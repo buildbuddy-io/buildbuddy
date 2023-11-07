@@ -579,6 +579,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 				return
 			}
 			invocationID = invocationUUID.String()
+			ctx = log.EnrichContext(ctx, log.InvocationIDKey, invocationID)
 
 			// The workflow execution is trusted since we're authenticated as a member of
 			// the BuildBuddy org that owns the workflow.
@@ -589,6 +590,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 				log.CtxWarning(ctx, statusErr.Error())
 				return
 			}
+			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
 			if req.GetAsync() {
 				return
 			}
@@ -798,6 +800,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 		}
 	}()
 
+	log.CtxInfof(ctx, "Waiting for workflow invocation to be created")
 	stage := repb.ExecutionStage_UNKNOWN
 	for {
 		select {
@@ -810,7 +813,6 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 		case <-time.After(1 * time.Second):
 			break
 		}
-		log.Infof("Polling invocation status...")
 		if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {
 			_, err := indb.LookupInvocation(ctx, invocationID)
 			if err == nil {
