@@ -12,6 +12,7 @@ import {
   User,
   Wrench,
   XCircle,
+  Circle,
 } from "lucide-react";
 import React from "react";
 import format from "../../../app/format/format";
@@ -19,6 +20,7 @@ import router from "../../../app/router/router";
 import Link from "../../../app/components/link/link";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
+import { exitCode } from "../../../app/util/exit_codes";
 
 const durationRefreshIntervalMillis = 3000;
 
@@ -118,6 +120,10 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
       return "card-disconnected";
     }
 
+    if (this.props.invocation.bazelExitCode == "NO_TESTS_FOUND") {
+      return "card-neutral";
+    }
+
     return this.props.invocation.success ? "card-success" : "card-failure";
   }
 
@@ -128,6 +134,10 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
 
     if (this.isDisconnected()) {
       return <HelpCircle className="icon" />;
+    }
+
+    if (this.props.invocation.bazelExitCode == "NO_TESTS_FOUND") {
+      return <Circle className="icon gray" />;
     }
 
     return this.props.invocation.success ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
@@ -141,8 +151,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
     if (this.isDisconnected()) {
       return "Disconnected";
     }
-
-    return this.props.invocation.success ? "Succeeded" : "Failed";
+    return exitCode(this.props.invocation.bazelExitCode);
   }
 
   private getTitleForWorkflow() {

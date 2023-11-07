@@ -423,6 +423,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
     if (selectedInvocation.invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return "grid-block-disconnected";
     }
+    if (selectedInvocation.bazelExitCode == "NO_TESTS_FOUND") {
+      return "grid-block-neutral";
+    }
     return selectedInvocation.success ? "grid-block-success" : "grid-block-failure";
   }
 
