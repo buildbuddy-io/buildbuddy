@@ -606,6 +606,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		eg.Go(func() error {
 			destReader, dstErr = mc.dest.Reader(ctx, r, uncompressedOffset, limit)
 			if dstErr != nil {
+				shouldDecompressAndVerify = false
 				return nil
 			}
 			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
@@ -616,17 +617,13 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 				} else {
 					destReader = dr
 				}
+				decompressor, err = compression.NewZstdDecompressor(pw)
+				if err != nil {
+					log.Warningf("Migration failed to get source decompressor for digest %q: %s", r.GetDigest().GetHash(), err)
+				}
 			}
 			return nil
 		})
-
-		if shouldDecompressAndVerify {
-			var err error
-			decompressor, err = compression.NewZstdDecompressor(pw)
-			if err != nil {
-				log.Warningf("Migration failed to get source decompressor for digest %q: %s", r.GetDigest().GetHash(), err)
-			}
-		}
 	}
 
 	srcReader, srcErr := mc.src.Reader(ctx, r, uncompressedOffset, limit)
