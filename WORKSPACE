@@ -36,7 +36,6 @@ http_archive(
         "//buildpatches:gazelle.patch",
     ],
     sha256 = "29218f8e0cebe583643cbf93cae6f971be8a2484cdcfa1e45057658df8d54002",
-    # Keep version in sync with .github/workflows/checkstyle.yaml
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.32.0/bazel-gazelle-v0.32.0.tar.gz",
         "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.32.0/bazel-gazelle-v0.32.0.tar.gz",
@@ -64,7 +63,6 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchai
 
 go_rules_dependencies()
 
-# Keep in sync with .github/workflows/checkstyle.yaml
 GO_SDK_VERSION = "1.21.4"
 
 # Register multiple Go SDKs so that we can perform cross-compilation remotely.
