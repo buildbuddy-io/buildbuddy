@@ -145,21 +145,16 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	bytesTransferredToClient := 0
 	for {
-		n, err := io.ReadFull(reader, copyBuf)
+		n, err := ioutil.ReadTryFillBuffer(reader, copyBuf)
 		bytesTransferredToClient += n
 		if err == io.EOF {
 			break
-		} else if err == io.ErrUnexpectedEOF {
-			if err := stream.Send(&bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
-				return err
-			}
-		} else if err != nil {
+		}
+		if err != nil {
 			return err
-		} else {
-			if err := stream.Send(&bspb.ReadResponse{Data: copyBuf}); err != nil {
-				return err
-			}
-			continue
+		}
+		if err := stream.Send(&bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
+			return err
 		}
 	}
 	// If the reader was not passed through the compressor above, the data will be sent
