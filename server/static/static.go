@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	iss_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service/config"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
@@ -171,7 +170,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		SecretsEnabled:                         env.GetSecretService() != nil,
 		TestOutputManifestsEnabled:             *testOutputManifestsEnabled,
 		UserOwnedKeysEnabled:                   env.GetAuthDB() != nil && env.GetAuthDB().GetUserOwnedKeysEnabled(),
-		TrendsHeatmapEnabled:                   iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
+		TrendsHeatmapEnabled:                   env.GetInvocationStatService() != nil && env.GetInvocationStatService().TrendsHeatmapEnabled(),
 		PatternFilterEnabled:                   *patternFilterEnabled,
 		BotSuggestionsEnabled:                  env.GetSuggestionService() != nil,
 		MultipleSuggestionProviders:            env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),

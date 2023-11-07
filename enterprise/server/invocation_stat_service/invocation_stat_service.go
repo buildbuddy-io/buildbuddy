@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service/config"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -40,6 +39,7 @@ var (
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
 	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", false, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
+	trendsHeatmapEnabled           = flag.Bool("app.trends_heatmap_enabled", true, "If set, enable a fancy heatmap UI for exploring build trends.")
 )
 
 type InvocationStatService struct {
@@ -54,6 +54,10 @@ func NewInvocationStatService(env environment.Env, dbh interfaces.DBHandle, olap
 		dbh:     dbh,
 		olapdbh: olapdbh,
 	}
+}
+
+func (i *InvocationStatService) TrendsHeatmapEnabled() bool {
+	return *readFromOLAPDBEnabled && i.olapdbh != nil
 }
 
 func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggType inpb.AggType) string {
@@ -939,7 +943,7 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 }
 
 func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*stpb.GetStatHeatmapResponse, error) {
-	if !config.TrendsHeatmapEnabled() {
+	if !i.TrendsHeatmapEnabled() {
 		return nil, status.UnimplementedError("Stat heatmaps are not enabled.")
 	}
 	if !i.isOLAPDBEnabled() {
@@ -1247,7 +1251,7 @@ func sortDrilldownChartKeys(dm map[stpb.DrilldownType]float64) *[]stpb.Drilldown
 }
 
 func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {
-	if !config.TrendsHeatmapEnabled() {
+	if !i.TrendsHeatmapEnabled() {
 		return nil, status.UnimplementedError("Stat heatmaps are not enabled.")
 	}
 	if !i.isOLAPDBEnabled() {
