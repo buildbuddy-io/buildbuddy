@@ -37,6 +37,7 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "@com_github_awslabs_soci_snapshotter//proto",
+        "@com_github_masterminds_semver_v3//:semver",
         "@com_github_opencontainers_go_digest//:go-digest",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",

@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -81,13 +82,18 @@ var (
 	sociStoreKeychainPort   = flag.Int("executor.podman.soci_store_keychain_port", 1989, "The port on which the soci-store local keychain service is exposed, for sharing credentials for streaming private container images.")
 	podmanRuntime           = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	podmanEnableStats       = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
-	transientStore          = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.")
+	transientStore          = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.", flag.Deprecated("--transient-store is now always applied if the podman version supports it"))
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
 
 	storageErrorRegex = regexp.MustCompile(`(?s)A storage corruption might have occurred.*Error: readlink.*no such file or directory`)
 	userRegex         = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*(:[a-z0-9_-]*)?$`)
+
+	// Detected podman version.
+	podmanVersion *semver.Version
+	// Min podman version supporting the '--transient-store' flag.
+	transientStoreMinVersion = semver.MustParse("4.3.0")
 
 	// A map from image name to pull status. This is used to avoid parallel pulling of the same image.
 	pullOperations sync.Map
@@ -190,6 +196,16 @@ func runSociStore(ctx context.Context) {
 }
 
 func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
+	v, err := getPodmanVersion(env.GetServerContext())
+	if err != nil {
+		return nil, status.WrapError(err, "podman version")
+	}
+	podmanVersion = v
+
+	if podmanVersion.LessThan(transientStoreMinVersion) {
+		log.Warningf("Detected podman version %s does not support --transient-store option, which significantly improves performance. Consider upgrading podman.", v)
+	}
+
 	var sociArtifactStoreClient socipb.SociArtifactStoreClient = nil
 	var sociStoreKeychainClient sspb.LocalKeychainClient = nil
 	if *imageStreamingEnabled {
@@ -257,6 +273,14 @@ graphroot = "/var/lib/containers/storage"
 		buildRoot:               buildRoot,
 		imageExistsCache:        imageExistsCache,
 	}, nil
+}
+
+func getPodmanVersion(ctx context.Context) (*semver.Version, error) {
+	b, err := exec.CommandContext(ctx, "podman", "version", "--format={{.Client.Version}}").CombinedOutput()
+	if err != nil {
+		return nil, status.InternalErrorf("`podman version` failed: %s: %s", err, string(b))
+	}
+	return semver.NewVersion(strings.TrimSpace(string(b)))
 }
 
 func intializeSociArtifactStoreClient(env environment.Env, target string) (socipb.SociArtifactStoreClient, error) {
@@ -985,7 +1009,7 @@ func (c *podmanCommandContainer) State(ctx context.Context) (*rnpb.ContainerStat
 
 func runPodman(ctx context.Context, subCommand string, stdio *commandutil.Stdio, args ...string) *interfaces.CommandResult {
 	command := []string{"podman"}
-	if *transientStore {
+	if !podmanVersion.LessThan(transientStoreMinVersion) {
 		// Use transient store to reduce contention.
 		// See https://github.com/containers/podman/issues/19824
 		command = append(command, "--transient-store")
