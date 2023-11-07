@@ -18,7 +18,6 @@ import (
 	dbConfig "github.com/lni/dragonboat/v4/config"
 )
 
-
 var targetAddressUnknownErrorMsg = "target address unknown"
 
 func targetAddressUnknownError(shard, replica uint64) error {
