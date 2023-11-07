@@ -70,6 +70,7 @@ for LOGFILE in "${LOGFILES[@]}"; do
 done
 
 if ! ((OK)); then
+  error "Some checks failed. To fix many common errors, run: ./buildfix.sh -a"
   exit 1
 fi
 
