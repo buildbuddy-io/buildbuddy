@@ -210,6 +210,15 @@ type ExecutorProperties struct {
 	DefaultXcodeVersion     string
 }
 
+func (p *ExecutorProperties) SupportsIsolation(c ContainerType) bool {
+	for _, s := range p.SupportedIsolationTypes {
+		if s == c {
+			return true
+		}
+	}
+	return false
+}
+
 // ParseProperties parses the client provided properties into a struct.
 // Before use, the returned platform.Properties object *must* have
 // executor-specific overrides applied via the ApplyOverrides function.
@@ -362,15 +371,6 @@ func GetExecutorProperties() *ExecutorProperties {
 	return p
 }
 
-func contains(haystack []ContainerType, needle ContainerType) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
-}
-
 // ApplyOverrides modifies the platformProps and command as needed to match the
 // locally configured executor properties.
 func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, platformProps *Properties, command *repb.Command) error {
@@ -394,7 +394,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	// Check that the selected isolation type is supported by this executor.
-	if !contains(executorProps.SupportedIsolationTypes, ContainerType(platformProps.WorkloadIsolationType)) {
+	if !executorProps.SupportsIsolation(ContainerType(platformProps.WorkloadIsolationType)) {
 		return status.InvalidArgumentErrorf("The requested workload isolation type %q is unsupported by this executor. Supported types: %s)", platformProps.WorkloadIsolationType, executorProps.SupportedIsolationTypes)
 	}
 

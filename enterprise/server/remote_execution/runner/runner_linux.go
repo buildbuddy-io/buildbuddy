@@ -21,32 +21,34 @@ import (
 	"google.golang.org/grpc"
 )
 
-func (p *pool) initContainerProviders() error {
-	providers := make(map[platform.ContainerType]container.Provider)
-	dockerProvider, err := docker.NewProvider(p.env, p.hostBuildRoot())
-	if err != nil {
-		return status.FailedPreconditionErrorf("Failed to initialize docker container provider: %s", err)
-	}
-	if dockerProvider != nil {
+func (p *pool) registerContainerProviders(providers map[platform.ContainerType]container.Provider, executor *platform.ExecutorProperties) error {
+	if executor.SupportsIsolation(platform.DockerContainerType) {
+		dockerProvider, err := docker.NewProvider(p.env, p.hostBuildRoot())
+		if err != nil {
+			return status.FailedPreconditionErrorf("Failed to initialize docker container provider: %s", err)
+		}
 		providers[platform.DockerContainerType] = dockerProvider
 	}
-	podmanProvider, err := podman.NewProvider(p.env, *rootDirectory)
-	if err != nil {
-		return status.FailedPreconditionErrorf("Failed to initialize podman container provider: %s", err)
-	}
-	if podmanProvider != nil {
+
+	if executor.SupportsIsolation(platform.PodmanContainerType) {
+		podmanProvider, err := podman.NewProvider(p.env, *rootDirectory)
+		if err != nil {
+			return status.FailedPreconditionErrorf("Failed to initialize podman container provider: %s", err)
+		}
 		providers[platform.PodmanContainerType] = podmanProvider
 	}
-	if *platform.EnableFirecracker {
+
+	if executor.SupportsIsolation(platform.FirecrackerContainerType) {
 		p, err := firecracker.NewProvider(p.env, *rootDirectory)
 		if err != nil {
 			return status.FailedPreconditionErrorf("Failed to initialize firecracker container provider: %s", err)
 		}
 		providers[platform.FirecrackerContainerType] = p
 	}
-	providers[platform.BareContainerType] = &bare.Provider{}
 
-	p.containerProviders = providers
+	if executor.SupportsIsolation(platform.BareContainerType) {
+		providers[platform.BareContainerType] = &bare.Provider{}
+	}
 
 	return nil
 }
