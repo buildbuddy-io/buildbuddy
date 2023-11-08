@@ -21,6 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -311,6 +313,9 @@ func TestCOW_Resize(t *testing.T) {
 }
 
 func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
+	flags.Set(b, "app.log_level", "error")
+	log.Configure()
+
 	const chunkSize = 512 * 1024 // 512K
 	// TODO: figure out a more realistic distribution of read/write size
 	const ioSize = 4096
