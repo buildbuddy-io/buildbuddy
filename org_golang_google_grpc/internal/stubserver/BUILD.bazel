@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "stubserver",
+    srcs = ["stubserver.go"],
+    importpath = "google.golang.org/grpc/internal/stubserver",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = [
+        "//:grpc",
+        "//connectivity",
+        "//credentials/insecure",
+        "//interop/grpc_testing",
+        "//resolver",
+        "//resolver/manual",
+        "//serviceconfig",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":stubserver",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)

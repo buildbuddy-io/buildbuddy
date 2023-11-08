@@ -1,0 +1,27 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "adaptive",
+    srcs = [
+        "adaptive.go",
+        "lookback.go",
+    ],
+    importpath = "google.golang.org/grpc/balancer/rls/internal/adaptive",
+    visibility = ["//balancer/rls:__subpackages__"],
+    deps = ["//internal/grpcrand"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":adaptive",
+    visibility = ["//balancer/rls:__subpackages__"],
+)
+
+go_test(
+    name = "adaptive_test",
+    srcs = [
+        "adaptive_test.go",
+        "lookback_test.go",
+    ],
+    embed = [":adaptive"],
+)

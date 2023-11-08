@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "xds_federation_lib",
+    srcs = ["client.go"],
+    importpath = "google.golang.org/grpc/interop/xds_federation",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//:grpc",
+        "//balancer/grpclb",
+        "//balancer/rls",
+        "//credentials/google",
+        "//credentials/insecure",
+        "//grpclog",
+        "//interop",
+        "//interop/grpc_testing",
+        "//xds/googledirectpath",
+    ],
+)
+
+go_binary(
+    name = "xds_federation",
+    embed = [":xds_federation_lib"],
+    visibility = ["//visibility:public"],
+)

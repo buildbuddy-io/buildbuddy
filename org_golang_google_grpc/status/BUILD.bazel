@@ -1,0 +1,42 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "status",
+    srcs = ["status.go"],
+    importpath = "google.golang.org/grpc/status",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//codes",
+        "//internal/status",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":status",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "status_test",
+    srcs = [
+        "status_ext_test.go",
+        "status_test.go",
+    ],
+    embed = [":status"],
+    deps = [
+        "//codes",
+        "//internal/grpctest",
+        "//internal/status",
+        "//interop/grpc_testing",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@com_github_golang_protobuf//ptypes/any",
+        "@com_github_golang_protobuf//ptypes/duration",
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_genproto_googleapis_rpc//code",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)

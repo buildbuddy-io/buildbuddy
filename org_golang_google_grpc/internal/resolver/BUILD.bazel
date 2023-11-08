@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "resolver",
+    srcs = ["config_selector.go"],
+    importpath = "google.golang.org/grpc/internal/resolver",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = [
+        "//internal/serviceconfig",
+        "//metadata",
+        "//resolver",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":resolver",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "resolver_test",
+    srcs = ["config_selector_test.go"],
+    embed = [":resolver"],
+    deps = [
+        "//internal/grpctest",
+        "//internal/serviceconfig",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

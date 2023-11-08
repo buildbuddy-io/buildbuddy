@@ -1,0 +1,60 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "priority",
+    srcs = [
+        "balancer.go",
+        "balancer_child.go",
+        "balancer_priority.go",
+        "config.go",
+        "ignore_resolve_now.go",
+        "logging.go",
+        "utils.go",
+    ],
+    importpath = "google.golang.org/grpc/xds/internal/balancer/priority",
+    visibility = ["//xds:__subpackages__"],
+    deps = [
+        "//balancer",
+        "//balancer/base",
+        "//connectivity",
+        "//grpclog",
+        "//internal/balancergroup",
+        "//internal/buffer",
+        "//internal/grpclog",
+        "//internal/grpcsync",
+        "//internal/hierarchy",
+        "//internal/pretty",
+        "//internal/serviceconfig",
+        "//resolver",
+        "//serviceconfig",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":priority",
+    visibility = ["//xds:__subpackages__"],
+)
+
+go_test(
+    name = "priority_test",
+    srcs = [
+        "balancer_test.go",
+        "config_test.go",
+        "ignore_resolve_now_test.go",
+        "utils_test.go",
+    ],
+    embed = [":priority"],
+    deps = [
+        "//balancer",
+        "//balancer/roundrobin",
+        "//connectivity",
+        "//internal/balancer/stub",
+        "//internal/grpctest",
+        "//internal/hierarchy",
+        "//internal/serviceconfig",
+        "//internal/testutils",
+        "//resolver",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

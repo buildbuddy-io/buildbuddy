@@ -1,0 +1,79 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "rbac",
+    srcs = [
+        "converter.go",
+        "matchers.go",
+        "rbac_engine.go",
+    ],
+    importpath = "google.golang.org/grpc/internal/xds/rbac",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = [
+        "//:grpc",
+        "//authz/audit",
+        "//authz/audit/stdout",
+        "//codes",
+        "//credentials",
+        "//grpclog",
+        "//internal/transport",
+        "//internal/xds/matcher",
+        "//metadata",
+        "//peer",
+        "//status",
+        "@com_github_cncf_xds_go//udpa/type/v1:type",
+        "@com_github_cncf_xds_go//xds/type/v3:type",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/core/v3:core",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/rbac/v3:rbac",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/route/v3:route",
+        "@com_github_envoyproxy_go_control_plane//envoy/extensions/rbac/audit_loggers/stream/v3:stream",
+        "@com_github_envoyproxy_go_control_plane//envoy/type/matcher/v3:matcher",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":rbac",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "rbac_test",
+    srcs = [
+        "converter_test.go",
+        "rbac_engine_test.go",
+    ],
+    embed = [":rbac"],
+    deps = [
+        "//:grpc",
+        "//authz/audit",
+        "//authz/audit/stdout",
+        "//codes",
+        "//credentials",
+        "//internal/grpctest",
+        "//internal/testutils",
+        "//metadata",
+        "//peer",
+        "//status",
+        "@com_github_cncf_xds_go//udpa/type/v1:type",
+        "@com_github_cncf_xds_go//xds/type/v3:type",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/core/v3:core",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/rbac/v3:rbac",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/route/v3:route",
+        "@com_github_envoyproxy_go_control_plane//envoy/extensions/rbac/audit_loggers/stream/v3:stream",
+        "@com_github_envoyproxy_go_control_plane//envoy/type/matcher/v3:matcher",
+        "@com_github_envoyproxy_go_control_plane//envoy/type/v3:type",
+        "@com_github_golang_protobuf//ptypes/wrappers",
+        "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
+)

@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "client_lib",
+    srcs = ["main.go"],
+    importpath = "google.golang.org/grpc/benchmark/client",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//:grpc",
+        "//benchmark",
+        "//benchmark/stats",
+        "//credentials/insecure",
+        "//grpclog",
+        "//internal/syscall",
+        "//interop/grpc_testing",
+    ],
+)
+
+go_binary(
+    name = "client",
+    embed = [":client_lib"],
+    visibility = ["//visibility:public"],
+)

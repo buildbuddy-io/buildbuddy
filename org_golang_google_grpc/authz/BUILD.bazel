@@ -1,0 +1,61 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "authz",
+    srcs = [
+        "grpc_authz_server_interceptors.go",
+        "rbac_translator.go",
+    ],
+    importpath = "google.golang.org/grpc/authz",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//grpclog",
+        "//internal/xds/rbac",
+        "//status",
+        "@com_github_cncf_xds_go//udpa/type/v1:type",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/core/v3:core",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/rbac/v3:rbac",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/route/v3:route",
+        "@com_github_envoyproxy_go_control_plane//envoy/type/matcher/v3:matcher",
+        "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":authz",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "authz_test",
+    srcs = [
+        "grpc_authz_end2end_test.go",
+        "grpc_authz_server_interceptors_test.go",
+        "rbac_translator_test.go",
+    ],
+    embed = [":authz"],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//credentials",
+        "//credentials/insecure",
+        "//internal/grpctest",
+        "//interop/grpc_testing",
+        "//metadata",
+        "//status",
+        "//testdata",
+        "@com_github_cncf_xds_go//udpa/type/v1:type",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/core/v3:core",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/rbac/v3:rbac",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/route/v3:route",
+        "@com_github_envoyproxy_go_control_plane//envoy/type/matcher/v3:matcher",
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
+)

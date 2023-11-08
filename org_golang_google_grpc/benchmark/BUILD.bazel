@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "benchmark",
+    srcs = ["benchmark.go"],
+    importpath = "google.golang.org/grpc/benchmark",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//grpclog",
+        "//interop/grpc_testing",
+        "//metadata",
+        "//status",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":benchmark",
+    visibility = ["//visibility:public"],
+)

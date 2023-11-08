@@ -1,0 +1,57 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "weightedroundrobin",
+    srcs = [
+        "balancer.go",
+        "config.go",
+        "logging.go",
+        "scheduler.go",
+        "weightedroundrobin.go",
+    ],
+    importpath = "google.golang.org/grpc/balancer/weightedroundrobin",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//balancer",
+        "//balancer/base",
+        "//balancer/weightedroundrobin/internal",
+        "//connectivity",
+        "//grpclog",
+        "//internal/grpclog",
+        "//internal/grpcrand",
+        "//internal/serviceconfig",
+        "//orca",
+        "//resolver",
+        "//serviceconfig",
+        "@com_github_cncf_xds_go//xds/data/orca/v3:orca",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":weightedroundrobin",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "weightedroundrobin_test",
+    srcs = [
+        "balancer_test.go",
+        "weightedroundrobin_test.go",
+    ],
+    embed = [":weightedroundrobin"],
+    deps = [
+        "//:grpc",
+        "//attributes",
+        "//balancer/weightedroundrobin/internal",
+        "//internal",
+        "//internal/grpctest",
+        "//internal/stubserver",
+        "//internal/testutils/roundrobin",
+        "//interop/grpc_testing",
+        "//orca",
+        "//peer",
+        "//resolver",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "leastrequest",
+    srcs = ["leastrequest.go"],
+    importpath = "google.golang.org/grpc/balancer/leastrequest",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//balancer",
+        "//balancer/base",
+        "//grpclog",
+        "//internal/grpcrand",
+        "//serviceconfig",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":leastrequest",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "leastrequest_test",
+    srcs = ["balancer_test.go"],
+    embed = [":leastrequest"],
+    deps = [
+        "//:grpc",
+        "//credentials/insecure",
+        "//internal",
+        "//internal/grpctest",
+        "//internal/stubserver",
+        "//interop/grpc_testing",
+        "//peer",
+        "//resolver",
+        "//resolver/manual",
+        "//serviceconfig",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "base",
+    srcs = [
+        "balancer.go",
+        "base.go",
+    ],
+    importpath = "google.golang.org/grpc/balancer/base",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//balancer",
+        "//connectivity",
+        "//grpclog",
+        "//resolver",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":base",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "base_test",
+    srcs = ["balancer_test.go"],
+    embed = [":base"],
+    deps = [
+        "//attributes",
+        "//balancer",
+        "//connectivity",
+        "//resolver",
+    ],
+)

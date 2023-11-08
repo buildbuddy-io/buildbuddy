@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "benchmain_lib",
+    srcs = ["main.go"],
+    importpath = "google.golang.org/grpc/benchmark/benchmain",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//:grpc",
+        "//benchmark",
+        "//benchmark/flags",
+        "//benchmark/latency",
+        "//benchmark/stats",
+        "//credentials/insecure",
+        "//grpclog",
+        "//internal/channelz",
+        "//interop/grpc_testing",
+        "//keepalive",
+        "//metadata",
+        "//test/bufconn",
+    ],
+)
+
+go_binary(
+    name = "benchmain",
+    embed = [":benchmain_lib"],
+    visibility = ["//visibility:public"],
+)

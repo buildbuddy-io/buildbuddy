@@ -1,0 +1,41 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "grpcsync",
+    srcs = [
+        "callback_serializer.go",
+        "event.go",
+        "oncefunc.go",
+        "pubsub.go",
+    ],
+    importpath = "google.golang.org/grpc/internal/grpcsync",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = ["//internal/buffer"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":grpcsync",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "grpcsync_test",
+    srcs = [
+        "callback_serializer_test.go",
+        "event_test.go",
+        "oncefunc_test.go",
+        "pubsub_test.go",
+    ],
+    embed = [":grpcsync"],
+    deps = [
+        "//internal/grpctest",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

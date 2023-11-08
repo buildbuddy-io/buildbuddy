@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gracefulswitch",
+    srcs = ["gracefulswitch.go"],
+    importpath = "google.golang.org/grpc/internal/balancer/gracefulswitch",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = [
+        "//balancer",
+        "//balancer/base",
+        "//connectivity",
+        "//resolver",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":gracefulswitch",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "gracefulswitch_test",
+    srcs = ["gracefulswitch_test.go"],
+    embed = [":gracefulswitch"],
+    deps = [
+        "//balancer",
+        "//connectivity",
+        "//internal/grpcsync",
+        "//internal/grpctest",
+        "//internal/testutils",
+        "//resolver",
+        "//serviceconfig",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+    ],
+)

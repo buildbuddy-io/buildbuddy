@@ -1,0 +1,27 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "buffer",
+    srcs = ["buffer.go"],
+    importpath = "google.golang.org/grpc/internal/profiling/buffer",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":buffer",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "buffer_test",
+    srcs = ["buffer_test.go"],
+    embed = [":buffer"],
+    deps = ["//internal/grpctest"],
+)

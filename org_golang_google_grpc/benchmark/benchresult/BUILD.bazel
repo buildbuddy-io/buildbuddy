@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "benchresult_lib",
+    srcs = ["main.go"],
+    importpath = "google.golang.org/grpc/benchmark/benchresult",
+    visibility = ["//visibility:private"],
+    deps = ["//benchmark/stats"],
+)
+
+go_binary(
+    name = "benchresult",
+    embed = [":benchresult_lib"],
+    visibility = ["//visibility:public"],
+)

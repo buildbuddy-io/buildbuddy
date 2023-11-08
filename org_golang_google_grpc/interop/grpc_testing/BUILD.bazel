@@ -1,0 +1,37 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "grpc_testing",
+    srcs = [
+        "benchmark_service.pb.go",
+        "benchmark_service_grpc.pb.go",
+        "control.pb.go",
+        "empty.pb.go",
+        "messages.pb.go",
+        "payloads.pb.go",
+        "report_qps_scenario_service.pb.go",
+        "report_qps_scenario_service_grpc.pb.go",
+        "stats.pb.go",
+        "test.pb.go",
+        "test_grpc.pb.go",
+        "worker_service.pb.go",
+        "worker_service_grpc.pb.go",
+    ],
+    importpath = "google.golang.org/grpc/interop/grpc_testing",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//interop/grpc_testing/core",
+        "//status",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":grpc_testing",
+    visibility = ["//visibility:public"],
+)

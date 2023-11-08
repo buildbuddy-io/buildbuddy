@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "testutils",
+    srcs = [
+        "protos.go",
+        "resource_watcher.go",
+        "testutils.go",
+    ],
+    importpath = "google.golang.org/grpc/xds/internal/testutils",
+    visibility = ["//xds:__subpackages__"],
+    deps = [
+        "//xds/internal",
+        "//xds/internal/xdsclient/bootstrap",
+        "//xds/internal/xdsclient/xdsresource",
+        "//xds/internal/xdsclient/xdsresource/version",
+        "@com_github_envoyproxy_go_control_plane//envoy/api/v2:api",
+        "@com_github_envoyproxy_go_control_plane//envoy/api/v2/core",
+        "@com_github_envoyproxy_go_control_plane//envoy/api/v2/endpoint",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/core/v3:core",
+        "@com_github_envoyproxy_go_control_plane//envoy/type",
+        "@com_github_golang_protobuf//ptypes/wrappers",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":testutils",
+    visibility = ["//xds:__subpackages__"],
+)
+
+go_test(
+    name = "testutils_test",
+    srcs = ["balancer_test.go"],
+    embed = [":testutils"],
+    deps = [
+        "//balancer",
+        "//internal/testutils",
+    ],
+)

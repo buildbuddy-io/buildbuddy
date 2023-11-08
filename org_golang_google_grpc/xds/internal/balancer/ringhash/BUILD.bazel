@@ -1,0 +1,63 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ringhash",
+    srcs = [
+        "config.go",
+        "logging.go",
+        "picker.go",
+        "ring.go",
+        "ringhash.go",
+        "util.go",
+    ],
+    importpath = "google.golang.org/grpc/xds/internal/balancer/ringhash",
+    visibility = ["//xds:__subpackages__"],
+    deps = [
+        "//balancer",
+        "//balancer/base",
+        "//balancer/weightedroundrobin",
+        "//codes",
+        "//connectivity",
+        "//grpclog",
+        "//internal/envconfig",
+        "//internal/grpclog",
+        "//internal/pretty",
+        "//resolver",
+        "//serviceconfig",
+        "//status",
+        "@com_github_cespare_xxhash_v2//:xxhash",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":ringhash",
+    visibility = ["//xds:__subpackages__"],
+)
+
+go_test(
+    name = "ringhash_test",
+    srcs = [
+        "config_test.go",
+        "picker_test.go",
+        "ring_test.go",
+        "ringhash_test.go",
+    ],
+    embed = [":ringhash"],
+    deps = [
+        "//attributes",
+        "//balancer",
+        "//balancer/weightedroundrobin",
+        "//connectivity",
+        "//grpclog",
+        "//internal/envconfig",
+        "//internal/grpclog",
+        "//internal/grpctest",
+        "//internal/testutils",
+        "//resolver",
+        "//xds/internal",
+        "@com_github_cespare_xxhash_v2//:xxhash",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+    ],
+)

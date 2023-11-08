@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "grpc_reflection_v1alpha",
+    srcs = [
+        "reflection.pb.go",
+        "reflection_grpc.pb.go",
+    ],
+    importpath = "google.golang.org/grpc/reflection/grpc_reflection_v1alpha",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//status",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":grpc_reflection_v1alpha",
+    visibility = ["//visibility:public"],
+)

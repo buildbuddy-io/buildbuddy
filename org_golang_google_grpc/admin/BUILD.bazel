@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "admin",
+    srcs = ["admin.go"],
+    importpath = "google.golang.org/grpc/admin",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//channelz/service",
+        "//internal/admin",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":admin",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "admin_test",
+    srcs = ["admin_test.go"],
+    deps = [
+        "//admin/test",
+        "//codes",
+    ],
+)

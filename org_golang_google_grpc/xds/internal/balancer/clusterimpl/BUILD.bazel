@@ -1,0 +1,71 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "clusterimpl",
+    srcs = [
+        "clusterimpl.go",
+        "config.go",
+        "logging.go",
+        "picker.go",
+    ],
+    importpath = "google.golang.org/grpc/xds/internal/balancer/clusterimpl",
+    visibility = ["//xds:__subpackages__"],
+    deps = [
+        "//balancer",
+        "//codes",
+        "//connectivity",
+        "//grpclog",
+        "//internal",
+        "//internal/balancer/gracefulswitch",
+        "//internal/buffer",
+        "//internal/grpclog",
+        "//internal/grpcsync",
+        "//internal/pretty",
+        "//internal/serviceconfig",
+        "//internal/wrr",
+        "//resolver",
+        "//serviceconfig",
+        "//status",
+        "//xds/internal",
+        "//xds/internal/balancer/loadstore",
+        "//xds/internal/xdsclient",
+        "//xds/internal/xdsclient/bootstrap",
+        "//xds/internal/xdsclient/load",
+        "@com_github_cncf_xds_go//xds/data/orca/v3:orca",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":clusterimpl",
+    visibility = ["//xds:__subpackages__"],
+)
+
+go_test(
+    name = "clusterimpl_test",
+    srcs = [
+        "balancer_test.go",
+        "config_test.go",
+    ],
+    embed = [":clusterimpl"],
+    deps = [
+        "//balancer",
+        "//balancer/base",
+        "//balancer/roundrobin",
+        "//balancer/weightedtarget",
+        "//connectivity",
+        "//internal",
+        "//internal/balancer/stub",
+        "//internal/grpctest",
+        "//internal/serviceconfig",
+        "//internal/testutils",
+        "//resolver",
+        "//xds/internal",
+        "//xds/internal/testutils/fakeclient",
+        "//xds/internal/xdsclient",
+        "//xds/internal/xdsclient/bootstrap",
+        "//xds/internal/xdsclient/load",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+    ],
+)

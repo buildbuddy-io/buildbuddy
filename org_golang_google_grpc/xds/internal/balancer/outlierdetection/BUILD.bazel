@@ -1,0 +1,60 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "outlierdetection",
+    srcs = [
+        "balancer.go",
+        "callcounter.go",
+        "config.go",
+        "logging.go",
+        "subconn_wrapper.go",
+    ],
+    importpath = "google.golang.org/grpc/xds/internal/balancer/outlierdetection",
+    visibility = ["//xds:__subpackages__"],
+    deps = [
+        "//balancer",
+        "//connectivity",
+        "//grpclog",
+        "//internal/balancer/gracefulswitch",
+        "//internal/buffer",
+        "//internal/channelz",
+        "//internal/envconfig",
+        "//internal/grpclog",
+        "//internal/grpcrand",
+        "//internal/grpcsync",
+        "//internal/serviceconfig",
+        "//resolver",
+        "//serviceconfig",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":outlierdetection",
+    visibility = ["//xds:__subpackages__"],
+)
+
+go_test(
+    name = "outlierdetection_test",
+    srcs = [
+        "balancer_test.go",
+        "callcounter_test.go",
+        "config_test.go",
+    ],
+    embed = [":outlierdetection"],
+    deps = [
+        "//balancer",
+        "//connectivity",
+        "//internal/balancer/stub",
+        "//internal/channelz",
+        "//internal/grpcsync",
+        "//internal/grpctest",
+        "//internal/serviceconfig",
+        "//internal/testutils",
+        "//resolver",
+        "//serviceconfig",
+        "//xds/internal/balancer/clusterimpl",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+    ],
+)

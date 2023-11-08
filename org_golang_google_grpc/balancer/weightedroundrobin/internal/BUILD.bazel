@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "internal",
+    srcs = ["internal.go"],
+    importpath = "google.golang.org/grpc/balancer/weightedroundrobin/internal",
+    visibility = ["//balancer/weightedroundrobin:__subpackages__"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":internal",
+    visibility = ["//balancer/weightedroundrobin:__subpackages__"],
+)

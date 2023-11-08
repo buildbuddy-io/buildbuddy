@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "bootstrap",
+    srcs = ["bootstrap.go"],
+    importpath = "google.golang.org/grpc/xds/bootstrap",
+    visibility = ["//visibility:public"],
+    deps = ["//credentials"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":bootstrap",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "bootstrap_test",
+    srcs = ["bootstrap_test.go"],
+    embed = [":bootstrap"],
+    deps = ["//credentials"],
+)

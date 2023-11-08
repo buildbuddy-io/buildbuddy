@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "e2e_test",
+    srcs = ["ringhash_balancer_test.go"],
+    deps = [
+        "//:grpc",
+        "//connectivity",
+        "//credentials/insecure",
+        "//internal/grpctest",
+        "//internal/testutils",
+        "//interop/grpc_testing",
+        "//resolver",
+        "//resolver/manual",
+        "//xds/internal/balancer/ringhash",
+    ],
+)

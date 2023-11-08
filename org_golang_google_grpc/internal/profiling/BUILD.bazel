@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "profiling",
+    srcs = [
+        "goid_regular.go",
+        "profiling.go",
+    ],
+    importpath = "google.golang.org/grpc/internal/profiling",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = ["//internal/profiling/buffer"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":profiling",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "profiling_test",
+    srcs = ["profiling_test.go"],
+    embed = [":profiling"],
+    deps = [
+        "//internal/grpctest",
+        "//internal/profiling/buffer",
+    ],
+)

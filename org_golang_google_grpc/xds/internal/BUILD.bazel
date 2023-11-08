@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "internal",
+    srcs = ["internal.go"],
+    importpath = "google.golang.org/grpc/xds/internal",
+    visibility = ["//xds:__subpackages__"],
+    deps = ["//resolver"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":internal",
+    visibility = ["//xds:__subpackages__"],
+)
+
+go_test(
+    name = "internal_test",
+    srcs = ["internal_test.go"],
+    embed = [":internal"],
+    deps = [
+        "//internal/grpctest",
+        "@com_github_envoyproxy_go_control_plane//envoy/api/v2/core",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

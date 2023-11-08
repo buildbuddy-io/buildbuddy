@@ -1,0 +1,41 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "grpctest",
+    srcs = [
+        "grpctest.go",
+        "tlogger.go",
+    ],
+    importpath = "google.golang.org/grpc/internal/grpctest",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = [
+        "//grpclog",
+        "//internal/leakcheck",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":grpctest",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "grpctest_test",
+    srcs = [
+        "example_test.go",
+        "grpctest_test.go",
+        "tlogger_test.go",
+    ],
+    embed = [":grpctest"],
+    deps = [
+        "//grpclog",
+        "//internal/grpclog",
+    ],
+)

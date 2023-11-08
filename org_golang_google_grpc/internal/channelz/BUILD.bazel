@@ -1,0 +1,60 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "channelz",
+    srcs = [
+        "funcs.go",
+        "id.go",
+        "logging.go",
+        "types.go",
+        "types_linux.go",
+        "types_nonlinux.go",
+        "util_linux.go",
+        "util_nonlinux.go",
+    ],
+    importpath = "google.golang.org/grpc/internal/channelz",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = [
+        "//connectivity",
+        "//credentials",
+        "//grpclog",
+    ] + select({
+        "@io_bazel_rules_go//go/platform:android": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":channelz",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "channelz_test",
+    srcs = ["util_test.go"],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:android": [
+            ":channelz",
+            "//internal/grpctest",
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            ":channelz",
+            "//internal/grpctest",
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
+)

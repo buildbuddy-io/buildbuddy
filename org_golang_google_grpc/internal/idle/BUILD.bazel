@@ -1,0 +1,45 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "idle",
+    srcs = ["idle.go"],
+    importpath = "google.golang.org/grpc/internal/idle",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = ["//grpclog"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":idle",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "idle_test",
+    srcs = [
+        "idle_e2e_test.go",
+        "idle_test.go",
+    ],
+    embed = [":idle"],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//connectivity",
+        "//credentials/insecure",
+        "//grpclog",
+        "//internal/channelz",
+        "//internal/grpctest",
+        "//internal/stubserver",
+        "//internal/testutils",
+        "//interop/grpc_testing",
+        "//resolver",
+        "//resolver/manual",
+        "//status",
+    ],
+)

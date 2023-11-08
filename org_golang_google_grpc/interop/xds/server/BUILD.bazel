@@ -1,0 +1,27 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "server_lib",
+    srcs = ["server.go"],
+    importpath = "google.golang.org/grpc/interop/xds/server",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//:grpc",
+        "//admin",
+        "//credentials/insecure",
+        "//credentials/xds",
+        "//grpclog",
+        "//health",
+        "//health/grpc_health_v1",
+        "//interop/grpc_testing",
+        "//metadata",
+        "//reflection",
+        "//xds",
+    ],
+)
+
+go_binary(
+    name = "server",
+    embed = [":server_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,80 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "service",
+    srcs = [
+        "func_linux.go",
+        "func_nonlinux.go",
+        "service.go",
+    ],
+    importpath = "google.golang.org/grpc/channelz/service",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//channelz/grpc_channelz_v1",
+        "//codes",
+        "//connectivity",
+        "//credentials",
+        "//grpclog",
+        "//internal/channelz",
+        "//status",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@com_github_golang_protobuf//ptypes/wrappers",
+        "@org_golang_google_protobuf//protoadapt",
+        "@org_golang_google_protobuf//types/known/anypb",
+    ] + select({
+        "@io_bazel_rules_go//go/platform:android": [
+            "@com_github_golang_protobuf//ptypes/duration",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@com_github_golang_protobuf//ptypes/duration",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":service",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "service_test",
+    srcs = [
+        "service_sktopt_test.go",
+        "service_test.go",
+        "util_sktopt_386_test.go",
+        "util_sktopt_amd64_test.go",
+    ],
+    embed = [":service"],
+    deps = [
+        "//channelz/grpc_channelz_v1",
+        "//connectivity",
+        "//credentials",
+        "//internal/channelz",
+        "//internal/grpctest",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_protobuf//testing/protocmp",
+    ] + select({
+        "@io_bazel_rules_go//go/platform:android_386": [
+            "@com_github_golang_protobuf//ptypes/duration",
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:android_amd64": [
+            "@com_github_golang_protobuf//ptypes/duration",
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:linux_386": [
+            "@com_github_golang_protobuf//ptypes/duration",
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:linux_amd64": [
+            "@com_github_golang_protobuf//ptypes/duration",
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
+)

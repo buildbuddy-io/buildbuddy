@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "rls",
+    srcs = ["rls.go"],
+    importpath = "google.golang.org/grpc/xds/internal/clusterspecifier/rls",
+    visibility = ["//xds:__subpackages__"],
+    deps = [
+        "//balancer",
+        "//internal",
+        "//internal/envconfig",
+        "//internal/proto/grpc_lookup_v1",
+        "//xds/internal/clusterspecifier",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//types/known/anypb",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":rls",
+    visibility = ["//xds:__subpackages__"],
+)
+
+go_test(
+    name = "rls_test",
+    srcs = ["rls_test.go"],
+    embed = [":rls"],
+    deps = [
+        "//balancer/rls",
+        "//internal/grpctest",
+        "//internal/proto/grpc_lookup_v1",
+        "//internal/testutils",
+        "//xds/internal/balancer/cdsbalancer",
+        "//xds/internal/clusterspecifier",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+        "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)

@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "grpc_lb_v1",
+    srcs = [
+        "load_balancer.pb.go",
+        "load_balancer_grpc.pb.go",
+    ],
+    importpath = "google.golang.org/grpc/balancer/grpclb/grpc_lb_v1",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//status",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":grpc_lb_v1",
+    visibility = ["//visibility:public"],
+)

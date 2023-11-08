@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "reflection",
+    srcs = [
+        "adapt.go",
+        "serverreflection.go",
+    ],
+    importpath = "google.golang.org/grpc/reflection",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//reflection/grpc_reflection_v1",
+        "//reflection/grpc_reflection_v1alpha",
+        "//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protodesc",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//reflect/protoregistry",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":reflection",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "reflection_test",
+    srcs = ["serverreflection_test.go"],
+    embed = [":reflection"],
+    deps = [
+        "//:grpc",
+        "//credentials/insecure",
+        "//internal/grpctest",
+        "//reflection/grpc_reflection_v1",
+        "//reflection/grpc_reflection_v1alpha",
+        "//reflection/grpc_testing",
+        "//reflection/grpc_testing_not_regenerate",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protodesc",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//reflect/protoregistry",
+        "@org_golang_google_protobuf//types/descriptorpb",
+        "@org_golang_google_protobuf//types/dynamicpb",
+    ],
+)

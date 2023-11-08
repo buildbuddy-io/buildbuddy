@@ -1,0 +1,46 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "dns",
+    srcs = ["dns_resolver.go"],
+    importpath = "google.golang.org/grpc/internal/resolver/dns",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = [
+        "//balancer/grpclb/state",
+        "//grpclog",
+        "//internal/backoff",
+        "//internal/envconfig",
+        "//internal/grpcrand",
+        "//resolver",
+        "//serviceconfig",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":dns",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "dns_test",
+    srcs = ["dns_resolver_test.go"],
+    embed = [":dns"],
+    deps = [
+        "//balancer",
+        "//balancer/grpclb/state",
+        "//internal/envconfig",
+        "//internal/leakcheck",
+        "//internal/testutils",
+        "//resolver",
+        "//serviceconfig",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+    ],
+)

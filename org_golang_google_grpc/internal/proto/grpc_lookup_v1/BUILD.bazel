@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "grpc_lookup_v1",
+    srcs = [
+        "rls.pb.go",
+        "rls_config.pb.go",
+        "rls_grpc.pb.go",
+    ],
+    importpath = "google.golang.org/grpc/internal/proto/grpc_lookup_v1",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//status",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+        "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":grpc_lookup_v1",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)

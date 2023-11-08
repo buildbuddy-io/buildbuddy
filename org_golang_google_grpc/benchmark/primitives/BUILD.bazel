@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "primitives_test",
+    srcs = [
+        "code_string_test.go",
+        "context_test.go",
+        "primitives_test.go",
+        "safe_config_selector_test.go",
+        "syncmap_test.go",
+    ],
+    deps = ["//codes"],
+)

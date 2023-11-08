@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "interop",
+    srcs = [
+        "orcalb.go",
+        "test_utils.go",
+    ],
+    importpath = "google.golang.org/grpc/interop",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//balancer",
+        "//balancer/base",
+        "//benchmark/stats",
+        "//codes",
+        "//connectivity",
+        "//grpclog",
+        "//interop/grpc_testing",
+        "//metadata",
+        "//orca",
+        "//peer",
+        "//status",
+        "@com_github_cncf_xds_go//xds/data/orca/v3:orca",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@org_golang_x_oauth2//:oauth2",
+        "@org_golang_x_oauth2//google",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":interop",
+    visibility = ["//visibility:public"],
+)

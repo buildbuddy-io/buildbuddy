@@ -1,0 +1,44 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "health",
+    srcs = [
+        "client.go",
+        "logging.go",
+        "server.go",
+    ],
+    importpath = "google.golang.org/grpc/health",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//connectivity",
+        "//grpclog",
+        "//health/grpc_health_v1",
+        "//internal",
+        "//internal/backoff",
+        "//status",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":health",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "health_test",
+    srcs = [
+        "client_test.go",
+        "server_internal_test.go",
+        "server_test.go",
+    ],
+    embed = [":health"],
+    deps = [
+        "//:grpc",
+        "//connectivity",
+        "//health/grpc_health_v1",
+        "//internal/grpctest",
+    ],
+)

@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "stdout",
+    srcs = ["stdout_logger.go"],
+    importpath = "google.golang.org/grpc/authz/audit/stdout",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//authz/audit",
+        "//grpclog",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":stdout",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "stdout_test",
+    srcs = ["stdout_logger_test.go"],
+    embed = [":stdout"],
+    deps = [
+        "//authz/audit",
+        "//internal/grpctest",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

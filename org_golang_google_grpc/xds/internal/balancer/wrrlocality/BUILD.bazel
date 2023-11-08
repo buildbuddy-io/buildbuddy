@@ -1,0 +1,46 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "wrrlocality",
+    srcs = [
+        "balancer.go",
+        "logging.go",
+    ],
+    importpath = "google.golang.org/grpc/xds/internal/balancer/wrrlocality",
+    visibility = ["//xds:__subpackages__"],
+    deps = [
+        "//balancer",
+        "//balancer/weightedtarget",
+        "//grpclog",
+        "//internal/grpclog",
+        "//internal/serviceconfig",
+        "//resolver",
+        "//serviceconfig",
+        "//xds/internal",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":wrrlocality",
+    visibility = ["//xds:__subpackages__"],
+)
+
+go_test(
+    name = "wrrlocality_test",
+    srcs = ["balancer_test.go"],
+    embed = [":wrrlocality"],
+    deps = [
+        "//balancer",
+        "//balancer/roundrobin",
+        "//balancer/weightedtarget",
+        "//internal/balancer/stub",
+        "//internal/grpctest",
+        "//internal/serviceconfig",
+        "//internal/testutils",
+        "//resolver",
+        "//serviceconfig",
+        "//xds/internal",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

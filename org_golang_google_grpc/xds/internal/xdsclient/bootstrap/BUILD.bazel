@@ -1,0 +1,54 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "bootstrap",
+    srcs = [
+        "bootstrap.go",
+        "logging.go",
+        "template.go",
+    ],
+    importpath = "google.golang.org/grpc/xds/internal/xdsclient/bootstrap",
+    visibility = ["//xds:__subpackages__"],
+    deps = [
+        "//:grpc",
+        "//credentials",
+        "//credentials/google",
+        "//credentials/insecure",
+        "//credentials/tls/certprovider",
+        "//grpclog",
+        "//internal",
+        "//internal/envconfig",
+        "//internal/grpclog",
+        "//internal/pretty",
+        "//xds/bootstrap",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/core/v3:core",
+        "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":bootstrap",
+    visibility = ["//xds:__subpackages__"],
+)
+
+go_test(
+    name = "bootstrap_test",
+    srcs = [
+        "bootstrap_test.go",
+        "template_test.go",
+    ],
+    embed = [":bootstrap"],
+    deps = [
+        "//:grpc",
+        "//credentials/tls/certprovider",
+        "//internal",
+        "//internal/envconfig",
+        "//xds/bootstrap",
+        "@com_github_envoyproxy_go_control_plane//envoy/config/core/v3:core",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//ptypes/struct",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+    ],
+)

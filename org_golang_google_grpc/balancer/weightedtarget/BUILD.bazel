@@ -1,0 +1,55 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "weightedtarget",
+    srcs = [
+        "logging.go",
+        "weightedtarget.go",
+        "weightedtarget_config.go",
+    ],
+    importpath = "google.golang.org/grpc/balancer/weightedtarget",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//balancer",
+        "//balancer/weightedtarget/weightedaggregator",
+        "//grpclog",
+        "//internal/balancergroup",
+        "//internal/grpclog",
+        "//internal/hierarchy",
+        "//internal/pretty",
+        "//internal/serviceconfig",
+        "//internal/wrr",
+        "//resolver",
+        "//serviceconfig",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":weightedtarget",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "weightedtarget_test",
+    srcs = [
+        "weightedtarget_config_test.go",
+        "weightedtarget_test.go",
+    ],
+    embed = [":weightedtarget"],
+    deps = [
+        "//attributes",
+        "//balancer",
+        "//balancer/grpclb",
+        "//balancer/roundrobin",
+        "//connectivity",
+        "//internal/balancer/stub",
+        "//internal/grpctest",
+        "//internal/hierarchy",
+        "//internal/serviceconfig",
+        "//internal/testutils",
+        "//resolver",
+        "//serviceconfig",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "latency",
+    srcs = ["latency.go"],
+    importpath = "google.golang.org/grpc/benchmark/latency",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":latency",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "latency_test",
+    srcs = ["latency_test.go"],
+    embed = [":latency"],
+    deps = ["//internal/grpctest"],
+)

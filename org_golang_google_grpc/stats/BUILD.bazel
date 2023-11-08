@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "stats",
+    srcs = [
+        "handlers.go",
+        "stats.go",
+    ],
+    importpath = "google.golang.org/grpc/stats",
+    visibility = ["//visibility:public"],
+    deps = ["//metadata"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":stats",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "stats_test",
+    srcs = ["stats_test.go"],
+    deps = [
+        ":stats",
+        "//:grpc",
+        "//credentials/insecure",
+        "//internal/grpctest",
+        "//interop/grpc_testing",
+        "//metadata",
+        "//status",
+        "@com_github_golang_protobuf//proto:go_default_library",
+    ],
+)

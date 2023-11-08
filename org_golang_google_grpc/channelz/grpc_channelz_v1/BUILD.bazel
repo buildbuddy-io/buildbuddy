@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "grpc_channelz_v1",
+    srcs = [
+        "channelz.pb.go",
+        "channelz_grpc.pb.go",
+    ],
+    importpath = "google.golang.org/grpc/channelz/grpc_channelz_v1",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:grpc",
+        "//codes",
+        "//status",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+        "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_golang_google_protobuf//types/known/wrapperspb",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":grpc_channelz_v1",
+    visibility = ["//visibility:public"],
+)

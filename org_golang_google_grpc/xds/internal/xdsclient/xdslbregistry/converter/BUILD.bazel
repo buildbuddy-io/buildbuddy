@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "converter",
+    srcs = ["converter.go"],
+    importpath = "google.golang.org/grpc/xds/internal/xdsclient/xdslbregistry/converter",
+    visibility = ["//xds:__subpackages__"],
+    deps = [
+        "//:grpc",
+        "//balancer",
+        "//balancer/leastrequest",
+        "//balancer/roundrobin",
+        "//balancer/weightedroundrobin",
+        "//internal/envconfig",
+        "//internal/serviceconfig",
+        "//xds/internal/balancer/ringhash",
+        "//xds/internal/balancer/wrrlocality",
+        "//xds/internal/xdsclient/xdslbregistry",
+        "@com_github_cncf_xds_go//udpa/type/v1:type",
+        "@com_github_cncf_xds_go//xds/type/v3:type",
+        "@com_github_envoyproxy_go_control_plane//envoy/extensions/load_balancing_policies/client_side_weighted_round_robin/v3:client_side_weighted_round_robin",
+        "@com_github_envoyproxy_go_control_plane//envoy/extensions/load_balancing_policies/least_request/v3:least_request",
+        "@com_github_envoyproxy_go_control_plane//envoy/extensions/load_balancing_policies/pick_first/v3:pick_first",
+        "@com_github_envoyproxy_go_control_plane//envoy/extensions/load_balancing_policies/ring_hash/v3:ring_hash",
+        "@com_github_envoyproxy_go_control_plane//envoy/extensions/load_balancing_policies/wrr_locality/v3:wrr_locality",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//ptypes/struct",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":converter",
+    visibility = ["//xds:__subpackages__"],
+)

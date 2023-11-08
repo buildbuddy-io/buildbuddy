@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "hierarchy",
+    srcs = ["hierarchy.go"],
+    importpath = "google.golang.org/grpc/internal/hierarchy",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+    deps = ["//resolver"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":hierarchy",
+    visibility = [
+        "//:__subpackages__",
+        "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:__subpackages__",
+    ],
+)
+
+go_test(
+    name = "hierarchy_test",
+    srcs = ["hierarchy_test.go"],
+    embed = [":hierarchy"],
+    deps = [
+        "//attributes",
+        "//resolver",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

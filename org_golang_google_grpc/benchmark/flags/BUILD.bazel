@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "flags",
+    srcs = ["flags.go"],
+    importpath = "google.golang.org/grpc/benchmark/flags",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":flags",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "flags_test",
+    srcs = ["flags_test.go"],
+    embed = [":flags"],
+    deps = ["//internal/grpctest"],
+)

@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "profiling",
+    srcs = ["profiling.go"],
+    importpath = "google.golang.org/grpc/profiling",
+    visibility = ["//visibility:public"],
+    deps = ["//internal/profiling"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":profiling",
+    visibility = ["//visibility:public"],
+)
