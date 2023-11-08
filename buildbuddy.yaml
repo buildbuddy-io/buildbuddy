@@ -9,7 +9,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
+      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
   - name: Test with static
     container_image: ubuntu-20.04
     triggers:
@@ -20,7 +20,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --config=static --test_tag_filters=-performance,-webdriver,-docker,-bare
+      - test //... --config=linux-workflows --config=race --config=static --test_tag_filters=-performance,-webdriver,-docker,-bare
   - name: Check style
     container_image: ubuntu-20.04
     triggers:
@@ -62,7 +62,7 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=linux-workflows --test_tag_filters=+performance
+      - test //... --config=linux-workflows --config=performance --test_tag_filters=+performance
   - name: Browser tests
     container_image: ubuntu-20.04
     triggers:
@@ -75,7 +75,7 @@ actions:
     bazel_commands:
       # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
       # TODO(http://go/b/1575): De-flake, and remove --flaky_test_attempts
-      - test //... --config=linux-workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver --flaky_test_attempts=4
+      - test //... --config=linux-workflows --config=race --remote_download_outputs=toplevel --test_tag_filters=+webdriver --flaky_test_attempts=4
   # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
   - name: Docker tests
     container_image: ubuntu-20.04
@@ -89,7 +89,7 @@ actions:
     bazel_commands:
       # TODO(http://go/b/1249): Increase reliability of runner recycling when
       # executing with high concurrency, and remove `--jobs=3`
-      - test //... --config=linux-workflows --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
+      - test //... --config=linux-workflows --config=race --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
   - name: Baremetal tests
     triggers:
       push:
@@ -99,7 +99,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare
+      - test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare
 
 plugins:
   - path: cli/plugins/go-deps
