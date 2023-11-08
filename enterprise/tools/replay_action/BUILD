@@ -15,11 +15,11 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_golang_protobuf//ptypes/timestamp",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sync//errgroup",
     ],
 )
