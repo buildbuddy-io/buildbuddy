@@ -30,6 +30,7 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/lockingbuffer",
         "//server/util/log",
+        "//server/util/lru",
         "//server/util/networking",
         "//server/util/prefix",
         "//server/util/random",
