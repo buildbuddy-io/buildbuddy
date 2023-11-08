@@ -154,7 +154,7 @@ type Provider struct {
 	imageStreamingEnabled   bool
 	sociArtifactStoreClient socipb.SociArtifactStoreClient
 	sociStoreKeychainClient sspb.LocalKeychainClient
-	imageExistsCache        *lru.LRU[time.Time]
+	imageExistsCache        *imageExistsCache
 }
 
 func prepareSociStore(ctx context.Context) error {
@@ -256,10 +256,7 @@ graphroot = "/var/lib/containers/storage"
 		}
 	}
 
-	imageExistsCache, err := lru.NewLRU(&lru.Config[time.Time]{
-		MaxSize: imageExistsCacheSize,
-		SizeFn:  func(time.Time) int64 { return 1 },
-	})
+	imageExistsCache, err := newImageExistsCache()
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +370,7 @@ type PodmanOptions struct {
 // podmanCommandContainer containerizes a single command's execution using a Podman container.
 type podmanCommandContainer struct {
 	env              environment.Env
-	imageExistsCache *lru.LRU[time.Time]
+	imageExistsCache *imageExistsCache
 
 	image     string
 	buildRoot string
@@ -625,8 +622,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 }
 
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	t, ok := c.imageExistsCache.Get(c.image)
-	if ok && time.Since(t) < imageExistsCacheTTL {
+	if c.imageExistsCache.Exists(c.image) {
 		return true, nil
 	}
 
@@ -644,7 +640,7 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 		return false, nil
 	}
 
-	c.imageExistsCache.Add(c.image, time.Now())
+	c.imageExistsCache.Add(c.image)
 	return true, nil
 }
 
@@ -904,7 +900,7 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 
 	// Since we just pulled the image, we can skip the next call to 'podman
 	// image exists'.
-	c.imageExistsCache.Add(c.image, time.Now())
+	c.imageExistsCache.Add(c.image)
 	return nil
 }
 
@@ -1179,4 +1175,39 @@ func (s *containerStats) Reset() {
 	}
 	s.last = nil
 	s.peakMemoryUsageBytes = 0
+}
+
+type imageExistsCache struct {
+	mu  sync.Mutex
+	lru *lru.LRU[time.Time]
+}
+
+func newImageExistsCache() (*imageExistsCache, error) {
+	l, err := lru.NewLRU(&lru.Config[time.Time]{
+		MaxSize: imageExistsCacheSize,
+		SizeFn:  func(time.Time) int64 { return 1 },
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &imageExistsCache{lru: l}, nil
+}
+
+func (c *imageExistsCache) Exists(image string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t, ok := c.lru.Get(image)
+	return ok && time.Since(t) < imageExistsCacheTTL
+}
+
+func (c *imageExistsCache) Add(image string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lru.Add(image, time.Now())
+}
+
+func (c *imageExistsCache) Remove(image string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lru.Remove(image)
 }
