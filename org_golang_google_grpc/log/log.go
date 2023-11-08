@@ -5,32 +5,19 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
-	"path"
 	"path/filepath"
-	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/log/gcp"
-	"google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 )
 
 var (
-	LogLevel                = flag.String("app.log_level", "info", "The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}")
-	EnableStructuredLogging = flag.Bool("app.enable_structured_logging", false, "If true, log messages will be json-formatted.")
-	IncludeShortFileName    = flag.Bool("app.log_include_short_file_name", false, "If true, log messages will include shortened originating file name.")
-	EnableGCPLoggingFormat  = flag.Bool("app.log_enable_gcp_logging_format", false, "If true, the output structured logs will be compatible with format expected by GCP Logging.")
-	LogErrorStackTraces     = flag.Bool("app.log_error_stack_traces", false, "If true, stack traces will be printed for errors that have them.")
+	LogLevel                = flag.String("grpc.log_level", "info", "The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}")
+	EnableStructuredLogging = flag.Bool("grpc.enable_structured_logging", false, "If true, log messages will be json-formatted.")
+	IncludeShortFileName    = flag.Bool("grpc.log_include_short_file_name", false, "If true, log messages will include shortened originating file name.")
 )
 
 const (
@@ -39,70 +26,6 @@ const (
 
 	callerSkipFrameCount = 3
 )
-
-func formatDuration(dur time.Duration) string {
-	switch {
-	case dur < time.Millisecond:
-		return fmt.Sprintf("%d us", dur.Microseconds())
-	case dur < time.Second:
-		return fmt.Sprintf("%d ms", dur.Milliseconds())
-	case dur < time.Minute:
-		return fmt.Sprintf("%2.2f s", dur.Seconds())
-	default:
-		return fmt.Sprintf("%d ms", dur.Milliseconds())
-	}
-}
-
-func isExpectedGRPCError(code codes.Code) bool {
-	switch code {
-	case codes.OK, codes.NotFound, codes.AlreadyExists, codes.Canceled, codes.Unavailable, codes.ResourceExhausted:
-		// Common codes we see in normal operation.
-		return true
-	default:
-		// Less common codes.
-		return false
-	}
-}
-
-func fmtErr(err error) string {
-	code := gstatus.Code(err)
-	if isExpectedGRPCError(code) {
-		// Common codes we see in normal operation. Just show the code.
-		return code.String()
-	} else {
-		// Less common codes: show the full error.
-		return err.Error()
-	}
-}
-
-func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, err error) {
-	if log.Logger.GetLevel() > zerolog.DebugLevel {
-		return
-	}
-	// ByteStream and DistributedCache services share some method names.
-	// We disambiguate them in the logs by adding a D prefix to DistributedCache methods.
-	fullMethod = strings.Replace(fullMethod, "distributed_cache.DistributedCache/", "D", 1)
-	shortPath := "/" + path.Base(fullMethod)
-	CtxDebugf(ctx, "%s %s %s [%s]", "gRPC", shortPath, fmtErr(err), formatDuration(dur))
-	if *LogErrorStackTraces {
-		if se, ok := err.(interface {
-			StackTrace() status.StackTrace
-		}); ok {
-			stackBuf := ""
-			for _, f := range se.StackTrace() {
-				stackBuf += fmt.Sprintf("%+s:%d\n", f, f)
-			}
-			CtxDebugf(ctx, stackBuf)
-		}
-	}
-}
-
-func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCode int) {
-	if log.Logger.GetLevel() > zerolog.InfoLevel {
-		return
-	}
-	CtxDebugf(ctx, "HTTP %q %d %s [%s]", url, statusCode, http.StatusText(statusCode), formatDuration(dur))
-}
 
 func init() {
 	err := Configure()
@@ -146,25 +69,8 @@ func NewConsoleWriter() io.Writer {
 	return LocalWriter()
 }
 
-type gcpLoggingCallerHook struct{}
-
-func (h gcpLoggingCallerHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
-	// +1 to skip the hook frame.
-	_, file, line, ok := runtime.Caller(callerSkipFrameCount + 1)
-	if !ok {
-		return
-	}
-	sourceLocation := zerolog.Dict().Str("file", filepath.Base(file)).Str("line", strconv.Itoa(line))
-	e.Dict(gcp.SourceLocationFieldName, sourceLocation)
-}
-
 func Configure() error {
 	writers := []io.Writer{}
-	if logWriter, err := gcp.NewLogWriter(); err != nil {
-		return err
-	} else if logWriter != nil {
-		writers = append(writers, logWriter)
-	}
 	// The ConsoleWriter comes last in the MultiLevelWriter because it writes to
 	// its sub-writers in sequence, and consoleWriter will exit after logging when
 	// we log fatal errors.
@@ -175,11 +81,7 @@ func Configure() error {
 		logger = logger.Level(l)
 	}
 	if *IncludeShortFileName {
-		if *EnableStructuredLogging && *EnableGCPLoggingFormat {
-			logger = logger.Hook(gcpLoggingCallerHook{})
-		} else {
-			logger = logger.With().CallerWithSkipFrameCount(callerSkipFrameCount).Logger()
-		}
+		logger = logger.With().CallerWithSkipFrameCount(callerSkipFrameCount).Logger()
 	}
 	log.Logger = logger
 	return nil
@@ -232,17 +134,11 @@ func (l *Logger) CtxInfof(ctx context.Context, format string, args ...interface{
 // Warning logs to the WARNING log.
 func (l *Logger) Warning(message string) {
 	l.zl.Warn().Msg(message)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "warning",
-	}).Inc()
 }
 
 // Warningf logs to the WARNING log. Arguments are handled in the manner of fmt.Printf.
 func (l *Logger) Warningf(format string, args ...interface{}) {
 	l.zl.Warn().Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "warning",
-	}).Inc()
 }
 
 // CtxWarningf logs to the WARNING log. Arguments are handled in the manner of
@@ -253,25 +149,16 @@ func (l *Logger) CtxWarningf(ctx context.Context, format string, args ...interfa
 	e := l.zl.Warn()
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "warning",
-	}).Inc()
 }
 
 // Error logs to the ERROR log.
 func (l *Logger) Error(message string) {
 	l.zl.Error().Msg(message)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "error",
-	}).Inc()
 }
 
 // Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
 func (l *Logger) Errorf(format string, args ...interface{}) {
 	l.zl.Error().Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "error",
-	}).Inc()
 }
 
 // CtxErrorf logs to the ERROR log. Arguments are handled in the manner of
@@ -282,18 +169,12 @@ func (l *Logger) CtxErrorf(ctx context.Context, format string, args ...interface
 	e := l.zl.Error()
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "error",
-	}).Inc()
 }
 
 // Fatal logs to the FATAL log. Arguments are handled in the manner of fmt.Print.
 // It calls os.Exit() with exit code 1.
 func (l *Logger) Fatal(message string) {
 	log.Fatal().Msg(message)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "fatal",
-	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
@@ -302,9 +183,6 @@ func (l *Logger) Fatal(message string) {
 // It calls os.Exit() with exit code 1.
 func (l *Logger) Fatalf(format string, args ...interface{}) {
 	log.Fatal().Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "fatal",
-	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
@@ -413,17 +291,11 @@ func CtxInfof(ctx context.Context, format string, args ...interface{}) {
 // Warning logs to the WARNING log.
 func Warning(message string) {
 	log.Warn().Msg(message)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "warning",
-	}).Inc()
 }
 
 // Warningf logs to the WARNING log. Arguments are handled in the manner of fmt.Printf.
 func Warningf(format string, args ...interface{}) {
 	log.Warn().Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "warning",
-	}).Inc()
 }
 
 // CtxWarning logs to the WARNING log.
@@ -433,9 +305,6 @@ func CtxWarning(ctx context.Context, message string) {
 	e := log.Warn()
 	enrichEventFromContext(ctx, e)
 	e.Msg(message)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "warning",
-	}).Inc()
 }
 
 // CtxWarningf logs to the WARNING log. Arguments are handled in the manner of
@@ -446,25 +315,16 @@ func CtxWarningf(ctx context.Context, format string, args ...interface{}) {
 	e := log.Warn()
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "warning",
-	}).Inc()
 }
 
 // Error logs to the ERROR log.
 func Error(message string) {
 	log.Error().Msg(message)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "error",
-	}).Inc()
 }
 
 // Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
 func Errorf(format string, args ...interface{}) {
 	log.Error().Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "error",
-	}).Inc()
 }
 
 // CtxError logs to the ERROR log.
@@ -474,9 +334,6 @@ func CtxError(ctx context.Context, message string) {
 	e := log.Error()
 	enrichEventFromContext(ctx, e)
 	e.Msg(message)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "error",
-	}).Inc()
 }
 
 // CtxErrorf logs to the ERROR log. Arguments are handled in the manner of
@@ -487,18 +344,12 @@ func CtxErrorf(ctx context.Context, format string, args ...interface{}) {
 	e := log.Error()
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "error",
-	}).Inc()
 }
 
 // Fatal logs to the FATAL log. Arguments are handled in the manner of fmt.Print.
 // It calls os.Exit() with exit code 1.
 func Fatal(message string) {
 	log.Fatal().Msg(message)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "fatal",
-	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
@@ -507,9 +358,6 @@ func Fatal(message string) {
 // It calls os.Exit() with exit code 1.
 func Fatalf(format string, args ...interface{}) {
 	log.Fatal().Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "fatal",
-	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
@@ -523,9 +371,6 @@ func CtxFatalf(ctx context.Context, format string, args ...interface{}) {
 	e := log.Fatal()
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
-	metrics.Logs.With(prometheus.Labels{
-		metrics.StatusHumanReadableLabel: "fatal",
-	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
@@ -559,14 +404,14 @@ func CtxWriter(ctx context.Context, prefix string) io.Writer {
 	return &logWriter{ctx: ctx, prefix: prefix}
 }
 
-const TraceHeader = "x-buildbuddy-log-trace-id"
+const LogTraceHeader = "x-buildbuddy-log-trace-id"
 
 // CtxDebugf logs to the DEBUG log. Arguments are handled in the manner of
 // fmt.Printf.
 // Logs are enriched with information from the context
 // (e.g. invocation_id, request_id)
 func CtxTracef(ctx context.Context, format string, args ...interface{}) {
-	if _, ok := ctx.Value(TraceHeader).(string); ok {
+	if _, ok := ctx.Value(LogTraceHeader).(string); ok {
 		e := log.Info()
 		enrichEventFromContext(ctx, e)
 		e.Msgf(format, args...)

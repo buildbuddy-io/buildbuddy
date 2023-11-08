@@ -24,6 +24,7 @@ go_library(
         "//codes",
         "//credentials",
         "//grpclog",
+        "//log",
         "//internal/channelz",
         "//internal/credentials",
         "//internal/grpclog",

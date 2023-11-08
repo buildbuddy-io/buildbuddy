@@ -46,6 +46,7 @@ import (
 	"google.golang.org/grpc/internal/syscall"
 	"google.golang.org/grpc/internal/transport/networktype"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/log"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/resolver"
@@ -703,6 +704,8 @@ func (e NewStreamError) Error() string {
 func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (*Stream, error) {
 	ctx = peer.NewContext(ctx, t.getPeer())
 
+	log.CtxTracef(ctx, "NewStream local addr %q", t.conn.LocalAddr())
+
 	// ServerName field of the resolver returned address takes precedence over
 	// Host field of CallHdr to determine the :authority header. This is because,
 	// the ServerName field takes precedence for server authentication during
@@ -737,6 +740,7 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (*Stream,
 		hf:        headerFields,
 		endStream: false,
 		initStream: func(id uint32) error {
+			log.CtxTracef(ctx, "NewStream init stream %d", id)
 			t.mu.Lock()
 			// TODO: handle transport closure in loopy instead and remove this
 			// initStream is never called when transport is draining.
@@ -754,6 +758,7 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (*Stream,
 				t.kpDormancyCond.Signal()
 			}
 			t.mu.Unlock()
+			log.CtxTracef(ctx, "NewStream init stream %d done", id)
 			return nil
 		},
 		onOrphaned: cleanup,
@@ -815,27 +820,36 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (*Stream,
 		return true
 	}
 	for {
+		log.CtxTracef(ctx, "NewStream put header")
 		success, err := t.controlBuf.executeAndPut(func(it any) bool {
 			return checkForHeaderListSize(it) && checkForStreamQuota(it)
 		}, hdr)
 		if err != nil {
+			log.CtxTracef(ctx, "NewStream connection closed")
 			// Connection closed.
 			return nil, &NewStreamError{Err: err, AllowTransparentRetry: true}
 		}
 		if success {
+			log.CtxTracef(ctx, "NewStream connection closed")
 			break
 		}
 		if hdrListSizeErr != nil {
+			log.CtxTracef(ctx, "NewStream header list size error")
 			return nil, &NewStreamError{Err: hdrListSizeErr}
 		}
+		log.CtxTracef(ctx, "NewStream wait for response")
 		firstTry = false
 		select {
 		case <-ch:
+			log.CtxTracef(ctx, "NewStream got response")
 		case <-ctx.Done():
+			log.CtxTracef(ctx, "NewStream context done")
 			return nil, &NewStreamError{Err: ContextErr(ctx.Err())}
 		case <-t.goAway:
+			log.CtxTracef(ctx, "NewStream go away")
 			return nil, &NewStreamError{Err: errStreamDrain, AllowTransparentRetry: true}
 		case <-t.ctx.Done():
+			log.CtxTracef(ctx, "NewStream transport context done")
 			return nil, &NewStreamError{Err: ErrConnClosing, AllowTransparentRetry: true}
 		}
 	}

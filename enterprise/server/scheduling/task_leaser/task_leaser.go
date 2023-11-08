@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/metadata"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -146,10 +147,19 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 	if *apiKey != "" {
 		leaseTaskCtx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, *apiKey)
 	}
+
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return nil, nil, err
+	}
+	log.CtxInfof(leaseTaskCtx, "LeaseTask %q", id)
+	leaseTaskCtx = context.WithValue(leaseTaskCtx, log.TraceHeader, id.String())
+	leaseTaskCtx = log.EnrichContext(leaseTaskCtx, "trace_id", id.String())
 	stream, err := t.env.GetSchedulerClient().LeaseTask(leaseTaskCtx)
 	if err != nil {
 		return nil, nil, err
 	}
+	log.CtxInfof(leaseTaskCtx, "LeaseTask %q created stream", id)
 	t.stream = stream
 	serializedTask, err := t.pingServer(leaseTaskCtx)
 	if err == nil {
