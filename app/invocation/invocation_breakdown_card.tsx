@@ -34,6 +34,7 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
     let inputMapping = this.props.durationByNameMap.get("AbstractSpawnStrategy.getInputMapping") ?? 0;
     let merkleTree = this.props.durationByNameMap.get("MerkleTree.build(ActionInput)") ?? 0;
     let downloadOuputs = this.props.durationByCategoryMap.get("remote output download") ?? 0;
+    let actionDependencyChecking = this.props.durationByCategoryMap.get("action dependency checking") ?? 0;
     let uploadMissing = this.props.durationByNameMap.get("upload missing inputs") ?? 0;
     let uploadOutputs = this.props.durationByNameMap.get("upload outputs") ?? 0;
     let checkCache = this.props.durationByNameMap.get("check cache hit") ?? 0;
@@ -51,6 +52,7 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
 
     let executionData: Datum[] = [
       { value: localExecution, name: "Executing locally" },
+      { value: actionDependencyChecking, name: "Action dependency checking" },
       { value: inputMapping, name: "Input mapping" },
       { value: merkleTree, name: "Merkle tree building" },
       { value: sandboxSetup, name: "Local sandbox creation" },
