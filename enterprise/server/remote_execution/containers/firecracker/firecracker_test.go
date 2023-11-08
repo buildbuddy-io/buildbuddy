@@ -496,11 +496,29 @@ func TestDirtyMemoryCDC(t *testing.T) {
 	testCaches := make([]CacheTC, 0)
 	commands := make([]CommandTC, 0)
 
-	noopCommand := ""
-	commands = append(commands, CommandTC{command: noopCommand, name: "no execution"})
-	simpleCommand := "exit"
-	commands = append(commands, CommandTC{command: simpleCommand, name: "no-op execution (`exit`)"})
-	bazelCommand := `
+	if !*testSingleBuild {
+		noopCommand := ""
+		commands = append(commands, CommandTC{command: noopCommand, name: "no execution"})
+		simpleCommand := "exit"
+		commands = append(commands, CommandTC{command: simpleCommand, name: "no-op execution (`exit`)"})
+	}
+
+	flagsToTest := []string{
+		"--jobs=1",
+		"--jobs=100",
+		"--local_ram_resources=\"HOST_RAM*.2\"",
+		"--local_ram_resources=8192",
+		"--local_ram_resources=\"HOST_RAM*.9\"",
+		"--host_jvm_args=-Xmx2g",
+		"--host_jvm_args=-Xmx6g",
+		"--discard_analysis_cache",
+		"--notrack_incremental_state",
+		"--nokeep_state_after_build",
+		"--nobuild",
+	}
+	for _, flag := range flagsToTest {
+		bazelCmd := fmt.Sprintf("bazelisk build //... %s", flag)
+		bazelCommand := `
 		cd ~
 		if [ -d bazel-gazelle ]; then
 		echo "Directory exists."
@@ -510,38 +528,41 @@ func TestDirtyMemoryCDC(t *testing.T) {
 		cd bazel-gazelle
 		# See https://github.com/bazelbuild/bazelisk/issues/220
 		echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
-		bazelisk build //...
-`
-	commands = append(commands, CommandTC{command: bazelCommand, name: "bazel build"})
+			
+` + bazelCmd
+		commands = append(commands, CommandTC{command: bazelCommand, name: flag})
+	}
 
 	// Setup env with pebble cache, compression + CDC enabled
-	pcCompressionCDCDir := testfs.MakeTempDir(t)
-	pebbleOpts := &pebble_cache.Options{
-		RootDirectory:         pcCompressionCDCDir,
-		MaxSizeBytes:          int64(10_000_000_000), // 10GB
-		AverageChunkSizeBytes: 524288,
-	}
-	pcCompressionCDC, err := pebble_cache.NewPebbleCache(testenv.GetTestEnv(t), pebbleOpts)
-	require.NoError(t, err)
-	err = pcCompressionCDC.Start()
-	require.NoError(t, err)
-	defer pcCompressionCDC.Stop()
-	testCaches = append(testCaches, CacheTC{cacheDir: pcCompressionCDCDir, c: pcCompressionCDC, name: "Pebble compression cdc"})
+	if !*testSingleBuild {
+		pcCompressionCDCDir := testfs.MakeTempDir(t)
+		pebbleOpts := &pebble_cache.Options{
+			RootDirectory:         pcCompressionCDCDir,
+			MaxSizeBytes:          int64(10_000_000_000), // 10GB
+			AverageChunkSizeBytes: 524288,
+		}
+		pcCompressionCDC, err := pebble_cache.NewPebbleCache(testenv.GetTestEnv(t), pebbleOpts)
+		require.NoError(t, err)
+		err = pcCompressionCDC.Start()
+		require.NoError(t, err)
+		defer pcCompressionCDC.Stop()
+		testCaches = append(testCaches, CacheTC{cacheDir: pcCompressionCDCDir, c: pcCompressionCDC, name: "Pebble compression cdc"})
 
-	// Setup env with pebble cache, CDC enabled, no compression
-	pcCDCDir := testfs.MakeTempDir(t)
-	pebbleOpts = &pebble_cache.Options{
-		RootDirectory:               pcCDCDir,
-		MaxSizeBytes:                int64(10_000_000_000), // 10GB
-		AverageChunkSizeBytes:       524288,
-		MinBytesAutoZstdCompression: 10_000_000,
+		// Setup env with pebble cache, CDC enabled, no compression
+		pcCDCDir := testfs.MakeTempDir(t)
+		pebbleOpts = &pebble_cache.Options{
+			RootDirectory:               pcCDCDir,
+			MaxSizeBytes:                int64(10_000_000_000), // 10GB
+			AverageChunkSizeBytes:       524288,
+			MinBytesAutoZstdCompression: 10_000_000,
+		}
+		pcCDC, err := pebble_cache.NewPebbleCache(testenv.GetTestEnv(t), pebbleOpts)
+		require.NoError(t, err)
+		err = pcCDC.Start()
+		require.NoError(t, err)
+		defer pcCDC.Stop()
+		testCaches = append(testCaches, CacheTC{cacheDir: pcCDCDir, c: pcCDC, name: "Pebble cdc, no compression"})
 	}
-	pcCDC, err := pebble_cache.NewPebbleCache(testenv.GetTestEnv(t), pebbleOpts)
-	require.NoError(t, err)
-	err = pcCDC.Start()
-	require.NoError(t, err)
-	defer pcCDC.Stop()
-	testCaches = append(testCaches, CacheTC{cacheDir: pcCDCDir, c: pcCDC, name: "Pebble cdc, no compression"})
 
 	// Set up env with disk cache - no CDC, no compression
 	diskDir := testfs.MakeTempDir(t)
