@@ -546,7 +546,6 @@ func (s *COWStore) sendNonBlockingEagerFetch(offset int64) {
 	select {
 	case s.eagerFetchChan <- &eagerFetchData{offset: offset}:
 	default:
-		log.Debug("COWStore eager fetch chan full")
 	}
 }
 
