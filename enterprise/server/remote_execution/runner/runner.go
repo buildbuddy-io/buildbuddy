@@ -947,9 +947,6 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		return nil, err
 	}
 
-	if snapshotEnabledRunner {
-		r.doNotReuse = true
-	}
 	return r, nil
 }
 
@@ -1345,12 +1342,26 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		log.CtxWarningf(ctx, "Failed to recycle runner %s due to previous execution error", cr)
 		return
 	}
-	// Clean the workspace once before adding it to the pool (to save on disk
-	// space).
+	// Clean the workspace before recycling the runner (to save on disk space).
 	if err := cr.Workspace.Clean(); err != nil {
 		log.CtxErrorf(ctx, "Failed to recycle runner %s: failed to clean workspace: %s", cr, err)
 		return
 	}
+
+	// Don't add snapshot enabled runners back to the pool because we don't need
+	// the pool logic for them. Just save the snapshot with `Container.Pause`,
+	// which also removes the container.
+	snapshotEnabledRunner := platform.ContainerType(cr.PlatformProperties.WorkloadIsolationType) == platform.FirecrackerContainerType &&
+		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
+	if snapshotEnabledRunner {
+		if err := cr.Container.Pause(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to save snapshot for runner %s: %s", cr, err)
+			return
+		}
+		log.CtxInfof(ctx, "Successfully saved snapshot for runner %s", cr)
+		return
+	}
+
 	if err := p.Add(ctx, cr); err != nil {
 		if status.IsResourceExhaustedError(err) || status.IsUnavailableError(err) {
 			log.CtxWarningf(ctx, "Failed to recycle runner %s: %s", cr, err)
