@@ -18,15 +18,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
 	maxSizeBytes = int64(1e9) // 100MB
-	numDigests   = 100
+	numDigests   = 50
 )
 
 var (
@@ -62,9 +64,11 @@ func makeCompressibleDigests(t testing.TB, numDigests int, digestSizeBytes int64
 	digestBufs := make([]*digestBuf, 0, numDigests)
 	for i := 0; i < numDigests; i++ {
 		r, buf := testdigest.RandomCompressibleCASResourceBuf(t, digestSizeBytes, "")
+		r.Compressor = repb.Compressor_ZSTD
+		compressedBuf := compression.CompressZstd(nil, buf)
 		digestBufs = append(digestBufs, &digestBuf{
 			d:   r,
-			buf: buf,
+			buf: compressedBuf,
 		})
 	}
 	return digestBufs
@@ -167,7 +171,7 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 
 	for i := 0; i < b.N; i++ {
 		dbuf := digestBufs[rand.Intn(len(digestBufs))]
-		b.SetBytes(dbuf.d.GetDigest().GetSizeBytes())
+		b.SetBytes(int64(len(dbuf.buf)))
 		_, err := c.Get(ctx, dbuf.d)
 		if err != nil {
 			b.Fatal(err)
@@ -182,7 +186,7 @@ func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes 
 	var sumBytes int64
 	for _, dbuf := range digestBufs {
 		digests = append(digests, dbuf.d)
-		sumBytes += dbuf.d.GetDigest().GetSizeBytes()
+		sumBytes += int64(len(dbuf.buf))
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
