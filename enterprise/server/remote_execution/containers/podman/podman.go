@@ -82,6 +82,7 @@ var (
 	podmanRuntime           = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	podmanEnableStats       = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
 	transientStore          = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.", flag.Deprecated("--transient-store is now always applied if the podman version supports it"))
+	podmanDNS               = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -444,7 +445,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	// "--dns" and "--dns=search" flags are invalid when --network is set to none
 	// or "container:id"
 	if networkMode != "none" && !strings.HasPrefix(networkMode, "container") {
-		args = append(args, "--dns=8.8.8.8")
+		if *podmanDNS != "" {
+			args = append(args, "--dns="+*podmanDNS)
+		}
 		args = append(args, "--dns-search=.")
 	}
 	if c.options.CapAdd != "" {
