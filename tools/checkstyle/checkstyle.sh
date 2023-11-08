@@ -16,12 +16,16 @@ export RUNFILES="${RUNFILES_DIR}_manifest"
 
 cd "$BUILD_WORKSPACE_DIRECTORY"
 
+function timestamp() {
+  date '+%Y-%m-%d %H:%M:%S'
+}
+
 function info() {
-  echo >&2 -e "\x1b[90m$(date --rfc-3339=s)\x1b[0m\x1b[96m INFO:\x1b[m" "$@" "\x1b[0m"
+  echo >&2 -e "\x1b[90m$(timestamp)\x1b[0m\x1b[96m INFO:\x1b[m" "$@" "\x1b[0m"
 }
 
 function error() {
-  echo >&2 -e "\x1b[90m$(date --rfc-3339=s)\x1b[0m\x1b[91m ERROR:\x1b[m" "$@" "\x1b[0m"
+  echo >&2 -e "\x1b[90m$(timestamp)\x1b[0m\x1b[91m ERROR:\x1b[m" "$@" "\x1b[0m"
 }
 
 LOGDIR=$(mktemp -d)
