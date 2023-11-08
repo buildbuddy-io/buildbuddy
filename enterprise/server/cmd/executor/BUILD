@@ -51,7 +51,6 @@ go_library(
         "//server/xcode",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//encoding/gzip",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [

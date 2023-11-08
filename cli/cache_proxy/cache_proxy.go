@@ -88,7 +88,7 @@ func startServerLocally(ctx context.Context, localBSS bspb.ByteStreamServer) (*g
 	return conn, nil
 }
 
-func NewCacheProxy(ctx context.Context, env environment.Env, conn *grpc.ClientConn) (*CacheProxy, error) {
+func NewCacheProxy(ctx context.Context, env environment.Env, conn grpc.ClientConnInterface) (*CacheProxy, error) {
 	if env.GetCache() == nil {
 		return nil, status.FailedPreconditionError("CacheProxy requires a local cache to run.")
 	}
