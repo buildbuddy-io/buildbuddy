@@ -1454,7 +1454,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			err = msg.err
 		case <-livenessTicker.Chan():
 			if s.clock.Since(lastCheckin) > (*leaseInterval + *leaseGracePeriod) {
-				err = status.DeadlineExceededError("lease was not renewed by executor and expired")
+				err = status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
 			} else {
 				continue
 			}
