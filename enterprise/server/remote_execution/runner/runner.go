@@ -1349,9 +1349,8 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	}
 
 	// Don't add snapshot enabled runners back to the pool because we don't need
-	// the pool logic for them. Just save the snapshot with `Container.Pause`
-	// Note: We want recycled=false here so that the container is removed in the
-	// background
+	// the pool logic for them. Just save the snapshot with `Container.Pause`,
+	// which also removes the container.
 	snapshotEnabledRunner := platform.ContainerType(cr.PlatformProperties.WorkloadIsolationType) == platform.FirecrackerContainerType &&
 		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
 	if snapshotEnabledRunner {
