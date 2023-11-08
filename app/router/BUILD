@@ -18,6 +18,7 @@ ts_library(
         "//app/router:router_params",
         "//app/service:rpc_service",
         "//app/shortcuts",
+        "//proto:group_ts_proto",
         "//proto:user_ts_proto",
         "@npm//tslib",
     ],

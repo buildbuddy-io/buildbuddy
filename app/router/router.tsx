@@ -4,6 +4,7 @@ import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import format from "../format/format";
 import rpc_service from "../service/rpc_service";
 import { user as user_proto } from "../../proto/user_ts_proto";
+import { grp } from "../../proto/group_ts_proto";
 
 import {
   END_DATE_PARAM_NAME,
@@ -385,7 +386,15 @@ class Router {
   }
 
   canCreateOrg(user?: User) {
-    return Boolean(user?.canCall("createGroup"));
+    if (!user?.canCall("createGroup")) {
+      return false;
+    }
+
+    if (user?.selectedGroup.role == grp.Group.Role.ADMIN_ROLE) {
+      return true;
+    }
+
+    return user?.selectedGroup.developerOrgCreationEnabled;
   }
 
   canAccessOrgGitHubLinkPage(user?: User) {

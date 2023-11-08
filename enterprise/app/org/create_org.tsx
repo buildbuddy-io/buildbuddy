@@ -9,6 +9,7 @@ import OrgForm, { getChangedFormState, makeSlug } from "./org_form";
 
 const DEFAULT_VALUES = new grp.CreateGroupRequest({
   sharingEnabled: true,
+  developerOrgCreationEnabled: true,
 });
 
 /**
