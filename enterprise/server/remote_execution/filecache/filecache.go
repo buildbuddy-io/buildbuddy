@@ -224,9 +224,6 @@ func key(ctx context.Context, node *repb.FileNode) string {
 }
 
 func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) (hit bool) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
 	defer func() {
 		label := missMetricLabel
 		if hit {
@@ -240,7 +237,9 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	groupID := groupIDStringFromContext(ctx)
 	key := groupSpecificKey(groupID, node)
 
+	c.lock.Lock()
 	v, ok := c.l.Get(key)
+	c.lock.Unlock()
 	if !ok {
 		return false
 	}
@@ -265,6 +264,10 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	// to the old link would suddenly change to point to the new content,
 	// which is not good.
 	k := groupSpecificKey(groupID, node)
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	c.l.Remove(k)
 
 	fp := c.filecachePath(k)
@@ -289,24 +292,25 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 }
 
 func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
 	groupID := groupIDStringFromContext(ctx)
+	// Locking happens in addFileToGroup().
 	return c.addFileToGroup(groupID, node, existingFilePath)
 }
 
 func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
+	k := key(ctx, node)
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	k := key(ctx, node)
 	return c.l.Contains(k)
 }
 
 func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
+	k := key(ctx, node)
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	return c.l.Remove(key(ctx, node))
+	return c.l.Remove(k)
 }
 
 func (c *fileCache) WaitForDirectoryScanToComplete() {
