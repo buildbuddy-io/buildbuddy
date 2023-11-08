@@ -93,7 +93,10 @@ build:workflows --config=buildbuddy_bes_results_url
 build:workflows --config=buildbuddy_remote_cache
 # Temporarily disabled while testing blake3.
 #build:workflows --config=buildbuddy_experimental_remote_downloader
-build:workflows --@io_bazel_rules_go//go/config:race
+
+build:race --@io_bazel_rules_go//go/config:race
+
+build:performance --compilation_mode=opt
 
 # Configuration used for Linux workflows
 build:linux-workflows --config=remote-shared
