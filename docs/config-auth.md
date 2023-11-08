@@ -126,15 +126,15 @@ SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS).
 
 4. Enter the following fields under **General**, making sure to replace `<org-slug>` with the value froms step 1:
 
-a. For Single sign on URL enter: `https://app.buildbuddy.io/auth/saml/acs?slug=<org-slug>`
+   a. For Single sign on URL enter: `https://app.buildbuddy.io/auth/saml/acs?slug=<org-slug>`
 
-b. For Audience URI (SP Entity ID) enter: `https://app.buildbuddy.io/saml/metadata?slug=<org-slug>`
+   b. For Audience URI (SP Entity ID) enter: `https://app.buildbuddy.io/saml/metadata?slug=<org-slug>`
 
-6. Add an `Attribute Statement` to map `email` and value `user.email`.
+5. Add an `Attribute Statement` to map `email` and value `user.email`.
 
-7. Click `Finish`.
+6. Click `Finish`.
 
-8. Under `Metadata URL` click copy and share this URL (which should have the format `https://xxxx.okta.com/app/XXXX/sso/saml/metadata`) with BuildBuddy support.
+7. Under `Metadata URL` click copy and share this URL (which should have the format `https://xxxx.okta.com/app/XXXX/sso/saml/metadata`) with BuildBuddy support.
 
 ### Azure AD / Entra SAML provider
 
