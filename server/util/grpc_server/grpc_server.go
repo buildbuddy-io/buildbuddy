@@ -176,7 +176,14 @@ func GRPCShutdown(ctx context.Context, grpcServer *grpc.Server) error {
 			grpcServer.Stop()
 		}
 	}()
-	grpcServer.GracefulStop()
+	if *gRPCOverHTTPPortEnabled {
+		// The transport returned by ServeHTTP() doesn't implement Drain()
+		// and if there are existing http connections during shutdown, it can
+		// cause panic.
+		grpcServer.Stop()
+	} else {
+		grpcServer.GracefulStop()
+	}
 	cancel()
 	return nil
 }
