@@ -360,6 +360,44 @@ func TestTaskRouter_MarkComplete_DoesNotAffectOtherRemoteInstances(t *testing.T)
 	requireNotAlwaysRanked(0, executorID1, t, router, ctx, cmd, instanceName2)
 }
 
+func TestTaskRouter_WorkflowGitRefRouting(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	nodes := sequentiallyNumberedNodes(100)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	instanceName := ""
+
+	// Mark executor1 as having completed a workflow run on the "main" branch.
+	mainBranchCmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "workflow-id", Value: "WF123"},
+		}},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GIT_BRANCH", Value: "main"},
+		},
+	}
+	router.MarkComplete(ctx, mainBranchCmd, instanceName, executorID1)
+
+	// executor1 should now be the preferred executor when running this workflow
+	// on the main branch.
+	ranked := router.RankNodes(ctx, mainBranchCmd, instanceName, nodes)
+	require.Equal(t, executorID1, ranked[0].GetExecutorID())
+
+	// executor1 should not necessarily be preferred when running this workflow
+	// on a different branch.
+	prBranchCmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "workflow-id", Value: "WF123"},
+		}},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GIT_BRANCH", Value: "my-cool-pr"},
+		},
+	}
+	requireNotAlwaysRanked(0, executorID1, t, router, ctx, prBranchCmd, instanceName)
+}
+
 // requireNotAlwaysRanked requires that the task router does not
 // deterministically assign the given rank to the given executor ID.
 func requireNotAlwaysRanked(rank int, executorID string, t *testing.T, router interfaces.TaskRouter, ctx context.Context, cmd *repb.Command, instanceName string) {

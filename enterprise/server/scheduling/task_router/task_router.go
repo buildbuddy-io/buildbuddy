@@ -228,8 +228,7 @@ func (runnerRecycler) Applies(params routingParams) bool {
 }
 
 func (runnerRecycler) preferredNodeLimit(params routingParams) int {
-	workflowID := platform.FindValue(params.cmd.GetPlatform(), platform.WorkflowIDPropertyName)
-	if workflowID != "" {
+	if isWorkflow(params.cmd) {
 		return workflowsPreferredNodeLimit
 	}
 	return defaultPreferredNodeLimit
@@ -252,6 +251,20 @@ func (runnerRecycler) routingKey(params routingParams) (string, error) {
 	}
 	parts = append(parts, hash.Bytes(b))
 
+	// For workflow tasks, route using GIT_BRANCH so that when re-running the
+	// workflow multiple times using the same branch, the runs are more likely
+	// to hit an executor with a warmer snapshot cache.
+	if isWorkflow(params.cmd) {
+		branch := ""
+		for _, envVar := range params.cmd.EnvironmentVariables {
+			if envVar.GetName() == "GIT_BRANCH" {
+				branch = envVar.GetValue()
+				break
+			}
+		}
+		parts = append(parts, hash.String(branch))
+	}
+
 	return strings.Join(parts, "/"), nil
 }
 
@@ -259,6 +272,10 @@ func (s runnerRecycler) RoutingInfo(params routingParams) (int, string, error) {
 	nodeLimit := s.preferredNodeLimit(params)
 	key, err := s.routingKey(params)
 	return nodeLimit, key, err
+}
+
+func isWorkflow(cmd *repb.Command) bool {
+	return platform.FindValue(cmd.GetPlatform(), platform.WorkflowIDPropertyName) != ""
 }
 
 // affinityRouter generates Redis routing keys based on:
