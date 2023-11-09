@@ -23,9 +23,9 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	iss_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service/config"
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 )
 
 const (

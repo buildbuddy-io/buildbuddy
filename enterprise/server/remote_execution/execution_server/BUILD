@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//enterprise/server/backends/pubsub",
         "//enterprise/server/gcplink",
-        "//enterprise/server/remote_execution/config",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
@@ -26,6 +25,7 @@ go_library(
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/remote_execution/config",
         "//server/tables",
         "//server/util/background",
         "//server/util/bazel_request",
