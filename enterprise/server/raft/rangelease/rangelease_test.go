@@ -168,7 +168,7 @@ func TestAcquireAndRelease(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -206,7 +206,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -246,7 +246,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	}
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	l := rangelease.New(proposer, liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -290,7 +290,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
