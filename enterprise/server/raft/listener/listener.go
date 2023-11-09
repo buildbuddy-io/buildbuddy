@@ -54,12 +54,7 @@ func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
 	rl.lastLeaderInfo = &info
 
 	for _, ch := range rl.leaderChangeListeners {
-		select {
-		case ch <- info:
-			continue
-		default:
-			log.Warning("Dropped LeaderUpdate callback")
-		}
+		ch <- info
 	}
 }
 
