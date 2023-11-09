@@ -249,15 +249,16 @@ func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rbuilder.Tx
 
 	prepared := make([]*rfpb.TxnRequest_Statement, 0)
 	for _, statement := range txnProto.GetStatements() {
-		batch := rbuilder.NewBatchBuilder().WithRequests(statement.GetUnion())
-		batch.SetTransactionID(txnProto.GetTransactionId())
+		batch := statement.GetRawBatch()
+		batch.TransactionId = txnProto.GetTransactionId()
 
 		// Prepare each statement.
-		rsp, err := SyncProposeLocalBatch(ctx, nodehost, statement.GetShardId(), batch)
+		rspProto, err := SyncProposeLocal(ctx, nodehost, statement.GetShardId(), batch)
 		if err != nil {
 			log.Errorf("Error preparing txn statement: %s", err)
 			break
 		}
+		rsp := rbuilder.NewBatchResponseFromProto(rspProto)
 		if err := rsp.AnyError(); err != nil {
 			log.Errorf("Error preparing txn statement: %s", err)
 			break

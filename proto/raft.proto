@@ -254,11 +254,17 @@ message ResponseUnion {
   }
 }
 
+message SnapshotClusterHook {}
+
+message PostCommitHook {
+  SnapshotClusterHook snapshot_cluster = 1;
+}
+
 message TxnRequest {
   optional bytes transaction_id = 1;
   message Statement {
     uint64 shard_id = 1;
-    repeated RequestUnion union = 2;
+    BatchCmdRequest raw_batch = 2;
   }
   repeated Statement statements = 2;
 }
@@ -287,6 +293,9 @@ message BatchCmdRequest {
   // If finalize_operation is set, a previously created transaction can be
   // COMMITTED or ROLLED BACK. When this field is set, union must be unset.
   optional FinalizeOperation finalize_operation = 4;
+
+  // Any post-commit hooks that should be run after a batch is *committed*.
+  repeated PostCommitHook post_commit_hooks = 5;
 }
 
 message BatchCmdResponse {

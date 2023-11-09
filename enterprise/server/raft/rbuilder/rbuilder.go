@@ -119,6 +119,16 @@ func (bb *BatchBuilder) SetFinalizeOperation(op rfpb.FinalizeOperation) *BatchBu
 	return bb
 }
 
+func (bb *BatchBuilder) AddPostCommitHook(m proto.Message) *BatchBuilder {
+	switch value := m.(type) {
+	case *rfpb.SnapshotClusterHook:
+		bb.cmd.PostCommitHooks = append(bb.cmd.PostCommitHooks, &rfpb.PostCommitHook{
+			SnapshotCluster: value,
+		})
+	}
+	return bb
+}
+
 func (bb *BatchBuilder) ToProto() (*rfpb.BatchCmdRequest, error) {
 	if bb.err != nil {
 		return nil, bb.err
@@ -308,8 +318,8 @@ func (br *BatchResponse) UpdateAtimeResponse(n int) (*rfpb.UpdateAtimeResponse, 
 }
 
 type txnStatement struct {
-	shardID uint64
-	union   []*rfpb.RequestUnion
+	shardID  uint64
+	rawBatch *BatchBuilder
 }
 
 type TxnBuilder struct {
@@ -324,8 +334,8 @@ func NewTxn() *TxnBuilder {
 
 func (tb *TxnBuilder) AddStatement(shardID uint64, batch *BatchBuilder) *TxnBuilder {
 	tb.statements = append(tb.statements, txnStatement{
-		shardID: shardID,
-		union:   batch.Requests(),
+		shardID:  shardID,
+		rawBatch: batch,
 	})
 	return tb
 }
@@ -341,9 +351,13 @@ func (tb *TxnBuilder) ToProto() (*rfpb.TxnRequest, error) {
 		TransactionId: txid,
 	}
 	for _, statement := range tb.statements {
+		batchProto, err := statement.rawBatch.ToProto()
+		if err != nil {
+			return nil, err
+		}
 		req.Statements = append(req.Statements, &rfpb.TxnRequest_Statement{
-			ShardId: statement.shardID,
-			Union:   statement.union,
+			ShardId:  statement.shardID,
+			RawBatch: batchProto,
 		})
 	}
 	return req, nil

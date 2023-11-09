@@ -587,12 +587,27 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 	sm.releaseLocks(txn, txid)
 
 	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
-	txn.Delete(sm.replicaLocalKey(txKey), nil /*ignore write options*/)
+	txKey = sm.replicaLocalKey(txKey)
+
+	// Lookup our request so that post-commit hooks can be applied, then
+	// delete it from the batch, since the txn is being committed.
+	batchReq := &rfpb.BatchCmdRequest{}
+	iter := txn.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+	if err := pebble.LookupProto(iter, txKey, batchReq); err != nil {
+		return err
+	}
+	txn.Delete(txKey, nil /*ignore write options*/)
 
 	if err := txn.Commit(pebble.Sync); err != nil {
 		return err
 	}
 	sm.updateInMemoryState(txn)
+
+	// Run post commit hooks, if any are set.
+	for _, hook := range batchReq.GetPostCommitHooks() {
+		sm.handlePostCommit(hook)
+	}
 	return nil
 }
 
@@ -1147,6 +1162,16 @@ func statusProto(err error) *statuspb.Status {
 	return s.Proto()
 }
 
+func (sm *Replica) handlePostCommit(hook *rfpb.PostCommitHook) {
+	if snap := hook.GetSnapshotCluster(); snap != nil {
+		go func() {
+			if err := sm.store.SnapshotCluster(context.TODO(), sm.ShardID); err != nil {
+				sm.log.Errorf("Error processing post-commit hook: %s", err)
+			}
+		}()
+	}
+}
+
 func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
 	rsp := &rfpb.ResponseUnion{}
 
@@ -1587,6 +1612,11 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 		// memory state.
 		sm.updateInMemoryState(wb)
 		sm.lastAppliedIndex = entry.Index
+
+		// Run post commit hooks, if any are set.
+		for _, hook := range batchReq.GetPostCommitHooks() {
+			sm.handlePostCommit(hook)
+		}
 	}
 
 	return entry, nil
