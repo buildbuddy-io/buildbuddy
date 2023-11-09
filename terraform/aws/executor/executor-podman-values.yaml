@@ -22,10 +22,8 @@ config:
     ## 'ubuntu' image is only suitable for execute genrule actions.
     default_image: ubuntu
 
-    ## Registry specific authentication
-    ## If not provided, falls back to credential helper available on executor's container
-    # container_registries:
-    #   - hostnames:
-    #       - gcr.io
-    #     username: "anonymous"
-    #     password: ""
+    podman:
+      # Share cgroup statistic with BuildBuddy Scheduler
+      enable_stats: true
+      # Use Podman's --transient-store flag for faster startup time
+      transient_store: true
