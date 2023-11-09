@@ -102,6 +102,7 @@ type Store struct {
 func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
 	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
 
+	nhLog := log.NamedSubLogger(nodeHost.ID())
 	eventsChan := make(chan events.Event, 100)
 	s := &Store{
 		rootDir:       rootDir,
@@ -114,12 +115,12 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		listener:      listener,
 		apiClient:     apiClient,
 		liveness:      nodeLiveness,
-		log:           log.NamedSubLogger(nodeHost.ID()),
+		log:           nhLog,
 
 		rangeMu:    sync.RWMutex{},
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
 
-		leaseKeeper: leasekeeper.New(nodeHost, nodeLiveness, listener, eventsChan),
+		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, listener, eventsChan),
 		replicas:    sync.Map{},
 
 		eventsMu:       sync.Mutex{},
