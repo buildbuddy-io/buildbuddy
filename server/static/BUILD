@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/invocation_stat_service/config",
-        "//enterprise/server/remote_execution/config",
         "//enterprise/server/scheduling/scheduler_server/config",
         "//proto:config_go_proto",
         "//server/backends/github",
@@ -15,6 +14,7 @@ go_library(
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/remote_cache/hit_tracker",
+        "//server/remote_execution/config",
         "//server/util/flag",
         "//server/util/region",
         "//server/util/status",

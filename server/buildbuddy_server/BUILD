@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//enterprise/server/auditlog",
         "//enterprise/server/gcplink",
-        "//enterprise/server/remote_execution/config",
         "//proto:api_key_go_proto",
         "//proto:auditlog_go_proto",
         "//proto:bazel_config_go_proto",
@@ -47,6 +46,7 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/directory_size",
         "//server/remote_cache/scorecard",
+        "//server/remote_execution/config",
         "//server/role_filter",
         "//server/tables",
         "//server/target",

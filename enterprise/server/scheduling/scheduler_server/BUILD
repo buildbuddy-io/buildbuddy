@@ -12,7 +12,6 @@ go_library(
     srcs = ["scheduler_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server",
     deps = [
-        "//enterprise/server/remote_execution/config",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/scheduling/scheduler_server/config",
         "//enterprise/server/tasksize",
@@ -23,6 +22,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
+        "//server/remote_execution/config",
         "//server/resources",
         "//server/util/background",
         "//server/util/grpc_client",
