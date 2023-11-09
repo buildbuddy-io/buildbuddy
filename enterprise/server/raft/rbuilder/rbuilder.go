@@ -119,6 +119,16 @@ func (bb *BatchBuilder) SetFinalizeOperation(op rfpb.FinalizeOperation) *BatchBu
 	return bb
 }
 
+func (bb *BatchBuilder) AddPostCommitHook(m proto.Message) *BatchBuilder {
+	switch value := m.(type) {
+	case *rfpb.SnapshotClusterHook:
+		bb.cmd.PostCommitHooks = append(bb.cmd.PostCommitHooks, &rfpb.PostCommitHook{
+			SnapshotCluster: value,
+		})
+	}
+	return bb
+}
+
 func (bb *BatchBuilder) ToProto() (*rfpb.BatchCmdRequest, error) {
 	if bb.err != nil {
 		return nil, bb.err
