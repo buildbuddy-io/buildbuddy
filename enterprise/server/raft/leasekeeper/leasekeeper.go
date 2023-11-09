@@ -20,6 +20,7 @@ type shardID uint64
 
 type LeaseKeeper struct {
 	nodeHost  *dragonboat.NodeHost
+	log       log.Logger
 	liveness  *nodeliveness.Liveness
 	listener  *listener.RaftListener
 	broadcast chan<- events.Event
@@ -38,9 +39,10 @@ type LeaseKeeper struct {
 	cancelNodeLivenessUpdates func()
 }
 
-func New(nodeHost *dragonboat.NodeHost, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event) *LeaseKeeper {
+func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event) *LeaseKeeper {
 	return &LeaseKeeper{
 		nodeHost:  nodeHost,
+		log:       log,
 		liveness:  liveness,
 		listener:  listener,
 		broadcast: broadcast,
@@ -64,7 +66,7 @@ func (lk *LeaseKeeper) Start() {
 func (lk *LeaseKeeper) Stop() {
 	now := time.Now()
 	defer func() {
-		log.Printf("Leasekeeper shutdown finished in %s", time.Since(now))
+		lk.log.Infof("Leasekeeper shutdown finished in %s", time.Since(now))
 	}()
 
 	lk.mu.Lock()
@@ -77,6 +79,7 @@ func (lk *LeaseKeeper) Stop() {
 }
 
 type leaseAndContext struct {
+	log       log.Logger
 	ctx       context.Context
 	cancel    context.CancelFunc
 	l         *rangelease.Lease
@@ -92,7 +95,7 @@ func (lac *leaseAndContext) broadcastLeaseStatus(eventType events.EventType) {
 	case lac.broadcast <- re:
 		break
 	default:
-		log.Warningf("dropping lease status update %+v", re)
+		lac.log.Warningf("dropping lease status update %+v", re)
 	}
 }
 
@@ -106,17 +109,17 @@ func (lac *leaseAndContext) Update(leader bool) {
 	start := time.Now()
 	if leader {
 		if err := lac.l.Lease(lac.ctx); err != nil {
-			log.Errorf("Error while updating rangelease (%s): %s", lac.l.String(), err)
+			lac.log.Errorf("Error while updating rangelease (%s): %s", lac.l.String(), err)
 			return
 		}
-		log.Debugf("Updated lease state [%s] %s after callback", lac.l.String(), time.Since(start))
+		lac.log.Debugf("Updated lease state [%s] %s after callback", lac.l.String(), time.Since(start))
 		if !valid {
 			lac.broadcastLeaseStatus(events.EventRangeLeaseAcquired)
 		}
 	} else {
 		// This is a no-op if we don't have the lease.
 		if err := lac.l.Release(lac.ctx); err != nil {
-			log.Errorf("Error dropping rangelease (%s): %s", lac.l, err)
+			lac.log.Errorf("Error dropping rangelease (%s): %s", lac.l, err)
 			return
 		}
 		if valid {
@@ -159,7 +162,8 @@ func (lk *LeaseKeeper) watchLeases() {
 
 func (lk *LeaseKeeper) newLeaseAndContext(rd *rfpb.RangeDescriptor) leaseAndContext {
 	return leaseAndContext{
-		l:         rangelease.New(lk.nodeHost, lk.liveness, rd),
+		l:         rangelease.New(lk.nodeHost, lk.log, lk.liveness, rd),
+		log:       lk.log,
 		broadcast: lk.broadcast,
 	}
 }
@@ -176,7 +180,7 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor) {
 	}
 	lacI, alreadyExists := lk.leases.LoadOrStore(shard, lk.newLeaseAndContext(rd))
 	if alreadyExists {
-		log.Warningf("Lease for shard %d was already mapped", shard)
+		lk.log.Warningf("Lease for shard %d was already mapped", shard)
 	}
 
 	// When a range is added via AddRange(), the raft leader may already
@@ -221,7 +225,8 @@ func (lk *LeaseKeeper) LeaseCount() int64 {
 func (lk *LeaseKeeper) HaveLease(shard uint64) bool {
 	if lacI, ok := lk.leases.Load(shardID(shard)); ok {
 		lac := lacI.(leaseAndContext)
-		return lac.l.Valid()
+		valid := lac.l.Valid()
+		return valid
 	}
 	return false
 }

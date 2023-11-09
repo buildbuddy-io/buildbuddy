@@ -37,6 +37,7 @@ func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
 
 type Lease struct {
 	nodeHost client.NodeHost
+	log      log.Logger
 	shardID  uint64
 	liveness *nodeliveness.Liveness
 
@@ -52,7 +53,7 @@ type Lease struct {
 	quitLease             chan struct{}
 }
 
-func New(nodeHost client.NodeHost, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
+func New(nodeHost client.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
 	var shardID uint64
 	for _, rep := range rd.GetReplicas() {
 		shardID = rep.GetShardId()
@@ -61,6 +62,7 @@ func New(nodeHost client.NodeHost, liveness *nodeliveness.Liveness, rd *rfpb.Ran
 
 	return &Lease{
 		nodeHost:              nodeHost,
+		log:                   log,
 		shardID:               shardID,
 		liveness:              liveness,
 		leaseDuration:         defaultLeaseDuration,
@@ -273,7 +275,7 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 	}
 
 	if !alreadyValid {
-		log.Debugf("Acquired %s", l.string(l.rangeDescriptor, l.leaseRecord))
+		l.log.Debugf("Acquired %s", l.string(l.rangeDescriptor, l.leaseRecord))
 	}
 
 	// We just renewed the lease. If there isn't already a background
