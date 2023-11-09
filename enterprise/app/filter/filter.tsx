@@ -613,7 +613,6 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             {sortByValue !== DEFAULT_SORT_BY_VALUE && (
               <span>
                 {sortByValue === "start-time" && "Start time"}
-                {sortByValue === "end-time" && "End time"}
                 {sortByValue === "duration" && "Duration"}
                 {sortByValue === "ac-hit-ratio" && "AC hit ratio"}
                 {sortByValue === "cas-hit-ratio" && "CAS hit ratio"}
