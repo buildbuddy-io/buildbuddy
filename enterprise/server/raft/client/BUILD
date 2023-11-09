@@ -18,7 +18,6 @@ go_library(
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//client",
         "@com_github_lni_dragonboat_v4//statemachine",
-        "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_protobuf//proto",
     ],
 )

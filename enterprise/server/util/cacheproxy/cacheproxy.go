@@ -157,7 +157,7 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 		return client, nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
-	conn, err := grpc_client.DialInternal(c.env, "grpc://"+peer)
+	conn, err := grpc_client.DialInternalWithoutPooling(c.env, "grpc://"+peer)
 	if err != nil {
 		return nil, err
 	}

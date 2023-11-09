@@ -34,7 +34,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -286,8 +285,7 @@ func intializeSociArtifactStoreClient(env environment.Env, target string) (socip
 		return nil, err
 	}
 	log.Infof("Connecting to app internal target: %s", target)
-	env.GetHealthChecker().AddHealthCheck(
-		"grpc_soci_artifact_store_connection", healthcheck.NewGRPCHealthCheck(conn))
+	env.GetHealthChecker().AddHealthCheck("grpc_soci_artifact_store_connection", conn)
 	return socipb.NewSociArtifactStoreClient(conn), nil
 }
 
@@ -297,8 +295,7 @@ func initializeSociStoreKeychainClient(env environment.Env, target string) (sspb
 		return nil, err
 	}
 	log.Infof("Connecting to soci store local keychain target: %s", target)
-	env.GetHealthChecker().AddHealthCheck(
-		"grpc_soci_store_keychain_connection", healthcheck.NewGRPCHealthCheck(conn))
+	env.GetHealthChecker().AddHealthCheck("grpc_soci_store_keychain_connection", conn)
 	return sspb.NewLocalKeychainClient(conn), nil
 }
 

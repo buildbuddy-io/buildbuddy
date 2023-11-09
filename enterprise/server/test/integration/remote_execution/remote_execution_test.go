@@ -1722,7 +1722,7 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 		}
 		mu.Unlock()
 
-		conn, err := grpc_client.DialSimple(target)
+		conn, err := grpc_client.DialSimpleWithoutPooling(target)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1813,7 +1813,7 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 		}
 		mu.Unlock()
 
-		conn, err := grpc_client.DialSimple(target)
+		conn, err := grpc_client.DialSimpleWithoutPooling(target)
 		if err != nil {
 			return nil, nil, err
 		}
