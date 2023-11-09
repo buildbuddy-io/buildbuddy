@@ -504,22 +504,7 @@ func TestDirtyMemoryCDC(t *testing.T) {
 		commands = append(commands, CommandTC{command: simpleCommand, name: "no-op execution (`exit`)"})
 	}
 
-	flagsToTest := []string{
-		"--jobs=1",
-		"--jobs=100",
-		"--local_ram_resources=\"HOST_RAM*.2\"",
-		"--local_ram_resources=8192",
-		"--local_ram_resources=\"HOST_RAM*.9\"",
-		"--host_jvm_args=-Xmx2g",
-		"--host_jvm_args=-Xmx6g",
-		"--discard_analysis_cache",
-		"--notrack_incremental_state",
-		"--nokeep_state_after_build",
-		"--nobuild",
-	}
-	for _, flag := range flagsToTest {
-		bazelCmd := fmt.Sprintf("bazelisk build //... %s", flag)
-		bazelCommand := `
+	bazelCommand := `
 		cd ~
 		if [ -d bazel-gazelle ]; then
 		echo "Directory exists."
@@ -529,10 +514,12 @@ func TestDirtyMemoryCDC(t *testing.T) {
 		cd bazel-gazelle
 		# See https://github.com/bazelbuild/bazelisk/issues/220
 		echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
-			
-` + bazelCmd
-		commands = append(commands, CommandTC{command: bazelCommand, name: flag})
-	}
+		bazelisk build //...
+
+		# Drop kernel page cache and free slab objects
+		echo 3 > /proc/sys/vm/drop_caches
+`
+	commands = append(commands, CommandTC{command: bazelCommand, name: "drop page cache"})
 
 	// Setup env with pebble cache, compression + CDC enabled
 	if !*testSingleBuild {
