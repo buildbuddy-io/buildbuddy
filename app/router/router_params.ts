@@ -22,6 +22,8 @@ export const MAXIMUM_DURATION_PARAM_NAME = "max-dur";
 // Sort params for the global filter.
 export const SORT_BY_PARAM_NAME = "sort-by";
 export const SORT_ORDER_PARAM_NAME = "sort-order";
+export const DEFAULT_SORT_BY_VALUE = "end-time";
+export const DEFAULT_SORT_ORDER_VALUE = "desc";
 
 export const GLOBAL_FILTER_PARAM_NAMES = [
   ROLE_PARAM_NAME,

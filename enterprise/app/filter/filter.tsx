@@ -43,6 +43,8 @@ import {
   MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
+  DEFAULT_SORT_BY_VALUE,
+  DEFAULT_SORT_ORDER_VALUE,
 } from "../../../app/router/router_params";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import {
@@ -211,7 +213,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   private onCloseFilterMenu() {
     this.setState({ isFilterMenuOpen: false });
   }
-  private onClickClearFilters() {
+  private onClickClearFiltersAndSort() {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [ROLE_PARAM_NAME]: "",
@@ -226,6 +228,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [TAG_PARAM_NAME]: "",
       [MINIMUM_DURATION_PARAM_NAME]: "",
       [MAXIMUM_DURATION_PARAM_NAME]: "",
+      [SORT_BY_PARAM_NAME]: "",
+      [SORT_ORDER_PARAM_NAME]: "",
     });
   }
 
@@ -265,14 +269,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   private onSortByChange(sortBy: string) {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
-      [SORT_BY_PARAM_NAME]: sortBy,
+      [SORT_BY_PARAM_NAME]: sortBy === DEFAULT_SORT_BY_VALUE ? "" : sortBy,
     });
   }
 
   private onSortOrderChange(sortOrder: string) {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
-      [SORT_ORDER_PARAM_NAME]: sortOrder,
+      [SORT_ORDER_PARAM_NAME]: sortOrder === DEFAULT_SORT_ORDER_VALUE ? "" : sortOrder,
     });
   }
 
@@ -349,6 +353,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const minimumDurationValue = this.props.search.get(MINIMUM_DURATION_PARAM_NAME) || "";
     const maximumDurationValue = this.props.search.get(MAXIMUM_DURATION_PARAM_NAME) || "";
     const isFiltering = isAnyNonDateFilterSet(this.props.search);
+    const isSorting = Boolean(
+      this.props.search.get(SORT_BY_PARAM_NAME) || this.props.search.get(SORT_ORDER_PARAM_NAME)
+    );
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
 
@@ -376,13 +383,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       };
     });
 
-    const sortByValue: SortBy | undefined = (this.props.search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined;
-    const sortOrderValue: SortOrder = (this.props.search.get(SORT_ORDER_PARAM_NAME) || "desc") as SortOrder;
+    const sortByValue: SortBy = (this.props.search.get(SORT_BY_PARAM_NAME) || DEFAULT_SORT_BY_VALUE) as SortBy;
+    const sortOrderValue: SortOrder = (this.props.search.get(SORT_ORDER_PARAM_NAME) ||
+      DEFAULT_SORT_ORDER_VALUE) as SortOrder;
 
     return (
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
-        {isFiltering && (
-          <FilledButton className="square" title="Clear filters" onClick={this.onClickClearFilters.bind(this)}>
+        {(isFiltering || isSorting) && (
+          <FilledButton className="square" title="Clear filters" onClick={this.onClickClearFiltersAndSort.bind(this)}>
             <X className="icon white" />
           </FilledButton>
         )}
@@ -598,14 +606,13 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         </div>
         <div className="popup-wrapper">
           <OutlinedButton
-            className={`sort-button icon-text-button ${sortByValue !== undefined ? "" : "square"}`}
+            className={`sort-button icon-text-button ${sortByValue !== DEFAULT_SORT_BY_VALUE ? "" : "square"}`}
             onClick={this.onOpenSortMenu.bind(this)}>
             {sortOrderValue === "asc" && <SortAsc className="icon" />}
             {sortOrderValue === "desc" && <SortDesc className="icon" />}
-            {sortByValue !== undefined && (
+            {sortByValue !== DEFAULT_SORT_BY_VALUE && (
               <span>
                 {sortByValue === "start-time" && "Start time"}
-                {sortByValue === "end-time" && "End time"}
                 {sortByValue === "duration" && "Duration"}
                 {sortByValue === "ac-hit-ratio" && "AC hit ratio"}
                 {sortByValue === "cas-hit-ratio" && "CAS hit ratio"}
@@ -624,7 +631,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 <div className="option-group-title">Sort By</div>
                 <div className="option-group-options">
                   {this.renderSortByRadio("Start time", "start-time", sortByValue)}
-                  {this.renderSortByRadio("End time", "end-time", sortByValue)}
+                  {this.renderSortByRadio("End time (Default)", "end-time", sortByValue)}
                   {this.renderSortByRadio("Duration", "duration", sortByValue)}
                   {this.renderSortByRadio("Action cache hit ratio", "ac-hit-ratio", sortByValue)}
                   {this.renderSortByRadio("CAS hit ratio", "cas-hit-ratio", sortByValue)}
@@ -637,7 +644,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 <div className="option-group-title">Sort Order</div>
                 <div className="option-group-options">
                   {this.renderSortOrderRadio("Ascending", "asc", sortOrderValue)}
-                  {this.renderSortOrderRadio("Descending", "desc", sortOrderValue)}
+                  {this.renderSortOrderRadio("Descending (Default)", "desc", sortOrderValue)}
                 </div>
               </div>
             </div>
