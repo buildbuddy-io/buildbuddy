@@ -140,19 +140,9 @@ func (r *wrappedReader) Close() error {
 func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
 	go func() {
-		for {
-			n, err := reader.Read(readBuf)
-			if n > 0 {
-				compressBuf = CompressZstd(compressBuf[:0], readBuf[:n])
-				if _, err := pw.Write(compressBuf); err != nil {
-					pw.CloseWithError(err)
-					return
-				}
-			}
-			if err != nil {
-				pw.CloseWithError(err)
-				return
-			}
+		err := gozstd.StreamCompress(pw, reader)
+		if err != nil {
+			pw.CloseWithError(err)
 		}
 	}()
 	return &wrappedReader{
@@ -164,21 +154,11 @@ func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf 
 // NewZstdDecompressingReader reads zstd-compressed data from the input
 // reader and makes the decompressed data available on the output reader
 func NewZstdDecompressingReader(reader io.ReadCloser) (io.ReadCloser, error) {
-	// Stream data from reader to decoder
-	decoder, err := zstdDecoderPool.Get(reader)
-	if err != nil {
-		return nil, err
-	}
-
 	pr, pw := io.Pipe()
 	go func() {
-		// Write decoded bytes to pw and pipe to pr
-		n, err := decoder.WriteTo(pw)
-		pw.CloseWithError(err)
-		metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(n))
-
-		if err := zstdDecoderPool.Put(decoder); err != nil {
-			log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
+		err := gozstd.StreamDecompress(pw, reader)
+		if err != nil {
+			pw.CloseWithError(err)
 		}
 	}()
 
