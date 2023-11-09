@@ -103,6 +103,12 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 	pq.Push(req)
 	t.numTasks++
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: taskGroupID}).Set(float64(pq.Len()))
+	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
+		metrics.RemoteExecutionAssignedOrQueuedMilliCPU.
+			Add(float64(req.TaskSize.EstimatedMilliCpu))
+		metrics.RemoteExecutionAssignedOrQueuedRAMBytes.
+			Add(float64(req.TaskSize.EstimatedMemoryBytes))
+	}
 }
 
 func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
@@ -128,6 +134,12 @@ func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
 	}
 	t.numTasks--
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: req.GetSchedulingMetadata().GetTaskGroupId()}).Set(float64(pq.Len()))
+	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
+		metrics.RemoteExecutionAssignedOrQueuedMilliCPU.
+			Sub(float64(req.TaskSize.EstimatedMilliCpu))
+		metrics.RemoteExecutionAssignedOrQueuedRAMBytes.
+			Sub(float64(req.TaskSize.EstimatedMemoryBytes))
+	}
 	return req
 }
 

@@ -131,6 +131,15 @@ message SchedulingMetadata {
   string executor_group_id = 5;
   // Group ID of the user that issued the Execute request.
   string task_group_id = 6;
+
+  // A signal to the executor that the size of this queued task should be
+  // tracked as part of the queued-or-assigned size metrics. This is necessary
+  // because tasks may be scheduled on multiple executors, but should only
+  // contributed to this system-wide metric once, so the scheduler must inform
+  // exactly one of the executors to perform the queued task size tracking.
+  // This is for metrics purposes only and shouldn't affect the behavior of the
+  // scheduler or the executor.
+  bool track_queued_task_size = 9;
 }
 
 message ScheduleTaskRequest {

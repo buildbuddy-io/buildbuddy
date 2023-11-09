@@ -29,6 +29,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 var (
@@ -151,8 +152,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	defer span.End()
 
 	metrics.RemoteExecutionTasksStartedCount.Inc()
-	stage := &stagedGauge{}
-	defer stage.End()
 
 	actionMetrics := &ActionMetrics{}
 	defer func() {
@@ -188,6 +187,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		EstimatedTaskSize:    st.GetSchedulingMetadata().GetTaskSize(),
 		DoNotCache:           task.GetAction().GetDoNotCache(),
 	}
+
+	stage := &stagedGauge{size: md.EstimatedTaskSize}
+	defer stage.End()
 
 	if !req.GetSkipCacheLookup() {
 		log.CtxInfof(ctx, "Checking action cache for existing result.")
@@ -444,6 +446,7 @@ func observeStageDuration(groupID string, stage string, start *timestamppb.Times
 // transition.
 type stagedGauge struct {
 	stage string
+	size  *scpb.TaskSize
 }
 
 func (g *stagedGauge) Set(stage string) {
@@ -451,11 +454,19 @@ func (g *stagedGauge) Set(stage string) {
 		metrics.RemoteExecutionTasksExecuting.
 			With(prometheus.Labels{metrics.ExecutedActionStageLabel: prev}).
 			Dec()
+		metrics.RemoteExecutionAssignedOrQueuedMilliCPU.
+			Sub(float64(g.size.EstimatedMilliCpu))
+		metrics.RemoteExecutionAssignedOrQueuedRAMBytes.
+			Sub(float64(g.size.EstimatedMemoryBytes))
 	}
 	if stage != "" {
 		metrics.RemoteExecutionTasksExecuting.
 			With(prometheus.Labels{metrics.ExecutedActionStageLabel: stage}).
 			Inc()
+		metrics.RemoteExecutionAssignedOrQueuedMilliCPU.
+			Add(float64(g.size.EstimatedMilliCpu))
+		metrics.RemoteExecutionAssignedOrQueuedRAMBytes.
+			Add(float64(g.size.EstimatedMemoryBytes))
 	}
 	g.stage = stage
 }
