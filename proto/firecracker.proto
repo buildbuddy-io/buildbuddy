@@ -26,6 +26,20 @@ message VMConfiguration {
   // TODO: add container_image here?
 }
 
+message SnapshotKeySet {
+  // Snapshot key to be read from when resuming the snapshot and written to when
+  // the task is complete.
+  //
+  // For workflows, this is associated with the git branch checked out in the
+  // snapshotted git repo directory.
+  SnapshotKey branch_key = 1;
+
+  // Fallback keys to try reading if the main key is not found. These are
+  // read-only; only the main key will be updated when writing the snapshot back
+  // to cache.
+  repeated SnapshotKey fallback_keys = 2;
+}
+
 message SnapshotKey {
   // Remote instance name associated with the snapshot.
   string instance_name = 1;

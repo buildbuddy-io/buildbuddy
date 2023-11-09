@@ -782,13 +782,13 @@ func TestFirecrackerSnapshotVersioning(t *testing.T) {
 	require.NoError(t, err)
 	c2, err := firecracker.NewContainer(ctx, env, task, opts)
 	require.NoError(t, err)
-	require.Empty(t, cmp.Diff(c1.SnapshotKey(), c2.SnapshotKey(), protocmp.Transform()))
+	require.Empty(t, cmp.Diff(c1.SnapshotKeySet(), c2.SnapshotKeySet(), protocmp.Transform()))
 
 	// Change guest API version; snapshot keys should not be equal.
 	opts.ExecutorConfig.GuestAPIVersion = "something-else"
 	c3, err := firecracker.NewContainer(ctx, env, task, opts)
 	require.NoError(t, err)
-	require.NotEmpty(t, cmp.Diff(c1.SnapshotKey(), c3.SnapshotKey(), protocmp.Transform()))
+	require.NotEmpty(t, cmp.Diff(c1.SnapshotKeySet(), c3.SnapshotKeySet(), protocmp.Transform()))
 }
 
 func TestFirecrackerComplexFileMapping(t *testing.T) {

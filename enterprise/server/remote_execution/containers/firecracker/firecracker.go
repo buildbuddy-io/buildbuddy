@@ -481,7 +481,7 @@ type FirecrackerContainer struct {
 	// based on the incoming task. If there is a new task, you may want to call
 	// NewContainer again rather than directly unpausing a pre-existing container,
 	// to make sure these fields are updated and the best snapshot match is used
-	snapshotKey             *fcpb.SnapshotKey
+	snapshotKeySet          *fcpb.SnapshotKeySet
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
 
@@ -598,7 +598,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		if *snaputil.EnableLocalSnapshotSharing {
 			runnerID = ""
 		}
-		c.snapshotKey, err = snaploader.NewKey(task, cd.GetHash(), runnerID)
+		c.snapshotKeySet, err = snaploader.SnapshotKeySet(task, cd.GetHash(), runnerID)
 		if err != nil {
 			return nil, err
 		}
@@ -607,11 +607,11 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 
 		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
 		if recyclingEnabled && *snaputil.EnableLocalSnapshotSharing {
-			_, err := loader.GetSnapshot(ctx, c.snapshotKey, c.supportsRemoteSnapshots)
+			_, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
 			c.createFromSnapshot = (err == nil)
 		}
 	} else {
-		c.snapshotKey = opts.SavedState.GetSnapshotKey()
+		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.SavedState.GetSnapshotKey()}
 
 		// TODO(bduffany): add version info to snapshots. For example, if a
 		// breaking change is made to the vmexec API, the executor should not
@@ -725,8 +725,8 @@ func alignToMultiple(n int64, multiple int64) int64 {
 	return n + multiple - remainder
 }
 
-func (c *FirecrackerContainer) SnapshotKey() *fcpb.SnapshotKey {
-	return proto.Clone(c.snapshotKey).(*fcpb.SnapshotKey)
+func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
+	return proto.Clone(c.snapshotKeySet).(*fcpb.SnapshotKeySet)
 }
 
 // State returns the container state to be persisted to disk so that this
@@ -745,7 +745,7 @@ func (c *FirecrackerContainer) State(ctx context.Context) (*rnpb.ContainerState,
 		IsolationType: string(platform.FirecrackerContainerType),
 		FirecrackerState: &rnpb.FirecrackerState{
 			VmConfiguration: c.vmConfig,
-			SnapshotKey:     c.snapshotKey,
+			SnapshotKey:     c.snapshotKeySet.GetBranchKey(),
 		},
 	}
 	return state, nil
@@ -840,7 +840,11 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	}
 
 	snaploaderStart := time.Now()
-	if err := c.loader.CacheSnapshot(ctx, c.snapshotKey, opts); err != nil {
+	// Note: we only update the snapshot corresponding to the pushed git branch.
+	// We do not update the snapshot for any fallback key(s) that we may have
+	// read from, i.e. ones corresponding to the PR's base branch or the repo's
+	// default branch.
+	if err := c.loader.CacheSnapshot(ctx, c.snapshotKeySet.GetBranchKey(), opts); err != nil {
 		return status.WrapError(err, "add snapshot to cache")
 	}
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
@@ -935,7 +939,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKey, c.supportsRemoteSnapshots)
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
@@ -1120,7 +1124,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 		return nil, status.WrapError(err, "make chunk dir")
 	}
 	// Use vmCtx for the COW since IO may be done outside of the task ctx.
-	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKey.InstanceName, c.supportsRemoteSnapshots)
+	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
