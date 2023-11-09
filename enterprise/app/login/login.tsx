@@ -13,6 +13,7 @@ import { GoogleIcon } from "../../../app/icons/google";
 import { GithubIcon } from "../../../app/icons/github";
 
 interface State {
+  loading: boolean;
   orgName?: string;
   showSSO: boolean;
   ssoSlug?: string;
@@ -25,6 +26,7 @@ interface Props {
 
 export default class LoginComponent extends React.Component<Props, State> {
   state: State = {
+    loading: false,
     showSSO: false,
     defaultToSSO: false,
     ssoSlug: this.getUrlSlug(),
@@ -33,7 +35,7 @@ export default class LoginComponent extends React.Component<Props, State> {
   ssoSlugButton = React.createRef<HTMLInputElement>();
 
   componentDidMount() {
-    if (this.isJoiningOrg()) {
+    if (this.isOrgSpecific()) {
       this.fetchOrgName();
     }
   }
@@ -42,22 +44,33 @@ export default class LoginComponent extends React.Component<Props, State> {
     return window.location.pathname.startsWith("/join/");
   }
 
+  isOrgSpecific() {
+    return this.isJoiningOrg() || capabilities.config.customerSubdomain;
+  }
+
   getUrlSlug() {
     if (this.isJoiningOrg()) {
       return window.location.pathname.split("/").pop();
+    }
+    if (this.isOrgSpecific()) {
+      return window.location.host.split(".")[0];
     }
     return "";
   }
 
   async fetchOrgName() {
+    this.setState({ loading: true });
     try {
       const { name, ssoEnabled } = await rpcService.service.getGroup(
         grp.GetGroupRequest.create({ urlIdentifier: this.getUrlSlug() })
       );
-      this.setState({ orgName: name, defaultToSSO: ssoEnabled });
+      this.setState({ orgName: name, defaultToSSO: ssoEnabled, loading: false });
     } catch (e) {
-      // TODO: handle 404 errors better
-      router.navigateHome();
+      this.setState({ loading: false, defaultToSSO: false });
+      if (this.isJoiningOrg()) {
+        error_service.handleError(e);
+        router.navigateHome();
+      }
     }
   }
 
@@ -121,7 +134,7 @@ export default class LoginComponent extends React.Component<Props, State> {
   }
 
   render() {
-    if (this.isJoiningOrg() && !this.state.orgName) {
+    if (this.isOrgSpecific() && this.state.loading) {
       return (
         <div className="login">
           <div className="loading" />
@@ -139,17 +152,17 @@ export default class LoginComponent extends React.Component<Props, State> {
                   <User /> Continue
                 </button>
               )}
-              {this.isGoogleConfigured() && (
+              {this.isGoogleConfigured() && !this.state.defaultToSSO && (
                 <button debug-id="login-button" className="google-button" onClick={this.handleLoginClicked.bind(this)}>
                   <GoogleIcon /> Continue with Google
                 </button>
               )}
-              {this.isOktaConfigured() && (
+              {this.isOktaConfigured() && !this.state.defaultToSSO && (
                 <button debug-id="login-button" className="login-button" onClick={this.handleLoginClicked.bind(this)}>
                   <User /> Continue with Okta
                 </button>
               )}
-              {capabilities.config.githubAuthEnabled && (
+              {capabilities.config.githubAuthEnabled && !this.state.defaultToSSO && (
                 <button
                   debug-id="github-button"
                   className="github-button"
@@ -157,7 +170,7 @@ export default class LoginComponent extends React.Component<Props, State> {
                   <GithubIcon /> Continue with GitHub
                 </button>
               )}
-              {capabilities.sso && (
+              {capabilities.sso && (this.state.defaultToSSO || !this.isOrgSpecific()) && (
                 <form className="sso" onSubmit={this.handleSSOClicked.bind(this)}>
                   <div className={`sso-prompt ${this.state.showSSO ? "" : "hidden"}`}>
                     <div className="sso-title">Team Slug</div>
@@ -175,7 +188,7 @@ export default class LoginComponent extends React.Component<Props, State> {
                   </button>
                 </form>
               )}
-              {capabilities.anonymous && (
+              {capabilities.anonymous && !this.isOrgSpecific() && (
                 <button className="anon-button" onClick={this.handleSetupClicked.bind(this)}>
                   <ArrowRight /> Anonymous mode
                 </button>
