@@ -488,6 +488,7 @@ type CommandTC struct {
 }
 
 func TestDirtyMemoryCDC(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 	flags.Set(t, "app.log_level", "fatal")
 	flags.Set(t, "snapshot", "mem")
 	log.Configure()
@@ -566,7 +567,7 @@ func TestDirtyMemoryCDC(t *testing.T) {
 
 	// Set up env with disk cache - no CDC, no compression
 	diskDir := testfs.MakeTempDir(t)
-	dc, err := disk_cache.NewDiskCache(testenv.GetTestEnv(t), &disk_cache.Options{RootDirectory: diskDir}, diskCacheSize)
+	dc, err := disk_cache.NewDiskCache(testenv.GetTestEnv(t), &disk_cache.Options{RootDirectory: diskDir}, 100_000_000_000)
 	if err != nil {
 		t.Error(err)
 	}
@@ -575,6 +576,10 @@ func TestDirtyMemoryCDC(t *testing.T) {
 	cfg := getExecutorConfig(t)
 	for _, commandTC := range commands {
 		for _, tc := range testCaches {
+			if err := os.RemoveAll(tc.cacheDir); err != nil {
+				t.Fatal(err)
+			}
+
 			env := getTestEnv(ctx, t, envOpts{c: tc.c})
 			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 			rootDir := testfs.MakeTempDir(t)
@@ -585,14 +590,26 @@ func TestDirtyMemoryCDC(t *testing.T) {
 				ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
 				ActionWorkingDirectory: workDir,
 				VMConfiguration: &fcpb.VMConfiguration{
-					NumCpus:           6,
-					MemSizeMb:         8000,
-					EnableNetworking:  true,
-					ScratchDiskSizeMb: 20_000,
+					NumCpus:            6,
+					MemSizeMb:          8000,
+					EnableNetworking:   true,
+					ScratchDiskSizeMb:  20_000,
+					KernelVersion:      cfg.KernelVersion,
+					FirecrackerVersion: cfg.FirecrackerVersion,
+					GuestApiVersion:    cfg.GuestAPIVersion,
 				},
 				ExecutorConfig: cfg,
 			}
-			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					// Note: platform must match in order to share snapshots
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+						{Name: platform.WorkflowIDPropertyName, Value: "workflow"},
+					}},
+				},
+			}
+			c, err := firecracker.NewContainer(ctx, env, task, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -632,7 +649,7 @@ func TestDirtyMemoryCDC(t *testing.T) {
 
 			workDir = testfs.MakeDirAll(t, rootDir, "fork")
 			opts.ActionWorkingDirectory = workDir
-			c, err = firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			c, err = firecracker.NewContainer(ctx, env, task, opts)
 			require.NoError(t, err)
 			err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 			require.NoError(t, err)
