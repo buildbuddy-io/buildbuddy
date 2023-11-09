@@ -254,9 +254,7 @@ message ResponseUnion {
   }
 }
 
-message SnapshotClusterHook {
-  uint64 cluster_id = 1;
-}
+message SnapshotClusterHook {}
 
 message PostCommitHook {
   SnapshotClusterHook snapshot_cluster = 1;
