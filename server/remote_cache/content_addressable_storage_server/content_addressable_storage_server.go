@@ -322,6 +322,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 				Digest: rn.GetDigest(),
 				Status: &statuspb.Status{Code: int32(codes.OK)},
 			})
+			closeTrackerData = append(closeTrackerData, downloadTrackerData{})
 			continue
 		}
 
