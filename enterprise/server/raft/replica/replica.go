@@ -603,6 +603,7 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 		return err
 	}
 	sm.updateInMemoryState(txn)
+
 	// Run post commit hooks, if any are set.
 	for _, hook := range batchReq.GetPostCommitHooks() {
 		sm.handlePostCommit(hook)
@@ -1163,10 +1164,11 @@ func statusProto(err error) *statuspb.Status {
 
 func (sm *Replica) handlePostCommit(hook *rfpb.PostCommitHook) {
 	if snap := hook.GetSnapshotCluster(); snap != nil {
-		sm.log.Infof("POST-COMMIT-HOOK SNAPSHOTTING SHARD %d", sm.ShardID)
-		if err := sm.store.SnapshotCluster(context.TODO(), sm.ShardID); err != nil {
-			log.Errorf("Error processing post-commit hook: %s", err)
-		}
+		go func() {
+			if err := sm.store.SnapshotCluster(context.TODO(), sm.ShardID); err != nil {
+				sm.log.Errorf("Error processing post-commit hook: %s", err)
+			}
+		}()
 	}
 }
 

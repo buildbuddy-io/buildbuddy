@@ -266,7 +266,7 @@ message TxnRequest {
   optional bytes transaction_id = 1;
   message Statement {
     uint64 shard_id = 1;
-    repeated RequestUnion union = 2;
+    BatchCmdRequest raw_batch = 2;
   }
   repeated Statement statements = 2;
 }
