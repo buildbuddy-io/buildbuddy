@@ -557,7 +557,7 @@ export default class InvocationModel {
   getStatus() {
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
-        return exitCode(this.invocation.bazelExitCode);
+        return this.invocation.success ? "Succeeded" : exitCode(this.invocation.bazelExitCode);
       case InvocationStatus.PARTIAL_INVOCATION_STATUS:
         return "In progress...";
       case InvocationStatus.DISCONNECTED_INVOCATION_STATUS:

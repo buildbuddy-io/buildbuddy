@@ -151,7 +151,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
     if (this.isDisconnected()) {
       return "Disconnected";
     }
-    return exitCode(this.props.invocation.bazelExitCode);
+    return this.props.invocation.success ? "Succeeded" : exitCode(this.props.invocation.bazelExitCode);
   }
 
   private getTitleForWorkflow() {
