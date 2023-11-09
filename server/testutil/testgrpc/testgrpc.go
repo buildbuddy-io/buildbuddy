@@ -77,7 +77,7 @@ func (p *Proxy) GRPCTarget() string {
 }
 
 func (p *Proxy) Dial() *grpc.ClientConn {
-	conn, err := grpc_client.DialSimple(p.GRPCTarget())
+	conn, err := grpc_client.DialSimpleWithoutPooling(p.GRPCTarget())
 	require.NoError(p.t, err)
 	return conn
 }
@@ -90,7 +90,7 @@ func RandomDialer(targets ...string) Director {
 		r := rand.Intn(len(targets))
 		for i := 0; i < len(targets); i++ {
 			target := targets[(r+i)%len(targets)]
-			cc, err = grpc_client.DialSimple(target)
+			cc, err = grpc_client.DialSimpleWithoutPooling(target)
 			if status.IsUnavailableError(err) {
 				continue
 			}

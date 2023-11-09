@@ -39,14 +39,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
+
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
+	_ "google.golang.org/grpc/encoding/gzip"                        // imported for side effects; DO NOT REMOVE.
 
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
@@ -66,21 +66,19 @@ var (
 )
 
 func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.RealEnv) {
-	var conn *grpc.ClientConn
 	var err error
 	if cacheTarget == "" {
 		log.Fatalf("No cache target was set. Run a local cache or specify one in the config")
 	} else if u, err := url.Parse(cacheTarget); err == nil && u.Hostname() == "cloud.buildbuddy.io" {
 		log.Warning("You are using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` to remote.buildbuddy.io for improved performance.")
 	}
-	conn, err = grpc_client.DialInternal(realEnv, cacheTarget)
+	conn, err := grpc_client.DialInternal(realEnv, cacheTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", cacheTarget, err)
 	}
 	log.Infof("Connecting to cache target: %s", cacheTarget)
 
-	realEnv.GetHealthChecker().AddHealthCheck(
-		"grpc_cache_connection", healthcheck.NewGRPCHealthCheck(conn))
+	realEnv.GetHealthChecker().AddHealthCheck("grpc_cache_connection", conn)
 
 	realEnv.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -144,8 +142,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) env
 	}
 	log.Infof("Connecting to app target: %s", *appTarget)
 
-	realEnv.GetHealthChecker().AddHealthCheck(
-		"grpc_app_connection", healthcheck.NewGRPCHealthCheck(conn))
+	realEnv.GetHealthChecker().AddHealthCheck("grpc_app_connection", conn)
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
 	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 

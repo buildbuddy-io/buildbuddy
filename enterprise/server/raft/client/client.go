@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
-	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -38,7 +37,6 @@ type NodeHost interface {
 
 type apiClientAndConn struct {
 	rfspb.ApiClient
-	conn *grpc.ClientConn
 }
 
 type APIClient struct {
@@ -67,7 +65,7 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 		return nil, err
 	}
 	client := rfspb.NewApiClient(conn)
-	c.clients[peer] = &apiClientAndConn{ApiClient: client, conn: conn}
+	c.clients[peer] = &apiClientAndConn{ApiClient: client}
 	return client, nil
 }
 

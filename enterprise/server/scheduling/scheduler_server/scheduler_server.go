@@ -27,7 +27,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
@@ -767,7 +766,7 @@ type schedulerClient struct {
 
 	localServer *SchedulerServer
 	rpcClient   scpb.SchedulerClient
-	rpcConn     *grpc.ClientConn
+	rpcConn     *grpc_client.ClientConnPool
 
 	lastAccess time.Time
 }
