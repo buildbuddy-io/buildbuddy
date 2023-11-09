@@ -3,7 +3,6 @@ package listener
 import (
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4/raftio"
 )
 
