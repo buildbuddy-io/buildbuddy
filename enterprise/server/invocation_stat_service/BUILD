@@ -7,7 +7,6 @@ go_library(
     srcs = ["invocation_stat_service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service",
     deps = [
-        "//enterprise/server/invocation_stat_service/config",
         "//proto:context_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
@@ -16,6 +15,7 @@ go_library(
         "//server/build_event_protocol/invocation_format",
         "//server/environment",
         "//server/interfaces",
+        "//server/invocation_stat_service/config",
         "//server/util/clickhouse",
         "//server/util/db",
         "//server/util/filter",
