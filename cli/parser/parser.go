@@ -314,6 +314,35 @@ type CommandLineSchema struct {
 	// allow us to show plugin-specific help.
 }
 
+// CommandSupportsOpt returns whether the given opt is in the CommandOptions.
+// The opt is expected to be either "--NAME" or "-SHORTNAME", without an "=".
+func (s *CommandLineSchema) CommandSupportsOpt(opt string) bool {
+	// TODO: this func is using heuristics, since a correct impl would require
+	// us to know the schema for all bazel commands. At some point we should
+	// probably just do a one-time parse of all the commands so that we can do
+	// this properly, or see if Bazel can give us a dump of its option schema.
+	if strings.HasPrefix(opt, "--") {
+		// Long-form arg
+		opt = strings.TrimPrefix(opt, "--")
+		if _, ok := s.CommandOptions.ByName[opt]; ok {
+			return true
+		}
+		// Hack: try with trimmed 'no' prefix too, in case this is a bool opt.
+		if strings.HasPrefix(opt, "no") {
+			if _, ok := s.CommandOptions.ByName[strings.TrimPrefix(opt, "no")]; ok {
+				return true
+			}
+		}
+		return false
+	} else if strings.HasPrefix(opt, "-") {
+		// Short-form arg
+		opt = strings.TrimPrefix(opt, "-")
+		_, ok := s.CommandOptions.ByShortName[opt]
+		return ok
+	}
+	return false
+}
+
 // GetCommandLineSchema returns the effective CommandLineSchemas for the given
 // command line.
 func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOptions bool) (*CommandLineSchema, error) {
@@ -525,9 +554,10 @@ func (r *Rules) ForPhaseAndConfig(phase, config string) []*RcRule {
 
 // RcRule is a rule parsed from a bazelrc file.
 type RcRule struct {
-	Phase   string
-	Config  string
-	Options []string
+	Phase  string
+	Config string
+	// Tokens contains the raw (non-canonicalized) tokens in the rule.
+	Tokens []string
 }
 
 func appendRcRulesFromImport(workspaceDir, path string, opts []*RcRule, optional bool, importStack []string) ([]*RcRule, error) {
@@ -625,14 +655,14 @@ func parseRcRule(line string) (*RcRule, error) {
 	}
 	if strings.HasPrefix(tokens[0], "-") {
 		return &RcRule{
-			Phase:   "common",
-			Options: tokens,
+			Phase:  "common",
+			Tokens: tokens,
 		}, nil
 	}
 	if !strings.Contains(tokens[0], ":") {
 		return &RcRule{
-			Phase:   tokens[0],
-			Options: tokens[1:],
+			Phase:  tokens[0],
+			Tokens: tokens[1:],
 		}, nil
 	}
 	phaseConfig := strings.Split(tokens[0], ":")
@@ -640,9 +670,9 @@ func parseRcRule(line string) (*RcRule, error) {
 		return nil, fmt.Errorf("invalid bazelrc syntax: %s", phaseConfig)
 	}
 	return &RcRule{
-		Phase:   phaseConfig[0],
-		Config:  phaseConfig[1],
-		Options: tokens[1:],
+		Phase:  phaseConfig[0],
+		Config: phaseConfig[1],
+		Tokens: tokens[1:],
 	}, nil
 }
 
@@ -677,7 +707,7 @@ func ExpandConfigs(args []string) ([]string, error) {
 	if err != nil {
 		log.Debugf("Could not determine workspace dir: %s", err)
 	}
-	args, err = expandConfigs(ws, args)
+	args, err = expandConfigs(ws, args, runBazelHelpWithCache)
 	if err != nil {
 		return nil, err
 	}
@@ -703,11 +733,21 @@ func getBazelOS() string {
 	}
 }
 
-func expandConfigs(workspaceDir string, args []string) ([]string, error) {
+func expandConfigs(workspaceDir string, args []string, help BazelHelpFunc) ([]string, error) {
 	_, idx := GetBazelCommandAndIndex(args)
 	if idx == -1 {
 		// Not a bazel command; don't expand configs.
 		return args, nil
+	}
+
+	var schema *CommandLineSchema
+	{
+		args, _ := arg.SplitExecutableArgs(args)
+		s, err := getCommandLineSchema(args, help, false /*=onlyStartupOptions*/)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get command line schema: %w", err)
+		}
+		schema = s
 	}
 
 	args, rcFiles, err := consumeRCFileArgs(args, workspaceDir)
@@ -722,7 +762,7 @@ func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 
 	// Expand startup args first, before any other args (including explicit
 	// startup args).
-	startupArgs, err := appendArgsForConfig(rules, nil, "startup", nil, "" /*=config*/, nil)
+	startupArgs, err := appendArgsForConfig(schema, rules, nil, "startup", nil, "" /*=config*/, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand startup options: %s", err)
 	}
@@ -746,7 +786,7 @@ func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 	// so we expand those first just after the command.
 	var defaultArgs []string
 	for _, phase := range phases {
-		defaultArgs, err = appendArgsForConfig(rules, defaultArgs, phase, phases, "" /*=config*/, nil)
+		defaultArgs, err = appendArgsForConfig(schema, rules, defaultArgs, phase, phases, "" /*=config*/, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
 		}
@@ -780,7 +820,7 @@ func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 
 		var configArgs []string
 		for _, phase := range phases {
-			configArgs, err = appendArgsForConfig(rules, configArgs, phase, phases, config, nil)
+			configArgs, err = appendArgsForConfig(schema, rules, configArgs, phase, phases, config, nil)
 			if err != nil {
 				return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
 			}
@@ -795,7 +835,7 @@ func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 	return args, nil
 }
 
-func appendArgsForConfig(rules *Rules, args []string, phase string, phases []string, config string, configStack []string) ([]string, error) {
+func appendArgsForConfig(schema *CommandLineSchema, rules *Rules, args []string, phase string, phases []string, config string, configStack []string) ([]string, error) {
 	var err error
 	for _, c := range configStack {
 		if c == config {
@@ -804,34 +844,83 @@ func appendArgsForConfig(rules *Rules, args []string, phase string, phases []str
 	}
 	configStack = append(configStack, config)
 	for _, rule := range rules.ForPhaseAndConfig(phase, config) {
-		for i := 0; i < len(rule.Options); i++ {
-			opt := rule.Options[i]
+		// Note: at each loop iteration, we skip either 1 or 2 args, so no
+		// "i++" here.
+		for i := 0; i < len(rule.Tokens); {
+			tok := rule.Tokens[i]
 
 			configArg := ""
 			configArgCount := 0
-			if strings.HasPrefix(opt, "--config=") {
-				configArg = strings.TrimPrefix(opt, "--config=")
+			if strings.HasPrefix(tok, "--config=") {
+				configArg = strings.TrimPrefix(tok, "--config=")
 				configArgCount = 1
-			} else if opt == "--config" && i+1 < len(rule.Options) {
-				configArg = rule.Options[i+1]
+			} else if tok == "--config" && i+1 < len(rule.Tokens) {
+				configArg = rule.Tokens[i+1]
 				// Consume the following argument in this iteration too
 				configArgCount = 2
 			}
+
 			// If we have a --config arg, expand it if it is defined in any rc
 			// file. If it is not defined, let bazel show an error saying that
 			// it is not defined.
 			if configArg != "" && isConfigDefined(rules, config, phases) {
 				for _, phase := range phases {
-					args, err = appendArgsForConfig(rules, args, phase, phases, configArg, configStack)
+					args, err = appendArgsForConfig(schema, rules, args, phase, phases, configArg, configStack)
 					if err != nil {
 						return nil, err
 					}
 				}
-				i += (configArgCount - 1)
+				i += configArgCount
 				continue
 			}
 
-			args = append(args, opt)
+			// For the 'common' phase, only append the arg if it's supported by
+			// the command.
+			//
+			// Note: Bazel throws an error here if the arg is not supported by
+			// at least one other command. We don't implement this for now since
+			// we lazily parse help per-command, and this behavior would require
+			// eagerly parsing help for all commands.
+			if phase == "common" {
+				opt, _ := arg.SplitOptionValue(tok)
+				if schema.CommandSupportsOpt(opt) {
+					// Since the opt is supported, we can do a proper parse to
+					// determine how many args to consume in this iteration.
+					// e.g., need to skip 2 args for "-c opt", 1 arg for
+					// "--nocache_test_results", and 1 arg for "--curses=yes".
+					_, _, next, err := schema.CommandOptions.Next(rule.Tokens, i)
+					if err != nil {
+						return nil, err
+					}
+					for j := i; j < next; j++ {
+						args = append(args, rule.Tokens[j])
+					}
+					i = next
+				} else {
+					log.Debugf("common rc rule: opt %q is unsupported by command %q; skipping", opt, schema.Command)
+					// If the opt isn't supported, apply a rough heuristic
+					// to figure out whether to skip just this arg, or the
+					// next arg too.
+					if strings.HasPrefix(tok, "--") {
+						nextArgIsOption := (i+1 < len(rule.Tokens) && strings.HasPrefix(rule.Tokens[i+1], "-"))
+						if strings.Contains(tok, "=") || strings.HasPrefix(tok, "--no") || nextArgIsOption {
+							i++
+						} else {
+							i += 2
+						}
+					} else if strings.HasPrefix(tok, "-") {
+						i += 2
+					}
+				}
+				continue
+			}
+
+			// Happy path: this is a "normal" phase like "build", "test" etc.
+			// rather than a "pseudo-phase" like "common" etc., and it's a plain
+			// old non-config arg that doesn't itself need to be expanded. Just
+			// append the arg and continue.
+			args = append(args, tok)
+			i++
 		}
 	}
 	return args, nil

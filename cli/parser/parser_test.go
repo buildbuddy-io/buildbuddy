@@ -22,8 +22,8 @@ func TestParseBazelrc_Basic(t *testing.T) {
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"WORKSPACE":                 "",
 		"import.bazelrc":            "",
-		"explicit_import_1.bazelrc": "--flag_from_explicit_import_1_bazelrc",
-		"explicit_import_2.bazelrc": "--flag_from_explicit_import_2_bazelrc",
+		"explicit_import_1.bazelrc": "--build_metadata=EXPLICIT_IMPORT_1=1",
+		"explicit_import_2.bazelrc": "--build_metadata=EXPLICIT_IMPORT_2=1",
 		".bazelrc": `
 
 # COMMENT
@@ -34,12 +34,14 @@ startup --startup_flag_1
 startup:config --startup_configs_are_not_supported_so_this_flag_should_be_ignored
 
 # continuations are allowed \
---this_is_not_a_flag_since_it_is_part_of_the_previous_line
+--build_metadata=THIS_IS_NOT_A_FLAG_SINCE_IT_IS_PART_OF_THE_PREVIOUS_LINE=1
 
---common_global_flag_1          # trailing comments are allowed
-common --common_global_flag_2
-common:foo --config_foo_global_flag
-common:bar --config_bar_global_flag
+--invalid_common_flag_1          # trailing comments are allowed
+--build_metadata=VALID_COMMON_FLAG=1
+common --invalid_common_flag_2
+common --build_metadata=VALID_COMMON_FLAG=2
+common:foo --build_metadata=COMMON_CONFIG_FOO=1
+common:bar --build_metadata=COMMON_CONFIG_BAR=1
 
 build --build_flag_1
 build:foo --build_config_foo_flag
@@ -56,6 +58,7 @@ build:bar --build_config_bar_flag
 
 build:workspace_status_with_space --workspace_status_command="bash workspace_status.sh"
 
+common --noverbose_test_summary
 test --config=bar
 
 import     %workspace%/import.bazelrc
@@ -73,8 +76,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
 			},
 		},
 		{
@@ -86,9 +89,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
-				"--flag_from_explicit_import_1_bazelrc",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
+				"--build_metadata=EXPLICIT_IMPORT_1=1",
 			},
 		},
 		{
@@ -101,10 +104,10 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
-				"--flag_from_explicit_import_1_bazelrc",
-				"--flag_from_explicit_import_2_bazelrc",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
+				"--build_metadata=EXPLICIT_IMPORT_1=1",
+				"--build_metadata=EXPLICIT_IMPORT_2=1",
 			},
 		},
 		{
@@ -120,9 +123,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
-				"--flag_from_explicit_import_1_bazelrc",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
+				"--build_metadata=EXPLICIT_IMPORT_1=1",
 			},
 		},
 		{
@@ -151,8 +154,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--explicit_startup_flag",
 				"--ignore_all_rc_files",
 				"query",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
 			},
 		},
 		{
@@ -161,8 +164,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
 				"--build_flag_1",
 			},
 		},
@@ -172,8 +175,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
 				"--build_flag_1",
 				"--explicit_flag",
 			},
@@ -184,10 +187,10 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
 				"--build_flag_1",
-				"--config_foo_global_flag",
+				"--build_metadata=COMMON_CONFIG_FOO=1",
 				"--build_config_foo_flag",
 				"--build_config_forward_ref_flag",
 				"--build_config_foo_multi_1",
@@ -200,15 +203,15 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
 				"--build_flag_1",
-				"--config_foo_global_flag",
+				"--build_metadata=COMMON_CONFIG_FOO=1",
 				"--build_config_foo_flag",
 				"--build_config_forward_ref_flag",
 				"--build_config_foo_multi_1",
 				"--build_config_foo_multi_2",
-				"--config_bar_global_flag",
+				"--build_metadata=COMMON_CONFIG_BAR=1",
 				"--build_config_bar_flag",
 			},
 		},
@@ -218,10 +221,11 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"test",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
+				"--noverbose_test_summary",
 				"--build_flag_1",
-				"--config_bar_global_flag",
+				"--build_metadata=COMMON_CONFIG_BAR=1",
 				"--build_config_bar_flag",
 			},
 		},
@@ -231,14 +235,14 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
-				"--common_global_flag_1",
-				"--common_global_flag_2",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
 				"--build_flag_1",
 				"--workspace_status_command=bash workspace_status.sh",
 			},
 		},
 	} {
-		expandedArgs, err := expandConfigs(ws, tc.args)
+		expandedArgs, err := expandConfigs(ws, tc.args, staticHelpFromTestData)
 
 		require.NoError(t, err, "error expanding %s", tc.args)
 		assert.Equal(t, tc.expectedExpandedArgs, expandedArgs)
@@ -258,11 +262,11 @@ build:d --config=d
 `,
 	})
 
-	_, err := expandConfigs(ws, []string{"build", "--config=a"})
+	_, err := expandConfigs(ws, []string{"build", "--config=a"}, staticHelpFromTestData)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular --config reference detected: a -> b -> c -> a")
 
-	_, err = expandConfigs(ws, []string{"build", "--config=d"})
+	_, err = expandConfigs(ws, []string{"build", "--config=d"}, staticHelpFromTestData)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular --config reference detected: d -> d")
 }
@@ -276,11 +280,11 @@ func TestParseBazelrc_CircularImport(t *testing.T) {
 		"b.bazelrc": `import %workspace%/a.bazelrc`,
 	})
 
-	_, err := expandConfigs(ws, []string{"build"})
+	_, err := expandConfigs(ws, []string{"build"}, staticHelpFromTestData)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular import detected:")
 
-	_, err = expandConfigs(ws, []string{"build"})
+	_, err = expandConfigs(ws, []string{"build"}, staticHelpFromTestData)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular import detected:")
 }
@@ -347,7 +351,7 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			expandedArgs, err := expandConfigs(ws, test.args)
+			expandedArgs, err := expandConfigs(ws, test.args, staticHelpFromTestData)
 
 			require.NoError(t, err, "error expanding %s", test.args)
 			assert.Equal(t, test.expectedExpandedArgs, expandedArgs)
@@ -469,8 +473,17 @@ func staticHelpFromTestData(topic string) (string, error) {
 	if topic == "startup_options" {
 		return test_data.BazelHelpStartupOptionsOutput, nil
 	}
+	if topic == "build" {
+		return test_data.BazelHelpBuildOutput, nil
+	}
 	if topic == "test" {
 		return test_data.BazelHelpTestOutput, nil
+	}
+	if topic == "query" {
+		return test_data.BazelHelpQueryOutput, nil
+	}
+	if topic == "run" {
+		return test_data.BazelHelpRunOutput, nil
 	}
 	return "", fmt.Errorf("testHelpProvider: no test data configured for `bazel help %s`", topic)
 }
