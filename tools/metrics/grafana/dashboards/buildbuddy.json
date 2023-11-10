@@ -24,7 +24,6 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 3,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -14282,6 +14281,7 @@
   ],
   "refresh": "1m",
   "schemaVersion": 38,
+  "slug": "buildbuddy",
   "style": "dark",
   "tags": [],
   "templating": {

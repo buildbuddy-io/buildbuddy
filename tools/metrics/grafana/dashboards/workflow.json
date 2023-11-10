@@ -24,11 +24,11 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 5,
   "links": [],
   "liveNow": false,
   "panels": [
     {
+      "collapsed": true,
       "datasource": {
         "type": "prometheus",
         "uid": "prom"
@@ -139,10 +139,10 @@
         }
       ],
       "title": "Warm Workflow Rate",
-      "type": "barchart",
-      "collapsed": true
+      "type": "barchart"
     },
     {
+      "collapsed": true,
       "datasource": {
         "type": "prometheus",
         "uid": "prom"
@@ -231,10 +231,10 @@
         }
       ],
       "title": "Workflow Stage P95 Duration",
-      "type": "timeseries",
-      "collapsed": true
+      "type": "timeseries"
     },
     {
+      "collapsed": true,
       "datasource": {
         "type": "prometheus",
         "uid": "prom"
@@ -312,10 +312,10 @@
         }
       ],
       "title": "Memory Snapshot Dirty Chunk Ratio",
-      "type": "heatmap",
-      "collapsed": true
+      "type": "heatmap"
     },
     {
+      "collapsed": true,
       "datasource": {
         "type": "prometheus",
         "uid": "prom"
@@ -394,10 +394,10 @@
         }
       ],
       "title": "Rootfs Dirty Chunk Ratio",
-      "type": "heatmap",
-      "collapsed": true
+      "type": "heatmap"
     },
     {
+      "collapsed": true,
       "datasource": {
         "type": "prometheus",
         "uid": "prom"
@@ -487,11 +487,12 @@
         }
       ],
       "title": "Dirty Bytes",
-      "type": "timeseries",
-      "collapsed": true
+      "type": "timeseries"
     }
   ],
+  "refresh": "1m",
   "schemaVersion": 37,
+  "slug": "workflow",
   "style": "dark",
   "tags": [],
   "templating": {
@@ -505,6 +506,5 @@
   "timezone": "",
   "title": "Workflow Snapshotting",
   "uid": "KI6NxDWSk",
-  "weekStart": "",
-  "refresh": "1m"
+  "weekStart": ""
 }
