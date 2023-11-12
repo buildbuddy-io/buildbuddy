@@ -1,7 +1,6 @@
 package podman
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -63,8 +63,8 @@ var (
 	// then look at the output of
 	//     find /sys/fs/cgroup | grep libpod-$(podman container inspect sleepy | jq -r '.[0].Id')
 
-	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
-	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
+	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "", "Go template specifying a path pointing to a container's current memory usage, in bytes. {{.ContainerID}} will be replaced by the containerID.", flag.Deprecated("This is now detected automatically. If paths aren't detected properly, please report a bug."))
+	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. {{.ContainerID}} will be replaced by the containerID.", flag.Deprecated("This is now detected automatically. If paths aren't detected properly, please report a bug."))
 
 	// TODO(iain): delete executor.podman.run_soci_snapshotter flag once
 	// the snapshotter doesn't need root permissions to run.
@@ -150,6 +150,7 @@ type pullStatus struct {
 
 type Provider struct {
 	env                     environment.Env
+	cgroupPaths             *cgroup.Paths
 	buildRoot               string
 	imageStreamingEnabled   bool
 	sociArtifactStoreClient socipb.SociArtifactStoreClient
@@ -262,7 +263,11 @@ graphroot = "/var/lib/containers/storage"
 	}
 
 	return &Provider{
-		env:                     env,
+		env: env,
+		cgroupPaths: &cgroup.Paths{
+			MemoryTemplate: *memUsagePathTemplate,
+			CPUTemplate:    *cpuUsagePathTemplate,
+		},
 		imageStreamingEnabled:   *imageStreamingEnabled,
 		sociArtifactStoreClient: sociArtifactStoreClient,
 		sociStoreKeychainClient: sociStoreKeychainClient,
@@ -332,6 +337,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 
 	return &podmanCommandContainer{
 		env:                     p.env,
+		cgroupPaths:             p.cgroupPaths,
 		image:                   props.ContainerImage,
 		imageIsStreamable:       imageIsStreamable,
 		sociArtifactStoreClient: p.sociArtifactStoreClient,
@@ -372,6 +378,7 @@ type PodmanOptions struct {
 type podmanCommandContainer struct {
 	env              environment.Env
 	imageExistsCache *imageExistsCache
+	cgroupPaths      *cgroup.Paths
 
 	image     string
 	buildRoot string
@@ -397,12 +404,19 @@ type podmanCommandContainer struct {
 	removed bool
 }
 
+// TODO: remove this and always use provider.New() instead.
 func NewPodmanCommandContainer(env environment.Env, image, buildRoot string, options *PodmanOptions) container.CommandContainer {
+	imageExistsCache, _ := newImageExistsCache()
 	return &podmanCommandContainer{
-		env:       env,
-		image:     image,
-		buildRoot: buildRoot,
-		options:   options,
+		env: env,
+		cgroupPaths: &cgroup.Paths{
+			MemoryTemplate: *memUsagePathTemplate,
+			CPUTemplate:    *cpuUsagePathTemplate,
+		},
+		imageExistsCache: imageExistsCache,
+		image:            image,
+		buildRoot:        buildRoot,
+		options:          options,
 	}
 }
 
@@ -941,49 +955,17 @@ func (c *podmanCommandContainer) Unpause(ctx context.Context) error {
 	return nil
 }
 
-// readRawStats reads the raw stats from the cgroup fs. Note that this does not
-// work in rootless mode for cgroup v1.
-func (c *podmanCommandContainer) readRawStats(ctx context.Context) (*repb.UsageStats, error) {
-	cid, err := c.getCID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	memUsagePath := strings.ReplaceAll(*memUsagePathTemplate, "{{.ContainerID}}", cid)
-	cpuUsagePath := strings.ReplaceAll(*cpuUsagePathTemplate, "{{.ContainerID}}", cid)
-
-	memUsageBytes, err := readInt64FromFile(memUsagePath)
-	if err != nil {
-		return nil, err
-	}
-	var cpuNanos int64
-	if strings.HasSuffix(cpuUsagePath, "/cpuacct.usage") {
-		// cgroup v1: /cpuacct.usage file contains just the CPU usage in ns.
-		cpuNanos, err = readInt64FromFile(cpuUsagePath)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// cgroup v2: /cpu.stat file contains a line like "usage_usec <N>" It
-		// contains other lines like user_usec, system_usec etc. but we just
-		// report the total for now.
-		cpuMicros, err := readCgroupInt64Field(cpuUsagePath, "usage_usec")
-		if err != nil {
-			return nil, err
-		}
-		cpuNanos = cpuMicros * 1e3
-	}
-	return &repb.UsageStats{
-		MemoryBytes: memUsageBytes,
-		CpuNanos:    cpuNanos,
-	}, nil
-}
-
 func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	if !c.options.EnableStats {
 		return nil, nil
 	}
 
-	current, err := c.readRawStats(ctx)
+	cid, err := c.getCID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	current, err := c.cgroupPaths.Stats(ctx, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -1109,46 +1091,6 @@ func ConfigureSecondaryNetwork(ctx context.Context) error {
 		return err
 	}
 	return nil
-}
-
-// readInt64FromFile reads a file expected to contain a single int64.
-func readInt64FromFile(path string) (int64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	b, err := io.ReadAll(f)
-	if err != nil {
-		return 0, err
-	}
-	n, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return n, nil
-}
-
-// readCgroupInt64Field reads a cgroupfs file containing a list of lines like
-// "field_name <int64_value>" and returns the value of the given field name.
-func readCgroupInt64Field(path, fieldName string) (int64, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return 0, err
-	}
-	scanner := bufio.NewScanner(bytes.NewReader(b))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) != 2 || fields[0] != fieldName {
-			continue
-		}
-		val, err := strconv.ParseInt(fields[1], 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		return val, nil
-	}
-	return 0, status.NotFoundErrorf("could not find field %q in %s", fieldName, path)
 }
 
 type containerStats struct {
