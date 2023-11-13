@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -109,8 +110,6 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	return util.Decompress(b, err)
 }
 
-const gcsDefaultChunkSize = int(16e6) // 16MB
-
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
 	compressedData, err := util.Compress(data)
 	if err != nil {
@@ -126,7 +125,7 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	// object size. Set it to the next largest power of 2:
 	// 2**CEIL(log2(size)) for values less than 16MB in size.
 	blobSize := len(compressedData)
-	if blobSize < gcsDefaultChunkSize {
+	if blobSize < googleapi.DefaultUploadChunkSize {
 		writer.ChunkSize = int(math.Exp2(math.Ceil(math.Log2(float64(blobSize)))))
 	}
 
