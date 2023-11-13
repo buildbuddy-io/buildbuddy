@@ -79,10 +79,10 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 	cancel := canary.StartWithLateFn(
 		stuckStreamWarningPeriod,
 		func(timeTaken time.Duration) {
-			log.Warningf("Streaming RPC %q has not been established after %q.", method, timeTaken)
+			log.CtxWarningf(ctx, "Streaming RPC %q has not been established after %q.", method, timeTaken)
 		},
 		func(timeTaken time.Duration) {
-			log.Warningf("Streaming RPC %q was established after %q.", method, timeTaken)
+			log.CtxWarningf(ctx, "Streaming RPC %q was established after %q.", method, timeTaken)
 		},
 	)
 	defer cancel()
