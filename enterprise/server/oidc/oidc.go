@@ -540,36 +540,34 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 		}
 	}
 
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if certHeaders := md.Get(SSLCertHeader); len(certHeaders) > 0 {
-			commonName, serialNumber, err := a.env.GetSSLService().ValidateCert(certHeaders[0])
-			if err != nil {
-				return nil, err
-			}
-			if commonName == "BuildBuddy ID" {
-				return a.claimsFromAPIKeyID(ctx, serialNumber)
-			}
-			if commonName == "BuildBuddy API Key" {
-				return a.claimsFromAPIKey(ctx, serialNumber)
-			}
+	certHeaders := metadata.ValueFromIncomingContext(ctx, SSLCertHeader)
+	if len(certHeaders) > 0 {
+		commonName, serialNumber, err := a.env.GetSSLService().ValidateCert(certHeaders[0])
+		if err != nil {
+			return nil, err
 		}
-
-		keys := md.Get(authutil.APIKeyHeader)
-		if l := len(keys); l > 0 {
-			// get the last key
-			return a.claimsFromAPIKey(ctx, keys[l-1])
+		if commonName == "BuildBuddy ID" {
+			return a.claimsFromAPIKeyID(ctx, serialNumber)
 		}
-
-		if keys := md.Get(basicAuthHeader); len(keys) > 0 {
-			return a.claimsFromAuthorityString(ctx, keys[0])
+		if commonName == "BuildBuddy API Key" {
+			return a.claimsFromAPIKey(ctx, serialNumber)
 		}
+	}
 
-		if keys := md.Get(authorityHeader); len(keys) > 0 {
-			// Authenticate with :authority header
-			lpAndHost := strings.SplitN(keys[0], "@", 2)
-			if len(lpAndHost) == 2 {
-				return a.claimsFromAuthorityString(ctx, lpAndHost[0])
-			}
+	if apiKeys := metadata.ValueFromIncomingContext(ctx, authutil.APIKeyHeader); len(apiKeys) > 0 {
+		// get the last key
+		return a.claimsFromAPIKey(ctx, apiKeys[len(apiKeys)-1])
+	}
+
+	if basicAuth := metadata.ValueFromIncomingContext(ctx, basicAuthHeader); len(basicAuth) > 0 {
+		return a.claimsFromAuthorityString(ctx, basicAuth[0])
+	}
+
+	if authority := metadata.ValueFromIncomingContext(ctx, authorityHeader); len(authority) > 0 {
+		// Authenticate with :authority header
+		lpAndHost := strings.SplitN(authority[0], "@", 2)
+		if len(lpAndHost) == 2 {
+			return a.claimsFromAuthorityString(ctx, lpAndHost[0])
 		}
 	}
 
