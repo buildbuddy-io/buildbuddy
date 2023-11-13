@@ -306,7 +306,10 @@ export default class InvocationModel {
   }
 
   isCacheCompressionEnabled() {
-    return this.optionsMap.get("experimental_remote_cache_compression") === "1";
+    return (
+      this.optionsMap.get("experimental_remote_cache_compression") === "1" ||
+      this.optionsMap.get("remote_cache_compression") === "1"
+    );
   }
 
   getTargetConfiguredCount() {

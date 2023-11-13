@@ -240,6 +240,7 @@ const matchers: SuggestionMatcher[] = [
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
 
+    if (model.optionsMap.get("remote_cache_compression")) return null;
     if (model.optionsMap.get("experimental_remote_cache_compression")) return null;
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     const version = getBazelMajorVersion(model);
@@ -289,6 +290,7 @@ const matchers: SuggestionMatcher[] = [
     if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_cache")) return null;
+    if (model.optionsMap.get("remote_build_event_upload")) return null;
     if (model.optionsMap.get("experimental_remote_build_event_upload")) return null;
     const version = getBazelMajorVersion(model);
     // Bazel pre-v6 doesn't support --experimental_remote_build_event_upload=minimal
