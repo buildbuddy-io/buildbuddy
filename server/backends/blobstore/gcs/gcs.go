@@ -109,6 +109,8 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	return util.Decompress(b, err)
 }
 
+const gcsDefaultChunkSize = int(16e6) // 16MB
+
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
 	compressedData, err := util.Compress(data)
 	if err != nil {
@@ -121,8 +123,12 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer, but to
 	// avoid unnecessary allocations for blobs << 16MB, ChunkSize should be
 	// set before the first write call to a value "slightly larger" than the
-	// object size. Set it to the next largest power of 2: 2**CEIL(log2(size))
-	writer.ChunkSize = int(math.Exp2(math.Ceil(math.Log2(float64(len(compressedData))))))
+	// object size. Set it to the next largest power of 2:
+	// 2**CEIL(log2(size)) for values less than 16MB in size.
+	blobSize := len(compressedData)
+	if blobSize < gcsDefaultChunkSize {
+		writer.ChunkSize = int(math.Exp2(math.Ceil(math.Log2(float64(blobSize)))))
+	}
 
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
