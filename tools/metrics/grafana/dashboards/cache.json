@@ -24,7 +24,6 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 6,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -1452,6 +1451,7 @@
   ],
   "refresh": "1m",
   "schemaVersion": 38,
+  "slug": "cache",
   "style": "dark",
   "tags": [],
   "templating": {

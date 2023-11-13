@@ -24,7 +24,6 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 12,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -769,6 +768,7 @@
   ],
   "refresh": "1m",
   "schemaVersion": 37,
+  "slug": "nodes",
   "style": "dark",
   "tags": [],
   "templating": {
@@ -954,7 +954,7 @@
     ]
   },
   "timezone": "",
-  "title": "Kubenetes Nodes",
+  "title": "Kubernetes Nodes",
   "uid": "QfTfJH7Iz",
   "weekStart": ""
 }
