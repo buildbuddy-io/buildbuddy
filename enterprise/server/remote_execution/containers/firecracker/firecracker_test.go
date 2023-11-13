@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -504,7 +505,29 @@ func TestDirtyMemoryCDC(t *testing.T) {
 		commands = append(commands, CommandTC{command: simpleCommand, name: "no-op execution (`exit`)"})
 	}
 
-	bazelCommand := `
+	flagsToTest := []string{
+		"--jobs=1",
+		"--jobs=100",
+		"--local_ram_resources=\"HOST_RAM*.2\"",
+		"--local_ram_resources=8192",
+		"--local_ram_resources=\"HOST_RAM*.9\"",
+		"--host_jvm_args=-Xmx2g",
+		"--host_jvm_args=-Xmx6g",
+		"--host_jvm_args=-Xmx2g --host_jvm_args=-Xms2g",
+		"--discard_analysis_cache",
+		"--notrack_incremental_state",
+		"--nokeep_state_after_build",
+		"--nobuild",
+	}
+	for _, flag := range flagsToTest {
+		bazelCmd := ""
+		// Certain startup flags have to go before the build command
+		if strings.Contains(flag, "host_jvm_args") {
+			bazelCmd = fmt.Sprintf("bazelisk %s build //...", flag)
+		} else {
+			bazelCmd = fmt.Sprintf("bazelisk build //... %s", flag)
+		}
+		bazelCommand := `
 		cd ~
 		if [ -d bazel-gazelle ]; then
 		echo "Directory exists."
@@ -514,9 +537,9 @@ func TestDirtyMemoryCDC(t *testing.T) {
 		cd bazel-gazelle
 		# See https://github.com/bazelbuild/bazelisk/issues/220
 		echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
-		bazelisk build //...
-`
-	commands = append(commands, CommandTC{command: bazelCommand, name: "bazel build"})
+` + bazelCmd
+		commands = append(commands, CommandTC{command: bazelCommand, name: flag})
+	}
 
 	if !*testSingleBuild {
 		// Setup env with pebble cache, compression + CDC enabled
