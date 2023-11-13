@@ -485,12 +485,9 @@ func blobTypeSegment(compressor repb.Compressor_Value) string {
 }
 
 func IsCacheDebuggingEnabled(ctx context.Context) bool {
-	if grpcMD, ok := gmetadata.FromIncomingContext(ctx); ok {
-		debugCacheHitsValue := grpcMD["debug-cache-hits"]
-		if len(debugCacheHitsValue) == 1 {
-			if strings.ToLower(strings.TrimSpace(debugCacheHitsValue[0])) == "true" {
-				return true
-			}
+	if hdrs := gmetadata.ValueFromIncomingContext(ctx, "debug-cache-hits"); len(hdrs) > 0 {
+		if strings.ToLower(strings.TrimSpace(hdrs[0])) == "true" {
+			return true
 		}
 	}
 	return false

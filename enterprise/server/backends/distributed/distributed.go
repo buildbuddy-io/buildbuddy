@@ -247,11 +247,8 @@ func (c *Cache) recvHeartbeatCallback(ctx context.Context, peer string) {
 	pi := &peerInfo{
 		lastContact: time.Now(),
 	}
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		zoneVals := md.Get(resources.ZoneHeader)
-		if len(zoneVals) == 1 {
-			pi.zone = zoneVals[0]
-		}
+	if zoneVals := metadata.ValueFromIncomingContext(ctx, resources.ZoneHeader); len(zoneVals) == 1 {
+		pi.zone = zoneVals[0]
 	}
 	c.heartbeatMu.Lock()
 	c.peerMetadata[peer] = pi

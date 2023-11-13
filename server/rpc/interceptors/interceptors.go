@@ -103,17 +103,12 @@ func addRequestIdToContext(ctx context.Context) context.Context {
 }
 
 func addClientIPToContext(ctx context.Context) context.Context {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ctx
-	}
-
-	hdrs := md.Get("X-Forwarded-For")
+	hdrs := metadata.ValueFromIncomingContext(ctx, "X-Forwarded-For")
 	if len(hdrs) == 0 {
 		return ctx
 	}
 
-	ctx, ok = clientip.SetFromXForwardedForHeader(ctx, hdrs[0])
+	ctx, ok := clientip.SetFromXForwardedForHeader(ctx, hdrs[0])
 	if ok {
 		return ctx
 	}
@@ -131,11 +126,7 @@ func addClientIPToContext(ctx context.Context) context.Context {
 }
 
 func addSubdomainToContext(ctx context.Context) context.Context {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ctx
-	}
-	hdrs := md.Get(":authority")
+	hdrs := metadata.ValueFromIncomingContext(ctx, ":authority")
 	if len(hdrs) == 0 {
 		return ctx
 	}
@@ -143,11 +134,9 @@ func addSubdomainToContext(ctx context.Context) context.Context {
 }
 
 func copyHeadersToContext(ctx context.Context) context.Context {
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		for headerName, contextKey := range headerContextKeys {
-			if headerVals := md.Get(headerName); len(headerVals) > 0 {
-				ctx = context.WithValue(ctx, contextKey, headerVals[0])
-			}
+	for headerName, contextKey := range headerContextKeys {
+		if hdrs := metadata.ValueFromIncomingContext(ctx, headerName); len(hdrs) > 0 {
+			ctx = context.WithValue(ctx, contextKey, hdrs[0])
 		}
 	}
 
