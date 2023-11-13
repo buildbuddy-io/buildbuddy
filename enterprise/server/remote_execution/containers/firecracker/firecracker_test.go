@@ -515,9 +515,6 @@ func TestDirtyMemoryCDC(t *testing.T) {
 		# See https://github.com/bazelbuild/bazelisk/issues/220
 		echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
 		bazelisk build //...
-
-		# Drop kernel page cache and free slab objects
-		echo 3 > /proc/sys/vm/drop_caches
 `
 	commands = append(commands, CommandTC{command: bazelCommand, name: "drop page cache"})
 
@@ -578,7 +575,7 @@ func TestDirtyMemoryCDC(t *testing.T) {
 				ActionWorkingDirectory: workDir,
 				VMConfiguration: &fcpb.VMConfiguration{
 					NumCpus:            6,
-					MemSizeMb:          8000,
+					MemSizeMb:          10_000,
 					EnableNetworking:   true,
 					ScratchDiskSizeMb:  20_000,
 					KernelVersion:      cfg.KernelVersion,
