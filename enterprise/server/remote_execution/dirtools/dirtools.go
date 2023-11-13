@@ -857,23 +857,6 @@ type DownloadTreeOpts struct {
 	TrackTransfers bool
 }
 
-// To be used when a symlink exists and an Exists error has been returned, but
-// the caller wants to ensure the *correct* file has been linked.
-func checkSymlink(oldName, newName string) bool {
-	pointee, err := os.Readlink(newName)
-	if err != nil {
-		return false
-	}
-	return pointee == oldName
-}
-
-func removeSymlink(name string) error {
-	if _, err := os.Lstat(name); err != nil {
-		return err
-	}
-	return os.Remove(name)
-}
-
 func DownloadTree(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
@@ -946,14 +929,9 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 			nodeAbsPath := filepath.Join(parentDir, symlinkNode.GetName())
 			if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
 				if os.IsExist(err) {
-					// If the symlink exists and is correct;
-					// skip the error.
-					if checkSymlink(symlinkNode.GetTarget(), nodeAbsPath) {
-						continue
-					}
-					// If the symlink exists but was
-					// incorrect; try to remove it
-					if err := removeSymlink(nodeAbsPath); err != nil {
+					// Attempt to blow away the existing
+					// file(s) at that location and re-link.
+					if err := os.RemoveAll(nodeAbsPath); err != nil {
 						return err
 					}
 					// Now that the symlink has been removed
