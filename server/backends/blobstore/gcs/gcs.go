@@ -3,6 +3,7 @@ package gcs
 import (
 	"context"
 	"io"
+	"math"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -121,7 +122,7 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	// avoid unnecessary allocations for blobs << 16MB, ChunkSize should be
 	// set before the first write call to a value "slightly larger" than the
 	// object size. Set it to the next largest power of 2: 2**CEIL(log2(size))
-	writer.ChunkSize = int64(math.Exp2(math.Ceil(math.Log2(float64(len(compressedData))))))
+	writer.ChunkSize = int(math.Exp2(math.Ceil(math.Log2(float64(len(compressedData))))))
 
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
