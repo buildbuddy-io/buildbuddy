@@ -98,11 +98,31 @@ func SetCredential(cmd *exec.Cmd, spec string) error {
 		}
 	}
 
-	groupSpec := u.Gid
+	groupSpec := ""
 	if len(parts) > 1 {
 		groupSpec = parts[1]
 	}
-	if allDigits.MatchString(groupSpec) {
+	var groups []uint32
+	if groupSpec == "" {
+		// If a group isn't explicitly set, use the user's gid as the primary
+		// group ID and use all of their group memberships as supplemental
+		// group IDs.
+		g, err = user.LookupGroupId(u.Gid)
+		if err != nil {
+			return status.InvalidArgumentErrorf("gid lookup failed: %s", err)
+		}
+		gidStrings, err := u.GroupIds()
+		if err != nil {
+			return status.InternalErrorf("groups lookup failed: %s", err)
+		}
+		for _, s := range gidStrings {
+			gid, err := strconv.Atoi(s)
+			if err != nil {
+				return status.InternalErrorf("failed to parse groups: %s", err)
+			}
+			groups = append(groups, uint32(gid))
+		}
+	} else if allDigits.MatchString(groupSpec) {
 		g, err = user.LookupGroupId(groupSpec)
 		if err != nil {
 			return status.InvalidArgumentErrorf("gid lookup failed: %s", err)
@@ -122,8 +142,11 @@ func SetCredential(cmd *exec.Cmd, spec string) error {
 	if err != nil {
 		return status.InternalErrorf("failed to parse gid: %s", err)
 	}
-
-	cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
+	cmd.SysProcAttr.Credential = &syscall.Credential{
+		Uid:    uint32(uid),
+		Gid:    uint32(gid),
+		Groups: groups,
+	}
 	return nil
 }
 
