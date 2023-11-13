@@ -1200,7 +1200,14 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			},
 		},
 	}
-	if !isSharedFirecrackerWorkflow {
+	if isSharedFirecrackerWorkflow {
+		// For firecracker workflows, init dockerd in case local actions or
+		// setup scripts want to use it.
+		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+			Name:  "init-dockerd",
+			Value: "true",
+		})
+	} else {
 		// For docker/podman workflows, run with `--init` so that the bazel
 		// process can be reaped.
 		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
