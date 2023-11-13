@@ -61,9 +61,6 @@ func (t *TaskLeaser) sendRequest(req *scpb.LeaseTaskRequest) (*scpb.LeaseTaskRes
 }
 
 func (t *TaskLeaser) pingServer(ctx context.Context) (b []byte, err error) {
-	log.CtxDebugf(ctx, "Pinging scheduler")
-	defer func() { log.CtxDebugf(ctx, "Ping done, err=%v", err) }()
-
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	req := &scpb.LeaseTaskRequest{
