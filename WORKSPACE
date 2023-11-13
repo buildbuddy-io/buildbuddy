@@ -40,6 +40,13 @@ http_archive(
 )
 
 http_archive(
+    name = "rules_cc",
+    urls = ["https://github.com/bazelbuild/rules_cc/releases/download/0.0.9/rules_cc-0.0.9.tar.gz"],
+    sha256 = "2037875b9a4456dce4a79d112a8ae885bbc4aad968e6587dca6e64f3a0900cdf",
+    strip_prefix = "rules_cc-0.0.9",
+)
+
+http_archive(
     name = "com_google_absl",
     sha256 = "987ce98f02eefbaf930d6e38ab16aa05737234d7afbab2d5c4ea7adbe50c28ed",
     strip_prefix = "abseil-cpp-20230802.1",
@@ -480,6 +487,38 @@ http_archive(
 )
 
 load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
+
+http_archive(
+    name = "cosmo_cc_gcc",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+
+genrule(name = "ar-bin", srcs = ["x86_64-linux-cosmo-ar"], outs = ["ar"], cmd_bash = "cp $(location x86_64-linux-cosmo-ar) $@")
+genrule(name = "as-bin", srcs = ["x86_64-linux-cosmo-as"], outs = ["as"], cmd_bash = "cp $(location x86_64-linux-cosmo-as) $@")
+genrule(name = "ld-bin", srcs = ["x86_64-linux-cosmo-ld"], outs = ["ld"], cmd_bash = "cp $(location x86_64-linux-cosmo-ld) $@")
+genrule(name = "gcc-bin", srcs = ["x86_64-linux-cosmo-gcc"], outs = ["gcc"], cmd_bash = "cp $(location x86_64-linux-cosmo-gcc) $@")
+genrule(name = "g++-bin", srcs = ["x86_64-linux-cosmo-g++"], outs = ["g++"], cmd_bash = "cp $(location x86_64-linux-cosmo-g++) $@")
+genrule(name = "strip-bin", srcs = ["x86_64-linux-cosmo-strip"], outs = ["strip"], cmd_bash = "cp $(location x86_64-linux-cosmo-strip) $@")
+genrule(name = "objcopy-bin", srcs = ["x86_64-linux-cosmo-objcopy"], outs = ["objcopy"], cmd_bash = "cp $(location x86_64-linux-cosmo-objcopy) $@")
+genrule(name = "objdump-bin", srcs = ["x86_64-linux-cosmo-objdump"], outs = ["objdump"], cmd_bash = "cp $(location x86_64-linux-cosmo-objdump) $@")
+genrule(name = "addr2line-bin", srcs = ["x86_64-linux-cosmo-addr2line"], outs = ["addr2line"], cmd_bash = "cp $(location x86_64-linux-cosmo-addr2line) $@")
+genrule(name = "cpp-bin", srcs = ["x86_64-linux-cosmo-cpp"], outs = ["cpp"], cmd_bash = "cp $(location x86_64-linux-cosmo-cpp) $@")
+genrule(name = "elfedit-bin", srcs = ["x86_64-linux-cosmo-elfedit"], outs = ["elfedit"], cmd_bash = "cp $(location x86_64-linux-cosmo-elfedit) $@")
+genrule(name = "gprof-bin", srcs = ["x86_64-linux-cosmo-gprof"], outs = ["gprof"], cmd_bash = "cp $(location x86_64-linux-cosmo-gprof) $@")
+genrule(name = "nm-bin", srcs = ["x86_64-linux-cosmo-nm"], outs = ["nm"], cmd_bash = "cp $(location x86_64-linux-cosmo-nm) $@")
+genrule(name = "ranlib-bin", srcs = ["x86_64-linux-cosmo-ranlib"], outs = ["ranlib"], cmd_bash = "cp $(location x86_64-linux-cosmo-ranlib) $@")
+genrule(name = "readelf-bin", srcs = ["x86_64-linux-cosmo-readelf"], outs = ["readelf"], cmd_bash = "cp $(location x86_64-linux-cosmo-readelf) $@")
+genrule(name = "size-bin", srcs = ["x86_64-linux-cosmo-size"], outs = ["size"], cmd_bash = "cp $(location x86_64-linux-cosmo-size) $@")
+genrule(name = "strings-bin", srcs = ["x86_64-linux-cosmo-strings"], outs = ["strings"], cmd_bash = "cp $(location x86_64-linux-cosmo-strings) $@")
+genrule(name = "c++-bin", srcs = ["x86_64-linux-cosmo-c++"], outs = ["c++"], cmd_bash = "cp $(location x86_64-linux-cosmo-c++) $@")
+genrule(name = "c++filt-bin", srcs = ["x86_64-linux-cosmo-c++filt"], outs = ["c++filt"], cmd_bash = "cp $(location x86_64-linux-cosmo-c++filt) $@")
+
+filegroup(name = "bin", srcs = ["ar-bin", "as-bin", ld-bin", "gcc-bin", "g++-bin", "strip-bin", "objcopy-bin", "objdump-bin", "addr2line-bin", "cpp-bin", "elfedit-bin", "gprof-bin", "nm-bin", "ranlib-bin", "readelf-bin", "size-bin", "strings-bin", "c++-bin", "c++filt-bin"])
+""",
+    sha256 = "453b593f3584d74b9d6992d4c98c9edc51db3dade92a5ed27966481f26259605",
+    strip_prefix = "bin",
+    url = "https://github.com/ahgamut/superconfigure/releases/download/z0.0.18/x86_64-gcc.zip",
+)
 
 # Plain zig_toolchains() will pick reasonable defaults. See
 # toolchain/defs.bzl:toolchains on how to change the Zig SDK version and

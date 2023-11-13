@@ -1,0 +1,8 @@
+diff --git a/BUILD b/BUILD
+new file mode 100644
+index 0000000..63cfb48
+--- /dev/null
++++ b/BUILD
+@@ -0,0 +1,1 @@
++exports_files(glob(["*"], exclude=["WORKSPACE", "BUILD"]), visibility = ["//visibility:public"])
+-- 
