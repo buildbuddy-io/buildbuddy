@@ -114,6 +114,7 @@ type RealEnv struct {
 	serverIdentityService            interfaces.ClientIdentityService
 	imageCacheAuthenticator          interfaces.ImageCacheAuthenticator
 	serverNotificationService        interfaces.ServerNotificationService
+	gcpService                       interfaces.GCPService
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -667,4 +668,12 @@ func (r *RealEnv) GetServerNotificationService() interfaces.ServerNotificationSe
 
 func (r *RealEnv) SetServerNotificationService(service interfaces.ServerNotificationService) {
 	r.serverNotificationService = service
+}
+
+func (r *RealEnv) GetGCPService() interfaces.GCPService {
+	return r.gcpService
+}
+
+func (r *RealEnv) SetGCPService(service interfaces.GCPService) {
+	r.gcpService = service
 }

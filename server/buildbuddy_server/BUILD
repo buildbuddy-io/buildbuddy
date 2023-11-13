@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/auditlog",
-        "//enterprise/server/gcplink",
         "//proto:api_key_go_proto",
         "//proto:auditlog_go_proto",
         "//proto:bazel_config_go_proto",

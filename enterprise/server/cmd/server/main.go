@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
@@ -86,6 +87,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		}
 		log.Warningf("No authentication will be configured: %s", err)
 	}
+	gcplink.Register(env)
 
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())
 	if err != nil {
