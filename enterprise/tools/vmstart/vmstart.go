@@ -43,7 +43,7 @@ import (
 )
 
 var (
-	image               = flag.String("image", "docker.io/library/busybox", "The default container to run.")
+	image               = flag.String("image", "mirror.gcr.io/library/busybox", "The default container to run.")
 	registryUser        = flag.String("container_registry_user", "", "User to use when pulling the image")
 	registryPassword    = flag.String("container_registry_password", "", "Password to use when pulling the image")
 	cacheTarget         = flag.String("cache_target", "grpcs://remote.buildbuddy.dev", "The remote cache target")
@@ -131,7 +131,6 @@ func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 func main() {
 	flag.Parse()
 
-	flagutil.SetValueForFlagName("app.trace_fraction", 1, nil, false)
 	flagutil.SetValueForFlagName("executor.firecracker_debug_stream_vm_logs", true, nil, false)
 	if *tty {
 		flagutil.SetValueForFlagName("executor.firecracker_debug_terminal", true, nil, false)
@@ -145,6 +144,7 @@ func main() {
 	if os.Getuid() != 0 {
 		log.Fatalf("Must be run as root: 'bazel run --run_under=sudo'")
 	}
+	flagutil.SetValueForFlagName("debug_enable_anonymous_runner_recycling", true, nil, false)
 	flagutil.SetValueForFlagName("executor.firecracker_enable_uffd", true, nil, false)
 	flagutil.SetValueForFlagName("executor.firecracker_enable_vbd", true, nil, false)
 	flagutil.SetValueForFlagName("executor.firecracker_enable_merged_rootfs", true, nil, false)
@@ -326,15 +326,15 @@ func run(ctx context.Context, env environment.Env) error {
 	log.Printf("To capture a snapshot at any time, send SIGTERM (killall vmstart)")
 
 	if *repl {
-		log.Infof("Starting Exec() repl (enter bash commands; quit with Ctrl+D)")
+		log.Infof("Starting Exec() repl (enter shell commands; quit with Ctrl+D)")
 		s := bufio.NewScanner(os.Stdin)
 		for {
-			fmt.Fprintf(os.Stderr, "bash> ")
+			fmt.Fprintf(os.Stderr, "sh> ")
 			if !s.Scan() {
 				break
 			}
 			res := c.Exec(ctx, &repb.Command{
-				Arguments: []string{"bash", "-c", s.Text()},
+				Arguments: []string{"sh", "-c", s.Text()},
 			}, &commandutil.Stdio{
 				Stdout: os.Stdout,
 				Stderr: os.Stderr,
