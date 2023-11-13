@@ -783,7 +783,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			metrics.FileName:             name,
 			metrics.RecycledRunnerStatus: recycleStatus,
 			metrics.ChunkSource:          snaputil.ChunkSourceLabel(chunkSrc),
-		}).Observe(float64(count / len(chunks)))
+		}).Observe(float64(count) / float64(len(chunks)))
 	}
 
 	return treeDigest, nil
