@@ -9,11 +9,13 @@ import (
 	"os/exec"
 	"sort"
 	"syscall"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
+	"github.com/tklauser/go-sysconf"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
@@ -22,12 +24,34 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+func init() {
+	clktck, err := sysconf.Sysconf(sysconf.SC_CLK_TCK)
+	if err != nil {
+		// Treat this as a fatal error because we could potentially report
+		// inaccurate CPU usage otherwise.
+		log.Fatalf("sysconf(SC_CLK_TCK): %s", err)
+	}
+	ticksPerSec = clktck
+}
+
 const (
 	// NOTE: These must match the values in enterprise/server/cmd/goinit/main.go
 
 	// workspaceMountPath is the path where the hot-swappable workspace block
 	// device is mounted.
 	workspaceMountPath = "/workspace"
+
+	// Stats polling starts off high-frequency to improve the chances of
+	// collecting some stats for short-running tasks, then slowly backs off to
+	// avoid adding excessive overhead for longer-running tasks.
+	initialStatsPollInterval = 10 * time.Millisecond
+	maxStatsPollInterval     = 250 * time.Millisecond
+	statsPollBackoff         = 1.1
+)
+
+var (
+	// Number of CPU ticks per second - used for CPU usage stats.
+	ticksPerSec int64
 )
 
 type execServer struct {
@@ -313,19 +337,61 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 		_, err := io.Copy(&stderrWriter{msgs}, c.stderrReader)
 		stderrErrCh <- err
 	}()
-	// TODO(bduffany): report memory/CPU stats from the whole VM, not just
-	// the process being executed.
-	var peakFSU []*repb.UsageStats_FileSystemUsage
-	statsListener := func(stats *repb.UsageStats) {
-		// Update the stats with disk usage.
-		if fsu := getFileSystemUsage(); fsu != nil {
-			peakFSU = updatePeakFileSystemUsage(peakFSU, fsu)
-		}
-		stats.PeakFileSystemUsage = peakFSU
 
-		msgs <- &message{Response: &vmxpb.ExecStreamedResponse{UsageStats: stats}}
-	}
-	_, err := commandutil.RunWithProcessTreeCleanup(ctx, c.cmd, statsListener)
+	// Start a goroutine to monitor CPU, memory, and disk usage while the
+	// command is running.
+	var peakFSU []*repb.UsageStats_FileSystemUsage
+	var peakMem int64
+	commandDone := make(chan struct{})
+	statsDone := make(chan struct{})
+	go func() {
+		defer close(statsDone)
+		delay := initialStatsPollInterval
+		for {
+			select {
+			case <-commandDone:
+				return
+			case <-time.After(delay):
+			}
+			delay = min(maxStatsPollInterval, time.Duration(float64(delay)*statsPollBackoff))
+
+			// Collect disk usage.
+			stats := &repb.UsageStats{}
+			if fsu := getFileSystemUsage(); fsu != nil {
+				peakFSU = updatePeakFileSystemUsage(peakFSU, fsu)
+			}
+			stats.PeakFileSystemUsage = peakFSU
+			// Collect memory usage.
+			mem := &gosigar.Mem{}
+			if err := mem.Get(); err == nil {
+				stats.MemoryBytes = int64(mem.ActualUsed)
+				if stats.MemoryBytes > peakMem {
+					peakMem = stats.MemoryBytes
+				}
+				stats.PeakMemoryBytes = peakMem
+			}
+			// Collect CPU usage.
+			cpu := &gosigar.Cpu{}
+			if err := cpu.Get(); err == nil {
+				// Note: gosigar's cpu.Total() returns an undesired value here -
+				// it includes "idle" and "wait" time which is not time spent
+				// doing actual work.
+				ticks := int64(cpu.User + cpu.Nice + cpu.Sys + cpu.Irq + cpu.SoftIrq)
+				const nanosPerSec = 1e9
+				nanosPerTick := nanosPerSec / ticksPerSec
+				stats.CpuNanos = ticks * nanosPerTick
+			}
+			msgs <- &message{Response: &vmxpb.ExecStreamedResponse{UsageStats: stats}}
+		}
+	}()
+	// Using a nil statsListener since we'd rather report stats from the whole
+	// VM (which includes e.g. docker-in-firecracker containers) -- not just the
+	// process being run.
+	_, err := commandutil.RunWithProcessTreeCleanup(ctx, c.cmd, nil /*=statsListener*/)
+
+	close(commandDone)
+	<-statsDone
+
 	exitCode, err := commandutil.ExitCode(ctx, c.cmd, err)
 	rsp := &vmxpb.ExecResponse{
 		ExitCode: int32(exitCode),
