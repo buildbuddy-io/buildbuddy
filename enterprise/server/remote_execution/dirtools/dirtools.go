@@ -844,6 +844,16 @@ func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (
 	return rootDigest, dirMap, nil
 }
 
+// To be used when a symlink exists and an Exists error has been returned, but
+// the caller wants to ensure the *correct* file has been linked.
+func checkSymlink(oldName, newName string) bool {
+	pointee, err := os.Readlink(newName)
+	if err != nil {
+		return false
+	}
+	return pointee == oldName
+}
+
 type DownloadTreeOpts struct {
 	// NonrootWritable specifies whether directories should be made writable
 	// by users other than root. Does not affect file permissions.
@@ -928,6 +938,22 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		for _, symlinkNode := range dir.GetSymlinks() {
 			nodeAbsPath := filepath.Join(parentDir, symlinkNode.GetName())
 			if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
+				if os.IsExist(err) {
+					if checkSymlink(symlinkNode.GetTarget(), nodeAbsPath) {
+						continue
+					}
+					// Attempt to blow away the existing
+					// file(s) at that location and re-link.
+					if err := os.RemoveAll(nodeAbsPath); err != nil {
+						return err
+					}
+					// Now that the symlink has been removed
+					// try one more time to link it.
+					if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
+						return err
+					}
+					continue
+				}
 				return err
 			}
 		}
