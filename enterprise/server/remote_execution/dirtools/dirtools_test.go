@@ -722,6 +722,180 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 	assert.FileExists(t, filepath.Join(tmpDir, "file_notempty.txt"), "file_notempty.txt should exist")
 }
 
+func TestDownloadTreeExistingCorrectSymlink(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	instanceName := "foo"
+	fileADigest := setFile(t, env, ctx, instanceName, "mytestdataA")
+	fileBDigest := setFile(t, env, ctx, instanceName, "mytestdataB")
+
+	childDir := &repb.Directory{
+		Files: []*repb.FileNode{
+			&repb.FileNode{
+				Name:   "fileA.txt",
+				Digest: fileADigest,
+			},
+		},
+		Symlinks: []*repb.SymlinkNode{
+			&repb.SymlinkNode{
+				Name:   "fileA.symlink",
+				Target: "./fileA.txt",
+			},
+		},
+	}
+
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	directory := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				&repb.FileNode{
+					Name:   "fileB.txt",
+					Digest: fileBDigest,
+				},
+			},
+			Directories: []*repb.DirectoryNode{
+				&repb.DirectoryNode{
+					Name:   "my-directory",
+					Digest: childDigest,
+				},
+			},
+		},
+		Children: []*repb.Directory{
+			childDir,
+		},
+	}
+	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.NotNil(t, info, "transfers are not nil")
+	assert.Equal(t, int64(2), info.FileCount, "two files were transferred")
+	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
+	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
+	assert.FileExists(t, filepath.Join(tmpDir, "fileB.txt"), "fileB.txt should exist")
+	target, err := os.Readlink(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
+	assert.NoError(t, err, "should be able to read symlink target")
+	assert.Equal(t, "./fileA.txt", target)
+	targetContents, err := os.ReadFile(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
+	assert.NoError(t, err)
+	assert.Equal(t, "mytestdataA", string(targetContents), "symlinked file contents should match target file")
+
+	info, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.NotNil(t, info, "transfers are not nil")
+	assert.Equal(t, int64(0), info.FileCount, "zero files were transferred")
+	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
+	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
+	assert.FileExists(t, filepath.Join(tmpDir, "fileB.txt"), "fileB.txt should exist")
+}
+
+func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	instanceName := "foo"
+	fileADigest := setFile(t, env, ctx, instanceName, "mytestdataA")
+	fileBDigest := setFile(t, env, ctx, instanceName, "mytestdataB")
+
+	childDir := &repb.Directory{
+		Files: []*repb.FileNode{
+			&repb.FileNode{
+				Name:   "fileA.txt",
+				Digest: fileADigest,
+			},
+		},
+		Symlinks: []*repb.SymlinkNode{
+			&repb.SymlinkNode{
+				Name:   "fileA.symlink",
+				Target: "./fileA.txt",
+			},
+		},
+	}
+
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	directory := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				&repb.FileNode{
+					Name:   "fileB.txt",
+					Digest: fileBDigest,
+				},
+			},
+			Directories: []*repb.DirectoryNode{
+				&repb.DirectoryNode{
+					Name:   "my-directory",
+					Digest: childDigest,
+				},
+			},
+		},
+		Children: []*repb.Directory{
+			childDir,
+		},
+	}
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	childDir = &repb.Directory{
+		Files: []*repb.FileNode{
+			&repb.FileNode{
+				Name:   "fileB.txt",
+				Digest: fileBDigest,
+			},
+		},
+		Symlinks: []*repb.SymlinkNode{
+			&repb.SymlinkNode{
+				Name:   "fileA.symlink",
+				Target: "./fileB.txt",
+			},
+		},
+	}
+
+	childDigest, err = digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	directory = &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				&repb.FileNode{
+					Name:   "fileB.txt",
+					Digest: fileBDigest,
+				},
+			},
+			Directories: []*repb.DirectoryNode{
+				&repb.DirectoryNode{
+					Name:   "my-directory",
+					Digest: childDigest,
+				},
+			},
+		},
+		Children: []*repb.Directory{
+			childDir,
+		},
+	}
+	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.NotNil(t, info, "transfers are not nil")
+	assert.Equal(t, int64(0), info.FileCount, "zero files were transferred")
+	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
+	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
+	assert.FileExists(t, filepath.Join(tmpDir, "fileB.txt"), "fileB.txt should exist")
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
