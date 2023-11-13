@@ -1214,6 +1214,9 @@ type ConfigSecretProvider interface {
 
 type AuditLogger interface {
 	Log(ctx context.Context, resource *alpb.ResourceID, action alpb.Action, request proto.Message)
+	LogWithGroup(ctx context.Context, groupID string, action alpb.Action, request proto.Message)
+	LogWithInvocation(ctx context.Context, invocationID string, action alpb.Action, request proto.Message)
+	LogWithSecret(ctx context.Context, secretName string, action alpb.Action, request proto.Message)
 	GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error)
 }
 
