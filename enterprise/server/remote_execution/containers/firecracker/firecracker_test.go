@@ -575,7 +575,7 @@ func TestDirtyMemoryCDC(t *testing.T) {
 				ActionWorkingDirectory: workDir,
 				VMConfiguration: &fcpb.VMConfiguration{
 					NumCpus:            6,
-					MemSizeMb:          8000,
+					MemSizeMb:          10_000,
 					EnableNetworking:   true,
 					ScratchDiskSizeMb:  20_000,
 					KernelVersion:      cfg.KernelVersion,
