@@ -1053,6 +1053,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "cow_snapshot_chunk_source_ratio",
+		Buckets:   prometheus.LinearBuckets(0, .05, 20),
 		Help:      "After a copy-on-write snapshot has been used, the percentage of chunks that were initialized by the given source.",
 	}, []string{
 		GroupID,
