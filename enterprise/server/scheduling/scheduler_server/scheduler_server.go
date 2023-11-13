@@ -137,10 +137,25 @@ var (
 		-- the lease is still in its reconnection grace period.
 		local isNewAttempt = true
 		if ARGV[1] == "true" then
-			local token = redis.call("hget", KEYS[1], "reconnectToken")
-			if token ~= nil and token ~= "" then
-				local periodEnd = redis.call("hget", KEYS[1], "reconnectPeriodEnd")
-				if token ~= ARGV[2] and periodEnd > tonumber(ARGV[3]) then
+			local periodEnd = redis.call("hget", KEYS[1], "reconnectPeriodEnd")
+			if periodEnd ~= nil and periodEnd ~= "" and periodEnd > tonumber(ARGV[3]) then
+				local validToken = false
+
+				-- Temporarily accept either reconnectToken or leaseId.
+				
+				-- TODO(vadim): remove after clients use leaseId as reconnect
+				-- token.
+				local token = redis.call("hget", KEYS[1], "reconnectToken")
+				if token ~= nil and token ~= "" and token == ARGV[2] then
+					validToken = true
+				end
+
+				local leaseId = redis.call("hget", KEYS[1], "leaseId")
+				if leaseId ~= nil and leaseId ~= "" and leaseId == ARGV[2] then
+					validToken = true
+				end
+
+				if not validToken then
 					return 12
 				end
 				isNewAttempt = false
