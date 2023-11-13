@@ -515,6 +515,8 @@ func TestDirtyMemoryCDC(t *testing.T) {
 		# See https://github.com/bazelbuild/bazelisk/issues/220
 		echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
 		bazelisk build //...
+		# Force garbage collection in jvm
+		jcmd $(pgrep java) GC.run
 `
 	commands = append(commands, CommandTC{command: bazelCommand, name: "bazel build"})
 
