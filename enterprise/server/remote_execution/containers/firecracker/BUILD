@@ -8,13 +8,10 @@ go_library(
         "containeropts.go",
         "firecracker.go",
     ],
-    data = select({
-        "@io_bazel_rules_go//go/platform:linux": [
-            "//enterprise/vmsupport/bin:initrd.cpio",
-            "//enterprise/vmsupport/bin:vmlinux",
-        ],
-        "//conditions:default": [],
-    }),
+    data = [
+        "//enterprise/vmsupport/bin:initrd.cpio",
+        "//enterprise/vmsupport/bin:vmlinux",
+    ],
     embedsrcs = ["guest_api_hash.sha256"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker",
     target_compatible_with = [
@@ -78,6 +75,9 @@ genrule(
     ],
     outs = ["guest_api_hash.sha256"],
     cmd_bash = """sha256sum $(SRCS) | sha256sum | awk '{printf "%s", $$1}' > $@""",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
 )
 
 go_test(
