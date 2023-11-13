@@ -847,11 +847,11 @@ func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (
 // To be used when a symlink exists and an Exists error has been returned, but
 // the caller wants to ensure the *correct* file has been linked.
 func checkSymlink(oldName, newName string) bool {
-       pointee, err := os.Readlink(newName)
-       if err != nil {
-               return false
-       }
-       return pointee == oldName
+	pointee, err := os.Readlink(newName)
+	if err != nil {
+		return false
+	}
+	return pointee == oldName
 }
 
 type DownloadTreeOpts struct {
