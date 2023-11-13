@@ -83,6 +83,8 @@ var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 
+var cowChunkSizePages = flag.Int64("executor.firecracker_cow_chunk_size_pages", 1000, "Size of copy on write chunks, reported in pages.")
+
 //go:embed guest_api_hash.sha256
 var GuestAPIHash string
 
@@ -160,9 +162,6 @@ const (
 	// minScratchDiskSizeBytes is the minimum size needed for the scratch disk.
 	// This is needed because the init binary needs some space to copy files around.
 	minScratchDiskSizeBytes = 64e6
-
-	// Chunk size to use when creating COW images from files.
-	cowChunkSizeInPages = 1000
 
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
@@ -1140,7 +1139,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 }
 
 func cowChunkSizeBytes() int64 {
-	return int64(os.Getpagesize() * cowChunkSizeInPages)
+	return int64(os.Getpagesize()) * *cowChunkSizePages
 }
 
 // hotSwapWorkspace unmounts the workspace drive from a running firecracker

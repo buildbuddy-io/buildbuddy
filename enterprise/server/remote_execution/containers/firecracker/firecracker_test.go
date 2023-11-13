@@ -557,105 +557,116 @@ func TestDirtyMemoryCDC(t *testing.T) {
 	}
 	testCaches = append(testCaches, CacheTC{cacheDir: diskDir, c: dc, name: "disk"})
 
+	chunkSizesInPages := []int64{
+		32,   // 128KB chunk size, with 4096B pages
+		125,  // 512KB chunk size
+		250,  // 1024KB chunk size
+		500,  // 2MB chunk size
+		1000, // 4MB chunk size
+	}
+
 	cfg := getExecutorConfig(t)
 	for _, commandTC := range commands {
 		for _, tc := range testCaches {
-			if err := os.RemoveAll(tc.cacheDir); err != nil {
-				t.Fatal(err)
-			}
-
-			env := getTestEnv(ctx, t, envOpts{c: tc.c})
-			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-			rootDir := testfs.MakeTempDir(t)
-			workDir := testfs.MakeDirAll(t, rootDir, "work")
-
-			// Create snapshot
-			opts := firecracker.ContainerOpts{
-				ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
-				ActionWorkingDirectory: workDir,
-				VMConfiguration: &fcpb.VMConfiguration{
-					NumCpus:            6,
-					MemSizeMb:          8000,
-					EnableNetworking:   true,
-					ScratchDiskSizeMb:  20_000,
-					KernelVersion:      cfg.KernelVersion,
-					FirecrackerVersion: cfg.FirecrackerVersion,
-					GuestApiVersion:    cfg.GuestAPIVersion,
-				},
-				ExecutorConfig: cfg,
-			}
-			task := &repb.ExecutionTask{
-				Command: &repb.Command{
-					// Note: platform must match in order to share snapshots
-					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
-						{Name: "recycle-runner", Value: "true"},
-						{Name: platform.WorkflowIDPropertyName, Value: "workflow"},
-					}},
-				},
-			}
-			c, err := firecracker.NewContainer(ctx, env, task, opts)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
-				t.Fatalf("unable to pull image: %s", err)
-			}
-
-			if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-				t.Fatalf("unable to Create container: %s", err)
-			}
-			t.Cleanup(func() {
-				if err := c.Remove(ctx); err != nil {
+			for _, chunkSize := range chunkSizesInPages {
+				flags.Set(t, "executor.firecracker_cow_chunk_size_pages", chunkSize)
+				if err := os.RemoveAll(tc.cacheDir); err != nil {
 					t.Fatal(err)
 				}
-			})
 
-			cmd := &repb.Command{
-				// Run a script that increments /workspace/count (on workspacefs) and
-				// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
-				// This will let us test whether the scratchfs is sticking around across
-				// runs, and whether workspacefs is being correctly reset across runs.
-				Arguments: []string{"sh", "-c", commandTC.command},
-			}
-			if commandTC.command != "" {
-				res := c.Exec(ctx, cmd, nil /*=stdio*/)
-				require.NoError(t, res.Error)
-			}
+				env := getTestEnv(ctx, t, envOpts{c: tc.c})
+				env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+				rootDir := testfs.MakeTempDir(t)
+				workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-			if err := c.Pause(ctx); err != nil {
-				t.Fatalf("unable to pause container: %s", err)
-			}
-
-			// After initial memory snapshot is saved, check size of cache
-			cacheSize := sizeDir(t, tc.cacheDir)
-			fmt.Printf("\nFor cache %s after %s:\nOriginal cache size with snapshot: %dMB\n", tc.name, commandTC.name, cacheSize/(1024*1024))
-
-			workDir = testfs.MakeDirAll(t, rootDir, "fork")
-			opts.ActionWorkingDirectory = workDir
-			c, err = firecracker.NewContainer(ctx, env, task, opts)
-			require.NoError(t, err)
-			err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
-			require.NoError(t, err)
-			err = c.Unpause(ctx)
-			require.NoError(t, err)
-			if commandTC.command != "" {
-				res := c.Exec(ctx, cmd, nil /*=stdio*/)
-				require.NoError(t, res.Error)
-			}
-			if err := c.Pause(ctx); err != nil {
-				t.Fatalf("unable to pause container: %s", err)
-			}
-
-			// After memory snapshot is dirtied and re-uploaded to cache, check size of cache
-			newCacheSize := sizeDir(t, tc.cacheDir)
-			fmt.Printf("New cache size with snapshot: %d MB\n", newCacheSize/(1024*1024))
-			t.Cleanup(func() {
-				if err := c.Remove(ctx); err != nil {
+				// Create snapshot
+				opts := firecracker.ContainerOpts{
+					ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+					ActionWorkingDirectory: workDir,
+					VMConfiguration: &fcpb.VMConfiguration{
+						NumCpus:            6,
+						MemSizeMb:          8000,
+						EnableNetworking:   true,
+						ScratchDiskSizeMb:  20_000,
+						KernelVersion:      cfg.KernelVersion,
+						FirecrackerVersion: cfg.FirecrackerVersion,
+						GuestApiVersion:    cfg.GuestAPIVersion,
+					},
+					ExecutorConfig: cfg,
+				}
+				task := &repb.ExecutionTask{
+					Command: &repb.Command{
+						// Note: platform must match in order to share snapshots
+						Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+							{Name: "recycle-runner", Value: "true"},
+							{Name: platform.WorkflowIDPropertyName, Value: "workflow"},
+						}},
+					},
+				}
+				c, err := firecracker.NewContainer(ctx, env, task, opts)
+				if err != nil {
 					t.Fatal(err)
 				}
-			})
-			fmt.Printf("Difference in cache size: %d\n", (newCacheSize-cacheSize)/(1024*1024))
+
+				if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
+					t.Fatalf("unable to pull image: %s", err)
+				}
+
+				if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+					t.Fatalf("unable to Create container: %s", err)
+				}
+				t.Cleanup(func() {
+					if err := c.Remove(ctx); err != nil {
+						t.Fatal(err)
+					}
+				})
+
+				cmd := &repb.Command{
+					// Run a script that increments /workspace/count (on workspacefs) and
+					// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+					// This will let us test whether the scratchfs is sticking around across
+					// runs, and whether workspacefs is being correctly reset across runs.
+					Arguments: []string{"sh", "-c", commandTC.command},
+				}
+				if commandTC.command != "" {
+					res := c.Exec(ctx, cmd, nil /*=stdio*/)
+					require.NoError(t, res.Error)
+				}
+
+				if err := c.Pause(ctx); err != nil {
+					t.Fatalf("unable to pause container: %s", err)
+				}
+
+				// After initial memory snapshot is saved, check size of cache
+				cacheSize := sizeDir(t, tc.cacheDir)
+				fmt.Printf("\nFor cache %s with COW chunk size %d:\nOriginal cache size with snapshot: %dMB\n", tc.name, chunkSize, cacheSize/(1024*1024))
+
+				workDir = testfs.MakeDirAll(t, rootDir, "fork")
+				opts.ActionWorkingDirectory = workDir
+				c, err = firecracker.NewContainer(ctx, env, task, opts)
+				require.NoError(t, err)
+				err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
+				require.NoError(t, err)
+				err = c.Unpause(ctx)
+				require.NoError(t, err)
+				if commandTC.command != "" {
+					res := c.Exec(ctx, cmd, nil /*=stdio*/)
+					require.NoError(t, res.Error)
+				}
+				if err := c.Pause(ctx); err != nil {
+					t.Fatalf("unable to pause container: %s", err)
+				}
+
+				// After memory snapshot is dirtied and re-uploaded to cache, check size of cache
+				newCacheSize := sizeDir(t, tc.cacheDir)
+				fmt.Printf("New cache size with snapshot: %d MB\n", newCacheSize/(1024*1024))
+				t.Cleanup(func() {
+					if err := c.Remove(ctx); err != nil {
+						t.Fatal(err)
+					}
+				})
+				fmt.Printf("Difference in cache size: %d\n", (newCacheSize-cacheSize)/(1024*1024))
+			}
 		}
 	}
 }
