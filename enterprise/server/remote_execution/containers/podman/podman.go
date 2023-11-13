@@ -272,11 +272,14 @@ graphroot = "/var/lib/containers/storage"
 }
 
 var getPodmanVersion = sync.OnceValues(func() (*semver.Version, error) {
-	b, err := exec.Command("podman", "version", "--format={{.Client.Version}}").CombinedOutput()
-	if err != nil {
-		return nil, status.InternalErrorf("`podman version` failed: %s: %s", err, string(b))
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("podman", "version", "--format={{.Client.Version}}")
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, status.InternalErrorf("command failed: %s: %s", err, stderr.String())
 	}
-	return semver.NewVersion(strings.TrimSpace(string(b)))
+	return semver.NewVersion(strings.TrimSpace(stdout.String()))
 })
 
 func intializeSociArtifactStoreClient(env environment.Env, target string) (socipb.SociArtifactStoreClient, error) {
