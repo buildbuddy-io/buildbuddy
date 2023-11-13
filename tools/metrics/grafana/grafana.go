@@ -23,7 +23,9 @@ import (
 )
 
 var (
-	kube       = flag.Bool("kube", false, "Use kubectl port-forward to point Grafana at real data.")
+	kube = flag.Bool("kube", false, "Use kubectl port-forward to point Grafana at real data.")
+
+	// Note: these flags only take effect when setting -kube=true:
 	namespace  = flag.String("namespace", "monitor-dev", "k8s namespace")
 	deployment = flag.String("deployment", "prometheus-global-server", "Prometheus server resource to port-forward to.")
 )
