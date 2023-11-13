@@ -23,6 +23,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
@@ -572,6 +573,11 @@ type GitHubApp interface {
 
 type RunnerService interface {
 	Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error)
+}
+
+type GCPService interface {
+	LinkForGroup(w http.ResponseWriter, r *http.Request, refreshToken string) error
+	GetGCPProject(ctx context.Context, request *gcpb.GetGCPProjectRequest) (*gcpb.GetGCPProjectResponse, error)
 }
 
 type GitProviders []GitProvider

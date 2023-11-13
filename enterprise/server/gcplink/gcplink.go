@@ -56,8 +56,18 @@ func RequestAccess(w http.ResponseWriter, r *http.Request, authUrl string) {
 	http.Redirect(w, r, authUrl, http.StatusTemporaryRedirect)
 }
 
+type GCPService struct {
+	env environment.Env
+}
+
+func Register(env environment.Env) {
+	env.SetGCPService(&GCPService{
+		env: env,
+	})
+}
+
 // Accepts the redirect from the auth provider and stores the results as secrets.
-func LinkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, refreshToken string) error {
+func (g *GCPService) LinkForGroup(w http.ResponseWriter, r *http.Request, refreshToken string) error {
 	if refreshToken == "" {
 		return status.PermissionDeniedErrorf("Empty refresh token")
 	}
@@ -66,8 +76,8 @@ func LinkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, r
 	}
 	cookie.ClearCookie(w, linkCookieName)
 	ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), rc)
-	ctx = env.GetAuthenticator().AuthenticatedHTTPContext(w, r.WithContext(ctx))
-	secretResponse, err := env.GetSecretService().GetPublicKey(ctx, &skpb.GetPublicKeyRequest{
+	ctx = g.env.GetAuthenticator().AuthenticatedHTTPContext(w, r.WithContext(ctx))
+	secretResponse, err := g.env.GetSecretService().GetPublicKey(ctx, &skpb.GetPublicKeyRequest{
 		RequestContext: rc,
 	})
 	if err != nil {
@@ -77,7 +87,7 @@ func LinkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, r
 	if err != nil {
 		return status.PermissionDeniedErrorf("Error sealing box: %s", err)
 	}
-	_, _, err = env.GetSecretService().UpdateSecret(ctx, &skpb.UpdateSecretRequest{
+	_, _, err = g.env.GetSecretService().UpdateSecret(ctx, &skpb.UpdateSecretRequest{
 		RequestContext: rc,
 		Secret: &skpb.Secret{
 			Name:  refreshTokenEnvVariableName,
@@ -149,12 +159,12 @@ type accessTokenResponse struct {
 	AccessToken string `json:"access_token"`
 }
 
-func GetGCPProject(env environment.Env, ctx context.Context, request *gcpb.GetGCPProjectRequest) (*gcpb.GetGCPProjectResponse, error) {
-	u, err := perms.AuthenticatedUser(ctx, env)
+func (g *GCPService) GetGCPProject(ctx context.Context, request *gcpb.GetGCPProjectRequest) (*gcpb.GetGCPProjectResponse, error) {
+	u, err := perms.AuthenticatedUser(ctx, g.env)
 	if err != nil {
 		return nil, err
 	}
-	secretService := env.GetSecretService()
+	secretService := g.env.GetSecretService()
 	if secretService == nil {
 		return nil, status.FailedPreconditionError("secret service not available")
 	}

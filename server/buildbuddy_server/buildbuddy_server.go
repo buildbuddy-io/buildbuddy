@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
@@ -2014,5 +2013,10 @@ func (s *BuildBuddyServer) DeleteIPRule(ctx context.Context, request *irpb.Delet
 }
 
 func (s *BuildBuddyServer) GetGCPProject(ctx context.Context, request *gcpb.GetGCPProjectRequest) (*gcpb.GetGCPProjectResponse, error) {
-	return gcplink.GetGCPProject(s.env, ctx, request)
+	gcpService := s.env.GetGCPService()
+	if gcpService == nil {
+		return nil, status.FailedPreconditionError("GCP service not enabled")
+	}
+
+	return gcpService.GetGCPProject(ctx, request)
 }
