@@ -6762,6 +6762,15 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_grpc",
         build_file_proto_mode = "disable",
+        # Remove panic() from serverHandlerTransport.Drain
+        # gRPC GracefulStop stops accepting new requests and lets any existing
+        # requests finish. For "grpc-over-http" requests, gRPC does not control
+        # the connection lifetime so they choose to panic in Drain if there are
+        # inflight "grpc-over-http" requests. Since we also shutdown the HTTP
+        # server gracefully, it's safe for us to allow gRPC to wait for all
+        # ongoing requests to finish.
+        patches = ["@{}//buildpatches:org_golang_google_grpc_remove_drain_panic.patch".format(workspace_name)],
+        patch_args = ["-p1"],
         importpath = "google.golang.org/grpc",
         sum = "h1:Z5Iec2pjwb+LEOqzpB2MR12/eKFhDPhuqW91O+4bwUk=",
         version = "v1.59.0",
