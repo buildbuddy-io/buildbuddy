@@ -114,7 +114,6 @@ func useModules() bool {
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	version := lines[len(lines)-1]
 
-	log.Printf(version)
 	if version == "" || version == "latest" {
 		return true
 	}
