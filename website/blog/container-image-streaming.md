@@ -40,7 +40,7 @@ The second problem posed a little bit more of a challenge. We needed a different
 
 To support all of these modifications, we added a bit of logic to the snapshotter that attempts to retrieve artifacts from the local filesystem before the remote registry and supports reading the image-to-index mapping from the local filesystem under a special directory, again keyed by the image identifier. Finally, we set up the app and executor to look for all of these artifacts in the cache, generate them if they’re not present, and store them on the local filesystem so the snapshotter can do its thing.
 
-The modified soci-snapshotter is available at [github.com/buildbuddy-io/soci-snapshotter](github.com/buildbuddy-io/soci-snapshotter).
+The modified soci-snapshotter is available at [github.com/buildbuddy-io/soci-snapshotter](https://github.com/buildbuddy-io/soci-snapshotter).
 
 ![](/img/blog/soci-snapshotter-buildbuddy.webp)
 _The BuildBuddy + soci-snapshotter setup. SOCI artifacts are generated on-demand in the App, stored in the cache, and retrieved by the Executor as needed._
