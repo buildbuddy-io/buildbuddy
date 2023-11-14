@@ -327,7 +327,7 @@ The CLI exposes certain environment variables to your plugins.
 #### $BUILD_WORKSPACE_DIRECTORY
 
 This is the path to the Bazel workspace in which the CLI is run. It is the
-root path, containing the bazel `WORKSPACE` or `WORKSPACE.bazel` file.
+root path, containing the bazel `WORKSPACE`, `WORKSPACE.bazel`, `MODULE`, or `MODULE.bazel` file.
 
 #### $PLUGIN_TEMPDIR
 
