@@ -128,11 +128,12 @@ func getDistributedCache(t testing.TB, te *testenv.TestEnv, c interfaces.Cache) 
 	return dc
 }
 
-func getPebbleCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
+func getPebbleCache(t testing.TB, te *testenv.TestEnv, blockSize int64) interfaces.Cache {
 	testRootDir := testfs.MakeTempDir(t)
 	activeKeyVersion := int64(5)
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
 		RootDirectory:         testRootDir,
+		BlockCacheSizeBytes:   blockSize,
 		MaxSizeBytes:          maxSizeBytes,
 		ActiveKeyVersion:      &activeKeyVersion,
 		AverageChunkSizeBytes: 524288,
@@ -235,7 +236,9 @@ func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 		//{getMemoryCache(b), "Memory"},
 		//{getDiskCache(b, te), "Disk"},
 		//{ddc, "DDisk"},
-		{getPebbleCache(b, te), "Pebble"},
+		{getPebbleCache(b, te, 0), "Pebble/blockSize=0"},
+		{getPebbleCache(b, te, 1e8), "Pebble/blockSize=1e8"},
+		{getPebbleCache(b, te, 1e9), "Pebble/blockSize=1e9"},
 		//{dpc, "DPebble"},
 	}
 	return caches
@@ -248,7 +251,7 @@ func BenchmarkSet(b *testing.B) {
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
-			name := fmt.Sprintf("%s%d", cache.Name, size)
+			name := fmt.Sprintf("%ssize=%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {
 				benchmarkSet(ctx, cache, size, b)
 			})
@@ -263,7 +266,7 @@ func BenchmarkGet(b *testing.B) {
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
-			name := fmt.Sprintf("%s%d", cache.Name, size)
+			name := fmt.Sprintf("%ssize=%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {
 				benchmarkGet(ctx, cache, size, b)
 			})
@@ -278,7 +281,7 @@ func BenchmarkGetMulti(b *testing.B) {
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
-			name := fmt.Sprintf("%s%d", cache.Name, size)
+			name := fmt.Sprintf("name=%ssize=%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {
 				benchmarkGetMulti(ctx, cache, size, b)
 			})
@@ -293,7 +296,7 @@ func BenchmarkFindMissing(b *testing.B) {
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
-			name := fmt.Sprintf("%s%d", cache.Name, size)
+			name := fmt.Sprintf("%s/size=%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {
 				benchmarkFindMissing(ctx, cache, size, b)
 			})
