@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -18,6 +19,12 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/google"
 	"google.golang.org/grpc/keepalive"
+)
+
+const (
+	// Log a warning if a new streaming RPC cannot be initialized within
+	// this time.
+	stuckStreamWarningPeriod = 15 * time.Second
 )
 
 var (
@@ -69,6 +76,16 @@ func (p *ClientConnPool) Invoke(ctx context.Context, method string, args any, re
 }
 
 func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	cancel := canary.StartWithLateFn(
+		stuckStreamWarningPeriod,
+		func(timeTaken time.Duration) {
+			log.CtxWarningf(ctx, "Streaming RPC %q has not been established after %q.", method, timeTaken)
+		},
+		func(timeTaken time.Duration) {
+			log.CtxWarningf(ctx, "Streaming RPC %q was established after %q.", method, timeTaken)
+		},
+	)
+	defer cancel()
 	return p.getConn().NewStream(ctx, desc, method, opts...)
 }
 
