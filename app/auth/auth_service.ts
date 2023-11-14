@@ -234,7 +234,7 @@ export class AuthService {
 
     // If the new group is on a different subdomain then we have to use a redirect.
     if (capabilities.config.subdomainsEnabled && new URL(response.url).hostname != window.location.hostname) {
-      window.location.href = response.url + window.location.pathname + window.location.search;
+      window.location.href = response.url + window.location.pathname + window.location.search + window.location.hash;
     } else {
       window.location.reload();
     }

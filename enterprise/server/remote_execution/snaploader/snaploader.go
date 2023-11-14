@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -783,7 +784,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			metrics.FileName:             name,
 			metrics.RecycledRunnerStatus: recycleStatus,
 			metrics.ChunkSource:          snaputil.ChunkSourceLabel(chunkSrc),
-		}).Observe(float64(count / len(chunks)))
+		}).Observe(float64(count) / float64(len(chunks)))
 	}
 
 	return treeDigest, nil
@@ -802,7 +803,7 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err == nil {
 		gid = u.GetGroupID()
-	} else if err != nil && !authutil.IsAnonymousUserError(err) {
+	} else if err != nil && !authutil.IsAnonymousUserError(err) && !*container.DebugEnableAnonymousRecycling {
 		return "", err
 	}
 	return gid, nil

@@ -150,22 +150,7 @@ func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
 }
 
 func (r *ResourceName) IsEmpty() bool {
-	switch r.rn.GetDigestFunction() {
-	case repb.DigestFunction_SHA1:
-		return r.rn.GetDigest().GetHash() == "da39a3ee5e6b4b0d3255bfef95601890afd80709"
-	case repb.DigestFunction_MD5:
-		return r.rn.GetDigest().GetHash() == "d41d8cd98f00b204e9800998ecf8427e"
-	case repb.DigestFunction_SHA256:
-		return r.rn.GetDigest().GetHash() == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	case repb.DigestFunction_SHA384:
-		return r.rn.GetDigest().GetHash() == "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
-	case repb.DigestFunction_SHA512:
-		return r.rn.GetDigest().GetHash() == "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
-	case repb.DigestFunction_BLAKE3:
-		return r.rn.GetDigest().GetHash() == "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
-	default:
-		return false
-	}
+	return IsEmptyHash(r.rn.GetDigest(), r.rn.GetDigestFunction())
 }
 
 func (r *ResourceName) Validate() error {
@@ -332,6 +317,25 @@ func InferOldStyleDigestFunctionInDesperation(d *repb.Digest) repb.DigestFunctio
 	}
 }
 
+func IsEmptyHash(d *repb.Digest, digestFunction repb.DigestFunction_Value) bool {
+	switch digestFunction {
+	case repb.DigestFunction_SHA1:
+		return d.GetHash() == "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+	case repb.DigestFunction_MD5:
+		return d.GetHash() == "d41d8cd98f00b204e9800998ecf8427e"
+	case repb.DigestFunction_SHA256:
+		return d.GetHash() == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	case repb.DigestFunction_SHA384:
+		return d.GetHash() == "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	case repb.DigestFunction_SHA512:
+		return d.GetHash() == "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
+	case repb.DigestFunction_BLAKE3:
+		return d.GetHash() == "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+	default:
+		return false
+	}
+}
+
 func isOldStyleDigestFunction(digestFunction repb.DigestFunction_Value) bool {
 	switch digestFunction {
 	case repb.DigestFunction_SHA1:
@@ -481,12 +485,9 @@ func blobTypeSegment(compressor repb.Compressor_Value) string {
 }
 
 func IsCacheDebuggingEnabled(ctx context.Context) bool {
-	if grpcMD, ok := gmetadata.FromIncomingContext(ctx); ok {
-		debugCacheHitsValue := grpcMD["debug-cache-hits"]
-		if len(debugCacheHitsValue) == 1 {
-			if strings.ToLower(strings.TrimSpace(debugCacheHitsValue[0])) == "true" {
-				return true
-			}
+	if hdrs := gmetadata.ValueFromIncomingContext(ctx, "debug-cache-hits"); len(hdrs) > 0 {
+		if strings.ToLower(strings.TrimSpace(hdrs[0])) == "true" {
+			return true
 		}
 	}
 	return false
