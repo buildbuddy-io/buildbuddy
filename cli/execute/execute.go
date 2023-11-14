@@ -9,11 +9,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/mdutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -28,6 +30,7 @@ var (
 	target         = flags.String("remote_executor", "grpcs://remote.buildbuddy.io", "Remote execution service target.")
 	instanceName   = flags.String("remote_instance_name", "", "Value to pass as an instance_name in the remote execution API.")
 	digestFunction = flags.String("digest_function", "sha256", "Digest function used for content-addressable storage. Can be `\"sha256\" or \"blake3\"`.")
+	invocationID   = flags.String("invocation_id", "", "If set, set this value as the tool_invocation_id in RequestMetadata.")
 	timeout        = flags.Duration("remote_timeout", 1*time.Hour, "Timeout used for the action.")
 	remoteHeaders  = flag.New(flags, "remote_header", []string{}, "Header to be applied to all outgoing gRPC requests, as a `NAME=VALUE` pair. Can be specified more than once.")
 	actionEnv      = flag.New(flags, "action_env", []string{}, "Action environment variable, as a `NAME=VALUE` pair. Can be specified more than once.")
@@ -99,6 +102,16 @@ func execute(cmdArgs []string) error {
 		return err
 	}
 	ctx = metadata.NewOutgoingContext(ctx, md)
+
+	iid := *invocationID
+	if iid == "" {
+		iid = uuid.New()
+	}
+	rmd := &repb.RequestMetadata{ToolInvocationId: iid}
+	ctx, err = bazel_request.WithRequestMetadata(ctx, rmd)
+	if err != nil {
+		return err
+	}
 
 	conn, err := grpc_client.DialSimple(*target)
 	if err != nil {
