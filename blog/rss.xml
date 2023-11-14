@@ -4,10 +4,20 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Wed, 01 Nov 2023 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Wed, 15 Nov 2023 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Lazily Pulling Container Images with Podman and SOCI Snapshotter]]></title>
+            <link>https://www.buildbuddy.io/blog/image-streaming</link>
+            <guid>https://www.buildbuddy.io/blog/image-streaming</guid>
+            <pubDate>Wed, 15 Nov 2023 12:00:00 GMT</pubDate>
+            <description><![CDATA[We’re excited to share how we're making "podman pull" ten times faster by lazily fetching container images using the SOCI Snapshotter.]]></description>
+            <category>product</category>
+            <category>engineering</category>
+            <category>performance</category>
+        </item>
         <item>
             <title><![CDATA[Bazelcon 2023 Recap]]></title>
             <link>https://www.buildbuddy.io/blog/bazelcon-2023</link>
