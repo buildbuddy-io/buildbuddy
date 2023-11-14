@@ -86,11 +86,11 @@ func HandleAdd(args []string) (int, error) {
 		}
 		if err := addToModule(f, module, version, resp); err != nil {
 			return 1, err
-		}	
+		}
 	} else {
 		if err := addToWorkspace(f, module, version, resp); err != nil {
 			return 1, err
-		}	
+		}
 	}
 
 	return 0, nil

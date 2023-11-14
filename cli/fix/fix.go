@@ -78,7 +78,7 @@ func runGazelle(repoRoot string) {
 	defer func() {
 		os.Args = originalArgs
 	}()
-	os.Args = []string{"gazelle", "-repo_root="+repoRoot, "--go_prefix="}
+	os.Args = []string{"gazelle", "-repo_root=" + repoRoot, "--go_prefix="}
 	if *diff {
 		os.Args = append(os.Args, "-mode=diff")
 	}

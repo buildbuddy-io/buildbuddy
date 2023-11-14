@@ -70,7 +70,7 @@ func CreateWorkspaceIfNotExists() (string, string, error) {
 	if err == nil {
 		return path, base, nil
 	}
-	
+
 	useModules := useModules()
 
 	fileName := "MODULE.bazel"
@@ -92,7 +92,7 @@ func CreateWorkspaceIfNotExists() (string, string, error) {
 	contents := ""
 	if useModules {
 		contents = `module(name = "` + filepath.Base(workspacePath) + `")` + "\n"
-	} else {		
+	} else {
 		contents = `workspace(name = "` + filepath.Base(workspacePath) + `")` + "\n"
 	}
 	if _, err := f.WriteString(contents); err != nil {
@@ -112,7 +112,7 @@ func useModules() bool {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	version := lines[len(lines) - 1] 
+	version := lines[len(lines)-1]
 
 	log.Printf(version)
 	if version == "" || version == "latest" {

@@ -48,7 +48,7 @@ func NewLanguage() language.Language {
 func (g *Golang) Deps() []string {
 	return []string{
 		"github/bazelbuild/rules_go@" + defaultRulesGoVersion,
-		"~github/bazelbuild/bazel-gazelle@" + defaultGazelleVersion, // Transitive
+		"~github/bazelbuild/bazel-gazelle@" + defaultGazelleVersion,  // Transitive
 		"~github/bazelbuild/rules_proto@" + defaultRulesProtoVersion, // Transitive
 	}
 }

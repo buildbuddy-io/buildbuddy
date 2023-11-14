@@ -71,7 +71,7 @@ func Invoke(ctx context.Context, bazelBinary string, workspaceDir string, subCom
 	}
 }
 
-// FindWorkspaceFile finds the location of the Bazel workspace file (either WORKSPACE.bazel, WORKSPACE, MODULE, or 
+// FindWorkspaceFile finds the location of the Bazel workspace file (either WORKSPACE.bazel, WORKSPACE, MODULE, or
 // MODULE.bazel) in which the startDir is located.
 func FindWorkspaceFile(startDir string) (string, error) {
 	path, err := filepath.Abs(startDir)
