@@ -102,7 +102,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "2"
+	GuestAPIVersion = "3"
 
 	// How long to wait for the VMM to listen on the firecracker socket.
 	firecrackerSocketWaitTimeout = 3 * time.Second
