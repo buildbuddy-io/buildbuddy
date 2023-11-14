@@ -11,7 +11,7 @@ OUTPUT_DIR="$(dirname "$(readlink -f "$0")")"
 pushd "$(mktemp -d -q)"
 PROFILE_DIR="$(pwd)"
 
-for i in {1..2}; do
+for i in {1..15}; do
     kubectl --namespace=buildbuddy-prod port-forward "buildbuddy-app-$i" 9090:9090 > /dev/null 2>&1 &
     pid=$!
 
@@ -24,7 +24,7 @@ for i in {1..2}; do
     done
 
     echo -n "Collecting data from app $i... "
-    curl -sS "http://localhost:9090/debug/pprof/profile?seconds=1" > "app_${i}.cpu.pprof"
+    curl -sS "http://localhost:9090/debug/pprof/profile?seconds=30" > "app_${i}.cpu.pprof"
     echo "finished."
 
     kill "$pid"
