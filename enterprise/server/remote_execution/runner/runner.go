@@ -56,11 +56,12 @@ import (
 )
 
 var (
-	rootDirectory        = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
-	hostRootDirectory    = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
-	warmupTimeoutSecs    = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
-	warmupWorkflowImages = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
-	maxRunnerCount       = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
+	rootDirectory          = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
+	hostRootDirectory      = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
+	warmupTimeoutSecs      = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
+	warmupWorkflowImages   = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
+	warmupAdditionalImages = flag.Slice[string]("executor.warmup_additional_images", []string{}, "TODO(iain): write")
+	maxRunnerCount         = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerDiskSizeBytes = flag.Int64("executor.runner_pool.max_runner_disk_size_bytes", 16e9, "Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB.")
@@ -818,6 +819,13 @@ func (p *pool) Warmup(ctx context.Context) {
 func (p *pool) warmupConfigs() []WarmupConfig {
 	var out []WarmupConfig
 	for _, isolation := range platform.GetExecutorProperties().SupportedIsolationTypes {
+		for _, image := range *warmupAdditionalImages {
+			out = append(out, WarmupConfig{
+				Image:     image,
+				Isolation: string(isolation),
+			})
+		}
+
 		if isolation == platform.PodmanContainerType && !*podmanWarmupDefaultImages {
 			continue
 		}
