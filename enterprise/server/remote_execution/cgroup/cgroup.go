@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -58,13 +57,14 @@ func (p *Paths) Stats(ctx context.Context, cid string) (*repb.UsageStats, error)
 		return nil, err
 	}
 	var cpuNanos int64
-	if p.CgroupVersion() == 1 {
+	switch p.CgroupVersion() {
+	case 1:
 		// cgroup v1: /cpuacct.usage file contains just the CPU usage in ns.
 		cpuNanos, err = readInt64FromFile(cpuUsagePath)
 		if err != nil {
 			return nil, err
 		}
-	} else {
+	case 2:
 		// cgroup v2: /cpu.stat file contains a line like "usage_usec <N>" It
 		// contains other lines like user_usec, system_usec etc. but we just
 		// report the total for now.
@@ -73,6 +73,8 @@ func (p *Paths) Stats(ctx context.Context, cid string) (*repb.UsageStats, error)
 			return nil, err
 		}
 		cpuNanos = cpuMicros * 1e3
+	default:
+		return nil, status.FailedPreconditionErrorf("invalid cgroup version %d", p.CgroupVersion())
 	}
 	return &repb.UsageStats{
 		MemoryBytes: memUsageBytes,
@@ -150,12 +152,7 @@ func (p *Paths) find(ctx context.Context, cid string) error {
 
 // readInt64FromFile reads a file expected to contain a single int64.
 func readInt64FromFile(path string) (int64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	b, err := io.ReadAll(f)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
 	}
