@@ -97,7 +97,7 @@ func (g *GCPService) Link(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -129,7 +129,7 @@ func (g *GCPService) handleAuthRedirect(w http.ResponseWriter, r *http.Request) 
 	if r.FormValue("state") != cookie.GetCookie(r, stateCookie) {
 		return status.PermissionDeniedErrorf("state mismatch: %s != %s", r.FormValue("state"), cookie.GetCookie(r, stateCookie))
 	}
-	
+
 	authError := r.URL.Query().Get("error")
 	if authError != "" {
 		return status.PermissionDeniedErrorf("Authenticator returned error: %s (%s %s)", authError, r.URL.Query().Get("error_desc"), r.URL.Query().Get("error_description"))
