@@ -131,11 +131,11 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	n, err := writer.Write(compressedData)
-	if closeErr := write.Close(); err == nil && closeErr != nil {
+	if closeErr := writer.Close(); err == nil && closeErr != nil {
 		err = closeErr
 	}
 	spn.End()
-	util.RecordWriteMetrics(gcsLabel, start, n, writeErr)
+	util.RecordWriteMetrics(gcsLabel, start, n, err)
 	return n, err
 }
 
