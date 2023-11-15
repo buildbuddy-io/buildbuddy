@@ -18,9 +18,17 @@ set -euo pipefail
 echo "I am currently in $$PWD"
 git status
 
+echo ""
+echo "==============="
 cd $$BUILD_WORKING_DIRECTORY
 echo "I have moved to $$PWD"
 git status
+
+echo ""
+echo "==============="
+git rev-parse HEAD
+git rev-parse origin/master
+git merge-base HEAD origin/master
 
 EOF
     """,
