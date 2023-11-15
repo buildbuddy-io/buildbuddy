@@ -11,11 +11,15 @@ go_library(
         "//proto:gcp_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:secrets_go_proto",
+        "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/util/cookie",
         "//server/util/perms",
+        "//server/util/random",
         "//server/util/request_context",
         "//server/util/status",
+        "@com_github_coreos_go_oidc//:go-oidc",
+        "@org_golang_x_oauth2//:oauth2",
     ],
 )
 

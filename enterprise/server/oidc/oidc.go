@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -437,7 +436,7 @@ func (a *OpenIDAuthenticator) getAuthCodeOptions(r *http.Request) []oauth2.AuthC
 	}
 	sessionID := cookie.GetCookie(r, cookie.SessionIDCookie)
 	// If a session doesn't already exist, force a consent screen (so the user can select between multiple accounts) if enabled.
-	if (sessionID == "" && *forceApproval) || r.URL.Query().Get("show_picker") == "true" || gcplink.IsLinkRequest(r) {
+	if (sessionID == "" && *forceApproval) || r.URL.Query().Get("show_picker") == "true" {
 		options = append(options, oauth2.ApprovalForce)
 	}
 	return options
@@ -786,11 +785,6 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) erro
 	// the user in our /auth callback.
 	cookie.SetCookie(w, cookie.RedirCookie, redirectURL, time.Now().Add(tempCookieDuration), true /* httpOnly= */)
 
-	if gcplink.IsLinkRequest(r) {
-		gcplink.RequestAccess(w, r, u)
-		return nil
-	}
-
 	// Set the issuer cookie so we remember which issuer to use when exchanging
 	// a token later in our /auth callback.
 	cookie.SetCookie(w, cookie.AuthIssuerCookie, issuer, time.Now().Add(tempCookieDuration), true /* httpOnly= */)
@@ -841,9 +835,6 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 
 	// Lookup issuer from the cookie we set in /login.
 	issuer := cookie.GetCookie(r, cookie.AuthIssuerCookie)
-	if gcplink.IsLinkRequest(r) {
-		issuer = gcplink.Issuer
-	}
 	auth := a.getAuthConfig(issuer)
 	if auth == nil {
 		return status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
@@ -864,14 +855,6 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, true)
 	if err != nil {
 		return err
-	}
-
-	if gcplink.IsLinkRequest(r) {
-		refreshToken, ok := oauth2Token.Extra("refresh_token").(string)
-		if !ok {
-			return status.PermissionDeniedError("Refresh token not present in auth response")
-		}
-		return a.env.GetGCPService().LinkForGroup(w, r, refreshToken)
 	}
 
 	guid, err := uuid.NewRandom()
