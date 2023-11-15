@@ -64,10 +64,10 @@ type Options struct {
 	NameOverride string
 }
 
-func NewExecutor(env environment.Env, id string, runnerPool interfaces.RunnerPool, options *Options) (*Executor, error) {
-	hostID := options.NameOverride
-	if hostID == "" {
-		hostID = env.GetFileCache().HostID()
+func NewExecutor(env environment.Env, id, hostID string, runnerPool interfaces.RunnerPool, options *Options) (*Executor, error) {
+	effectiveHostID := hostID
+	if options.NameOverride != "" {
+		effectiveHostID = options.NameOverride
 	}
 	if err := disk.EnsureDirectoryExists(runnerPool.GetBuildRoot()); err != nil {
 		return nil, err
@@ -75,7 +75,7 @@ func NewExecutor(env environment.Env, id string, runnerPool interfaces.RunnerPoo
 	return &Executor{
 		env:        env,
 		id:         id,
-		hostID:     hostID,
+		hostID:     effectiveHostID,
 		runnerPool: runnerPool,
 	}, nil
 }
