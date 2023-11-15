@@ -279,6 +279,37 @@
   object-position: 0 50%;
 }
 
+.gcp-picker-footer,
+.gcp-picker-empty-state {
+  cursor: default;
+}
+
+.gcp-picker-footer {
+  border-top: 1px solid #eee;
+  padding-top: 16px;
+  margin-top: 10px;
+}
+
+.gcp-picker-footer a,
+.gcp-picker-empty-state a {
+  font-weight: bold;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.gcp-picker-footer button,
+.gcp-picker-empty-state button {
+  border: 0;
+  background: #eee;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 12px;
+  width: 100%;
+  cursor: pointer;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
 @media (max-width: 540px) {
   .create-repo-page .repo-picker {
     flex-direction: column;
