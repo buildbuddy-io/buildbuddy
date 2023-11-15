@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"io"
 	"os"
 	"path/filepath"
@@ -137,6 +138,18 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 	return s, nil
 }
 
+func (c *COWStore) lock() {
+	_, span := tracing.StartSpan(c.ctx)
+	defer span.End()
+	c.mu.Lock()
+}
+
+func (c *COWStore) rlock() {
+	_, span := tracing.StartSpan(c.ctx)
+	defer span.End()
+	c.mu.RLock()
+}
+
 // GetRelativeOffsetFromChunkStart returns the relative offset from the
 // beginning of the chunk
 //
@@ -177,7 +190,7 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 	c.eagerFetchNextChunks(chunkStartOffset)
 
-	c.mu.Lock()
+	c.lock()
 	defer c.mu.Unlock()
 	if write {
 		if err := c.copyChunkIfNotDirty(chunkStartOffset); err != nil {
@@ -203,7 +216,7 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 // SortedChunks returns all chunks sorted by offset.
 func (c *COWStore) SortedChunks() []*Mmap {
-	c.mu.RLock()
+	c.rlock()
 	chunks := maps.Values(c.chunks)
 	c.mu.RUnlock()
 
@@ -229,7 +242,7 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 
 	c.eagerFetchNextChunks(chunkOffset)
 
-	c.mu.RLock()
+	c.rlock()
 	defer c.mu.RUnlock()
 
 	for len(p) > 0 {
@@ -302,7 +315,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 
 	c.eagerFetchNextChunks(chunkOffset)
 
-	c.mu.Lock()
+	c.lock()
 	defer c.mu.Unlock()
 
 	for len(p) > 0 {
@@ -367,7 +380,7 @@ func (s *COWStore) SizeBytes() (int64, error) {
 
 // Dirty returns whether the chunk at the given offset is dirty.
 func (s *COWStore) Dirty(chunkOffset int64) bool {
-	s.mu.RLock()
+	s.rlock()
 	defer s.mu.RUnlock()
 	return s.dirty[chunkOffset]
 }
@@ -579,7 +592,7 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 }
 
 func (s *COWStore) fetchChunk(offset int64) error {
-	s.mu.RLock()
+	s.rlock()
 	c := s.chunks[offset]
 	s.mu.RUnlock()
 
