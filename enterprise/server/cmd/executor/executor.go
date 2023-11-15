@@ -92,10 +92,15 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 func getExecutorHostID() string {
 	mdDir := *executorMedadataDirectory
 	if mdDir == "" {
-		mdDir = filepath.Dir(*localCacheDirectory)
+		mdDir = filepath.Join(filepath.Dir(*localCacheDirectory), "metadata")
 	}
-	hostID, err := hostid.GetHostID(mdDir)
-	if err != nil {
+	var hostID string
+	if err := disk.EnsureDirectoryExists(mdDir); err == nil {
+		if h, err := hostid.GetHostID(mdDir); err == nil {
+			hostID = h
+		}
+	}
+	if hostID == "" {
 		log.Warning("Unable to get stable BuildBuddy HostID; filecache will not be reused across process restarts.")
 		hostID = hostid.GetFailsafeHostID(mdDir)
 	}
