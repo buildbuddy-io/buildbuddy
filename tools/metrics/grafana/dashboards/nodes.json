@@ -768,9 +768,10 @@
   ],
   "refresh": "1m",
   "schemaVersion": 37,
-  "slug": "nodes",
   "style": "dark",
-  "tags": [],
+  "tags": [
+    "file:nodes.json"
+  ],
   "templating": {
     "list": [
       {
