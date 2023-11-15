@@ -15,8 +15,13 @@ genrule(
 #!/bin/bash
 set -euo pipefail
 
-cd $$BUILD_WORKING_DIRECTORY
+echo "I am currently in $$PWD"
 git status
+
+cd $$BUILD_WORKING_DIRECTORY
+echo "I have moved to $$PWD"
+git status
+
 EOF
     """,
     executable = True,
