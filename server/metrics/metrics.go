@@ -898,7 +898,7 @@ var (
 	RemoteExecutionAssignedOrQueuedEstimatedMilliCPU = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name:      "assigned_and_queued_estimated)milli_cpu",
+		Name:      "assigned_and_queued_estimated_milli_cpu",
 		Help:      "Estimated CPU time on the executor that is currently allocated for queued or executing tasks, in **milliCPU** (CPU-milliseconds per second). Note that this is a fuzzy estimate because there's no guarantee that tasks queued on a machine will be handled by that machine.",
 	})
 
