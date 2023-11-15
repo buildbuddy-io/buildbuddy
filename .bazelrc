@@ -1,10 +1,11 @@
+build --noenable_bzlmod
+
 build --enable_platform_specific_config=true
 query --enable_platform_specific_config=true
 
 # Skymeld merges the analysis phase and execution phase.
 # This allows build and test executions to start before the analysis phase finishes,
 # thus speeding up the build overall .
-build:skymeld --experimental_skymeld_ui
 build:skymeld --experimental_merged_skyframe_analysis_execution
 
 # Build with --config=local to send build logs to your local server
