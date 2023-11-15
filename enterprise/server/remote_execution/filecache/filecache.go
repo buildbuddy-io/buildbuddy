@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -21,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -69,6 +69,7 @@ const (
 // will return false.
 type fileCache struct {
 	rootDir     string
+	hostID      string
 	lock        sync.RWMutex
 	l           interfaces.LRU[*entry]
 	dirScanDone chan struct{}
@@ -107,10 +108,10 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
-	hostID, err := uuid.GetHostID()
+	hostID, err := hostid.GetHostID(rootDir)
 	if err != nil {
 		log.Warning("Unable to get stable BuildBuddy HostID; filecache will not be reused across process restarts.")
-		hostID = uuid.GetFailsafeHostID()
+		hostID = hostid.GetFailsafeHostID(rootDir)
 	}
 	rootDir = filepath.Join(rootDir, hostID)
 	if deleteContent {
@@ -128,6 +129,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	}
 	c := &fileCache{
 		rootDir:     rootDir,
+		hostID:      hostID,
 		l:           l,
 		dirScanDone: make(chan struct{}),
 	}
@@ -139,6 +141,10 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	}
 	go c.scanDir()
 	return c, nil
+}
+
+func (c *fileCache) HostID() string {
+	return c.hostID
 }
 
 func (c *fileCache) TempDir() string {
