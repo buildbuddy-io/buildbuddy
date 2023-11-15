@@ -3825,10 +3825,9 @@
   ],
   "refresh": "1m",
   "schemaVersion": 33,
-  "slug": "clickhouse",
   "style": "dark",
   "tags": [
-    "clickhouse"
+    "file:clickhouse.json"
   ],
   "templating": {
     "list": [

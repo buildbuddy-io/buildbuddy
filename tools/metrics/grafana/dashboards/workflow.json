@@ -492,9 +492,10 @@
   ],
   "refresh": "1m",
   "schemaVersion": 37,
-  "slug": "workflow",
   "style": "dark",
-  "tags": [],
+  "tags": [
+    "file:workflow.json"
+  ],
   "templating": {
     "list": []
   },

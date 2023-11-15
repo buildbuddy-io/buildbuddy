@@ -386,7 +386,9 @@
   "schemaVersion": 26,
   "slug": "rbeperf",
   "style": "dark",
-  "tags": [],
+  "tags": [
+    "file:rbeperf.json"
+  ],
   "templating": {
     "list": [
       {

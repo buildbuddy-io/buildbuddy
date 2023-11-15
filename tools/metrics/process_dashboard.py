@@ -12,7 +12,7 @@ import sys
 
 
 ARGS = argparse.ArgumentParser()
-ARGS.add_argument("--slug", default="", help="Dashboard slug")
+ARGS.add_argument("--name", default="", help="Dashboard file name")
 
 DASHBOARD_REFRESH_INTERVAL = "1m"
 
@@ -28,8 +28,10 @@ def main(args):
     # Delete non-deterministic id; it doesn't seem to be needed.
     if "id" in dashboard:
         del dashboard["id"]
-    # Populate the slug field
-    dashboard["slug"] = args.slug
+    # Populate the file tag so that the file name remains stable.
+    if not get_file_tag(dashboard):
+        dashboard["tags"] = dashboard.get("tags", [])
+        dashboard["tags"].append("file:" + args.name)
 
     # Sometimes null values creep into the dashboard JSON and cause unnecessary
     # diffs. Strip these out since the resulting dashboard is equivalent.
@@ -46,13 +48,20 @@ def main(args):
     # Grafana updates "collapsed" state when expanding panels in the UI. Ensure
     # all panels are collapsed to prevent accidental updates.
     # (For the main buildbuddy dashboard only).
-    if dashboard["slug"] == "buildbuddy":
+    if args.name == "buildbuddy.json":
         for panel in dashboard["panels"]:
             panel["collapsed"] = True
 
     # Note: ensure_ascii=False keeps strings like "µs" as-is.
     json.dump(dashboard, sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")
+
+
+def get_file_tag(dash):
+    for tag in dash.get("tags", []):
+        if tag.startswith("file:"):
+            return tag[len("file:") :]
+    return None
 
 
 def with_ordered_dicts(obj):

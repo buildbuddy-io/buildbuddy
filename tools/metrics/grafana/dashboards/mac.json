@@ -4154,9 +4154,10 @@
   ],
   "refresh": "1m",
   "schemaVersion": 37,
-  "slug": "mac",
   "style": "dark",
-  "tags": [],
+  "tags": [
+    "file:mac.json"
+  ],
   "templating": {
     "list": [
       {
