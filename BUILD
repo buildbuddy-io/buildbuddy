@@ -7,6 +7,26 @@ load("//rules/go:index.bzl", "go_sdk_tool")
 
 package(default_visibility = ["//visibility:public"])
 
+genrule(
+    name = "create_test_script",
+    outs = ["git_status.sh"],
+    cmd = """
+    cat <<'EOF' > $@
+#!/bin/bash
+set -euo pipefail
+
+cd $$BUILD_WORKING_DIRECTORY
+git status
+EOF
+    """,
+    executable = True,
+)
+
+sh_binary(
+    name = "git_status_script",
+    srcs = ["git_status.sh"],
+)
+
 # Rendered JSON result could be checked by doing:
 #   bazel build //:no_go_config
 #   cat bazel-bin/no_go_config.json | jq .
