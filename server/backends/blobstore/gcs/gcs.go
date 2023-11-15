@@ -117,7 +117,6 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	}
 
 	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
-	defer writer.Close()
 
 	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer, but to
 	// avoid unnecessary allocations for blobs << 16MB, ChunkSize should be
@@ -132,8 +131,11 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	n, err := writer.Write(compressedData)
+	if closeErr := write.Close(); err == nil && closeErr != nil {
+		err = closeErr
+	}
 	spn.End()
-	util.RecordWriteMetrics(gcsLabel, start, n, err)
+	util.RecordWriteMetrics(gcsLabel, start, n, writeErr)
 	return n, err
 }
 
