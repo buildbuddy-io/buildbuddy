@@ -63,6 +63,8 @@ type COWStore struct {
 
 	mu sync.RWMutex // Protects chunks and dirty
 
+	NumWrites map[int64]int
+
 	// chunks is a mapping of chunk offset to the backing data store
 	chunks map[int64]*Mmap
 	// Indexes of chunks which have been copied from the original chunks due to
@@ -111,6 +113,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
 		remoteEnabled:      remoteEnabled,
+		NumWrites:          make(map[int64]int, len(chunks)),
 		chunks:             chunkMap,
 		dirty:              make(map[int64]bool, 0),
 		dataDir:            dataDir,
@@ -317,6 +320,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		if writeSize > len(p) {
 			writeSize = len(p)
 		}
+		c.NumWrites[chunkOffset]++
 		chunk := c.chunks[chunkOffset]
 		nw, err := chunk.WriteAt(p[:writeSize], chunkRelativeOffset)
 		n += nw

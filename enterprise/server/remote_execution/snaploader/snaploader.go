@@ -746,6 +746,18 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		return nil, status.WrapError(err, "cache chunks")
 	}
 
+	oneWrite := 0
+	multWrites := 0
+	for offset, numWrites := range cow.NumWrites {
+		if numWrites == 1 {
+			oneWrite++
+		} else {
+			multWrites++
+			fmt.Printf("Offset %d had %d writes\n", offset, numWrites)
+		}
+	}
+	fmt.Printf("For store %s:\nNum chunks with 1 write: %d, num chunks with multiple writes: %d\n", name, oneWrite, multWrites)
+
 	// Save ActionCache Tree to the cache
 	treeDigest, err := digest.ComputeForMessage(tree, repb.DigestFunction_BLAKE3)
 	if err != nil {
