@@ -315,12 +315,12 @@ func MoveFile(src, dest string) error {
 		if os.IsNotExist(err) {
 			return err
 		}
-		return copyViaTmpSibling(src, dest)
+		return CopyViaTmpSibling(src, dest)
 	}
 	return nil
 }
 
-func copyViaTmpSibling(src, dest string) error {
+func CopyViaTmpSibling(src, dest string) error {
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return err

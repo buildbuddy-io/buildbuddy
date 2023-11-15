@@ -65,7 +65,7 @@ func getOrCreateHostId(dir string) (string, error) {
 			newHostIDFilepath := path.Join(dir, hostIDFilename)
 			// This call will move an old-style host id file (if it exists) to the new
 			// host id file location.
-			_ = disk.MoveFile(oldHostIDFilepath, newHostIDFilepath)
+			_ = disk.CopyViaTmpSibling(oldHostIDFilepath, newHostIDFilepath)
 		}
 	}
 	hostIDFilepath := path.Join(dir, hostIDFilename)
