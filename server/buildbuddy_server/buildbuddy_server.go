@@ -181,7 +181,7 @@ func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.Updat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.LogWithInvocation(ctx, req.GetInvocationId(), alpb.Action_UPDATE, req)
+		al.LogForInvocation(ctx, req.GetInvocationId(), alpb.Action_UPDATE, req)
 	}
 	return &inpb.UpdateInvocationResponse{}, nil
 }
@@ -463,7 +463,7 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.LogWithGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_UPDATE_MEMBERSHIP, req)
+		al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_UPDATE_MEMBERSHIP, req)
 	}
 	return &grpb.UpdateGroupUsersResponse{}, nil
 }
@@ -561,7 +561,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.LogWithGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_UPDATE, req)
+		al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_UPDATE, req)
 	}
 	return &grpb.UpdateGroupResponse{}, nil
 }
@@ -741,7 +741,7 @@ func (s *BuildBuddyServer) CreateImpersonationApiKey(ctx context.Context, req *a
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.LogWithGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_CREATE_IMPERSONATION_API_KEY, req)
+		al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_CREATE_IMPERSONATION_API_KEY, req)
 	}
 	return &akpb.CreateImpersonationApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
@@ -1242,7 +1242,7 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			req.WorkflowId = wfs.GetLegacyWorkflowIDForGitRepository(authenticatedUser.GetGroupID(), req.GetTargetRepoUrl())
 		}
 		if al := s.env.GetAuditLogger(); al != nil && req.GetClean() {
-			al.LogWithGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_EXECUTE_CLEAN_WORKFLOW, req)
+			al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_EXECUTE_CLEAN_WORKFLOW, req)
 		}
 		return wfs.ExecuteWorkflow(ctx, req)
 	}
@@ -1351,7 +1351,7 @@ func (s *BuildBuddyServer) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRep
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.LogWithGroup(ctx, req.GetRequestContext().GroupId, alpb.Action_LINK_GITHUB_REPO, req)
+		al.LogForGroup(ctx, req.GetRequestContext().GroupId, alpb.Action_LINK_GITHUB_REPO, req)
 	}
 	return rsp, nil
 }
@@ -1365,7 +1365,7 @@ func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.Unlin
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.LogWithGroup(ctx, req.GetRequestContext().GroupId, alpb.Action_UNLINK_GITHUB_REPO, req)
+		al.LogForGroup(ctx, req.GetRequestContext().GroupId, alpb.Action_UNLINK_GITHUB_REPO, req)
 	}
 	return rsp, nil
 }
@@ -1467,7 +1467,7 @@ func (s *BuildBuddyServer) UpdateSecret(ctx context.Context, req *skpb.UpdateSec
 				action = alpb.Action_CREATE
 			}
 			req.GetSecret().Value = ""
-			al.LogWithSecret(ctx, req.GetSecret().GetName(), action, req)
+			al.LogForSecret(ctx, req.GetSecret().GetName(), action, req)
 		}
 		return rsp, err
 	}
@@ -1743,7 +1743,7 @@ func (s *BuildBuddyServer) SetEncryptionConfig(ctx context.Context, request *enp
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.LogWithGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_UPDATE_ENCRYPTION_CONFIG, request)
+		al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_UPDATE_ENCRYPTION_CONFIG, request)
 	}
 	return rsp, nil
 }
@@ -1918,7 +1918,7 @@ func (s *BuildBuddyServer) SetIPRulesConfig(ctx context.Context, request *irpb.S
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.LogWithGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_UPDATE_IP_RULES_CONFIG, request)
+		al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_UPDATE_IP_RULES_CONFIG, request)
 	}
 	return rsp, err
 }

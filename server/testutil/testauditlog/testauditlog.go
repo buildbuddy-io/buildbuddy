@@ -48,7 +48,7 @@ func (f *FakeAuditLog) Log(ctx context.Context, resource *alpb.ResourceID, actio
 	})
 }
 
-func (l *FakeAuditLog) LogWithGroup(ctx context.Context, groupID string, action alpb.Action, request proto.Message) {
+func (l *FakeAuditLog) LogForGroup(ctx context.Context, groupID string, action alpb.Action, request proto.Message) {
 	r := &alpb.ResourceID{
 		Type: alpb.ResourceType_GROUP,
 		Id:   groupID,
@@ -56,7 +56,7 @@ func (l *FakeAuditLog) LogWithGroup(ctx context.Context, groupID string, action 
 	l.Log(ctx, r, action, request)
 }
 
-func (l *FakeAuditLog) LogWithInvocation(ctx context.Context, invocationID string, action alpb.Action, request proto.Message) {
+func (l *FakeAuditLog) LogForInvocation(ctx context.Context, invocationID string, action alpb.Action, request proto.Message) {
 	r := &alpb.ResourceID{
 		Type: alpb.ResourceType_INVOCATION,
 		Id:   invocationID,
@@ -64,7 +64,7 @@ func (l *FakeAuditLog) LogWithInvocation(ctx context.Context, invocationID strin
 	l.Log(ctx, r, action, request)
 }
 
-func (l *FakeAuditLog) LogWithSecret(ctx context.Context, secretName string, action alpb.Action, request proto.Message) {
+func (l *FakeAuditLog) LogForSecret(ctx context.Context, secretName string, action alpb.Action, request proto.Message) {
 	r := &alpb.ResourceID{
 		Type: alpb.ResourceType_SECRET,
 		Id:   secretName,

@@ -159,7 +159,7 @@ func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, action alpb
 	}
 }
 
-func (l *Logger) LogWithGroup(ctx context.Context, groupID string, action alpb.Action, request proto.Message) {
+func (l *Logger) LogForGroup(ctx context.Context, groupID string, action alpb.Action, request proto.Message) {
 	r := &alpb.ResourceID{
 		Type: alpb.ResourceType_GROUP,
 		Id:   groupID,
@@ -167,7 +167,7 @@ func (l *Logger) LogWithGroup(ctx context.Context, groupID string, action alpb.A
 	l.Log(ctx, r, action, request)
 }
 
-func (l *Logger) LogWithInvocation(ctx context.Context, invocationID string, action alpb.Action, request proto.Message) {
+func (l *Logger) LogForInvocation(ctx context.Context, invocationID string, action alpb.Action, request proto.Message) {
 	r := &alpb.ResourceID{
 		Type: alpb.ResourceType_INVOCATION,
 		Id:   invocationID,
@@ -175,7 +175,7 @@ func (l *Logger) LogWithInvocation(ctx context.Context, invocationID string, act
 	l.Log(ctx, r, action, request)
 }
 
-func (l *Logger) LogWithSecret(ctx context.Context, secretName string, action alpb.Action, request proto.Message) {
+func (l *Logger) LogForSecret(ctx context.Context, secretName string, action alpb.Action, request proto.Message) {
 	r := &alpb.ResourceID{
 		Type: alpb.ResourceType_SECRET,
 		Id:   secretName,
