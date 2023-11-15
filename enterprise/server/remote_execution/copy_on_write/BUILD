@@ -11,6 +11,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/util/lockmap",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_x_exp//maps",
