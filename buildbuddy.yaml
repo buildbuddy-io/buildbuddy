@@ -6,11 +6,11 @@ actions:
         branches:
           - "master"
       pull_request:
+        merge_with_base: false
         branches:
           - "*"
     bazel_commands:
       - run //:git_status_script
-    merge_with_base: false
 
 plugins:
   - path: cli/plugins/go-deps
