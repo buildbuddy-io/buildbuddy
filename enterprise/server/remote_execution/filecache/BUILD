@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache",
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/hostid",
         "//server/interfaces",
         "//server/metrics",
         "//server/util/claims",
@@ -17,7 +18,6 @@ go_library(
         "//server/util/lru",
         "//server/util/random",
         "//server/util/status",
-        "//server/util/uuid",
         "@com_github_prometheus_client_golang//prometheus",
     ],
 )
