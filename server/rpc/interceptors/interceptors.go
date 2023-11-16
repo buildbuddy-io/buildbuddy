@@ -279,6 +279,8 @@ func subdomainUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 }
 
 func addInvocationIdToLog(ctx context.Context) context.Context {
+	ctx = bazel_request.ExtractValuesIntoContext(ctx)
+
 	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
 		return log.EnrichContext(ctx, log.InvocationIDKey, iid)
 	}

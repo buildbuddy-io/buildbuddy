@@ -21,7 +21,31 @@ var (
 	bazelVersionPattern = regexp.MustCompile(`^(?P<major>\d+)\.(?P<minor>\d+)(\.(?P<patch>\d+))?(?P<suffix>.*)?`)
 )
 
-const RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
+const (
+	RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
+
+	requestMetadataContextKey = "bazel_request.request_metadata"
+	invocationIDContextKey    = "bazel_request.invocation_id"
+)
+
+func ExtractValuesIntoContext(ctx context.Context) context.Context {
+	hdrs := metadata.ValueFromIncomingContext(ctx, RequestMetadataKey)
+	if len(hdrs) == 0 {
+		return ctx
+	}
+
+	rmd := &repb.RequestMetadata{}
+	if err := proto.Unmarshal([]byte(hdrs[0]), rmd); err != nil {
+		return ctx
+	}
+
+	// Set the request metadata on the context.
+	ctx = context.WithValue(ctx, requestMetadataContextKey, rmd)
+
+	// Set the invocation ID on the context.
+	ctx = context.WithValue(ctx, invocationIDContextKey, rmd.GetToolInvocationId())
+	return ctx
+}
 
 func GetRequestMetadataBytes(ctx context.Context) []byte {
 	vals := metadata.ValueFromIncomingContext(ctx, RequestMetadataKey)
@@ -32,6 +56,10 @@ func GetRequestMetadataBytes(ctx context.Context) []byte {
 }
 
 func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
+	if rmd, ok := ctx.Value(requestMetadataContextKey).(*repb.RequestMetadata); ok {
+		return rmd
+	}
+
 	b := GetRequestMetadataBytes(ctx)
 	if len(b) == 0 {
 		return nil
@@ -44,6 +72,10 @@ func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
 }
 
 func GetInvocationID(ctx context.Context) string {
+	if iid, ok := ctx.Value(invocationIDContextKey).(string); ok {
+		return iid
+	}
+
 	const toolInvocationIDFieldNumber = 3
 	b := GetRequestMetadataBytes(ctx)
 	value, _ := pbwireutil.ConsumeFirstString(b, toolInvocationIDFieldNumber)

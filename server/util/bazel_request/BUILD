@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/util/log",
         "//server/util/pbwireutil",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
