@@ -366,8 +366,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
 
   linkGoogleCloud() {
     return popup.open(
-      `/login/?${new URLSearchParams({
-        issuer_url: "https://accounts.google.com",
+      `/auth/gcp/link/?${new URLSearchParams({
         link_gcp_for_group: this.props.user?.selectedGroup.id || "",
         redirect_url: window.location.href,
       })}`

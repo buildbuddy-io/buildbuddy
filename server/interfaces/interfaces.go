@@ -576,7 +576,7 @@ type RunnerService interface {
 }
 
 type GCPService interface {
-	LinkForGroup(w http.ResponseWriter, r *http.Request, refreshToken string) error
+	Link(w http.ResponseWriter, r *http.Request) error
 	GetGCPProject(ctx context.Context, request *gcpb.GetGCPProjectRequest) (*gcpb.GetGCPProjectResponse, error)
 }
 
