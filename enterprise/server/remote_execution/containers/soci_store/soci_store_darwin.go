@@ -46,3 +46,7 @@ func (_ NoStore) GetArtifacts(ctx context.Context, env environment.Env, image st
 func (_ NoStore) SeedCredentials(ctx context.Context, image string, credentials oci.Credentials) error {
 	return nil
 }
+
+func Init(env environment.Env) (Store, error) {
+	return &NoStore{}, nil
+}
