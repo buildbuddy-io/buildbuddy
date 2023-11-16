@@ -8,7 +8,7 @@ interface Props {
   node: InputNode;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, InputNode[]>;
-  treeShaToTotalSizeMap: Map<string, Number>;
+  treeShaToTotalSizeMap: Map<string, [Number, Number]>;
   handleFileClicked: any;
 }
 
@@ -19,10 +19,19 @@ export interface InputNode {
   type: "file" | "dir";
 }
 
+function getChildCountText(childCount: Number) {
+  if (childCount === 0) {
+    return "empty";
+  } else if (childCount === 1) {
+    return "1 child";
+  }
+  return childCount + " children";
+}
+
 export default class InputNodeComponent extends React.Component<Props, State> {
   render() {
     const digestString = this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes;
-    const totalSize = this.props.treeShaToTotalSizeMap.get(digestString);
+    const sizeInfo = this.props.treeShaToTotalSizeMap.get(digestString);
     const expanded = this.props.treeShaToExpanded.get(digestString);
     return (
       <div className="input-tree-node">
@@ -43,7 +52,13 @@ export default class InputNodeComponent extends React.Component<Props, State> {
             )}
           </span>{" "}
           <span className="input-tree-node-label">{this.props.node.obj.name}</span>
-          {totalSize ? <span className="input-tree-node-size">{`${format.bytes(+totalSize)} total`}</span> : ""}
+          {sizeInfo ? (
+            <span className="input-tree-node-size">{`${format.bytes(+sizeInfo[0])} (${getChildCountText(
+              sizeInfo[1]
+            )})`}</span>
+          ) : (
+            ""
+          )}
           {this.props.node.obj?.digest && <DigestComponent digest={this.props.node.obj.digest} />}
         </div>
         {expanded && (
