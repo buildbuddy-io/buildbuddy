@@ -139,7 +139,7 @@ func copyHeadersToContext(ctx context.Context) context.Context {
 			ctx = context.WithValue(ctx, contextKey, hdrs[0])
 		}
 	}
-
+	ctx = bazel_request.ParseRequestMetadataOnce(ctx)
 	return ctx
 }
 

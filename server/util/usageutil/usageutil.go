@@ -6,7 +6,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -76,25 +75,9 @@ func clientLabel(ctx context.Context) string {
 	if len(vals) > 0 {
 		return vals[0]
 	}
-
-	// Note: we avoid deserializing the RequestMetadata proto here since
-	// proto deserialization is too expensive to run on every request.
-	b := bazel_request.GetRequestMetadataBytes(ctx)
-	if len(b) == 0 {
-		return ""
+	toolName := bazel_request.GetToolName(ctx)
+	if toolName == "bazel" {
+		return bazelClientLabel
 	}
-	const (
-		mdToolDetailsFieldNumber       = 1
-		toolDetailsToolNameFieldNumber = 1
-	)
-	toolDetailsBytes, _ := pbwireutil.ConsumeFirstBytes(b, mdToolDetailsFieldNumber)
-	if len(toolDetailsBytes) > 0 {
-		toolName, _ := pbwireutil.ConsumeFirstString(toolDetailsBytes, toolDetailsToolNameFieldNumber)
-		if toolName == "bazel" {
-			return bazelClientLabel
-		}
-		return ""
-	}
-
 	return ""
 }
