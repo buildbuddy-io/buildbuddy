@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/invocation_stat_service/config",
-        "//enterprise/server/scheduling/scheduler_server/config",
         "//proto:config_go_proto",
         "//server/backends/github",
         "//server/build_event_protocol/target_tracker",
@@ -15,6 +14,7 @@ go_library(
         "//server/environment",
         "//server/remote_cache/hit_tracker",
         "//server/remote_execution/config",
+        "//server/scheduling/scheduler_server/config",
         "//server/util/flag",
         "//server/util/region",
         "//server/util/status",
