@@ -721,10 +721,13 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			}
 			continue
 		}
-		if len(foundMap) == len(hashResources) {
-			// If we've found everything, we can exit now.
-			break
-		}
+
+		// It's possible that a file exists on a non-primary shard,
+		// but we report it as missing. This might trigger a very small
+		// number of duplicate writes (which get short-circuited anyway)
+		// but it should drastically reduce the fanout necessary to
+		// serve FindMissing calls.
+		break
 	}
 
 	// For every digest we found, if we did not find it
