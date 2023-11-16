@@ -328,7 +328,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       options: resp.project.map((p) => p.id),
       emptyState: (
         <div className="gcp-picker-empty-state">
-          No Google Cloud Projects found!
+          No Google Cloud projects found!
           <br />
           <br />
           <a href="https://console.cloud.google.com/projectcreate" target="_blank">
