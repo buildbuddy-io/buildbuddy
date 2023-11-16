@@ -731,8 +731,8 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	// For every digest we found, if we did not find it
 	// on the first peer in our list, we want to backfill it.
 	backfills := make([]*backfillOrder, 0)
-	for h, present := range foundMap {
-		if !present {
+	for h, foundOnPeer := range foundMap {
+		if !foundOnPeer {
 			continue
 		}
 		r := hashResources[h][0]
