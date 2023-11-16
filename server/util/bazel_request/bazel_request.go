@@ -24,7 +24,6 @@ const (
 	RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
 
 	requestMetadataContextKey = "bazel_request.request_metadata"
-	invocationIDContextKey    = "bazel_request.invocation_id"
 )
 
 func GetRequestMetadataBytes(ctx context.Context) []byte {
