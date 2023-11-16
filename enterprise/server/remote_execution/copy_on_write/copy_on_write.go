@@ -4,13 +4,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
@@ -92,6 +92,8 @@ type COWStore struct {
 	eagerFetchChan chan *eagerFetchData
 	eagerFetchEg   *errgroup.Group
 	quitChan       chan struct{}
+
+	TotalLockTime int64
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -139,15 +141,15 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 }
 
 func (c *COWStore) lock() {
-	_, span := tracing.StartSpan(c.ctx)
-	defer span.End()
+	start := time.Now()
 	c.mu.Lock()
+	c.TotalLockTime += time.Since(start).Milliseconds()
 }
 
 func (c *COWStore) rlock() {
-	_, span := tracing.StartSpan(c.ctx)
-	defer span.End()
+	start := time.Now()
 	c.mu.RLock()
+	c.TotalLockTime += time.Since(start).Milliseconds()
 }
 
 // GetRelativeOffsetFromChunkStart returns the relative offset from the
