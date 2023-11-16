@@ -706,9 +706,8 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 				}
 				for _, r := range resources {
 					hash := r.GetDigest().GetHash()
-					if _, ok := peerMissingHashes[hash]; !ok {
-						foundMap[hash] = true
-					}
+					_, ok := peerMissingHashes[hash]
+					foundMap[hash] = !ok
 				}
 				return nil
 			})
