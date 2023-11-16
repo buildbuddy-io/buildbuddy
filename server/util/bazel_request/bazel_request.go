@@ -75,9 +75,11 @@ func GetInvocationID(ctx context.Context) string {
 	if iid, ok := ctx.Value(invocationIDContextKey).(string); ok {
 		return iid
 	}
-
 	const toolInvocationIDFieldNumber = 3
 	b := GetRequestMetadataBytes(ctx)
+	if len(b) == 0 {
+		return ""
+	}
 	value, _ := pbwireutil.ConsumeFirstString(b, toolInvocationIDFieldNumber)
 	return value
 }
