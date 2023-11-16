@@ -275,6 +275,11 @@ message DigestWithTotalSize {
   // recursively expanded subcontents of child directories if this is a
   // Directory.
   int64 total_size = 2;
+
+  // If this is a directory, the total number of files and directories
+  // contained within the directory.  The directory itself does not count
+  // (i.e., an empty directory has child_count == 0)
+  int64 child_count = 3;
 }
 
 message GetTreeDirectorySizesResponse {
