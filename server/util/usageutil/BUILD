@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//server/tables",
         "//server/util/bazel_request",
-        "//server/util/pbwireutil",
         "@org_golang_google_grpc//metadata",
     ],
 )

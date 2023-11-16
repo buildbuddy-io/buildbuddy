@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
@@ -28,31 +27,21 @@ const (
 	invocationIDContextKey    = "bazel_request.invocation_id"
 )
 
-func ExtractValuesIntoContext(ctx context.Context) context.Context {
-	hdrs := metadata.ValueFromIncomingContext(ctx, RequestMetadataKey)
-	if len(hdrs) == 0 {
-		return ctx
-	}
-
-	rmd := &repb.RequestMetadata{}
-	if err := proto.Unmarshal([]byte(hdrs[0]), rmd); err != nil {
-		return ctx
-	}
-
-	// Set the request metadata on the context.
-	ctx = context.WithValue(ctx, requestMetadataContextKey, rmd)
-
-	// Set the invocation ID on the context.
-	ctx = context.WithValue(ctx, invocationIDContextKey, rmd.GetToolInvocationId())
-	return ctx
-}
-
 func GetRequestMetadataBytes(ctx context.Context) []byte {
 	vals := metadata.ValueFromIncomingContext(ctx, RequestMetadataKey)
 	if len(vals) == 0 {
 		return nil
 	}
 	return []byte(vals[0])
+}
+
+func ParseRequestMetadataOnce(ctx context.Context) context.Context {
+	rmd := GetRequestMetadata(ctx)
+
+	// Set the parsed request metadata on the context. By doing this once
+	// and saving the value on the context, we save a bunch of work when
+	// many downstream callers read values from the request metadata.
+	return context.WithValue(ctx, requestMetadataContextKey, rmd)
 }
 
 func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
@@ -72,16 +61,11 @@ func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
 }
 
 func GetInvocationID(ctx context.Context) string {
-	if iid, ok := ctx.Value(invocationIDContextKey).(string); ok {
-		return iid
-	}
-	const toolInvocationIDFieldNumber = 3
-	b := GetRequestMetadataBytes(ctx)
-	if len(b) == 0 {
-		return ""
-	}
-	value, _ := pbwireutil.ConsumeFirstString(b, toolInvocationIDFieldNumber)
-	return value
+	return GetRequestMetadata(ctx).GetToolInvocationId()
+}
+
+func GetToolName(ctx context.Context) string {
+	return GetRequestMetadata(ctx).GetToolDetails().GetToolName()
 }
 
 type Version struct {
