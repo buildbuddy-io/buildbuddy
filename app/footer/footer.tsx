@@ -14,8 +14,13 @@ export default class FooterComponent extends React.Component {
           Privacy
         </a>
         <a href="https://buildbuddy.io" target="_blank">
-          BuildBuddy {capabilities.version != "unknown" && capabilities.version}
+          BuildBuddy
         </a>
+        {capabilities.version != "unknown" && (
+          <a href={`https://github.com/buildbuddy-io/buildbuddy/releases/tag/${capabilities.version}`} target="_blank">
+            {capabilities.version}
+          </a>
+        )}
         <a href="mailto:hello@buildbuddy.io" target="_blank">
           Contact us
         </a>
