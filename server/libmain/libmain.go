@@ -395,6 +395,10 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, gha.OAuthHandler()))
 	}
 
+	if gcp := env.GetGCPService(); gcp != nil {
+		mux.Handle("/auth/gcp/link/", interceptors.WrapAuthenticatedExternalHandler(env, interceptors.RedirectOnError(gcp.Link)))
+	}
+
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(bburl.WithPath("").Hostname(), *port, grpc_server.GRPCPort())
 	}

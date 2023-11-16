@@ -8,14 +8,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/coreos/go-oidc"
+	"golang.org/x/oauth2"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
@@ -25,10 +28,13 @@ import (
 )
 
 const (
-	Issuer         = "https://accounts.google.com"
-	scope          = "https://www.googleapis.com/auth/cloud-platform"
-	linkParamName  = "link_gcp_for_group"
-	linkCookieName = "link-gcp-for-group"
+	Issuer            = "https://accounts.google.com"
+	scope             = "https://www.googleapis.com/auth/cloud-platform"
+	linkParamName     = "link_gcp_for_group"
+	linkCookieName    = "link-gcp-for-group"
+	authRedirectParam = "redirect_url"
+	stateCookie       = "GCP-State-Token"
+
 	cookieDuration = 1 * time.Hour
 	// Refresh token secret that's exchanged for an auth token in workflows
 	refreshTokenEnvVariableName = "CLOUDSDK_AUTH_REFRESH_TOKEN"
@@ -37,6 +43,7 @@ const (
 	accessTokenEnvVariableName = "CLOUDSDK_AUTH_ACCESS_TOKEN"
 	authTokenURL               = "https://accounts.google.com/o/oauth2/token"
 	projectSearchURL           = "https://cloudresourcemanager.googleapis.com/v3/projects:search"
+	linkURL                    = "/auth/gcp/link/"
 )
 
 var (
@@ -44,30 +51,121 @@ var (
 	gcpClientSecret = flag.String("gcp.client_secret", "", "The client secret to use for GCP linking.")
 )
 
-// Returns true if the request contains either a gcp link url param or cookie.
-func IsLinkRequest(r *http.Request) bool {
-	return r.URL.Query().Get(linkParamName) != "" || cookie.GetCookie(r, linkCookieName) != ""
-}
-
-// Redirects the user to the auth flow with a request for the GCP scope.
-func RequestAccess(w http.ResponseWriter, r *http.Request, authUrl string) {
-	authUrl = strings.ReplaceAll(authUrl, "scope=", fmt.Sprintf("scope=%s+", scope))
-	cookie.SetCookie(w, linkCookieName, r.URL.Query().Get(linkParamName), time.Now().Add(cookieDuration), true)
-	http.Redirect(w, r, authUrl, http.StatusTemporaryRedirect)
-}
-
 type GCPService struct {
-	env environment.Env
+	env      environment.Env
+	provider *oidc.Provider
+	config   *oauth2.Config
+	options  []oauth2.AuthCodeOption
 }
 
-func Register(env environment.Env) {
+func Register(env environment.Env) error {
+	provider, err := oidc.NewProvider(context.TODO(), Issuer)
+	if err != nil {
+		return err
+	}
+	config := &oauth2.Config{
+		ClientID:     *gcpClientId,
+		ClientSecret: *gcpClientSecret,
+		RedirectURL:  build_buddy_url.WithPath(linkURL).String(),
+		Endpoint:     provider.Endpoint(),
+		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", scope},
+	}
+	options := []oauth2.AuthCodeOption{
+		oauth2.AccessTypeOffline,
+		oauth2.ApprovalForce,
+	}
+
 	env.SetGCPService(&GCPService{
-		env: env,
+		env:      env,
+		provider: provider,
+		config:   config,
+		options:  options,
 	})
+
+	return nil
+}
+
+func (g *GCPService) Link(w http.ResponseWriter, r *http.Request) error {
+	if r.FormValue("state") == "" {
+		err := g.startAuthFlow(w, r)
+		if err != nil {
+			return err
+		}
+	}
+
+	err := g.handleAuthRedirect(w, r)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (g *GCPService) startAuthFlow(w http.ResponseWriter, r *http.Request) error {
+	// Set the "state" cookie which will be returned to us by the authentication
+	// provider in the URL. We verify that it matches.
+	state := fmt.Sprintf("%d", random.RandUint64())
+	cookie.SetCookie(w, stateCookie, state, time.Now().Add(cookieDuration), true /* httpOnly= */)
+
+	redirectURL := r.URL.Query().Get(authRedirectParam)
+	if err := build_buddy_url.ValidateRedirect(redirectURL); err != nil {
+		return err
+	}
+
+	// Redirect to the login provider (and ask for a refresh token).
+	authURL := g.config.AuthCodeURL(state, g.options...)
+
+	// Set the redirection URL in a cookie so we can use it after validating
+	// the user in our /auth callback.
+	cookie.SetCookie(w, cookie.RedirCookie, redirectURL, time.Now().Add(cookieDuration), true /* httpOnly= */)
+
+	cookie.SetCookie(w, linkCookieName, r.URL.Query().Get(linkParamName), time.Now().Add(cookieDuration), true)
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
+	return nil
+}
+
+func (g *GCPService) handleAuthRedirect(w http.ResponseWriter, r *http.Request) error {
+	// Verify "state" cookie match.
+	if r.FormValue("state") != cookie.GetCookie(r, stateCookie) {
+		return status.PermissionDeniedErrorf("state mismatch: %s != %s", r.FormValue("state"), cookie.GetCookie(r, stateCookie))
+	}
+
+	authError := r.URL.Query().Get("error")
+	if authError != "" {
+		return status.PermissionDeniedErrorf("Authenticator returned error: %s (%s %s)", authError, r.URL.Query().Get("error_desc"), r.URL.Query().Get("error_description"))
+	}
+
+	code := r.URL.Query().Get("code")
+	oauth2Token, err := g.config.Exchange(r.Context(), code, g.options...)
+	if err != nil {
+		return status.PermissionDeniedErrorf("Error exchanging code for auth token: %s", code)
+	}
+
+	// Extract the ID Token (JWT) from OAuth2 token.
+	jwt, ok := oauth2Token.Extra("id_token").(string)
+	if !ok {
+		return status.PermissionDeniedError("ID Token not present in auth response")
+	}
+
+	c := &oidc.Config{
+		ClientID:        *gcpClientId,
+		SkipExpiryCheck: false,
+	}
+
+	_, err = g.provider.Verifier(c).Verify(r.Context(), jwt)
+	if err != nil {
+		return err
+	}
+
+	refreshToken, ok := oauth2Token.Extra("refresh_token").(string)
+	if !ok {
+		return status.PermissionDeniedError("Refresh token not present in auth response")
+	}
+	return linkForGroup(g.env, w, r, refreshToken)
 }
 
 // Accepts the redirect from the auth provider and stores the results as secrets.
-func (g *GCPService) LinkForGroup(w http.ResponseWriter, r *http.Request, refreshToken string) error {
+func linkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, refreshToken string) error {
 	if refreshToken == "" {
 		return status.PermissionDeniedErrorf("Empty refresh token")
 	}
@@ -76,8 +174,8 @@ func (g *GCPService) LinkForGroup(w http.ResponseWriter, r *http.Request, refres
 	}
 	cookie.ClearCookie(w, linkCookieName)
 	ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), rc)
-	ctx = g.env.GetAuthenticator().AuthenticatedHTTPContext(w, r.WithContext(ctx))
-	secretResponse, err := g.env.GetSecretService().GetPublicKey(ctx, &skpb.GetPublicKeyRequest{
+	ctx = env.GetAuthenticator().AuthenticatedHTTPContext(w, r.WithContext(ctx))
+	secretResponse, err := env.GetSecretService().GetPublicKey(ctx, &skpb.GetPublicKeyRequest{
 		RequestContext: rc,
 	})
 	if err != nil {
@@ -87,7 +185,7 @@ func (g *GCPService) LinkForGroup(w http.ResponseWriter, r *http.Request, refres
 	if err != nil {
 		return status.PermissionDeniedErrorf("Error sealing box: %s", err)
 	}
-	_, _, err = g.env.GetSecretService().UpdateSecret(ctx, &skpb.UpdateSecretRequest{
+	_, _, err = env.GetSecretService().UpdateSecret(ctx, &skpb.UpdateSecretRequest{
 		RequestContext: rc,
 		Secret: &skpb.Secret{
 			Name:  refreshTokenEnvVariableName,

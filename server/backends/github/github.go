@@ -58,7 +58,7 @@ const (
 )
 
 func AuthEnabled(env environment.Env) bool {
-	return env.GetGitHubApp() != nil && *JwtKey != ""
+	return *JwtKey != ""
 }
 
 // State represents a status value that GitHub's statuses API understands.
