@@ -10,6 +10,18 @@ actions:
           - "*"
     bazel_commands:
       - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
+  - name: Test FOSS build
+    container_image: ubuntu-20.04
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    bazel_commands:
+      - run --config=linux-workflows --config=race //tools:rm-enterprise
+      - build --config=linux-workflows --config=race //server
   - name: Test with static
     container_image: ubuntu-20.04
     triggers:
