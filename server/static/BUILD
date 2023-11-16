@@ -6,12 +6,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/static",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/invocation_stat_service/config",
         "//proto:config_go_proto",
         "//server/backends/github",
         "//server/build_event_protocol/target_tracker",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
+        "//server/invocation_stat_service/config",
         "//server/remote_cache/hit_tracker",
         "//server/remote_execution/config",
         "//server/scheduling/scheduler_server/config",
