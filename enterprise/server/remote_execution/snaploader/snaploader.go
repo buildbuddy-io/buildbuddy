@@ -854,6 +854,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 	opts := &CacheSnapshotOptions{
 		ChunkedFiles: map[string]*copy_on_write.COWStore{rootfsFileName: cow},
 		Recycled:     false,
+		Remote:       *snaputil.EnableRemoteSnapshotSharing,
 	}
 	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
 		return nil, status.WrapError(err, "cache containerfs snapshot")
