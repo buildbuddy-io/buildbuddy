@@ -7,26 +7,31 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 )
 
-// TODO: refactor a bit more
-// TODO: write some more comments here and there
-// TODO: add tests
-// TODO: perform tests
-
+// An abstraction of the soci-store that enables podman image streaming.
 type Store interface {
+	// Returns nil if the soci-store is alive and ready to serve traffic, or an
+	// error if not.
 	Exists(ctx context.Context) error
+
+	// Waits until the store is alive and ready to serve traffic, returning
+	// an error if it takes too lnog.
 	WaitUntilExists() error
 
 	// Returns the command-line argument to pass to podman in order to stream
 	// images using this soci-store.
 	EnableStreamingStoreArg() string
 
+	// Fetches the soci artifacts the provided image and stores them locally
+	// for this soci-store to use.
 	GetArtifacts(ctx context.Context, env environment.Env, image string, creds oci.Credentials) error
 
+	// Passes the provided credentials for the provided image to the store so
+	// it can fetch spans of password-protected images.
 	SeedCredentials(ctx context.Context, image string, credentials oci.Credentials) error
 }
 
-// A SociStore implementation that does not start up a soci-store and does not
-// stream container images.
+// A SociStore implementation that does not start up a soci-store and causes
+// regular (slow) image pull behavior when used by podman.
 type NoStore struct{}
 
 func (_ NoStore) Exists(ctx context.Context) error {

@@ -363,7 +363,10 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 			args = append(args, "--runtime-flag=ignore-cgroups")
 		}
 	}
-	args = append(args, c.sociStore.EnableStreamingStoreArg())
+	streamingStoreArg := c.sociStore.EnableStreamingStoreArg()
+	if streamingStoreArg != "" {
+		args = append(args, streamingStoreArg)
+	}
 	if c.options.Init {
 		args = append(args, "--init")
 	}
@@ -644,6 +647,14 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 	if c.imageIsStreamable {
 		// Make the image credentials available to the soci-store
 		c.sociStore.SeedCredentials(ctx, c.image, creds)
+
+		// We still need to run "podman pull" even when image streaming is
+		// enabled to populate the layer info and avoid spitting a bunch of
+		// pull-time logging into the run-time logs.
+		streamingStoreArg := c.sociStore.EnableStreamingStoreArg()
+		if streamingStoreArg != "" {
+			podmanArgs = append(podmanArgs, c.sociStore.EnableStreamingStoreArg())
+		}
 	}
 
 	if !creds.IsEmpty() {

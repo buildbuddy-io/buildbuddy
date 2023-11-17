@@ -39,11 +39,13 @@ import (
 
 var (
 	imageStreamingEnabled = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all public (non-authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
+
 	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/2570): remove this flag
-	sociStoreBinary         = flag.String("executor.podman.soci_store_binary", "soci-store", "The name of the soci-store binary to run. If empty, soci-store is not started even if it's needed (for local development).")
-	sociStoreLogLevel       = flag.String("executor.podman.soci_store_log_level", "", "The level at which the soci-store should log. Should be one of the standard log levels, all lowercase.")
-	sociArtifactStoreTarget = flag.String("executor.podman.soci_artifact_store_target", "", "The GRPC url to use to access the SociArtifactStore GRPC service.")
-	sociStoreKeychainPort   = flag.Int("executor.podman.soci_store_keychain_port", 1989, "The port on which the soci-store local keychain service is exposed, for sharing credentials for streaming private container images.")
+	binary   = flag.String("executor.podman.soci_store_binary", "soci-store", "The name of the soci-store binary to run. If empty, soci-store is not started even if it's needed (for local development).")
+	logLevel = flag.String("executor.podman.soci_store_log_level", "", "The level at which the soci-store should log. Should be one of the standard log levels, all lowercase.")
+
+	artifactStoreTarget = flag.String("executor.podman.soci_artifact_store_target", "", "The GRPC url to use to access the SociArtifactStore GRPC service.")
+	keychainPort        = flag.Int("executor.podman.soci_store_keychain_port", 1989, "The port on which the soci-store local keychain service is exposed, for sharing credentials for streaming private container images.")
 )
 
 const (
@@ -58,18 +60,17 @@ const (
 	sociIndexDirectory = "/var/lib/containers/soci/indexes/"
 
 	// The path where the soci-store is mounted
-	sociStorePath         = "/var/lib/soci-store/store"
+	sociStorePath = "/var/lib/soci-store/store"
+
+	// How long to cache credentials in the store.
 	sociStoreCredCacheTtl = 1 * time.Hour
 )
-
-// TODO: write some more comments here and there
-// TODO: write tests
-// TODO: perform tests
 
 // A SociStore implementation that references an externally running soci-store.
 // This is useful for local development if you want to do things like make the
 // store crash while running, though it should go away eventually in favor of
 // a patched dependency.
+// TODO(iain): delete this.
 type DevStore struct {
 	path                string
 	artifactStoreClient socipb.SociArtifactStoreClient
@@ -135,8 +136,8 @@ func (s SociStore) SeedCredentials(ctx context.Context, image string, credential
 	return seedCredentials(ctx, s.keychainClient, image, credentials)
 }
 
+// TODO(iain): write this as a temp file and pass it to the store as an arg.
 func writeSociStoreConf() error {
-	// TODO(iain): write this in a different location (a temp file)
 	sociStoreConf := fmt.Sprintf(`
 root_path = "%s"
 content_store_path = "%s"
@@ -151,8 +152,8 @@ index_store_path = "%s"
 	return nil
 }
 
+// TODO(iain): select the correct location for this based on the user.
 func writeStorageConf() error {
-	// TODO(iain): select the correct location for this absed on the user.
 	storageConf := `
 [storage]
 driver = "overlay"
@@ -180,12 +181,12 @@ func (s SociStore) runWithRetries(ctx context.Context) {
 	path := s.newPath()
 	for {
 		log.Infof("Starting soci store")
-		args := []string{fmt.Sprintf("--local_keychain_port=%d", *sociStoreKeychainPort)}
-		if *sociStoreLogLevel != "" {
-			args = append(args, fmt.Sprintf("--log-level=%s", *sociStoreLogLevel))
+		args := []string{fmt.Sprintf("--local_keychain_port=%d", *keychainPort)}
+		if *logLevel != "" {
+			args = append(args, fmt.Sprintf("--log-level=%s", *logLevel))
 		}
 		args = append(args, path)
-		cmd := exec.CommandContext(ctx, *sociStoreBinary, args...)
+		cmd := exec.CommandContext(ctx, *binary, args...)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
@@ -225,16 +226,16 @@ func (s SociStore) Path() string {
 
 func Init(env environment.Env) (Store, error) {
 	if *imageStreamingEnabled {
-		artifactStoreClient, err := intializeSociArtifactStoreClient(env, *sociArtifactStoreTarget)
+		artifactStoreClient, err := intializeSociArtifactStoreClient(env, *artifactStoreTarget)
 		if err != nil {
 			return nil, err
 		}
-		keychainClient, err := initializeSociStoreKeychainClient(env, fmt.Sprintf("grpc://localhost:%d", *sociStoreKeychainPort))
+		keychainClient, err := initializeSociStoreKeychainClient(env, fmt.Sprintf("grpc://localhost:%d", *keychainPort))
 		if err != nil {
 			return nil, err
 		}
 		var store Store
-		if *sociStoreBinary == "" {
+		if *binary == "" {
 			store = &DevStore{
 				path:                sociStorePath,
 				artifactStoreClient: artifactStoreClient,
