@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -7,20 +7,18 @@ go_library(
     srcs = [
         "soci_store.go",
         "soci_store_darwin.go",
+        "soci_store_linux.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/soci_store",
-    deps = select({
-        "@io_bazel_rules_go//go/platform:darwin": [
-            "//enterprise/server/util/oci",
-            "//server/environment",
-        ],
+    deps = [
+        "//enterprise/server/util/oci",
+        "//server/environment",
+    ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
-            "//enterprise/server/util/oci",
             "//proto:registry_go_proto",
             "//proto:remote_execution_go_proto",
             "//proto:resource_go_proto",
             "//proto:soci_go_proto",
-            "//server/environment",
             "//server/interfaces",
             "//server/metrics",
             "//server/remote_cache/cachetools",
@@ -36,4 +34,14 @@ go_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+go_test(
+    name = "soci_store_test",
+    srcs = ["soci_store_test.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/soci_store",
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )
