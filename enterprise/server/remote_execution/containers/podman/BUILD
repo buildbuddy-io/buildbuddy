@@ -7,6 +7,7 @@ go_library(
     srcs = ["podman.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman",
     deps = [
+        "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/platform",
@@ -46,13 +47,6 @@ go_library(
 go_test(
     name = "podman_test",
     srcs = ["podman_test.go"],
-    args = [
-        # Note: these are used only for the Stats tests, which require running as root.
-        # These paths were tested on Ubuntu 20.04 + podman 3.4.2, but may be different for other setups.
-        # See the comment in podman.go for more info.
-        "--executor.podman.memory_usage_path_template=/sys/fs/cgroup/memory/machine.slice/libpod-{{.ContainerID}}.scope/memory.usage_in_bytes",
-        "--executor.podman.cpu_usage_path_template=/sys/fs/cgroup/cpu,cpuacct/machine.slice/libpod-{{.ContainerID}}.scope/cpuacct.usage",
-    ],
     tags = [
         "manual",
         "no-sandbox",
