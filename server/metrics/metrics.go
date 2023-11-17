@@ -1062,6 +1062,13 @@ var (
 		ChunkSource,
 	})
 
+	COWSnapshotMemoryMappedBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_memory_mapped_bytes",
+		Help:      "Total number of bytes currently memory-mapped.",
+	})
+
 	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
