@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -100,8 +101,16 @@ func main() {
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
 	ctx := context.Background()
-	if *apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+
+	bbApiKey := *apiKey
+	if bbApiKey == "" {
+		// If the API key is not set, try to get it from BuildBuddy section in Git config.
+		if key, err := storage.ReadRepoConfig("api-key"); err == nil {
+			bbApiKey = key
+		}
+	}
+	if bbApiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", bbApiKey)
 	}
 
 	if *showMetadata || *showMetadataOnly {

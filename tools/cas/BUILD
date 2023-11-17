@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/cas",
     visibility = ["//visibility:private"],
     deps = [
+        "//cli/storage",
         "//proto:buildbuddy_service_go_proto",
         "//proto:cache_go_proto",
         "//proto:remote_execution_go_proto",
