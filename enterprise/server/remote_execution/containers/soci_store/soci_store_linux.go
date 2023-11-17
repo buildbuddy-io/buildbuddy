@@ -173,9 +173,7 @@ func (s SociStore) prepare(ctx context.Context) error {
 	if err := writeSociStoreConf(); err != nil {
 		return err
 	}
-	if err := writeStorageConf(); err != nil {
-		return err
-	}
+	return writeStorageConf()
 }
 
 func (s SociStore) runWithRetries(ctx context.Context) {
@@ -308,10 +306,6 @@ func getArtifacts(ctx context.Context, client socipb.SociArtifactStoreClient, en
 		With(prometheus.Labels{metrics.ContainerImageTag: image}).
 		Observe(float64(time.Since(startTime).Microseconds()))
 
-	if !*privateImageStreamingEnabled && !credentials.IsEmpty() {
-		return nil
-	}
-
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, env)
 	if err != nil {
 		return err
@@ -365,8 +359,6 @@ func getArtifacts(ctx context.Context, client socipb.SociArtifactStoreClient, en
 
 func seedCredentials(ctx context.Context, keychainClient sspb.LocalKeychainClient, image string, credentials oci.Credentials) error {
 	if credentials.IsEmpty() {
-		return nil
-	} else if !*privateImageStreamingEnabled && !credentials.IsEmpty() {
 		return nil
 	}
 
