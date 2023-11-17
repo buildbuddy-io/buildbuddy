@@ -82,6 +82,7 @@ var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", f
 var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
+var registryMirror = flag.String("executor.registry_mirror", "mirror.gcr.io", "The docker image registry mirror to pull through.")
 
 //go:embed guest_api_hash.sha256
 var GuestAPIHash string
@@ -1291,6 +1292,9 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	}
 	if *EnableRootfs {
 		bootArgs = "-enable_rootfs " + bootArgs
+	}
+	if *registryMirror != "" {
+		bootArgs = fmt.Sprintf("-registry_mirror=%s ", *registryMirror) + bootArgs
 	}
 	cgroupVersion, err := getCgroupVersion()
 	if err != nil {

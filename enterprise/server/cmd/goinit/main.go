@@ -58,6 +58,7 @@ var (
 	initDockerd             = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
 	enableDockerdTCP        = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
 	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
+	registryMirror          = flag.String("registry_mirror", "", "The docker image registry mirror to pull through.")
 
 	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
 	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
@@ -177,6 +178,10 @@ func startDockerd(ctx context.Context) error {
 	args := []string{}
 	if *enableDockerdTCP {
 		args = append(args, "--host=unix:///var/run/docker.sock", "--host=tcp://0.0.0.0:2375", "--tls=false")
+	}
+
+	if *registryMirror != "" {
+		args = append(args, "--registry-mirror="+*registryMirror)
 	}
 
 	cmd := exec.CommandContext(ctx, "dockerd", args...)
