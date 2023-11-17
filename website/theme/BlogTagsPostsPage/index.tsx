@@ -35,9 +35,8 @@ function BlogTagsPostPage(props: Props): JSX.Element {
 
   return (
     <Layout title={`Posts tagged "${label}"`} description={`Blog | Tagged "${label}"`} wrapperClassName="blog-wrapper">
-      <div className="container margin-vert--lg">
+      <div className="blog-container margin-vert--lg">
         <div className="row">
-          <div className="col col--1"></div>
           <main className="col col--8">
             <h1>
               <Translate
@@ -68,6 +67,7 @@ function BlogTagsPostPage(props: Props): JSX.Element {
               ))}
             </div>
           </main>
+          <div className="col col--1"></div>
           <div className="col col--3">
             <BlogSidebar sidebar={sidebar} />
           </div>

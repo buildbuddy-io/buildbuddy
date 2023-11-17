@@ -1,5 +1,13 @@
+h1,
 .blogPostTitle {
-  font-size: 3rem;
+  font-size: 56px;
+  line-height: 64px;
+}
+
+h1 {
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: initial;
 }
 
 .blogPostDate {
@@ -60,10 +68,14 @@
 .readMore a {
   display: block;
   width: calc(100% - 32px);
-  color: #fff;
-  background: #263238;
+  border: 2px solid #ddd;
+  color: #000;
   text-align: center;
   border-radius: 64px;
   padding: 16px;
   margin: 16px;
+}
+
+.readMore a:hover {
+  background-color: #fafafa;
 }

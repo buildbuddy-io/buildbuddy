@@ -16,9 +16,8 @@ function BlogPostPage(props: Props): JSX.Element {
   return (
     <Layout title={title} description={description} wrapperClassName="blog-wrapper">
       {BlogPostContents && (
-        <div className="container margin-vert--lg">
+        <div className="blog-container margin-vert--lg">
           <div className="row">
-            <div className="col col--1"></div>
             <main className="col col--8">
               <BlogPostItem frontMatter={frontMatter} metadata={metadata} isBlogPostPage>
                 <BlogPostContents />
@@ -30,6 +29,7 @@ function BlogPostPage(props: Props): JSX.Element {
                 </div>
               )}
             </main>
+            <div className="col col--1"></div>
             {
               <div className="col col--3">
                 <BlogSidebar sidebar={sidebar} />

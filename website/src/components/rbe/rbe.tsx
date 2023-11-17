@@ -31,24 +31,18 @@ function Component() {
             <br /> Execution
           </h2>
           <div className={common.subtitle}>
-            Massively parallel builds with just a few lines of configuration. BuildBuddy provides remote build execution
-            and caching as a fully-managed cloud service. Supports custom Docker images, and automatically scales to
-            thousands of worker nodes.
+            Massively parallel builds with just a few lines of configuration and no maintenance burden. BuildBuddy
+            provides remote build execution and caching as a fully-managed cloud service. Supports custom Docker images,
+            and automatically scales to thousands of worker nodes.
           </div>
         </div>
         <div className={styles.deploymentModels}>
           <div className={styles.deploymentModel}>
             <div className={styles.deploymentModelTitle}>{minuteSaved.toLocaleString()} </div>
+            <div className={styles.deploymentModelUnit}>Total Compute Minutes Saved</div>
             <div className={styles.deploymentModelDescription}>
-              Compute minutes saved by BuildBuddy Cloud organizations using remote caching &mdash; that's{" "}
+              By organizations using BuildBuddy Cloud remote caching &mdash; that's{" "}
               {Math.round(minuteSaved / minutesInAYear).toLocaleString()} years not spent waiting for builds to finish.
-            </div>
-          </div>
-          <div className={styles.deploymentModel}>
-            <div className={styles.deploymentModelTitle}>103 Global PoPs</div>
-            <div className={styles.deploymentModelDescription}>
-              With our globally distributed Points of Presence (PoP) network, your BuildBuddy Cloud remote cache will
-              always be blazing fast &mdash; no matter where your engineers are.
             </div>
           </div>
         </div>
