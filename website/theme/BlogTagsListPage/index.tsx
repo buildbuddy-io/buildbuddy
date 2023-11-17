@@ -42,9 +42,8 @@ function BlogTagsListPage(props: Props): JSX.Element {
 
   return (
     <Layout title="Tags" description="Blog Tags" wrapperClassName="blog-wrapper">
-      <div className="container margin-vert--lg">
+      <div className="blog-container margin-vert--lg">
         <div className="row">
-          <div className="col col--1"></div>
           <main className="col col--8">
             <h1>
               <Translate id="theme.tags.tagsPageTitle" description="The title of the tag list page">
@@ -53,7 +52,8 @@ function BlogTagsListPage(props: Props): JSX.Element {
             </h1>
             <div className="margin-vert--lg">{tagsSection}</div>
           </main>
-          <div className="col col--2">
+          <div className="col col--1"></div>
+          <div className="col col--3">
             <BlogSidebar sidebar={sidebar} />
           </div>
         </div>
