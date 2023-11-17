@@ -31,10 +31,10 @@ var (
 const (
 	RedactionFlagStandardRedactions = 1
 
-	envVarPrefix              = "--"
-	envVarOptionName          = "client_env"
-	envVarSeparator           = "="
-	envVarRedactedPlaceholder = "<REDACTED>"
+	envVarPrefix        = "--"
+	envVarOptionName    = "client_env"
+	envVarSeparator     = "="
+	redactedPlaceholder = "<REDACTED>"
 
 	buildMetadataOptionPrefix = "--build_metadata="
 	allowEnvPrefix            = "ALLOW_ENV="
@@ -43,7 +43,8 @@ const (
 )
 
 var (
-	urlSecretRegex = regexp.MustCompile(`[a-zA-Z0-9-_=]+\@`)
+	urlSecretRegex      = regexp.MustCompile(`[a-zA-Z0-9-_=]+\@`)
+	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
 	// There are some flags that contain multiple sub-flags which are
 	// specified as comma-separated KEY=VALUE pairs, e.g.:
@@ -301,54 +302,87 @@ func splitCombinedForm(cf string) (string, string) {
 
 func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) {
 	for _, section := range commandLine.Sections {
-		p, ok := section.SectionType.(*clpb.CommandLineSection_OptionList)
-		if !ok {
-			continue
-		}
-		p.OptionList.Option = filterCommandLineOptions(p.OptionList.Option)
-		for _, option := range p.OptionList.Option {
-			// Strip URL secrets. Strip git URLs explicitly first, since
-			// gitutil.StripRepoURLCredentials is URL-aware. Then fall back to
-			// regex-based stripping.
-			stripRepoURLCredentialsFromCommandLineOption(option)
+		if p, ok := section.SectionType.(*clpb.CommandLineSection_OptionList); ok {
+			p.OptionList.Option = filterCommandLineOptions(p.OptionList.Option)
+			for _, option := range p.OptionList.Option {
+				// Strip URL secrets. Strip git URLs explicitly first, since
+				// gitutil.StripRepoURLCredentials is URL-aware. Then fall back to
+				// regex-based stripping.
+				stripRepoURLCredentialsFromCommandLineOption(option)
 
-			if isKnownMultiFlag(option.OptionName) {
-				option.OptionValue = stripUrlSecretsFromMultiFlagValue(option.OptionValue)
-				option.CombinedForm = stripUrlSecretsFromMultiFlag(option.CombinedForm)
-			} else {
-				option.OptionValue = stripURLSecrets(option.OptionValue)
-				option.CombinedForm = stripUrlSecretsFromFlag(option.CombinedForm)
-			}
-
-			// Redact remote header values
-			for _, name := range headerOptionNames {
-				if option.OptionName == name {
-					option.OptionValue = envVarRedactedPlaceholder
-					option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
+				if isKnownMultiFlag(option.OptionName) {
+					option.OptionValue = stripUrlSecretsFromMultiFlagValue(option.OptionValue)
+					option.CombinedForm = stripUrlSecretsFromMultiFlag(option.CombinedForm)
+				} else {
+					option.OptionValue = stripURLSecrets(option.OptionValue)
+					option.CombinedForm = stripUrlSecretsFromFlag(option.CombinedForm)
 				}
-			}
 
-			// Redact non-allowed env vars
-			if option.OptionName == envVarOptionName {
-				parts := strings.Split(option.OptionValue, envVarSeparator)
-				if len(parts) == 0 || isAllowedEnvVar(parts[0], allowedEnvVars) {
-					continue
+				// Redact remote header values
+				for _, name := range headerOptionNames {
+					if option.OptionName == name {
+						option.OptionValue = redactedPlaceholder
+						option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + redactedPlaceholder
+					}
 				}
-				option.OptionValue = parts[0] + envVarSeparator + envVarRedactedPlaceholder
-				option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
-			}
 
-			// Redact sensitive platform props
-			if option.OptionName == "remote_default_exec_properties" {
-				for _, propName := range redactedPlatformProps {
-					if strings.HasPrefix(option.OptionValue, propName+"=") {
-						option.OptionValue = propName + "=<REDACTED>"
-						option.CombinedForm = "--remote_default_exec_properties=" + propName + "=<REDACTED>"
+				// Redact non-allowed env vars
+				if option.OptionName == envVarOptionName {
+					parts := strings.Split(option.OptionValue, envVarSeparator)
+					if len(parts) == 0 || isAllowedEnvVar(parts[0], allowedEnvVars) {
+						continue
+					}
+					option.OptionValue = parts[0] + envVarSeparator + redactedPlaceholder
+					option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + redactedPlaceholder
+				}
+
+				// Redact sensitive platform props
+				if option.OptionName == "remote_default_exec_properties" {
+					for _, propName := range redactedPlatformProps {
+						if strings.HasPrefix(option.OptionValue, propName+"=") {
+							option.OptionValue = propName + "=<REDACTED>"
+							option.CombinedForm = "--remote_default_exec_properties=" + propName + "=<REDACTED>"
+						}
 					}
 				}
 			}
+			continue
+		}
+
+		if p, ok := section.SectionType.(*clpb.CommandLineSection_ChunkList); ok {
+			if section.SectionLabel == "residual" {
+				redactResidualChunkList(p.ChunkList)
+			}
 		}
 	}
+}
+
+func redactResidualChunkList(chunkList *clpb.ChunkList) {
+	filteredChunks := make([]string, 0, len(chunkList.Chunk))
+
+	filterNext := false
+	for _, c := range chunkList.Chunk {
+		if filterNext {
+			filterNext = false
+			filteredChunks = append(filteredChunks, redactedPlaceholder)
+			continue
+		}
+
+		if residualSecretRegex.MatchString(c) {
+			if strings.Contains(c, "=") {
+				chunks := strings.SplitN(c, "=", 2)
+				filteredChunks = append(filteredChunks, chunks[0]+"="+redactedPlaceholder)
+				continue
+			}
+			filteredChunks = append(filteredChunks, c)
+			filterNext = true
+			continue
+		}
+
+		filteredChunks = append(filteredChunks, c)
+	}
+
+	chunkList.Chunk = filteredChunks
 }
 
 func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
