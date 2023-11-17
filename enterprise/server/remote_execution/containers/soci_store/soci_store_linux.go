@@ -84,7 +84,7 @@ func (s DevStore) Exists(ctx context.Context) error {
 
 func (s DevStore) WaitUntilExists() error {
 	if err := disk.WaitUntilExists(context.Background(), s.path, disk.WaitOpts{}); err != nil {
-		return status.UnavailableErrorf("soci-store not available: %s", err)
+		return status.UnavailableErrorf("soci-store unavailable at %s: %s", s.path, err)
 	}
 	return nil
 }
@@ -107,9 +107,8 @@ type SociStore struct {
 	artifactStoreClient socipb.SociArtifactStoreClient
 	keychainClient      sspb.LocalKeychainClient
 
-	idx      *int
-	fullPath string
-	mu       *sync.RWMutex
+	idx *int
+	mu  *sync.RWMutex
 }
 
 func (s SociStore) Exists(ctx context.Context) error {
@@ -118,8 +117,9 @@ func (s SociStore) Exists(ctx context.Context) error {
 }
 
 func (s SociStore) WaitUntilExists() error {
-	if err := disk.WaitUntilExists(context.Background(), s.Path(), disk.WaitOpts{}); err != nil {
-		return status.UnavailableErrorf("soci-store not available: %s", err)
+	path := s.Path()
+	if err := disk.WaitUntilExists(context.Background(), path, disk.WaitOpts{}); err != nil {
+		return status.UnavailableErrorf("soci-store unavailable at %s: %s", path, err)
 	}
 	return nil
 }
@@ -163,14 +163,10 @@ graphroot = "/var/lib/containers/storage"
 	if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
 		return status.UnavailableErrorf("could not write storage config: %s", err)
 	}
-
-	if err := disk.WaitUntilExists(context.Background(), sociStorePath, disk.WaitOpts{}); err != nil {
-		return status.UnavailableErrorf("soci-store failed to start: %s", err)
-	}
 	return nil
 }
 
-func (s SociStore) prepare(ctx context.Context) error {
+func (s SociStore) init(ctx context.Context) error {
 	if err := writeSociStoreConf(); err != nil {
 		return err
 	}
@@ -178,7 +174,7 @@ func (s SociStore) prepare(ctx context.Context) error {
 }
 
 func (s SociStore) runWithRetries(ctx context.Context) {
-	path := s.newPath()
+	path := s.Path()
 	for {
 		log.Infof("Starting soci store")
 		args := []string{fmt.Sprintf("--local_keychain_port=%d", *keychainPort)}
@@ -202,7 +198,10 @@ func (s SociStore) runWithRetries(ctx context.Context) {
 		} else {
 			// If unmounting fails, try to re-mount in a different filesystem
 			// location as a last-ditech effort.
-			path = s.newPath()
+			s.mu.Lock()
+			(*s.idx)++
+			s.mu.Unlock()
+			path = s.Path()
 			log.Errorf("error unmounting dead soci-store path, re-mounting in new location: %s", err)
 		}
 
@@ -210,18 +209,10 @@ func (s SociStore) runWithRetries(ctx context.Context) {
 	}
 }
 
-func (s SociStore) newPath() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.fullPath = filepath.Join(s.rootPath, strconv.Itoa(*s.idx))
-	(*s.idx)++
-	return s.fullPath
-}
-
 func (s SociStore) Path() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.fullPath
+	return filepath.Join(s.rootPath, strconv.Itoa(*s.idx))
 }
 
 func Init(env environment.Env) (Store, error) {
@@ -236,24 +227,29 @@ func Init(env environment.Env) (Store, error) {
 		}
 		var store Store
 		if *binary == "" {
-			store = &DevStore{
+			store = DevStore{
 				path:                sociStorePath,
 				artifactStoreClient: artifactStoreClient,
 				keychainClient:      keychainClient,
 			}
 		} else {
 			index := 0
-			store := &SociStore{
+			sociStore := SociStore{
 				rootPath:            sociStorePath,
 				artifactStoreClient: artifactStoreClient,
 				keychainClient:      keychainClient,
 				idx:                 &index,
 				mu:                  &sync.RWMutex{},
 			}
-			if err = store.prepare(env.GetServerContext()); err != nil {
+			if err = sociStore.init(env.GetServerContext()); err != nil {
 				return nil, err
 			}
-			go store.runWithRetries(env.GetServerContext())
+			go sociStore.runWithRetries(env.GetServerContext())
+
+			if err := sociStore.WaitUntilExists(); err != nil {
+				return nil, status.UnavailableErrorf("soci-store failed to start: %s", err)
+			}
+			store = sociStore
 		}
 
 		// TODO(iain): there's a concurrency bug in soci-store that causes it
@@ -273,7 +269,7 @@ func Init(env environment.Env) (Store, error) {
 
 		return store, nil
 	} else {
-		return &NoStore{}, nil
+		return NoStore{}, nil
 	}
 }
 
