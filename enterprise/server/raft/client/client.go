@@ -156,7 +156,6 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch
 	if batch.Header == nil {
 		return nil, status.FailedPreconditionError("Header must be set")
 	}
-
 	var raftResponseIface interface{}
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		switch batch.GetHeader().GetConsistencyMode() {
