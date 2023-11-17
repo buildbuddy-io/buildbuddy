@@ -148,6 +148,9 @@ func contextWithTargetAPIKey(ctx context.Context) context.Context {
 	if *targetAPIKey != "" {
 		return metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *targetAPIKey)
 	}
+	if *sourceAPIKey != "" {
+		return metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *sourceAPIKey)
+	}
 	return ctx
 }
 
@@ -235,6 +238,7 @@ func main() {
 		InstanceName:    *targetRemoteInstanceName,
 		SkipCacheLookup: true,
 		ActionDigest:    d,
+		DigestFunction:  actionInstanceDigest.GetDigestFunction(),
 	}
 	eg := &errgroup.Group{}
 	eg.SetLimit(*jobs)
