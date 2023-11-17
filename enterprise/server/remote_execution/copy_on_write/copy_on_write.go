@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -43,6 +45,10 @@ const (
 
 var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
 var eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 8, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
+
+// Total number of mmapped bytes. This is atomically updated and backs the
+// mapped bytes gauge metric.
+var mmappedBytes int64
 
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
@@ -800,6 +806,9 @@ func mmapDataFromFd(fd, size int) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mmap: %s", err)
 	}
+	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
+		atomic.AddInt64(&mmappedBytes, int64(len(data))),
+	))
 	return data, nil
 }
 
@@ -880,7 +889,14 @@ func (m *Mmap) Close() error {
 		return nil
 	}
 	m.source = snaputil.ChunkSourceUnmapped
-	return syscall.Munmap(m.data)
+	n := len(m.data)
+	if err := syscall.Munmap(m.data); err != nil {
+		return err
+	}
+	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
+		atomic.AddInt64(&mmappedBytes, int64(-n)),
+	))
+	return nil
 }
 
 func (m *Mmap) SizeBytes() (int64, error) {
