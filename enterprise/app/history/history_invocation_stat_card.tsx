@@ -95,7 +95,7 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
             </div>
             <div className="detail">
               <Hash className="icon" />
-              {this.props.invocationStat.totalNumBuilds} total builds
+              {format.formatWithCommas(this.props.invocationStat.totalNumBuilds)} total builds
             </div>
             <div className="detail">
               <Clock className="icon" />
@@ -103,7 +103,7 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
             </div>
             <div className="detail">
               <Activity className="icon" />
-              {this.props.invocationStat.totalActions} total actions
+              {format.formatWithCommas(this.props.invocationStat.totalActions)} total actions
             </div>
           </div>
         </div>

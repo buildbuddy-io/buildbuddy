@@ -73,7 +73,8 @@ export default class CacheCardComponent extends React.Component<Props> {
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-hit-color-swatch"></span>
-                            <span className="cache-stat">{format.formatWithCommas(cacheStat.casCacheHits)} </span> hits
+                            <span className="cache-stat">{format.formatWithCommas(cacheStat.casCacheHits)} </span>
+                            hits
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-miss-color-swatch"></span>
