@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
@@ -99,6 +101,7 @@ type COWStore struct {
 	eagerFetchChan chan *eagerFetchData
 	eagerFetchEg   *errgroup.Group
 	quitChan       chan struct{}
+	TotalLockTime  int64
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -144,6 +147,32 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 	})
 
 	return s, nil
+}
+
+func (c *COWStore) lockChunk(offset int64) func() {
+	start := time.Now()
+	chunkUnlockFn := c.chunkLock.Lock(fmt.Sprintf("%d", offset))
+	atomic.AddInt64(&c.TotalLockTime, time.Since(start).Milliseconds())
+	return chunkUnlockFn
+}
+
+func (c *COWStore) rlockChunk(offset int64) func() {
+	start := time.Now()
+	chunkUnlockFn := c.chunkLock.RLock(fmt.Sprintf("%d", offset))
+	atomic.AddInt64(&c.TotalLockTime, time.Since(start).Milliseconds())
+	return chunkUnlockFn
+}
+
+func (c *COWStore) lockStore() {
+	start := time.Now()
+	c.storeLock.Lock()
+	atomic.AddInt64(&c.TotalLockTime, time.Since(start).Milliseconds())
+}
+
+func (c *COWStore) rlockStore() {
+	start := time.Now()
+	c.storeLock.RLock()
+	atomic.AddInt64(&c.TotalLockTime, time.Since(start).Milliseconds())
 }
 
 // GetRelativeOffsetFromChunkStart returns the relative offset from the
@@ -192,10 +221,10 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 		}
 	}
 
-	chunkUnlockFn := c.chunkLock.RLock(fmt.Sprintf("%d", chunkStartOffset))
+	chunkUnlockFn := c.rlockChunk(chunkStartOffset)
 	defer chunkUnlockFn()
 
-	c.storeLock.RLock()
+	c.rlockStore()
 	chunk := c.chunks[chunkStartOffset]
 	c.storeLock.RUnlock()
 	if chunk == nil {
@@ -215,7 +244,7 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 // SortedChunks returns all chunks sorted by offset.
 func (c *COWStore) SortedChunks() []*Mmap {
-	c.storeLock.RLock()
+	c.rlockStore()
 	chunks := maps.Values(c.chunks)
 	c.storeLock.RUnlock()
 
@@ -262,10 +291,10 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffset int64, readSize int) error {
-	chunkUnlockFn := c.chunkLock.RLock(fmt.Sprintf("%d", chunkStartOffset))
+	chunkUnlockFn := c.rlockChunk(chunkStartOffset)
 	defer chunkUnlockFn()
 
-	c.storeLock.RLock()
+	c.rlockStore()
 	chunk := c.chunks[chunkStartOffset]
 	c.storeLock.RUnlock()
 	if chunk == nil {
@@ -351,10 +380,10 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 }
 
 func (c *COWStore) writeToChunk(p []byte, writeRelativeOffset int64, chunkStartOffset int64, writeSize int) (int, error) {
-	chunkUnlockFn := c.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
+	chunkUnlockFn := c.lockChunk(chunkStartOffset)
 	defer chunkUnlockFn()
 
-	c.storeLock.RLock()
+	c.rlockStore()
 	chunk := c.chunks[chunkStartOffset]
 	c.storeLock.RUnlock()
 
@@ -403,7 +432,7 @@ func (s *COWStore) SizeBytes() (int64, error) {
 
 // Dirty returns whether the chunk at the given offset is dirty.
 func (s *COWStore) Dirty(chunkOffset int64) bool {
-	s.storeLock.RLock()
+	s.rlockStore()
 	defer s.storeLock.RUnlock()
 	return s.dirty[chunkOffset]
 }
@@ -473,10 +502,10 @@ func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 }
 
 func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
-	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
+	chunkUnlockFn := s.lockChunk(chunkStartOffset)
 	defer chunkUnlockFn()
 
-	s.storeLock.RLock()
+	s.rlockStore()
 	dirty := s.dirty[chunkStartOffset]
 	s.storeLock.RUnlock()
 	if dirty {
@@ -549,7 +578,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 		return nil, nil, err
 	}
 
-	s.storeLock.RLock()
+	s.rlockStore()
 	ogChunk = s.chunks[offset]
 	s.storeLock.RUnlock()
 	chunkSource := snaputil.ChunkSourceHole
@@ -566,7 +595,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 		return nil, nil, err
 	}
 
-	s.storeLock.Lock()
+	s.lockStore()
 	s.chunks[offset] = newChunk
 	s.dirty[offset] = true
 	s.storeLock.Unlock()
@@ -624,10 +653,10 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 }
 
 func (s *COWStore) fetchChunk(offset int64) error {
-	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", offset))
+	chunkUnlockFn := s.lockChunk(offset)
 	defer chunkUnlockFn()
 
-	s.storeLock.RLock()
+	s.rlockStore()
 	c := s.chunks[offset]
 	s.storeLock.RUnlock()
 
