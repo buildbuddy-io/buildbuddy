@@ -114,11 +114,11 @@ type pullStatus struct {
 }
 
 type Provider struct {
-	env                     environment.Env
-	cgroupPaths             *cgroup.Paths
-	buildRoot               string
-	sociStore               soci_store.Store
-	imageExistsCache        *imageExistsCache
+	env              environment.Env
+	cgroupPaths      *cgroup.Paths
+	buildRoot        string
+	sociStore        soci_store.Store
+	imageExistsCache *imageExistsCache
 }
 
 func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
@@ -148,8 +148,8 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 			CPUTemplate:    *cpuUsagePathTemplate,
 		},
 		sociStore:        sociStore,
-		buildRoot:               buildRoot,
-		imageExistsCache:        imageExistsCache,
+		buildRoot:        buildRoot,
+		imageExistsCache: imageExistsCache,
 	}, nil
 }
 
@@ -193,13 +193,13 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 	}
 
 	return &podmanCommandContainer{
-		env:                     p.env,
-		cgroupPaths:             p.cgroupPaths,
-		image:                   props.ContainerImage,
-		imageIsStreamable:       imageIsStreamable,
-		sociStore:               p.sociStore,
-		imageExistsCache:        p.imageExistsCache,
-		buildRoot:               p.buildRoot,
+		env:               p.env,
+		cgroupPaths:       p.cgroupPaths,
+		image:             props.ContainerImage,
+		imageIsStreamable: imageIsStreamable,
+		sociStore:         p.sociStore,
+		imageExistsCache:  p.imageExistsCache,
+		buildRoot:         p.buildRoot,
 		options: &PodmanOptions{
 			ForceRoot:          props.DockerForceRoot,
 			Init:               props.DockerInit,
