@@ -148,6 +148,7 @@ ts_library(
     name = "invocation_artifacts_card",
     srcs = ["invocation_artifacts_card.tsx"],
     deps = [
+        "//app/format",
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_target_group_card",
         "//app/service:rpc_service",
@@ -252,6 +253,7 @@ ts_library(
     deps = [
         "//app/alert:alert_service",
         "//app/components/banner",
+        "//app/format",
         "//app/invocation:invocation_model",
         "//app/util:clipboard",
         "//proto:command_line_ts_proto",
@@ -283,6 +285,7 @@ ts_library(
     deps = [
         "//app/components/button",
         "//app/components/select",
+        "//app/format",
         "//app/invocation:invocation_execution_table",
         "//app/invocation:invocation_execution_util",
         "//app/invocation:invocation_model",
@@ -476,6 +479,7 @@ ts_library(
         "//app/components/button",
         "//app/components/button:link_button",
         "//app/components/filter_input",
+        "//app/format",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//proto:invocation_ts_proto",
@@ -559,6 +563,7 @@ ts_library(
     deps = [
         "//app/alert:alert_service",
         "//app/components/link",
+        "//app/format",
         "//app/invocation:invocation_model",
         "//app/util:clipboard",
         "//proto:build_event_stream_ts_proto",
@@ -673,6 +678,7 @@ ts_library(
         "//app/components/link",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/format",
         "//app/invocation:target_util",
         "//app/service:rpc_service",
         "//app/util:clipboard",

@@ -25,7 +25,7 @@ function getChildCountText(childCount: Number) {
   } else if (childCount === 1) {
     return "1 child";
   }
-  return childCount + " children";
+  return format.formatWithCommas(childCount) + " children";
 }
 
 export default class InputNodeComponent extends React.Component<Props, State> {
