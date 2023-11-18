@@ -5,6 +5,7 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { target } from "../../proto/target_ts_proto";
 import { ArrowDownCircle, FileCode } from "lucide-react";
 import TargetGroupCard from "./invocation_target_group_card";
+import format from "../format/format";
 
 interface Props {
   model: InvocationModel;
@@ -158,8 +159,8 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                   ))}
                   {target.hiddenOutputCount > 0 && (
                     <div className="artifact-hidden-count">
-                      {target.hiddenOutputCount} more {target.hiddenOutputCount === 1 ? "artifact" : "artifacts"} for
-                      this target
+                      {format.formatWithCommas(target.hiddenOutputCount)} more{" "}
+                      {target.hiddenOutputCount === 1 ? "artifact" : "artifacts"} for this target
                     </div>
                   )}
                 </div>
@@ -167,7 +168,8 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
             ))}
             {hiddenTargetCount > 0 && (
               <div className="artifact-hidden-count">
-                {hiddenTargetCount} more {hiddenTargetCount === 1 ? "target" : "targets"} with artifacts
+                {format.formatWithCommas(hiddenTargetCount)} more {hiddenTargetCount === 1 ? "target" : "targets"} with
+                artifacts
               </div>
             )}
             {totalOutputCount === 0 && <span>{this.props.filter ? "No matching artifacts" : "No artifacts"}</span>}

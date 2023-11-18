@@ -15,6 +15,7 @@ import {
   totalDuration,
   uploadDuration,
 } from "./invocation_execution_util";
+import format from "../format/format";
 
 interface Props {
   model: InvocationModel;
@@ -226,8 +227,9 @@ export default class ExecutionCardComponent extends React.Component<Props, State
           <div className="content">
             <div className="invocation-content-header">
               <div className="title">
-                Remotely executed actions ({!!incompleteCount && <span>{incompleteCount} in progress, </span>}
-                {completedCount} completed)
+                Remotely executed actions (
+                {!!incompleteCount && <span>{format.formatWithCommas(incompleteCount)} in progress, </span>}
+                {format.formatWithCommas(completedCount)} completed)
               </div>
 
               <div className="invocation-sort-controls">

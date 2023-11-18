@@ -6,6 +6,7 @@ import alert_service from "../alert/alert_service";
 import { command_line } from "../../proto/command_line_ts_proto";
 import shlex from "shlex";
 import Banner from "../components/banner/banner";
+import format from "../format/format";
 
 interface Props {
   model: InvocationModel;
@@ -166,25 +167,34 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 <div className="invocation-section">
                   <div className="invocation-section-title">Targets</div>
                   <div>
-                    {this.props.model.getTargetConfiguredCount()}{" "}
+                    {format.formatWithCommas(this.props.model.getTargetConfiguredCount())}{" "}
                     {this.props.model.getTargetConfiguredCount() == 1 ? "target" : "targets"}
                     {!!this.props.model.buildMetrics?.targetMetrics?.targetsConfigured && (
-                      <span> ({this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured)</span>
+                      <span>
+                        {" "}
+                        ({format.formatWithCommas(this.props.model.buildMetrics?.targetMetrics.targetsConfigured)}{" "}
+                        configured)
+                      </span>
                     )}
                   </div>
                 </div>
                 <div className="invocation-section">
                   <div className="invocation-section-title">Actions</div>
                   <div>
-                    {this.props.model.buildMetrics?.actionSummary?.actionsExecuted} actions
+                    {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted)} actions
                     {!!this.props.model.buildMetrics?.actionSummary?.actionsCreated && (
-                      <span> ({this.props.model.buildMetrics?.actionSummary.actionsCreated} created)</span>
+                      <span>
+                        {" "}
+                        ({format.formatWithCommas(this.props.model.buildMetrics?.actionSummary.actionsCreated)} created)
+                      </span>
                     )}
                   </div>
                 </div>
                 <div className="invocation-section">
                   <div className="invocation-section-title">Packages</div>
-                  <div>{this.props.model.buildMetrics?.packageMetrics?.packagesLoaded} packages</div>
+                  <div>
+                    {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
+                  </div>
                 </div>
               </>
             )}
