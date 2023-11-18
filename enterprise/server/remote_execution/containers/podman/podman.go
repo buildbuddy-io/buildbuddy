@@ -458,6 +458,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 			filepath.Join(c.buildRoot, filepath.Base(workDir)),
 			workDir,
 		),
+		// We do not need to run `podman logs`, so we can disable the log driver
+		// for slightly improved performance.
+		"--log-driver=none",
 	}
 	args = addUserArgs(args, c.options)
 	networkMode := c.options.DefaultNetworkMode
