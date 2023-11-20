@@ -26,6 +26,9 @@ import capabilities from "../capabilities/capabilities";
 export interface CacheRequestsCardProps {
   model: InvocationModel;
   search: URLSearchParams;
+  query?: string;
+  show?: number;
+  groupBy?: number;
 }
 
 interface State {
@@ -101,7 +104,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
   constructor(props: CacheRequestsCardProps) {
     super(props);
-    this.state.searchText = this.props.search.get("search") || "";
+    this.state.searchText = this.props.search.get("search") || this.props.query || "";
   }
 
   componentDidMount() {
@@ -259,15 +262,17 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     return (this.props.search.get("desc") || "false") === "true";
   }
   private getFilterIndex() {
-    return Number(this.props.search.get("filter") || defaultFilterIndex);
+    return Number(
+      this.props.search.get("filter") || (this.props.show === undefined ? defaultFilterIndex : this.props.show)
+    );
   }
   private getGroupBy() {
     return Number(
-      this.props.search.get("groupBy") || cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET
+      this.props.search.get("groupBy") || this.props.groupBy || cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET
     ) as cache.GetCacheScoreCardRequest.GroupBy;
   }
   private getSearch() {
-    return this.props.search.get("search") || "";
+    return this.props.search.get("search") || this.props.query || "";
   }
 
   private onChangeOrderBy(event: React.ChangeEvent<HTMLSelectElement>) {
@@ -277,7 +282,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     // is more useful for duration and size.
     const desc = value !== cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_START_TIME;
     router.setQuery({
-      ...Object.fromEntries(this.props.search.entries()),
+      ...Object.fromEntries(this.props.search.entries() || []),
       sort: String(value),
       desc: String(desc),
     });
@@ -344,11 +349,32 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <Option value={cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION}>Action</Option>
           </Select>
         </div>
-        <div className="controls row">
-          <FilterInput value={this.state.searchText} onChange={this.onChangeSearch.bind(this)} />
-        </div>
+        {!this.props.query && (
+          <div className="controls row">
+            <FilterInput value={this.state.searchText} onChange={this.onChangeSearch.bind(this)} />
+          </div>
+        )}
       </>
     );
+  }
+
+  private handleRowClicked(result: cache.ScoreCard.Result) {
+    if (result.digest?.hash && result.cacheType == resource.CacheType.AC) {
+      router.navigateTo(this.getActionUrl(result.digest.hash));
+    }
+    if (result.digest?.hash && result.cacheType == resource.CacheType.CAS) {
+      rpc_service.downloadBytestreamFile(
+        result.digest.hash,
+        "bytestream://" +
+          this.props.model.getCacheAddress() +
+          "/blobs/" +
+          this.props.model.getDigestFunctionDir() +
+          result.digest?.hash +
+          "/" +
+          result.digest?.sizeBytes,
+        this.props.model.getInvocationId()
+      );
+    }
   }
 
   private renderResults(
@@ -362,6 +388,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       <Tooltip
         className="row result-row"
         pin={pinBottomMiddleToMouse}
+        onClick={this.handleRowClicked.bind(this, result)}
         renderContent={() => this.renderResultHovercard(result, startTimeMillis)}>
         {(groupTarget === null || groupActionId === null) && (
           <div className="name-column" title={result.targetId ? `${result.targetId} › ${result.actionMnemonic}` : ""}>
