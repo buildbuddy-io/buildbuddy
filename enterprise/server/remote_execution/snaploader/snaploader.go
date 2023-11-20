@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -326,18 +327,8 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 	rn := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if err != nil {
-		if status.IsNotFoundError(err) {
-			metrics.RecycleRunnerRequests.With(prometheus.Labels{
-				metrics.RecycleRunnerRequestStatusLabel: metrics.MissStatusLabel,
-			}).Inc()
-		}
 		return nil, err
 	}
-
-	metrics.RecycleRunnerRequests.With(prometheus.Labels{
-		metrics.RecycleRunnerRequestStatusLabel: metrics.HitStatusLabel,
-	}).Inc()
-
 	tmpDir := l.env.GetFileCache().TempDir()
 	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir)
 }
@@ -783,7 +774,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			metrics.FileName:             name,
 			metrics.RecycledRunnerStatus: recycleStatus,
 			metrics.ChunkSource:          snaputil.ChunkSourceLabel(chunkSrc),
-		}).Observe(float64(count / len(chunks)))
+		}).Observe(float64(count) / float64(len(chunks)))
 	}
 
 	return treeDigest, nil
@@ -802,7 +793,7 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err == nil {
 		gid = u.GetGroupID()
-	} else if err != nil && !authutil.IsAnonymousUserError(err) {
+	} else if err != nil && !authutil.IsAnonymousUserError(err) && !*container.DebugEnableAnonymousRecycling {
 		return "", err
 	}
 	return gid, nil
@@ -853,6 +844,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 	opts := &CacheSnapshotOptions{
 		ChunkedFiles: map[string]*copy_on_write.COWStore{rootfsFileName: cow},
 		Recycled:     false,
+		Remote:       *snaputil.EnableRemoteSnapshotSharing,
 	}
 	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
 		return nil, status.WrapError(err, "cache containerfs snapshot")

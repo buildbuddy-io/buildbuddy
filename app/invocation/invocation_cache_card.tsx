@@ -53,11 +53,13 @@ export default class CacheCardComponent extends React.Component<Props> {
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-hit-color-swatch"></span>
-                            <span className="cache-stat">{cacheStat.actionCacheHits}</span> hits
+                            <span className="cache-stat">{format.formatWithCommas(cacheStat.actionCacheHits)} </span>
+                            hits
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-miss-color-swatch"></span>
-                            <span className="cache-stat">{cacheStat.actionCacheMisses}</span> misses
+                            <span className="cache-stat">{format.formatWithCommas(cacheStat.actionCacheMisses)} </span>
+                            misses
                           </div>
                         </div>
                       </div>
@@ -71,11 +73,13 @@ export default class CacheCardComponent extends React.Component<Props> {
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-hit-color-swatch"></span>
-                            <span className="cache-stat">{cacheStat.casCacheHits}</span> hits
+                            <span className="cache-stat">{format.formatWithCommas(cacheStat.casCacheHits)} </span>
+                            hits
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-miss-color-swatch"></span>
-                            <span className="cache-stat">{cacheStat.casCacheUploads}</span> writes
+                            <span className="cache-stat">{format.formatWithCommas(cacheStat.casCacheUploads)} </span>
+                            writes
                           </div>
                         </div>
                       </div>

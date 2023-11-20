@@ -71,15 +71,15 @@ func Invoke(ctx context.Context, bazelBinary string, workspaceDir string, subCom
 	}
 }
 
-// FindWorkspaceFile finds the location of the Bazel workspace file (either WORKSPACE.bazel or WORKSPACE) in which the
-// startDir is located.
+// FindWorkspaceFile finds the location of the Bazel workspace file (either WORKSPACE.bazel, WORKSPACE, MODULE, or
+// MODULE.bazel) in which the startDir is located.
 func FindWorkspaceFile(startDir string) (string, error) {
 	path, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", nil
 	}
 	for path != "/" {
-		for _, wsFilename := range []string{"WORKSPACE.bazel", "WORKSPACE"} {
+		for _, wsFilename := range []string{"WORKSPACE.bazel", "WORKSPACE", "MODULE", "MODULE.bazel"} {
 			wsFilePath := filepath.Join(path, wsFilename)
 			_, err := os.Stat(wsFilePath)
 			if err == nil {
@@ -92,5 +92,5 @@ func FindWorkspaceFile(startDir string) (string, error) {
 		}
 		path = filepath.Dir(path)
 	}
-	return "", status.NotFoundError("could not detect workspace root (WORKSPACE.bazel or WORKSPACE file not found)")
+	return "", status.NotFoundError("could not detect workspace root (WORKSPACE.bazel, WORKSPACE, MODULE, MODULE.bazel file not found)")
 }

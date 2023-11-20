@@ -18,6 +18,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_elastic_gosigar//:gosigar",
+        "@com_github_tklauser_go_sysconf//:go-sysconf",
         "@com_github_vishvananda_netlink//:netlink",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sys//unix",

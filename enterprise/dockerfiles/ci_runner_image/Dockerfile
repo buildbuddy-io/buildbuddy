@@ -40,7 +40,8 @@ RUN apt-get update && \
 
 # Provision a non-root user named "buildbuddy" and set up passwordless sudo.
 # Non-root users are needed for some bazel toolchains, such as hermetic python.
+# Also add them to the docker group so they can use docker.
 RUN apt-get update && apt-get install -y sudo && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN useradd --create-home buildbuddy --groups sudo && \
+RUN useradd --create-home buildbuddy --groups sudo,docker && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers

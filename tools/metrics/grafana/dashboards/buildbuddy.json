@@ -14281,9 +14281,10 @@
   ],
   "refresh": "1m",
   "schemaVersion": 38,
-  "slug": "buildbuddy",
   "style": "dark",
-  "tags": [],
+  "tags": [
+    "file:buildbuddy.json"
+  ],
   "templating": {
     "list": [
       {

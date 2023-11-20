@@ -5,6 +5,7 @@ import { ChevronRight, Copy } from "lucide-react";
 import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
 import Link from "../components/link/link";
+import format from "../format/format";
 
 interface Props {
   model: InvocationModel;
@@ -53,7 +54,7 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
         <div className="icon">{this.props.icon}</div>
         <div className="content">
           <div className="title">
-            {events.length}
+            {format.formatWithCommas(events.length)}
             {this.props.filter ? " matching" : ""} {this.props.pastVerb}{" "}
             <Copy
               className="copy-icon"

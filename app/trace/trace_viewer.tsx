@@ -11,6 +11,7 @@ import Panel from "./trace_viewer_panel";
 import { TraceEvent } from "./trace_events";
 import { buildTraceViewerModel, panelScrollHeight } from "./trace_viewer_model";
 import { Profile } from "./trace_events";
+import router from "../router/router";
 
 export interface TraceViewProps {
   profile: Profile;
@@ -187,6 +188,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
         data: { event: hoveredEvent, x: mouse.clientX, y: mouse.clientY },
       });
     }
+    document.body.style.cursor = hoveredEvent?.args.target ? "pointer" : "";
   }
 
   private onScroll(e: React.UIEvent<HTMLDivElement>, panelIndex: number) {
@@ -256,6 +258,13 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     this.mouseScrollTop = container.scrollTop + (this.mouse.clientY - container.getBoundingClientRect().top);
   }
 
+  private onCanvasClick(e: React.MouseEvent, panelIndex: number) {
+    const target = this.panels[panelIndex].getHoveredEvent()?.args?.target;
+    if (target) {
+      router.navigateTo(`?target=${target}#targets`);
+    }
+  }
+
   render() {
     return (
       <div
@@ -275,7 +284,11 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
               position: "relative",
             }}>
             <div key={i} className="panel" onScroll={(e) => this.onScroll(e, i)}>
-              <canvas ref={this.canvasRefs[i]} onMouseDown={(e) => this.onCanvasMouseDown(e, i)} />
+              <canvas
+                ref={this.canvasRefs[i]}
+                onMouseDown={(e) => this.onCanvasMouseDown(e, i)}
+                onClick={(e) => this.onCanvasClick(e, i)}
+              />
               {/*
                * This sizer div is used to make the total scrollable area
                * match the size of the panel contents. We can't use a very

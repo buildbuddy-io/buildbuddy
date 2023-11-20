@@ -317,14 +317,44 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   async promptGCPProjectPicker() {
+    let picked = await this.showGCPProjectPicker();
+    await encryptAndUpdate(gcpProjectKey, picked);
+  }
+  async showGCPProjectPicker() {
     let resp = await rpc_service.service.getGCPProject({});
-    // TODO(siggisim): Handle the case where there aren't any GCP Projects.
-    let picked = await picker_service.show({
-      placeholder: "Pick a project or search...",
+    return await picker_service.show({
+      placeholder: "Pick a GCP project or search...",
       title: "Projects",
       options: resp.project.map((p) => p.id),
+      emptyState: (
+        <div className="gcp-picker-empty-state">
+          No Google Cloud projects found!
+          <br />
+          <br />
+          <a href="https://console.cloud.google.com/projectcreate" target="_blank">
+            Click here to create a Google Cloud project
+          </a>
+          , and then click refresh below to update this list.
+          <br />
+          <br />
+          <button onClick={this.showGCPProjectPicker.bind(this)}>Refresh</button>
+        </div>
+      ),
+      footer: (
+        <div className="gcp-picker-footer">
+          Don't want to deploy to any of these projects?
+          <br />
+          <br />
+          <a href="https://console.cloud.google.com/projectcreate" target="_blank">
+            Click here to create a Google Cloud project
+          </a>
+          , and then click refresh below to update this list.
+          <br />
+          <br />
+          <button onClick={this.showGCPProjectPicker.bind(this)}>Refresh</button>
+        </div>
+      ),
     });
-    await encryptAndUpdate(gcpProjectKey, picked);
   }
 
   async handleDeployClicked(repoResponse: repo.CreateRepoResponse) {
@@ -366,8 +396,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
 
   linkGoogleCloud() {
     return popup.open(
-      `/login/?${new URLSearchParams({
-        issuer_url: "https://accounts.google.com",
+      `/auth/gcp/link/?${new URLSearchParams({
         link_gcp_for_group: this.props.user?.selectedGroup.id || "",
         redirect_url: window.location.href,
       })}`

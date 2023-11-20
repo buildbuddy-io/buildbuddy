@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -107,12 +106,6 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
-	hostID, err := uuid.GetHostID()
-	if err != nil {
-		log.Warning("Unable to get stable BuildBuddy HostID; filecache will not be reused across process restarts.")
-		hostID = uuid.GetFailsafeHostID()
-	}
-	rootDir = filepath.Join(rootDir, hostID)
 	if deleteContent {
 		log.Infof("Cleaning up filecache %q", rootDir)
 		if err := disk.ForceRemove(context.Background(), rootDir); err != nil {

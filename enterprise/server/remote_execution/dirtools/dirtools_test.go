@@ -722,6 +722,136 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 	assert.FileExists(t, filepath.Join(tmpDir, "file_notempty.txt"), "file_notempty.txt should exist")
 }
 
+func TestDownloadTreeExistingCorrectSymlink(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	instanceName := "foo"
+	fileADigest := setFile(t, env, ctx, instanceName, "mytestdataA")
+	fileBDigest := setFile(t, env, ctx, instanceName, "mytestdataB")
+
+	directory := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				&repb.FileNode{
+					Name:   "fileA.txt",
+					Digest: fileADigest,
+				},
+			},
+			Symlinks: []*repb.SymlinkNode{
+				&repb.SymlinkNode{
+					Name:   "fileA.symlink",
+					Target: "./fileA.txt",
+				},
+			},
+		},
+	}
+
+	_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := os.Readlink(filepath.Join(tmpDir, "fileA.symlink"))
+	assert.NoError(t, err, "should be able to read symlink target")
+	assert.Equal(t, "./fileA.txt", target)
+	targetContents, err := os.ReadFile(filepath.Join(tmpDir, "fileA.symlink"))
+	assert.NoError(t, err)
+	assert.Equal(t, "mytestdataA", string(targetContents), "symlinked file contents should match target file")
+
+	directory = &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				&repb.FileNode{
+					Name:   "fileB.txt",
+					Digest: fileBDigest,
+				},
+			},
+			Symlinks: []*repb.SymlinkNode{
+				&repb.SymlinkNode{
+					Name:   "fileA.symlink",
+					Target: "./fileA.txt",
+				},
+			},
+		},
+	}
+
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err = os.Readlink(filepath.Join(tmpDir, "fileA.symlink"))
+	assert.NoError(t, err, "should be able to read symlink target")
+	assert.Equal(t, "./fileA.txt", target)
+	targetContents, err = os.ReadFile(filepath.Join(tmpDir, "fileA.symlink"))
+	assert.NoError(t, err)
+	assert.Equal(t, "mytestdataA", string(targetContents), "symlinked file contents should match target file")
+}
+
+func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+	instanceName := "foo"
+	fileADigest := setFile(t, env, ctx, instanceName, "mytestdataA")
+	fileBDigest := setFile(t, env, ctx, instanceName, "mytestdataB")
+
+	directory := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				&repb.FileNode{
+					Name:   "fileA.txt",
+					Digest: fileADigest,
+				},
+			},
+			Symlinks: []*repb.SymlinkNode{
+				&repb.SymlinkNode{
+					Name:   "fileA.symlink",
+					Target: "./fileA.txt",
+				},
+			},
+		},
+	}
+
+	_, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := os.Readlink(filepath.Join(tmpDir, "fileA.symlink"))
+	assert.NoError(t, err, "should be able to read symlink target")
+	assert.Equal(t, "./fileA.txt", target)
+	targetContents, err := os.ReadFile(filepath.Join(tmpDir, "fileA.symlink"))
+	assert.NoError(t, err)
+	assert.Equal(t, "mytestdataA", string(targetContents), "symlinked file contents should match target file")
+
+	directory = &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				&repb.FileNode{
+					Name:   "fileB.txt",
+					Digest: fileBDigest,
+				},
+			},
+			Symlinks: []*repb.SymlinkNode{
+				&repb.SymlinkNode{
+					Name:   "fileA.symlink",
+					Target: "./fileB.txt",
+				},
+			},
+		},
+	}
+
+	_, err = dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err = os.Readlink(filepath.Join(tmpDir, "fileA.symlink"))
+	assert.NoError(t, err, "should be able to read symlink target")
+	assert.Equal(t, "./fileB.txt", target)
+	targetContents, err = os.ReadFile(filepath.Join(tmpDir, "fileA.symlink"))
+	assert.NoError(t, err)
+	assert.Equal(t, "mytestdataB", string(targetContents), "symlinked file contents should match target file")
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()

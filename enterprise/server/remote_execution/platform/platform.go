@@ -39,8 +39,8 @@ const (
 	Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 	Ubuntu20_04Image = "gcr.io/flame-public/rbe-ubuntu20-04@sha256:036ae8c90876fa22da9ace6f8218e614f4cd500a154fc162973fff691e72d28e"
 
-	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:6381c06bee2910e66903784b4a90cb9ff08823686da46cf6874902c9f8428e69"
-	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:eb81189af1cec44b5348751f75ec7aea516d0de675b8461235f4cc4e553a34b5"
+	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:8cf614fc4695789bea8321446402e7d6f84f6be09b8d39ec93caa508fa3e3cfc"
+	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:271e5e3704d861159c75b8dd6713dbe5a12272ec8ee73d17f89ed7be8026553f"
 
 	// overrideHeaderPrefix is a prefix used to override platform props via
 	// remote headers. The property name immediately follows the prefix in the

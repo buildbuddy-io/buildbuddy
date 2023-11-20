@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -65,15 +64,10 @@ type Options struct {
 	NameOverride string
 }
 
-func NewExecutor(env environment.Env, id string, runnerPool interfaces.RunnerPool, options *Options) (*Executor, error) {
-	hostID := options.NameOverride
-	if hostID == "" {
-		if h, err := uuid.GetHostID(); err == nil {
-			hostID = h
-		} else {
-			log.Warningf("Unable to get stable BuildBuddy HostID. Falling back to failsafe ID. %s", err)
-			hostID = uuid.GetFailsafeHostID()
-		}
+func NewExecutor(env environment.Env, id, hostID string, runnerPool interfaces.RunnerPool, options *Options) (*Executor, error) {
+	effectiveHostID := hostID
+	if options.NameOverride != "" {
+		effectiveHostID = options.NameOverride
 	}
 	if err := disk.EnsureDirectoryExists(runnerPool.GetBuildRoot()); err != nil {
 		return nil, err
@@ -81,7 +75,7 @@ func NewExecutor(env environment.Env, id string, runnerPool interfaces.RunnerPoo
 	return &Executor{
 		env:        env,
 		id:         id,
-		hostID:     hostID,
+		hostID:     effectiveHostID,
 		runnerPool: runnerPool,
 	}, nil
 }

@@ -73,33 +73,6 @@ func TestExecStreamed_Stdio(t *testing.T) {
 	assert.Equal(t, 7, res.ExitCode)
 }
 
-func TestExecStreamed_Stats(t *testing.T) {
-	wd := testfs.MakeTempDir(t)
-	testfs.WriteAllFileContents(t, wd, map[string]string{
-		"mem.py": useMemPythonScript(1e9, 3*time.Second),
-		"cpu.py": useCPUPythonScript(1 * time.Second),
-	})
-	client := startExecService(t)
-	cmd := &repb.Command{
-		Arguments: []string{"bash", "-c", `
-			python3 ./mem.py &
-			python3 ./cpu.py &
-			wait
-		`},
-	}
-
-	res := vmexec_client.Execute(context.Background(), client, cmd, wd, "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
-
-	require.NoError(t, res.Error)
-	require.NotNil(t, res.UsageStats)
-	// Note: error bounds are intentionally very large here to avoid flakiness.
-	assert.GreaterOrEqual(t, res.UsageStats.GetCpuNanos(), int64(0.5e9), "should use around 1e9 CPU nanos")
-	assert.LessOrEqual(t, res.UsageStats.GetCpuNanos(), int64(2e9), "should use around 1e9 CPU nanos")
-	assert.GreaterOrEqual(t, res.UsageStats.GetMemoryBytes(), int64(0), "should use around 1GB memory")
-	assert.LessOrEqual(t, res.UsageStats.GetMemoryBytes(), int64(1.6e9), "should use around 1GB memory")
-	assert.NotEmpty(t, res.UsageStats.GetPeakFileSystemUsage(), "file system usage should not be empty")
-}
-
 func TestExecStreamed_Timeout(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)

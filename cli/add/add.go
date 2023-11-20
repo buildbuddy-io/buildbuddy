@@ -29,6 +29,7 @@ Adds the given dependency to your WORKSPACE file.
 	footerTemplate = "###### End auto-generated section for %s ######"
 
 	headerRegex = regexp.MustCompile(`##### Begin auto-generated section for \[https://registry\.build/(.+?)@(.+?)\]`)
+	moduleRegex = regexp.MustCompile(`bazel_dep\(name = "([^"]+?)", version = "([^"]+?)"\)`)
 )
 
 const (
@@ -58,7 +59,13 @@ func HandleAdd(args []string) (int, error) {
 		return 1, nil
 	}
 
-	module, version, resp, err := FetchModuleOrDisambiguate(flags.Args()[0])
+	input := flags.Args()[0]
+	transitive := strings.HasPrefix(input, "~")
+	if transitive {
+		input = strings.TrimPrefix(input, "~")
+	}
+
+	module, version, resp, err := FetchModuleOrDisambiguate(input)
 	if err != nil {
 		return 1, err
 	}
@@ -67,16 +74,32 @@ func HandleAdd(args []string) (int, error) {
 		version = resp.LatestReleaseWithWorkspaceSnippet
 	}
 
-	// TODO(siggisim): Support MODULE.bazel
 	f, err := openOrCreateWorkspaceFile()
 	if err != nil {
 		return 1, err
 	}
 	defer f.Close()
 
+	if strings.HasPrefix(strings.ToUpper(filepath.Base(f.Name())), "MODULE") {
+		if transitive {
+			return 0, nil
+		}
+		if err := addToModule(f, module, version, resp); err != nil {
+			return 1, err
+		}
+	} else {
+		if err := addToWorkspace(f, module, version, resp); err != nil {
+			return 1, err
+		}
+	}
+
+	return 0, nil
+}
+
+func addToWorkspace(f *os.File, module, version string, resp *RegistryResponse) error {
 	contents, err := io.ReadAll(f)
 	if err != nil {
-		return 1, err
+		return err
 	}
 
 	matches := headerRegex.FindAllStringSubmatch(string(contents), -1)
@@ -84,31 +107,65 @@ func HandleAdd(args []string) (int, error) {
 		existingModule := m[1]
 		existingVersion := m[2]
 		if module == existingModule && version == existingVersion {
-			return 1, fmt.Errorf("WORKSPACE already contains %s at the requested version (%s)",
+			return fmt.Errorf("WORKSPACE already contains %s at the requested version (%s)",
 				existingModule, existingVersion)
 		}
 		if module == existingModule {
-			return 1, fmt.Errorf("WORKSPACE already contains %s at version %s (the requested version is %s)",
+			return fmt.Errorf("WORKSPACE already contains %s at version %s (the requested version is %s)",
 				existingModule, existingVersion, version)
 		}
 	}
 	if strings.Contains(string(contents), resp.Repo.FullName) {
-		return 1, fmt.Errorf("WORKSPACE already contains %s which is likely %s manually installed",
+		return fmt.Errorf("WORKSPACE already contains %s which is likely %s manually installed",
 			resp.Repo.FullName, module)
 	}
 
-	addition := GenerateSnippet(module, version, resp)
+	addition := GenerateWorkspaceSnippet(module, version, resp)
 
 	if _, err := f.WriteString(addition); err != nil {
-		return 1, err
+		return err
 	}
 
-	log.Debugf("Added the following snippet to WORKSPACE:\n%s\n\n", addition)
-
-	return 0, nil
+	log.Debugf("Added the following snippet to %s:\n%s\n\n", filepath.Base(f.Name()), addition)
+	return nil
 }
 
-// TODO(siggisim): Support specifying a version.
+func addToModule(f *os.File, module, version string, resp *RegistryResponse) error {
+	contents, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+
+	moduleSnippet := GenerateModuleSnippet(module, version, resp)
+	registryMatches := moduleRegex.FindStringSubmatch(moduleSnippet)
+	if registryMatches == nil {
+		return fmt.Errorf("MODULE %s not found: %s", module, moduleSnippet)
+	}
+	newModule := registryMatches[1]
+	newVersion := registryMatches[2]
+
+	matches := moduleRegex.FindAllStringSubmatch(string(contents), -1)
+	for _, m := range matches {
+		existingModule := m[1]
+		existingVersion := m[2]
+		if newModule == existingModule && newVersion == existingVersion {
+			return fmt.Errorf("MODULE already contains %s at the requested version (%s)",
+				existingModule, existingVersion)
+		}
+		if newModule == existingModule {
+			return fmt.Errorf("MODULE already contains %s at version %s (the requested version is %s)",
+				existingModule, existingVersion, newVersion)
+		}
+	}
+
+	if _, err := f.WriteString(moduleSnippet); err != nil {
+		return err
+	}
+
+	log.Debugf("Added the following snippet to %s:\n%s\n\n", filepath.Base(f.Name()), moduleSnippet)
+	return nil
+}
+
 func FetchModuleOrDisambiguate(moduleInput string) (string, string, *RegistryResponse, error) {
 	moduleAndVersion := strings.Replace(moduleInput, "https://", "", 1)
 	moduleAndVersion = strings.Replace(moduleAndVersion, "github.com/", "github/", 1)
@@ -147,7 +204,7 @@ func FetchModuleOrDisambiguate(moduleInput string) (string, string, *RegistryRes
 	return moduleName, moduleVersion, res, nil
 }
 
-func GenerateSnippet(module, version string, resp *RegistryResponse) string {
+func GenerateWorkspaceSnippet(module, version string, resp *RegistryResponse) string {
 	versionKey := fmt.Sprintf("[https://registry.build/%s@%s]", module, version)
 	header := fmt.Sprintf(headerTemplate, versionKey)
 	footer := fmt.Sprintf(footerTemplate, versionKey)
@@ -159,6 +216,11 @@ func GenerateSnippet(module, version string, resp *RegistryResponse) string {
 		}
 	}
 	return fmt.Sprintf("\n%s\n\n%+v\n\n%s\n", header, strings.TrimSpace(snippet), footer)
+}
+
+func GenerateModuleSnippet(module, version string, resp *RegistryResponse) string {
+	snippet := resp.ModuleSnippet
+	return fmt.Sprintf("%s\n", snippet)
 }
 
 func fetch(module string) (*RegistryResponse, error) {
@@ -222,7 +284,7 @@ func showPicker(modules []Disambiguation) (string, error) {
 }
 
 func openOrCreateWorkspaceFile() (*os.File, error) {
-	workspacePath, basename, err := workspace.CreateWorkspaceFileIfNotExists()
+	workspacePath, basename, err := workspace.CreateWorkspaceIfNotExists()
 	if err != nil {
 		return nil, err
 	}

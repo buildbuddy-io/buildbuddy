@@ -128,8 +128,8 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "cb6b9cd2728d6d73250f2af99ed96d9714822bee5c3110a8b146a8a3017690d4"
-		expectedVersion = "2"
+		expectedHash    = "ce69b4a932a47c8763a4390171eee6fdb6191920eab50fafe29a72f7d496ce38"
+		expectedVersion = "3"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -395,18 +395,32 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		rootDir := testfs.MakeTempDir(t)
 		workDir := testfs.MakeDirAll(t, rootDir, "work")
 
+		cfg := getExecutorConfig(t)
 		opts := firecracker.ContainerOpts{
 			ContainerImage:         busyboxImage,
 			ActionWorkingDirectory: workDir,
 			VMConfiguration: &fcpb.VMConfiguration{
-				NumCpus:           1,
-				MemSizeMb:         memorySize,
-				EnableNetworking:  false,
-				ScratchDiskSizeMb: 100,
+				NumCpus:            1,
+				MemSizeMb:          memorySize,
+				EnableNetworking:   false,
+				ScratchDiskSizeMb:  100,
+				KernelVersion:      cfg.KernelVersion,
+				FirecrackerVersion: cfg.FirecrackerVersion,
+				GuestApiVersion:    cfg.GuestAPIVersion,
 			},
-			ExecutorConfig: getExecutorConfig(t),
+			ExecutorConfig: cfg,
 		}
-		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		task := &repb.ExecutionTask{
+			Command: &repb.Command{
+				// Note: platform must match in order to share snapshots
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "recycle-runner", Value: "true"},
+					{Name: platform.WorkflowIDPropertyName, Value: "workflow"},
+				}},
+			},
+		}
+
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -657,10 +671,13 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-			EnableNetworking:  false,
-			ScratchDiskSizeMb: 100,
+			NumCpus:            1,
+			MemSizeMb:          minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:   false,
+			ScratchDiskSizeMb:  100,
+			KernelVersion:      cfg.KernelVersion,
+			FirecrackerVersion: cfg.FirecrackerVersion,
+			GuestApiVersion:    cfg.GuestAPIVersion,
 		},
 		ExecutorConfig: cfg,
 	}
@@ -669,6 +686,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 			// Note: platform must match in order to share snapshots
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.WorkflowIDPropertyName, Value: "workflow"},
 			}},
 		},
 	}

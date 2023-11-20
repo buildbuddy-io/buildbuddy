@@ -58,7 +58,7 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return -1, err
 	}
 
-	_, _, err = workspace.CreateWorkspaceFileIfNotExists()
+	path, _, err := workspace.CreateWorkspaceIfNotExists()
 	if err != nil {
 		return 1, err
 	}
@@ -68,17 +68,17 @@ func HandleFix(args []string) (exitCode int, err error) {
 		log.Printf("Error fixing: %s", err)
 	}
 
-	runGazelle()
+	runGazelle(path)
 
 	return 0, nil
 }
 
-func runGazelle() {
+func runGazelle(repoRoot string) {
 	originalArgs := os.Args
 	defer func() {
 		os.Args = originalArgs
 	}()
-	os.Args = []string{"gazelle"}
+	os.Args = []string{"gazelle", "-repo_root=" + repoRoot, "--go_prefix="}
 	if *diff {
 		os.Args = append(os.Args, "-mode=diff")
 	}
@@ -114,7 +114,7 @@ func walk() error {
 				depFiles[fileName] = append(depFiles[fileName], path)
 			}
 			fileNameRoot := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-			if fileNameRoot != "BUILD" && fileNameRoot != "WORKSPACE" {
+			if fileNameRoot != "BUILD" && fileNameRoot != "WORKSPACE" && fileNameRoot != "MODULE" {
 				return nil
 			}
 			fileToFormat, err := translate.Translate(path)

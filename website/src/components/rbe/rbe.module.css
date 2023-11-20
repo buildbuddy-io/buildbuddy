@@ -21,6 +21,16 @@
   min-width: 340px;
 }
 
+.deploymentModelUnit {
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 1.2em;
+  line-height: 1em;
+}
+
 .deploymentModelIcon {
   width: 48px;
   height: 48px;

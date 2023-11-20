@@ -327,7 +327,10 @@ export function formatRole(role: string): string | null {
   return null;
 }
 
-export function formatWithCommas(num: number | Long) {
+export function formatWithCommas(num: number | Long | Number | undefined) {
+  if (num === undefined || num === null) {
+    return "";
+  }
   return (+num).toLocaleString("en-US");
 }
 

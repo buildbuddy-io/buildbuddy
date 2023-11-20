@@ -1,10 +1,11 @@
+build --noenable_bzlmod
+
 build --enable_platform_specific_config=true
 query --enable_platform_specific_config=true
 
 # Skymeld merges the analysis phase and execution phase.
 # This allows build and test executions to start before the analysis phase finishes,
 # thus speeding up the build overall .
-build:skymeld --experimental_skymeld_ui
 build:skymeld --experimental_merged_skyframe_analysis_execution
 
 # Build with --config=local to send build logs to your local server
@@ -132,6 +133,7 @@ build:release-m1 --config=release-shared
 build:auto-release --config=remote
 build:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 build:auto-release -c opt
+build:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/pgo:prod.pprof
 
 # Static build configuration. MacOS is currently unsupported.
 # On multi-user machines, specify HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX in your
@@ -201,6 +203,13 @@ coverage --combined_report=lcov
 
 # Use BLAKE3 digest function.
 startup --digest_function=BLAKE3
+
+# Include target names in timing profile so it's clickable.
+build --experimental_profile_include_target_label
+# Include primary output name in timing profile.
+build --experimental_profile_include_primary_output
+# Don't merge timing profile actions.
+build --noslim_profile
 
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:

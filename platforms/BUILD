@@ -32,7 +32,6 @@ platform(
     name = "macos",
     constraint_values = ["@platforms//os:macos"],
     exec_properties = {
-        "Arch": "amd64",
         "OSFamily": "darwin",
     },
 )
@@ -40,12 +39,18 @@ platform(
 platform(
     name = "macos_x86_64",
     constraint_values = ["@platforms//cpu:x86_64"],
+    exec_properties = {
+        "Arch": "amd64",
+    },
     parents = [":macos"],
 )
 
 platform(
     name = "macos_arm64",
     constraint_values = ["@platforms//cpu:arm64"],
+    exec_properties = {
+        "Arch": "arm64",
+    },
     parents = [":macos"],
 )
 

@@ -796,7 +796,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 
 	runnerPool := NewTestRunnerPool(r.t, env, options.RunInterceptor)
 
-	exec, err := executor.NewExecutor(env, executorID, runnerPool, &executor.Options{NameOverride: options.Name})
+	exec, err := executor.NewExecutor(env, executorID, "" /*=hostID=*/, runnerPool, &executor.Options{NameOverride: options.Name})
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}

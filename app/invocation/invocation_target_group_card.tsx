@@ -19,6 +19,7 @@ import rpc_service, { CancelablePromise } from "../service/rpc_service";
 import error_service from "../errors/error_service";
 import Spinner from "../components/spinner/spinner";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import format from "../format/format";
 
 export interface TargetGroupCardProps {
   invocationId: string;
@@ -169,7 +170,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
         <div className="icon">{icon}</div>
         <div className="content">
           <div className="title">
-            {this.props.group.totalCount}
+            {format.formatWithCommas(this.props.group.totalCount)}
             {this.props.filter ? " matching" : ""} {pastVerb}{" "}
             <Copy
               className="copy-icon"

@@ -27,7 +27,7 @@ def yarn(name, srcs, package, command = "build", deps = [], yarn = "@yarn//:yarn
         outs = [name + extension],
         cmd_bash = cmd,
         executable = executable,
-        exec_tools = [yarn, node],
+        tools = [yarn, node],
         local = 1,
         **kwargs
     )

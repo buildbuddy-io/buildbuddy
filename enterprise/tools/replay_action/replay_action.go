@@ -30,7 +30,7 @@ var (
 	sourceExecutor           = flag.String("source_executor", "grpcs://remote.buildbuddy.dev", "The backend to replay an action against.")
 	targetExecutor           = flag.String("target_executor", "", "The backend to replay an action against.")
 	sourceAPIKey             = flag.String("source_api_key", "", "The API key of the account that owns the action.")
-	targetAPIKey             = flag.String("target_api_key", "", "API key to use for the target executor. If not set, uses the source API key.")
+	targetAPIKey             = flag.String("target_api_key", "", "API key to use for the target executor.")
 	sourceRemoteInstanceName = flag.String("source_remote_instance_name", "", "The remote instance name used in the source action")
 	targetRemoteInstanceName = flag.String("target_remote_instance_name", "", "The remote instance name used in the source action")
 
@@ -148,6 +148,9 @@ func contextWithTargetAPIKey(ctx context.Context) context.Context {
 	if *targetAPIKey != "" {
 		return metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *targetAPIKey)
 	}
+	if *sourceAPIKey != "" {
+		log.Fatalf("--target_api_key is required when --source_api_key is set")
+	}
 	return ctx
 }
 
@@ -235,6 +238,7 @@ func main() {
 		InstanceName:    *targetRemoteInstanceName,
 		SkipCacheLookup: true,
 		ActionDigest:    d,
+		DigestFunction:  actionInstanceDigest.GetDigestFunction(),
 	}
 	eg := &errgroup.Group{}
 	eg.SetLimit(*jobs)

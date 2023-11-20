@@ -659,20 +659,17 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 }
 
 func isComplete(children []*capb.DirectoryWithDigest) bool {
-	allDigests := make(map[string]struct{}, len(children))
+	allDigests := make(map[string]*capb.DirectoryWithDigest, len(children))
 	for _, child := range children {
-		rn := digest.ResourceNameFromProto(child.GetResourceName())
-		if rn.IsEmpty() {
+		rn := child.GetResourceName()
+		if digest.IsEmptyHash(rn.GetDigest(), rn.GetDigestFunction()) {
 			continue
 		}
-		allDigests[rn.GetDigest().GetHash()] = struct{}{}
+		allDigests[rn.GetDigest().GetHash()] = child
 	}
-	for _, child := range children {
-		rn := digest.ResourceNameFromProto(child.GetResourceName())
-		if rn.IsEmpty() {
-			continue
-		}
+	for _, child := range allDigests {
 		dir := child.Directory
+		rn := child.GetResourceName()
 		if len(dir.Directories) == 0 && len(dir.Files) == 0 && len(dir.Symlinks) == 0 {
 			log.Warningf("corrupted tree: empty dir: %+v, digest: %q", dir, rn.GetDigest().GetHash())
 			return false

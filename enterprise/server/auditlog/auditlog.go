@@ -41,27 +41,6 @@ type Logger struct {
 	payloadTypes map[protoreflect.MessageDescriptor]protoreflect.FieldDescriptor
 }
 
-func GroupResourceID(id string) *alpb.ResourceID {
-	return &alpb.ResourceID{
-		Type: alpb.ResourceType_GROUP,
-		Id:   id,
-	}
-}
-
-func SecretResourceID(secretName string) *alpb.ResourceID {
-	return &alpb.ResourceID{
-		Type: alpb.ResourceType_SECRET,
-		Id:   secretName,
-	}
-}
-
-func InvocationResourceID(id string) *alpb.ResourceID {
-	return &alpb.ResourceID{
-		Type: alpb.ResourceType_INVOCATION,
-		Id:   id,
-	}
-}
-
 func Register(env environment.Env) error {
 	if !*auditLogsEnabled {
 		return nil
@@ -178,6 +157,30 @@ func (l *Logger) Log(ctx context.Context, resource *alpb.ResourceID, action alpb
 	if err := l.insertLog(ctx, resource, action, request); err != nil {
 		log.Warningf("could not insert audit log: %s", err)
 	}
+}
+
+func (l *Logger) LogForGroup(ctx context.Context, groupID string, action alpb.Action, request proto.Message) {
+	r := &alpb.ResourceID{
+		Type: alpb.ResourceType_GROUP,
+		Id:   groupID,
+	}
+	l.Log(ctx, r, action, request)
+}
+
+func (l *Logger) LogForInvocation(ctx context.Context, invocationID string, action alpb.Action, request proto.Message) {
+	r := &alpb.ResourceID{
+		Type: alpb.ResourceType_INVOCATION,
+		Id:   invocationID,
+	}
+	l.Log(ctx, r, action, request)
+}
+
+func (l *Logger) LogForSecret(ctx context.Context, secretName string, action alpb.Action, request proto.Message) {
+	r := &alpb.ResourceID{
+		Type: alpb.ResourceType_SECRET,
+		Id:   secretName,
+	}
+	l.Log(ctx, r, action, request)
 }
 
 // cleanRequest clears out redundant noise from the requests.

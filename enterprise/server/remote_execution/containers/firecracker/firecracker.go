@@ -102,7 +102,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "2"
+	GuestAPIVersion = "3"
 
 	// How long to wait for the VMM to listen on the firecracker socket.
 	firecrackerSocketWaitTimeout = 3 * time.Second
@@ -940,6 +940,13 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
 	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
+	label := metrics.HitStatusLabel
+	if err != nil {
+		label = metrics.MissStatusLabel
+	}
+	metrics.RecycleRunnerRequests.With(prometheus.Labels{
+		metrics.RecycleRunnerRequestStatusLabel: label,
+	}).Inc()
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}

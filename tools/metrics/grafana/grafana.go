@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -134,9 +135,9 @@ func run() error {
 }
 
 type Dashboard struct {
-	UID  string `json:"uid"`
-	URL  string `json:"url"`
-	Slug string `json:"slug"`
+	UID  string   `json:"uid"`
+	URL  string   `json:"url"`
+	Tags []string `json:"tags"`
 }
 
 type DashboardResponse struct {
@@ -155,22 +156,23 @@ func exportNormalizedDashboard(d *Dashboard) error {
 		return err
 	}
 	var normalized bytes.Buffer
-	// Use the slug as the filename since it's stable even if the dashboard
-	// is renamed.
-	slug := rsp.Dashboard.Slug
-	if slug == "" {
-		// When saving for the first time, the slug won't be set. Use Grafana's
-		// auto-generated one from the dashboard title, which appears in the URL
-		slug = path.Base(d.URL)
+	fileName := path.Base(d.URL) + ".json"
+	for _, t := range d.Tags {
+		// Use the existing "file:" tag as the file name if it exists, this way
+		// the file name does not have to match the dashboard title, and so we
+		// can rename dashboards without changing the file name.
+		if strings.HasPrefix(t, "file:") {
+			fileName = strings.TrimPrefix(t, "file:")
+			break
+		}
 	}
-	cmd := exec.Command(normalizeScript, "--slug="+slug)
+	cmd := exec.Command(normalizeScript, "--name="+fileName)
 	cmd.Stdin = bytes.NewReader(b)
 	cmd.Stdout = &normalized
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return err
 	}
-	fileName := slug + ".json"
 	outPath := filepath.Join(dashboardsDir, fileName)
 	// Write file only if different, to avoid updating mtime and triggering file
 	// watchers etc.

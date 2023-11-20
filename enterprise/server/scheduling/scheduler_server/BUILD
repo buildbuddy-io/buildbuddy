@@ -1,10 +1,8 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-# TODO(sluongng): ensure all //enterprise code are not dependency of FOSS code
-# gazelle:default_visibility //enterprise:__subpackages__,//server/static:__pkg__
+# gazelle:default_visibility //enterprise:__subpackages__
 package(default_visibility = [
     "//enterprise:__subpackages__",
-    "//server/static:__pkg__",
 ])
 
 go_library(
@@ -13,7 +11,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server",
     deps = [
         "//enterprise/server/remote_execution/platform",
-        "//enterprise/server/scheduling/scheduler_server/config",
         "//enterprise/server/tasksize",
         "//proto:api_key_go_proto",
         "//proto:remote_execution_go_proto",
@@ -24,6 +21,7 @@ go_library(
         "//server/metrics",
         "//server/remote_execution/config",
         "//server/resources",
+        "//server/scheduling/scheduler_server/config",
         "//server/util/background",
         "//server/util/grpc_client",
         "//server/util/log",

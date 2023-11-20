@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/rpc/interceptors",
+        "//server/util/canary",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
