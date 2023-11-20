@@ -152,10 +152,10 @@ func filterResults(results []*capb.ScoreCard_Result, req *capb.GetCacheScoreCard
 				filePath := filepath.Join(result.GetPathPrefix(), result.GetName())
 				if req.GetFilter().GetExactMatch() {
 					return strings.ToLower(result.GetActionId()) == s ||
-					strings.ToLower(result.GetActionMnemonic()) == s ||
-					strings.ToLower(result.GetTargetId()) == s ||
-					strings.ToLower(result.GetDigest().GetHash()) == s ||
-					strings.ToLower(filePath) == s
+						strings.ToLower(result.GetActionMnemonic()) == s ||
+						strings.ToLower(result.GetTargetId()) == s ||
+						strings.ToLower(result.GetDigest().GetHash()) == s ||
+						strings.ToLower(filePath) == s
 				}
 				return strings.Contains(strings.ToLower(result.GetActionId()), s) ||
 					strings.Contains(strings.ToLower(result.GetActionMnemonic()), s) ||
