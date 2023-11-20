@@ -43,22 +43,35 @@
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
-            "fillOpacity": 80,
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 50,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
             "lineWidth": 1,
+            "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
             }
           },
           "mappings": [],
+          "max": 1,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -82,25 +95,16 @@
       },
       "id": 4,
       "options": {
-        "barRadius": 0,
-        "barWidth": 0.97,
-        "fullHighlight": false,
-        "groupWidth": 0.7,
         "legend": {
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
-        "orientation": "auto",
-        "showValue": "auto",
-        "stacking": "none",
         "tooltip": {
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
-        },
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 0
+        }
       },
       "targets": [
         {
@@ -109,22 +113,10 @@
             "uid": "prom"
           },
           "editorMode": "code",
-          "expr": "(sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"us-west1\", job=\"executor-workflows\", status=\"hit\"}[60m])) * 60 * 60) / ((sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"us-west1\", job=\"executor-workflows\"}[60m])) > 0)* 60 * 60 > 10)",
+          "expr": "(sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"us-west1\", job=\"executor-workflows\", status=\"hit\"}[60m])) * 60 * 60)\n/\n((sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"us-west1\", job=\"executor-workflows\"}[60m])) > 0)* 60 * 60 > 10)",
           "legendFormat": "runner reuse rate (1h window, where at least 10 workflows executed)",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
-          "editorMode": "code",
-          "expr": "0",
-          "hide": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "B"
         },
         {
           "datasource": {
@@ -137,10 +129,21 @@
           "legendFormat": "event: fraction of executors shutdown (approx)",
           "range": true,
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "expr": "",
+          "hide": false,
+          "instant": false,
+          "range": true,
+          "refId": "B"
         }
       ],
       "title": "Warm Workflow Rate",
-      "type": "barchart"
+      "type": "timeseries"
     },
     {
       "collapsed": true,
@@ -215,8 +218,8 @@
           "showLegend": true
         },
         "tooltip": {
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "targets": [
@@ -417,7 +420,7 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 0,
+            "fillOpacity": 20,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -453,7 +456,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "binBps"
         },
         "overrides": []
       },
@@ -472,7 +476,7 @@
           "showLegend": true
         },
         "tooltip": {
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
@@ -483,13 +487,13 @@
             "uid": "prom"
           },
           "editorMode": "code",
-          "expr": "sum(buildbuddy_firecracker_cow_snapshot_dirty_bytes) by(file_name)",
+          "expr": "sum by (file_name) (rate(buildbuddy_firecracker_cow_snapshot_dirty_bytes[10m]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Dirty Bytes",
+      "title": "Dirty byte upload rate (10m window)",
       "type": "timeseries"
     },
     {
