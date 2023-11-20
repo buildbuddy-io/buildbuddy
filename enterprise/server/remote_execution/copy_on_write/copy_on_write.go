@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/exp/maps"
@@ -67,7 +68,14 @@ type COWStore struct {
 	// in addition to local caching
 	remoteEnabled bool
 
-	mu sync.RWMutex // Protects chunks and dirty
+	// storeLock locks the entire store.
+	// It can be used to prevent concurrent map access of chunks and dirty.
+	// storeLock has worse performance, so use chunkLock when possible.
+	storeLock sync.RWMutex
+	// chunkLock can be used to lock a single chunk, to synchronize simultaneous
+	// access on that chunk (i.e. two goroutines trying to initialize and copy a chunk
+	// at the same time).
+	chunkLock lockmap.Locker
 
 	// chunks is a mapping of chunk offset to the backing data store
 	chunks map[int64]*Mmap
@@ -117,6 +125,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
 		remoteEnabled:      remoteEnabled,
+		chunkLock:          lockmap.New(),
 		chunks:             chunkMap,
 		dirty:              make(map[int64]bool, 0),
 		dataDir:            dataDir,
@@ -183,15 +192,18 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 	c.eagerFetchNextChunks(chunkStartOffset)
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if write {
 		if err := c.copyChunkIfNotDirty(chunkStartOffset); err != nil {
 			return 0, status.WrapError(err, "copy chunk")
 		}
 	}
 
+	chunkUnlockFn := c.chunkLock.RLock(fmt.Sprintf("%d", chunkStartOffset))
+	defer chunkUnlockFn()
+
+	c.storeLock.RLock()
 	chunk := c.chunks[chunkStartOffset]
+	c.storeLock.RUnlock()
 	if chunk == nil {
 		// No data (yet); map into our static zero-filled buf. Note that this
 		// can only happen for reads, since for writes we call copyChunkIfNotDirty above.
@@ -209,9 +221,9 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 // SortedChunks returns all chunks sorted by offset.
 func (c *COWStore) SortedChunks() []*Mmap {
-	c.mu.RLock()
+	c.storeLock.RLock()
 	chunks := maps.Values(c.chunks)
-	c.mu.RUnlock()
+	c.storeLock.RUnlock()
 
 	sort.Slice(chunks, func(i, j int) bool {
 		return chunks[i].Offset < chunks[j].Offset
@@ -235,9 +247,6 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 
 	c.eagerFetchNextChunks(chunkOffset)
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	for len(p) > 0 {
 		chunkRelativeOffset := off % c.chunkSizeBytes
 		chunkCalculatedSize := c.calculateChunkSize(chunkOffset)
@@ -245,51 +254,11 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 		if readSize > len(p) {
 			readSize = len(p)
 		}
-		chunk := c.chunks[chunkOffset]
-		if chunk == nil {
-			// No chunk at this index yet; write all 0s.
-			copy(p[:readSize], c.zeroBuf)
-		} else {
-			// chunkActualSize will be different than chunkCalculatedSize only
-			// if this chunk was the last chunk when we called Resize(). This is
-			// because Resize() does not actually resize the chunk itself - it
-			// is a lazy operation that "virtually" right-pads the COWStore with
-			// 0s. So in this case, we need to limit the amount of data
-			// requested from the chunk (readSize) to the amount of data that's
-			// actually remaining in the chunk (remainingDataSize), then fill
-			// the remainder with zeroes.
-			//
-			// For example, let's say we have the following chunks, before
-			// resizing:
-			//     [1111]  [1]
-			//     c1      c2
-			// Now let's say we Resize, increasing the COW's total size by 4
-			// bytes. (Bytes between "[]"" are physically present in the chunk,
-			// while other bytes are "virtual")
-			//     [1111]  [1]000  0
-			//     c1      c2      c3
-			// Now, the chunkActualSize of c2 will still be 1, while the
-			// chunkCalculatedSize will be 4. So when reading from c2, we need
-			// to make sure that we zero-pad when reading offset >= 1.
 
-			chunkActualSize, err := chunk.SizeBytes()
-			if err != nil {
-				return n, err
-			}
-			// Chunk might have less data available than the calculated size
-			// if this was the last chunk when we resized. If so then fill
-			// the range from [dataSize, readSize) with 0s.
-			dataSize := int64(readSize)
-			if remainder := chunkActualSize - chunkRelativeOffset; readSize > int(remainder) {
-				dataSize = max(0, remainder)
-			}
-			if dataSize > 0 {
-				if _, err := readFullAt(chunk, p[:dataSize], chunkRelativeOffset); err != nil {
-					return n, err
-				}
-			}
-			copy(p[dataSize:readSize], c.zeroBuf)
+		if err := c.readChunk(p, chunkRelativeOffset, chunkOffset, readSize); err != nil {
+			return n, err
 		}
+
 		n += readSize
 		p = p[readSize:]
 		off += int64(readSize)
@@ -298,6 +267,61 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 	return n, nil
 }
 
+func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffset int64, readSize int) error {
+	chunkUnlockFn := c.chunkLock.RLock(fmt.Sprintf("%d", chunkStartOffset))
+	defer chunkUnlockFn()
+
+	c.storeLock.RLock()
+	chunk := c.chunks[chunkStartOffset]
+	c.storeLock.RUnlock()
+	if chunk == nil {
+		// No chunk at this index yet; write all 0s.
+		copy(p[:readSize], c.zeroBuf)
+		return nil
+	}
+
+	// chunkActualSize will be different than chunkCalculatedSize only
+	// if this chunk was the last chunk when we called Resize(). This is
+	// because Resize() does not actually resize the chunk itself - it
+	// is a lazy operation that "virtually" right-pads the COWStore with
+	// 0s. So in this case, we need to limit the amount of data
+	// requested from the chunk (readSize) to the amount of data that's
+	// actually remaining in the chunk (remainingDataSize), then fill
+	// the remainder with zeroes.
+	//
+	// For example, let's say we have the following chunks, before
+	// resizing:
+	//     [1111]  [1]
+	//     c1      c2
+	// Now let's say we Resize, increasing the COW's total size by 4
+	// bytes. (Bytes between "[]"" are physically present in the chunk,
+	// while other bytes are "virtual")
+	//     [1111]  [1]000  0
+	//     c1      c2      c3
+	// Now, the chunkActualSize of c2 will still be 1, while the
+	// chunkCalculatedSize will be 4. So when reading from c2, we need
+	// to make sure that we zero-pad when reading offset >= 1.
+
+	chunkActualSize, err := chunk.SizeBytes()
+	if err != nil {
+		return err
+	}
+	// Chunk might have less data available than the calculated size
+	// if this was the last chunk when we resized. If so then fill
+	// the range from [dataSize, readSize) with 0s.
+	dataSize := int64(readSize)
+	if remainder := chunkActualSize - readRelativeOffset; readSize > int(remainder) {
+		dataSize = max(0, remainder)
+	}
+	if dataSize > 0 {
+		_, err = readFullAt(chunk, p[:dataSize], readRelativeOffset)
+		if err != nil {
+			return err
+		}
+	}
+	copy(p[dataSize:readSize], c.zeroBuf)
+	return nil
+}
 func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	if err := checkBounds("write", c.totalSizeBytes, p, off); err != nil {
 		return 0, err
@@ -307,9 +331,6 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	n := 0
 
 	c.eagerFetchNextChunks(chunkOffset)
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
@@ -323,17 +344,32 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		if writeSize > len(p) {
 			writeSize = len(p)
 		}
-		chunk := c.chunks[chunkOffset]
-		nw, err := chunk.WriteAt(p[:writeSize], chunkRelativeOffset)
+
+		nw, err := c.writeToChunk(p, chunkRelativeOffset, chunkOffset, writeSize)
 		n += nw
 		if err != nil {
 			return n, err
 		}
-		if nw != writeSize {
-			return n, io.ErrShortWrite
-		}
 		p = p[writeSize:]
 		chunkOffset += c.chunkSizeBytes
+	}
+	return n, nil
+}
+
+func (c *COWStore) writeToChunk(p []byte, writeRelativeOffset int64, chunkStartOffset int64, writeSize int) (int, error) {
+	chunkUnlockFn := c.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
+	defer chunkUnlockFn()
+
+	c.storeLock.RLock()
+	chunk := c.chunks[chunkStartOffset]
+	c.storeLock.RUnlock()
+
+	n, err := chunk.WriteAt(p[:writeSize], writeRelativeOffset)
+	if err != nil {
+		return n, err
+	}
+	if n != writeSize {
+		return n, io.ErrShortWrite
 	}
 	return n, nil
 }
@@ -373,8 +409,8 @@ func (s *COWStore) SizeBytes() (int64, error) {
 
 // Dirty returns whether the chunk at the given offset is dirty.
 func (s *COWStore) Dirty(chunkOffset int64) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.storeLock.RLock()
+	defer s.storeLock.RUnlock()
 	return s.dirty[chunkOffset]
 }
 
@@ -442,9 +478,14 @@ func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 	return size
 }
 
-// NOTE: This function should be executed atomically. Callers should manage locking
 func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
-	if s.dirty[chunkStartOffset] {
+	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
+	defer chunkUnlockFn()
+
+	s.storeLock.RLock()
+	dirty := s.dirty[chunkStartOffset]
+	s.storeLock.RUnlock()
+	if dirty {
 		// Chunk is already dirty - no need to copy
 		return nil
 	}
@@ -514,7 +555,9 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 		return nil, nil, err
 	}
 
+	s.storeLock.RLock()
 	ogChunk = s.chunks[offset]
+	s.storeLock.RUnlock()
 	chunkSource := snaputil.ChunkSourceHole
 	if ogChunk != nil {
 		if !ogChunk.safeReadMapped() {
@@ -529,8 +572,10 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 		return nil, nil, err
 	}
 
+	s.storeLock.Lock()
 	s.chunks[offset] = newChunk
 	s.dirty[offset] = true
+	s.storeLock.Unlock()
 
 	return ogChunk, newChunk, nil
 }
@@ -585,9 +630,12 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 }
 
 func (s *COWStore) fetchChunk(offset int64) error {
-	s.mu.RLock()
+	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", offset))
+	defer chunkUnlockFn()
+
+	s.storeLock.RLock()
 	c := s.chunks[offset]
-	s.mu.RUnlock()
+	s.storeLock.RUnlock()
 
 	// Skip holes
 	if c == nil {
