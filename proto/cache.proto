@@ -81,6 +81,10 @@ message GetCacheScoreCardRequest {
 
     // Return only results with this cache type.
     resource.CacheType cache_type = 6;
+
+    // If true, the search string must match exactly and won't match prefix
+    // strings.
+    bool exact_match = 7;
   }
 
   // Optional filter for returned results.
