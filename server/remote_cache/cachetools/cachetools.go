@@ -97,8 +97,7 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 		if err != nil {
 			return err
 		}
-		n, err := wc.Write(rsp.Data)
-		if err != nil {
+		if _, err := wc.Write(rsp.Data); err != nil {
 			return err
 		}
 	}
