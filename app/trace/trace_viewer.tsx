@@ -11,6 +11,7 @@ import Panel from "./trace_viewer_panel";
 import { TraceEvent } from "./trace_events";
 import { buildTraceViewerModel, panelScrollHeight } from "./trace_viewer_model";
 import { Profile } from "./trace_events";
+import router from "../router/router";
 
 export interface TraceViewProps {
   profile: Profile;
@@ -74,6 +75,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
 
     window.addEventListener("resize", this.onWindowResize);
     window.addEventListener("mousemove", this.onWindowMouseMove);
+    window.addEventListener("click", this.onWindowMouseClick);
     window.addEventListener("mouseup", this.onWindowMouseUp);
     for (const panel of this.panels) {
       // Need to register a non-passive event listener because we may want to
@@ -147,6 +149,16 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     if (this.canvasXPerModelX.isAtTarget) this.animation.stop();
   }
 
+  private mouseClick(mouse: MouseEvent | React.MouseEvent) {
+    for (const panel of this.panels) {
+      panel.mouse = mouse;
+      const hovering = panel.containsClientXY(mouse);
+      if (hovering && panel?.getHoveredEvent()?.args.target) {
+        router.navigateTo(`?target=${panel?.getHoveredEvent()?.args.target}#targets`);
+      }
+    }
+  }
+
   private updateMouse(mouse: MouseEvent | React.MouseEvent) {
     this.mouse = { clientX: mouse.clientX, clientY: mouse.clientY };
     // Update the mouse's model X coordinate (i.e. hovered timestamp).
@@ -187,6 +199,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
         data: { event: hoveredEvent, x: mouse.clientX, y: mouse.clientY },
       });
     }
+    document.body.style.cursor = hoveredEvent?.args.target ? "pointer" : "";
   }
 
   private onScroll(e: React.UIEvent<HTMLDivElement>, panelIndex: number) {
@@ -235,6 +248,10 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
   private onWindowMouseMove = (e: MouseEvent) => {
     this.updateMouse(e);
     this.animation.start();
+  };
+
+  private onWindowMouseClick = (e: MouseEvent) => {
+    this.mouseClick(e);
   };
 
   private onWindowResize = () => {
