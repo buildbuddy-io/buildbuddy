@@ -29,6 +29,7 @@ export interface CacheRequestsCardProps {
   query?: string;
   show?: number;
   groupBy?: number;
+  exactMatch?: boolean;
 }
 
 interface State {
@@ -152,6 +153,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             requestType: filter.request,
             responseType: filter.response,
             search: this.getSearch(),
+            exactMatch: Boolean(this.props.exactMatch),
           }),
           pageToken,
         })
