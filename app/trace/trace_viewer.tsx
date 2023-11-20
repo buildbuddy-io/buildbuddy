@@ -75,7 +75,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
 
     window.addEventListener("resize", this.onWindowResize);
     window.addEventListener("mousemove", this.onWindowMouseMove);
-    window.addEventListener("click", this.onWindowMouseClick);
     window.addEventListener("mouseup", this.onWindowMouseUp);
     for (const panel of this.panels) {
       // Need to register a non-passive event listener because we may want to
@@ -147,16 +146,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     }
 
     if (this.canvasXPerModelX.isAtTarget) this.animation.stop();
-  }
-
-  private mouseClick(mouse: MouseEvent | React.MouseEvent) {
-    for (const panel of this.panels) {
-      panel.mouse = mouse;
-      const hovering = panel.containsClientXY(mouse);
-      if (hovering && panel?.getHoveredEvent()?.args.target) {
-        router.navigateTo(`?target=${panel?.getHoveredEvent()?.args.target}#targets`);
-      }
-    }
   }
 
   private updateMouse(mouse: MouseEvent | React.MouseEvent) {
@@ -250,10 +239,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     this.animation.start();
   };
 
-  private onWindowMouseClick = (e: MouseEvent) => {
-    this.mouseClick(e);
-  };
-
   private onWindowResize = () => {
     this.update();
   };
@@ -271,6 +256,13 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     this.updateMouse(e);
     // Capture mouseScrollTop so we can keep it fixed while panning.
     this.mouseScrollTop = container.scrollTop + (this.mouse.clientY - container.getBoundingClientRect().top);
+  }
+
+  private onCanvasClick(e: React.MouseEvent, panelIndex: number) {
+    const target = this.panels[panelIndex].getHoveredEvent()?.args?.target;
+    if (target) {
+      router.navigateTo(`?target=${target}#targets`);
+    }
   }
 
   render() {
@@ -292,7 +284,11 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
               position: "relative",
             }}>
             <div key={i} className="panel" onScroll={(e) => this.onScroll(e, i)}>
-              <canvas ref={this.canvasRefs[i]} onMouseDown={(e) => this.onCanvasMouseDown(e, i)} />
+              <canvas
+                ref={this.canvasRefs[i]}
+                onMouseDown={(e) => this.onCanvasMouseDown(e, i)}
+                onClick={(e) => this.onCanvasClick(e, i)}
+              />
               {/*
                * This sizer div is used to make the total scrollable area
                * match the size of the panel contents. We can't use a very
