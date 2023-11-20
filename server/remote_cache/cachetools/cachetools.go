@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -16,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
@@ -36,11 +38,16 @@ const (
 
 var (
 	enableUploadCompresssion = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
+	casRPCTimeout            = flag.Duration("cache.client.cas_rpc_timeout", 1*time.Minute, "Maximum time a single batch RPC or a single ByteStream chunk read can take.")
+	acRPCTimeout             = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
+	byteStreamWriteTimeout   = flag.Duration("cache.client.byte_stream_write_timeout", 15*time.Minute, "Maximum time a single ByteStream upload can take.")
 )
 
-type StreamBlobOpts struct {
-	Offset int64
-	Limit  int64
+func retryOptions(name string) *retry.Options {
+	opts := retry.DefaultOptions()
+	opts.MaxRetries = 3
+	opts.Name = name
+	return opts
 }
 
 type nopCloser struct {
@@ -49,7 +56,7 @@ type nopCloser struct {
 
 func (nopCloser) Close() error { return nil }
 
-func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
+func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
 	if bsClient == nil {
 		return status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -86,8 +93,39 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 		wc = decompressor
 	}
 
+	type streamMsg struct {
+		rsp *bspb.ReadResponse
+		err error
+	}
+	streamMsgs := make(chan streamMsg)
+	go func() {
+		for {
+			rsp, err := stream.Recv()
+			select {
+			case streamMsgs <- streamMsg{rsp, err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	readTimer := time.NewTimer(*casRPCTimeout)
+	defer readTimer.Stop()
+
 	for {
-		rsp, err := stream.Recv()
+		var rsp *bspb.ReadResponse
+		var err error
+		select {
+		case msg := <-streamMsgs:
+			rsp = msg.rsp
+			err = msg.err
+		case <-readTimer.C:
+			return status.DeadlineExceededError("Timed out waiting for Read response")
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 		if err == io.EOF {
 			if err := wc.Close(); err != nil {
 				return err
@@ -108,6 +146,27 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	return nil
 }
 
+func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
+	// We can only retry if we can rewind the writer back to the beginning.
+	seeker, retryable := out.(io.Seeker)
+	if retryable {
+		return retry.DoVoid(ctx, retryOptions("ByteStream.Read"), func(ctx context.Context) error {
+			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+				return retry.NonRetryableError(err)
+			}
+			ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
+			defer cancel()
+			err := getBlob(ctx, bsClient, r, out)
+			if status.IsNotFoundError(err) {
+				return retry.NonRetryableError(err)
+			}
+			return err
+		})
+	} else {
+		return getBlob(ctx, bsClient, r, out)
+	}
+}
+
 // BlobResponse is a response to an individual blob in a BatchReadBlobs request.
 type BlobResponse struct {
 	Digest *repb.Digest
@@ -122,6 +181,14 @@ type BlobResponse struct {
 // It validates the response so that if the returned err is nil, then all
 // digests in the request are guaranteed to have a corresponding map entry.
 func BatchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.BatchReadBlobsRequest) ([]*BlobResponse, error) {
+	return retry.Do(ctx, retryOptions("BatchReadBlobs"), func(ctx context.Context) ([]*BlobResponse, error) {
+		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
+		defer cancel()
+		return batchReadBlobs(ctx, casClient, req)
+	})
+}
+
+func batchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.BatchReadBlobsRequest) ([]*BlobResponse, error) {
 	res, err := casClient.BatchReadBlobs(ctx, req)
 	if err != nil {
 		return nil, err
@@ -193,7 +260,7 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
-func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*repb.Digest, error) {
+func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*repb.Digest, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -272,6 +339,25 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	return r.GetDigest(), nil
 }
 
+func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*repb.Digest, error) {
+	// We can only retry if we can rewind the reader back to the beginning.
+	seeker, retryable := in.(io.Seeker)
+	if retryable {
+		return retry.Do(ctx, retryOptions("ByteStream.Write"), func(ctx context.Context) (*repb.Digest, error) {
+			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+				return nil, retry.NonRetryableError(err)
+			}
+			// We set a timeout for the entire write since we can't monitor
+			// status of individual chunk writes.
+			ctx, cancel := context.WithTimeout(ctx, *byteStreamWriteTimeout)
+			defer cancel()
+			return uploadFromReader(ctx, bsClient, r, in)
+		})
+	} else {
+		return uploadFromReader(ctx, bsClient, r, in)
+	}
+}
+
 func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *digest.ResourceName) (*repb.ActionResult, error) {
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("ActionCacheClient not configured")
@@ -284,7 +370,15 @@ func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *d
 		InstanceName:   ar.GetInstanceName(),
 		DigestFunction: ar.GetDigestFunction(),
 	}
-	return acClient.GetActionResult(ctx, req)
+	return retry.Do(ctx, retryOptions("GetActionResult"), func(ctx context.Context) (*repb.ActionResult, error) {
+		ctx, cancel := context.WithTimeout(ctx, *acRPCTimeout)
+		defer cancel()
+		rsp, err := acClient.GetActionResult(ctx, req)
+		if status.IsNotFoundError(err) {
+			return nil, retry.NonRetryableError(err)
+		}
+		return rsp, err
+	})
 }
 
 func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r *digest.ResourceName, ar *repb.ActionResult) error {
@@ -301,7 +395,11 @@ func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r 
 		ActionResult:   ar,
 		DigestFunction: r.GetDigestFunction(),
 	}
-	_, err := acClient.UpdateActionResult(ctx, req)
+	_, err := retry.Do(ctx, retryOptions("UpdateActionResult"), func(ctx context.Context) (*repb.ActionResult, error) {
+		ctx, cancel := context.WithTimeout(ctx, *acRPCTimeout)
+		defer cancel()
+		return acClient.UpdateActionResult(ctx, req)
+	})
 	return err
 }
 
@@ -621,7 +719,11 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 	}
 	ul.unsentBatchSize = 0
 	ul.eg.Go(func() error {
-		rsp, err := casClient.BatchUpdateBlobs(ul.ctx, req)
+		rsp, err := retry.Do(ul.ctx, retryOptions("BatchUpdateBlobs"), func(ctx context.Context) (*repb.BatchUpdateBlobsResponse, error) {
+			ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
+			defer cancel()
+			return casClient.BatchUpdateBlobs(ctx, req)
+		})
 		if err != nil {
 			return err
 		}
