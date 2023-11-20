@@ -49,33 +49,31 @@ type nopCloser struct {
 
 func (nopCloser) Close() error { return nil }
 
-func getBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, opts *StreamBlobOpts, out io.Writer) (int64, error) {
+func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
 	if bsClient == nil {
-		return 0, status.FailedPreconditionError("ByteStreamClient not configured")
+		return status.FailedPreconditionError("ByteStreamClient not configured")
 	}
 	if r.IsEmpty() {
-		return 0, nil
+		return nil
 	}
 
 	downloadString, err := r.DownloadString()
 	if err != nil {
-		return 0, err
+		return err
 	}
 	req := &bspb.ReadRequest{
 		ResourceName: downloadString,
-		ReadOffset:   opts.Offset,
-		ReadLimit:    opts.Limit,
 	}
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
-			return 0, digest.MissingDigestError(r.GetDigest())
+			return digest.MissingDigestError(r.GetDigest())
 		}
-		return 0, err
+		return err
 	}
 	checksum, err := digest.HashForDigestType(r.GetDigestFunction())
 	if err != nil {
-		return 0, err
+		return err
 	}
 	w := io.MultiWriter(checksum, out)
 
@@ -83,40 +81,31 @@ func getBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		decompressor, err := compression.NewZstdDecompressor(w)
 		if err != nil {
-			return 0, err
+			return err
 		}
 		wc = decompressor
 	}
 
-	written := int64(0)
 	for {
 		rsp, err := stream.Recv()
 		if err == io.EOF {
 			if err := wc.Close(); err != nil {
-				return 0, err
+				return err
 			}
 			break
 		}
 		if err != nil {
-			return 0, err
+			return err
 		}
-		n, err := wc.Write(rsp.Data)
-		if err != nil {
-			return 0, err
+		if _, err := wc.Write(rsp.Data); err != nil {
+			return err
 		}
-		written += int64(n)
 	}
 	computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
-	if opts.Offset == 0 && opts.Limit == 0 && computedDigest != r.GetDigest().GetHash() {
-		return 0, status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
+	if computedDigest != r.GetDigest().GetHash() {
+		return status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
 	}
-	return written, nil
-}
-
-// TODO(vadim): return # of bytes written for consistency with getBlobChunk
-func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
-	_, err := getBlobChunk(ctx, bsClient, r, &StreamBlobOpts{Offset: 0, Limit: 0}, out)
-	return err
+	return nil
 }
 
 // BlobResponse is a response to an individual blob in a BatchReadBlobs request.
