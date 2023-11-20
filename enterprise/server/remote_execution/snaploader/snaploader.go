@@ -746,6 +746,8 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		return nil, status.WrapError(err, "cache chunks")
 	}
 
+	fmt.Printf("\nFor store %s, total lock time is %d (ms)\n", name, cow.TotalLockTime)
+
 	// Save ActionCache Tree to the cache
 	treeDigest, err := digest.ComputeForMessage(tree, repb.DigestFunction_BLAKE3)
 	if err != nil {
