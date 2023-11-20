@@ -65,27 +65,28 @@ const (
 	// empty or unset.
 	unsetContainerImageVal = "none"
 
-	RecycleRunnerPropertyName            = "recycle-runner"
-	AffinityRoutingPropertyName          = "affinity-routing"
-	preserveWorkspacePropertyName        = "preserve-workspace"
-	nonrootWorkspacePropertyName         = "nonroot-workspace"
-	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
-	persistentWorkerPropertyName         = "persistent-workers"
-	persistentWorkerKeyPropertyName      = "persistentWorkerKey"
-	persistentWorkerProtocolPropertyName = "persistentWorkerProtocol"
-	WorkflowIDPropertyName               = "workflow-id"
-	workloadIsolationPropertyName        = "workload-isolation-type"
-	initDockerdPropertyName              = "init-dockerd"
-	enableDockerdTCPPropertyName         = "enable-dockerd-tcp"
-	enableVFSPropertyName                = "enable-vfs"
-	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
-	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
-	disableMeasuredTaskSizePropertyName  = "debug-disable-measured-task-size"
-	disablePredictedTaskSizePropertyName = "debug-disable-predicted-task-size"
-	extraArgsPropertyName                = "extra-args"
-	EnvOverridesPropertyName             = "env-overrides"
-	EnvOverridesBase64PropertyName       = "env-overrides-base64"
-	IncludeSecretsPropertyName           = "include-secrets"
+	RecycleRunnerPropertyName             = "recycle-runner"
+	AffinityRoutingPropertyName           = "affinity-routing"
+	ColdRunnerSchedulingDelayPropertyName = "cold-runner-scheduling-delay-ms"
+	preserveWorkspacePropertyName         = "preserve-workspace"
+	nonrootWorkspacePropertyName          = "nonroot-workspace"
+	cleanWorkspaceInputsPropertyName      = "clean-workspace-inputs"
+	persistentWorkerPropertyName          = "persistent-workers"
+	persistentWorkerKeyPropertyName       = "persistentWorkerKey"
+	persistentWorkerProtocolPropertyName  = "persistentWorkerProtocol"
+	WorkflowIDPropertyName                = "workflow-id"
+	workloadIsolationPropertyName         = "workload-isolation-type"
+	initDockerdPropertyName               = "init-dockerd"
+	enableDockerdTCPPropertyName          = "enable-dockerd-tcp"
+	enableVFSPropertyName                 = "enable-vfs"
+	HostedBazelAffinityKeyPropertyName    = "hosted-bazel-affinity-key"
+	useSelfHostedExecutorsPropertyName    = "use-self-hosted-executors"
+	disableMeasuredTaskSizePropertyName   = "debug-disable-measured-task-size"
+	disablePredictedTaskSizePropertyName  = "debug-disable-predicted-task-size"
+	extraArgsPropertyName                 = "extra-args"
+	EnvOverridesPropertyName              = "env-overrides"
+	EnvOverridesBase64PropertyName        = "env-overrides-base64"
+	IncludeSecretsPropertyName            = "include-secrets"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -144,6 +145,7 @@ type Properties struct {
 	DockerNetwork             string
 	RecycleRunner             bool
 	AffinityRouting           bool
+	ColdRunnerSchedulingDelay time.Duration
 	EnableVFS                 bool
 	IncludeSecrets            bool
 
@@ -269,6 +271,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		AffinityRouting:           boolProp(m, AffinityRoutingPropertyName, false),
+		ColdRunnerSchedulingDelay: durationProp(m, ColdRunnerSchedulingDelayPropertyName, 0*time.Second),
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
@@ -574,6 +577,19 @@ func stringListProp(props map[string]string, name string) []string {
 		}
 	}
 	return vals
+}
+
+func durationProp(props map[string]string, name string, defaultValue time.Duration) time.Duration {
+	val := props[strings.ToLower(name)]
+	if val == "" {
+		return defaultValue
+	}
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		log.Warningf("Could not parse platform property %q as duration: %s", name, err)
+		return defaultValue
+	}
+	return d
 }
 
 // FindValue scans the platform properties for the given property name (ignoring

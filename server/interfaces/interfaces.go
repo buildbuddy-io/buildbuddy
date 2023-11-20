@@ -736,6 +736,15 @@ type ExecutionService interface {
 	GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
 }
 
+// An ExecutionNode that has been ranked for scheduling.
+type RankedExecutionNode interface {
+	GetExecutionNode() ExecutionNode
+
+	// Returns the delay which should be applied for tasks newly scheduled on
+	// this execution node.
+	GetSchedulingDelay() time.Duration
+}
+
 type ExecutionNode interface {
 	// GetExecutorID returns the ID for this execution node that uniquely identifies
 	// it within a node pool.
@@ -759,7 +768,7 @@ type TaskRouter interface {
 	// suitability are returned in random order (for load balancing purposes).
 	//
 	// If an error occurs, the input nodes should be returned in random order.
-	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) []ExecutionNode
+	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) []RankedExecutionNode
 
 	// MarkComplete notifies the router that the command has been completed by the
 	// given executor instance. Subsequent calls to RankNodes may assign a higher

@@ -483,7 +483,8 @@ type executionNode struct {
 	// the "task streaming" API.
 	schedulerHostPort string
 	// Optional handle for locally connected executor that can be used to enqueue task reservations.
-	handle *executorHandle
+	handle          *executorHandle
+	schedulingDelay time.Duration
 }
 
 func (en *executionNode) CanFit(size *scpb.TaskSize) bool {
@@ -523,14 +524,15 @@ func toNodeInterfaces(nodes []*executionNode) []interfaces.ExecutionNode {
 	return out
 }
 
-func fromNodeInterfaces(nodes []interfaces.ExecutionNode) ([]*executionNode, error) {
+func fromRankedNodeInterfaces(nodes []interfaces.RankedExecutionNode) ([]*executionNode, error) {
 	out := make([]*executionNode, 0, len(nodes))
 	for _, node := range nodes {
-		en, ok := node.(*executionNode)
+		en, ok := node.GetExecutionNode().(*executionNode)
 		if !ok {
 			return nil, status.InternalError("failed to convert executionNode to interface; this should never happen")
 		}
 		out = append(out, en)
+		en.schedulingDelay = node.GetSchedulingDelay()
 	}
 	return out, nil
 }
@@ -1700,7 +1702,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 						enqueueRequest.GetTaskSize().GetEstimatedMemoryBytes())
 				}
 				rankedNodes := s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(nodes))
-				nodes, err = fromNodeInterfaces(rankedNodes)
+				nodes, err = fromRankedNodeInterfaces(rankedNodes)
 				if err != nil {
 					return err
 				}
@@ -1714,6 +1716,9 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		// Set the executor ID in case the node is owned by another scheduler, so
 		// that the scheduler can prefer this node for the probe.
 		enqueueRequest.ExecutorId = node.GetExecutorID()
+		if node.schedulingDelay > 0*time.Second {
+			enqueueRequest.Delay = durationpb.New(node.schedulingDelay)
+		}
 
 		enqueueStart := time.Now()
 		if opts.scheduleOnConnectedExecutors {

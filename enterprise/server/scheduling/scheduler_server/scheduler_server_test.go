@@ -34,8 +34,25 @@ const (
 type fakeTaskRouter struct {
 }
 
-func (f *fakeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
-	return nodes
+type fakeRankedNode struct {
+	node  interfaces.ExecutionNode
+	delay time.Duration
+}
+
+func (n fakeRankedNode) GetExecutionNode() interfaces.ExecutionNode {
+	return n.node
+}
+
+func (n fakeRankedNode) GetSchedulingDelay() time.Duration {
+	return n.delay
+}
+
+func (f *fakeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
+	for i, node := range nodes {
+		rankedNodes[i] = fakeRankedNode{node: node, delay: time.Duration(i) * time.Second}
+	}
+	return rankedNodes
 }
 
 func (f *fakeTaskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
@@ -218,6 +235,10 @@ func TestSchedulerServerGetPoolInfoSelfHostedByDefault(t *testing.T) {
 	require.Equal(t, "workflows", p.Name)
 }
 
+type task struct {
+	delay time.Duration
+}
+
 type fakeExecutor struct {
 	t               *testing.T
 	schedulerClient scpb.SchedulerClient
@@ -225,7 +246,7 @@ type fakeExecutor struct {
 	ctx context.Context
 
 	mu    sync.Mutex
-	tasks map[string]struct{}
+	tasks map[string]task
 }
 
 func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.SchedulerClient) *fakeExecutor {
@@ -233,17 +254,21 @@ func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.Sch
 		t:               t,
 		schedulerClient: schedulerClient,
 		ctx:             ctx,
-		tasks:           make(map[string]struct{}),
+		tasks:           make(map[string]task),
 	}
 }
 
 func (e *fakeExecutor) Register() {
 	stream, err := e.schedulerClient.RegisterAndStreamWork(e.ctx)
 	require.NoError(e.t, err)
+	id, err := uuid.NewRandom()
+	require.NoError(e.t, err)
+	executorID := id.String()
 	go func() {
 		err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
 			RegisterExecutorRequest: &scpb.RegisterExecutorRequest{
 				Node: &scpb.ExecutionNode{
+					ExecutorId:            executorID,
 					Os:                    defaultOS,
 					Arch:                  defaultArch,
 					Host:                  "foo",
@@ -267,19 +292,27 @@ func (e *fakeExecutor) Register() {
 			require.NoError(e.t, err)
 			e.mu.Lock()
 			log.Infof("got task %q", req.GetEnqueueTaskReservationRequest().GetTaskId())
-			e.tasks[req.GetEnqueueTaskReservationRequest().GetTaskId()] = struct{}{}
+			e.tasks[req.GetEnqueueTaskReservationRequest().GetTaskId()] = task{delay: req.GetEnqueueTaskReservationRequest().GetDelay().AsDuration()}
 			e.mu.Unlock()
 		}
 	}()
 }
 
 func (e *fakeExecutor) WaitForTask(taskID string) {
+	e.WaitForTaskWithDelay(taskID, 0*time.Second)
+}
+
+func (e *fakeExecutor) WaitForTaskWithDelay(taskID string, delay time.Duration) {
 	for i := 0; i < 5; i++ {
 		e.mu.Lock()
-		_, ok := e.tasks[taskID]
+		task, ok := e.tasks[taskID]
 		e.mu.Unlock()
 		if ok {
-			return
+			if task.delay == delay {
+				return
+			} else {
+				require.FailNowf(e.t, "executor received task with unexpected delay", "task %q expected delay: %s actual delay: %s", taskID, delay, task.delay)
+			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -300,7 +333,7 @@ func (e *fakeExecutor) EnsureTaskNotReceived(taskID string) {
 
 func (e *fakeExecutor) ResetTasks() {
 	e.mu.Lock()
-	e.tasks = make(map[string]struct{})
+	e.tasks = make(map[string]task)
 	e.mu.Unlock()
 }
 
@@ -477,4 +510,20 @@ func TestLeaseExpiration(t *testing.T) {
 	// Lease renewal should fail as the stream should be broken.
 	err = lease.Renew()
 	require.ErrorIs(t, io.EOF, err)
+}
+
+func TestSchedulingDelay(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	fe1 := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe2 := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe1.Register()
+	fe2.Register()
+
+	taskID := scheduleTask(ctx, t, env)
+
+	// The fake task router returns nodes in the order they were registered
+	// 1 second of scheduled delay between each execution.
+	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
+	fe2.WaitForTaskWithDelay(taskID, 1*time.Second)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -245,6 +246,30 @@ func TestParse_EstimatedMemory(t *testing.T) {
 		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedMemoryBytes)
+	}
+}
+
+func TestParse_Duration(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		rawValue      string
+		expectedValue time.Duration
+	}{
+		{"cold-runner-scheduling-delay-ms", "", 0 * time.Second},
+		{"cold-runner-scheduling-delay-ms", "100", 0 * time.Second},
+		{"cold-runner-scheduling-delay-ms", "blah", 0 * time.Second},
+		{"cold-runner-scheduling-delay-ms", "10ms", 10 * time.Millisecond},
+		{"cold-runner-scheduling-delay-ms", "-20ms", -20 * time.Millisecond},
+		{"cold-runner-scheduling-delay-ms", "2s", 2 * time.Second},
+		{"cold-runner-scheduling-delay-ms", "4m", 4 * time.Minute},
+		{"cold-runner-scheduling-delay-ms", "-7m", -7 * time.Minute},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: testCase.name, Value: testCase.rawValue},
+		}}
+		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.NoError(t, err)
+		assert.Equal(t, testCase.expectedValue, platformProps.ColdRunnerSchedulingDelay)
 	}
 }
 
