@@ -204,6 +204,13 @@ coverage --combined_report=lcov
 # Use BLAKE3 digest function.
 startup --digest_function=BLAKE3
 
+# Include target names in timing profile so it's clickable.
+build --experimental_profile_include_target_label
+# Include primary output name in timing profile.
+build --experimental_profile_include_primary_output
+# Don't merge timing profile actions.
+build --noslim_profile
+
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:
 # cp template-user.bazelrc user.bazelrc
