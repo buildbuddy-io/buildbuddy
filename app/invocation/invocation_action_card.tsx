@@ -51,7 +51,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     this.setState({ loadingAction: true });
     const digest = parseDigest(this.props.search.get("actionDigest") ?? "");
     const digestType = this.props.model.getDigestFunctionDir();
-    const actionUrl = `bytestream://${this.getCacheAddress()}/blobs/${digestType}${digest.hash}/${
+    const actionUrl = `bytestream://${this.props.model.getCacheAddress()}/blobs/${digestType}${digest.hash}/${
       digest.sizeBytes ?? 1
     }`;
     rpcService
@@ -92,7 +92,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
     let inputRootFile =
       "bytestream://" +
-      this.getCacheAddress() +
+      this.props.model.getCacheAddress() +
       "/blobs/" +
       this.props.model.getDigestFunctionDir() +
       rootDigest.hash +
@@ -124,7 +124,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
     const digestType = this.props.model.getDigestFunctionDir();
     const digest = parseDigest(digestParam ?? "");
-    const actionResultUrl = `actioncache://${this.getCacheAddress()}/blobs/ac/${digestType}${digest.hash}/${
+    const actionResultUrl = `actioncache://${this.props.model.getCacheAddress()}/blobs/ac/${digestType}${digest.hash}/${
       digest.sizeBytes ?? 1
     }`;
     rpcService
@@ -142,7 +142,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   fetchStdoutAndStderr(actionResult: build.bazel.remote.execution.v2.ActionResult) {
     let stdoutUrl =
       "bytestream://" +
-      this.getCacheAddress() +
+      this.props.model.getCacheAddress() +
       "/blobs/" +
       this.props.model.getDigestFunctionDir() +
       actionResult.stdoutDigest?.hash +
@@ -160,7 +160,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     let stderrUrl =
       "bytestream://" +
-      this.getCacheAddress() +
+      this.props.model.getCacheAddress() +
       "/blobs/" +
       this.props.model.getDigestFunctionDir() +
       actionResult.stderrDigest?.hash +
@@ -179,7 +179,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
     let commandFile =
       "bytestream://" +
-      this.getCacheAddress() +
+      this.props.model.getCacheAddress() +
       "/blobs/" +
       this.props.model.getDigestFunctionDir() +
       action.commandDigest?.hash +
@@ -210,7 +210,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     rpcService.downloadBytestreamFile(
       file.path,
       "bytestream://" +
-        this.getCacheAddress() +
+        this.props.model.getCacheAddress() +
         "/blobs/" +
         this.props.model.getDigestFunctionDir() +
         file.digest?.hash +
@@ -218,22 +218,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
         file.digest?.sizeBytes,
       this.props.model.getInvocationId()
     );
-  }
-
-  getCacheAddress() {
-    const orderedOptions = ["remote_cache", "remote_executor", "cache_backend", "rbe_backend"];
-    let address = "";
-    for (const optionName of orderedOptions) {
-      const option = this.props.model.optionsMap.get(optionName);
-      if (!option) continue;
-
-      address = option.replace("grpc://", "").replace("grpcs://", "");
-      break;
-    }
-    if (this.props.model.optionsMap.get("remote_instance_name")) {
-      address = address + "/" + this.props.model.optionsMap.get("remote_instance_name");
-    }
-    return address;
   }
 
   private renderTimelines() {
@@ -333,7 +317,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
   handleFileClicked(node: InputNode) {
     let digestString = node.obj.digest?.hash + "/" + node.obj.digest?.sizeBytes;
     let dirUrl =
-      "bytestream://" + this.getCacheAddress() + "/blobs/" + this.props.model.getDigestFunctionDir() + digestString;
+      "bytestream://" +
+      this.props.model.getCacheAddress() +
+      "/blobs/" +
+      this.props.model.getDigestFunctionDir() +
+      digestString;
 
     if (this.state.treeShaToExpanded.get(digestString)) {
       this.state.treeShaToExpanded.set(digestString, false);

@@ -365,6 +365,22 @@ export default class InvocationModel {
     return "Cache on";
   }
 
+  getCacheAddress() {
+    const orderedOptions = ["remote_cache", "remote_executor", "cache_backend", "rbe_backend"];
+    let address = "";
+    for (const optionName of orderedOptions) {
+      const option = this.optionsMap.get(optionName);
+      if (!option) continue;
+
+      address = option.replace("grpc://", "").replace("grpcs://", "");
+      break;
+    }
+    if (this.optionsMap.get("remote_instance_name")) {
+      address = address + "/" + this.optionsMap.get("remote_instance_name");
+    }
+    return address;
+  }
+
   getRemoteInstanceName() {
     return this.optionsMap.get("remote_instance_name") ?? "";
   }
