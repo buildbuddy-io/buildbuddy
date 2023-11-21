@@ -49,6 +49,7 @@ go_library(
         "//enterprise/server/remote_execution/redis_client",
         "//enterprise/server/scheduling/scheduler_server",
         "//enterprise/server/scheduling/task_router",
+        "//enterprise/server/scim",
         "//enterprise/server/secrets",
         "//enterprise/server/selfauth",
         "//enterprise/server/server_notification",

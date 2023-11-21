@@ -1334,3 +1334,8 @@ type ServerNotificationService interface {
 	// service.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupID: "123"})
 	Publish(ctx context.Context, msg proto.Message) error
 }
+
+type SCIMService interface {
+	Users() http.Handler
+	Groups() http.Handler
+}

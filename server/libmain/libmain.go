@@ -387,6 +387,11 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/api/v1/metrics", interceptors.WrapAuthenticatedExternalHandler(env, api.GetMetricsHandler()))
 	}
 
+	if scim := env.GetSCIMService(); scim != nil {
+		mux.Handle("/scim/Users", interceptors.WrapAuthenticatedExternalHandler(env, scim.Users()))
+		mux.Handle("/scim/Groups", interceptors.WrapAuthenticatedExternalHandler(env, scim.Groups()))
+	}
+
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}
