@@ -2,6 +2,7 @@ package rpcutil
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -15,24 +16,37 @@ type RecvStream[T proto.Message] interface {
 	Recv() (T, error)
 }
 
-// RecvChan starts a goroutine that receives messages from a stream and puts it
-// on a channel.
+type Receiver[T proto.Message] struct {
+	ctx      context.Context
+	recvChan chan StreamMsg[T]
+}
+
+// RecvWithTimeoutCause waits for a message on the underlying stream, waiting
+// a maximum of timeout. If timeout is reached, the given cause is returned
+// as the error.
+func (r *Receiver[T]) RecvWithTimeoutCause(timeout time.Duration, cause error) (T, error) {
+	ctx, cancel := context.WithTimeoutCause(r.ctx, timeout, cause)
+	defer cancel()
+	select {
+	case msg := <-r.recvChan:
+		return msg.Data, msg.Error
+	case <-ctx.Done():
+		return *new(T), ctx.Err()
+	}
+}
+
+// NewReceiver returns a stream handle that can be used to implement more
+// advanced stream handling, such as per-receive timeouts.
 //
 // Example usage:
 //
-// msgs := rpcutil.RecvChan[*bspb.ReadResponse](ctx, stream)
+// receiver := rpcutil.NewReceiver[*bspb.ReadResponse](ctx, stream)
 //
 //	for {
-//	  select {
-//	    case msg := <-msgs:
-//	      // handle stream message/err
-//	    case <-ctx.Done():
-//	      return ctx.Err()
-//	  }
+//		rsp, err := receiver.RecvWithTimeoutCause(5 * time.Second, status.DeadlineExceededError("blah blah blah"))
+//		// handle rsp and err
 //	}
-//
-// It's important to always include a ctx.Done() case to avoid leaks.
-func RecvChan[T proto.Message](ctx context.Context, stream RecvStream[T]) chan StreamMsg[T] {
+func NewReceiver[T proto.Message](ctx context.Context, stream RecvStream[T]) Receiver[T] {
 	streamMsgs := make(chan StreamMsg[T])
 	go func() {
 		for {
@@ -47,7 +61,7 @@ func RecvChan[T proto.Message](ctx context.Context, stream RecvStream[T]) chan S
 			}
 		}
 	}()
-	return streamMsgs
+	return Receiver[T]{ctx, streamMsgs}
 }
 
 type SendStream[T proto.Message] interface {
@@ -55,16 +69,43 @@ type SendStream[T proto.Message] interface {
 }
 
 type Sender[T proto.Message] struct {
+	ctx      context.Context
 	sendChan chan T
 	errChan  chan error
 }
 
-func (s *Sender[T]) Send(msg T) chan error {
+// SendWithTimeoutCause attempts to send a message on the underlying stream,
+// waiting a maximum of timeout. If timeout is reached, the given cause is
+// returned as the error.
+//
+// Note that gRPC sends are asynchronous in the sense that the protocol does not
+// acknowledge individual messages. A timeout wil only occur if the sender
+// exhausts the flow-control window and the receiver does not increase it.
+func (s *Sender[T]) SendWithTimeoutCause(msg T, timeout time.Duration, cause error) error {
 	s.sendChan <- msg
-	return s.errChan
+
+	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
+	defer cancel()
+	select {
+	case err := <-s.errChan:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
-func SendChan[T proto.Message](ctx context.Context, stream SendStream[T]) Sender[T] {
+// NewSender returns a stream handle that can be used to implement more
+// advanced stream handling, such as per-send timeouts.
+//
+// Example usage:
+//
+// sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+//
+//	for {
+//		err := sender.SendWithTimeoutCause(5 * time.Second, status.DeadlineExceededError("blah blah blah"))
+//		// handle err
+//	}
+func NewSender[T proto.Message](ctx context.Context, stream SendStream[T]) Sender[T] {
 	sendChan := make(chan T, 1)
 	errChan := make(chan error)
 	go func() {
@@ -78,5 +119,5 @@ func SendChan[T proto.Message](ctx context.Context, stream SendStream[T]) Sender
 			}
 		}
 	}()
-	return Sender[T]{sendChan, errChan}
+	return Sender[T]{ctx, sendChan, errChan}
 }

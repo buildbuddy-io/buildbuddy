@@ -93,23 +93,9 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 		wc = decompressor
 	}
 
-	streamMsgs := rpcutil.RecvChan[*bspb.ReadResponse](ctx, stream)
-	// XXX need to reset the timer
-	readTimer := time.NewTimer(*casRPCTimeout)
-	defer readTimer.Stop()
-
+	receiver := rpcutil.NewReceiver[*bspb.ReadResponse](ctx, stream)
 	for {
-		var rsp *bspb.ReadResponse
-		var err error
-		select {
-		case msg := <-streamMsgs:
-			rsp = msg.Data
-			err = msg.Error
-		case <-readTimer.C:
-			return status.DeadlineExceededError("Timed out waiting for Read response")
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		rsp, err := receiver.RecvWithTimeoutCause(*casRPCTimeout, status.DeadlineExceededError("Timed out waiting for Read response"))
 		if err == io.EOF {
 			if err := wc.Close(); err != nil {
 				return err
@@ -274,10 +260,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 	buf := make([]byte, uploadBufSizeBytes)
 	bytesUploaded := int64(0)
-	sender := rpcutil.SendChan[*bspb.WriteRequest](ctx, stream)
-	// XXX need to reset the timer
-	writeTimer := time.NewTimer(*casRPCTimeout)
-	defer writeTimer.Stop()
+	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
 	for {
 		n, err := rc.Read(buf)
 		if err != nil && err != io.EOF {
@@ -292,22 +275,13 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			FinishWrite:  readDone,
 		}
 
-		done := false
-		select {
-		case err := <-sender.Send(req):
+		err = sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+		if err != nil {
 			if err == io.EOF {
-				done = true
 				break
 			}
 			return nil, err
-		case <-writeTimer.C:
-			return nil, status.DeadlineExceededError("Timed out sending Write request")
 		}
-
-		if done {
-			break
-		}
-
 		bytesUploaded += int64(len(req.Data))
 		if readDone {
 			break

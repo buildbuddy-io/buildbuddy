@@ -233,6 +233,9 @@ func (e *nonRetryableError) Unwrap() error {
 	return e.err
 }
 
+// NonRetryableError is used in conjunction with Do to indicate that a
+// particular error should not be retried. Instead of returning the original
+// error, returned the result of calling NonRetryableError(err).
 func NonRetryableError(err error) error {
 	return &nonRetryableError{err}
 }
