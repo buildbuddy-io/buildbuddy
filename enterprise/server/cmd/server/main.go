@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scim"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/server_notification"
@@ -265,6 +266,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := clientidentity.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := scim.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

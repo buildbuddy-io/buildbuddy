@@ -169,4 +169,6 @@ type Env interface {
 	SetServerNotificationService(service interfaces.ServerNotificationService)
 	GetGCPService() interfaces.GCPService
 	SetGCPService(service interfaces.GCPService)
+	SetSCIMService(interfaces.SCIMService)
+	GetSCIMService() interfaces.SCIMService
 }
