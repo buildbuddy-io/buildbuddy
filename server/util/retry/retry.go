@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/jonboulle/clockwork"
 )
 
@@ -19,10 +20,15 @@ type Options struct {
 	// To only stop when the context is done, set to MaxInt.
 	MaxRetries int
 
-	InitialBackoff time.Duration   // How long to wait after the first request
-	MaxBackoff     time.Duration   // Max amount of time to wait for a single request
-	Multiplier     float64         // Next backoff is this * previous backoff
-	Clock          clockwork.Clock // Optional clock implementation to use.
+	InitialBackoff time.Duration // How long to wait after the first request
+	MaxBackoff     time.Duration // Max amount of time to wait for a single request
+	Multiplier     float64       // Next backoff is this * previous backoff
+
+	Clock clockwork.Clock // Optional clock implementation to use.
+
+	// Below options are only applicable to the Do function.
+	Name                  string // Optional operation name for logging
+	DontLogFailedAttempts bool   // If true, failed attempts will not be logged.
 }
 
 type Retry struct {
@@ -82,7 +88,7 @@ func DefaultOptions() *Options {
 		InitialBackoff: 50 * time.Millisecond,
 		MaxBackoff:     3 * time.Second,
 		Multiplier:     2,
-		MaxRetries:     0, // unlimited, time based max by default.
+		MaxRetries:     0, // retry until backoff reaches max backoff
 	}
 }
 
@@ -179,4 +185,57 @@ func (r *Retry) MaxAttempts() int {
 // Only valid if MaxRetries was not set.
 func (r *Retry) MaxTotalDelay() time.Duration {
 	return r.maxTime
+}
+
+// Do executes the given function with a retry loop.
+//
+// The caller can indicate that an error should not be retried by wrapping it
+// using NonRetryableError(err).
+func Do[T any](ctx context.Context, opts *Options, fn func(ctx context.Context) (T, error)) (T, error) {
+	r := New(ctx, opts)
+	var lastError error
+	for r.Next() {
+		rsp, err := fn(ctx)
+		if err != nil {
+			lastError = err
+			continue
+		}
+		if lastError != nil && !opts.DontLogFailedAttempts {
+			name := opts.Name
+			if name != "" {
+				name += " "
+			}
+			log.CtxWarningf(ctx, "%sattempt failed, but succeeded on retry: %s", name, err)
+		}
+		return rsp, nil
+	}
+	return *new(T), lastError
+}
+
+// DoVoid is a convenience wrapper around Do for functions that do not return a
+// value.
+func DoVoid(ctx context.Context, opts *Options, fn func(ctx context.Context) error) error {
+	_, err := Do(ctx, opts, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, fn(ctx)
+	})
+	return err
+}
+
+type nonRetryableError struct {
+	err error
+}
+
+func (e *nonRetryableError) Error() string {
+	return e.err.Error()
+}
+
+func (e *nonRetryableError) Unwrap() error {
+	return e.err
+}
+
+// NonRetryableError is used in conjunction with Do to indicate that a
+// particular error should not be retried. Instead of returning the original
+// error, returned the result of calling NonRetryableError(err).
+func NonRetryableError(err error) error {
+	return &nonRetryableError{err}
 }

@@ -5,7 +5,10 @@ go_library(
     srcs = ["retry.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/retry",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_jonboulle_clockwork//:clockwork"],
+    deps = [
+        "//server/util/log",
+        "@com_github_jonboulle_clockwork//:clockwork",
+    ],
 )
 
 go_test(
