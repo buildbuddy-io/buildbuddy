@@ -134,7 +134,7 @@ export default class CacheCardComponent extends React.Component<Props> {
                     {capabilities.config.trendsSummaryEnabled && renderExecTime && (
                       <div className="cache-section">
                         <div className="cache-title">CPU savings</div>
-                        <div className="cache-subtitle">Theoretical and actual CPU used</div>
+                        <div className="cache-subtitle">Cached CPU and actual CPU used</div>
                         <div className="cache-chart">
                           {this.drawChart(
                             +cacheStat.totalCachedActionExecUsec,
@@ -283,9 +283,13 @@ function renderBreakdown(data: any[] | undefined, title: string, subtitle: strin
   });
 
   let other = 0;
+  let otherLabels: string[] = [];
   if (data && data?.length > cap) {
     for (let i = cap; i < data.length; i++) {
       other += data[i].value;
+      otherLabels.push(
+        `${format.formatWithCommas(data[i].value)} ${data[i].name} (${format.percent(data[i].value / sum.value)}%)`
+      );
     }
   }
 
@@ -317,7 +321,13 @@ function renderBreakdown(data: any[] | undefined, title: string, subtitle: strin
                 style={{ backgroundColor: getChartColor(index) }}></span>
               <span className="cache-stat">
                 <span className="cache-stat-duration">{format.formatWithCommas(entry.value)}</span>{" "}
-                <span className="cache-stat-description">
+                <span
+                  className="cache-stat-description"
+                  title={
+                    other > 0 && index == cap
+                      ? otherLabels.join(", ")
+                      : `${entry.name} (${format.percent(entry.value / sum.value)}%)`
+                  }>
                   {entry.name} ({format.percent(entry.value / sum.value)}%)
                 </span>
               </span>
