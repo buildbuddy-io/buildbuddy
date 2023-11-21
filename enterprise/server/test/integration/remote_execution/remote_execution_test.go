@@ -1423,6 +1423,18 @@ func TestWaitExecution(t *testing.T) {
 	}
 }
 
+type fakeRankedNode struct {
+	node interfaces.ExecutionNode
+}
+
+func (n fakeRankedNode) GetExecutionNode() interfaces.ExecutionNode {
+	return n.node
+}
+
+func (_ fakeRankedNode) GetSchedulingDelay() time.Duration {
+	return 0 * time.Second
+}
+
 type fixedNodeTaskRouter struct {
 	mu          sync.Mutex
 	executorIDs map[string]struct{}
@@ -1436,13 +1448,13 @@ func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
 	return &fixedNodeTaskRouter{executorIDs: idSet}
 }
 
-func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
+func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	var out []interfaces.ExecutionNode
+	var out []interfaces.RankedExecutionNode
 	for _, n := range nodes {
 		if _, ok := f.executorIDs[n.GetExecutorID()]; ok {
-			out = append(out, n)
+			out = append(out, fakeRankedNode{node: n})
 		}
 	}
 	return out
