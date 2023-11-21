@@ -132,7 +132,7 @@ func TestTaskRouter_RankNodes_WithDelay(t *testing.T) {
 			Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "workflow-id", Value: "WF1"},
-				{Name: "cold-runner-scheduling-delay-ms", Value: "2s"},
+				{Name: "cold-runner-scheduling-delay", Value: "2s"},
 			},
 		},
 	}

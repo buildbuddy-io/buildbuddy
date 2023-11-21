@@ -3,6 +3,7 @@ package scheduler_server
 import (
 	"context"
 	"io"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -48,6 +49,9 @@ func (n fakeRankedNode) GetSchedulingDelay() time.Duration {
 }
 
 func (f *fakeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].GetExecutorID() < nodes[j].GetExecutorID()
+	})
 	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
 	for i, node := range nodes {
 		rankedNodes[i] = fakeRankedNode{node: node, delay: time.Duration(i) * time.Second}
@@ -243,6 +247,8 @@ type fakeExecutor struct {
 	t               *testing.T
 	schedulerClient scpb.SchedulerClient
 
+	id string
+
 	ctx context.Context
 
 	mu    sync.Mutex
@@ -250,9 +256,16 @@ type fakeExecutor struct {
 }
 
 func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.SchedulerClient) *fakeExecutor {
+	id, err := uuid.NewRandom()
+	require.NoError(t, err)
+	return newFakeExecutorWithId(ctx, t, id.String(), schedulerClient)
+}
+
+func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedulerClient scpb.SchedulerClient) *fakeExecutor {
 	return &fakeExecutor{
 		t:               t,
 		schedulerClient: schedulerClient,
+		id:              id,
 		ctx:             ctx,
 		tasks:           make(map[string]task),
 	}
@@ -261,14 +274,11 @@ func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.Sch
 func (e *fakeExecutor) Register() {
 	stream, err := e.schedulerClient.RegisterAndStreamWork(e.ctx)
 	require.NoError(e.t, err)
-	id, err := uuid.NewRandom()
-	require.NoError(e.t, err)
-	executorID := id.String()
 	go func() {
 		err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
 			RegisterExecutorRequest: &scpb.RegisterExecutorRequest{
 				Node: &scpb.ExecutionNode{
-					ExecutorId:            executorID,
+					ExecutorId:            e.id,
 					Os:                    defaultOS,
 					Arch:                  defaultArch,
 					Host:                  "foo",
@@ -515,15 +525,15 @@ func TestLeaseExpiration(t *testing.T) {
 func TestSchedulingDelay(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
-	fe1 := newFakeExecutor(ctx, t, env.GetSchedulerClient())
-	fe2 := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
+	fe2 := newFakeExecutorWithId(ctx, t, "2", env.GetSchedulerClient())
 	fe1.Register()
 	fe2.Register()
 
 	taskID := scheduleTask(ctx, t, env)
 
-	// The fake task router returns nodes in the order they were registered
-	// 1 second of scheduled delay between each execution.
+	// The fake task router returns nodes in sorted order of id with 1 second
+	// of scheduled delay between each execution.
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 1*time.Second)
 }

@@ -67,7 +67,7 @@ const (
 
 	RecycleRunnerPropertyName             = "recycle-runner"
 	AffinityRoutingPropertyName           = "affinity-routing"
-	ColdRunnerSchedulingDelayPropertyName = "cold-runner-scheduling-delay-ms"
+	ColdRunnerSchedulingDelayPropertyName = "cold-runner-scheduling-delay"
 	preserveWorkspacePropertyName         = "preserve-workspace"
 	nonrootWorkspacePropertyName          = "nonroot-workspace"
 	cleanWorkspaceInputsPropertyName      = "clean-workspace-inputs"

@@ -255,14 +255,14 @@ func TestParse_Duration(t *testing.T) {
 		rawValue      string
 		expectedValue time.Duration
 	}{
-		{"cold-runner-scheduling-delay-ms", "", 0 * time.Second},
-		{"cold-runner-scheduling-delay-ms", "100", 0 * time.Second},
-		{"cold-runner-scheduling-delay-ms", "blah", 0 * time.Second},
-		{"cold-runner-scheduling-delay-ms", "10ms", 10 * time.Millisecond},
-		{"cold-runner-scheduling-delay-ms", "-20ms", -20 * time.Millisecond},
-		{"cold-runner-scheduling-delay-ms", "2s", 2 * time.Second},
-		{"cold-runner-scheduling-delay-ms", "4m", 4 * time.Minute},
-		{"cold-runner-scheduling-delay-ms", "-7m", -7 * time.Minute},
+		{"cold-runner-scheduling-delay", "", 0 * time.Second},
+		{"cold-runner-scheduling-delay", "100", 0 * time.Second},
+		{"cold-runner-scheduling-delay", "blah", 0 * time.Second},
+		{"cold-runner-scheduling-delay", "10ms", 10 * time.Millisecond},
+		{"cold-runner-scheduling-delay", "-20ms", -20 * time.Millisecond},
+		{"cold-runner-scheduling-delay", "2s", 2 * time.Second},
+		{"cold-runner-scheduling-delay", "4m", 4 * time.Minute},
+		{"cold-runner-scheduling-delay", "-7m", -7 * time.Minute},
 	} {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.name, Value: testCase.rawValue},
