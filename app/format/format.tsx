@@ -346,6 +346,13 @@ export function colorHash(input: string) {
   return `hsl(${(num % 360000) / 1000}, 50%, 80%)`;
 }
 
+export function enumLabel(e: string) {
+  if (!e) {
+    return "";
+  }
+  return e.substring(0, 1).toUpperCase() + e.substring(1).replaceAll("_", " ").toLowerCase();
+}
+
 export default {
   compactDurationSec,
   durationSec,
@@ -367,4 +374,5 @@ export default {
   formatWithCommas,
   formatDateRange,
   colorHash,
+  enumLabel,
 };
