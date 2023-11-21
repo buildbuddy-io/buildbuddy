@@ -46,6 +46,7 @@ ts_library(
     srcs = ["target_artifacts_card.tsx"],
     deps = [
         "//app/capabilities",
+        "//app/components/digest",
         "//app/service:rpc_service",
         "//proto:build_event_stream_ts_proto",
         "//proto:zip_ts_proto",
