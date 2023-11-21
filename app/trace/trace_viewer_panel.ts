@@ -407,7 +407,7 @@ export default class Panel {
       lastEventRendered = true;
 
       const visibleWidth = width + Math.min(0, x);
-      if (visibleWidth >= constants.EVENT_LABEL_WIDTH_THRESHOLD) {
+      if (visibleWidth > constants.EVENT_LABEL_WIDTH_THRESHOLD) {
         let name = track.events[i].name;
         this.ctx.font = `${constants.EVENT_LABEL_FONT_SIZE} ${this.fontFamily}`;
         this.ctx.fillStyle = constants.EVENT_LABEL_FONT_COLOR;
