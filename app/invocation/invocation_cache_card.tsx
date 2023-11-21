@@ -273,7 +273,6 @@ export default class CacheCardComponent extends React.Component<Props> {
   }
 }
 
-
 function renderBreakdown(data: any[] | undefined, title: string, subtitle: string) {
   data = data?.filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
 
