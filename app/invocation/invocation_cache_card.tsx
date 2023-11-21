@@ -273,7 +273,6 @@ export default class CacheCardComponent extends React.Component<Props> {
   }
 }
 
-let cap = 5;
 
 function renderBreakdown(data: any[] | undefined, title: string, subtitle: string) {
   data = data?.filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
@@ -282,6 +281,7 @@ function renderBreakdown(data: any[] | undefined, title: string, subtitle: strin
     return { name: "Sum", value: prev.value + current.value };
   });
 
+  let cap = 5;
   let other = 0;
   let otherLabels: string[] = [];
   if (data && data?.length > cap) {
