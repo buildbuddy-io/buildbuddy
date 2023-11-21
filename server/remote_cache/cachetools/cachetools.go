@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
@@ -93,24 +94,7 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 		wc = decompressor
 	}
 
-	type streamMsg struct {
-		rsp *bspb.ReadResponse
-		err error
-	}
-	streamMsgs := make(chan streamMsg)
-	go func() {
-		for {
-			rsp, err := stream.Recv()
-			select {
-			case streamMsgs <- streamMsg{rsp, err}:
-			case <-ctx.Done():
-				return
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
+	streamMsgs := rpcutil.RecvChan[*bspb.ReadResponse](ctx, stream)
 	readTimer := time.NewTimer(*casRPCTimeout)
 	defer readTimer.Stop()
 
@@ -119,8 +103,8 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 		var err error
 		select {
 		case msg := <-streamMsgs:
-			rsp = msg.rsp
-			err = msg.err
+			rsp = msg.Data
+			err = msg.Error
 		case <-readTimer.C:
 			return status.DeadlineExceededError("Timed out waiting for Read response")
 		case <-ctx.Done():

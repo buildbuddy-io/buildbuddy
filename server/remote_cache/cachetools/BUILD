@@ -15,6 +15,7 @@ go_library(
         "//server/util/compression",
         "//server/util/log",
         "//server/util/retry",
+        "//server/util/rpcutil",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//codes",
