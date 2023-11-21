@@ -147,7 +147,7 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 	return batchResponse, err
 }
 
-func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
@@ -156,7 +156,6 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdR
 	if batch.Header == nil {
 		return nil, status.FailedPreconditionError("Header must be set")
 	}
-	shardID := batch.GetHeader().GetReplica().GetShardId()
 	var raftResponseIface interface{}
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		switch batch.GetHeader().GetConsistencyMode() {
@@ -214,7 +213,7 @@ func (nhs *NodeHostSender) SyncProposeLocal(ctx context.Context, shardID uint64,
 	return SyncProposeLocal(ctx, nhs.NodeHost, shardID, batch)
 }
 func (nhs *NodeHostSender) SyncReadLocal(ctx context.Context, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	return SyncReadLocal(ctx, nhs.NodeHost, batch)
+	return SyncReadLocal(ctx, nhs.NodeHost, shardID, batch)
 }
 
 func SyncProposeLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {

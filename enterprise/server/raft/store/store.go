@@ -780,7 +780,8 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 		s.log.Warningf("SyncRead without header: %+v", req)
 	}
 
-	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, batch)
+	shardID := req.GetHeader().GetReplica().GetShardId()
+	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, shardID, batch)
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
 			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, req.GetHeader())

@@ -155,19 +155,8 @@ func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte
 }
 
 func (l *Lease) clearLeaseValue(ctx context.Context) error {
-	var expectedValue []byte
-	if l.leaseRecord != nil {
-		buf, err := proto.Marshal(l.leaseRecord)
-		if err != nil {
-			return err
-		}
-		expectedValue = buf
-	}
-	_, err := l.sendCasRequest(ctx, expectedValue, nil)
-	if err == nil {
-		l.leaseRecord = nil
-	}
-	return err
+	l.leaseRecord = nil
+	return nil
 }
 
 func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
