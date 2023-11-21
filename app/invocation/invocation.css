@@ -604,6 +604,11 @@
   margin-right: 32px;
 }
 
+.cache-chart .recharts-responsive-container {
+  flex-shrink: 0;
+  margin-right: 32px;
+}
+
 .cache-stat {
   font-weight: 600;
   font-weight: 20px;
@@ -620,6 +625,7 @@
 
 .cache-chart-label {
   display: flex;
+  white-space: nowrap;
 }
 
 .color-swatch {
