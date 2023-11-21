@@ -19,7 +19,7 @@ def yarn(name, srcs, package, command = "build", deps = [], yarn = "@yarn//:yarn
     """ % (package, yarn, node, command)
 
     if executable:
-        cmd = "echo \"cd $$(dirname $(location %s)) && yarn install && yarn %s\" > $@" % (package, command)
+        cmd = "echo \"cd $$(dirname $(location %s)) && yarn install && NODE_OPTIONS=--openssl-legacy-provider yarn %s\" > $@" % (package, command)
 
     native.genrule(
         name = name,
