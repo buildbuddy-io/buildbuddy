@@ -4,6 +4,8 @@ import format from "../format/format";
 import { PieChart as PieChartIcon, AlertCircle as AlertCircleIcon } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import capabilities from "../capabilities/capabilities";
+import { getChartColor } from "../util/color";
+import { blaze } from "../../proto/action_cache_ts_proto";
 
 interface Props {
   model: InvocationModel;
@@ -53,13 +55,13 @@ export default class CacheCardComponent extends React.Component<Props> {
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-hit-color-swatch"></span>
-                            <span className="cache-stat">{format.formatWithCommas(cacheStat.actionCacheHits)} </span>
-                            hits
+                            <span className="cache-stat">{format.formatWithCommas(cacheStat.actionCacheHits)}</span>
+                            &nbsp;hits
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-miss-color-swatch"></span>
-                            <span className="cache-stat">{format.formatWithCommas(cacheStat.actionCacheMisses)} </span>
-                            misses
+                            <span className="cache-stat">{format.formatWithCommas(cacheStat.actionCacheMisses)}</span>
+                            &nbsp;misses
                           </div>
                         </div>
                       </div>
@@ -73,13 +75,13 @@ export default class CacheCardComponent extends React.Component<Props> {
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-hit-color-swatch"></span>
-                            <span className="cache-stat">{format.formatWithCommas(cacheStat.casCacheHits)} </span>
-                            hits
+                            <span className="cache-stat">{format.formatWithCommas(cacheStat.casCacheHits)}</span>
+                            &nbsp;hits
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-miss-color-swatch"></span>
-                            <span className="cache-stat">{format.formatWithCommas(cacheStat.casCacheUploads)} </span>
-                            writes
+                            <span className="cache-stat">{format.formatWithCommas(cacheStat.casCacheUploads)}</span>
+                            &nbsp;writes
                           </div>
                         </div>
                       </div>
@@ -120,11 +122,11 @@ export default class CacheCardComponent extends React.Component<Props> {
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch download-color-swatch"></span>
-                            <span className="cache-stat">{downloadThroughput.toFixed(2)}</span> Mbps download
+                            <span className="cache-stat">{downloadThroughput.toFixed(2)}</span>&nbsp;Mbps download
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch upload-color-swatch"></span>
-                            <span className="cache-stat">{uploadThroughput.toFixed(2)}</span> Mbps upload
+                            <span className="cache-stat">{uploadThroughput.toFixed(2)}</span>&nbsp;Mbps upload
                           </div>
                         </div>
                       </div>
@@ -132,7 +134,7 @@ export default class CacheCardComponent extends React.Component<Props> {
                     {capabilities.config.trendsSummaryEnabled && renderExecTime && (
                       <div className="cache-section">
                         <div className="cache-title">CPU savings</div>
-                        <div className="cache-subtitle">Theoretical and actual CPU used</div>
+                        <div className="cache-subtitle">Cached CPU and actual CPU used</div>
                         <div className="cache-chart">
                           {this.drawChart(
                             +cacheStat.totalCachedActionExecUsec,
@@ -143,13 +145,70 @@ export default class CacheCardComponent extends React.Component<Props> {
                           <div>
                             <div className="cache-chart-label">
                               <span className="color-swatch cache-hit-color-swatch"></span>
-                              <span className="cache-stat">{cachedExecTime}</span> not executed
+                              <span className="cache-stat">{cachedExecTime}</span>&nbsp;not executed
                             </div>
                             <div className="cache-chart-label">
                               <span className="color-swatch cache-miss-color-swatch"></span>
-                              <span className="cache-stat">{uncachedExecTime}</span> executed
+                              <span className="cache-stat">{uncachedExecTime}</span>&nbsp;executed
                             </div>
                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {Boolean(
+                      this.props.model.buildMetrics?.actionSummary?.actionCacheStatistics?.missDetails.length
+                    ) && (
+                      <div className="cache-section">
+                        <div className="cache-chart">
+                          {renderBreakdown(
+                            this.props.model.buildMetrics?.actionSummary?.actionCacheStatistics?.missDetails.map(
+                              (d) => {
+                                return {
+                                  value: d.count,
+                                  name: format.enumLabel(blaze.ActionCacheStatistics.MissReason[d.reason]),
+                                };
+                              }
+                            ),
+                            "Cache miss reasons",
+                            "Reasons why actions missed cache"
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {Boolean(this.props.model.buildMetrics?.actionSummary?.actionData.length) && (
+                      <div className="cache-section">
+                        <div className="cache-chart">
+                          {renderBreakdown(
+                            this.props.model.buildMetrics?.actionSummary?.actionData.map((d) => {
+                              return {
+                                value: d.actionsExecuted,
+                                name: d.mnemonic,
+                              };
+                            }),
+                            "Action types",
+                            "Number of actions with each action mnemonic"
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {Boolean(this.props.model.buildMetrics?.actionSummary?.runnerCount.length) && (
+                      <div className="cache-section">
+                        <div className="cache-chart">
+                          {renderBreakdown(
+                            this.props.model.buildMetrics?.actionSummary?.runnerCount
+                              ?.filter((r) => r.name != "total")
+                              .map((r) => {
+                                return {
+                                  value: r.count,
+                                  name: r.name,
+                                };
+                              }),
+                            "Runner types",
+                            "Number of actions with each runner type"
+                          )}
                         </div>
                       </div>
                     )}
@@ -212,4 +271,69 @@ export default class CacheCardComponent extends React.Component<Props> {
       </div>
     );
   }
+}
+
+function renderBreakdown(data: any[] | undefined, title: string, subtitle: string) {
+  data = data?.filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
+
+  let sum = data?.reduce((prev, current) => {
+    return { name: "Sum", value: prev.value + current.value };
+  });
+
+  let cap = 5;
+  let other = 0;
+  let otherLabels: string[] = [];
+  if (data && data?.length > cap) {
+    for (let i = cap; i < data.length; i++) {
+      other += data[i].value;
+      otherLabels.push(
+        `${format.formatWithCommas(data[i].value)} ${data[i].name} (${format.percent(data[i].value / sum.value)}%)`
+      );
+    }
+  }
+
+  data = data?.splice(0, cap);
+
+  if (other > 0) {
+    data?.push({ name: "Other", value: other });
+  }
+
+  return (
+    <div className="cache-section">
+      <div className="cache-title">{title}</div>
+      <div className="cache-subtitle">{subtitle}</div>
+      <div className="cache-chart">
+        <ResponsiveContainer width={80} height={80}>
+          <PieChart>
+            <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
+              {data?.map((_, index) => (
+                <Cell key={`cell-${index}`} fill={getChartColor(index)} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div>
+          {data?.map((entry, index) => (
+            <div className="cache-chart-label">
+              <span
+                className="color-swatch cache-hit-color-swatch"
+                style={{ backgroundColor: getChartColor(index) }}></span>
+              <span className="cache-stat">
+                <span className="cache-stat-duration">{format.formatWithCommas(entry.value)}</span>{" "}
+                <span
+                  className="cache-stat-description"
+                  title={
+                    other > 0 && index == cap
+                      ? otherLabels.join(", ")
+                      : `${entry.name} (${format.percent(entry.value / sum.value)}%)`
+                  }>
+                  {entry.name} ({format.percent(entry.value / sum.value)}%)
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
