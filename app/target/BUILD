@@ -131,9 +131,12 @@ ts_library(
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
+        "//app/capabilities",
         "//app/components/button:link_button",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:cache_requests_card",
+        "//app/invocation:invocation_model",
         "//app/invocation:target_util",
         "//app/router",
         "//app/service:rpc_service",

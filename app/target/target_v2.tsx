@@ -19,6 +19,9 @@ import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import rpc_service from "../service/rpc_service";
 import error_service from "../errors/error_service";
 import { renderTestSize } from "../invocation/target_util";
+import capabilities from "../capabilities/capabilities";
+import CacheRequestsCardComponent from "../invocation/cache_requests_card";
+import InvocationModel from "../invocation/invocation_model";
 
 const Status = api_common.v1.Status;
 
@@ -26,6 +29,8 @@ export interface TargetProps {
   invocationId: string;
   label: string;
   status: api_common.v1.Status;
+  model: InvocationModel;
+  search: URLSearchParams;
 
   user?: User;
   repo?: string;
@@ -59,7 +64,11 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
         status: this.props.status,
       })
       .then((response) => this.setState({ target: response.targetGroups[0]?.targets[0] }))
-      .catch((e) => error_service.handleError(e))
+      .catch(() => {
+        this.setState({
+          target: new target.Target(),
+        });
+      })
       .finally(() => this.setState({ loading: false }));
 
     // TODO: maybe refresh every 3s to handle the case where the invocation is
@@ -249,10 +258,12 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
               )}
             </div>
             <div className="details">
-              <div className="detail">
-                {this.renderStatusIcon()}
-                {this.getTargetStatusTitle()}
-              </div>
+              {Boolean(target?.status) && (
+                <div className="detail">
+                  {this.renderStatusIcon()}
+                  {this.getTargetStatusTitle()}
+                </div>
+              )}
 
               {target?.testSummary && (
                 <div className="detail">
@@ -260,11 +271,13 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                   {target.testSummary.totalRunCount ?? 0} total runs
                 </div>
               )}
-              <div className="detail">
-                <Target className="icon" />
-                {target?.metadata?.ruleType ||
-                  target?.actionEvents?.map((actionEvent) => actionEvent?.action?.type).join(",")}
-              </div>
+              {Boolean(target?.metadata?.ruleType || target?.actionEvents.length) && (
+                <div className="detail">
+                  <Target className="icon" />
+                  {target?.metadata?.ruleType ||
+                    target?.actionEvents?.map((actionEvent) => actionEvent?.action?.type).join(",")}
+                </div>
+              )}
               {Boolean(target.metadata?.testSize) && (
                 <div className="detail">
                   <Box className="icon" />
@@ -315,7 +328,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
           {actionEvents.map((action) => (
             <ActionCardComponent dark={this.props.dark} invocationId={this.props.invocationId} buildEvent={action} />
           ))}
-          {target.files && (
+          {Boolean(target.files.length) && (
             <TargetArtifactsCardComponent
               name={"Target outputs"}
               invocationId={this.props.invocationId}
@@ -335,6 +348,17 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                 />
               </div>
             ))}
+
+          {capabilities.config.detailedCacheStatsEnabled && (
+            <CacheRequestsCardComponent
+              model={this.props.model}
+              query={this.props.label}
+              search={this.props.search}
+              groupBy={1} // Action
+              show={0} // All
+              exactMatch={true}
+            />
+          )}
         </div>
       </div>
     );
