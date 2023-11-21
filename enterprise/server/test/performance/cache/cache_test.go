@@ -128,17 +128,22 @@ func getDistributedCache(t testing.TB, te *testenv.TestEnv, c interfaces.Cache) 
 	return dc
 }
 
-func getPebbleCache(t testing.TB, te *testenv.TestEnv, blockSize int64) interfaces.Cache {
+func getPebbleCacheOptions(t testing.TB, blockSize int64) *pebble_cache.Options {
 	testRootDir := testfs.MakeTempDir(t)
 	activeKeyVersion := int64(5)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+	return &pebble_cache.Options{
 		RootDirectory:         testRootDir,
 		BlockCacheSizeBytes:   blockSize,
 		MaxSizeBytes:          maxSizeBytes,
 		ActiveKeyVersion:      &activeKeyVersion,
 		AverageChunkSizeBytes: 524288,
 		IncludeMetadataSize:   true,
-	})
+	}
+}
+
+func getPebbleCache(t testing.TB, te *testenv.TestEnv, blockSize int64) interfaces.Cache {
+	opts := getPebbleCacheOptions(t, blockSize)
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,9 +154,37 @@ func getPebbleCache(t testing.TB, te *testenv.TestEnv, blockSize int64) interfac
 	return pc
 }
 
-func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeCompressibleDigests(b, numDigests, digestSizeBytes)
+func getPebbleCacheWithDigests(ctx context.Context, t testing.TB, te *testenv.TestEnv, opts *pebble_cache.Options, dbufs []*digestBuf) interfaces.Cache {
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	if err != nil {
+		t.Fatalf("failed to create the first pebble cache: %s", err)
+	}
+	err = pc.Start()
+	if err != nil {
+		t.Fatalf("failed to start the first pebble cache: %s", err)
+	}
+	setDigestsInCache(t, ctx, pc, dbufs)
+	err = pc.Stop()
+	if err != nil {
+		t.Fatalf("failed to stop the first pebble cache: %s", err)
+	}
 
+	// start a second cache with same options
+	pc2, err := pebble_cache.NewPebbleCache(te, opts)
+	if err != nil {
+		t.Fatalf("failed to create the second pebble cache: %s", err)
+	}
+	err = pc2.Start()
+	if err != nil {
+		t.Fatalf("failed to start the second pebble cache: %s", err)
+	}
+	t.Cleanup(func() {
+		pc2.Stop()
+	})
+	return pc2
+}
+
+func benchmarkSet(ctx context.Context, c interfaces.Cache, digestBufs []*digestBuf, b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -164,9 +197,7 @@ func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	}
 }
 
-func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeCompressibleDigests(b, numDigests, digestSizeBytes)
-	setDigestsInCache(b, ctx, c, digestBufs)
+func benchmarkGet(ctx context.Context, c interfaces.Cache, digestBufs []*digestBuf, b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
@@ -180,9 +211,7 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	}
 }
 
-func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeCompressibleDigests(b, numDigests, digestSizeBytes)
-	setDigestsInCache(b, ctx, c, digestBufs)
+func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestBufs []*digestBuf, b *testing.B) {
 	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	var sumBytes int64
 	for _, dbuf := range digestBufs {
@@ -201,9 +230,7 @@ func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes 
 	}
 }
 
-func benchmarkFindMissing(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeCompressibleDigests(b, numDigests, digestSizeBytes)
-	setDigestsInCache(b, ctx, c, digestBufs)
+func benchmarkFindMissing(ctx context.Context, c interfaces.Cache, digestBufs []*digestBuf, b *testing.B) {
 	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	for _, dbuf := range digestBufs {
 		digests = append(digests, dbuf.d)
@@ -236,16 +263,28 @@ func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 		//{getMemoryCache(b), "Memory"},
 		//{getDiskCache(b, te), "Disk"},
 		//{ddc, "DDisk"},
-		{getPebbleCache(b, te, 0), "Pebble/blockSize=0"},
-		{getPebbleCache(b, te, 1e8), "Pebble/blockSize=1e8"},
-		{getPebbleCache(b, te, 1e9), "Pebble/blockSize=1e9"},
+		{getPebbleCache(b, te, 0), "Pebble"},
 		//{dpc, "DPebble"},
 	}
 	return caches
 }
 
+type namedPebbleOptions struct {
+	opts *pebble_cache.Options
+	Name string
+}
+
+func getAllPebbleCacheOptions(b *testing.B, te *testenv.TestEnv) []*namedPebbleOptions {
+	return []*namedPebbleOptions{
+		{getPebbleCacheOptions(b, 1e9), "blockSize=1e9"},
+		{getPebbleCacheOptions(b, 5e9), "blockSize=5e9"},
+		{getPebbleCacheOptions(b, 1e10), "blockSize=1e10"},
+		{getPebbleCacheOptions(b, 5e10), "blockSize=5e10"},
+	}
+}
+
 func BenchmarkSet(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8}
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 5e7, 1e8}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
@@ -253,44 +292,15 @@ func BenchmarkSet(b *testing.B) {
 		for _, size := range sizes {
 			name := fmt.Sprintf("%ssize=%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {
-				benchmarkSet(ctx, cache, size, b)
+				digestBufs := makeCompressibleDigests(b, numDigests, size)
+				benchmarkSet(ctx, cache, digestBufs, b)
 			})
 		}
 	}
 }
 
 func BenchmarkGet(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8}
-	te := testenv.GetTestEnv(b)
-	ctx := getAnonContext(b, te)
-
-	for _, cache := range getAllCaches(b, te) {
-		for _, size := range sizes {
-			name := fmt.Sprintf("%ssize=%d", cache.Name, size)
-			b.Run(name, func(b *testing.B) {
-				benchmarkGet(ctx, cache, size, b)
-			})
-		}
-	}
-}
-
-func BenchmarkGetMulti(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8}
-	te := testenv.GetTestEnv(b)
-	ctx := getAnonContext(b, te)
-
-	for _, cache := range getAllCaches(b, te) {
-		for _, size := range sizes {
-			name := fmt.Sprintf("name=%ssize=%d", cache.Name, size)
-			b.Run(name, func(b *testing.B) {
-				benchmarkGetMulti(ctx, cache, size, b)
-			})
-		}
-	}
-}
-
-func BenchmarkFindMissing(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 1e8}
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 5e7, 1e8}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
@@ -298,7 +308,93 @@ func BenchmarkFindMissing(b *testing.B) {
 		for _, size := range sizes {
 			name := fmt.Sprintf("%s/size=%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {
-				benchmarkFindMissing(ctx, cache, size, b)
+				digestBufs := makeCompressibleDigests(b, numDigests, size)
+				setDigestsInCache(b, ctx, cache, digestBufs)
+				benchmarkGet(ctx, cache, digestBufs, b)
+			})
+		}
+	}
+}
+
+func BenchmarkPebbleGet(b *testing.B) {
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 5e7, 1e8}
+	te := testenv.GetTestEnv(b)
+	ctx := getAnonContext(b, te)
+	for _, namedOpts := range getAllPebbleCacheOptions(b, te) {
+		for _, size := range sizes {
+			name := fmt.Sprintf("%s/size=%d", namedOpts.Name, size)
+			b.Run(name, func(b *testing.B) {
+				digestBufs := makeCompressibleDigests(b, numDigests, size)
+				pc := getPebbleCacheWithDigests(ctx, b, te, namedOpts.opts, digestBufs)
+				benchmarkGet(ctx, pc, digestBufs, b)
+			})
+		}
+	}
+}
+
+func BenchmarkGetMulti(b *testing.B) {
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 5e7, 1e8}
+	te := testenv.GetTestEnv(b)
+	ctx := getAnonContext(b, te)
+
+	for _, cache := range getAllCaches(b, te) {
+		for _, size := range sizes {
+			name := fmt.Sprintf("%s/size=%d", cache.Name, size)
+			b.Run(name, func(b *testing.B) {
+				digestBufs := makeCompressibleDigests(b, numDigests, size)
+				setDigestsInCache(b, ctx, cache, digestBufs)
+				benchmarkGetMulti(ctx, cache, digestBufs, b)
+			})
+		}
+	}
+}
+
+func BenchmarkPebbleGetMulti(b *testing.B) {
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 5e7, 1e8}
+	te := testenv.GetTestEnv(b)
+	ctx := getAnonContext(b, te)
+
+	for _, namedOpts := range getAllPebbleCacheOptions(b, te) {
+		for _, size := range sizes {
+			name := fmt.Sprintf("%s/size=%d", namedOpts.Name, size)
+			b.Run(name, func(b *testing.B) {
+				digestBufs := makeCompressibleDigests(b, numDigests, size)
+				pc := getPebbleCacheWithDigests(ctx, b, te, namedOpts.opts, digestBufs)
+				benchmarkGetMulti(ctx, pc, digestBufs, b)
+			})
+		}
+	}
+}
+
+func BenchmarkFindMissing(b *testing.B) {
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 5e7, 1e8}
+	te := testenv.GetTestEnv(b)
+	ctx := getAnonContext(b, te)
+
+	for _, cache := range getAllCaches(b, te) {
+		for _, size := range sizes {
+			name := fmt.Sprintf("%s/size=%d", cache.Name, size)
+			b.Run(name, func(b *testing.B) {
+				digestBufs := makeCompressibleDigests(b, numDigests, size)
+				setDigestsInCache(b, ctx, cache, digestBufs)
+				benchmarkFindMissing(ctx, cache, digestBufs, b)
+			})
+		}
+	}
+}
+
+func BenchmarkPebbleFindMissing(b *testing.B) {
+	sizes := []int64{10, 100, 1000, 10000, 1e5, 1e6, 1e7, 5e7, 1e8}
+	te := testenv.GetTestEnv(b)
+	ctx := getAnonContext(b, te)
+
+	for _, namedOpts := range getAllPebbleCacheOptions(b, te) {
+		for _, size := range sizes {
+			name := fmt.Sprintf("%s/size=%d", namedOpts.Name, size)
+			b.Run(name, func(b *testing.B) {
+				digestBufs := makeCompressibleDigests(b, numDigests, size)
+				pc := getPebbleCacheWithDigests(ctx, b, te, namedOpts.opts, digestBufs)
+				benchmarkFindMissing(ctx, pc, digestBufs, b)
 			})
 		}
 	}
