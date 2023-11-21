@@ -69,6 +69,7 @@ class Router {
     //    IP rules.
     if (
       this.user &&
+      this.user.groups.length > 0 &&
       this.user.selectedGroupAccess != user_proto.SelectedGroup.Access.ALLOWED &&
       // A user may have access to an invocation w/o having access to group.
       !path.startsWith(Path.invocationPath) &&
