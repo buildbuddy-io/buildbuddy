@@ -49,7 +49,7 @@ export default class CreateOrgComponent extends OrgForm<grp.CreateGroupRequest> 
             <Banner type="info">
               You are logged in, but not part of any organization. Create one to continue or{" "}
               <a className="organization-page-link" href="/logout/">
-                click here to Logout
+                click here to log out
               </a>
               .
             </Banner>
