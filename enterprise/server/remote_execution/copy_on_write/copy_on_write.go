@@ -42,6 +42,8 @@ const (
 	// to be eagerly fetched in the background, anticipating that they will
 	// also be accessed
 	numChunksToEagerFetch = 4
+
+	fileConversionConcurrency = 4
 )
 
 var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
@@ -689,19 +691,56 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 
 	// Copy buffer (large enough to copy one data block at a time).
 	ioBlockSize := int64(stat.Sys().(*syscall.Stat_t).Blksize)
-	copyBuf := make([]byte, ioBlockSize)
+	copyBufPool := sync.Pool{
+		New: func() any {
+			copyBuf := make([]byte, ioBlockSize)
+			return &copyBuf
+		},
+	}
 
-	// dataOffset points to the start of the current non-empty data block in the
-	// file. It is updated every time we consume a data block.
-	dataOffset, err := syscall.Seek(fd, 0, unix.SEEK_DATA)
-	if err == syscall.ENXIO {
-		// No more data
-		dataOffset = totalSizeBytes
-	} else if err != nil {
-		return nil, status.InternalErrorf("initial data seek failed: %s", err)
+	// Seeking moves the offset of the file descriptor, so lock to ensure concurrent
+	// goroutines are simultaneously moving it
+	var fileMu sync.Mutex
+
+	// readFromOffset starts reading from `startOffset`, but will skip forward if there
+	// is no data at `startOffset`.
+	// Returns the offset it actually started reading from
+	// (the offset of the first non-empty data block >= `startOffset`)
+	readFromOffset := func(startOffset int64, buf []byte) (int64, error) {
+		fileMu.Lock()
+		defer fileMu.Unlock()
+
+		// Seek to the start of a non-empty data block in the file
+		// greater or equal to `startOffset`
+		dataOffset, err := syscall.Seek(fd, startOffset, unix.SEEK_DATA)
+		if err == syscall.ENXIO {
+			// No more data in the file
+			return totalSizeBytes, nil
+		} else if err != nil {
+			return 0, err
+		}
+
+		// TODO: see whether it's faster to mmap the file we're copying
+		// from, rather than issuing read() syscalls for each data block
+		if _, err := io.ReadFull(f, buf); err != nil {
+			return 0, err
+		}
+		return dataOffset, nil
 	}
 
 	createChunk := func(chunkStartOffset int64) (*Mmap, error) {
+		// Check if there's any data in the chunk, to avoid writing a file if
+		// there isn't
+		fileMu.Lock()
+		dataOffset, err := syscall.Seek(fd, chunkStartOffset, unix.SEEK_DATA)
+		fileMu.Unlock()
+		if err == syscall.ENXIO {
+			// No more data
+			return nil, nil
+		} else if err != nil {
+			return nil, status.InternalErrorf("initial data seek failed: %s", err)
+		}
+
 		chunkFileSize := chunkSizeBytes
 		if remainder := totalSizeBytes - chunkStartOffset; chunkFileSize > remainder {
 			chunkFileSize = remainder
@@ -722,44 +761,64 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		if endOffset > totalSizeBytes {
 			endOffset = totalSizeBytes
 		}
+
+		copyBuf := copyBufPool.Get().(*[]byte)
+		defer copyBufPool.Put(copyBuf)
+
 		for dataOffset < endOffset {
 			// Copy the current data block to the output chunk file.
 			chunkFileDataOffset := dataOffset - chunkStartOffset
-			dataBuf := copyBuf
+			dataBuf := *copyBuf
 			if remainder := chunkFileSize - chunkFileDataOffset; remainder < int64(len(dataBuf)) {
-				dataBuf = copyBuf[:remainder]
+				dataBuf = (*copyBuf)[:remainder]
 			}
-			// TODO: see whether it's faster to mmap the file we're copying
-			// from, rather than issuing read() syscalls for each data block
-			if _, err := io.ReadFull(f, dataBuf); err != nil {
+
+			dataOffset, err = readFromOffset(dataOffset, dataBuf)
+			if err != nil {
 				return nil, err
 			}
+
+			if dataOffset >= endOffset {
+				break
+			}
+
 			if _, err := chunkFile.WriteAt(dataBuf, chunkFileDataOffset); err != nil {
 				return nil, err
 			}
 			// Seek to the next data block, starting from the end of the data
 			// block we just copied.
 			dataOffset += int64(len(dataBuf))
-			dataOffset, err = syscall.Seek(fd, dataOffset, unix.SEEK_DATA)
-			if err == syscall.ENXIO {
-				// No more data
-				dataOffset = totalSizeBytes
-			} else if err != nil {
-				return nil, err
-			}
 		}
 		return NewMmapFd(ctx, env, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset, snaputil.ChunkSourceLocalFile, remoteInstanceName, remoteEnabled)
 	}
 
-	// TODO: iterate through the file with multiple goroutines
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(fileConversionConcurrency)
+	var chunksMu sync.Mutex
 	for chunkStartOffset := int64(0); chunkStartOffset < totalSizeBytes; chunkStartOffset += chunkSizeBytes {
-		c, err := createChunk(chunkStartOffset)
-		if err != nil {
-			return nil, status.WrapError(err, "failed to create chunk")
+		select {
+		case <-egCtx.Done():
+			// One goroutine failed - exit the for loop
+			break
+		default:
+			dupChunkStartOffset := chunkStartOffset
+			eg.Go(func() error {
+				c, err := createChunk(dupChunkStartOffset)
+				if err != nil {
+					return status.WrapError(err, "failed to create chunk")
+				}
+				if c != nil {
+					chunksMu.Lock()
+					chunks = append(chunks, c)
+					chunksMu.Unlock()
+				}
+				return nil
+			})
 		}
-		if c != nil {
-			chunks = append(chunks, c)
-		}
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 
 	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
