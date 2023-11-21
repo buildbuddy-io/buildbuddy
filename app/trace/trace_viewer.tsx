@@ -188,7 +188,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
         data: { event: hoveredEvent, x: mouse.clientX, y: mouse.clientY },
       });
     }
-    document.body.style.cursor = hoveredEvent?.args.target ? "pointer" : "";
+    document.body.style.cursor = hoveredEvent?.args?.target ? "pointer" : "";
   }
 
   private onScroll(e: React.UIEvent<HTMLDivElement>, panelIndex: number) {

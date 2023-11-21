@@ -19,7 +19,7 @@ export const MOUSE_GRIDLINE_COLOR = "#B0BEC5";
 
 export const SECTION_LABEL_HEIGHT = 20;
 export const SECTION_LABEL_FONT_SIZE = "13px";
-export const SECTION_LABEL_FONT_COLOR = "black";
+export const SECTION_LABEL_FONT_COLOR = "#212121";
 export const SECTION_LABEL_BG_COLOR = "#eee";
 export const SECTION_LABEL_BORDER_COLOR = "#E0E0E0";
 export const SECTION_LABEL_PADDING_BOTTOM = 1;
@@ -28,9 +28,9 @@ export const SECTION_PADDING_BOTTOM = 1;
 export const TRACK_HEIGHT = 16;
 export const TRACK_VERTICAL_GAP = 1;
 
-export const EVENT_HORIZONTAL_GAP = 1;
+export const EVENT_HORIZONTAL_GAP = 0.5;
 export const EVENT_LABEL_WIDTH_THRESHOLD = 20;
-export const EVENT_LABEL_FONT_SIZE = "12px";
+export const EVENT_LABEL_FONT_SIZE = "11px";
 export const EVENT_LABEL_FONT_COLOR = SECTION_LABEL_FONT_COLOR;
 
 export const TIME_SERIES_HEIGHT = 24;
