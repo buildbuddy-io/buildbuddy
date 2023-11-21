@@ -7,6 +7,7 @@ go_library(
     srcs = ["store.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store",
     deps = [
+        "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
