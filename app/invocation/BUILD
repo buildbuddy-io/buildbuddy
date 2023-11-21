@@ -210,6 +210,8 @@ ts_library(
         "//app/capabilities",
         "//app/format",
         "//app/invocation:invocation_model",
+        "//app/util:color",
+        "//proto:action_cache_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
