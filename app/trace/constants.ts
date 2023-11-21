@@ -19,7 +19,7 @@ export const MOUSE_GRIDLINE_COLOR = "#B0BEC5";
 
 export const SECTION_LABEL_HEIGHT = 20;
 export const SECTION_LABEL_FONT_SIZE = "13px";
-export const SECTION_LABEL_FONT_COLOR = "#222";
+export const SECTION_LABEL_FONT_COLOR = "#212121";
 export const SECTION_LABEL_BG_COLOR = "#eee";
 export const SECTION_LABEL_BORDER_COLOR = "#E0E0E0";
 export const SECTION_LABEL_PADDING_BOTTOM = 1;
