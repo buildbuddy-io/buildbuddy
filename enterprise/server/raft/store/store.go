@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
@@ -257,7 +258,6 @@ func (s *Store) handleEvents(ctx context.Context) error {
 	for {
 		select {
 		case e := <-s.events:
-			log.Debugf("event: %+v", e)
 			s.eventsMu.Lock()
 			for _, ch := range s.eventListeners {
 				select {
@@ -562,7 +562,6 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 	if s.haveLease(header.GetRangeId()) {
 		return r, nil
 	}
-
 	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
 }
 
@@ -739,7 +738,6 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	//	if _, _, err := s.validatedRange(req.GetHeader()); err != nil {
 	if _, err := s.LeasedRange(req.GetHeader()); err != nil {
 		return nil, err
 	}
@@ -966,36 +964,83 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	sourceRange = proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
 	shardID := sourceRange.GetReplicas()[0].GetShardId()
 
+	// Reserve new IDs for this cluster.
 	newShardID, newRangeID, err := s.reserveClusterAndRangeID(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("could not reserve IDs for new cluster: %s", err)
 	}
-	simpleSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.SimpleSplitRequest{
-		SourceRangeId: sourceRange.GetRangeId(),
-		NewShardId:    newShardID,
-		NewRangeId:    newRangeID,
+
+	// Find Split Point.
+	fsp := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
+	fspRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, shardID, fsp)
+	if err != nil {
+		return nil, status.InternalErrorf("find split point err: %s", err)
+	}
+	splitPointResponse, err := fspRsp.FindSplitPointResponse(0)
+	if err != nil {
+		return nil, err
+	}
+
+	// Bringup new peers.
+	servers := make(map[string]string)
+	for _, r := range sourceRange.GetReplicas() {
+		nhid, _, err := s.registry.ResolveNHID(r.GetShardId(), r.GetReplicaId())
+		if err != nil {
+			return nil, err
+		}
+		grpcAddr, _, err := s.registry.ResolveGRPC(r.GetShardId(), r.GetReplicaId())
+		if err != nil {
+			return nil, err
+		}
+		servers[nhid] = grpcAddr
+	}
+	bootstrapInfo := bringup.MakeBootstrapInfo(newShardID, 1, servers)
+	if err := bringup.StartShard(ctx, s.apiClient, bootstrapInfo, rbuilder.NewBatchBuilder()); err != nil {
+		return nil, err
+	}
+
+	// Assemble new range descriptor.
+	destRange := proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
+	destRange.Start = splitPointResponse.GetSplitKey()
+	destRange.RangeId = newRangeID
+	destRange.Generation += 1
+	for i, r := range destRange.GetReplicas() {
+		r.ReplicaId = uint64(i + 1)
+		r.ShardId = newShardID
+	}
+	destRangeBuf, err := proto.Marshal(destRange)
+	if err != nil {
+		return nil, err
+	}
+
+	newSourceRange := proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
+	newSourceRange.End = splitPointResponse.GetSplitKey()
+	newSourceRange.Generation += 1
+
+	leftBatch := rbuilder.NewBatchBuilder()
+	if err := addLocalRangeEdits(sourceRange, newSourceRange, leftBatch); err != nil {
+		return nil, err
+	}
+	leftBatch.AddPostCommitHook(&rfpb.SnapshotClusterHook{})
+	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: destRangeBuf,
+		},
 	})
-	rsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, shardID, simpleSplitReq)
-	if err != nil {
-		return nil, status.InternalErrorf("simple split err: %s", err)
-	}
-
-	simpleSplitRsp, err := rsp.SimpleSplitResponse(0)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.updateMetarange(ctx, sourceRange, simpleSplitRsp.GetNewStart(), simpleSplitRsp.GetNewEnd()); err != nil {
-		log.Errorf("metarange update error: %s", err)
+	rightBatch.AddPostCommitHook(&rfpb.SnapshotClusterHook{})
+	metaBatch := rbuilder.NewBatchBuilder()
+	if err := addMetaRangeEdits(sourceRange, newSourceRange, destRange, metaBatch); err != nil {
 		return nil, err
 	}
 
-	if err := s.SnapshotCluster(ctx, shardID); err != nil {
+	txn := rbuilder.NewTxn().AddStatement(shardID, leftBatch)
+	txn = txn.AddStatement(newShardID, rightBatch)
+	txn = txn.AddStatement(1, metaBatch)
+	if err := client.RunTxn(ctx, s.nodeHost, txn); err != nil {
 		return nil, err
 	}
-	return &rfpb.SplitRangeResponse{
-		Start: simpleSplitRsp.GetNewStart(),
-		End:   simpleSplitRsp.GetNewEnd(),
-	}, nil
+	return &rfpb.SplitRangeResponse{}, nil
 }
 
 func (s *Store) getLastAppliedIndex(header *rfpb.Header) (uint64, error) {
@@ -1283,8 +1328,8 @@ func casRangeEdit(key []byte, old, new *rfpb.RangeDescriptor) (*rfpb.CASRequest,
 	}, nil
 }
 
-func addLocalRangeEdits(oldStart, newStart *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	cas, err := casRangeEdit(constants.LocalRangeKey, oldStart, newStart)
+func addLocalRangeEdits(oldRange, newRange *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
+	cas, err := casRangeEdit(constants.LocalRangeKey, oldRange, newRange)
 	if err != nil {
 		return err
 	}
@@ -1292,23 +1337,23 @@ func addLocalRangeEdits(oldStart, newStart *rfpb.RangeDescriptor, b *rbuilder.Ba
 	return nil
 }
 
-func addMetaRangeEdits(oldStart, newStart, newEnd *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	newStartBuf, err := proto.Marshal(newStart)
+func addMetaRangeEdits(oldLeftRange, newLeftRange, newRightRange *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
+	newLeftRangeBuf, err := proto.Marshal(newLeftRange)
 	if err != nil {
 		return err
 	}
-	oldStartBuf, err := proto.Marshal(oldStart)
+	oldLeftRangeBuf, err := proto.Marshal(oldLeftRange)
 	if err != nil {
 		return err
 	}
-	newEndBuf, err := proto.Marshal(newEnd)
+	newRightRangeBuf, err := proto.Marshal(newRightRange)
 	if err != nil {
 		return err
 	}
 
 	// Send a single request that:
-	//  - CAS sets the newStart value to newNewStartBuf
-	//  - inserts the new newEndBuf
+	//  - CAS sets the newLeftRange value to newNewStartBuf
+	//  - inserts the new newRightRangeBuf
 	//
 	// if the CAS fails, check the existing value
 	//  if it's generation is past ours, ignore the error, we're out of date
@@ -1316,14 +1361,14 @@ func addMetaRangeEdits(oldStart, newStart, newEnd *rfpb.RangeDescriptor, b *rbui
 	//  else return an error
 	b.Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newEnd.GetEnd()),
-			Value: newEndBuf,
+			Key:   keys.RangeMetaKey(newRightRange.GetEnd()),
+			Value: newRightRangeBuf,
 		},
-		ExpectedValue: oldStartBuf,
+		ExpectedValue: oldLeftRangeBuf,
 	}).Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newStart.GetEnd()),
-			Value: newStartBuf,
+			Key:   keys.RangeMetaKey(newLeftRange.GetEnd()),
+			Value: newLeftRangeBuf,
 		},
 	})
 	return nil
