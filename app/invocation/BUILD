@@ -148,6 +148,7 @@ ts_library(
     name = "invocation_artifacts_card",
     srcs = ["invocation_artifacts_card.tsx"],
     deps = [
+        "//app/components/digest",
         "//app/format",
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_target_group_card",
@@ -675,6 +676,7 @@ ts_library(
     name = "invocation_target_group_card",
     srcs = ["invocation_target_group_card.tsx"],
     deps = [
+        "//app/components/digest",
         "//app/components/link",
         "//app/components/spinner",
         "//app/errors:error_service",

@@ -20,6 +20,7 @@ import error_service from "../errors/error_service";
 import Spinner from "../components/spinner/spinner";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import format from "../format/format";
+import DigestComponent from "../components/digest/digest";
 
 export interface TargetGroupCardProps {
   invocationId: string;
@@ -215,6 +216,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
                             <FileCode className="icon" /> View
                           </a>
                         )}
+                        <DigestComponent digest={{ hash: output.digest, sizeBytes: output.length }} />
                       </div>
                     ))}
                   </div>
