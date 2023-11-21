@@ -49,3 +49,34 @@ func RecvChan[T proto.Message](ctx context.Context, stream RecvStream[T]) chan S
 	}()
 	return streamMsgs
 }
+
+type SendStream[T proto.Message] interface {
+	Send(T) error
+}
+
+type Sender[T proto.Message] struct {
+	sendChan chan T
+	errChan  chan error
+}
+
+func (s *Sender[T]) Send(msg T) chan error {
+	s.sendChan <- msg
+	return s.errChan
+}
+
+func SendChan[T proto.Message](ctx context.Context, stream SendStream[T]) Sender[T] {
+	sendChan := make(chan T, 1)
+	errChan := make(chan error)
+	go func() {
+		for {
+			select {
+			case req := <-sendChan:
+				err := stream.Send(req)
+				errChan <- err
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return Sender[T]{sendChan, errChan}
+}

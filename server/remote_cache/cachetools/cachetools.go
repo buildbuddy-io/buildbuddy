@@ -41,7 +41,6 @@ var (
 	enableUploadCompresssion = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
 	casRPCTimeout            = flag.Duration("cache.client.cas_rpc_timeout", 1*time.Minute, "Maximum time a single batch RPC or a single ByteStream chunk read can take.")
 	acRPCTimeout             = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
-	byteStreamWriteTimeout   = flag.Duration("cache.client.byte_stream_write_timeout", 15*time.Minute, "Maximum time a single ByteStream upload can take.")
 )
 
 func retryOptions(name string) *retry.Options {
@@ -95,6 +94,7 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	}
 
 	streamMsgs := rpcutil.RecvChan[*bspb.ReadResponse](ctx, stream)
+	// XXX need to reset the timer
 	readTimer := time.NewTimer(*casRPCTimeout)
 	defer readTimer.Stop()
 
@@ -274,6 +274,10 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 	buf := make([]byte, uploadBufSizeBytes)
 	bytesUploaded := int64(0)
+	sender := rpcutil.SendChan[*bspb.WriteRequest](ctx, stream)
+	// XXX need to reset the timer
+	writeTimer := time.NewTimer(*casRPCTimeout)
+	defer writeTimer.Stop()
 	for {
 		n, err := rc.Read(buf)
 		if err != nil && err != io.EOF {
@@ -287,12 +291,23 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			WriteOffset:  bytesUploaded,
 			FinishWrite:  readDone,
 		}
-		if err := stream.Send(req); err != nil {
+
+		done := false
+		select {
+		case err := <-sender.Send(req):
 			if err == io.EOF {
+				done = true
 				break
 			}
 			return nil, err
+		case <-writeTimer.C:
+			return nil, status.DeadlineExceededError("Timed out sending Write request")
 		}
+
+		if done {
+			break
+		}
+
 		bytesUploaded += int64(len(req.Data))
 		if readDone {
 			break
@@ -331,10 +346,6 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
 				return nil, retry.NonRetryableError(err)
 			}
-			// We set a timeout for the entire write since we can't monitor
-			// status of individual chunk writes.
-			ctx, cancel := context.WithTimeout(ctx, *byteStreamWriteTimeout)
-			defer cancel()
 			return uploadFromReader(ctx, bsClient, r, in)
 		})
 	} else {
