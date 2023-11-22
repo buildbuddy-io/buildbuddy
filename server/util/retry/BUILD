@@ -17,6 +17,7 @@ go_test(
     srcs = ["retry_test.go"],
     deps = [
         ":retry",
+        "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -156,11 +157,13 @@ func TestRetryWithFixedDelay(t *testing.T) {
 }
 
 func TestRetryDoWithExpiredContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	// Immediately cancel the context.
-	cancel()
-	_, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (int, error) {
-		return 1, nil
-	})
-	require.Error(t, err)
+	for i := 0; i < 100; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		// Immediately cancel the context.
+		cancel()
+		_, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (int, error) {
+			return 0, status.InternalError("oh oh")
+		})
+		require.Error(t, err)
+	}
 }
