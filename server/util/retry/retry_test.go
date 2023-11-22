@@ -167,3 +167,30 @@ func TestRetryDoWithExpiredContext(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestRetryDo(t *testing.T) {
+	ctx := context.Background()
+
+	firstAttempt := true
+	val, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (int, error) {
+		if firstAttempt {
+			firstAttempt = false
+			return 0, status.InternalError("oh no")
+		}
+		return 1, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, val)
+}
+
+func TestRetryDoSkipsNonRetryableErrors(t *testing.T) {
+	ctx := context.Background()
+
+	attempts := 0
+	_, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (int, error) {
+		attempts += 1
+		return 0, retry.NonRetryableError(status.InternalError("oh no"))
+	})
+	require.Error(t, err)
+	require.Equal(t, 1, attempts)
+}
