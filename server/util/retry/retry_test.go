@@ -154,3 +154,13 @@ func TestRetryWithFixedDelay(t *testing.T) {
 	}
 	require.Equal(t, expected, delays)
 }
+
+func TestRetryDoWithExpiredContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	// Immediately cancel the context.
+	cancel()
+	_, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (int, error) {
+		return 1, nil
+	})
+	require.Error(t, err)
+}
