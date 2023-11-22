@@ -2,7 +2,7 @@
 slug: introducing-buildbuddy-v1
 title: Introducing BuildBuddy Version 1.0
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2020-04-24:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
@@ -59,4 +59,4 @@ Our open source BuildBuddy distribution is targeted at individuals viewing and d
 
 That's it for this release. Stay tuned for more updates coming soon!
 
-As always, we love your feedback - email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
+As always, we love your feedback - email us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) with any questions, comments, or thoughts.

@@ -2,7 +2,7 @@
 slug: meet-buildbuddy
 title: Meet BuildBuddy
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2020-03-04:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
@@ -21,4 +21,4 @@ The Bazel build log viewer is just the start. We're working on a [shared build c
 
 Our end goal is to take the pain out of managing Bazel, so you can focus on building your product.
 
-Reach out to us at <hello@buildbuddy.io> if you're interested, we'd love to chat!
+Reach out to us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) if you're interested, we'd love to chat!

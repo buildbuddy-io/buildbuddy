@@ -3,7 +3,7 @@ slug: customer-managed-encryption-keys
 title: Providing Control Over Cache Encryption
 description: We are announcing a feature that allows customers to control how their data is encrypted in in our cache.
 author: Vadim Berezniker
-author_title: Engineer @ BuildBuddy
+author_title: "Engineer @ BuildBuddy"
 date: 2023-06-05:11:00:00
 author_url: https://www.linkedin.com/in/vadimberezniker/
 author_image_url: https://avatars.githubusercontent.com/u/1335358?v=4

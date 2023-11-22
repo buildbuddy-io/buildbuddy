@@ -3,7 +3,7 @@ slug: keyboard-shortcuts
 title: Keyboard Shortcuts in BuildBuddy
 description: We're happy to announce keyboard shortcuts in BuildBuddy.
 author: Iain Macdonald
-author_title: Engineer @ BuildBuddy
+author_title: "Engineer @ BuildBuddy"
 date: 2023-05-22:12:00:00
 author_url: https://www.linkedin.com/in/macdonaldi/
 author_image_url: https://avatars.githubusercontent.com/u/455246?v=4

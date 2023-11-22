@@ -4,7 +4,7 @@ title: "Multiple Xcode Configurations with rules_xcodeproj 1.3"
 description: The one where we added a much requested, but surprisingly difficult
   to implement, feature.
 author: Brentley Jones
-author_title: Developer Evangelist @ BuildBuddy
+author_title: "Developer Evangelist @ BuildBuddy"
 date: 2023-03-17:12:00:00
 author_url: https://brentleyjones.com
 author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
@@ -95,7 +95,7 @@ We think the end result is a good starting point, but can be refined futher in
 future releases. Please give it a try, and if you run into any problems
 [file an issue][file-an-issue]! You can also join us in the `#rules_xcodeproj`
 channel in the [Bazel Slack workspace][bazel-slack], and you can email us at
-<hello@buildbuddy.io> with any questions, comments, or thoughts.
+[hello@buildbuddy.io](mailto:hello@buildbuddy.io) with any questions, comments, or thoughts.
 
 [bazel-slack]: https://slack.bazel.build/
 [file-an-issue]: https://github.com/buildbuddy-io/rules_xcodeproj/issues/new/choose

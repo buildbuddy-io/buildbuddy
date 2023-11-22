@@ -2,7 +2,7 @@
 slug: buildbuddy-achieves-soc-2-certification
 title: BuildBuddy Achieves SOC 2 Certification
 author: George Li
-author_title: Head of Sales @ BuildBuddy
+author_title: "Head of Sales @ BuildBuddy"
 date: 2021-04-28:12:00:00
 author_url: https://www.linkedin.com/in/gli/
 author_image_url: https://avatars.githubusercontent.com/u/27219306?v=4

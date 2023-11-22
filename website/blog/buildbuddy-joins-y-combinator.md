@@ -2,7 +2,7 @@
 slug: buildbuddy-joins-y-combinator
 title: BuildBuddy joins Y Combinator
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2020-03-16:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
@@ -28,4 +28,4 @@ We're excited to share that we've been accepted into [Y Combinator](https://www.
   <figcaption>Airbnb founders speak at our first batch dinner via <a href="https://twitter.com/gustaf/status/1215039947356270594">Gustaf Alstromer</a></figcaption>
 </figure>
 
-We're excited to share more about BuildBuddy in the coming months. If you intrigued and want to learn more - feel free to shoot us an email at <hello@buildbuddy.io>.
+We're excited to share more about BuildBuddy in the coming months. If you intrigued and want to learn more - feel free to shoot us an email at [hello@buildbuddy.io](mailto:hello@buildbuddy.io).

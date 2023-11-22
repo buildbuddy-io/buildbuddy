@@ -2,7 +2,7 @@
 slug: buildbuddy-v1-0-6-release-notes
 title: BuildBuddy v1.0.6 Release Notes
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2020-05-20:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
@@ -48,4 +48,4 @@ Many of these Enterprise features are also available for free to individuals via
 
 That's it for this release. Stay tuned for more updates coming soon!
 
-As always, we love your feedback - email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
+As always, we love your feedback - email us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) with any questions, comments, or thoughts.

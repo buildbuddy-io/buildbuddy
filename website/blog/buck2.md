@@ -3,7 +3,7 @@ slug: buck2-review
 title: "Buck2 Unboxing"
 description: A review of Meta's new build tool Buck2.
 author: Son Luong Ngoc
-author_title: Solution Engineer @ BuildBuddy
+author_title: "Solution Engineer @ BuildBuddy"
 date: 2023-05-30:12:00:00
 author_url: https://github.com/sluongng/
 author_image_url: https://avatars.githubusercontent.com/u/26684313?v=4

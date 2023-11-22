@@ -2,7 +2,7 @@
 slug: welcoming-grace-chuang
 title: Welcoming Grace Chuang
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2023-04-03 12:00:00
 author_url: https://www.linkedin.com/in/grace2chuang/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4

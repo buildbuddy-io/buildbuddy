@@ -2,7 +2,7 @@
 slug: welcoming-george-li-head-of-sales
 title: Welcoming George Li, Head of Sales
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2020-11-12:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4

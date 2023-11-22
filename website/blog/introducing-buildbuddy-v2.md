@@ -2,7 +2,7 @@
 slug: introducing-buildbuddy-v2
 title: Introducing BuildBuddy v2
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2021-05-27:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
@@ -75,6 +75,6 @@ While our focus for v2 has been on RBE performance, we've made plenty of other i
 
 We have several big announcements coming in the next few weeks, so stay tuned for more!
 
-As always, we love your feedback - join our [Slack channel](https://community.buildbuddy.io) or email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
+As always, we love your feedback - join our [Slack channel](https://community.buildbuddy.io) or email us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) with any questions, comments, or thoughts.
 
 Happy Building!

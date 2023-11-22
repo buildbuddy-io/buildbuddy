@@ -2,7 +2,7 @@
 slug: buildbuddy-v1-1-0-release-notes
 title: BuildBuddy v1.1.0 Release Notes
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2020-07-15:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
@@ -26,7 +26,7 @@ BuildBuddy's Remote Build Execution platform supports executing your Bazel build
 
 While BuildBuddy RBE is not yet fully open source, we're offering Cloud RBE for free to individuals and open source projects to show our appreciation to the open source community.
 
-We'll be adding more documentation on getting started with BuildBuddy RBE in the coming weeks, but in the meantime feel free to email us at <rbe@buildbuddy.io> or ping us in the [BuildBuddy Slack](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g) and we'll be happy to help you get started.
+We'll be adding more documentation on getting started with BuildBuddy RBE in the coming weeks, but in the meantime feel free to email us at [rbe@buildbuddy.io](mailto:rbe@buildbuddy.io) or ping us in the [BuildBuddy Slack](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g) and we'll be happy to help you get started.
 
 ## **New to Open Source BuildBuddy**
 
@@ -72,4 +72,4 @@ We'll be adding more documentation on getting started with BuildBuddy RBE in th
 
 That's it for this release. Stay tuned for more updates coming soon!
 
-As always, we love your feedback - email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
+As always, we love your feedback - email us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) with any questions, comments, or thoughts.

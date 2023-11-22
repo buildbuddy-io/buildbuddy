@@ -4,7 +4,7 @@ title: "Donating rules_xcodeproj to the Mobile Native Foundation"
 description: We are solidifying the community ownership of rules_xcodeproj by
   donating it to the Mobile Native Foundation.
 author: Brentley Jones
-author_title: Developer Evangelist @ BuildBuddy
+author_title: "Developer Evangelist @ BuildBuddy"
 date: 2023-03-22:9:00:00
 author_url: https://brentleyjones.com
 author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
@@ -191,6 +191,6 @@ and this is what they had to say:
 Do you have comments on rules_xcodeproj being donated to the Mobile Native
 Foundation? You can send us a message in the `#rules_xcodeproj` channel in the
 [Bazel Slack workspace][bazel-slack], or you can email us at
-<hello@buildbuddy.io>.
+[hello@buildbuddy.io](mailto:hello@buildbuddy.io).
 
 [bazel-slack]: https://slack.bazel.build/

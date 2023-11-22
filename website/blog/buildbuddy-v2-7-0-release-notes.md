@@ -2,7 +2,7 @@
 slug: buildbuddy-v2-7-0-release-notes
 title: BuildBuddy v2.7.0 Release Notes
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2021-11-18:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
@@ -65,4 +65,4 @@ If you're interested in any of these upcoming features and would like to try the
 
 That's it for this release. Stay tuned for more updates!
 
-As always, we love your feedback - join our [Slack channel](https://community.buildbuddy.io) or email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
+As always, we love your feedback - join our [Slack channel](https://community.buildbuddy.io) or email us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) with any questions, comments, or thoughts.
