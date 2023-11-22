@@ -209,7 +209,7 @@ func (r *Retry) MaxTotalDelay() time.Duration {
 // using NonRetryableError(err).
 func Do[T any](ctx context.Context, opts *Options, fn func(ctx context.Context) (T, error)) (T, error) {
 	logFailedAttempt := func(err error, message string) {
-		if err == nil || !opts.DontLogFailedAttempts {
+		if err == nil || opts.DontLogFailedAttempts {
 			return
 		}
 		name := opts.Name
@@ -232,12 +232,15 @@ func Do[T any](ctx context.Context, opts *Options, fn func(ctx context.Context) 
 		}
 
 		rsp, err := fn(ctx)
-		if err != nil {
-			lastError = err
-			continue
+		if err == nil {
+			logFailedAttempt(lastError, ", but succeeded on retry")
+			return rsp, nil
 		}
-		logFailedAttempt(lastError, ", but succeeded on retry")
-		return rsp, nil
+		if _, ok := err.(*nonRetryableError); ok {
+			logFailedAttempt(lastError, " and could not be retried due to a non-retryable error")
+			return rsp, err
+		}
+		lastError = err
 	}
 	return *new(T), lastError
 }
