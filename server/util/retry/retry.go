@@ -156,18 +156,34 @@ func (r *Retry) FixedDelayOnce(delay time.Duration) {
 	}
 }
 
-func (r *Retry) Next() bool {
+// next returns whether another attempt should be made. An error is returned
+// if the context is done.
+func (r *Retry) next() (bool, error) {
 	d, valid := r.NextDelay()
 	if !valid {
-		return false
+		return false, nil
 	}
 
+	t := r.clock.NewTimer(d)
+	defer t.Stop()
 	select {
-	case <-r.clock.After(d):
-		return true
+	case <-t.Chan():
+		return true, nil
 	case <-r.ctx.Done():
+		return false, r.ctx.Err()
+	}
+}
+
+// Next returns whether another attempt should be made.
+//
+// Note that Next may return false even on the first call if the context is
+// done.
+func (r *Retry) Next() bool {
+	valid, err := r.next()
+	if err != nil {
 		return false
 	}
+	return valid
 }
 
 func (r *Retry) AttemptNumber() int {
@@ -192,21 +208,35 @@ func (r *Retry) MaxTotalDelay() time.Duration {
 // The caller can indicate that an error should not be retried by wrapping it
 // using NonRetryableError(err).
 func Do[T any](ctx context.Context, opts *Options, fn func(ctx context.Context) (T, error)) (T, error) {
+	logFailedAttempt := func(err error, message string) {
+		if err == nil || !opts.DontLogFailedAttempts {
+			return
+		}
+		name := opts.Name
+		if name != "" {
+			name += " "
+		}
+		log.CtxWarningf(ctx, "%sattempt failed%s: %s", name, message, err)
+	}
+
 	r := New(ctx, opts)
 	var lastError error
-	for r.Next() {
+	for {
+		makeAttempt, err := r.next()
+		if err != nil {
+			logFailedAttempt(lastError, " and could not be retried as the context is done")
+			return *new(T), err
+		}
+		if !makeAttempt {
+			break
+		}
+
 		rsp, err := fn(ctx)
 		if err != nil {
 			lastError = err
 			continue
 		}
-		if lastError != nil && !opts.DontLogFailedAttempts {
-			name := opts.Name
-			if name != "" {
-				name += " "
-			}
-			log.CtxWarningf(ctx, "%sattempt failed, but succeeded on retry: %s", name, err)
-		}
+		logFailedAttempt(lastError, ", but succeeded on retry")
 		return rsp, nil
 	}
 	return *new(T), lastError
