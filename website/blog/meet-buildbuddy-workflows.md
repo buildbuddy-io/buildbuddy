@@ -2,7 +2,7 @@
 slug: meet-buildbuddy-workflows
 title: "Meet BuildBuddy Workflows"
 author: Brandon Duffany
-author_title: Engineer @ BuildBuddy
+author_title: "Engineer @ BuildBuddy"
 date: 2021-06-30:12:00:00
 author_url: https://www.linkedin.com/in/brandon-duffany-39b7217a
 author_image_url: https://avatars.githubusercontent.com/u/2414826?v=4

@@ -3,7 +3,7 @@ slug: bazel-remote-cache-debugging
 title: Bazel Remote Cache Debugging
 description: All about the new cache requests card and how to use it.
 author: Brandon Duffany
-author_title: Engineer @ BuildBuddy
+author_title: "Engineer @ BuildBuddy"
 date: 2022-06-07:12:00:00
 author_url: https://github.com/bduffany
 author_image_url: https://avatars.githubusercontent.com/u/2414826?v=4
@@ -141,4 +141,4 @@ enjoyed reading about how it works! We would love to hear your feedback,
 which will help inform how we design the next iteration of our cache
 debugging tools to help make your builds even faster and more scalable.
 Join our [Slack channel](https://community.buildbuddy.io) or email us at
-<hello@buildbuddy.io> with any questions, comments, or thoughts.
+[hello@buildbuddy.io](mailto:hello@buildbuddy.io) with any questions, comments, or thoughts.

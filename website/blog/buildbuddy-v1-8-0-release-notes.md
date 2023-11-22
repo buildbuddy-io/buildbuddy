@@ -2,7 +2,7 @@
 slug: buildbuddy-v1-8-0-release-notes
 title: BuildBuddy v1.8.0 Release Notes
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2021-03-18:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
@@ -55,4 +55,4 @@ Our focus for this release was on reliability, performance, improved documentati
 
 That's it for this release. Stay tuned for more updates coming soon!
 
-As always, we love your feedback - join our [Slack channel](https://community.buildbuddy.io) or email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
+As always, we love your feedback - join our [Slack channel](https://community.buildbuddy.io) or email us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) with any questions, comments, or thoughts.
