@@ -214,6 +214,9 @@ export default class InvocationModel {
       this.toolLogMap.set(log.name, new TextDecoder().decode(log.contents || new Uint8Array()));
     }
     for (let commandLine of this.structuredCommandLine) {
+      if (commandLine.commandLineLabel != "canonical") {
+        continue;
+      }
       for (let section of commandLine.sections || []) {
         for (let option of section.optionList?.option || []) {
           this.optionsMap.set(option.optionName, option.optionValue);
