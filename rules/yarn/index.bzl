@@ -1,3 +1,25 @@
+DEFAULT_CMD_TPL = """
+export ROOTDIR=$$(pwd) &&
+export PACKAGEDIR=$$(dirname $(location {package})) &&
+export PATH=$$ROOTDIR/$$(dirname $(location {yarn})):$$ROOTDIR/$$(dirname $(location {node})):$$PATH &&
+cd $$PACKAGEDIR &&
+yarn install &&
+yarn {command} &&
+cd build &&
+tar -cvf ../build.tar * &&
+cd $$ROOTDIR &&
+mv $$PACKAGEDIR/build.tar $@
+"""
+
+EXECUTABLE_CMD_TPL = """
+cat << EOF > $@
+export PATH=$$(pwd)/$$(dirname $(location {yarn})):$$(pwd)/$$(dirname $(location {node})):$$PATH &&
+cd $$(dirname $(location {package})) &&
+yarn install &&
+yarn {command}
+EOF
+"""
+
 def yarn(name, srcs, package, command = "build", deps = [], yarn = "@yarn//:yarn_bin", node = "@nodejs_host//:node_bin", **kwargs):
     extension = ".tar"
     executable = False
@@ -5,21 +27,17 @@ def yarn(name, srcs, package, command = "build", deps = [], yarn = "@yarn//:yarn
         extension = ".sh"
         executable = True
 
-    cmd = """
-        export ROOTDIR=$$(pwd) && 
-        export PACKAGEDIR=$$(dirname $(location %s)) && 
-        export PATH=$$ROOTDIR/$$(dirname $(location %s)):$$ROOTDIR/$$(dirname $(location %s)):$$PATH && 
-        cd $$PACKAGEDIR && 
-        yarn install && 
-        yarn %s && 
-        cd build && 
-        tar -cvf ../build.tar * && 
-        cd $$ROOTDIR && 
-        mv $$PACKAGEDIR/build.tar $@
-    """ % (package, yarn, node, command)
-
     if executable:
-        cmd = "echo \"cd $$(dirname $(location %s)) && yarn install && yarn %s\" > $@" % (package, command)
+        cmd_tpl = EXECUTABLE_CMD_TPL
+    else:
+        cmd_tpl = DEFAULT_CMD_TPL
+
+    cmd = cmd_tpl.format(
+        package = package,
+        yarn = yarn,
+        node = node,
+        command = command,
+    )
 
     native.genrule(
         name = name,
