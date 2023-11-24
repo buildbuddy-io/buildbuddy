@@ -146,7 +146,6 @@ are executed in the remote environment.
 
 These properties could be used in different ways:
 
-- Setting `--remote_header=x-buildbuddy-platform.KEY=VALUE` in `.bazelrc` or in Bazel command line.
 - Setting `--remote_default_exec_properties=KEY=VALUE` in `.bazelrc` or in Bazel command line.
 - Setting `exec_properties` in Execution Platform definition.
 - Setting `exec_properties` in each BUILD target.
