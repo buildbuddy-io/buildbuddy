@@ -378,3 +378,76 @@ func TestRedactAPIKey(t *testing.T) {
 		require.Contains(t, json, notAPIKey)
 	}
 }
+
+func TestRedactRunResidual(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		given    []string
+		expected []string
+	}{
+		{
+			name:     "withoutSecret",
+			given:    []string{"-foo=bar", "-baz"},
+			expected: []string{"-foo=bar", "-baz"},
+		},
+		{
+			name:     "withNoSplit",
+			given:    []string{"-api_key=foobar", "-baz"},
+			expected: []string{"-api_key=<REDACTED>", "-baz"},
+		},
+		{
+			name:     "withSplit",
+			given:    []string{"-api_key", "foobar", "-baz"},
+			expected: []string{"-api_key", "<REDACTED>", "-baz"},
+		},
+		{
+			name:     "MultipleEqualSigns",
+			given:    []string{"-api_key=foo=bar=laz", "-baz"},
+			expected: []string{"-api_key=<REDACTED>", "-baz"},
+		},
+		{
+			name:     "MultipleEqualSigns",
+			given:    []string{"-api_key=foo=bar=laz", "-baz"},
+			expected: []string{"-api_key=<REDACTED>", "-baz"},
+		},
+		{
+			name:     "withSecret",
+			given:    []string{"--key", "foobar", "-secret", "loremsumip"},
+			expected: []string{"--key", "<REDACTED>", "-secret", "<REDACTED>"},
+		},
+		{
+			name:     "withPass",
+			given:    []string{"--password=foobar", "--pass=loremsumip"},
+			expected: []string{"--password=<REDACTED>", "--pass=<REDACTED>"},
+		},
+		{
+			name:     "withToken",
+			given:    []string{"--token=foobar", "--baz=loremsumip"},
+			expected: []string{"--token=<REDACTED>", "--baz=loremsumip"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+
+			chunkList := &clpb.ChunkList{
+				Chunk: tc.given,
+			}
+			redactor.RedactMetadata(&bespb.BuildEvent{
+				Payload: &bespb.BuildEvent_StructuredCommandLine{
+					StructuredCommandLine: &clpb.CommandLine{
+						Sections: []*clpb.CommandLineSection{
+							{
+								SectionLabel: "residual",
+								SectionType: &clpb.CommandLineSection_ChunkList{
+									ChunkList: chunkList,
+								},
+							},
+						},
+					},
+				},
+			})
+
+			require.Equal(t, tc.expected, chunkList.Chunk)
+		})
+	}
+}
