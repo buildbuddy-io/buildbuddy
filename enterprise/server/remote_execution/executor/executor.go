@@ -213,7 +213,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionMetrics.Isolation = r.GetIsolationType()
 	finishedCleanly := false
 	defer func() {
-		go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
+		// Note: recycling is done in the foreground here in order to ensure
+		// that the runner is fully cleaned up (if applicable) before its
+		// resource claims are freed up by the priority_task_scheduler.
+		s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
 	}()
 
 	log.CtxInfof(ctx, "Preparing runner for task.")
