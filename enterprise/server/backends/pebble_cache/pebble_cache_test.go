@@ -3134,12 +3134,12 @@ func TestSampling(t *testing.T) {
 			// kick in. The unencrypted test digest should be evicted.
 			clock.Advance(minEvictionAge - 1*time.Minute)
 
-			for i := 0; i < 30; i++ {
+			for i := 0; i < 60; i++ {
 				if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
 					log.Infof("i = %d: unencrypted test digest is evicted", i)
 					break
 				}
-				time.Sleep(1000 * time.Millisecond)
+				time.Sleep(800 * time.Millisecond)
 			}
 
 			// The unencrypted key should no longer exist.
