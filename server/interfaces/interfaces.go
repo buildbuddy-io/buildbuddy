@@ -740,9 +740,9 @@ type ExecutionService interface {
 type RankedExecutionNode interface {
 	GetExecutionNode() ExecutionNode
 
-	// Returns the delay which should be applied for tasks newly scheduled on
-	// this execution node.
-	GetSchedulingDelay() time.Duration
+	// Returns whether or not this node is "preferred" in ranking for the
+	// provided execution.
+	IsPreferred() bool
 }
 
 type ExecutionNode interface {

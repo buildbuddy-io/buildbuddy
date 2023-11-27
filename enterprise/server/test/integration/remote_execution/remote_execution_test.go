@@ -1431,8 +1431,8 @@ func (n fakeRankedNode) GetExecutionNode() interfaces.ExecutionNode {
 	return n.node
 }
 
-func (_ fakeRankedNode) GetSchedulingDelay() time.Duration {
-	return 0 * time.Second
+func (_ fakeRankedNode) IsPreferred() bool {
+	return false
 }
 
 type fixedNodeTaskRouter struct {

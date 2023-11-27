@@ -33,29 +33,45 @@ const (
 )
 
 type fakeTaskRouter struct {
+	preferredExecutors []string
 }
 
 type fakeRankedNode struct {
-	node  interfaces.ExecutionNode
-	delay time.Duration
+	node      interfaces.ExecutionNode
+	preferred bool
 }
 
 func (n fakeRankedNode) GetExecutionNode() interfaces.ExecutionNode {
 	return n.node
 }
 
-func (n fakeRankedNode) GetSchedulingDelay() time.Duration {
-	return n.delay
+func (n fakeRankedNode) IsPreferred() bool {
+	return n.preferred
 }
 
 func (f *fakeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
-	sort.Slice(nodes, func(i, j int) bool {
-		return nodes[i].GetExecutorID() < nodes[j].GetExecutorID()
-	})
 	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
 	for i, node := range nodes {
-		rankedNodes[i] = fakeRankedNode{node: node, delay: time.Duration(i) * time.Second}
+		preferred := false
+		for _, preferredNodeID := range f.preferredExecutors {
+			if node.GetExecutorID() == preferredNodeID {
+				preferred = true
+				break
+			}
+		}
+		rankedNodes[i] = fakeRankedNode{node: node, preferred: preferred}
 	}
+
+	// Return the preferred nodes first, then non-preferred nodes, both sections
+	// sorted deterministically by executor ID.
+	sort.Slice(rankedNodes, func(i, j int) bool {
+		if rankedNodes[i].IsPreferred() && !rankedNodes[j].IsPreferred() {
+			return true
+		} else if !rankedNodes[i].IsPreferred() && rankedNodes[j].IsPreferred() {
+			return false
+		}
+		return nodes[i].GetExecutorID() < nodes[j].GetExecutorID()
+	})
 	return rankedNodes
 }
 
@@ -63,9 +79,10 @@ func (f *fakeTaskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, re
 }
 
 type schedulerOpts struct {
-	userOwnedEnabled  bool
-	groupOwnedEnabled bool
-	clock             clockwork.Clock
+	userOwnedEnabled   bool
+	groupOwnedEnabled  bool
+	clock              clockwork.Clock
+	preferredExecutors []string
 }
 
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
@@ -79,7 +96,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 
 	err := execution_server.Register(env)
 	require.NoError(t, err)
-	env.SetTaskRouter(&fakeTaskRouter{})
+	env.SetTaskRouter(&fakeTaskRouter{opts.preferredExecutors})
 	s, err := NewSchedulerServerWithOptions(env, &Options{Clock: opts.clock})
 	require.NoError(t, err)
 	env.SetSchedulerService(s)
@@ -388,7 +405,7 @@ func (e *fakeExecutor) Claim(taskID string) *taskLease {
 	return lease
 }
 
-func scheduleTask(ctx context.Context, t *testing.T, env environment.Env) string {
+func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props map[string]string) string {
 	for i := 0; i < 5; i++ {
 		id, err := uuid.NewRandom()
 		require.NoError(t, err)
@@ -396,6 +413,14 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env) string
 
 		task := &repb.ExecutionTask{
 			ExecutionId: taskID,
+			Command: &repb.Command{
+				Platform: &repb.Platform{
+					Properties: []*repb.Platform_Property{},
+				},
+			},
+		}
+		for k, v := range props {
+			task.Command.Platform.Properties = append(task.Command.Platform.Properties, &repb.Platform_Property{Name: k, Value: v})
 		}
 		taskBytes, err := proto.Marshal(task)
 		require.NoError(t, err)
@@ -432,7 +457,7 @@ func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
-	taskID := scheduleTask(ctx, t, env)
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
 	fe.WaitForTask(taskID)
 	fe.Claim(taskID)
 
@@ -452,7 +477,7 @@ func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
-	taskID := scheduleTask(ctx, t, env)
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
 	fe.WaitForTask(taskID)
 	lease := fe.Claim(taskID)
 
@@ -473,7 +498,7 @@ func TestExecutorReEnqueue_NonMatchingLeaseID(t *testing.T) {
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
-	taskID := scheduleTask(ctx, t, env)
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
 	fe.WaitForTask(taskID)
 	fe.Claim(taskID)
 
@@ -495,7 +520,7 @@ func TestLeaseExpiration(t *testing.T) {
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
-	taskID := scheduleTask(ctx, t, env)
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
 	fe.WaitForTask(taskID)
 	lease := fe.Claim(taskID)
 
@@ -522,7 +547,7 @@ func TestLeaseExpiration(t *testing.T) {
 	require.ErrorIs(t, io.EOF, err)
 }
 
-func TestSchedulingDelay(t *testing.T) {
+func TestSchedulingDelay_NoDelay(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
 	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
@@ -530,10 +555,64 @@ func TestSchedulingDelay(t *testing.T) {
 	fe1.Register()
 	fe2.Register()
 
-	taskID := scheduleTask(ctx, t, env)
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
 
-	// The fake task router returns nodes in sorted order of id with 1 second
-	// of scheduled delay between each execution.
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
-	fe2.WaitForTaskWithDelay(taskID, 1*time.Second)
+	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
+}
+
+func TestSchedulingDelay_DelayTooSmall(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
+	fe2 := newFakeExecutorWithId(ctx, t, "2", env.GetSchedulerClient())
+	fe1.Register()
+	fe2.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{"cold-runner-scheduling-delay": "-1s"})
+
+	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
+	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
+}
+
+func TestSchedulingDelay_NoPreferredExecutors(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
+	fe2 := newFakeExecutorWithId(ctx, t, "2", env.GetSchedulerClient())
+	fe1.Register()
+	fe2.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{"cold-runner-scheduling-delay": "5s"})
+
+	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
+	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
+}
+
+func TestSchedulingDelay_DelayTooLarge(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{preferredExecutors: []string{"2"}}, "user1")
+
+	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
+	fe2 := newFakeExecutorWithId(ctx, t, "2", env.GetSchedulerClient())
+	fe1.Register()
+	fe2.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{"cold-runner-scheduling-delay": "1h"})
+
+	fe1.WaitForTaskWithDelay(taskID, 15*time.Minute)
+	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
+}
+
+func TestSchedulingDelay_OnePreferredExecutor(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{preferredExecutors: []string{"2"}}, "user1")
+
+	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
+	fe2 := newFakeExecutorWithId(ctx, t, "2", env.GetSchedulerClient())
+	fe1.Register()
+	fe2.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{"cold-runner-scheduling-delay": "5s"})
+
+	fe1.WaitForTaskWithDelay(taskID, 5*time.Second)
+	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
 }

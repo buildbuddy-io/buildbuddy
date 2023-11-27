@@ -40,11 +40,6 @@ const (
 	// set less than the number of probes so that we can autoscale the workflow
 	// executor pool effectively.
 	workflowsPreferredNodeLimit = 2
-
-	// Upper bound on the scheduling delay applied for tasks scheduled on
-	// cold execution nodes, to prevent indefinite scheduling delays.
-	maxPermittedSchedulingDelay = 15 * time.Minute
-	defaultSchedulingDelay      = 0 * time.Second
 )
 
 type taskRouter struct {
@@ -83,46 +78,20 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	}, nil
 }
 
-// Returns the delay that should be applied to executions scheduled on
-// non-preferred execution nodes.
-func getNonPreferredSchedulingDelay(cmd *repb.Command, numPreferredNodes int) time.Duration {
-	if numPreferredNodes == 0 {
-		return defaultSchedulingDelay
-	}
-	delayProperty := platform.FindValue(cmd.GetPlatform(), platform.ColdRunnerSchedulingDelayPropertyName)
-	if delayProperty == "" {
-		return defaultSchedulingDelay
-	}
-	d, err := time.ParseDuration(delayProperty)
-	if err != nil {
-		log.Warningf("Could not parse platform property %q as duration: %s", platform.ColdRunnerSchedulingDelayPropertyName, err)
-		return defaultSchedulingDelay
-	}
-	if d < 0*time.Second {
-		// It would be a huge performance win if this worked. Unfortunately we
-		// haven't figured out how to implement it yet :-(
-		return defaultSchedulingDelay
-	}
-	if d > maxPermittedSchedulingDelay {
-		return maxPermittedSchedulingDelay
-	}
-	return d
-}
-
 type rankedExecutionNode struct {
-	node  interfaces.ExecutionNode
-	delay time.Duration
+	node      interfaces.ExecutionNode
+	preferred bool
 }
 
 func (n rankedExecutionNode) GetExecutionNode() interfaces.ExecutionNode {
 	return n.node
 }
 
-func (n rankedExecutionNode) GetSchedulingDelay() time.Duration {
-	return n.delay
+func (n rankedExecutionNode) IsPreferred() bool {
+	return n.preferred
 }
 
-func noDelays(nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+func nonePreferred(nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
 	for i, node := range nodes {
 		rankedNodes[i] = rankedExecutionNode{node: node}
@@ -142,22 +111,22 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(params)
 	if strategy == nil {
-		return noDelays(nodes)
+		return nonePreferred(nodes)
 	}
 
 	preferredNodeLimit, routingKey, err := strategy.RoutingInfo(params)
 	if err != nil {
 		log.Errorf("Failed to compute routing info: %s", err)
-		return noDelays(nodes)
+		return nonePreferred(nodes)
 	}
 	if preferredNodeLimit == 0 {
-		return noDelays(nodes)
+		return nonePreferred(nodes)
 	}
 
 	preferredNodeIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
 	if err != nil {
 		log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
-		return noDelays(nodes)
+		return nonePreferred(nodes)
 	}
 
 	nodeByID := map[string]interfaces.ExecutionNode{}
@@ -177,17 +146,13 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 			continue
 		}
 		preferredSet[id] = struct{}{}
-		ranked = append(ranked, rankedExecutionNode{node: node})
+		ranked = append(ranked, rankedExecutionNode{node: node, preferred: true})
 	}
-	nonPreferredNodeDelay := getNonPreferredSchedulingDelay(cmd, len(preferredNodeIDs))
 	for _, node := range nodes {
 		if _, ok := preferredSet[node.GetExecutorID()]; ok {
 			continue
 		}
-		ranked = append(ranked, rankedExecutionNode{
-			node:  node,
-			delay: nonPreferredNodeDelay,
-		})
+		ranked = append(ranked, rankedExecutionNode{node: node})
 	}
 
 	return ranked
