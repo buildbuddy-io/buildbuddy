@@ -138,8 +138,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	// Test various scenarios of running bazel builds with clean/recycled
 	// runners
 	for _, enableRemote := range []bool{true, false} {
-		setup(false)
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+		setup(false)
 
 		rootDir := testfs.MakeTempDir(t)
 		workDir := testfs.MakeDirAll(t, rootDir, "work")
@@ -295,8 +295,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 
 	// Pausing a new VM
 	for _, enableRemote := range []bool{true, false} {
-		setup(true)
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+		setup(true)
 
 		start := time.Now()
 		err := c.Pause(ctx)
@@ -307,8 +307,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	// Pausing a VM that had started from a snapshot.
 	// No changes to the VM other than running for a bit.
 	for _, enableRemote := range []bool{true, false} {
-		setup(true)
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+		setup(true)
 
 		// Create a snapshot
 		err := c.Pause(ctx)
@@ -327,8 +327,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	// Pausing a VM that had started from a snapshot.
 	// Execute a command in the VM before saving the new snapshot.
 	for _, enableRemote := range []bool{true, false} {
-		setup(true)
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+		setup(true)
 
 		// Create a snapshot
 		err := c.Pause(ctx)
@@ -349,8 +349,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 
 	// Loading a snapshot for a VM.
 	for _, enableRemote := range []bool{true, false} {
-		setup(true)
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
+		setup(true)
 
 		// Create a snapshot
 		err := c.Pause(ctx)
@@ -365,8 +365,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	// Loading a snapshot for a VM where ~30% of artifacts were evicted from filecache
 	// and must be fetched remotely.
 	{
-		setup(true)
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+		setup(true)
 
 		// Create a snapshot
 		err := c.Pause(ctx)
@@ -404,8 +404,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	// Loading a snapshot for a VM where all artifacts were evicted from filecache
 	// and must be fetched remotely.
 	{
-		setup(true)
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+		setup(true)
 
 		// Create a snapshot
 		err := c.Pause(ctx)
