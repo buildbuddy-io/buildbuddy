@@ -1639,7 +1639,9 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 		return nil, err
 	}
 	defer rc.Close()
-	return io.ReadAll(rc)
+	var buffer bytes.Buffer
+	_, err = io.Copy(&buffer, rc)
+	return buffer.Bytes(), err
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
