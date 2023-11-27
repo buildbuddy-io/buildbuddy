@@ -1,4 +1,4 @@
-package bytestream
+package byte_stream_client
 
 import (
 	"bytes"

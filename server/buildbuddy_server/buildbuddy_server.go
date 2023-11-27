@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
-	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
@@ -23,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
@@ -209,7 +209,7 @@ func (s *BuildBuddyServer) GetZipManifest(ctx context.Context, req *zipb.GetZipM
 	if err != nil {
 		return nil, err
 	}
-	man, err := bytestream.FetchBytestreamZipManifest(ctx, s.env, u)
+	man, err := byte_stream_client.FetchBytestreamZipManifest(ctx, s.env, u)
 	if err != nil {
 		return nil, err
 	}
@@ -1708,7 +1708,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", entry.GetName()))
 		// TODO(jdhollen): Parse output mime type from bazel-generated MANIFEST file.
 		w.Header().Set("Content-Type", "application/octet-stream")
-		err = bytestream.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, entry, w)
+		err = byte_stream_client.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, entry, w)
 		if err != nil {
 			if status.IsInvalidArgumentError(err) {
 				return http.StatusBadRequest, err
@@ -1722,7 +1722,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	err = bytestream.StreamBytestreamFile(ctx, s.env, lookup.URL, w)
+	err = byte_stream_client.StreamBytestreamFile(ctx, s.env, lookup.URL, w)
 
 	if err != nil {
 		if status.IsInvalidArgumentError(err) {
