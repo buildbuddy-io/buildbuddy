@@ -3,7 +3,6 @@ package interceptors
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/netip"
 	"runtime"
 	"strconv"
@@ -481,7 +480,6 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 }
 
 func GetUnaryClientInterceptor() grpc.DialOption {
-	fmt.Println("Yes, a unary one.")
 	return grpc.WithChainUnaryInterceptor(
 		otelgrpc.UnaryClientInterceptor(),
 		grpc_prometheus.UnaryClientInterceptor,
@@ -494,7 +492,6 @@ func GetUnaryClientIdentityInterceptor(env environment.Env) grpc.DialOption {
 }
 
 func GetStreamClientInterceptor() grpc.DialOption {
-	fmt.Println("Yes, a stream one.")
 	return grpc.WithChainStreamInterceptor(
 		otelgrpc.StreamClientInterceptor(),
 		grpc_prometheus.StreamClientInterceptor,
