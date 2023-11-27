@@ -10,11 +10,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
 	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
-	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -387,7 +387,7 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 
 	writer := &getFileWriter{s: server}
 
-	return bytestream.StreamBytestreamFile(ctx, s.env, parsedURL, writer)
+	return byte_stream_client.StreamBytestreamFile(ctx, s.env, parsedURL, writer)
 }
 
 func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {
@@ -458,7 +458,7 @@ func (s *APIServer) handleGetFileRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = bytestream.StreamBytestreamFile(r.Context(), s.env, parsedURL, w)
+	err = byte_stream_client.StreamBytestreamFile(r.Context(), s.env, parsedURL, w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

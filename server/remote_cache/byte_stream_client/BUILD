@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "bytestream",
-    srcs = ["bytestream.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/bytestream",
+    name = "byte_stream_client",
+    srcs = ["byte_stream_client.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
@@ -21,15 +21,15 @@ go_library(
 )
 
 go_test(
-    name = "bytestream_test",
+    name = "byte_stream_client_test",
     size = "small",
-    srcs = ["bytestream_test.go"],
+    srcs = ["byte_stream_client_test.go"],
     data = [
         "no_files.zip",
         "some_files.zip",
         "too_many_files.zip",
     ],
-    embed = [":bytestream"],
+    embed = [":byte_stream_client"],
     deps = [
         "//proto:zip_go_proto",
         "//server/environment",
