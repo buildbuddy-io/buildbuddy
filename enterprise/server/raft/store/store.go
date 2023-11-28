@@ -35,7 +35,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
@@ -188,7 +187,6 @@ func (s *Store) setMetaRangeBuf(buf []byte) {
 	// Update the value
 	s.metaRangeData = buf
 	s.sender.UpdateRange(new)
-	go s.renewNodeLiveness()
 }
 
 func (s *Store) queryForMetarange() {
@@ -317,6 +315,10 @@ func (s *Store) Start() error {
 	eg.Go(func() error {
 		return s.handleEvents(gctx)
 	})
+	eg.Go(func() error {
+		return s.acquireNodeLiveness(gctx)
+	})
+
 	s.leaseKeeper.Start()
 	return nil
 }
@@ -461,6 +463,8 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.updateTags()
 	go s.updateUsages(r)
+
+	s.log.Debugf("Added range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -562,7 +566,9 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 	if s.haveLease(header.GetRangeId()) {
 		return r, nil
 	}
-	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
+	err = status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
+	s.log.Debug(err.Error())
+	return nil, err
 }
 
 func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMachine {
@@ -815,17 +821,31 @@ func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 	}
 }
 
-func (s *Store) renewNodeLiveness() {
-	retrier := retry.DefaultWithContext(context.Background())
-	for retrier.Next() {
-		if s.liveness.Valid() {
-			return
+func (s *Store) acquireNodeLiveness(ctx context.Context) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			s.metaRangeMu.Lock()
+			haveMetaRange := len(s.metaRangeData) > 0
+			s.metaRangeMu.Unlock()
+
+			if !haveMetaRange {
+				continue
+			}
+			if s.liveness.Valid() {
+				return nil
+			}
+			err := s.liveness.Lease()
+			if err == nil {
+				return nil
+			}
+			s.log.Errorf("Error leasing node liveness record: %s", err)
 		}
-		err := s.liveness.Lease()
-		if err == nil {
-			return
-		}
-		s.log.Errorf("Error leasing node liveness record: %s", err)
 	}
 }
 
