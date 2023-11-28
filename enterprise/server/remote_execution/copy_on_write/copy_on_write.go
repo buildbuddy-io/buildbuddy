@@ -322,6 +322,7 @@ func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffse
 	copy(p[dataSize:readSize], c.zeroBuf)
 	return nil
 }
+
 func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	if err := checkBounds("write", c.totalSizeBytes, p, off); err != nil {
 		return 0, err
@@ -560,14 +561,12 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 	s.storeLock.RUnlock()
 	chunkSource := snaputil.ChunkSourceHole
 	if ogChunk != nil {
-		if !ogChunk.safeReadMapped() {
-			if err := ogChunk.initMap(); err != nil {
-				return nil, nil, err
-			}
+		if err := ogChunk.initMap(); err != nil {
+			return nil, nil, err
 		}
 		chunkSource = ogChunk.source
 	}
-	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled)
+	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), true /*=dirty*/, fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -642,11 +641,8 @@ func (s *COWStore) fetchChunk(offset int64) error {
 		return nil
 	}
 
-	var err error
-	if !c.safeReadMapped() {
-		err = c.initMap()
-	}
-	return err
+	// Fetch, but don't mmap (since it incurs extra memory usage).
+	return c.Fetch()
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -748,7 +744,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 				return nil, err
 			}
 		}
-		return NewMmapFd(ctx, env, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset, snaputil.ChunkSourceLocalFile, remoteInstanceName, remoteEnabled)
+		return NewMmapLocalFile(ctx, env, dataDir, false /*=dirty*/, int(chunkFileSize), chunkStartOffset, remoteInstanceName, remoteEnabled)
 	}
 
 	// TODO: iterate through the file with multiple goroutines
@@ -783,11 +779,16 @@ type Mmap struct {
 
 	Offset  int64
 	dataDir string
+	dirty   bool // dirty suffix, only used to compute path
+
+	// initMu is used only to prevent concurrent attempts to mmap the data.
+	initMu sync.Mutex
 
 	// Mutex protects the subsequent fields
 	mu         sync.RWMutex
 	data       []byte
 	source     snaputil.ChunkSource
+	fetched    bool
 	closed     bool
 	lazyDigest *repb.Digest
 }
@@ -814,7 +815,9 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 	}, nil
 }
 
-func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
+// NewMmapFd returns an eagerly mmapped instance from the given fd.
+// The onMap callback is invoked immediately.
+func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty bool, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
 	if source == snaputil.ChunkSourceUnmapped {
 		return nil, status.InvalidArgumentError("ChunkSourceUnmapped is not a valid source when initializing a chunk from a fd")
 	}
@@ -823,13 +826,27 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, siz
 		return nil, err
 	}
 	return &Mmap{
-		remoteInstanceName: remoteInstanceName,
-		remoteEnabled:      remoteEnabled,
 		ctx:                ctx,
 		env:                env,
+		remoteInstanceName: remoteInstanceName,
+		remoteEnabled:      remoteEnabled,
+		dirty:              dirty,
 		Offset:             offset,
 		data:               data,
 		source:             source,
+		dataDir:            dataDir,
+	}, nil
+}
+
+func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, dirty bool, size int, offset int64, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
+	return &Mmap{
+		ctx:                ctx,
+		env:                env,
+		remoteInstanceName: remoteInstanceName,
+		remoteEnabled:      remoteEnabled,
+		dirty:              dirty,
+		Offset:             offset,
+		source:             snaputil.ChunkSourceLocalFile,
 		dataDir:            dataDir,
 	}, nil
 }
@@ -860,43 +877,60 @@ func mmapDataFromFd(fd, size int) ([]byte, error) {
 	return data, nil
 }
 
-func (m *Mmap) initMap() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Mmap) initMap() (err error) {
+	m.initMu.Lock()
+	defer m.initMu.Unlock()
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
-	if m.source != snaputil.ChunkSourceUnmapped {
+	if m.data != nil {
 		return nil
 	}
-	if m.lazyDigest == nil {
-		return status.InternalError("cannot initialize chunk without a digest")
+	path := m.path()
+	if m.lazyDigest != nil {
+		if err := m.fetch(path); err != nil {
+			return err
+		}
 	}
+	data, err := mmapDataFromPath(path)
+	if err != nil {
+		return status.WrapErrorf(err, "create mmap for path %s", path)
+	}
+	m.data = data
 
-	outputPath := filepath.Join(m.dataDir, ChunkName(m.Offset, false /*dirty*/))
-	artifactSrc, err := snaputil.GetArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.remoteEnabled, m.lazyDigest, m.remoteInstanceName, outputPath)
+	return nil
+}
+
+func (m *Mmap) path() string {
+	return filepath.Join(m.dataDir, ChunkName(m.Offset, m.dirty))
+}
+
+// Fetch fetches the chunk from cache if applicable.
+func (m *Mmap) Fetch() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.fetch(m.path())
+}
+
+func (m *Mmap) fetch(path string) error {
+	if m.fetched || m.lazyDigest == nil {
+		return nil
+	}
+	src, err := snaputil.GetArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.remoteEnabled, m.lazyDigest, m.remoteInstanceName, path)
 	if err != nil {
 		return status.WrapErrorf(err, "fetch snapshot chunk for offset %d digest %s", m.Offset, m.lazyDigest.Hash)
 	}
-
-	data, err := mmapDataFromPath(outputPath)
-	if err != nil {
-		return status.WrapErrorf(err, "create mmap for path %s", outputPath)
-	}
-
-	m.data = data
-	m.source = artifactSrc
+	m.source = src
+	m.fetched = true
 	return nil
 }
 
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
-	if !m.safeReadMapped() {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
-	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if err := m.initMap(); err != nil {
+		return 0, err
+	}
 	if err := checkBounds("read", int64(len(m.data)), p, off); err != nil {
 		return 0, err
 	}
@@ -905,13 +939,11 @@ func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
-	if !m.safeReadMapped() {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.initMap(); err != nil {
+		return 0, err
+	}
 	if err := checkBounds("write", int64(len(m.data)), p, off); err != nil {
 		return 0, err
 	}
@@ -921,80 +953,72 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) Sync() error {
-	if !m.safeReadMapped() {
-		return nil
-	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if m.data == nil {
+		return nil
+	}
 	return unix.Msync(m.data, unix.MS_SYNC)
 }
 
-func (m *Mmap) Close() error {
+// Unmap unmaps the chunk without marking it closed.
+// It returns nil if the chunk is already unmapped.
+func (m *Mmap) Unmap() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.closed = true
-	if m.source == snaputil.ChunkSourceUnmapped {
+	if m.data == nil {
 		return nil
 	}
-	m.source = snaputil.ChunkSourceUnmapped
 	n := len(m.data)
 	if err := syscall.Munmap(m.data); err != nil {
 		return err
 	}
+	m.data = nil
 	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
 		atomic.AddInt64(&mmappedBytes, int64(-n)),
 	))
+	// TODO: this causes issues because when we unmap then remap due to LRU
+	// eviction, we lose the remote/filecache source information, since Fetch()
+	// won't be called again. Is it safe to just delete this line?
+	// m.source = snaputil.ChunkSourceUnmapped
 	return nil
 }
 
-func (m *Mmap) SizeBytes() (int64, error) {
-	if !m.safeReadMapped() {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
+func (m *Mmap) Close() error {
+	m.mu.Lock()
+	alreadyClosed := m.closed
+	m.closed = true
+	m.mu.Unlock()
+	if alreadyClosed {
+		return status.FailedPreconditionError("mmap is already closed")
 	}
+	return m.Unmap()
+}
+
+func (m *Mmap) SizeBytes() (int64, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if err := m.initMap(); err != nil {
+		return 0, err
+	}
 	return int64(len(m.data)), nil
 }
 
 // StartAddress returns the address of the first mapped byte. If this is a lazy
 // mmap, calling this func will force an mmap if not already mapped.
 func (m *Mmap) StartAddress() (uintptr, error) {
-	if !m.safeReadMapped() {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
-	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if err := m.initMap(); err != nil {
+		return 0, err
+	}
 	return memoryAddress(m.data), nil
 }
 
-func (m *Mmap) safeReadMapped() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.source != snaputil.ChunkSourceUnmapped
-}
-
-func (m *Mmap) Mapped() bool {
-	return m.safeReadMapped()
-}
-
 func (m *Mmap) Source() snaputil.ChunkSource {
-	return m.safeReadSource()
-}
-
-func (m *Mmap) safeReadSource() snaputil.ChunkSource {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.source
-}
-
-func (m *Mmap) safeReadClosed() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.closed
 }
 
 func (m *Mmap) safeReadLazyDigest() *repb.Digest {
