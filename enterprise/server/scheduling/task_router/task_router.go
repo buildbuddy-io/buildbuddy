@@ -254,7 +254,7 @@ func (runnerRecycler) routingKey(params routingParams) (string, error) {
 	// For workflow tasks, route using GIT_BRANCH so that when re-running the
 	// workflow multiple times using the same branch, the runs are more likely
 	// to hit an executor with a warmer snapshot cache.
-	if isWorkflow(params.cmd) {
+	if isWorkflow(params.cmd) || isRemoteBazel(params.cmd) {
 		branch := ""
 		for _, envVar := range params.cmd.EnvironmentVariables {
 			if envVar.GetName() == "GIT_BRANCH" {
@@ -276,6 +276,10 @@ func (s runnerRecycler) RoutingInfo(params routingParams) (int, string, error) {
 
 func isWorkflow(cmd *repb.Command) bool {
 	return platform.FindValue(cmd.GetPlatform(), platform.WorkflowIDPropertyName) != ""
+}
+
+func isRemoteBazel(cmd *repb.Command) bool {
+	return platform.FindValue(cmd.GetPlatform(), platform.WorkloadTypePropertyName) == "remote-bazel"
 }
 
 // affinityRouter generates Redis routing keys based on:

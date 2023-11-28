@@ -174,6 +174,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 			// Run from the scratch disk, since the workspace disk is hot-swapped
 			// between runs, which may not be very Bazel-friendly.
 			{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"},
+			{Name: "GIT_BRANCH", Value: req.GetRepoState().GetBranch()},
 		},
 		Arguments: args,
 		Platform: &repb.Platform{
@@ -183,6 +184,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: "container-image", Value: image},
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "workload-isolation-type", Value: "firecracker"},
+				{Name: platform.WorkloadTypePropertyName, Value: "remote-bazel"},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 			},

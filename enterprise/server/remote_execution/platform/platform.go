@@ -75,6 +75,7 @@ const (
 	persistentWorkerProtocolPropertyName = "persistentWorkerProtocol"
 	WorkflowIDPropertyName               = "workflow-id"
 	workloadIsolationPropertyName        = "workload-isolation-type"
+	WorkloadTypePropertyName             = "workload-type"
 	initDockerdPropertyName              = "init-dockerd"
 	enableDockerdTCPPropertyName         = "enable-dockerd-tcp"
 	enableVFSPropertyName                = "enable-vfs"
