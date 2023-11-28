@@ -3146,12 +3146,9 @@ func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *rfpb.Stor
 			rc, err := p.Reader(ctx, rn, 0, 0)
 			if err != nil {
 				pw.CloseWithError(err)
-			}
-			defer rc.Close()
-			if err != nil {
-				pw.CloseWithError(err)
 				return
 			}
+			defer rc.Close()
 			if _, err = io.Copy(pw, rc); err != nil {
 				pw.CloseWithError(err)
 				return
