@@ -463,8 +463,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.updateTags()
 	go s.updateUsages(r)
-
-	s.log.Debugf("Added range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -566,9 +564,7 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 	if s.haveLease(header.GetRangeId()) {
 		return r, nil
 	}
-	err = status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
-	s.log.Debug(err.Error())
-	return nil, err
+	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
 }
 
 func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMachine {
