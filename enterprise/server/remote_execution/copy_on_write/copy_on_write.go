@@ -789,17 +789,14 @@ type Mmap struct {
 	dirty   bool // dirty suffix, only used to compute path
 
 	// mu protects the subsequent fields.
-	// RLock should *only* be used in ReadAt.
-	mu         sync.RWMutex
+	// We do not use a RMutex, because Read methods may still need to initialize
+	// the map, which writes data
+	mu         sync.Mutex
 	data       []byte
 	source     snaputil.ChunkSource
 	fetched    bool
 	closed     bool
 	lazyDigest *repb.Digest
-
-	// initMu is an additional lock that is only used in ReadAt to prevent
-	// concurrent map initialization while still allowing concurrent reads.
-	initMu sync.Mutex
 }
 
 // NewLazyMmap returns an mmap that is set up only when the file is read or
@@ -891,6 +888,7 @@ func mmapDataFromFd(fd, size int) ([]byte, error) {
 	return data, nil
 }
 
+// NOTE: This function should be executed atomically. Callers should manage locking
 func (m *Mmap) initMap() (err error) {
 	if m.closed {
 		return status.InternalError("store is closed")
@@ -941,17 +939,14 @@ func (m *Mmap) fetch(path string) error {
 }
 
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	// Prevent concurrent calls to initMap while still allowing multiple
 	// concurrent readers.
-	m.initMu.Lock()
 	if err := m.initMap(); err != nil {
-		m.initMu.Unlock()
 		return 0, err
 	}
-	m.initMu.Unlock()
 
 	if err := checkBounds("read", int64(len(m.data)), p, off); err != nil {
 		return 0, err
@@ -975,9 +970,6 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) Sync() error {
-	// This func is only reading m.data, but we get an exclusive lock here since
-	// it's not safe to call ReadAt concurrently, as it can affect whether data
-	// is mapped or not.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.data == nil {
