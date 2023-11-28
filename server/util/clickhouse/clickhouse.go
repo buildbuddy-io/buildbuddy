@@ -177,6 +177,8 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		ExecutionCompletedTimestampUsec:    in.GetExecutionCompletedTimestampUsec(),
 		OutputUploadStartTimestampUsec:     in.GetOutputUploadStartTimestampUsec(),
 		OutputUploadCompletedTimestampUsec: in.GetOutputUploadCompletedTimestampUsec(),
+		StatusCode:                         in.GetStatusCode(),
+		ExitCode:                           in.GetExitCode(),
 		InvocationLinkType:                 int8(in.GetInvocationLinkType()),
 		User:                               inv.GetUser(),
 		Host:                               inv.GetHost(),

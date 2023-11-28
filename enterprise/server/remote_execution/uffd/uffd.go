@@ -301,6 +301,13 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		if err != nil {
 			return err
 		}
+
+		// After memory has been copied to the VM, unmap the chunk to save memory
+		// usage on the executor
+		chunkStartOffset := faultStoreOffset - relOffset
+		if err := memoryStore.UnmapChunk(int64(chunkStartOffset)); err != nil {
+			return err
+		}
 	}
 }
 
