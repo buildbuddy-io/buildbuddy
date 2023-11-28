@@ -781,16 +781,18 @@ type Mmap struct {
 	dataDir string
 	dirty   bool // dirty suffix, only used to compute path
 
-	// initMu is used only to prevent concurrent attempts to mmap the data.
-	initMu sync.Mutex
-
-	// Mutex protects the subsequent fields
+	// mu protects the subsequent fields.
+	// RLock should *only* be used in ReadAt.
 	mu         sync.RWMutex
 	data       []byte
 	source     snaputil.ChunkSource
 	fetched    bool
 	closed     bool
 	lazyDigest *repb.Digest
+
+	// initMu is an additional lock that is only used in ReadAt to prevent
+	// concurrent map initialization while still allowing concurrent reads.
+	initMu sync.Mutex
 }
 
 // NewLazyMmap returns an mmap that is set up only when the file is read or
@@ -883,8 +885,6 @@ func mmapDataFromFd(fd, size int) ([]byte, error) {
 }
 
 func (m *Mmap) initMap() (err error) {
-	m.initMu.Lock()
-	defer m.initMu.Unlock()
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
@@ -936,9 +936,16 @@ func (m *Mmap) fetch(path string) error {
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
+	// Prevent concurrent calls to initMap while still allowing multiple
+	// concurrent readers.
+	m.initMu.Lock()
 	if err := m.initMap(); err != nil {
+		m.initMu.Unlock()
 		return 0, err
 	}
+	m.initMu.Unlock()
+
 	if err := checkBounds("read", int64(len(m.data)), p, off); err != nil {
 		return 0, err
 	}
@@ -1003,8 +1010,8 @@ func (m *Mmap) Close() error {
 }
 
 func (m *Mmap) SizeBytes() (int64, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err := m.initMap(); err != nil {
 		return 0, err
 	}
@@ -1014,8 +1021,8 @@ func (m *Mmap) SizeBytes() (int64, error) {
 // StartAddress returns the address of the first mapped byte. If this is a lazy
 // mmap, calling this func will force an mmap if not already mapped.
 func (m *Mmap) StartAddress() (uintptr, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err := m.initMap(); err != nil {
 		return 0, err
 	}
@@ -1023,14 +1030,14 @@ func (m *Mmap) StartAddress() (uintptr, error) {
 }
 
 func (m *Mmap) Source() snaputil.ChunkSource {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.source
 }
 
 func (m *Mmap) safeReadLazyDigest() *repb.Digest {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.lazyDigest
 }
 

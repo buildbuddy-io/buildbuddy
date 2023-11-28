@@ -74,6 +74,10 @@ func TestMmap_Concurrency(t *testing.T) {
 	eg := &errgroup.Group{}
 	for i := 0; i < 100; i++ {
 		eg.Go(func() error {
+			s.Source()
+			return nil
+		})
+		eg.Go(func() error {
 			buf := make([]byte, 100)
 			_, err := rand.Read(buf)
 			if err != nil {
