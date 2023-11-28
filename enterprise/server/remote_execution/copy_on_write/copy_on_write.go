@@ -977,10 +977,6 @@ func (m *Mmap) Unmap() error {
 	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
 		atomic.AddInt64(&mmappedBytes, int64(-n)),
 	))
-	// TODO: this causes issues because when we unmap then remap due to LRU
-	// eviction, we lose the remote/filecache source information, since Fetch()
-	// won't be called again. Is it safe to just delete this line?
-	// m.source = snaputil.ChunkSourceUnmapped
 	return nil
 }
 
