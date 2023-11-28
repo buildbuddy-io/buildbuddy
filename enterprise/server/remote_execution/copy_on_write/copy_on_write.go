@@ -415,6 +415,13 @@ func (s *COWStore) Dirty(chunkOffset int64) bool {
 	return s.dirty[chunkOffset]
 }
 
+func (s *COWStore) UnmapChunk(chunkOffset int64) error {
+	s.storeLock.RLock()
+	c := s.chunks[chunkOffset]
+	s.storeLock.RUnlock()
+	return c.Unmap()
+}
+
 // ChunkName returns the file name containing the data for the given chunk offset.
 func ChunkName(chunkOffset int64, dirty bool) string {
 	suffix := ""
