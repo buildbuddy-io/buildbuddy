@@ -2262,4 +2262,7 @@ message StoredExecution {
   int64 output_upload_completed_timestamp_usec = 27;
 
   int32 invocation_link_type = 28;
+  
+  int32 status_code = 29;
+  int32 exit_code = 30;
 }
