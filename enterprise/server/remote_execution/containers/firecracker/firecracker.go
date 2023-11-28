@@ -1944,6 +1944,11 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	start := time.Now()
+	defer func() {
+		metrics.FirecrackerExecDialDurationUsec.Observe(float64(time.Since(start).Microseconds()))
+	}()
+
 	ctx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
 	defer cancel()
 
