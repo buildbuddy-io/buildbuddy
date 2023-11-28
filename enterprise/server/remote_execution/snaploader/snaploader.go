@@ -728,6 +728,12 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			chunkSourceCounter[chunkSrc]++
 			mu.Unlock()
 
+			// After uploading the chunk to the cache, we won't still need
+			// the data in memory, so unmap it to reduce memory usage on the executor
+			if err := c.Unmap(); err != nil {
+				return status.WrapError(err, "unmap chunk")
+			}
+
 			return nil
 		})
 	}
