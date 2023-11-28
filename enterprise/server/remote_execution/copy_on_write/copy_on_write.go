@@ -809,6 +809,7 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 		remoteEnabled:      remoteEnabled,
 		Offset:             offset,
 		data:               nil,
+		fetched:            false,
 		source:             snaputil.ChunkSourceUnmapped,
 		dataDir:            dataDir,
 		lazyDigest:         digest,
@@ -816,7 +817,6 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 }
 
 // NewMmapFd returns an eagerly mmapped instance from the given fd.
-// The onMap callback is invoked immediately.
 func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty bool, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
 	if source == snaputil.ChunkSourceUnmapped {
 		return nil, status.InvalidArgumentError("ChunkSourceUnmapped is not a valid source when initializing a chunk from a fd")
@@ -833,11 +833,14 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty b
 		dirty:              dirty,
 		Offset:             offset,
 		data:               data,
+		fetched:            true,
 		source:             source,
 		dataDir:            dataDir,
 	}, nil
 }
 
+// NewMmapLocalFile returns an unmapped instance from the given directory and
+// offset.
 func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, dirty bool, size int, offset int64, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
 	return &Mmap{
 		ctx:                ctx,
@@ -846,6 +849,8 @@ func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, 
 		remoteEnabled:      remoteEnabled,
 		dirty:              dirty,
 		Offset:             offset,
+		data:               nil,
+		fetched:            true,
 		source:             snaputil.ChunkSourceLocalFile,
 		dataDir:            dataDir,
 	}, nil
@@ -913,8 +918,11 @@ func (m *Mmap) Fetch() error {
 }
 
 func (m *Mmap) fetch(path string) error {
-	if m.fetched || m.lazyDigest == nil {
+	if m.fetched {
 		return nil
+	}
+	if m.lazyDigest == nil {
+		return status.InternalError("attempted to fetch chunk with nil digest")
 	}
 	src, err := snaputil.GetArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.remoteEnabled, m.lazyDigest, m.remoteInstanceName, path)
 	if err != nil {
@@ -953,8 +961,11 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) Sync() error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	// This func is only reading m.data, but we get an exclusive lock here since
+	// it's not safe to call ReadAt concurrently, as it can affect whether data
+	// is mapped or not.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.data == nil {
 		return nil
 	}
