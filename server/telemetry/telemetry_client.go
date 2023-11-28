@@ -84,7 +84,7 @@ func (t *TelemetryClient) Stop() {
 
 func (t *TelemetryClient) logTelemetryData() {
 	ctx := t.env.GetServerContext()
-	conn, err := grpc_client.DialSimple(*telemetryEndpoint)
+	conn, err := grpc_client.DialSimpleWithoutPooling(*telemetryEndpoint)
 	if err != nil {
 		log.Debugf("Error dialing endpoint: %s", err)
 		return
