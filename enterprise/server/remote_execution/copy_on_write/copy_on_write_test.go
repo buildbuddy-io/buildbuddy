@@ -72,7 +72,11 @@ func TestMmap_Concurrency(t *testing.T) {
 	s, _ := newMmap(t)
 
 	eg := &errgroup.Group{}
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 100; i++ {
+		eg.Go(func() error {
+			s.Source()
+			return nil
+		})
 		eg.Go(func() error {
 			buf := make([]byte, 100)
 			_, err := rand.Read(buf)
@@ -97,6 +101,14 @@ func TestMmap_Concurrency(t *testing.T) {
 		eg.Go(func() error {
 			_, err := s.StartAddress()
 			return err
+		})
+		eg.Go(func() error {
+			return s.Fetch()
+		})
+		eg.Go(func() error {
+			// Should be safe to call Unmap at any time. ReadAt / WriteAt should
+			// re-map if needed.
+			return s.Unmap()
 		})
 	}
 	err := eg.Wait()
@@ -519,7 +531,8 @@ func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
 	env := testenv.GetTestEnv(t)
 
 	root := testfs.MakeTempDir(t)
-	path := filepath.Join(root, "f")
+	const offset = 0
+	path := filepath.Join(root, fmt.Sprintf("%d", offset))
 	err := os.WriteFile(path, make([]byte, backingFileSizeBytes), 0644)
 	require.NoError(t, err, "write empty file")
 
@@ -529,7 +542,7 @@ func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
 	s, err := f.Stat()
 	require.NoError(t, err)
 
-	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, int(f.Fd()), int(s.Size()), 0, snaputil.ChunkSourceLocalFile, "", false)
+	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, false /*=dirty*/, int(f.Fd()), int(s.Size()), offset, snaputil.ChunkSourceLocalFile, "", false)
 	require.NoError(t, err)
 	return mmap, path
 }
