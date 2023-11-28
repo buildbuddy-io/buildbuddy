@@ -1016,6 +1016,14 @@ var (
 	//  )
 	// ```
 
+	FirecrackerExecDialDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "exec_dial_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 5*time.Minute, 1.25),
+		Help:      "Time taken to dial the VM guest execution server after it has been started or resumed, in **microseconds**.",
+	})
+
 	COWSnapshotDirtyChunkRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
