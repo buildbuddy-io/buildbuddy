@@ -402,7 +402,7 @@ export default class Panel {
       ) {
         this.ctx.fillStyle = color;
       } else {
-        this.ctx.fillStyle = constants.TRACK_FILTERED_OUT_COLOR;
+        this.ctx.fillStyle = constants.EVENT_FILTERED_OUT_COLOR;
       }
 
       // TODO: only apply the horizontal gap if there's an event just after us.

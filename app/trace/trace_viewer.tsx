@@ -60,8 +60,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
   private mouseScrollTop = 0;
   private panning?: Panel | null;
 
-  private filterInputRef = React.createRef<HTMLInputElement>();
-
   private hovercardRef = React.createRef<EventHovercard>();
 
   private unobserveResize?: () => void;
@@ -88,10 +86,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
       panel.container.addEventListener("wheel", (e: WheelEvent) => this.onWheel(e), {
         passive: false,
       });
-    }
-    if (this.filterInputRef.current) {
-      this.filterInputRef.current.addEventListener("keyup", () => this.updateFilter());
-      this.filterInputRef.current.value = this.getFilter();
     }
   }
 
@@ -262,8 +256,8 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     document.body.style.cursor = "";
   };
 
-  private updateFilter = () => {
-    router.setQueryParam(FILTER_URL_PARAM, this.filterInputRef.current?.value);
+  private updateFilter = (value: string) => {
+    router.setQueryParam(FILTER_URL_PARAM, value);
     this.update();
   };
 
@@ -294,7 +288,12 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
             "--scrollbar-size": `${constants.SCROLLBAR_SIZE}px`,
           } as CSSProperties),
         }}>
-        <FilterInput className="filter" ref={this.filterInputRef} placeholder="Filter..." />
+        <FilterInput
+          className="filter"
+          onChange={(e) => this.updateFilter(e.target.value)}
+          value={this.getFilter()}
+          placeholder="Filter..."
+        />
         {this.model.panels.map((panel, i) => (
           <div
             className="panel-container"
