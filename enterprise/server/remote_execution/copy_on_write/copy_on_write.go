@@ -1025,6 +1025,10 @@ func (m *Mmap) Sync() error {
 // Unmap unmaps the chunk without marking it closed.
 // It returns nil if the chunk is already unmapped.
 func (m *Mmap) Unmap() error {
+	return m.unmap(false /*=isLRUEviction*/)
+}
+
+func (m *Mmap) unmap(isLRUEviction bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.data == nil {
@@ -1035,7 +1039,10 @@ func (m *Mmap) Unmap() error {
 		return err
 	}
 	m.data = nil
-	if m.lru != nil {
+	// Also remove from the LRU. To avoid a deadlock with lru.Add, skip calling
+	// lru.Remove if we're already being called as part of the LRU eviction
+	// callback.
+	if m.lru != nil && !isLRUEviction {
 		m.lru.Remove(m)
 	}
 	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
@@ -1124,12 +1131,13 @@ func NewMmapLRU() (*MmapLRU, error) {
 	l, err := lru.NewLRU(&lru.Config[*Mmap]{
 		SizeFn: func(m *Mmap) int64 { return m.sizeBytes },
 		OnEvict: func(m *Mmap, reason lru.EvictionReason) {
-			// When manually calling Remove(), the caller is expected to have
-			// unmapped already, so do nothing.
+			// Manual evictions are triggered by calling Unmap(). Don't call
+			// unmap again here, not only because it's unnecessary, but also
+			// because it would cause a deadlock.
 			if reason == lru.ManualEviction {
 				return
 			}
-			if err := m.Unmap(); err != nil {
+			if err := m.unmap(true /*=isLRUEviction*/); err != nil {
 				log.Errorf("Failed to unmap chunk: %s", err)
 			}
 		},
