@@ -22,6 +22,7 @@ go_test(
     deps = [
         "//server/backends/blobstore/util",
         "//server/interfaces",
+        "//server/testutil/testdigest",
         "@com_github_stretchr_testify//require",
     ],
 )
