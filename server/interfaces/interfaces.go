@@ -23,6 +23,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
@@ -574,6 +575,11 @@ type RunnerService interface {
 	Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error)
 }
 
+type GCPService interface {
+	Link(w http.ResponseWriter, r *http.Request) error
+	GetGCPProject(ctx context.Context, request *gcpb.GetGCPProjectRequest) (*gcpb.GetGCPProjectResponse, error)
+}
+
 type GitProviders []GitProvider
 
 type GitProvider interface {
@@ -681,11 +687,14 @@ type RemoteExecutionService interface {
 }
 
 type FileCache interface {
-	FastLinkFile(f *repb.FileNode, outputPath string) bool
-	DeleteFile(f *repb.FileNode) bool
-	AddFile(f *repb.FileNode, existingFilePath string) error
-	ContainsFile(node *repb.FileNode) bool
+	FastLinkFile(ctx context.Context, f *repb.FileNode, outputPath string) bool
+	DeleteFile(ctx context.Context, f *repb.FileNode) bool
+	AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error
+	ContainsFile(ctx context.Context, node *repb.FileNode) bool
 	WaitForDirectoryScanToComplete()
+
+	Read(ctx context.Context, node *repb.FileNode) ([]byte, error)
+	Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error)
 
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
@@ -1203,6 +1212,9 @@ type ConfigSecretProvider interface {
 
 type AuditLogger interface {
 	Log(ctx context.Context, resource *alpb.ResourceID, action alpb.Action, request proto.Message)
+	LogForGroup(ctx context.Context, groupID string, action alpb.Action, request proto.Message)
+	LogForInvocation(ctx context.Context, invocationID string, action alpb.Action, request proto.Message)
+	LogForSecret(ctx context.Context, secretName string, action alpb.Action, request proto.Message)
 	GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error)
 }
 
@@ -1321,4 +1333,9 @@ type ServerNotificationService interface {
 	// e.g. publishing an InvalidateIPRulesCache notification can be done as:
 	// service.Publish(ctx, &snpb.InvalidateIPRulesCache{GroupID: "123"})
 	Publish(ctx context.Context, msg proto.Message) error
+}
+
+type SCIMService interface {
+	Users() http.Handler
+	Groups() http.Handler
 }

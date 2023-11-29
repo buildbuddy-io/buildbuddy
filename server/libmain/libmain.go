@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -81,6 +82,9 @@ var (
 	appDirectory    = flag.String("app_directory", "", "the directory containing app binary files to host")
 
 	exitWhenReady = flag.Bool("exit_when_ready", false, "If set, the app will exit as soon as it becomes ready (useful for migrations)")
+
+	mutexProfileFraction = flag.Int("mutex_profile_fraction", 0, "The fraction of mutex contention events reported. (1/rate, 0 disables)")
+	blockProfileRate     = flag.Int("block_profile_rate", 0, "The fraction of goroutine blocking events reported. (1/rate, 0 disables)")
 
 	// URL path prefixes that should be handled by serving the app's HTML.
 	appRoutes = []string{
@@ -274,6 +278,9 @@ func StartAndRunServices(env environment.Env) {
 		log.Printf("Error raising open files limit: %s", err)
 	}
 
+	runtime.SetMutexProfileFraction(*mutexProfileFraction)
+	runtime.SetBlockProfileRate(*blockProfileRate)
+
 	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
 	if err != nil {
 		log.Fatalf("Error reading app bundle hash: %s", err)
@@ -380,12 +387,21 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/api/v1/metrics", interceptors.WrapAuthenticatedExternalHandler(env, api.GetMetricsHandler()))
 	}
 
+	if scim := env.GetSCIMService(); scim != nil {
+		mux.Handle("/scim/Users", interceptors.WrapAuthenticatedExternalHandler(env, scim.Users()))
+		mux.Handle("/scim/Groups", interceptors.WrapAuthenticatedExternalHandler(env, scim.Groups()))
+	}
+
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}
 	if gha := env.GetGitHubApp(); gha != nil {
 		mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gha.WebhookHandler()))
 		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, gha.OAuthHandler()))
+	}
+
+	if gcp := env.GetGCPService(); gcp != nil {
+		mux.Handle("/auth/gcp/link/", interceptors.WrapAuthenticatedExternalHandler(env, interceptors.RedirectOnError(gcp.Link)))
 	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {

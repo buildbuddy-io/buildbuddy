@@ -17,6 +17,7 @@ import (
 	"github.com/awslabs/soci-snapshotter/soci"
 	"github.com/awslabs/soci-snapshotter/ztoc"
 	"github.com/awslabs/soci-snapshotter/ztoc/compression"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -189,7 +190,7 @@ func checkAccess(ctx context.Context, imgRepo ctrname.Repository, img v1.Image, 
 	return nil
 }
 
-func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platform, creds *rgpb.Credentials) (targetImage ctrname.Digest, manifestConfig v1.Hash, err error) {
+func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platform, creds oci.Credentials) (targetImage ctrname.Digest, manifestConfig v1.Hash, err error) {
 	imageRef, err := ctrname.ParseReference(image)
 	if err != nil {
 		return ctrname.Digest{}, v1.Hash{}, status.InvalidArgumentErrorf("invalid image %q", image)
@@ -197,10 +198,10 @@ func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platfo
 
 	var authenticator authn.Authenticator
 	remoteOpts := []remote.Option{remote.WithContext(ctx)}
-	if creds.GetUsername() != "" || creds.GetPassword() != "" {
+	if !creds.IsEmpty() {
 		authenticator = &authn.Basic{
-			Username: creds.GetUsername(),
-			Password: creds.GetPassword(),
+			Username: creds.Username,
+			Password: creds.Password,
 		}
 		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
 	}
@@ -241,7 +242,11 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	if err != nil {
 		return nil, err
 	}
-	targetImageRef, configHash, err := getTargetImageInfo(ctx, req.Image, req.Platform, req.Credentials)
+	creds, err := oci.CredentialsFromProto(req.Credentials)
+	if err != nil {
+		return nil, err
+	}
+	targetImageRef, configHash, err := getTargetImageInfo(ctx, req.Image, req.Platform, creds)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +265,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	// apps a bunch of parallel work.
 	workKey := fmt.Sprintf("soci-artifact-store-image-%s", configHash.Hex)
 	respBytes, err := s.deduper.Do(ctx, workKey, func() ([]byte, error) {
-		sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, configHash, req.Credentials)
+		sociIndexDigest, ztocDigests, err := s.pullAndIndexImage(ctx, targetImageRef, configHash, creds)
 		if err != nil {
 			return nil, err
 		}
@@ -340,7 +345,7 @@ func (s *SociArtifactStore) getArtifactsFromCache(ctx context.Context, imageConf
 	return getArtifactsResponse(imageConfigHash, sociIndexDigest, ztocDigests), nil
 }
 
-func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrname.Digest, configHash v1.Hash, credentials *rgpb.Credentials) (*repb.Digest, []*repb.Digest, error) {
+func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrname.Digest, configHash v1.Hash, credentials oci.Credentials) (*repb.Digest, []*repb.Digest, error) {
 	log.CtxInfof(ctx, "soci artifacts not found, generating them for image %s", imageRef.DigestStr())
 	image, err := fetchImageDescriptor(ctx, imageRef, credentials)
 	if err != nil {
@@ -353,12 +358,12 @@ func (s *SociArtifactStore) pullAndIndexImage(ctx context.Context, imageRef ctrn
 	return index, ztocs, err
 }
 
-func fetchImageDescriptor(ctx context.Context, imageRef ctrname.Digest, credentials *rgpb.Credentials) (v1.Image, error) {
+func fetchImageDescriptor(ctx context.Context, imageRef ctrname.Digest, credentials oci.Credentials) (v1.Image, error) {
 	remoteOpts := []remote.Option{remote.WithContext(ctx)}
-	if credentials.GetUsername() != "" || credentials.GetPassword() != "" {
+	if !credentials.IsEmpty() {
 		authenticator := &authn.Basic{
-			Username: credentials.GetUsername(),
-			Password: credentials.GetPassword(),
+			Username: credentials.Username,
+			Password: credentials.Password,
 		}
 		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
 	}

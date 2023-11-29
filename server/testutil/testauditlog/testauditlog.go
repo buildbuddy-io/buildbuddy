@@ -48,6 +48,30 @@ func (f *FakeAuditLog) Log(ctx context.Context, resource *alpb.ResourceID, actio
 	})
 }
 
+func (l *FakeAuditLog) LogForGroup(ctx context.Context, groupID string, action alpb.Action, request proto.Message) {
+	r := &alpb.ResourceID{
+		Type: alpb.ResourceType_GROUP,
+		Id:   groupID,
+	}
+	l.Log(ctx, r, action, request)
+}
+
+func (l *FakeAuditLog) LogForInvocation(ctx context.Context, invocationID string, action alpb.Action, request proto.Message) {
+	r := &alpb.ResourceID{
+		Type: alpb.ResourceType_INVOCATION,
+		Id:   invocationID,
+	}
+	l.Log(ctx, r, action, request)
+}
+
+func (l *FakeAuditLog) LogForSecret(ctx context.Context, secretName string, action alpb.Action, request proto.Message) {
+	r := &alpb.ResourceID{
+		Type: alpb.ResourceType_SECRET,
+		Id:   secretName,
+	}
+	l.Log(ctx, r, action, request)
+}
+
 func (f *FakeAuditLog) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
 	return nil, status.UnimplementedError("not implemented")
 }

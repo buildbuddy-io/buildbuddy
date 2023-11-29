@@ -139,8 +139,10 @@ export default class Panel {
     if (!track) return null;
 
     const modelMouse = this.getMouseModelCoordinates();
+
+    const onePx = 1 / this.canvasXPerModelX;
     for (const event of track.events) {
-      if (modelMouse.x >= event.ts && modelMouse.x <= event.ts + event.dur) {
+      if (modelMouse.x >= event.ts && modelMouse.x <= event.ts + Math.max(event.dur, onePx)) {
         return event;
       }
       if (event.ts > modelMouse.x) return null;
@@ -378,6 +380,7 @@ export default class Panel {
 
   private drawTrack(track: TrackModel, y: number, xMin: number, xMax: number) {
     let i = 0;
+    let lastEventRendered = false;
     for (; i < track.xs.length; i++) {
       let modelX = track.xs[i];
       if (modelX > xMax) break;
@@ -389,10 +392,19 @@ export default class Panel {
 
       this.ctx.fillStyle = color;
       // TODO: only apply the horizontal gap if there's an event just after us.
-      const width = modelWidth * this.canvasXPerModelX - constants.EVENT_HORIZONTAL_GAP;
-      if (width <= 0) continue;
+      let width = modelWidth * this.canvasXPerModelX - constants.EVENT_HORIZONTAL_GAP;
+      if (width <= 0) {
+        // If the event is less than 1px side, and less than 1px away from the previous
+        // event start that rendered, don't render it.
+        if (lastEventRendered && Math.abs(modelX - track.xs[i - 1]) * this.canvasXPerModelX <= 1) {
+          lastEventRendered = false;
+          continue;
+        }
+        width = 1;
+      }
       const x = modelX * this.canvasXPerModelX - this.scrollX;
       this.ctx.fillRect(x, y, width, constants.TRACK_HEIGHT);
+      lastEventRendered = true;
 
       const visibleWidth = width + Math.min(0, x);
       if (visibleWidth > constants.EVENT_LABEL_WIDTH_THRESHOLD) {

@@ -11,10 +11,17 @@ import Panel from "./trace_viewer_panel";
 import { TraceEvent } from "./trace_events";
 import { buildTraceViewerModel, panelScrollHeight } from "./trace_viewer_model";
 import { Profile } from "./trace_events";
+import router from "../router/router";
 
 export interface TraceViewProps {
   profile: Profile;
 }
+
+// The browser starts struggling if we have a div much greater than this width
+// in pixels. For now we rely on the browser for rendering the horizontal
+// scrollbar, so we don't allow the horizontally scrollable width to exceed this
+// value.
+const SCROLL_WIDTH_LIMIT = 18_000_000;
 
 /**
  * Renders an interactive trace profile viewer for an invocation.
@@ -100,6 +107,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
    */
   private update(dt = 0) {
     this.canvasXPerModelX.min = this.panels[0].container.clientWidth / this.model.xMax;
+    this.canvasXPerModelX.max = SCROLL_WIDTH_LIMIT / this.model.xMax;
     this.canvasXPerModelX.step(dt, { threshold: 1e-9 });
 
     for (const panel of this.panels) {
@@ -180,6 +188,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
         data: { event: hoveredEvent, x: mouse.clientX, y: mouse.clientY },
       });
     }
+    document.body.style.cursor = hoveredEvent?.args?.target ? "pointer" : "";
   }
 
   private onScroll(e: React.UIEvent<HTMLDivElement>, panelIndex: number) {
@@ -249,6 +258,13 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     this.mouseScrollTop = container.scrollTop + (this.mouse.clientY - container.getBoundingClientRect().top);
   }
 
+  private onCanvasClick(e: React.MouseEvent, panelIndex: number) {
+    const target = this.panels[panelIndex].getHoveredEvent()?.args?.target;
+    if (target) {
+      router.navigateTo(`?target=${target}#targets`);
+    }
+  }
+
   render() {
     return (
       <div
@@ -267,14 +283,12 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
               height: `${panel.height}px`,
               position: "relative",
             }}>
-            <div
-              key={i}
-              className="panel"
-              style={{
-                height: `${panel.height}px`,
-              }}
-              onScroll={(e) => this.onScroll(e, i)}>
-              <canvas ref={this.canvasRefs[i]} onMouseDown={(e) => this.onCanvasMouseDown(e, i)} />
+            <div key={i} className="panel" onScroll={(e) => this.onScroll(e, i)}>
+              <canvas
+                ref={this.canvasRefs[i]}
+                onMouseDown={(e) => this.onCanvasMouseDown(e, i)}
+                onClick={(e) => this.onCanvasClick(e, i)}
+              />
               {/*
                * This sizer div is used to make the total scrollable area
                * match the size of the panel contents. We can't use a very

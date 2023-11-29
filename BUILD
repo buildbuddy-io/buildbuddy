@@ -38,7 +38,6 @@ write_file(
                     "asmdecl",
                     "assign",
                     "atomicalign",
-                    # "cgocall",
                     "buildtag",
                     "cgocall",
                     "composites",
@@ -109,9 +108,6 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/unusedresult",
         "@com_github_nishanths_exhaustive//:exhaustive",
     ] + staticcheck_analyzers(ANALYZERS + [
-        "-S1019",
-        "-S1023",
-        "-S1025",
         "-S1028",
         "-S1030",
         "-S1031",
@@ -209,6 +205,11 @@ config_setting(
     values = {"define": "release=true"},
 )
 
+config_setting(
+    name = "static",
+    flag_values = {"@io_bazel_rules_go//go/config:static": "true"},
+)
+
 package_group(
     name = "os",
     packages = [
@@ -265,21 +266,4 @@ platform(
     exec_properties = {
         "enable-vfs": "true",
     },
-)
-
-# TODO(bduffany): The sh_toolchain config here is a workaround for
-# https://github.com/aspect-build/rules_swc/issues/20
-# We should probably either move these to the buildbuddy-toolchain repo
-# or add a symlink from /usr/bin/bash -> /bin/bash to remove the need for these.
-load("@bazel_tools//tools/sh:sh_toolchain.bzl", "sh_toolchain")
-
-sh_toolchain(
-    name = "bash_rbe_ubuntu1604",
-    path = "/bin/bash",
-)
-
-toolchain(
-    name = "sh_toolchain",
-    toolchain = ":bash_rbe_ubuntu1604",
-    toolchain_type = "@bazel_tools//tools/sh:toolchain_type",
 )

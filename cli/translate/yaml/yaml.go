@@ -30,7 +30,8 @@ func New() *yamlTranslator {
 	}
 }
 
-func (y *yamlTranslator) Translate(_, input string) (string, error) {
+func (y *yamlTranslator) Translate(path, input string) (string, error) {
+	isModule := strings.HasPrefix(strings.ToUpper(path), "MODULE")
 	rules := splitRegex.Split(string(input), -1)
 	output := ""
 	for _, rule := range rules {
@@ -43,7 +44,7 @@ func (y *yamlTranslator) Translate(_, input string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		s := y.translateRule(m)
+		s := y.translateRule(m, isModule)
 		if s == "" {
 			continue
 		}
@@ -52,7 +53,7 @@ func (y *yamlTranslator) Translate(_, input string) (string, error) {
 	return output, nil
 }
 
-func (y *yamlTranslator) translateRule(m yaml.MapSlice) string {
+func (y *yamlTranslator) translateRule(m yaml.MapSlice, isModule bool) string {
 	s := ""
 	for _, i := range m {
 		ruleName := i.Key.(string)
@@ -66,14 +67,14 @@ func (y *yamlTranslator) translateRule(m yaml.MapSlice) string {
 		case "rules":
 			if rules, ok := i.Value.([]interface{}); ok {
 				for _, rule := range rules {
-					s = s + y.translateRule(rule.(yaml.MapSlice)) + newLineSeparator
+					s = s + y.translateRule(rule.(yaml.MapSlice), isModule) + newLineSeparator
 				}
 			} else {
 				log.Warnf("rules: must be a list")
 			}
 		case "deps":
 			if load, ok := i.Value.([]interface{}); ok {
-				s = s + y.translateDeps(load) + newLineSeparator
+				s = s + y.translateDeps(load, isModule) + newLineSeparator
 			} else {
 				log.Warnf("deps: must be a list, instead it was %T", i.Value)
 			}
@@ -192,7 +193,7 @@ func (y *yamlTranslator) translateLoad(m yaml.MapSlice) string {
 	return strings.Join(values, newLineSeparator)
 }
 
-func (y *yamlTranslator) translateDeps(m []interface{}) string {
+func (y *yamlTranslator) translateDeps(m []interface{}, isModule bool) string {
 	output := ""
 	for _, dep := range m {
 		depString, ok := dep.(string)
@@ -205,7 +206,11 @@ func (y *yamlTranslator) translateDeps(m []interface{}) string {
 			log.Warnf("error fetching module: %s", err)
 			continue
 		}
-		output += add.GenerateSnippet(module, version, resp)
+		if isModule {
+			output += add.GenerateModuleSnippet(module, version, resp)
+		} else {
+			output += add.GenerateWorkspaceSnippet(module, version, resp)
+		}
 	}
 	return output
 }

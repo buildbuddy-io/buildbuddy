@@ -12,12 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
-	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
@@ -25,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
@@ -42,7 +40,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
@@ -68,6 +65,7 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -181,7 +179,7 @@ func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.Updat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.InvocationResourceID(req.GetInvocationId()), alpb.Action_UPDATE, req)
+		al.LogForInvocation(ctx, req.GetInvocationId(), alpb.Action_UPDATE, req)
 	}
 	return &inpb.UpdateInvocationResponse{}, nil
 }
@@ -209,7 +207,7 @@ func (s *BuildBuddyServer) GetZipManifest(ctx context.Context, req *zipb.GetZipM
 	if err != nil {
 		return nil, err
 	}
-	man, err := bytestream.FetchBytestreamZipManifest(ctx, s.env, u)
+	man, err := byte_stream_client.FetchBytestreamZipManifest(ctx, s.env, u)
 	if err != nil {
 		return nil, err
 	}
@@ -257,12 +255,14 @@ func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 		r = append(r, &grpb.Group{
 			Id:                                g.GroupID,
 			Name:                              g.Name,
+			Role:                              role.ToProto(role.Role(gr.Role)),
 			OwnedDomain:                       g.OwnedDomain,
 			GithubLinked:                      githubToken != "",
 			UrlIdentifier:                     urlIdentifier,
 			SharingEnabled:                    g.SharingEnabled,
 			UserOwnedKeysEnabled:              g.UserOwnedKeysEnabled,
 			BotSuggestionsEnabled:             g.BotSuggestionsEnabled,
+			DeveloperOrgCreationEnabled:       g.DeveloperOrgCreationEnabled,
 			UseGroupOwnedExecutors:            g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors,
 			RestrictCleanWorkflowRunsToAdmins: g.RestrictCleanWorkflowRunsToAdmins,
 			EnforceIpRules:                    g.EnforceIPRules,
@@ -461,7 +461,7 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_UPDATE_MEMBERSHIP, req)
+		al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_UPDATE_MEMBERSHIP, req)
 	}
 	return &grpb.UpdateGroupUsersResponse{}, nil
 }
@@ -489,13 +489,14 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 
 	useGroupOwnedExecutors := req.GetUseGroupOwnedExecutors()
 	group := &tables.Group{
-		UserID:                 user.UserID,
-		Name:                   groupName,
-		OwnedDomain:            groupOwnedDomain,
-		SharingEnabled:         req.GetSharingEnabled(),
-		UserOwnedKeysEnabled:   req.GetUserOwnedKeysEnabled(),
-		BotSuggestionsEnabled:  req.GetBotSuggestionsEnabled(),
-		UseGroupOwnedExecutors: &useGroupOwnedExecutors,
+		UserID:                      user.UserID,
+		Name:                        groupName,
+		OwnedDomain:                 groupOwnedDomain,
+		SharingEnabled:              req.GetSharingEnabled(),
+		UserOwnedKeysEnabled:        req.GetUserOwnedKeysEnabled(),
+		BotSuggestionsEnabled:       req.GetBotSuggestionsEnabled(),
+		DeveloperOrgCreationEnabled: req.GetDeveloperOrgCreationEnabled(),
+		UseGroupOwnedExecutors:      &useGroupOwnedExecutors,
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 	group.URLIdentifier = &urlIdentifier
@@ -547,6 +548,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	useGroupOwnedExecutors := req.GetUseGroupOwnedExecutors()
 	group.UserOwnedKeysEnabled = req.GetUserOwnedKeysEnabled()
 	group.BotSuggestionsEnabled = req.GetBotSuggestionsEnabled()
+	group.DeveloperOrgCreationEnabled = req.GetDeveloperOrgCreationEnabled()
 	group.UseGroupOwnedExecutors = &useGroupOwnedExecutors
 	group.SuggestionPreference = req.GetSuggestionPreference()
 	group.RestrictCleanWorkflowRunsToAdmins = req.GetRestrictCleanWorkflowRunsToAdmins()
@@ -557,7 +559,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_UPDATE, req)
+		al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_UPDATE, req)
 	}
 	return &grpb.UpdateGroupResponse{}, nil
 }
@@ -737,7 +739,7 @@ func (s *BuildBuddyServer) CreateImpersonationApiKey(ctx context.Context, req *a
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_CREATE_IMPERSONATION_API_KEY, req)
+		al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_CREATE_IMPERSONATION_API_KEY, req)
 	}
 	return &akpb.CreateImpersonationApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
@@ -1210,7 +1212,7 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			req.WorkflowId = wfs.GetLegacyWorkflowIDForGitRepository(authenticatedUser.GetGroupID(), req.GetTargetRepoUrl())
 		}
 		if al := s.env.GetAuditLogger(); al != nil && req.GetClean() {
-			al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GetGroupId()), alpb.Action_EXECUTE_CLEAN_WORKFLOW, req)
+			al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_EXECUTE_CLEAN_WORKFLOW, req)
 		}
 		return wfs.ExecuteWorkflow(ctx, req)
 	}
@@ -1319,7 +1321,7 @@ func (s *BuildBuddyServer) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRep
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GroupId), alpb.Action_LINK_GITHUB_REPO, req)
+		al.LogForGroup(ctx, req.GetRequestContext().GroupId, alpb.Action_LINK_GITHUB_REPO, req)
 	}
 	return rsp, nil
 }
@@ -1333,7 +1335,7 @@ func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.Unlin
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(req.GetRequestContext().GroupId), alpb.Action_UNLINK_GITHUB_REPO, req)
+		al.LogForGroup(ctx, req.GetRequestContext().GroupId, alpb.Action_UNLINK_GITHUB_REPO, req)
 	}
 	return rsp, nil
 }
@@ -1435,7 +1437,7 @@ func (s *BuildBuddyServer) UpdateSecret(ctx context.Context, req *skpb.UpdateSec
 				action = alpb.Action_CREATE
 			}
 			req.GetSecret().Value = ""
-			al.Log(ctx, auditlog.SecretResourceID(req.GetSecret().GetName()), action, req)
+			al.LogForSecret(ctx, req.GetSecret().GetName(), action, req)
 		}
 		return rsp, err
 	}
@@ -1676,7 +1678,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", entry.GetName()))
 		// TODO(jdhollen): Parse output mime type from bazel-generated MANIFEST file.
 		w.Header().Set("Content-Type", "application/octet-stream")
-		err = bytestream.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, entry, w)
+		err = byte_stream_client.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, entry, w)
 		if err != nil {
 			if status.IsInvalidArgumentError(err) {
 				return http.StatusBadRequest, err
@@ -1690,7 +1692,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	err = bytestream.StreamBytestreamFile(ctx, s.env, lookup.URL, w)
+	err = byte_stream_client.StreamBytestreamFile(ctx, s.env, lookup.URL, w)
 
 	if err != nil {
 		if status.IsInvalidArgumentError(err) {
@@ -1711,7 +1713,7 @@ func (s *BuildBuddyServer) SetEncryptionConfig(ctx context.Context, request *enp
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(request.GetRequestContext().GetGroupId()), alpb.Action_UPDATE_ENCRYPTION_CONFIG, request)
+		al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_UPDATE_ENCRYPTION_CONFIG, request)
 	}
 	return rsp, nil
 }
@@ -1886,7 +1888,7 @@ func (s *BuildBuddyServer) SetIPRulesConfig(ctx context.Context, request *irpb.S
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
-		al.Log(ctx, auditlog.GroupResourceID(request.GetRequestContext().GetGroupId()), alpb.Action_UPDATE_IP_RULES_CONFIG, request)
+		al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_UPDATE_IP_RULES_CONFIG, request)
 	}
 	return rsp, err
 }
@@ -1980,5 +1982,10 @@ func (s *BuildBuddyServer) DeleteIPRule(ctx context.Context, request *irpb.Delet
 }
 
 func (s *BuildBuddyServer) GetGCPProject(ctx context.Context, request *gcpb.GetGCPProjectRequest) (*gcpb.GetGCPProjectResponse, error) {
-	return gcplink.GetGCPProject(s.env, ctx, request)
+	gcpService := s.env.GetGCPService()
+	if gcpService == nil {
+		return nil, status.FailedPreconditionError("GCP service not enabled")
+	}
+
+	return gcpService.GetGCPProject(ctx, request)
 }

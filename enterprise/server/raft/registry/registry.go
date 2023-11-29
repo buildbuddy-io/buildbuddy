@@ -3,6 +3,7 @@ package registry
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -17,7 +18,11 @@ import (
 	dbConfig "github.com/lni/dragonboat/v4/config"
 )
 
-var TargetAddressUnknownError = status.NotFoundError("target address unknown")
+var targetAddressUnknownErrorMsg = "target address unknown"
+
+func targetAddressUnknownError(shard, replica uint64) error {
+	return status.NotFoundErrorf("%s: shard: %d replica: %d", targetAddressUnknownErrorMsg, shard, replica)
+}
 
 type NodeRegistry interface {
 	raftio.INodeRegistry
@@ -92,12 +97,10 @@ func (n *StaticRegistry) getConnectionKey(addr string, shardID uint64) string {
 
 // Remove removes a remote from the node registry.
 func (n *StaticRegistry) Remove(shardID uint64, replicaID uint64) {
-	return
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (n *StaticRegistry) RemoveShard(shardID uint64) {
-	return
 }
 
 func (n *StaticRegistry) Resolve(shardID uint64, replicaID uint64) (string, string, error) {
@@ -113,7 +116,7 @@ func (n *StaticRegistry) ResolveRaft(shardID uint64, replicaID uint64) (string, 
 			return raftAddr, n.getConnectionKey(raftAddr, shardID), nil
 		}
 	}
-	return "", "", TargetAddressUnknownError
+	return "", "", targetAddressUnknownError(shardID, replicaID)
 }
 
 func (n *StaticRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (string, string, error) {
@@ -124,7 +127,7 @@ func (n *StaticRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (string, 
 			return grpcAddr, n.getConnectionKey(grpcAddr, shardID), nil
 		}
 	}
-	return "", "", TargetAddressUnknownError
+	return "", "", targetAddressUnknownError(shardID, replicaID)
 }
 
 func (n *StaticRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, string, error) {
@@ -133,7 +136,7 @@ func (n *StaticRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, 
 		target := t.(string)
 		return target, n.getConnectionKey(target, shardID), nil
 	}
-	return "", "", TargetAddressUnknownError
+	return "", "", targetAddressUnknownError(shardID, replicaID)
 }
 
 func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
@@ -344,12 +347,10 @@ func (d *DynamicNodeRegistry) Add(shardID uint64, replicaID uint64, target strin
 
 // Remove removes a remote from the node registry.
 func (d *DynamicNodeRegistry) Remove(shardID uint64, replicaID uint64) {
-	return
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (d *DynamicNodeRegistry) RemoveShard(shardID uint64) {
-	return
 }
 
 func (d *DynamicNodeRegistry) Resolve(shardID uint64, replicaID uint64) (string, string, error) {
@@ -359,7 +360,7 @@ func (d *DynamicNodeRegistry) Resolve(shardID uint64, replicaID uint64) (string,
 // Resolve looks up the Addr of the specified node.
 func (d *DynamicNodeRegistry) ResolveRaft(shardID uint64, replicaID uint64) (string, string, error) {
 	r, k, err := d.sReg.ResolveRaft(shardID, replicaID)
-	if err == TargetAddressUnknownError {
+	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
 		d.queryPeers(shardID, replicaID)
 		return d.sReg.ResolveRaft(shardID, replicaID)
 	}
@@ -368,7 +369,7 @@ func (d *DynamicNodeRegistry) ResolveRaft(shardID uint64, replicaID uint64) (str
 
 func (d *DynamicNodeRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (string, string, error) {
 	g, k, err := d.sReg.ResolveGRPC(shardID, replicaID)
-	if err == TargetAddressUnknownError {
+	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
 		d.queryPeers(shardID, replicaID)
 		return d.sReg.ResolveGRPC(shardID, replicaID)
 	}
@@ -377,7 +378,7 @@ func (d *DynamicNodeRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (str
 
 func (d *DynamicNodeRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, string, error) {
 	n, k, err := d.sReg.ResolveNHID(shardID, replicaID)
-	if err == TargetAddressUnknownError {
+	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
 		d.queryPeers(shardID, replicaID)
 		return d.sReg.ResolveNHID(shardID, replicaID)
 	}

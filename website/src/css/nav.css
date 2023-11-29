@@ -95,6 +95,14 @@ html[data-theme="dark"] .menu {
   .dsla-search-wrapper {
     margin-right: 48px;
   }
+
+  .blog-container {
+    padding: 0 16px;
+  }
+
+  .navbar {
+    overflow: hidden;
+  }
 }
 
 @keyframes jump {
@@ -186,6 +194,10 @@ html[data-theme="dark"] .menu {
 .theme-doc-sidebar-menu.menu__list .menu__list {
   padding: 0;
   margin: 0;
+}
+
+.theme-doc-sidebar-menu.theme-doc-sidebar-menu.theme-doc-sidebar-menu {
+  margin-top: 16px;
 }
 
 .theme-doc-sidebar-menu.menu__list .menu__link {

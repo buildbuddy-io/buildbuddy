@@ -112,9 +112,11 @@ func printBBCommands() {
 	// TODO: Have commands add themselves to a registry and get the command
 	// names / descriptions from there.
 	columns := [][]string{
-		{"analyze", "Analyzes the dependency graph."},
 		{"add", "Adds a dependency to your WORKSPACE file."},
+		{"analyze", "Analyzes the dependency graph."},
+		{"ask|wtf|huh", "Asks for suggestions about your last invocation."},
 		{"download", "Downloads artifacts from a remote cache."},
+		{"execute", "Executes arbitrary commands using remote execution."},
 		{"install", "Installs a bb plugin (https://buildbuddy.io/plugins)."},
 		{"login", "Configures bb commands to use your BuildBuddy API key."},
 		{"logout", "Configures bb commands to no longer use your saved API key."},
@@ -122,7 +124,6 @@ func printBBCommands() {
 		{"remote", "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service."},
 		{"update", "Updates the bb CLI to the latest version."},
 		{"upload", "Uploads files to the remote cache."},
-		{"ask|wtf|huh", "Ask for suggestions about your last invocation."},
 	}
 	fmt.Println("bb commands:")
 	for _, row := range columns {

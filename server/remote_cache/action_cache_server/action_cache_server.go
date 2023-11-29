@@ -6,13 +6,13 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
@@ -115,7 +115,7 @@ func setWorkerMetadata(ar *repb.ActionResult) error {
 			// Host ID. Don't warn in that case because this func is
 			// called on every UpdateActionResult, and the
 			// consequences of this ID changing are none.
-			Worker: uuid.GetFailsafeHostID(),
+			Worker: hostid.GetFailsafeHostID(""),
 		}
 	}
 	return nil

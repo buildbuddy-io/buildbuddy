@@ -15,11 +15,14 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -69,7 +72,11 @@ func TestMmap_Concurrency(t *testing.T) {
 	s, _ := newMmap(t)
 
 	eg := &errgroup.Group{}
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 100; i++ {
+		eg.Go(func() error {
+			s.Source()
+			return nil
+		})
 		eg.Go(func() error {
 			buf := make([]byte, 100)
 			_, err := rand.Read(buf)
@@ -95,6 +102,14 @@ func TestMmap_Concurrency(t *testing.T) {
 			_, err := s.StartAddress()
 			return err
 		})
+		eg.Go(func() error {
+			return s.Fetch()
+		})
+		eg.Go(func() error {
+			// Should be safe to call Unmap at any time. ReadAt / WriteAt should
+			// re-map if needed.
+			return s.Unmap()
+		})
 	}
 	err := eg.Wait()
 	require.NoError(t, err)
@@ -108,7 +123,7 @@ func TestCOW_Basic(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
 	chunkSizeBytes := backingFileSizeBytes / 2
-	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "")
+	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false)
 	require.NoError(t, err)
 	// Don't validate against the backing file, since COWFromFile makes a copy
 	// of the underlying file.
@@ -121,7 +136,7 @@ func TestCOW_Concurrency(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
 	chunkSizeBytes := backingFileSizeBytes / 2
-	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "")
+	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false)
 	require.NoError(t, err)
 
 	eg := &errgroup.Group{}
@@ -190,7 +205,7 @@ func TestCOW_SparseData(t *testing.T) {
 	outDir := testfs.MakeTempDir(t)
 
 	// Now split the file.
-	c, err := copy_on_write.ConvertFileToCOW(ctx, env, dataFilePath, chunkSize, outDir, "")
+	c, err := copy_on_write.ConvertFileToCOW(ctx, env, dataFilePath, chunkSize, outDir, "", false)
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -254,7 +269,7 @@ func TestCOW_Resize(t *testing.T) {
 				startBuf := randBytes(t, int(test.OldSize))
 				src := makeTempFile(t, startBuf)
 				dir := testfs.MakeTempDir(t)
-				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, src, chunkSize, dir, "")
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, src, chunkSize, dir, "", false)
 				require.NoError(t, err)
 
 				// Resize the COW
@@ -310,6 +325,9 @@ func TestCOW_Resize(t *testing.T) {
 }
 
 func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
+	flags.Set(b, "app.log_level", "error")
+	log.Configure()
+
 	const chunkSize = 512 * 1024 // 512K
 	// TODO: figure out a more realistic distribution of read/write size
 	const ioSize = 4096
@@ -383,7 +401,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 				}
 				chunkDir, err := os.MkdirTemp(tmp, "")
 				require.NoError(b, err)
-				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, f.Name(), chunkSize, chunkDir, "")
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, f.Name(), chunkSize, chunkDir, "", false)
 				require.NoError(b, err)
 				err = os.Remove(f.Name())
 				require.NoError(b, err)
@@ -513,7 +531,8 @@ func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
 	env := testenv.GetTestEnv(t)
 
 	root := testfs.MakeTempDir(t)
-	path := filepath.Join(root, "f")
+	const offset = 0
+	path := filepath.Join(root, fmt.Sprintf("%d", offset))
 	err := os.WriteFile(path, make([]byte, backingFileSizeBytes), 0644)
 	require.NoError(t, err, "write empty file")
 
@@ -523,7 +542,7 @@ func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
 	s, err := f.Stat()
 	require.NoError(t, err)
 
-	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, int(f.Fd()), int(s.Size()), 0, "")
+	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, false /*=dirty*/, int(f.Fd()), int(s.Size()), offset, snaputil.ChunkSourceLocalFile, "", false)
 	require.NoError(t, err)
 	return mmap, path
 }

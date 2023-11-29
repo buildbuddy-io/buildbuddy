@@ -16,12 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -268,12 +266,12 @@ func (f *fileToUpload) DirNode() *repb.DirectoryNode {
 	}
 }
 
-func uploadFiles(uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
+func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
 		if fc != nil && uploadableFile.dir == nil {
 			node := uploadableFile.FileNode()
-			if err := fc.AddFile(node, uploadableFile.fullFilePath); err != nil {
+			if err := fc.AddFile(ctx, node, uploadableFile.fullFilePath); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
 			}
 		}
@@ -454,7 +452,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	}
 
 	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
-	if err := uploadFiles(uploader, env.GetFileCache(), filesToUpload); err != nil {
+	if err := uploadFiles(ctx, uploader, env.GetFileCache(), filesToUpload); err != nil {
 		return nil, err
 	}
 
@@ -548,11 +546,11 @@ func copyFile(src *FilePointer, dest *FilePointer, opts *DownloadTreeOpts) error
 
 // linkFileFromFileCache attempts to link the given file path from the local
 // file cache, and returns whether the linking was successful.
-func linkFileFromFileCache(d *repb.Digest, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) (bool, error) {
+func linkFileFromFileCache(ctx context.Context, d *repb.Digest, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) (bool, error) {
 	if err := removeExisting(fp, opts); err != nil {
 		return false, err
 	}
-	return fc.FastLinkFile(fp.FileNode, fp.FullPath), nil
+	return fc.FastLinkFile(ctx, fp.FileNode, fp.FullPath), nil
 }
 
 // FileMap is a map of digests to file pointers containing the contents
@@ -613,28 +611,28 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	if casClient == nil {
 		return status.FailedPreconditionErrorf("cannot batch download files when casClient is not set")
 	}
-
-	rsp, err := casClient.BatchReadBlobs(ctx, req)
+	responses, err := cachetools.BatchReadBlobs(ctx, ff.env.GetContentAddressableStorageClient(), req)
 	if err != nil {
 		return err
 	}
 
 	ff.statsMu.Lock()
-	for _, fileResponse := range rsp.GetResponses() {
-		if fileResponse.GetStatus().GetCode() != int32(codes.OK) {
+	for _, res := range responses {
+		if res.Err != nil {
 			continue
 		}
-		ff.stats.FileDownloadSizeBytes += fileResponse.GetDigest().GetSizeBytes()
+		// TODO: measure compressed size
+		ff.stats.FileDownloadSizeBytes += res.Digest.GetSizeBytes()
 		ff.stats.FileDownloadCount += 1
 	}
 	ff.statsMu.Unlock()
 
 	fileCache := ff.env.GetFileCache()
-	for _, fileResponse := range rsp.GetResponses() {
-		if fileResponse.GetStatus().GetCode() != int32(codes.OK) {
-			return digest.MissingDigestError(fileResponse.GetDigest())
+	for _, res := range responses {
+		if res.Err != nil {
+			return digest.MissingDigestError(res.Digest)
 		}
-		d := fileResponse.GetDigest()
+		d := res.Digest
 		ptrs, ok := filesToFetch[digest.NewKey(d)]
 		if !ok {
 			return status.InternalErrorf("Fetched unrequested file: %q", d)
@@ -642,26 +640,12 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 		if len(ptrs) == 0 {
 			continue
 		}
-		data := fileResponse.GetData()
-		if fileResponse.GetCompressor() == repb.Compressor_ZSTD {
-			data, err = compression.DecompressZstd(nil, data)
-			if err != nil {
-				return err
-			}
-		}
-		computedDigest, err := digest.Compute(bytes.NewReader(data), req.GetDigestFunction())
-		if err != nil {
-			return err
-		}
-		if computedDigest.GetHash() != d.GetHash() {
-			return status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest.GetHash(), d.GetHash())
-		}
 		ptr := ptrs[0]
-		if err := writeFile(ptr, data); err != nil {
+		if err := writeFile(ptr, res.Data); err != nil {
 			return err
 		}
 		if fileCache != nil {
-			if err := fileCache.AddFile(ptr.FileNode, ptr.FullPath); err != nil {
+			if err := fileCache.AddFile(ff.ctx, ptr.FileNode, ptr.FullPath); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
 			}
 		}
@@ -714,7 +698,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		for _, fp := range filePointers {
 			d := fp.FileNode.GetDigest()
 			if fileCache != nil {
-				linked, err := linkFileFromFileCache(d, fp, fileCache, opts)
+				linked, err := linkFileFromFileCache(ff.ctx, d, fp, fileCache, opts)
 				if err != nil {
 					return err
 				}
@@ -817,7 +801,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	}
 	fileCache := ff.env.GetFileCache()
 	if fileCache != nil {
-		if err := fileCache.AddFile(fp.FileNode, fp.FullPath); err != nil {
+		if err := fileCache.AddFile(ff.ctx, fp.FileNode, fp.FullPath); err != nil {
 			log.Warningf("Error adding file to filecache: %s", err)
 		}
 	}
@@ -858,6 +842,16 @@ func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (
 	}
 
 	return rootDigest, dirMap, nil
+}
+
+// To be used when a symlink exists and an Exists error has been returned, but
+// the caller wants to ensure the *correct* file has been linked.
+func checkSymlink(oldName, newName string) bool {
+	pointee, err := os.Readlink(newName)
+	if err != nil {
+		return false
+	}
+	return pointee == oldName
 }
 
 type DownloadTreeOpts struct {
@@ -944,6 +938,22 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		for _, symlinkNode := range dir.GetSymlinks() {
 			nodeAbsPath := filepath.Join(parentDir, symlinkNode.GetName())
 			if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
+				if os.IsExist(err) {
+					if checkSymlink(symlinkNode.GetTarget(), nodeAbsPath) {
+						continue
+					}
+					// Attempt to blow away the existing
+					// file(s) at that location and re-link.
+					if err := os.RemoveAll(nodeAbsPath); err != nil {
+						return err
+					}
+					// Now that the symlink has been removed
+					// try one more time to link it.
+					if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
+						return err
+					}
+					continue
+				}
 				return err
 			}
 		}

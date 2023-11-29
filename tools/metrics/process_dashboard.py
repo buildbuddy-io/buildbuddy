@@ -5,14 +5,19 @@ Its purpose is to reduce unnecessary diffs, normalizing the dashboard and
 reverting changes which are most likely unintended.
 """
 
+import argparse
 import collections
 import json
 import sys
 
+
+ARGS = argparse.ArgumentParser()
+ARGS.add_argument("--name", default="", help="Dashboard file name")
+
 DASHBOARD_REFRESH_INTERVAL = "1m"
 
 
-def main():
+def main(args):
     dashboard = json.load(sys.stdin)["dashboard"]
 
     # Remove volatile versioning info since we use Git for versioning.
@@ -20,6 +25,13 @@ def main():
         del dashboard["version"]
     if "iteration" in dashboard:
         del dashboard["iteration"]
+    # Delete non-deterministic id; it doesn't seem to be needed.
+    if "id" in dashboard:
+        del dashboard["id"]
+    # Populate the file tag so that the file name remains stable.
+    if not get_file_tag(dashboard):
+        dashboard["tags"] = dashboard.get("tags", [])
+        dashboard["tags"].append("file:" + args.name)
 
     # Sometimes null values creep into the dashboard JSON and cause unnecessary
     # diffs. Strip these out since the resulting dashboard is equivalent.
@@ -35,11 +47,21 @@ def main():
 
     # Grafana updates "collapsed" state when expanding panels in the UI. Ensure
     # all panels are collapsed to prevent accidental updates.
-    for panel in dashboard["panels"]:
-        panel["collapsed"] = True
+    # (For the main buildbuddy dashboard only).
+    if args.name == "buildbuddy.json":
+        for panel in dashboard["panels"]:
+            panel["collapsed"] = True
 
     # Note: ensure_ascii=False keeps strings like "µs" as-is.
     json.dump(dashboard, sys.stdout, indent=2, ensure_ascii=False)
+    sys.stdout.write("\n")
+
+
+def get_file_tag(dash):
+    for tag in dash.get("tags", []):
+        if tag.startswith("file:"):
+            return tag[len("file:") :]
+    return None
 
 
 def with_ordered_dicts(obj):
@@ -68,4 +90,4 @@ def remove_dict_none_values(obj):
 
 
 if __name__ == "__main__":
-    main()
+    main(ARGS.parse_args())

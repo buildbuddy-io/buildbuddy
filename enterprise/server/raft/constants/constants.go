@@ -80,6 +80,9 @@ var (
 
 	// When this local range was set up.
 	LocalRangeSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("range_initialization_time"))
+
+	// A prefix to prepend to transactions.
+	LocalTransactionPrefix = keys.MakeKey(LocalPrefix, []byte("txn-"))
 )
 
 // Error constants -- sender recognizes these errors.

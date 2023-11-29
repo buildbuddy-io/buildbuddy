@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/filecacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -24,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -42,39 +45,123 @@ const (
 	chunkedFileWriteConcurrency = 4
 )
 
-// NewKey returns the cache key for a snapshot.
+// SnapshotKeySet returns the cache keys for potential snapshot matches,
+// as well as the key that should be written to.
+//
 // TODO: include a version number in the key somehow, so that
 // if we make breaking changes e.g. to the vmexec API or firecracker
 // version etc., we can ensure that incompatible snapshots don't get reused.
-func NewKey(task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb.SnapshotKey, error) {
+func SnapshotKeySet(task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb.SnapshotKeySet, error) {
 	pd, err := digest.ComputeForMessage(task.GetCommand().GetPlatform(), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, status.WrapErrorf(err, "failed to compute platform hash")
 	}
-	return &fcpb.SnapshotKey{
-		InstanceName:      task.GetExecuteRequest().GetInstanceName(),
-		PlatformHash:      pd.GetHash(),
-		ConfigurationHash: configurationHash,
-		RunnerId:          runnerID,
-	}, nil
+
+	branchRef, fallbackRefs := gitRefs(task)
+	keys := &fcpb.SnapshotKeySet{
+		BranchKey: &fcpb.SnapshotKey{
+			InstanceName:      task.GetExecuteRequest().GetInstanceName(),
+			PlatformHash:      pd.GetHash(),
+			ConfigurationHash: configurationHash,
+			Ref:               branchRef,
+			RunnerId:          runnerID,
+		},
+	}
+	for _, ref := range fallbackRefs {
+		fallbackKey := proto.Clone(keys.BranchKey).(*fcpb.SnapshotKey)
+		fallbackKey.Ref = ref
+		keys.FallbackKeys = append(keys.FallbackKeys, fallbackKey)
+	}
+	return keys, nil
 }
 
-// manifestKey returns the key for the snapshot manifest
+func gitRefs(task *repb.ExecutionTask) (branchRef string, fallbackRefs []string) {
+	if !*snaputil.EnableRemoteSnapshotSharing && !*snaputil.EnableLocalSnapshotSharing {
+		return "", nil
+	}
+
+	// NOTE: keep these names in sync with workflow service
+	branchRef = getEnv(task, "GIT_BRANCH")
+	if branchRef == "" {
+		// Workflow actions should always have GIT_BRANCH set, so if we don't
+		// see this env var then assume we're not dealing with a workflow, and
+		// so we shouldn't respect fallback refs.
+		return "", nil
+	}
+	for _, fallback := range []string{"GIT_BASE_BRANCH", "GIT_REPO_DEFAULT_BRANCH"} {
+		v := getEnv(task, fallback)
+		if v != "" && v != branchRef && !slices.Contains(fallbackRefs, v) {
+			fallbackRefs = append(fallbackRefs, v)
+		}
+	}
+	return branchRef, fallbackRefs
+}
+
+func getEnv(task *repb.ExecutionTask, name string) string {
+	for _, e := range task.GetCommand().GetEnvironmentVariables() {
+		if e.GetName() == name {
+			return e.GetValue()
+		}
+	}
+	return ""
+}
+
+// localManifestKey returns the key for the local snapshot manifest.
 //
 // Because we always want runners to use the newest manifest/snapshot, this
 // doesn't actually create a digest of the manifest contents. It just takes a
 // hash of shared properties, for which the snapshot should be shared
-func manifestKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) (*repb.Digest, error) {
+func localManifestKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) (*repb.Digest, error) {
+	// Note: filecache does not have explicit group AC partitioning unlike
+	// remote cache, so we need to manually hash in the group ID as part of the
+	// key.
 	gid, err := groupID(ctx, env)
+	if err != nil {
+		return nil, err
+	}
+	kd, err := digest.ComputeForMessage(s, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
 	// Note: .manifest is not a real file that we ever create on disk, it's
 	// effectively just part of the cache key used to locate the manifest.
 	return &repb.Digest{
-		Hash:      hashStrings(gid, s.InstanceName, s.PlatformHash, s.ConfigurationHash, s.RunnerId, ".manifest"),
+		Hash:      hashStrings(gid, kd.GetHash(), ".manifest"),
 		SizeBytes: 1, /*=arbitrary size*/
 	}, nil
+}
+
+// remoteManifestKey returns the key for the remote snapshot manifest.
+func remoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
+	kd, err := digest.ComputeForMessage(s, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	// Note: .manifest is not a real file that we ever create on disk, it's
+	// effectively just part of the cache key used to locate the manifest.
+	return &repb.Digest{
+		Hash:      hashStrings(kd.GetHash(), ".manifest"),
+		SizeBytes: 1, /*=arbitrary size*/
+	}, nil
+}
+
+func keyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) string {
+	d, err := remoteManifestKey(s)
+	var dStr string
+	if err != nil {
+		dStr = fmt.Sprintf("<error: %s>", err)
+	} else {
+		dStr = digest.String(d)
+	}
+	gid, err := groupID(ctx, env)
+	if err != nil {
+		gid = fmt.Sprintf("<error: %s>", err)
+	}
+	jb, err := protojson.Marshal(s)
+	if err != nil {
+		jb = []byte(fmt.Sprintf("%q", err))
+	}
+	return fmt.Sprintf(`{"group_id": %q, "instance_name": %q, "key_digest": %q, "key": %s}`, gid, s.InstanceName, dStr, string(jb))
 }
 
 func fileDigest(filePath string) (*repb.Digest, error) {
@@ -88,8 +175,9 @@ func fileDigest(filePath string) (*repb.Digest, error) {
 
 // Snapshot holds a snapshot manifest along with the corresponding cache key.
 type Snapshot struct {
-	key      *fcpb.SnapshotKey
-	manifest *fcpb.SnapshotManifest
+	key           *fcpb.SnapshotKey
+	manifest      *fcpb.SnapshotManifest
+	remoteEnabled bool
 }
 
 func (s *Snapshot) GetVMConfiguration() *fcpb.VMConfiguration {
@@ -127,6 +215,9 @@ type CacheSnapshotOptions struct {
 
 	// Whether the snapshot is from a recycled VM
 	Recycled bool
+
+	// Whether to save the snapshot to the remote cache (in addition to locally)
+	Remote bool
 }
 
 type UnpackedSnapshot struct {
@@ -160,10 +251,11 @@ type Loader interface {
 	// snapshot configuration and artifact paths specified by opts.
 	CacheSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) error
 
-	// GetSnapshot loads the metadata for the snapshot. It does not
+	// GetSnapshot loads the metadata for the snapshot. If the main key is not
+	// found, it tries falling back to one of the fallback keys. It does not
 	// unpack any snapshot artifacts.
 	// It returns UnavailableError if the metadata has expired from cache.
-	GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (*Snapshot, error)
+	GetSnapshot(ctx context.Context, key *fcpb.SnapshotKeySet, remoteEnabled bool) (*Snapshot, error)
 
 	// UnpackSnapshot unpacks a snapshot to the given directory.
 	// It returns UnavailableError if any snapshot artifacts have expired
@@ -182,24 +274,45 @@ func New(env environment.Env) (*FileCacheLoader, error) {
 	return &FileCacheLoader{env: env}, nil
 }
 
-func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (*Snapshot, error) {
-	var manifest *fcpb.SnapshotManifest
-	var err error
-	if *snaputil.EnableRemoteSnapshotSharing {
-		manifest, err = l.fetchRemoteManifest(ctx, key)
+func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKeySet, remoteEnabled bool) (*Snapshot, error) {
+	var lastErr error
+	allKeys := append([]*fcpb.SnapshotKey{keys.GetBranchKey()}, keys.FallbackKeys...)
+	for _, key := range allKeys {
+		manifest, err := l.getSnapshot(ctx, key, remoteEnabled)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if key == keys.GetBranchKey() {
+			log.CtxInfof(ctx, "Found preferred snapshot ref=%q in cache", key.GetRef())
+		} else {
+			log.CtxInfof(ctx, "Found fallback snapshot ref=%q in cache", key.GetRef())
+		}
+		return &Snapshot{
+			key:           key,
+			manifest:      manifest,
+			remoteEnabled: remoteEnabled,
+		}, nil
+	}
+	return nil, lastErr
+}
+
+func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
+	if *snaputil.EnableRemoteSnapshotSharing && remoteEnabled {
+		manifest, err := l.fetchRemoteManifest(ctx, key)
 		if err != nil {
 			log.CtxInfof(ctx, "Failed to fetch remote snapshot manifest: %s", err)
 			return nil, status.WrapError(err, "fetch remote manifest")
 		}
-		log.CtxInfof(ctx, "Fetched remote snapshot manifest")
-	} else {
-		manifest, err = l.getLocalManifest(ctx, key)
-		if err != nil {
-			return nil, status.WrapError(err, "get local manifest")
-		}
+		log.CtxInfof(ctx, "Fetched remote snapshot manifest %s", keyDebugString(ctx, l.env, key))
+		return manifest, nil
 	}
 
-	return &Snapshot{key: key, manifest: manifest}, nil
+	manifest, err := l.getLocalManifest(ctx, key)
+	if err != nil {
+		return nil, status.WrapError(err, "get local manifest")
+	}
+	return manifest, nil
 }
 
 // fetchRemoteManifest fetches the most recent snapshot manifest from the remote
@@ -207,7 +320,7 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
 func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
-	d, err := manifestKey(ctx, l.env, key)
+	d, err := remoteManifestKey(key)
 	if err != nil {
 		return nil, err
 	}
@@ -216,18 +329,17 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 	if err != nil {
 		return nil, err
 	}
-
 	tmpDir := l.env.GetFileCache().TempDir()
 	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir)
 }
 
 func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
-	d, err := manifestKey(ctx, l.env, key)
+	d, err := localManifestKey(ctx, l.env, key)
 	if err != nil {
 		return nil, err
 	}
 	manifestNode := &repb.FileNode{Digest: d}
-	buf, err := filecacheutil.Read(l.env.GetFileCache(), manifestNode)
+	buf, err := l.env.GetFileCache().Read(ctx, manifestNode)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read snapshot manifest: %s", status.Message(err))
 	}
@@ -328,7 +440,7 @@ func chunkedFileProperty(chunkedFileTree *repb.Tree, propertyName string) (int64
 }
 
 func (l *FileCacheLoader) chunkedFileTree(ctx context.Context, remoteInstanceName string, chunkedFileMetadata *repb.OutputDirectory, tmpDir string) (*repb.Tree, error) {
-	b, err := snaputil.GetBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
+	b, err := snaputil.GetBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), true /*remoteEnabled*/, chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read chunked file tree: %s", status.Message(err))
 	}
@@ -346,7 +458,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 
 	for _, fileNode := range snapshot.manifest.Files {
 		outputPath := filepath.Join(outputDirectory, fileNode.GetName())
-		if err := snaputil.GetArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
+		if _, err := snaputil.GetArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), snapshot.remoteEnabled, fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
 			return nil, err
 		}
 	}
@@ -356,7 +468,7 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 	}
 	// Construct COWs from chunks.
 	for _, cf := range snapshot.manifest.ChunkedFiles {
-		cow, err := l.unpackCOW(ctx, cf, snapshot.key.InstanceName, outputDirectory)
+		cow, err := l.unpackCOW(ctx, cf, snapshot.key.InstanceName, outputDirectory, snapshot.remoteEnabled)
 		if err != nil {
 			return nil, status.WrapError(err, "unpack COW")
 		}
@@ -419,7 +531,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				}
 			}
 			out.Digest = d
-			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, key.InstanceName, filePath)
+			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath)
 		})
 	}
 	for name, cow := range opts.ChunkedFiles {
@@ -431,7 +543,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		ar.OutputDirectories = append(ar.OutputDirectories, dir)
 		eg.Go(func() error {
 			ctx := egCtx
-			treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts.Recycled)
+			treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts)
 			if err != nil {
 				return status.WrapErrorf(err, "cache %q COW", name)
 			}
@@ -455,18 +567,25 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if err != nil {
 		return err
 	}
-	d, err := manifestKey(ctx, l.env, key)
+	if *snaputil.EnableRemoteSnapshotSharing && !*snaputil.RemoteSnapshotReadonly {
+		d, err := remoteManifestKey(key)
+		if err != nil {
+			return err
+		}
+		acDigest := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar); err != nil {
+			return err
+		}
+		log.CtxInfof(ctx, "Cached remote snapshot manifest %s", keyDebugString(ctx, l.env, key))
+		return nil
+	}
+
+	d, err := localManifestKey(ctx, l.env, key)
 	if err != nil {
 		return err
 	}
-
-	if *snaputil.EnableRemoteSnapshotSharing {
-		acDigest := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
-		return cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar)
-	}
-
 	manifestNode := &repb.FileNode{Digest: d}
-	_, localCacheErr := filecacheutil.Write(l.env.GetFileCache(), manifestNode, b)
+	_, localCacheErr := l.env.GetFileCache().Write(ctx, manifestNode, b)
 	return localCacheErr
 }
 
@@ -474,7 +593,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 // ActionResult validation will check this
 func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *fcpb.SnapshotManifest) error {
 	for _, f := range manifest.GetFiles() {
-		if !l.env.GetFileCache().ContainsFile(f) {
+		if !l.env.GetFileCache().ContainsFile(ctx, f) {
 			return status.NotFoundErrorf("file %q not found (digest %q)", f.GetName(), digest.String(f.GetDigest()))
 		}
 	}
@@ -483,7 +602,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 			node := &repb.FileNode{
 				Digest: c.GetDigest(),
 			}
-			if !l.env.GetFileCache().ContainsFile(node) {
+			if !l.env.GetFileCache().ContainsFile(ctx, node) {
 				return status.NotFoundErrorf("chunked file %q missing chunk at offset 0x%x (digest %q)", cf.GetName(), c.GetOffset(), digest.String(node.Digest))
 			}
 		}
@@ -491,7 +610,7 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 	return nil
 }
 
-func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, remoteInstanceName string, outputDirectory string) (cf *copy_on_write.COWStore, err error) {
+func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile, remoteInstanceName string, outputDirectory string, remoteEnabled bool) (cf *copy_on_write.COWStore, err error) {
 	dataDir := filepath.Join(outputDirectory, file.GetName())
 	if err := os.Mkdir(dataDir, 0755); err != nil {
 		return nil, status.InternalErrorf("failed to create COW data dir %q: %s", dataDir, err)
@@ -510,13 +629,13 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		// TODO: Make a unit test where there is less data in a chunk than the chunk size
 		// But when we fetch from the remote cache, it will need the actual
 		// data size in the digest
-		c, err := copy_on_write.NewLazyMmap(ctx, l.env, dataDir, chunk.GetOffset(), chunk.GetDigest(), remoteInstanceName)
+		c, err := copy_on_write.NewLazyMmap(ctx, l.env, dataDir, chunk.GetOffset(), chunk.GetDigest(), remoteInstanceName, remoteEnabled)
 		if err != nil {
 			return nil, status.WrapError(err, "create mmap for chunk")
 		}
 		chunks = append(chunks, c)
 	}
-	cow, err := copy_on_write.NewCOWStore(ctx, l.env, chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName)
+	cow, err := copy_on_write.NewCOWStore(ctx, l.env, chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName, remoteEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -525,7 +644,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 
 // cacheCOW represents a COWStore as an action result tree and saves the store
 // to the cache. Returns the digest of the tree
-func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, recycled bool) (*repb.Digest, error) {
+func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, error) {
 	var dirtyBytes, dirtyChunkCount int64
 	start := time.Now()
 	defer func() {
@@ -559,6 +678,8 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	eg.SetLimit(chunkedFileWriteConcurrency)
 
 	chunks := cow.SortedChunks()
+	var mu sync.RWMutex
+	chunkSourceCounter := make(map[snaputil.ChunkSource]int, len(chunks))
 	for _, c := range chunks {
 		c := c
 		fn := &repb.FileNode{
@@ -568,7 +689,8 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		tree.Root.Files = append(tree.Root.Files, fn)
 		eg.Go(func() error {
 			ctx := egCtx
-			if cow.Dirty(c.Offset) {
+			dirty := cow.Dirty(c.Offset)
+			if dirty {
 				chunkSize, err := c.SizeBytes()
 				if err != nil {
 					return status.WrapError(err, "dirty chunk size")
@@ -590,12 +712,21 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 			fn.Digest = d
 
-			if c.Mapped() {
+			chunkSrc := c.Source()
+			// If the chunk was pulled from a cache and is not dirty, we don't need
+			// to re-cache it.
+			// If it was chunked directly from a snapshot file, it may not exist
+			// in the cache yet, and we should cache it.
+			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
+			if shouldCache {
 				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), d, remoteInstanceName, path); err != nil {
+				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path); err != nil {
 					return status.WrapError(err, "write chunk to cache")
 				}
 			}
+			mu.Lock()
+			chunkSourceCounter[chunkSrc]++
+			mu.Unlock()
 
 			return nil
 		})
@@ -614,7 +745,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err != nil {
 		return nil, err
 	}
-	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), treeDigest, remoteInstanceName, treeBytes); err != nil {
+	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, treeDigest, remoteInstanceName, treeBytes); err != nil {
 		return nil, err
 	}
 
@@ -623,7 +754,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		return nil, err
 	}
 	recycleStatus := "clean"
-	if recycled {
+	if cacheOpts.Recycled {
 		recycleStatus = "recycled"
 	}
 	metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
@@ -636,6 +767,15 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		metrics.FileName:             name,
 		metrics.RecycledRunnerStatus: recycleStatus,
 	}).Add(float64(dirtyBytes))
+
+	for chunkSrc, count := range chunkSourceCounter {
+		metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{
+			metrics.GroupID:              gid,
+			metrics.FileName:             name,
+			metrics.RecycledRunnerStatus: recycleStatus,
+			metrics.ChunkSource:          snaputil.ChunkSourceLabel(chunkSrc),
+		}).Observe(float64(count) / float64(len(chunks)))
+	}
 
 	return treeDigest, nil
 }
@@ -653,7 +793,7 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err == nil {
 		gid = u.GetGroupID()
-	} else if err != nil && !authutil.IsAnonymousUserError(err) {
+	} else if err != nil && !authutil.IsAnonymousUserError(err) && !*container.DebugEnableAnonymousRecycling {
 		return "", err
 	}
 	return gid, nil
@@ -670,11 +810,11 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 
 	// TODO: use an Action for this key instead (to allow remote snapshot
 	// sharing).
-	key := &fcpb.SnapshotKey{
+	key := &fcpb.SnapshotKeySet{BranchKey: &fcpb.SnapshotKey{
 		ConfigurationHash: hashStrings("__UnpackContainerImage", imageRef),
-	}
+	}}
 
-	snap, err := l.GetSnapshot(ctx, key)
+	snap, err := l.GetSnapshot(ctx, key, *snaputil.EnableRemoteSnapshotSharing)
 	if err != nil && !(status.IsNotFoundError(err) || status.IsUnavailableError(err)) {
 		return nil, err
 	}
@@ -690,10 +830,13 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 		return cf, nil
 	}
 	// containerfs is not available in cache; convert the EXT4 image to a
-	// ChunkedFile then add it to cache.
+	// ChunkedFile then add it to cache. Note that we don't use remote instance
+	// name here, since OCI -> ext4 conversion is expensive and we want to
+	// ensure that this is a one-time thing.
+	//
 	// TODO(bduffany): single-flight this.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, key.InstanceName)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, "" /*=instanceName*/, *snaputil.EnableRemoteSnapshotSharing)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}
@@ -701,8 +844,9 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 	opts := &CacheSnapshotOptions{
 		ChunkedFiles: map[string]*copy_on_write.COWStore{rootfsFileName: cow},
 		Recycled:     false,
+		Remote:       *snaputil.EnableRemoteSnapshotSharing,
 	}
-	if err := l.CacheSnapshot(ctx, key, opts); err != nil {
+	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
 		return nil, status.WrapError(err, "cache containerfs snapshot")
 	}
 	log.CtxDebugf(ctx, "Converted containerfs to COW in %s", time.Since(start))

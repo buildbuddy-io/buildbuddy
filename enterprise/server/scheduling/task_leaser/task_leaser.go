@@ -32,6 +32,7 @@ type TaskLeaser struct {
 	env            environment.Env
 	executorID     string
 	taskID         string
+	leaseID        string
 	reconnectToken string
 	quit           chan struct{}
 	mu             sync.Mutex // protects stream
@@ -59,7 +60,10 @@ func (t *TaskLeaser) sendRequest(req *scpb.LeaseTaskRequest) (*scpb.LeaseTaskRes
 	return t.stream.Recv()
 }
 
-func (t *TaskLeaser) pingServer(ctx context.Context) ([]byte, error) {
+func (t *TaskLeaser) pingServer(ctx context.Context) (b []byte, err error) {
+	log.CtxDebugf(ctx, "Pinging scheduler")
+	defer func() { log.CtxDebugf(ctx, "Ping done, err=%v", err) }()
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	req := &scpb.LeaseTaskRequest{
@@ -100,14 +104,18 @@ func (t *TaskLeaser) pingServer(ctx context.Context) ([]byte, error) {
 	if rsp.GetReconnectToken() != "" {
 		t.reconnectToken = rsp.GetReconnectToken()
 	}
+	if rsp.GetLeaseId() != "" {
+		t.leaseID = rsp.GetLeaseId()
+	}
 	t.ttl = time.Duration(rsp.GetLeaseDurationSeconds()) * time.Second
 	return rsp.GetSerializedTask(), nil
 }
 
 func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 	req := &scpb.ReEnqueueTaskRequest{
-		TaskId: t.taskID,
-		Reason: reason,
+		TaskId:  t.taskID,
+		LeaseId: t.leaseID,
+		Reason:  reason,
 	}
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, *apiKey)

@@ -18,6 +18,7 @@ go_library(
             "@com_github_google_go_containerregistry//pkg/v1:pkg",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/util/oci",
             "//proto:registry_go_proto",
             "//proto:remote_execution_go_proto",
             "//proto:resource_go_proto",

@@ -38,21 +38,23 @@ func (tc *testCache) Add(e *entry) {
 	tc.data = append(tc.data, e)
 }
 
-func (tc *testCache) evict(ctx context.Context, sample *approxlru.Sample[*entry]) (skip bool, err error) {
+func (tc *testCache) evict(ctx context.Context, sample *approxlru.Sample[*entry]) error {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 
 	key := sample.Key
 	for i, v := range tc.data {
 		if v.ID() == key.ID() {
-			tc.evictions = append(tc.evictions, key)
-			tc.data[i] = tc.data[len(tc.data)-1]
-			tc.data = tc.data[:len(tc.data)-1]
-			return false, nil
+			if sample.Timestamp.Equal(v.atime) {
+				tc.evictions = append(tc.evictions, key)
+				tc.data[i] = tc.data[len(tc.data)-1]
+				tc.data = tc.data[:len(tc.data)-1]
+			}
+			return nil
 		}
 	}
 
-	return false, status.InvalidArgumentErrorf("key %q not in cache", key.ID())
+	return status.InvalidArgumentErrorf("key %q not in cache", key.ID())
 }
 
 func (tc *testCache) sample(ctx context.Context, n int) ([]*approxlru.Sample[*entry], error) {
@@ -61,6 +63,9 @@ func (tc *testCache) sample(ctx context.Context, n int) ([]*approxlru.Sample[*en
 
 	var samples []*approxlru.Sample[*entry]
 	for i := 0; i < n; i++ {
+		if len(tc.data) == 0 {
+			break
+		}
 		s := tc.data[rand.Intn(len(tc.data))]
 		samples = append(samples, &approxlru.Sample[*entry]{
 			Key:       s,
@@ -69,10 +74,6 @@ func (tc *testCache) sample(ctx context.Context, n int) ([]*approxlru.Sample[*en
 		})
 	}
 	return samples, nil
-}
-
-func (tc *testCache) refresh(ctx context.Context, key *entry) (skip bool, timestamp time.Time, err error) {
-	return false, key.atime, nil
 }
 
 func waitForEviction(t *testing.T, l *approxlru.LRU[*entry]) {
@@ -91,14 +92,11 @@ func newCache(t *testing.T, maxSizeBytes int64) (*testCache, *approxlru.LRU[*ent
 		SamplePoolSize:     100,
 		SamplesPerEviction: 10,
 		MaxSizeBytes:       maxSizeBytes,
-		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*entry]) (skip bool, err error) {
+		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*entry]) error {
 			return c.evict(ctx, sample)
 		},
 		OnSample: func(ctx context.Context, n int) ([]*approxlru.Sample[*entry], error) {
 			return c.sample(ctx, n)
-		},
-		OnRefresh: func(ctx context.Context, key *entry) (skip bool, timestamp time.Time, err error) {
-			return c.refresh(ctx, key)
 		},
 	})
 	require.NoError(t, err)

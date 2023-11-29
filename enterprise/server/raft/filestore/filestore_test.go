@@ -15,6 +15,18 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
+// These constants are presisted, so care must be taken to not change them.
+func TestKeyVersionDefinitions(t *testing.T) {
+	assert.Equal(t, -1, int(filestore.UnspecifiedKeyVersion))
+	assert.Equal(t, 0, int(filestore.UndefinedKeyVersion))
+	assert.Equal(t, 1, int(filestore.Version1))
+	assert.Equal(t, 2, int(filestore.Version2))
+	assert.Equal(t, 3, int(filestore.Version3))
+	assert.Equal(t, 4, int(filestore.Version4))
+	assert.Equal(t, 5, int(filestore.Version5))
+	assert.Equal(t, 6, int(filestore.MaxKeyVersion))
+}
+
 func TestKeyVersionCrossCompatibility(t *testing.T) {
 	testGroupID := "GR7890"
 	partitionID := "FOO"
@@ -23,7 +35,7 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 	// What we are testing here is that for every version a key can be
 	// written at, it can also be re-read and rewritten at every *later*
 	// version.
-	for i := filestore.UndefinedKeyVersion; i < filestore.TestingMaxKeyVersion; i++ {
+	for i := filestore.UndefinedKeyVersion; i < filestore.MaxKeyVersion; i++ {
 		r, _ := testdigest.RandomCASResourceBuf(t, 100)
 		fr := &rfpb.FileRecord{
 			Isolation: &rfpb.Isolation{
@@ -44,7 +56,7 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 		keyBytes, err := sourceKey.Bytes(i)
 		require.NoError(t, err)
 
-		for j := i; j < filestore.TestingMaxKeyVersion; j++ {
+		for j := i; j < filestore.MaxKeyVersion; j++ {
 			parsedKey := &filestore.PebbleKey{}
 			parsedVersion, err := parsedKey.FromBytes(keyBytes)
 			assert.NoError(t, err)
@@ -98,7 +110,7 @@ func TestKnownVersions(t *testing.T) {
 		},
 	}
 
-	for version := filestore.UndefinedKeyVersion; version < filestore.TestingMaxKeyVersion; version++ {
+	for version := filestore.UndefinedKeyVersion; version < filestore.MaxKeyVersion; version++ {
 		exemplars, ok := versionExemplars[version]
 		if !ok {
 			t.Fatalf("Please add test exemplars for pebble key version: %d", version)
@@ -150,7 +162,7 @@ func TestMigration(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		for startingVersion := filestore.UndefinedKeyVersion; startingVersion < filestore.TestingMaxKeyVersion; startingVersion++ {
+		for startingVersion := filestore.UndefinedKeyVersion; startingVersion < filestore.MaxKeyVersion; startingVersion++ {
 			key, ok := tc[startingVersion]
 			if !ok {
 				t.Fatalf("Please add test exemplars for pebble key version: %d", startingVersion)
@@ -159,7 +171,7 @@ func TestMigration(t *testing.T) {
 			_, err := parsedKey.FromBytes([]byte(key))
 			require.NoError(t, err)
 
-			for version := startingVersion; version < filestore.TestingMaxKeyVersion; version++ {
+			for version := startingVersion; version < filestore.MaxKeyVersion; version++ {
 				t.Run(fmt.Sprintf("from_v%d_to_v%d", startingVersion, version), func(t *testing.T) {
 					versionedKey, err := parsedKey.Bytes(version)
 					require.NoError(t, err)

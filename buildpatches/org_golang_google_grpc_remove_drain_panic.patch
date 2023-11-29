@@ -1,0 +1,12 @@
+diff --git a/internal/transport/handler_server.go b/internal/transport/handler_server.go
+index 17f7a21b..93523d73 100644
+--- a/internal/transport/handler_server.go
++++ b/internal/transport/handler_server.go
+@@ -457,7 +457,6 @@ func (ht *serverHandlerTransport) IncrMsgSent() {}
+ func (ht *serverHandlerTransport) IncrMsgRecv() {}
+ 
+ func (ht *serverHandlerTransport) Drain(debugData string) {
+-	panic("Drain() is not implemented")
+ }
+ 
+ // mapRecvMsgError returns the non-nil err into the appropriate

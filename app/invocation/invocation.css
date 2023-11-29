@@ -317,6 +317,7 @@
 }
 
 .cache-requests-card .result-row:hover {
+  cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   transition: box-shadow 100ms;
   z-index: 1;
@@ -603,6 +604,11 @@
   margin-right: 32px;
 }
 
+.cache-chart .recharts-responsive-container {
+  flex-shrink: 0;
+  margin-right: 32px;
+}
+
 .cache-stat {
   font-weight: 600;
   font-weight: 20px;
@@ -619,6 +625,7 @@
 
 .cache-chart-label {
   display: flex;
+  white-space: nowrap;
 }
 
 .color-swatch {

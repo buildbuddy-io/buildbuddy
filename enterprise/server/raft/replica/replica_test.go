@@ -28,7 +28,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
-	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -128,21 +127,23 @@ func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica,
 func reader(t *testing.T, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
 	fs := filestore.New()
 
-	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetMultiRequest{
-		FileRecords: []*rfpb.FileRecord{fileRecord},
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(t, err)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	require.NoError(t, err)
+
+	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetRequest{
+		Key: fileMetadataKey,
 	}).ToBuf()
 	require.NoError(t, err)
 	readRsp, err := r.Lookup(buf)
 	require.NoError(t, err)
 	readBatch := rbuilder.NewBatchResponse(readRsp)
-	getMultiRsp, err := readBatch.GetMultiResponse(0)
-	require.NoError(t, err)
-	require.Equal(t, 1, len(getMultiRsp.GetResponses()))
-	err = gstatus.ErrorProto(getMultiRsp.GetResponses()[0].GetStatus())
+	getRsp, err := readBatch.GetResponse(0)
 	if err != nil {
 		return nil, err
 	}
-	md := getMultiRsp.GetResponses()[0].GetFileMetadata()
+	md := getRsp.GetFileMetadata()
 	rc, err := fs.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), 0, 0)
 	require.NoError(t, err)
 	return rc, nil
@@ -232,8 +233,15 @@ func (wt *replicaTester) writeRandom(header *rfpb.Header, partition string, size
 }
 
 func (wt *replicaTester) delete(fileRecord *rfpb.FileRecord) {
-	entry := wt.em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
-		FileRecord: fileRecord,
+	fs := filestore.New()
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(wt.t, err)
+
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	require.NoError(wt.t, err)
+
+	entry := wt.em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{
+		Key: fileMetadataKey,
 	}))
 	entries := []dbsm.Entry{entry}
 	deleteRsp, err := wt.repl.Update(entries)
@@ -598,6 +606,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 }
 
 func TestReplicaFileWriteDelete(t *testing.T) {
+	fs := filestore.New()
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
 	repl := newTestReplica(t, rootDir, 1, 1, store)
@@ -638,8 +647,13 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	}
 	// Delete the file.
 	{
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
-			FileRecord: fileRecord,
+		key, err := fs.PebbleKey(fileRecord)
+		require.NoError(t, err)
+		fileMetadataKey, err := key.Bytes(filestore.Version5)
+		require.NoError(t, err)
+
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{
+			Key: fileMetadataKey,
 		}))
 		entries := []dbsm.Entry{entry}
 		deleteRsp, err := repl.Update(entries)
@@ -715,5 +729,285 @@ func TestUsage(t *testing.T) {
 				require.EqualValues(t, 3, usage.GetTotalCount())
 			}
 		}
+	}
+}
+
+func TestTransactionPrepareAndCommit(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	store := &fakeStore{}
+	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err = repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	wb := db.NewBatch()
+	txid := []byte("TX1")
+	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("bar"),
+		},
+	}).ToProto()
+	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	require.NoError(t, err)
+
+	require.NoError(t, wb.Commit(pebble.Sync))
+	require.NoError(t, wb.Close())
+
+	wb = db.NewBatch()
+	txid2 := []byte("TX2")
+	badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("baz"),
+		},
+	}).ToProto()
+	_, err = repl.PrepareTransaction(wb, txid2, badCmd)
+	require.Error(t, err)
+	require.NoError(t, wb.Close())
+
+	// Do a DirectWrite.
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("just-an-innocent-write"),
+		},
+	}))
+	entries := []dbsm.Entry{entry}
+	rsp, err := repl.Update(entries)
+	require.NoError(t, err)
+	require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+
+	err = repl.CommitTransaction(txid)
+	require.NoError(t, err)
+
+	buf, closer, err := db.Get([]byte("foo"))
+	require.NoError(t, err)
+	defer closer.Close()
+	require.Equal(t, []byte("bar"), buf)
+}
+
+func TestTransactionPrepareAndRollback(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	store := &fakeStore{}
+	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err = repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	wb := db.NewBatch()
+	txid := []byte("TX1")
+	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("bar"),
+		},
+	}).ToProto()
+	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	require.NoError(t, err)
+
+	require.NoError(t, wb.Commit(pebble.Sync))
+	require.NoError(t, wb.Close())
+
+	err = repl.RollbackTransaction(txid)
+	require.NoError(t, err)
+
+	buf, _, err := db.Get([]byte("foo"))
+	require.Error(t, err)
+	require.Nil(t, buf)
+}
+
+func TestTransactionsSurviveRestart(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	store := &fakeStore{}
+	txid := []byte("TX1")
+
+	{
+		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		require.NotNil(t, repl)
+
+		stopc := make(chan struct{})
+		_, err = repl.Open(stopc)
+		require.NoError(t, err)
+
+		em := newEntryMaker(t)
+		writeDefaultRangeDescriptor(t, em, repl)
+
+		wb := db.NewBatch()
+		cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("foo"),
+				Value: []byte("bar"),
+			},
+		}).ToProto()
+		_, err = repl.PrepareTransaction(wb, txid, cmd)
+		require.NoError(t, err)
+
+		require.NoError(t, wb.Commit(pebble.Sync))
+		require.NoError(t, wb.Close())
+
+		err = repl.Close()
+		require.NoError(t, err)
+	}
+
+	{
+		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		require.NotNil(t, repl)
+
+		stopc := make(chan struct{})
+		_, err = repl.Open(stopc)
+		require.NoError(t, err)
+
+		err = repl.CommitTransaction(txid)
+		require.NoError(t, err)
+
+		buf, closer, err := db.Get([]byte("foo"))
+		require.NoError(t, err)
+		defer closer.Close()
+		require.Equal(t, []byte("bar"), buf)
+	}
+}
+
+func TestBatchTransaction(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	store := &fakeStore{}
+	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err = repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	txid := []byte("test-txid")
+
+	{ // Do a DirectWrite.
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("foo"),
+				Value: []byte("bar"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+	{ // Prepare a transaction
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetTransactionID(txid).Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("foo"),
+				Value: []byte("transaction-succeeded"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+	{ // Attempt another direct write (should fail b/c of pending txn).
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("foo"),
+				Value: []byte("boop"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+	{ // Do a DirectRead and verify the value is still `bar`.
+		buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: []byte("foo"),
+		}).ToBuf()
+		require.NoError(t, err)
+		readRsp, err := repl.Lookup(buf)
+		require.NoError(t, err)
+
+		readBatch := rbuilder.NewBatchResponse(readRsp)
+		directRead, err := readBatch.DirectReadResponse(0)
+		require.NoError(t, err)
+		require.Equal(t, []byte("bar"), directRead.GetKv().GetValue())
+	}
+	{ // Commit the transaction
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetTransactionID(txid).SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+	{ // Do a DirectRead and verify the value was updated by the txn.
+		buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: []byte("foo"),
+		}).ToBuf()
+		require.NoError(t, err)
+		readRsp, err := repl.Lookup(buf)
+		require.NoError(t, err)
+
+		readBatch := rbuilder.NewBatchResponse(readRsp)
+		directRead, err := readBatch.DirectReadResponse(0)
+		require.NoError(t, err)
+		require.Equal(t, []byte("transaction-succeeded"), directRead.GetKv().GetValue())
+	}
+	{ // Value should be direct writable again (no more pending txns)
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("foo"),
+				Value: []byte("bar"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 	}
 }

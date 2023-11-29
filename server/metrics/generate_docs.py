@@ -134,6 +134,10 @@ class DocsGenerator(object):
 
     def flush_metric(self):
         metric = self.metric
+        if metric.get("name").endswith("_exported"):
+            # Skip exported metrics
+            self.metric = {}
+            return
         (help_main, *help_details) = metric["help"].split(". ")
         metric_name = "_".join(
             [

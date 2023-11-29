@@ -13,6 +13,11 @@ proto_library(
 )
 
 proto_library(
+    name = "action_cache_proto",
+    srcs = ["action_cache.proto"],
+)
+
+proto_library(
     name = "api_key_proto",
     srcs = ["api_key.proto"],
     deps = [
@@ -345,10 +350,12 @@ proto_library(
     name = "build_event_stream_proto",
     srcs = ["build_event_stream.proto"],
     deps = [
+        ":action_cache_proto",
         ":command_line_proto",
         ":failure_details_proto",
         ":invocation_policy_proto",
         ":package_load_metrics_proto",
+        "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
@@ -648,6 +655,12 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "action_cache_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/action_cache",
+    proto = ":action_cache_proto",
+)
+
+go_proto_library(
     name = "api_key_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/api_key",
     proto = ":api_key_proto",
@@ -799,6 +812,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream",
     proto = ":build_event_stream_proto",
     deps = [
+        ":action_cache_go_proto",
         ":command_line_go_proto",
         ":failure_details_go_proto",
         ":invocation_policy_go_proto",
@@ -1283,6 +1297,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "action_cache_ts_proto",
+    proto = ":action_cache_proto",
+)
+
+ts_proto_library(
     name = "api_key_ts_proto",
     proto = ":api_key_proto",
     deps = [
@@ -1445,6 +1464,8 @@ ts_proto_library(
     name = "build_event_stream_ts_proto",
     proto = ":build_event_stream_proto",
     deps = [
+        ":action_cache_ts_proto",
+        ":any_ts_proto",
         ":command_line_ts_proto",
         ":descriptor_ts_proto",
         ":duration_ts_proto",

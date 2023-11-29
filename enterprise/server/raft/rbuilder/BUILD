@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//proto:raft_go_proto",
         "//server/util/status",
+        "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/prototext",
         "@org_golang_google_protobuf//proto",

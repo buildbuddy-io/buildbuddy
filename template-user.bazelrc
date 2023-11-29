@@ -24,16 +24,6 @@
 ## Uncomment the line below and update the path to point to your local toolchain directory
 #build --override_repository=io_buildbuddy_buildbuddy_toolchain=/ABSOLUTE_PATH_TO_YOUR_TOOLCHAIN_DIRECTORY/buildbuddy-toolchain/
 
-###############################################
-## Remote build from Mac Laptop on Linux RBE ##
-###############################################
-# Use this config with --config=x (cross build)
-#build:x --config=target-linux
-#
-# Show more actions in the terminal output.
-# When execute build remotely, up-to 100 actions could be running in parallel.
-#build --ui_actions_shown=32
-
 ##########
 ## Misc ##
 ##########
@@ -45,3 +35,7 @@
 #
 # Enable Skymeld to speed up build
 #build --config=skymeld
+#
+# Show more actions in the terminal output.
+# When execute build remotely, up-to 100 actions could be running in parallel.
+#build --ui_actions_shown=32

@@ -218,6 +218,7 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 		grpc.ChainStreamInterceptor(otelgrpc.StreamServerInterceptor(), propagateInvocationIDToSpanStreamServerInterceptor()),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+		grpc.RecvBufferPool(grpc.NewSharedBufferPool()),
 		grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes),
 		KeepaliveEnforcementPolicy(),
 	}

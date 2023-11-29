@@ -10,8 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper"
@@ -29,10 +31,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
@@ -82,22 +84,26 @@ type Store struct {
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
 
-	usageUpdates        chan *rfpb.ReplicaUsage
-	usages              *usagetracker.Tracker
-	rangeUsageListeners []RangeUsageListener
+	eventsMu       sync.Mutex
+	events         chan events.Event
+	eventListeners []chan events.Event
+
+	usages *usagetracker.Tracker
 
 	metaRangeMu   sync.Mutex
 	metaRangeData []byte
 
 	fileStorer filestore.Store
 
-	closeLeaderUpdatesChan func()
-	eg                     errgroup.Group
-	egCancel               context.CancelFunc
+	eg       *errgroup.Group
+	egCancel context.CancelFunc
 }
 
 func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
 	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
+
+	nhLog := log.NamedSubLogger(nodeHost.ID())
+	eventsChan := make(chan events.Event, 100)
 	s := &Store{
 		rootDir:       rootDir,
 		grpcAddr:      grpcAddress,
@@ -109,16 +115,18 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		listener:      listener,
 		apiClient:     apiClient,
 		liveness:      nodeLiveness,
-		log:           log.NamedSubLogger(nodeHost.ID()),
+		log:           nhLog,
 
-		rangeMu:             sync.RWMutex{},
-		openRanges:          make(map[uint64]*rfpb.RangeDescriptor),
-		rangeUsageListeners: make([]RangeUsageListener, 0),
+		rangeMu:    sync.RWMutex{},
+		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
 
-		leaseKeeper: leasekeeper.New(nodeHost, nodeLiveness, listener),
+		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, listener, eventsChan),
 		replicas:    sync.Map{},
 
-		usageUpdates:  make(chan *rfpb.ReplicaUsage, 100),
+		eventsMu:       sync.Mutex{},
+		events:         eventsChan,
+		eventListeners: make([]chan events.Event, 0),
+
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
 		fileStorer:    filestore.New(),
@@ -179,7 +187,6 @@ func (s *Store) setMetaRangeBuf(buf []byte) {
 	// Update the value
 	s.metaRangeData = buf
 	s.sender.UpdateRange(new)
-	go s.renewNodeLiveness()
 }
 
 func (s *Store) queryForMetarange() {
@@ -245,36 +252,42 @@ func (s *Store) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (s *Store) handleUsageUpdates(ctx context.Context, usageUpdatesChan <-chan *rfpb.ReplicaUsage) error {
+func (s *Store) handleEvents(ctx context.Context) error {
 	for {
 		select {
-		case usage := <-usageUpdatesChan:
-			if rd := s.lookupRange(usage.GetRangeId()); rd != nil {
-				s.NotifyUsage(usage, rd)
-			} else {
-				log.Warningf("Usage update for unknown range: %d", usage.GetRangeId())
+		case e := <-s.events:
+			s.eventsMu.Lock()
+			for _, ch := range s.eventListeners {
+				select {
+				case ch <- e:
+					continue
+				default:
+					log.Warningf("Dropped event: %s", e)
+				}
 			}
+			s.eventsMu.Unlock()
 		case <-ctx.Done():
 			return nil
 		}
 	}
 }
 
-func (s *Store) NotifyUsage(replicaUsage *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) {
-	for _, rep := range rd.GetReplicas() {
-		ru := proto.Clone(replicaUsage).(*rfpb.ReplicaUsage)
-		ru.Replica = rep
+func (s *Store) AddEventListener() (<-chan events.Event, func()) {
+	s.eventsMu.Lock()
+	defer s.eventsMu.Unlock()
 
-		nhid, _, err := s.registry.ResolveNHID(rep.GetShardId(), rep.GetReplicaId())
-		if err != nil {
-			log.Errorf("Error resolving nhid: %s", err)
-			return
-		}
-		for _, rul := range s.rangeUsageListeners {
-			rul.OnReplicaUsageUpdate(nhid, ru, rd)
+	ch := make(chan events.Event, 10)
+	s.eventListeners = append(s.eventListeners, ch)
+	closeFunc := func() {
+		s.eventsMu.Lock()
+		defer s.eventsMu.Unlock()
+		for i, l := range s.eventListeners {
+			if l == ch {
+				s.eventListeners = append(s.eventListeners[:i], s.eventListeners[:i+1]...)
+			}
 		}
 	}
-	s.updateTags()
+	return ch, closeFunc
 }
 
 func (s *Store) Start() error {
@@ -298,14 +311,24 @@ func (s *Store) Start() error {
 	s.egCancel = cancelFunc
 
 	eg, gctx := errgroup.WithContext(ctx)
+	s.eg = eg
 	eg.Go(func() error {
-		return s.handleUsageUpdates(gctx, s.usageUpdates)
+		return s.handleEvents(gctx)
 	})
+	eg.Go(func() error {
+		return s.acquireNodeLiveness(gctx)
+	})
+
 	s.leaseKeeper.Start()
 	return nil
 }
 
 func (s *Store) Stop(ctx context.Context) error {
+	now := time.Now()
+	defer func() {
+		log.Printf("Store shutdown finished in %s", time.Since(now))
+	}()
+
 	s.leaseKeeper.Stop()
 
 	s.egCancel()
@@ -381,14 +404,18 @@ func (s *Store) updateUsages(r *replica.Replica) error {
 	return nil
 }
 
-type RangeUsageListener interface {
-	OnReplicaUsageUpdate(nhid string, ru *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor)
-	OnRangeLeaseAcquired(rd *rfpb.RangeDescriptor)
-	OnRangeLeaseDropped(rd *rfpb.RangeDescriptor)
-}
+func (s *Store) sendRangeEvent(eventType events.EventType, rd *rfpb.RangeDescriptor) {
+	ev := events.RangeEvent{
+		Type:            eventType,
+		RangeDescriptor: rd,
+	}
 
-func (s *Store) AddRangeUsageListener(rul RangeUsageListener) {
-	s.rangeUsageListeners = append(s.rangeUsageListeners, rul)
+	select {
+	case s.events <- ev:
+		break
+	default:
+		s.log.Warningf("Dropping range event: %+v", ev)
+	}
 }
 
 // We need to implement the Add/RemoveRange interface so that stores opened and
@@ -419,6 +446,8 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
+	s.sendRangeEvent(events.EventRangeAdded, rd)
+
 	if rangelease.ContainsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -431,7 +460,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	}
 
 	s.leaseKeeper.AddRange(rd)
-
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.updateTags()
 	go s.updateUsages(r)
@@ -455,46 +483,17 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
+	s.sendRangeEvent(events.EventRangeRemoved, rd)
 	s.leaseKeeper.RemoveRange(rd)
 	go s.updateTags()
 }
 
-func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*usagetracker.ReplicaSample], error) {
-	r, rd, err := s.replicaForRange(rangeID)
+func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*replica.LRUSample], error) {
+	r, _, err := s.replicaForRange(rangeID)
 	if err != nil {
 		return nil, err
 	}
-	samples, err := r.Sample(ctx, partition, n)
-	if err != nil {
-		return nil, err
-	}
-
-	var rs []*approxlru.Sample[*usagetracker.ReplicaSample]
-	for _, samp := range samples {
-		pebbleKey, err := s.fileStorer.PebbleKey(samp.GetFileRecord())
-		if err != nil {
-			return nil, err
-		}
-		fileMetadataKey, err := pebbleKey.Bytes(filestore.Version2)
-		if err != nil {
-			return nil, err
-		}
-		sampleKey := &usagetracker.ReplicaSample{
-			Header: &rfpb.Header{
-				Replica:    rd.GetReplicas()[0],
-				RangeId:    rd.GetRangeId(),
-				Generation: rd.GetGeneration(),
-			},
-			Key:        string(fileMetadataKey),
-			FileRecord: samp.GetFileRecord(),
-		}
-		rs = append(rs, &approxlru.Sample[*usagetracker.ReplicaSample]{
-			Key:       sampleKey,
-			SizeBytes: samp.GetStoredSizeBytes(),
-			Timestamp: time.UnixMicro(samp.GetLastAccessUsec()),
-		})
-	}
-	return rs, nil
+	return r.Sample(ctx, partition, n)
 }
 
 func (s *Store) replicaForRange(rangeID uint64) (*replica.Replica, *rfpb.RangeDescriptor, error) {
@@ -565,12 +564,11 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 	if s.haveLease(header.GetRangeId()) {
 		return r, nil
 	}
-
 	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
 }
 
 func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMachine {
-	r := replica.New(s.leaser, shardID, replicaID, s, s.usageUpdates)
+	r := replica.New(s.leaser, shardID, replicaID, s, s.events)
 	return r
 }
 
@@ -618,6 +616,7 @@ func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeader
 // Snapshots the cluster *on this node*. This is a local operation and does not
 // create a snapshot on other nodes that are members of this cluster.
 func (s *Store) SnapshotCluster(ctx context.Context, shardID uint64) error {
+	defer canary.Start("SnapshotCluster", 10*time.Second)()
 	if _, ok := ctx.Deadline(); !ok {
 		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
 		defer cancel()
@@ -658,6 +657,7 @@ func (s *Store) ListReplicas(ctx context.Context, req *rfpb.ListReplicasRequest)
 }
 
 func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error {
+	defer canary.Start("AddPeer", 10*time.Second)()
 	rd := s.lookupRange(sourceShardID)
 	if rd == nil {
 		return status.FailedPreconditionErrorf("cluster %d not found on this node", sourceShardID)
@@ -681,6 +681,9 @@ func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) e
 		InitialMember: initialMembers,
 		Join:          false,
 	})
+	if status.IsAlreadyExistsError(err) {
+		return nil
+	}
 	return err
 }
 
@@ -737,7 +740,6 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	//	if _, _, err := s.validatedRange(req.GetHeader()); err != nil {
 	if _, err := s.LeasedRange(req.GetHeader()); err != nil {
 		return nil, err
 	}
@@ -762,7 +764,26 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	batch := req.GetBatch()
 	batch.Header = req.GetHeader()
 
-	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, batch)
+	if batch.Header != nil {
+		r, err := s.LeasedRange(batch.Header)
+		if err != nil {
+			return nil, err
+		}
+		// SHORTCUT: if this is a rangelease read, don't bother
+		// with the raft stuff below.
+		if batch.GetHeader().GetConsistencyMode() == rfpb.Header_RANGELEASE {
+			batchRsp, err := r.BatchLookup(batch)
+			if err != nil {
+				return nil, err
+			}
+			return &rfpb.SyncReadResponse{Batch: batchRsp}, nil
+		}
+	} else {
+		s.log.Warningf("SyncRead without header: %+v", req)
+	}
+
+	shardID := req.GetHeader().GetReplica().GetShardId()
+	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, shardID, batch)
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
 			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, req.GetHeader())
@@ -773,83 +794,6 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	return &rfpb.SyncReadResponse{
 		Batch: batchResponse,
 	}, nil
-}
-
-func (s *Store) localRead(ctx context.Context, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	header := batch.GetHeader()
-
-	_, err := s.LeasedRange(header)
-	if err != nil {
-		return nil, err
-	}
-
-	rsp, err := client.SyncReadLocal(ctx, s.nodeHost, batch)
-	if err != nil {
-		if err == dragonboat.ErrShardNotFound {
-			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, header)
-		}
-		return nil, err
-	}
-	return rsp, nil
-}
-
-func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := s.localRead(ctx, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).FindMissingResponse(0)
-}
-
-func (s *Store) GetMulti(ctx context.Context, req *rfpb.GetMultiRequest) (*rfpb.GetMultiResponse, error) {
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := s.localRead(ctx, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).GetMultiResponse(0)
-}
-
-func (s *Store) Metadata(ctx context.Context, req *rfpb.MetadataRequest) (*rfpb.MetadataResponse, error) {
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := s.localRead(ctx, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).MetadataResponse(0)
-}
-
-func (s *Store) SetMulti(ctx context.Context, req *rfpb.SetMultiRequest) (*rfpb.SetMultiResponse, error) {
-	_, err := s.LeasedRange(req.GetHeader())
-	if err != nil {
-		return nil, err
-	}
-	batch, err := rbuilder.NewBatchBuilder().Add(req).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	batch.Header = req.GetHeader()
-	rsp, err := client.SyncReadLocal(ctx, s.nodeHost, batch)
-	if err != nil {
-		if err == dragonboat.ErrShardNotFound {
-			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, req.GetHeader())
-		}
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).SetMultiResponse(0)
 }
 
 func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
@@ -873,17 +817,31 @@ func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 	}
 }
 
-func (s *Store) renewNodeLiveness() {
-	retrier := retry.DefaultWithContext(context.Background())
-	for retrier.Next() {
-		if s.liveness.Valid() {
-			return
+func (s *Store) acquireNodeLiveness(ctx context.Context) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			s.metaRangeMu.Lock()
+			haveMetaRange := len(s.metaRangeData) > 0
+			s.metaRangeMu.Unlock()
+
+			if !haveMetaRange {
+				continue
+			}
+			if s.liveness.Valid() {
+				return nil
+			}
+			err := s.liveness.Lease()
+			if err == nil {
+				return nil
+			}
+			s.log.Errorf("Error leasing node liveness record: %s", err)
 		}
-		err := s.liveness.Lease()
-		if err == nil {
-			return
-		}
-		s.log.Errorf("Error leasing node liveness record: %s", err)
 	}
 }
 
@@ -917,6 +875,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	return su
 }
 
+// TODO(tylerw): remove this; let usagetracker listen on events channel.
 func (s *Store) RefreshReplicaUsages() []*rfpb.ReplicaUsage {
 	s.rangeMu.RLock()
 	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
@@ -1021,36 +980,83 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	sourceRange = proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
 	shardID := sourceRange.GetReplicas()[0].GetShardId()
 
+	// Reserve new IDs for this cluster.
 	newShardID, newRangeID, err := s.reserveClusterAndRangeID(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("could not reserve IDs for new cluster: %s", err)
 	}
-	simpleSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.SimpleSplitRequest{
-		SourceRangeId: sourceRange.GetRangeId(),
-		NewShardId:    newShardID,
-		NewRangeId:    newRangeID,
+
+	// Find Split Point.
+	fsp := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
+	fspRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, shardID, fsp)
+	if err != nil {
+		return nil, status.InternalErrorf("find split point err: %s", err)
+	}
+	splitPointResponse, err := fspRsp.FindSplitPointResponse(0)
+	if err != nil {
+		return nil, err
+	}
+
+	// Bringup new peers.
+	servers := make(map[string]string)
+	for _, r := range sourceRange.GetReplicas() {
+		nhid, _, err := s.registry.ResolveNHID(r.GetShardId(), r.GetReplicaId())
+		if err != nil {
+			return nil, err
+		}
+		grpcAddr, _, err := s.registry.ResolveGRPC(r.GetShardId(), r.GetReplicaId())
+		if err != nil {
+			return nil, err
+		}
+		servers[nhid] = grpcAddr
+	}
+	bootstrapInfo := bringup.MakeBootstrapInfo(newShardID, 1, servers)
+	if err := bringup.StartShard(ctx, s.apiClient, bootstrapInfo, rbuilder.NewBatchBuilder()); err != nil {
+		return nil, err
+	}
+
+	// Assemble new range descriptor.
+	destRange := proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
+	destRange.Start = splitPointResponse.GetSplitKey()
+	destRange.RangeId = newRangeID
+	destRange.Generation += 1
+	for i, r := range destRange.GetReplicas() {
+		r.ReplicaId = uint64(i + 1)
+		r.ShardId = newShardID
+	}
+	destRangeBuf, err := proto.Marshal(destRange)
+	if err != nil {
+		return nil, err
+	}
+
+	newSourceRange := proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
+	newSourceRange.End = splitPointResponse.GetSplitKey()
+	newSourceRange.Generation += 1
+
+	leftBatch := rbuilder.NewBatchBuilder()
+	if err := addLocalRangeEdits(sourceRange, newSourceRange, leftBatch); err != nil {
+		return nil, err
+	}
+	leftBatch.AddPostCommitHook(&rfpb.SnapshotClusterHook{})
+	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: destRangeBuf,
+		},
 	})
-	rsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, shardID, simpleSplitReq)
-	if err != nil {
-		return nil, status.InternalErrorf("simple split err: %s", err)
-	}
-
-	simpleSplitRsp, err := rsp.SimpleSplitResponse(0)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.updateMetarange(ctx, sourceRange, simpleSplitRsp.GetNewStart(), simpleSplitRsp.GetNewEnd()); err != nil {
-		log.Errorf("metarange update error: %s", err)
+	rightBatch.AddPostCommitHook(&rfpb.SnapshotClusterHook{})
+	metaBatch := rbuilder.NewBatchBuilder()
+	if err := addMetaRangeEdits(sourceRange, newSourceRange, destRange, metaBatch); err != nil {
 		return nil, err
 	}
 
-	if err := s.SnapshotCluster(ctx, shardID); err != nil {
+	txn := rbuilder.NewTxn().AddStatement(shardID, leftBatch)
+	txn = txn.AddStatement(newShardID, rightBatch)
+	txn = txn.AddStatement(1, metaBatch)
+	if err := client.RunTxn(ctx, s.nodeHost, txn); err != nil {
 		return nil, err
 	}
-	return &rfpb.SplitRangeResponse{
-		Start: simpleSplitRsp.GetNewStart(),
-		End:   simpleSplitRsp.GetNewEnd(),
-	}, nil
+	return &rfpb.SplitRangeResponse{}, nil
 }
 
 func (s *Store) getLastAppliedIndex(header *rfpb.Header) (uint64, error) {
@@ -1338,8 +1344,8 @@ func casRangeEdit(key []byte, old, new *rfpb.RangeDescriptor) (*rfpb.CASRequest,
 	}, nil
 }
 
-func addLocalRangeEdits(oldStart, newStart *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	cas, err := casRangeEdit(constants.LocalRangeKey, oldStart, newStart)
+func addLocalRangeEdits(oldRange, newRange *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
+	cas, err := casRangeEdit(constants.LocalRangeKey, oldRange, newRange)
 	if err != nil {
 		return err
 	}
@@ -1347,23 +1353,23 @@ func addLocalRangeEdits(oldStart, newStart *rfpb.RangeDescriptor, b *rbuilder.Ba
 	return nil
 }
 
-func addMetaRangeEdits(oldStart, newStart, newEnd *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	newStartBuf, err := proto.Marshal(newStart)
+func addMetaRangeEdits(oldLeftRange, newLeftRange, newRightRange *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
+	newLeftRangeBuf, err := proto.Marshal(newLeftRange)
 	if err != nil {
 		return err
 	}
-	oldStartBuf, err := proto.Marshal(oldStart)
+	oldLeftRangeBuf, err := proto.Marshal(oldLeftRange)
 	if err != nil {
 		return err
 	}
-	newEndBuf, err := proto.Marshal(newEnd)
+	newRightRangeBuf, err := proto.Marshal(newRightRange)
 	if err != nil {
 		return err
 	}
 
 	// Send a single request that:
-	//  - CAS sets the newStart value to newNewStartBuf
-	//  - inserts the new newEndBuf
+	//  - CAS sets the newLeftRange value to newNewStartBuf
+	//  - inserts the new newRightRangeBuf
 	//
 	// if the CAS fails, check the existing value
 	//  if it's generation is past ours, ignore the error, we're out of date
@@ -1371,14 +1377,14 @@ func addMetaRangeEdits(oldStart, newStart, newEnd *rfpb.RangeDescriptor, b *rbui
 	//  else return an error
 	b.Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newEnd.GetEnd()),
-			Value: newEndBuf,
+			Key:   keys.RangeMetaKey(newRightRange.GetEnd()),
+			Value: newRightRangeBuf,
 		},
-		ExpectedValue: oldStartBuf,
+		ExpectedValue: oldLeftRangeBuf,
 	}).Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newStart.GetEnd()),
-			Value: newStartBuf,
+			Key:   keys.RangeMetaKey(newLeftRange.GetEnd()),
+			Value: newLeftRangeBuf,
 		},
 	})
 	return nil

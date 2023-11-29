@@ -164,20 +164,20 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               className="detail"
               title={`${this.props.model.buildMetrics?.targetMetrics?.targetsConfigured} configured`}>
               <Target className="icon" />
-              {this.props.model.getTargetConfiguredCount()}{" "}
+              {format.formatWithCommas(this.props.model.getTargetConfiguredCount())}{" "}
               {this.props.model.getTargetConfiguredCount() == 1 ? "target" : "targets"}
             </div>
           )}
           {isBazelInvocation && (
             <div title={`${this.props.model.buildMetrics?.actionSummary?.actionsCreated} created`} className="detail">
               <Activity className="icon" />
-              {this.props.model.buildMetrics?.actionSummary?.actionsExecuted} actions
+              {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted)} actions
             </div>
           )}
           {isBazelInvocation && (
             <div className="detail">
               <Box className="icon" />
-              {this.props.model.buildMetrics?.packageMetrics?.packagesLoaded} packages
+              {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
             </div>
           )}
           {isBazelInvocation && (
@@ -185,7 +185,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               className={this.props.model.getFetchURLs().length ? "detail clickable" : "detail"}
               onClick={this.handleFetchesClicked.bind(this)}>
               <DownloadCloud className="icon" />
-              {this.props.model.getFetchURLs().length} fetches
+              {format.formatWithCommas(this.props.model.getFetchURLs().length)} fetches
             </div>
           )}
           {isBazelInvocation && (

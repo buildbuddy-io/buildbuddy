@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
@@ -36,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scim"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/server_notification"
@@ -86,6 +88,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		}
 		log.Warningf("No authentication will be configured: %s", err)
 	}
+	gcplink.Register(env)
 
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())
 	if err != nil {
@@ -263,6 +266,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := clientidentity.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := scim.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

@@ -20,7 +20,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/docker/go-units"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -38,7 +41,7 @@ var (
 	emptyUserMap = testauth.TestUsers()
 )
 
-func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
+func getTestEnv(t testing.TB, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
 	return te
@@ -952,4 +955,59 @@ func TestMetadata(t *testing.T) {
 	require.Equal(t, cacheMetadata.DigestSizeBytes, cacheproxyMetadata.DigestSizeBytes)
 	require.Equal(t, cacheMetadata.LastAccessTimeUsec, cacheproxyMetadata.LastAccessUsec)
 	require.Equal(t, cacheMetadata.LastModifyTimeUsec, cacheproxyMetadata.LastModifyUsec)
+}
+
+func copyChunked(t testing.TB, w interfaces.CommittedWriteCloser, data []byte, chunkSize int64) {
+	for len(data) > 0 {
+		if chunkSize > int64(len(data)) {
+			chunkSize = int64(len(data))
+		}
+		_, err := w.Write(data[:chunkSize])
+		require.NoError(t, err)
+		data = data[chunkSize:]
+	}
+	err := w.Commit()
+	require.NoError(t, err)
+	err = w.Close()
+	require.NoError(t, err)
+}
+
+func BenchmarkWrite(b *testing.B) {
+	flags.Set(b, "app.log_level", "error")
+	log.Configure()
+
+	digestSizes := []int64{
+		128, 16384, 16_777_216,
+	}
+
+	for _, digestSize := range digestSizes {
+		for chunkSize := digestSize / 4; chunkSize <= digestSize; chunkSize += digestSize / 4 {
+			b.Run(fmt.Sprintf("digest%s_chunk%s", units.BytesSize(float64(digestSize)), units.BytesSize(float64(chunkSize))), func(b *testing.B) {
+				b.ReportAllocs()
+				ctx := context.Background()
+				te := getTestEnv(b, emptyUserMap)
+
+				ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+				require.NoError(b, err)
+
+				peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
+				c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+				err = c.StartListening()
+				require.NoError(b, err)
+
+				waitUntilServerIsAlive(peer)
+
+				b.ResetTimer()
+				for n := 0; n < b.N; n++ {
+					b.StopTimer()
+					rn, buf := testdigest.RandomCASResourceBuf(b, digestSize)
+					b.StartTimer()
+					wc, err := c.RemoteWriter(ctx, peer, noHandoff, rn)
+					require.NoError(b, err)
+					copyChunked(b, wc, buf, chunkSize)
+					require.NoError(b, err)
+				}
+			})
+		}
+	}
 }

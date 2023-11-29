@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -1195,7 +1196,7 @@ func TestCompression(t *testing.T) {
 
 	testParams := []struct {
 		desc                  string
-		blobSize              int
+		blobSize              int64
 		averageChunkSizeBytes int
 	}{
 		{
@@ -1204,7 +1205,7 @@ func TestCompression(t *testing.T) {
 		},
 		{
 			desc:     "inline",
-			blobSize: int(maxInlineFileSizeBytes) - 100,
+			blobSize: maxInlineFileSizeBytes - 100,
 		},
 		{
 			desc:                  "chunking_on_multiple_cdc_chunks",
@@ -1218,7 +1219,7 @@ func TestCompression(t *testing.T) {
 		},
 		{
 			desc:                  "chunking_on_single_chunk",
-			blobSize:              averageChunkSizeBytes/4 - 1,
+			blobSize:              int64(averageChunkSizeBytes/4 - 1),
 			averageChunkSizeBytes: averageChunkSizeBytes,
 		},
 	}
@@ -1251,12 +1252,8 @@ func TestCompression(t *testing.T) {
 	}
 
 	for _, tp := range testParams {
-		blob := compressibleBlobOfSize(tp.blobSize)
+		decompressedRN, blob := testdigest.RandomCompressibleCASResourceBuf(t, tp.blobSize, "" /*instanceName*/)
 		compressedBuf := compression.CompressZstd(nil, blob)
-		// Note: Digest is of uncompressed contents
-		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
-		require.NoError(t, err)
-		decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 		compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
 		compressedRN.Compressor = repb.Compressor_ZSTD
 
@@ -1314,7 +1311,7 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 		desc                   string
 		maxInlineFileSizeBytes int
 		averageChunkSizeBytes  int
-		blobSize               int
+		blobSize               int64
 	}{
 		{
 			desc:                  "chunking on single chunk",
@@ -1354,12 +1351,9 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 
 			// Do multiple reads to reuse buffers in bufferpool
 			for i := 0; i < 5; i++ {
-				blob := compressibleBlobOfSize(tc.blobSize)
+				decompressedRN, blob := testdigest.RandomCompressibleCASResourceBuf(t, tc.blobSize, "" /*instanceName*/)
 
-				// Note: Digest is of uncompressed contents
-				d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 				require.NoError(t, err, "i=%d", i)
-				decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 
 				// Write non-compressed data to cache
 				writeResource(t, ctx, pc, decompressedRN, blob)
@@ -1385,7 +1379,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 		desc                   string
 		maxInlineFileSizeBytes int
 		averageChunkSizeBytes  int
-		blobSize               int
+		blobSize               int64
 	}{
 		{
 			desc:                  "chunking on single chunk",
@@ -1426,12 +1420,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			eg := errgroup.Group{}
 			for i := 0; i < 10; i++ {
 				eg.Go(func() error {
-					blob := compressibleBlobOfSize(tc.blobSize)
-
-					// Note: Digest is of uncompressed contents
-					d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
-					require.NoError(t, err)
-					decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+					decompressedRN, blob := testdigest.RandomCompressibleCASResourceBuf(t, tc.blobSize, "" /*instanceName*/)
 
 					// Write non-compressed data to cache
 					writeResource(t, ctx, pc, decompressedRN, blob)
@@ -1461,14 +1450,12 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 	totalSizeCompresedData := 0
 	digestBlobs := make(map[*repb.Digest][]byte, numDigests)
 	for i := 0; i < numDigests; i++ {
-		blob := compressibleBlobOfSize(2000)
+		rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, 2000, "" /*instanceName*/)
 		compressed := compression.CompressZstd(nil, blob)
 		require.Less(t, len(compressed), len(blob))
 		totalSizeCompresedData += len(compressed)
 
-		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
-		require.NoError(t, err)
-		digestBlobs[d] = blob
+		digestBlobs[rn.GetDigest()] = blob
 	}
 
 	minEvictionAge := time.Duration(0)
@@ -1532,7 +1519,7 @@ func TestCompressionOffset(t *testing.T) {
 
 	testCases := []struct {
 		desc                  string
-		blobSize              int
+		blobSize              int64
 		averageChunkSizeBytes int
 		readOffset            int64
 		readLimit             int64
@@ -1545,7 +1532,7 @@ func TestCompressionOffset(t *testing.T) {
 		},
 		{
 			desc:       "inline",
-			blobSize:   maxInlineFileSizeBytes - 100,
+			blobSize:   int64(maxInlineFileSizeBytes - 100),
 			readOffset: 512,
 			readLimit:  10,
 		},
@@ -1565,7 +1552,7 @@ func TestCompressionOffset(t *testing.T) {
 		},
 		{
 			desc:                  "chunking_on_single_chunk",
-			blobSize:              averageChunkSizeBytes/4 - 1,
+			blobSize:              int64(averageChunkSizeBytes/4 - 1),
 			averageChunkSizeBytes: averageChunkSizeBytes,
 			readOffset:            20,
 			readLimit:             10,
@@ -1575,14 +1562,9 @@ func TestCompressionOffset(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			// Make blob big enough to require multiple chunks to compress
-			blob := compressibleBlobOfSize(tc.blobSize)
+			decompressedRN, blob := testdigest.RandomCompressibleCASResourceBuf(t, tc.blobSize, "" /*instanceName*/)
 			compressedBuf := compression.CompressZstd(nil, blob)
 
-			// Note: Digest is of uncompressed contents
-			d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
-			require.NoError(t, err)
-
-			decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 			compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
 			compressedRN.Compressor = repb.Compressor_ZSTD
 
@@ -1611,22 +1593,6 @@ func TestCompressionOffset(t *testing.T) {
 			require.Equal(t, blob[tc.readOffset:tc.readOffset+tc.readLimit], data)
 		})
 	}
-}
-
-func compressibleBlobOfSize(sizeBytes int) []byte {
-	out := make([]byte, 0, sizeBytes)
-	for len(out) < sizeBytes {
-		runEnd := len(out) + 100 + rand.Intn(100)
-		if runEnd > sizeBytes {
-			runEnd = sizeBytes
-		}
-
-		runChar := byte(rand.Intn('Z'-'A'+1)) + 'A'
-		for len(out) < runEnd {
-			out = append(out, runChar)
-		}
-	}
-	return out
 }
 
 func TestFindMissing(t *testing.T) {
@@ -2165,6 +2131,159 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestUnspecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000) // 1MB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+
+	// Confirm that a newly-created pebble database with an unspecified key
+	// version is written at the highest available key version.
+	activeKeyVersion := int64(filestore.UnspecifiedKeyVersion)
+	options.ActiveKeyVersion = &activeKeyVersion
+	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
+	versionMetadata, err := pc.DatabaseVersionMetadata()
+	require.NoError(t, err)
+	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MinVersion)
+	require.Equal(t, int64(filestore.MaxKeyVersion)-1, versionMetadata.MaxVersion)
+
+	require.NoError(t, pc.Stop())
+}
+
+func TestUnspecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000) // 1MB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+
+	// Create a database with version 2 keys
+	{
+		activeKeyVersion := int64(filestore.Version2)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+
+	// Re-open the database with an unspecified version and confirm it sets the
+	// active version to version 2.
+	{
+		activeKeyVersion := int64(filestore.UnspecifiedKeyVersion)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-2"})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+}
+
+func TestSpecifiedActiveKeyVersion_NewDatabase(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000) // 1MB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+
+	// Confirm that a newly-created pebble database with an specified key
+	// version is written at that key version.
+	activeKeyVersion := int64(filestore.Version2)
+	options.ActiveKeyVersion = &activeKeyVersion
+	pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
+	versionMetadata, err := pc.DatabaseVersionMetadata()
+	require.NoError(t, err)
+	require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+	require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+
+	require.NoError(t, pc.Stop())
+}
+
+func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000) // 1MB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+
+	// Create a database with version 2 keys
+	{
+		activeKeyVersion := int64(filestore.Version2)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{"remote-instance-name-1"})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+
+	// Re-open the database with version 3 as the active key version and
+	// confirm the version metadata is [2, 3]. Don't write anything though, to
+	// avoid migrating the data.
+	{
+		activeKeyVersion := int64(filestore.Version3)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+
+	// Re-open the database with version 1 as the active key version and
+	// confirm the version metadata is [1, 3].
+	{
+		activeKeyVersion := int64(filestore.Version1)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+
+	// Finally, open again with version 2 as the active key version.
+	{
+		activeKeyVersion := int64(filestore.Version2)
+		options.ActiveKeyVersion = &activeKeyVersion
+		pc := openPebbleCache(ctx, t, te, options, []string{})
+		versionMetadata, err := pc.DatabaseVersionMetadata()
+		require.NoError(t, err)
+		require.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
+		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
+
+		require.NoError(t, pc.Stop())
+	}
+}
+
+func openPebbleCache(ctx context.Context, t *testing.T, te *testenv.TestEnv, opts *pebble_cache.Options, data []string) *pebble_cache.PebbleCache {
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+	for _, d := range data {
+		r, buf := newResourceAndBuf(t, 1000, rspb.CacheType_CAS, d)
+		require.NoError(t, pc.Set(ctx, r, buf))
+	}
+	return pc
+}
+
 func TestMigrateVersions(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
@@ -2562,7 +2681,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 
 	testParams := []struct {
 		desc                  string
-		blobSize              int
+		blobSize              int64
 		averageChunkSizeBytes int
 	}{
 		{
@@ -2571,7 +2690,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 		},
 		{
 			desc:     "inline",
-			blobSize: int(maxInlineFileSizeBytes) - 100,
+			blobSize: maxInlineFileSizeBytes - 100,
 		},
 		{
 			desc:                  "chunking_on_multiple_cdc_chunks",
@@ -2585,7 +2704,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 		},
 		{
 			desc:                  "chunking_on_single_chunk",
-			blobSize:              averageChunkSizeBytes/4 - 1,
+			blobSize:              int64(averageChunkSizeBytes/4 - 1),
 			averageChunkSizeBytes: averageChunkSizeBytes,
 		},
 	}
@@ -2643,14 +2762,9 @@ func TestEncryptionAndCompression(t *testing.T) {
 		require.NoError(t, err)
 
 		// Make blob big enough to require multiple chunks to compress
-		blob := compressibleBlobOfSize(tp.blobSize)
+		decompressedRN, blob := testdigest.RandomCompressibleCASResourceBuf(t, tp.blobSize, "" /*instanceName*/)
 		compressedBuf := compression.CompressZstd(nil, blob)
 
-		// Note: Digest is of uncompressed contents
-		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
-		require.NoError(t, err)
-
-		decompressedRN := digest.NewResourceName(d, "" /*instanceName*/, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 		compressedRN := proto.Clone(decompressedRN).(*rspb.ResourceName)
 		compressedRN.Compressor = repb.Compressor_ZSTD
 
@@ -3020,12 +3134,12 @@ func TestSampling(t *testing.T) {
 			// kick in. The unencrypted test digest should be evicted.
 			clock.Advance(minEvictionAge - 1*time.Minute)
 
-			for i := 0; i < 30; i++ {
+			for i := 0; i < 60; i++ {
 				if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
 					log.Infof("i = %d: unencrypted test digest is evicted", i)
 					break
 				}
-				time.Sleep(1000 * time.Millisecond)
+				time.Sleep(800 * time.Millisecond)
 			}
 
 			// The unencrypted key should no longer exist.

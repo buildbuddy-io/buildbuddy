@@ -7,6 +7,7 @@ import Button from "../components/button/button";
 import LinkButton from "../components/button/link_button";
 import rpc_service from "../service/rpc_service";
 import Banner from "../components/banner/banner";
+import format from "../format/format";
 
 interface Props {
   model: InvocationModel;
@@ -86,7 +87,7 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
                     return (
                       <div className="raw-event">
                         <div className="raw-event-title" onClick={this.handleEventClicked.bind(this, event.event)}>
-                          [{expanded ? "-" : "+"}] Build event {event.event.sequenceNumber} -{" "}
+                          [{expanded ? "-" : "+"}] Build event {format.formatWithCommas(event.event.sequenceNumber)} -{" "}
                           {Object.keys(event.event.buildEvent ?? {})
                             .filter((key) => key != "id" && key != "children")
                             .join(", ")}

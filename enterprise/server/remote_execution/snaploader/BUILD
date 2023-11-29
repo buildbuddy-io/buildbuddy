@@ -7,9 +7,9 @@ go_library(
     srcs = ["snaploader.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader",
     deps = [
+        "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/snaputil",
-        "//enterprise/server/util/filecacheutil",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -24,6 +24,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_x_sync//errgroup",

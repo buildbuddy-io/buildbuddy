@@ -5,5 +5,8 @@ go_library(
     srcs = ["flag.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/flag",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/flagutil/types/autoflags"],
+    deps = [
+        "//server/util/flagutil/common",
+        "//server/util/flagutil/types/autoflags",
+    ],
 )

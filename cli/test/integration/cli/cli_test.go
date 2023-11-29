@@ -325,7 +325,7 @@ func TestQueryFile(t *testing.T) {
 func TestFix(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 
-	cmd := testcli.Command(t, ws, "fix", "-mode", "diff")
+	cmd := testcli.Command(t, ws, "fix", "--diff")
 	b, err := testcli.CombinedOutput(cmd)
 
 	require.NoError(t, err, "output:\n%s", string(b))

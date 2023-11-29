@@ -3,6 +3,7 @@ package filecache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,12 +14,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -104,12 +106,6 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
-	hostID, err := uuid.GetHostID()
-	if err != nil {
-		log.Warning("Unable to get stable BuildBuddy HostID; filecache will not be reused across process restarts.")
-		hostID = uuid.GetFailsafeHostID()
-	}
-	rootDir = filepath.Join(rootDir, hostID)
 	if deleteContent {
 		log.Infof("Cleaning up filecache %q", rootDir)
 		if err := disk.ForceRemove(context.Background(), rootDir); err != nil {
@@ -142,18 +138,21 @@ func (c *fileCache) TempDir() string {
 	return filepath.Join(c.rootDir, tmpDir)
 }
 
-func (c *fileCache) filecachePath(node *repb.FileNode) string {
-	return filepath.Join(c.rootDir, key(node))
+func (c *fileCache) filecachePath(key string) string {
+	return filepath.Join(c.rootDir, key)
 }
 
-func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (*repb.FileNode, error) {
+func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (string, *repb.FileNode, error) {
 	if !strings.HasPrefix(fullPath, c.rootDir) {
-		return nil, status.FailedPreconditionErrorf("Path %q not in rootDir: %q", fullPath, c.rootDir)
+		return "", nil, status.FailedPreconditionErrorf("Path %q not in rootDir: %q", fullPath, c.rootDir)
 	}
 
-	name := filepath.Base(fullPath)
+	subdirPath := strings.TrimPrefix(fullPath, c.rootDir)
+	groupID, name := filepath.Split(subdirPath)
+	groupID = strings.Trim(groupID, string(filepath.Separator))
+
 	nameParts := strings.Split(name, ".")
-	return &repb.FileNode{
+	return groupID, &repb.FileNode{
 		IsExecutable: len(nameParts) > 1 && nameParts[1] == executableSuffix,
 		Digest: &repb.Digest{
 			Hash:      nameParts[0],
@@ -179,11 +178,11 @@ func (c *fileCache) scanDir() {
 			}
 			return err
 		}
-		node, err := c.nodeFromPathAndSize(path, info.Size())
+		groupID, node, err := c.nodeFromPathAndSize(path, info.Size())
 		if err != nil {
 			return err
 		}
-		return c.AddFile(node, path)
+		return c.addFileToGroup(groupID, node, path)
 	}
 	if err := filepath.WalkDir(c.rootDir, walkFn); err != nil {
 		log.Errorf("Error reading existing filecache dir: %q: %s", c.rootDir, err)
@@ -196,18 +195,28 @@ func (c *fileCache) scanDir() {
 	close(c.dirScanDone)
 }
 
-func key(node *repb.FileNode) string {
+func groupSpecificKey(groupID string, node *repb.FileNode) string {
 	suffix := ""
 	if node.GetIsExecutable() {
 		suffix = "." + executableSuffix
 	}
-	return node.GetDigest().GetHash() + suffix
+	return groupID + "/" + node.GetDigest().GetHash() + suffix
 }
 
-func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) (hit bool) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+func groupIDStringFromContext(ctx context.Context) string {
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return c.GroupID
+	}
+	return interfaces.AuthAnonymousUser
+}
 
+func key(ctx context.Context, node *repb.FileNode) string {
+	groupID := groupIDStringFromContext(ctx)
+	k := groupSpecificKey(groupID, node)
+	return k
+}
+
+func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) (hit bool) {
 	defer func() {
 		label := missMetricLabel
 		if hit {
@@ -218,30 +227,48 @@ func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) (hit bo
 			Inc()
 	}()
 
-	v, ok := c.l.Get(key(node))
+	groupID := groupIDStringFromContext(ctx)
+	key := groupSpecificKey(groupID, node)
+
+	c.lock.Lock()
+	v, ok := c.l.Get(key)
+	c.lock.Unlock()
 	if !ok {
 		return false
 	}
-	if err := fastcopy.FastCopy(v.value, outputPath); err != nil {
-		log.Warningf("Error fast linking file: %s", err.Error())
-		return false
+
+	if groupID == interfaces.AuthAnonymousUser {
+		if err := fastcopy.Clone(v.value, outputPath); err != nil {
+			log.Warningf("Error fast linking file: %s", err.Error())
+			return false
+		}
+	} else {
+		if err := fastcopy.FastCopy(v.value, outputPath); err != nil {
+			log.Warningf("Error fast linking file: %s", err.Error())
+			return false
+		}
 	}
 	return true
 }
 
-func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
+func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existingFilePath string) error {
 	// Remove any existing entry. We can't update in-place because if we
 	// overwrite an existing link with different contents, all pointers
 	// to the old link would suddenly change to point to the new content,
 	// which is not good.
-	k := key(node)
+	k := groupSpecificKey(groupID, node)
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	c.l.Remove(k)
 
-	fp := c.filecachePath(node)
+	fp := c.filecachePath(k)
+	if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
+		return err
+	}
 	if err := fastcopy.FastCopy(existingFilePath, fp); err != nil {
+		log.Errorf("Error fastcopying %q => %q: %s", existingFilePath, fp, err)
 		return status.WrapError(err, "adding file to filecache")
 	}
 	e := &entry{
@@ -257,19 +284,78 @@ func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) error 
 	return nil
 }
 
-func (c *fileCache) ContainsFile(node *repb.FileNode) bool {
+func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
+	groupID := groupIDStringFromContext(ctx)
+	// Locking happens in addFileToGroup().
+	return c.addFileToGroup(groupID, node, existingFilePath)
+}
+
+func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
+	k := key(ctx, node)
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	k := key(node)
 	return c.l.Contains(k)
 }
 
-func (c *fileCache) DeleteFile(node *repb.FileNode) bool {
+func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
+	k := key(ctx, node)
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	return c.l.Remove(key(node))
+	return c.l.Remove(k)
 }
 
 func (c *fileCache) WaitForDirectoryScanToComplete() {
 	<-c.dirScanDone
+}
+
+// Read atomically reads a file from filecache.
+func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, error) {
+	tmp, err := c.tempPath(node.GetDigest().GetHash())
+	if err != nil {
+		return nil, err
+	}
+	if !c.FastLinkFile(ctx, node, tmp) {
+		return nil, status.NotFoundErrorf("digest %s not found", node.GetDigest().GetHash())
+	}
+	defer func() {
+		if err := os.Remove(tmp); err != nil {
+			log.Warningf("Failed to remove filecache temp file: %s", err)
+		}
+	}()
+	return os.ReadFile(tmp)
+}
+
+// Write atomically writes the given bytes to filecache.
+func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
+	tmp, err := c.tempPath(node.GetDigest().GetHash())
+	if err != nil {
+		return 0, err
+	}
+	f, err := os.Create(tmp)
+	if err != nil {
+		return 0, status.InternalErrorf("filecache temp file creation failed: %s", err)
+	}
+	defer func() {
+		if err := os.Remove(tmp); err != nil {
+			log.Warningf("Failed to remove filecache temp file: %s", err)
+		}
+	}()
+	n, err = f.Write(b)
+	if err != nil {
+		return n, err
+	}
+	if err := c.AddFile(ctx, node, tmp); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (c *fileCache) tempPath(name string) (string, error) {
+	randStr, err := random.RandomString(10)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(c.TempDir(), fmt.Sprintf("%s.%s.tmp", name, randStr)), nil
 }

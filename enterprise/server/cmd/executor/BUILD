@@ -34,6 +34,7 @@ go_library(
         "//proto:scheduler_go_proto",
         "//server/config",
         "//server/environment",
+        "//server/hostid",
         "//server/metrics",
         "//server/real_environment",
         "//server/resources",
@@ -51,7 +52,6 @@ go_library(
         "//server/xcode",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//encoding/gzip",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [

@@ -208,12 +208,22 @@ const (
 	// sharing status (Ex. 'disabled' or 'local_sharing_enabled')
 	SnapshotSharingStatus = "snapshot_sharing_status"
 
+	// For chunked snapshot files, describes the initialization source of the
+	// chunk (Ex. `remote_cache` or `local_filecache`)
+	ChunkSource = "chunk_source"
+
 	// For remote execution runners, describes the recycling status (Ex.
 	// 'clean' if the runner is not recycled or 'recycled')
 	RecycledRunnerStatus = "recycled_runner_status"
 
 	// Name of a file.
 	FileName = "file_name"
+)
+
+// Label value constants
+const (
+	HitStatusLabel  = "hit"
+	MissStatusLabel = "miss"
 )
 
 // Other constants
@@ -267,6 +277,16 @@ var (
 		BazelCommand,
 	})
 
+	// #### Examples
+	//
+	// ```promql
+	// # Median invocation duration in the past 5 minutes
+	// histogram_quantile(
+	//   0.5,
+	//   sum(rate(buildbuddy_invocation_duration_usec_bucket[5m])) by (le)
+	// )
+	// ```
+
 	// InvocationDurationUsExported is a simplified version of
 	// InvocationDurationUs which is exported to customers.
 	InvocationDurationUsExported = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -279,16 +299,6 @@ var (
 		InvocationStatusLabel,
 		GroupID,
 	})
-
-	// #### Examples
-	//
-	// ```promql
-	// # Median invocation duration in the past 5 minutes
-	// histogram_quantile(
-	//   0.5,
-	//   sum(rate(buildbuddy_invocation_duration_usec_bucket[5m])) by (le)
-	// )
-	// ```
 
 	BuildEventCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -1006,6 +1016,14 @@ var (
 	//  )
 	// ```
 
+	FirecrackerExecDialDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "exec_dial_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 5*time.Minute, 1.25),
+		Help:      "Time taken to dial the VM guest execution server after it has been started or resumed, in **microseconds**.",
+	})
+
 	COWSnapshotDirtyChunkRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
@@ -1037,6 +1055,26 @@ var (
 		GroupID,
 		FileName,
 		RecycledRunnerStatus,
+	})
+
+	COWSnapshotChunkSourceRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_chunk_source_ratio",
+		Buckets:   prometheus.LinearBuckets(0, .05, 20),
+		Help:      "After a copy-on-write snapshot has been used, the percentage of chunks that were initialized by the given source.",
+	}, []string{
+		GroupID,
+		FileName,
+		RecycledRunnerStatus,
+		ChunkSource,
+	})
+
+	COWSnapshotMemoryMappedBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_memory_mapped_bytes",
+		Help:      "Total number of bytes currently memory-mapped.",
 	})
 
 	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{

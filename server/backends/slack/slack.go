@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -109,7 +108,7 @@ func (w *SlackWebhook) slackPayloadFromInvocation(invocation *inpb.Invocation) *
 	} else {
 		statusText = "❌ Failed"
 	}
-	durationString := fmt.Sprintf("%s", time.Duration(invocation.DurationUsec)*time.Microsecond)
+	durationString := (time.Duration(invocation.DurationUsec) * time.Microsecond).String()
 	a.AddField(Field{
 		Title: "Status",
 		Value: statusText,

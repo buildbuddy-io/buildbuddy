@@ -315,12 +315,19 @@ func MoveFile(src, dest string) error {
 		if os.IsNotExist(err) {
 			return err
 		}
-		return copyViaTmpSibling(src, dest)
+		if err := CopyViaTmpSibling(src, dest); err != nil {
+			return err
+		}
+		// Remove the original file.
+		if err := os.Remove(src); err != nil {
+			return err
+		}
+		return nil
 	}
 	return nil
 }
 
-func copyViaTmpSibling(src, dest string) error {
+func CopyViaTmpSibling(src, dest string) error {
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return err
@@ -348,10 +355,6 @@ func copyViaTmpSibling(src, dest string) error {
 	}
 	// Move the temp file to its final destination.
 	if err := os.Rename(tmpPath, dest); err != nil {
-		return err
-	}
-	// Remove the original file.
-	if err := os.Remove(src); err != nil {
 		return err
 	}
 	return nil

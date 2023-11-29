@@ -3,7 +3,7 @@ slug: introducing-rules_xcodeproj-1-0
 title: "Introducing rules_xcodeproj 1.0"
 description: How we got here and what’s next.
 author: Brentley Jones
-author_title: Developer Evangelist @ BuildBuddy
+author_title: "Developer Evangelist @ BuildBuddy"
 date: 2023-02-06:9:00:00
 author_url: https://brentleyjones.com
 author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
@@ -111,7 +111,7 @@ If you run into any problems with rules_xcodeproj, please check if
 [another issue already exists][issues] and comment on it, and if not,
 [file an issue][file-an-issue]! You can also join us in the `#rules_xcodeproj`
 channel in the [Bazel Slack workspace][bazel-slack], and you can email us at
-<hello@buildbuddy.io> with any questions, comments, or thoughts.
+[hello@buildbuddy.io](mailto:hello@buildbuddy.io) with any questions, comments, or thoughts.
 
 [bazel-slack]: https://slack.bazel.build/
 [file-an-issue]: https://github.com/buildbuddy-io/rules_xcodeproj/issues/new/choose

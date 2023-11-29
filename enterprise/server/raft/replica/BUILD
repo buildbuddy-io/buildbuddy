@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica",
     deps = [
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/events",
         "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
@@ -16,6 +17,8 @@ go_library(
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/metrics",
+        "//server/util/approxlru",
+        "//server/util/canary",
         "//server/util/log",
         "//server/util/qps",
         "//server/util/rangemap",
@@ -51,7 +54,6 @@ go_test(
         "//server/util/status",
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],
 )

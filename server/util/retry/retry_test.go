@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -153,4 +154,43 @@ func TestRetryWithFixedDelay(t *testing.T) {
 		3000 * time.Millisecond,
 	}
 	require.Equal(t, expected, delays)
+}
+
+func TestRetryDoWithExpiredContext(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		// Immediately cancel the context.
+		cancel()
+		_, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (int, error) {
+			return 0, status.InternalError("oh oh")
+		})
+		require.Error(t, err)
+	}
+}
+
+func TestRetryDo(t *testing.T) {
+	ctx := context.Background()
+
+	firstAttempt := true
+	val, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (int, error) {
+		if firstAttempt {
+			firstAttempt = false
+			return 0, status.InternalError("oh no")
+		}
+		return 1, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, val)
+}
+
+func TestRetryDoSkipsNonRetryableErrors(t *testing.T) {
+	ctx := context.Background()
+
+	attempts := 0
+	_, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (int, error) {
+		attempts += 1
+		return 0, retry.NonRetryableError(status.InternalError("oh no"))
+	})
+	require.Error(t, err)
+	require.Equal(t, 1, attempts)
 }

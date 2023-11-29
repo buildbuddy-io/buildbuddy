@@ -211,3 +211,17 @@ func ParseFlagSet(flagset *flag.FlagSet, args []string) error {
 	// expected value.
 	return flagset.Parse(positionalArgs)
 }
+
+// SplitOptionValue returns the arg parts before and after the first '=' if
+// present.
+func SplitOptionValue(arg string) (flag string, value string) {
+	parts := strings.SplitN(arg, "=", 2)
+	switch len(parts) {
+	case 2:
+		return parts[0], parts[1]
+	case 1:
+		return parts[0], ""
+	default:
+		return "", ""
+	}
+}

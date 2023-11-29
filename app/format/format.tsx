@@ -327,7 +327,10 @@ export function formatRole(role: string): string | null {
   return null;
 }
 
-export function formatWithCommas(num: number | Long) {
+export function formatWithCommas(num: number | Long | Number | undefined) {
+  if (num === undefined || num === null) {
+    return "";
+  }
   return (+num).toLocaleString("en-US");
 }
 
@@ -341,6 +344,13 @@ export function colorHash(input: string) {
     num = input.charCodeAt(i) + ((num << 5) - num);
   }
   return `hsl(${(num % 360000) / 1000}, 50%, 80%)`;
+}
+
+export function enumLabel(e: string) {
+  if (!e) {
+    return "";
+  }
+  return e.substring(0, 1).toUpperCase() + e.substring(1).replaceAll("_", " ").toLowerCase();
 }
 
 export default {
@@ -364,4 +374,5 @@ export default {
   formatWithCommas,
   formatDateRange,
   colorHash,
+  enumLabel,
 };

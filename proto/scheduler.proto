@@ -75,6 +75,10 @@ message LeaseTaskResponse {
 
   // A token that may be used to retry the lease if it disconnects.
   string reconnect_token = 4;
+
+  // ID for this lease. The scheduler will ignore any mutation requests if the
+  // provided lease ID doesn't match the current lease ID.
+  string lease_id = 5;
 }
 
 message TaskSize {
@@ -138,6 +142,9 @@ message ReEnqueueTaskRequest {
   string task_id = 1;
   // Optional reason for the re-enqueue (may be visible to end-user).
   string reason = 2;
+  // Lease ID of the claim on the task. The request will be ignored if the
+  // lease ID doesn't match the current lease ID.
+  string lease_id = 3;
 }
 
 message ReEnqueueTaskResponse {

@@ -64,6 +64,10 @@ message Group {
   // Whether to show "Ask Buddy" for the organization.
   bool bot_suggestions_enabled = 15;
 
+  // Whether developers in this organization are allowed to create
+  // organizations.
+  bool developer_org_creation_enabled = 16;
+
   // Default URL from the group. If custom subdomains are enabled this will
   // reference the group subdomain, otherwise it will point to the default
   // BuildBuddy URL.
@@ -222,6 +226,10 @@ message CreateGroupRequest {
 
   // Whether to show "Ask Buddy" for the organization.
   bool bot_suggestions_enabled = 8;
+
+  // Whether developers in this organization are allowed to create
+  // organizations.
+  bool developer_org_creation_enabled = 9;
 }
 
 message CreateGroupResponse {
@@ -280,6 +288,10 @@ message UpdateGroupRequest {
 
   // Whether to show "Ask Buddy" for the organization.
   bool bot_suggestions_enabled = 11;
+
+  // Whether developers in this organization are allowed to create
+  // organizations.
+  bool developer_org_creation_enabled = 12;
 }
 
 message UpdateGroupResponse {

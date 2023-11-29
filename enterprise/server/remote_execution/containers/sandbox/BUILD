@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//server/interfaces",
@@ -31,7 +32,7 @@ go_test(
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
             ":sandbox",
-            "//enterprise/server/remote_execution/container",
+            "//enterprise/server/util/oci",
             "//proto:remote_execution_go_proto",
             "//server/testutil/testfs",
             "@com_github_stretchr_testify//assert",

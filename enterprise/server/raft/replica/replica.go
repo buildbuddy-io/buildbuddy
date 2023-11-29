@@ -16,12 +16,15 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -113,12 +116,15 @@ type Replica struct {
 
 	fileStorer filestore.Store
 
-	quitChan     chan struct{}
-	accesses     chan *accessTimeUpdate
-	usageUpdates chan<- *rfpb.ReplicaUsage
+	quitChan  chan struct{}
+	accesses  chan *accessTimeUpdate
+	broadcast chan<- events.Event
 
 	readQPS        *qps.Counter
 	raftProposeQPS *qps.Counter
+
+	lockedKeys map[string][]byte       // key => txid
+	prepared   map[string]pebble.Batch // string(txid) => prepared batch.
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -193,14 +199,6 @@ func (sm *Replica) replicaLocalKey(key []byte) []byte {
 	return replicaSpecificKey(key, sm.ShardID, sm.ReplicaID)
 }
 
-func (sm *Replica) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
-	pebbleKey, err := sm.fileStorer.PebbleKey(fr)
-	if err != nil {
-		return nil, err
-	}
-	return pebbleKey.Bytes(filestore.Version5)
-}
-
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
@@ -243,15 +241,21 @@ func rdString(rd *rfpb.RangeDescriptor) string {
 	return fmt.Sprintf("Range(%d) [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 }
 
-func (sm *Replica) notifyListenersOfUsage(usage *rfpb.ReplicaUsage) {
-	if sm.usageUpdates == nil {
+func (sm *Replica) notifyListenersOfUsage(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsage) {
+	if sm.broadcast == nil {
 		return
 	}
+	up := events.RangeUsageEvent{
+		Type:            events.EventRangeUsageUpdated,
+		RangeDescriptor: rd,
+		ReplicaUsage:    usage,
+	}
+
 	select {
-	case sm.usageUpdates <- usage:
+	case sm.broadcast <- up:
 		break
 	default:
-		sm.log.Warningf("dropped usage update")
+		sm.log.Warningf("dropped usage update: %+v", up)
 	}
 }
 
@@ -281,7 +285,9 @@ func (sm *Replica) setRange(key, val []byte) error {
 	sm.store.AddRange(sm.rangeDescriptor, sm)
 
 	if usage, err := sm.Usage(); err == nil {
-		sm.notifyListenersOfUsage(usage)
+		sm.notifyListenersOfUsage(sm.rangeDescriptor, usage)
+	} else {
+		log.Errorf("Error computing usage upon opening replica: %s", err)
 	}
 	return nil
 }
@@ -463,6 +469,202 @@ type ReplicaWriter interface {
 	NewSnapshot() *pebble.Snapshot
 }
 
+// checkLocks checks if any keys in this batch are already locked and returns an
+// error if so: the txn must abort.
+func (sm *Replica) checkLocks(wb pebble.Batch, txid []byte) error {
+	batchReader := wb.Reader()
+	for len(batchReader) > 0 {
+		_, ukey, _, _ := batchReader.Next()
+		keyString := string(ukey)
+		lockingTxid, ok := sm.lockedKeys[keyString]
+		if ok && !bytes.Equal(txid, lockingTxid) {
+			return status.UnavailableErrorf("Conflict on key %q", keyString)
+		}
+	}
+	return nil
+}
+
+// acquireLocks locks all of the keys in batch `wb`.
+func (sm *Replica) acquireLocks(wb pebble.Batch, txid []byte) {
+	batchReader := wb.Reader()
+	for len(batchReader) > 0 {
+		_, ukey, _, _ := batchReader.Next()
+		keyString := string(ukey)
+		sm.lockedKeys[keyString] = txid
+	}
+}
+
+// releaseLocks unlocks all the keys in the batch `wb` locked with `txid`. If a
+// row in `wb` is locked by another transaction, an error is logged and the row
+// lock is left unchanged.
+func (sm *Replica) releaseLocks(wb pebble.Batch, txid []byte) {
+	// Unlock all the keys in this batch.
+	batchReader := wb.Reader()
+	for len(batchReader) > 0 {
+		_, ukey, _, _ := batchReader.Next()
+		keyString := string(ukey)
+		lockingTxid, ok := sm.lockedKeys[keyString]
+		if !ok || !bytes.Equal(txid, lockingTxid) {
+			log.Errorf("Key %q was not locked by %q; should have been", keyString, string(txid))
+		} else {
+			delete(sm.lockedKeys, keyString)
+		}
+	}
+}
+
+func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	txn := db.NewIndexedBatch()
+
+	// Ensure the txn is cleaned up if not prepared succesfully.
+	loaded := false
+	defer func() {
+		if !loaded {
+			txn.Close()
+		}
+	}()
+
+	// Run all the propose commands against the txn batch.
+	batchRsp := &rfpb.BatchCmdResponse{}
+	for _, union := range batchReq.GetUnion() {
+		rsp := sm.handlePropose(txn, union)
+		if err := gstatus.FromProto(rsp.GetStatus()).Err(); err != nil {
+			return nil, err
+		}
+		batchRsp.Union = append(batchRsp.Union, rsp)
+	}
+
+	// Check if there are any locked keys conflicting.
+	if err := sm.checkLocks(txn, txid); err != nil {
+		return nil, err
+	}
+
+	// If not, acquire locks for all changed keys.
+	sm.acquireLocks(txn, txid)
+
+	// Save the txn batch in memory.
+	sm.prepared[string(txid)] = txn
+	loaded = true
+	return batchRsp, nil
+}
+
+// PrepareTransaction processes all of the writes from `req` into a new batch
+// and attempts to lock all keys modified in the batch. If any error is
+// encountered, an error is returned; otherwise the batch is retained in memory
+// so it can be applied or reverted via CommitTransaction or
+// RollbackTransaction.
+func (sm *Replica) PrepareTransaction(wb pebble.Batch, txid []byte, batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	// Save the txn batch in memory and acquire locks.
+	batchRsp, err := sm.loadTxnIntoMemory(txid, batchReq)
+	if err != nil {
+		return nil, err
+	}
+
+	buf, err := proto.Marshal(batchReq)
+	if err != nil {
+		return nil, err
+	}
+
+	// Save the txn batch on-disk in case of a restart.
+	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
+	wb.Set(sm.replicaLocalKey(txKey), buf, nil /*ignored write options*/)
+
+	return batchRsp, nil
+}
+
+func (sm *Replica) CommitTransaction(txid []byte) error {
+	txn, ok := sm.prepared[string(txid)]
+	if !ok {
+		return status.NotFoundErrorf("Transaction %q not found", string(txid))
+	}
+	defer txn.Close()
+	delete(sm.prepared, string(txid))
+
+	sm.releaseLocks(txn, txid)
+
+	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
+	txKey = sm.replicaLocalKey(txKey)
+
+	// Lookup our request so that post-commit hooks can be applied, then
+	// delete it from the batch, since the txn is being committed.
+	batchReq := &rfpb.BatchCmdRequest{}
+	iter := txn.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+	if err := pebble.LookupProto(iter, txKey, batchReq); err != nil {
+		return err
+	}
+	txn.Delete(txKey, nil /*ignore write options*/)
+
+	if err := txn.Commit(pebble.Sync); err != nil {
+		return err
+	}
+	sm.updateInMemoryState(txn)
+
+	// Run post commit hooks, if any are set.
+	for _, hook := range batchReq.GetPostCommitHooks() {
+		sm.handlePostCommit(hook)
+	}
+	return nil
+}
+
+func (sm *Replica) RollbackTransaction(txid []byte) error {
+	txn, ok := sm.prepared[string(txid)]
+	if !ok {
+		return status.NotFoundErrorf("Transaction %q not found", string(txid))
+	}
+	defer txn.Close()
+	delete(sm.prepared, string(txid))
+
+	sm.releaseLocks(txn, txid)
+
+	txn.Reset()
+	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
+	txn.Delete(sm.replicaLocalKey(txKey), nil /*ignore write options*/)
+
+	if err := txn.Commit(pebble.Sync); err != nil {
+		return err
+	}
+	sm.updateInMemoryState(txn)
+	return nil
+}
+
+func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
+	iterOpts := &pebble.IterOptions{
+		LowerBound: constants.LocalPrefix,
+		UpperBound: constants.MetaRangePrefix,
+	}
+	iter := db.NewIter(iterOpts)
+	defer iter.Close()
+
+	suffix := sm.replicaSuffix()
+	for iter.First(); iter.Valid(); iter.Next() {
+		if !bytes.HasSuffix(iter.Key(), suffix) {
+			// Skip keys that are not ours.
+			continue
+		}
+		if !bytes.HasPrefix(iter.Key(), constants.LocalTransactionPrefix) {
+			// Skip non-inflight-transactions
+			continue
+		}
+
+		key := iter.Key()[:len(iter.Key())-len(suffix)]
+		txid := key[len(constants.LocalTransactionPrefix):]
+
+		batchReq := &rfpb.BatchCmdRequest{}
+		if err := proto.Unmarshal(iter.Value(), batchReq); err != nil {
+			return err
+		}
+		if _, err := sm.loadTxnIntoMemory(txid, batchReq); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (sm *Replica) loadPartitionMetadata(db ReplicaReader) error {
 	pms, err := sm.getPartitionMetadatas(db)
 	if err != nil {
@@ -490,6 +692,9 @@ func (sm *Replica) loadRangeDescriptor(db ReplicaReader) {
 func (sm *Replica) loadReplicaState(db ReplicaReader) error {
 	sm.loadRangeDescriptor(db)
 	if err := sm.loadPartitionMetadata(db); err != nil {
+		return err
+	}
+	if err := sm.loadInflightTransactions(db); err != nil {
 		return err
 	}
 	lastStoredIndex, err := sm.getLastAppliedIndex(db)
@@ -528,95 +733,6 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	}
 	go sm.processAccessTimeUpdates()
 	return sm.lastAppliedIndex, nil
-}
-
-func (sm *Replica) fileDelete(wb pebble.Batch, req *rfpb.FileDeleteRequest) (*rfpb.FileDeleteResponse, error) {
-	iter := wb.NewIter(nil /*default iter options*/)
-	defer iter.Close()
-
-	fileMetadataKey, err := sm.fileMetadataKey(req.GetFileRecord())
-	if err != nil {
-		return nil, err
-	}
-
-	found := iter.SeekGE(fileMetadataKey)
-	if !found || !bytes.Equal(fileMetadataKey, iter.Key()) {
-		return nil, status.NotFoundErrorf("file data for %v was not found in replica", req.GetFileRecord())
-	}
-	fileMetadata := &rfpb.FileMetadata{}
-	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return nil, err
-	}
-	if err := sm.fileStorer.DeleteStoredFile(context.TODO(), sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
-		return nil, err
-	}
-	if err := wb.Delete(fileMetadataKey, nil /*ignored write options*/); err != nil {
-		return nil, err
-	}
-	if err := sm.updateAndFlushPartitionMetadatas(wb, fileMetadataKey, iter.Value(), fileMetadata, fileRecordDelete); err != nil {
-		return nil, err
-	}
-	return &rfpb.FileDeleteResponse{}, nil
-}
-
-func (sm *Replica) deleteRange(wb pebble.Batch, req *rfpb.DeleteRangeRequest) (*rfpb.DeleteRangeResponse, error) {
-	iter := wb.NewIter(&pebble.IterOptions{
-		LowerBound: keys.Key(req.GetStart()),
-		UpperBound: keys.Key(req.GetEnd()),
-	})
-	defer iter.Close()
-
-	for iter.First(); iter.Valid(); iter.Next() {
-		if err := wb.Delete(iter.Key(), nil /*ignored write options*/); err != nil {
-			return nil, err
-		}
-		fileMetadata := &rfpb.FileMetadata{}
-		if err := proto.Unmarshal(iter.Value(), fileMetadata); err == nil {
-			if err := sm.updatePartitionMetadata(wb, iter.Key(), iter.Value(), fileMetadata, fileRecordDelete); err != nil {
-				return nil, err
-			}
-			if fileMetadata.GetFileRecord() != nil {
-				if err := sm.fileStorer.DeleteStoredFile(context.TODO(), sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
-					log.Errorf("Error deleting stored file: %s", err)
-				}
-			}
-		}
-	}
-	if err := sm.flushPartitionMetadatas(wb); err != nil {
-		return nil, err
-	}
-
-	return &rfpb.DeleteRangeResponse{}, nil
-}
-
-func (sm *Replica) fileUpdateMetadata(wb pebble.Batch, req *rfpb.FileUpdateMetadataRequest) (*rfpb.FileUpdateMetadataResponse, error) {
-	iter := wb.NewIter(nil /*default iter options*/)
-	defer iter.Close()
-
-	fileMetadataKey, err := sm.fileMetadataKey(req.GetFileRecord())
-	if err != nil {
-		return nil, err
-	}
-
-	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
-	if err != nil {
-		return nil, err
-	}
-
-	if req.GetLastAccessUsec() != 0 {
-		fileMetadata.LastAccessUsec = req.GetLastAccessUsec()
-	}
-
-	d, err := proto.Marshal(fileMetadata)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := wb.Set(fileMetadataKey, d, nil); err != nil {
-		return nil, err
-	}
-
-	return &rfpb.FileUpdateMetadataResponse{}, nil
 }
 
 func (sm *Replica) directWrite(wb pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
@@ -700,7 +816,7 @@ func absInt(i int64) int64 {
 	return i
 }
 
-func (sm *Replica) findSplitPoint() ([]byte, error) {
+func (sm *Replica) findSplitPoint() (*rfpb.FindSplitPointResponse, error) {
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
 	sm.rangeMu.Unlock()
@@ -772,7 +888,9 @@ func (sm *Replica) findSplitPoint() ([]byte, error) {
 		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, start split size: %d", totalSize, leftSize)
 	}
 	sm.log.Debugf("Cluster %d found split @ %q start rows: %d, size: %d, end rows: %d, size: %d", sm.ShardID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
-	return splitKey, nil
+	return &rfpb.FindSplitPointResponse{
+		SplitKey: splitKey,
+	}, nil
 }
 
 func canSplitKeys(startKey, endKey []byte) bool {
@@ -820,10 +938,11 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*rfpb.SimpleSplitResponse, error) {
 	ctx := context.Background()
 
-	splitKey, err := sm.findSplitPoint()
+	splitRsp, err := sm.findSplitPoint()
 	if err != nil {
 		return nil, err
 	}
+	splitKey := splitRsp.GetSplitKey()
 
 	sm.rangeMu.RLock()
 	rd := sm.rangeDescriptor
@@ -925,103 +1044,117 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 	return rsp, nil
 }
 
-func (sm *Replica) findMissing(db ReplicaReader, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	rsp := &rfpb.FindMissingResponse{
-		Missing: make([]*rfpb.FileRecord, 0),
-	}
-
-	for _, fileRecord := range req.GetFileRecords() {
-		fileMetadataKey, err := sm.fileMetadataKey(fileRecord)
-		if err != nil {
-			return nil, err
-		}
-		if !iter.SeekGE(fileMetadataKey) || !bytes.Equal(iter.Key(), fileMetadataKey) {
-			rsp.Missing = append(rsp.Missing, fileRecord)
-		}
-	}
-	return rsp, nil
-}
-
-func (sm *Replica) getMulti(db ReplicaReader, req *rfpb.GetMultiRequest) (*rfpb.GetMultiResponse, error) {
-	rsp := &rfpb.GetMultiResponse{
-		Responses: make([]*rfpb.GetMultiResponse_Response, len(req.GetFileRecords())),
-	}
-
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	for i, fileRecord := range req.GetFileRecords() {
-		fr := fileRecord
-
-		fileMetadataKey, err := sm.fileMetadataKey(fileRecord)
-		if err != nil {
-			return nil, err
-		}
-
-		r := new(rfpb.GetMultiResponse_Response)
-		rsp.Responses[i] = r
-		r.FileRecord = fr
-
-		fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
-		if err != nil {
-			r.Status = gstatus.Convert(err).Proto()
-		} else {
-			r.FileMetadata = fileMetadata
-			sm.sendAccessTimeUpdate(fileMetadata)
-		}
-	}
-
-	return rsp, nil
-}
-
-func (sm *Replica) setMulti(wb pebble.Batch, req *rfpb.SetMultiRequest) (*rfpb.SetMultiResponse, error) {
-	rsp := &rfpb.SetMultiResponse{
-		Responses: make([]*rfpb.SetMultiResponse_Response, len(req.GetFileMetadatas())),
-	}
-
-	for i, fileMetadata := range req.GetFileMetadatas() {
-		fm := fileMetadata
-
-		r := new(rfpb.SetMultiResponse_Response)
-		rsp.Responses[i] = r
-		r.FileRecord = fm.GetFileRecord()
-
-		fileMetadataKey, err := sm.fileMetadataKey(fm.GetFileRecord())
-		if err != nil {
-			return nil, err
-		}
-		buf, err := proto.Marshal(fm)
-		if err != nil {
-			return nil, err
-		}
-		if err := sm.rangeCheckedSet(wb, fileMetadataKey, buf); err != nil {
-			r.Status = gstatus.Convert(err).Proto()
-		}
-	}
-
-	return rsp, nil
-}
-
-func (sm *Replica) metadata(db ReplicaReader, req *rfpb.MetadataRequest) (*rfpb.MetadataResponse, error) {
-	fileMetadataKey, err := sm.fileMetadataKey(req.GetFileRecord())
-	if err != nil {
+func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetResponse, error) {
+	// Check that key is a valid PebbleKey.
+	var pk filestore.PebbleKey
+	if _, err := pk.FromBytes(req.GetKey()); err != nil {
 		return nil, err
 	}
 
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	fileMetadata, err := lookupFileMetadata(iter, req.GetKey())
 	if err != nil {
 		return nil, err
 	}
-	fileMetadata.StorageMetadata = nil // nil out because this is not a read call.
-	return &rfpb.MetadataResponse{
+	sm.sendAccessTimeUpdate(req.GetKey(), fileMetadata)
+	return &rfpb.GetResponse{
 		FileMetadata: fileMetadata,
 	}, nil
+}
+
+func (sm *Replica) set(wb pebble.Batch, req *rfpb.SetRequest) (*rfpb.SetResponse, error) {
+	// Check that key is a valid PebbleKey.
+	var pk filestore.PebbleKey
+	if _, err := pk.FromBytes(req.GetKey()); err != nil {
+		return nil, err
+	}
+	// Check that value is non-nil.
+	if req.GetFileMetadata() == nil {
+		return nil, status.InvalidArgumentErrorf("Invalid (nil) FileMetadata for key %q", req.GetKey())
+	}
+	buf, err := proto.Marshal(req.GetFileMetadata())
+	if err != nil {
+		return nil, err
+	}
+	if err := sm.rangeCheckedSet(wb, req.GetKey(), buf); err != nil {
+		return nil, err
+	}
+	return &rfpb.SetResponse{}, nil
+}
+
+func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.DeleteResponse, error) {
+	// Check that key is a valid PebbleKey.
+	var pk filestore.PebbleKey
+	if _, err := pk.FromBytes(req.GetKey()); err != nil {
+		return nil, err
+	}
+	iter := wb.NewIter(nil /*default iter options*/)
+	defer iter.Close()
+
+	fileMetadata, err := lookupFileMetadata(iter, req.GetKey())
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return &rfpb.DeleteResponse{}, nil
+		}
+		return nil, err
+	}
+	if req.GetMatchAtime() != 0 && req.GetMatchAtime() != fileMetadata.GetLastAccessUsec() {
+		return nil, status.FailedPreconditionError("Atime mismatch")
+	}
+	if err := sm.fileStorer.DeleteStoredFile(context.TODO(), sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
+		return nil, err
+	}
+	if err := wb.Delete(req.GetKey(), nil /*ignored write options*/); err != nil {
+		return nil, err
+	}
+	if err := sm.updateAndFlushPartitionMetadatas(wb, req.GetKey(), iter.Value(), fileMetadata, fileRecordDelete); err != nil {
+		return nil, err
+	}
+	return &rfpb.DeleteResponse{}, nil
+}
+
+func (sm *Replica) find(db ReplicaReader, req *rfpb.FindRequest) (*rfpb.FindResponse, error) {
+	// Check that key is a valid PebbleKey.
+	var pk filestore.PebbleKey
+	if _, err := pk.FromBytes(req.GetKey()); err != nil {
+		return nil, err
+	}
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	present := iter.SeekGE(req.GetKey()) && bytes.Equal(iter.Key(), req.GetKey())
+	return &rfpb.FindResponse{
+		Present: present,
+	}, nil
+}
+
+func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*rfpb.UpdateAtimeResponse, error) {
+	// Check that key is a valid PebbleKey.
+	var pk filestore.PebbleKey
+	if _, err := pk.FromBytes(req.GetKey()); err != nil {
+		return nil, err
+	}
+
+	buf, err := sm.lookup(wb, req.GetKey())
+	if err != nil {
+		return nil, err
+	}
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
+		return nil, err
+	}
+	fileMetadata.LastAccessUsec = req.GetAccessTimeUsec()
+	buf, err = proto.Marshal(fileMetadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := sm.rangeCheckedSet(wb, req.GetKey(), buf); err != nil {
+		return nil, err
+	}
+	return &rfpb.UpdateAtimeResponse{}, nil
 }
 
 func statusProto(err error) *statuspb.Status {
@@ -1029,7 +1162,19 @@ func statusProto(err error) *statuspb.Status {
 	return s.Proto()
 }
 
-func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion, rsp *rfpb.ResponseUnion) {
+func (sm *Replica) handlePostCommit(hook *rfpb.PostCommitHook) {
+	if snap := hook.GetSnapshotCluster(); snap != nil {
+		go func() {
+			if err := sm.store.SnapshotCluster(context.TODO(), sm.ShardID); err != nil {
+				sm.log.Errorf("Error processing post-commit hook: %s", err)
+			}
+		}()
+	}
+}
+
+func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
+	rsp := &rfpb.ResponseUnion{}
+
 	switch value := req.Value.(type) {
 	case *rfpb.RequestUnion_DirectWrite:
 		r, err := sm.directWrite(wb, value.DirectWrite)
@@ -1049,39 +1194,46 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion, rsp *r
 			Cas: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_FileDelete:
-		r, err := sm.fileDelete(wb, value.FileDelete)
-		rsp.Value = &rfpb.ResponseUnion_FileDelete{
-			FileDelete: r,
-		}
-		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_DeleteRange:
-		r, err := sm.deleteRange(wb, value.DeleteRange)
-		rsp.Value = &rfpb.ResponseUnion_DeleteRange{
-			DeleteRange: r,
-		}
-		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_FileUpdateMetadata:
-		r, err := sm.fileUpdateMetadata(wb, value.FileUpdateMetadata)
-		rsp.Value = &rfpb.ResponseUnion_FileUpdateMetadata{
-			FileUpdateMetadata: r,
-		}
-		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_SimpleSplit:
 		r, err := sm.simpleSplit(wb, value.SimpleSplit)
 		rsp.Value = &rfpb.ResponseUnion_SimpleSplit{
 			SimpleSplit: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_SetMulti:
-		r, err := sm.setMulti(wb, value.SetMulti)
-		rsp.Value = &rfpb.ResponseUnion_SetMulti{
-			SetMulti: r,
+	case *rfpb.RequestUnion_Set:
+		r, err := sm.set(wb, value.Set)
+		rsp.Value = &rfpb.ResponseUnion_Set{
+			Set: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_Delete:
+		r, err := sm.delete(wb, value.Delete)
+		rsp.Value = &rfpb.ResponseUnion_Delete{
+			Delete: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_UpdateAtime:
+		r, err := sm.updateAtime(wb, value.UpdateAtime)
+		rsp.Value = &rfpb.ResponseUnion_UpdateAtime{
+			UpdateAtime: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_FindSplitPoint:
+		r, err := sm.findSplitPoint()
+		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
+			FindSplitPoint: r,
 		}
 		rsp.Status = statusProto(err)
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}
+
+	if req.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
+		// Log Update() errors (except Compare-And-Set) errors.
+		sm.log.Errorf("error processing update %+v: %s", req, rsp.GetStatus())
+	}
+
+	return rsp
 }
 
 func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
@@ -1100,22 +1252,16 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 			Scan: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_FindMissing:
-		r, err := sm.findMissing(db, value.FindMissing)
-		rsp.Value = &rfpb.ResponseUnion_FindMissing{
-			FindMissing: r,
+	case *rfpb.RequestUnion_Get:
+		r, err := sm.get(db, value.Get)
+		rsp.Value = &rfpb.ResponseUnion_Get{
+			Get: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_GetMulti:
-		r, err := sm.getMulti(db, value.GetMulti)
-		rsp.Value = &rfpb.ResponseUnion_GetMulti{
-			GetMulti: r,
-		}
-		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_Metadata:
-		r, err := sm.metadata(db, value.Metadata)
-		rsp.Value = &rfpb.ResponseUnion_Metadata{
-			Metadata: r,
+	case *rfpb.RequestUnion_Find:
+		r, err := sm.find(db, value.Find)
+		rsp.Value = &rfpb.ResponseUnion_Find{
+			Find: r,
 		}
 		rsp.Status = statusProto(err)
 	default:
@@ -1132,28 +1278,18 @@ func lookupFileMetadata(iter pebble.Iterator, fileMetadataKey []byte) (*rfpb.Fil
 	return fileMetadata, nil
 }
 
-// validateRange checks that the requested range generation matches our range
-// generation. We perform the generation check both in the store and the replica
-// because of a race condition during splits. The replica may receive concurrent
-// read/write & split requests that may pass the store generation check and
-// enter the replica code. The split will hold the split lock and modify the
-// internal state with the new range information. goroutines that are unblocked
-// after the split lock is released need to verify that the generation has not
-// changed under them.
-func (sm *Replica) validateRange(header *rfpb.Header) error {
-	sm.rangeMu.RLock()
-	defer sm.rangeMu.RUnlock()
-	if sm.rangeDescriptor == nil {
+func validateHeaderAgainstRange(rangeDescriptor *rfpb.RangeDescriptor, header *rfpb.Header) error {
+	if rangeDescriptor == nil {
 		return status.FailedPreconditionError("range descriptor is not set")
 	}
-	if sm.rangeDescriptor.GetGeneration() != header.GetGeneration() {
-		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, sm.rangeDescriptor.GetGeneration(), header.GetGeneration())
+	if rangeDescriptor.GetGeneration() != header.GetGeneration() {
+		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rangeDescriptor.GetGeneration(), header.GetGeneration())
 	}
 	return nil
 }
 
 type accessTimeUpdate struct {
-	record *rfpb.FileRecord
+	key []byte
 }
 
 func olderThanThreshold(t time.Time, threshold time.Duration) bool {
@@ -1205,9 +1341,9 @@ func (sm *Replica) processAccessTimeUpdates() {
 	for {
 		select {
 		case accessTimeUpdate := <-sm.accesses:
-			batch.Add(&rfpb.FileUpdateMetadataRequest{
-				FileRecord:     accessTimeUpdate.record,
-				LastAccessUsec: time.Now().UnixMicro(),
+			batch.Add(&rfpb.UpdateAtimeRequest{
+				Key:            accessTimeUpdate.key,
+				AccessTimeUsec: time.Now().UnixMicro(),
 			})
 			if batch.Size() >= *atimeWriteBatchSize {
 				flush()
@@ -1229,13 +1365,15 @@ func (sm *Replica) processAccessTimeUpdates() {
 	}
 }
 
-func (sm *Replica) sendAccessTimeUpdate(fileMetadata *rfpb.FileMetadata) {
+func (sm *Replica) sendAccessTimeUpdate(key []byte, fileMetadata *rfpb.FileMetadata) {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 	if !olderThanThreshold(atime, *atimeUpdateThreshold) {
 		return
 	}
 
-	up := &accessTimeUpdate{fileMetadata.GetFileRecord()}
+	up := &accessTimeUpdate{
+		key: key,
+	}
 
 	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
 	// so in that case just do a regular channel send. Otherwise; use a non-
@@ -1262,7 +1400,24 @@ func randomKey(partitionID string, n int) []byte {
 	return []byte(randKey)
 }
 
-func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rfpb.FileMetadata, error) {
+type LRUSample struct {
+	Bytes   []byte
+	RangeID uint64
+}
+
+func (s *LRUSample) ID() string {
+	return string(s.Bytes)
+}
+
+func (s *LRUSample) String() string {
+	return fmt.Sprintf("Range-%d %q", s.RangeID, s.ID())
+}
+
+func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*approxlru.Sample[*LRUSample], error) {
+	sm.rangeMu.RLock()
+	rangeID := sm.rangeDescriptor.GetRangeId()
+	sm.rangeMu.RUnlock()
+
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1276,27 +1431,56 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rf
 	})
 	defer iter.Close()
 
-	samples := make([]*rfpb.FileMetadata, 0, n)
-	// generate k random digests and for each:
-	//   - seek to the next valid key, and return that file record
-	for i := 0; i < n*2; i++ {
-		randKey := randomKey(partitionID, 64)
-		valid := iter.SeekGE(randKey)
-		if !valid {
-			continue
-		}
-		fileMetadata := &rfpb.FileMetadata{}
-		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			return nil, err
-		}
+	samples := make([]*approxlru.Sample[*LRUSample], 0, n)
+	var key filestore.PebbleKey
 
-		samples = append(samples, fileMetadata)
-		if len(samples) == n {
-			break
+	// Generate k random samples. Attempt this up to k*2 times, to account
+	// for the fact that some files sampled may be younger than
+	// minEvictionAge. We try hard!
+	for i := 0; i < n*2; i++ {
+		if !iter.Valid() {
+			// This should only happen once per call to sample(), or
+			// occasionally more if we've exhausted the iter.
+			randKey := randomKey(partitionID, 64)
+			iter.SeekGE(randKey)
+		}
+		for ; iter.Valid(); iter.Next() {
+			if _, err := key.FromBytes(iter.Key()); err != nil {
+				return nil, err
+			}
+
+			fileMetadata := &rfpb.FileMetadata{}
+			if err = proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+				return nil, err
+			}
+
+			keyBytes := make([]byte, len(iter.Key()))
+			copy(keyBytes, iter.Key())
+			sample := &approxlru.Sample[*LRUSample]{
+				Key: &LRUSample{
+					Bytes:   keyBytes,
+					RangeID: rangeID,
+				},
+				SizeBytes: fileMetadata.GetStoredSizeBytes(),
+				Timestamp: time.UnixMicro(fileMetadata.GetLastAccessUsec()),
+			}
+			samples = append(samples, sample)
+			if len(samples) == n {
+				return samples, nil
+			}
 		}
 	}
 
 	return samples, nil
+}
+
+func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
+	// Update the local in-memory range descriptor iff this batch modified
+	// it.
+	localRangeKey := sm.replicaLocalKey(constants.LocalRangeKey)
+	if buf, ok := batchContainsKey(wb, localRangeKey); ok {
+		sm.setRange(localRangeKey, buf)
+	}
 }
 
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
@@ -1344,71 +1528,114 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rf
 //
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
+func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Entry, error) {
+	// This method should return errors if something truly fails in an
+	// unrecoverable way (proto marshal/unmarshal, pebble batch commit) but
+	// otherwise normal request handling errors are encoded in the response
+	// and the statemachine keeps progressing.
+	batchReq := &rfpb.BatchCmdRequest{}
+	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
+		return entry, err
+	}
+
+	sm.rangeMu.RLock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.RUnlock()
+
+	// Increment QPS counters.
+	rangeID := rd.GetRangeId()
+	metrics.RaftProposals.With(prometheus.Labels{
+		metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+	}).Inc()
+	sm.raftProposeQPS.Inc()
+
+	// All of the data in a BatchCmdRequest is handled in a single pebble
+	// write batch. That means that if any part of a batch update fails,
+	// none of the batch will be applied.
+	wb := db.NewIndexedBatch()
+	defer wb.Close()
+
+	batchRsp := &rfpb.BatchCmdResponse{}
+	var headerErr error
+	if header := batchReq.GetHeader(); header != nil {
+		headerErr = validateHeaderAgainstRange(rd, header)
+		batchRsp.Status = statusProto(headerErr)
+	}
+	if headerErr == nil {
+		if txid := batchReq.GetTransactionId(); len(txid) > 0 {
+			// Check that request is not malformed.
+			if len(batchReq.GetUnion()) > 0 && batchReq.GetFinalizeOperation() != rfpb.FinalizeOperation_UNKNOWN_OPERATION {
+				batchRsp.Status = statusProto(status.InvalidArgumentErrorf("Batch must be empty when finalizing transaction"))
+			}
+
+			switch batchReq.GetFinalizeOperation() {
+			case rfpb.FinalizeOperation_COMMIT:
+				if err := sm.CommitTransaction(txid); err != nil {
+					batchRsp.Status = statusProto(err)
+				}
+			case rfpb.FinalizeOperation_ROLLBACK:
+				if err := sm.RollbackTransaction(txid); err != nil {
+					batchRsp.Status = statusProto(err)
+				}
+			default:
+				txnRsp, err := sm.PrepareTransaction(wb, txid, batchReq)
+				if err != nil {
+					batchRsp.Status = statusProto(err)
+				} else {
+					batchRsp = txnRsp
+				}
+			}
+		} else {
+			for _, union := range batchReq.GetUnion() {
+				batchRsp.Union = append(batchRsp.Union, sm.handlePropose(wb, union))
+			}
+			if err := sm.checkLocks(wb, nil); err != nil {
+				batchRsp.Status = statusProto(err)
+				wb.Reset() // don't commit if conflict.
+			}
+		}
+	}
+	rspBuf, err := proto.Marshal(batchRsp)
+	if err != nil {
+		return entry, err
+	}
+	entry.Result = dbsm.Result{
+		Value: uint64(len(entry.Cmd)),
+		Data:  rspBuf,
+	}
+	appliedIndex := uint64ToBytes(entry.Index)
+	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
+	if err := wb.Commit(pebble.NoSync); err != nil {
+		return entry, err
+	} else {
+		// If the batch commit was successful, update the replica's in-
+		// memory state.
+		sm.updateInMemoryState(wb)
+		sm.lastAppliedIndex = entry.Index
+
+		// Run post commit hooks, if any are set.
+		for _, hook := range batchReq.GetPostCommitHooks() {
+			sm.handlePostCommit(hook)
+		}
+	}
+
+	return entry, nil
+}
+
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
+	defer canary.Start("replica.Update", time.Second)()
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	for idx, entry := range entries {
-		// Insert all of the data in the batch.
-		batchReq := &rfpb.BatchCmdRequest{}
-		batchRsp := &rfpb.BatchCmdResponse{}
-		if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
-			return nil, err
-		}
-
-		wb := db.NewIndexedBatch()
-		defer wb.Close()
-
-		var headerErr error
-		if batchReq.GetHeader() != nil {
-			headerErr = sm.validateRange(batchReq.GetHeader())
-			batchRsp.Status = statusProto(headerErr)
-		}
-
-		if headerErr == nil {
-			for _, union := range batchReq.GetUnion() {
-				rsp := &rfpb.ResponseUnion{}
-				sm.handlePropose(wb, union, rsp)
-				if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
-					sm.log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
-				}
-				batchRsp.Union = append(batchRsp.Union, rsp)
-			}
-		}
-
-		rspBuf, err := proto.Marshal(batchRsp)
+	for i, entry := range entries {
+		e, err := sm.singleUpdate(db, entry)
 		if err != nil {
 			return nil, err
 		}
-		rangeID := batchReq.GetHeader().GetRangeId()
-
-		entries[idx].Result = dbsm.Result{
-			Value: uint64(len(entries[idx].Cmd)),
-			Data:  rspBuf,
-		}
-		metrics.RaftProposals.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
-		}).Inc()
-		sm.raftProposeQPS.Inc()
-		appliedIndex := uint64ToBytes(entry.Index)
-		if err := sm.rangeCheckedSet(wb, constants.LastAppliedIndexKey, appliedIndex); err != nil {
-			return nil, err
-		}
-
-		if err := wb.Commit(pebble.NoSync); err != nil {
-			return nil, err
-		}
-
-		// Update the local in-memory range descriptor iff this batch
-		// modified it and the batch was successfully committed.
-		localRangeKey := sm.replicaLocalKey(constants.LocalRangeKey)
-		if buf, ok := batchContainsKey(wb, localRangeKey); ok {
-			sm.setRange(localRangeKey, buf)
-		}
-		sm.lastAppliedIndex = entry.Index
+		entries[i] = e
 	}
 
 	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > entriesBetweenUsageChecks {
@@ -1416,7 +1643,10 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		if err != nil {
 			sm.log.Warningf("Error computing usage: %s", err)
 		} else {
-			sm.notifyListenersOfUsage(usage)
+			sm.rangeMu.RLock()
+			rd := sm.rangeDescriptor
+			sm.rangeMu.RUnlock()
+			sm.notifyListenersOfUsage(rd, usage)
 		}
 		sm.lastUsageCheckIndex = sm.lastAppliedIndex
 	}
@@ -1442,26 +1672,45 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 // The Lookup method is a read only method, it should never change the state
 // of IOnDiskStateMachine.
 func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
+	defer canary.Start("replica.Lookup", time.Second)()
 	reqBuf, ok := key.([]byte)
 	if !ok {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
 	}
 
+	batchReq := &rfpb.BatchCmdRequest{}
+	if err := proto.Unmarshal(reqBuf, batchReq); err != nil {
+		return nil, err
+	}
+
+	batchRsp, err := sm.BatchLookup(batchReq)
+	if err != nil {
+		return nil, err
+	}
+
+	rspBuf, err := proto.Marshal(batchRsp)
+	if err != nil {
+		return nil, err
+	}
+	return rspBuf, nil
+}
+
+func (sm *Replica) BatchLookup(batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	batchReq := &rfpb.BatchCmdRequest{}
-	if err := proto.Unmarshal(reqBuf, batchReq); err != nil {
-		return nil, err
-	}
 	batchRsp := &rfpb.BatchCmdResponse{}
 
 	var headerErr error
-	if batchReq.GetHeader() != nil {
-		headerErr = sm.validateRange(batchReq.GetHeader())
+	if header := batchReq.GetHeader(); header != nil {
+		sm.rangeMu.RLock()
+		rd := sm.rangeDescriptor
+		sm.rangeMu.RUnlock()
+
+		headerErr = validateHeaderAgainstRange(rd, header)
 		batchRsp.Status = statusProto(headerErr)
 	}
 
@@ -1474,11 +1723,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		}
 	}
 
-	rspBuf, err := proto.Marshal(batchRsp)
-	if err != nil {
-		return nil, err
-	}
-	return rspBuf, nil
+	return batchRsp, nil
 }
 
 // Sync synchronizes all in-core state of the state machine to persisted
@@ -1774,11 +2019,15 @@ func (sm *Replica) Close() error {
 	if sm.store != nil && rangeDescriptor != nil {
 		sm.store.RemoveRange(rangeDescriptor, sm)
 	}
+
+	sm.readQPS.Stop()
+	sm.raftProposeQPS.Stop()
+
 	return nil
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, usageUpdates chan<- *rfpb.ReplicaUsage) *Replica {
+func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
 	return &Replica{
 		ShardID:             shardID,
 		ReplicaID:           replicaID,
@@ -1789,7 +2038,10 @@ func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, usageUpd
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", shardID, replicaID)),
 		fileStorer:          filestore.New(),
 		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
-		readQPS:             qps.NewCounter(),
-		raftProposeQPS:      qps.NewCounter(),
+		readQPS:             qps.NewCounter(1 * time.Minute),
+		raftProposeQPS:      qps.NewCounter(1 * time.Minute),
+		broadcast:           broadcast,
+		lockedKeys:          make(map[string][]byte),
+		prepared:            make(map[string]pebble.Batch),
 	}
 }

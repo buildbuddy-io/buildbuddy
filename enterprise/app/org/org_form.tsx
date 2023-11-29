@@ -235,6 +235,19 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             <span>Enable "Ask Buddy" button</span>
           </label>
         )}
+        {this.showAdvancedSettings() && (
+          <label className="form-row input-label">
+            <input
+              autoComplete="off"
+              onFocus={this.onFocus.bind(this)}
+              onChange={this.onChange.bind(this)}
+              type="checkbox"
+              name="developerOrgCreationEnabled"
+              checked={request.developerOrgCreationEnabled}
+            />
+            <span>Allow Developers in this organization to create new organizations</span>
+          </label>
+        )}
         {this.showAdvancedSettings() && capabilities.config.workflowsEnabled && (
           <label className="form-row input-label">
             <input

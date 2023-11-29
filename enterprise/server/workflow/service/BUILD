@@ -7,7 +7,6 @@ go_library(
     srcs = ["service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service",
     deps = [
-        "//enterprise/server/remote_execution/config",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/webhooks/webhook_data",
@@ -27,6 +26,7 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/remote_execution/config",
         "//server/tables",
         "//server/util/alert",
         "//server/util/authutil",

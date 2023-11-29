@@ -12,6 +12,7 @@ go_library(
         "//proto:buildbuddy_service_go_proto",
         "//proto:encryption_go_proto",
         "//proto:execution_stats_go_proto",
+        "//proto:gcp_go_proto",
         "//proto:github_go_proto",
         "//proto:group_go_proto",
         "//proto:health_go_proto",

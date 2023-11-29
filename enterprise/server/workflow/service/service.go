@@ -54,12 +54,12 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	githubapi "github.com/google/go-github/v43/github"
 	guuid "github.com/google/uuid"
@@ -580,6 +580,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 				return
 			}
 			invocationID = invocationUUID.String()
+			ctx = log.EnrichContext(ctx, log.InvocationIDKey, invocationID)
 
 			// The workflow execution is trusted since we're authenticated as a member of
 			// the BuildBuddy org that owns the workflow.
@@ -590,6 +591,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 				log.CtxWarning(ctx, statusErr.Error())
 				return
 			}
+			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
 			if req.GetAsync() {
 				return
 			}
@@ -799,6 +801,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 		}
 	}()
 
+	log.CtxInfof(ctx, "Waiting for workflow invocation to be created")
 	stage := repb.ExecutionStage_UNKNOWN
 	for {
 		select {
@@ -811,7 +814,6 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 		case <-time.After(1 * time.Second):
 			break
 		}
-		log.Infof("Polling invocation status...")
 		if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {
 			_, err := indb.LookupInvocation(ctx, invocationID)
 			if err == nil {
@@ -1105,7 +1107,14 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if err != nil {
 		return nil, err
 	}
-	envVars := []*repb.Command_EnvironmentVariable{}
+	envVars := []*repb.Command_EnvironmentVariable{
+		{Name: "CI", Value: "true"},
+		{Name: "GIT_COMMIT", Value: wd.SHA},
+		{Name: "GIT_BRANCH", Value: wd.PushedBranch},
+		{Name: "GIT_BASE_BRANCH", Value: wd.TargetBranch},
+		{Name: "GIT_REPO_DEFAULT_BRANCH", Value: wd.TargetRepoDefaultBranch},
+		{Name: "GIT_PR_NUMBER", Value: fmt.Sprintf("%d", wd.PullRequestNumber)},
+	}
 	containerImage := ""
 	isolationType := ""
 	os := strings.ToLower(workflowAction.OS)
@@ -1201,7 +1210,14 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			},
 		},
 	}
-	if !isSharedFirecrackerWorkflow {
+	if isSharedFirecrackerWorkflow {
+		// For firecracker workflows, init dockerd in case local actions or
+		// setup scripts want to use it.
+		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+			Name:  "init-dockerd",
+			Value: "true",
+		})
+	} else {
 		// For docker/podman workflows, run with `--init` so that the bazel
 		// process can be reaped.
 		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{

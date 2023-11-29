@@ -4,6 +4,8 @@ export type PickerModel = {
   title: string;
   placeholder: string;
   options: string[];
+  emptyState?: any;
+  footer?: any;
 };
 
 export class PickerService {

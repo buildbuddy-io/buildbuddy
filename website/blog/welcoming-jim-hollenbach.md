@@ -2,7 +2,7 @@
 slug: welcoming-jim-hollenbach
 title: Welcoming Jim Hollenbach
 author: Siggi Simonarson
-author_title: Co-founder @ BuildBuddy
+author_title: "Co-founder @ BuildBuddy"
 date: 2022-12-06 12:00:00
 author_url: https://www.linkedin.com/in/jim-hollenbach-5a49659/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4

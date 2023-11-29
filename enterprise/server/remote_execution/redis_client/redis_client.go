@@ -11,9 +11,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 )
 
 var redisPubSubPoolSize = flag.Int("remote_execution.redis_pubsub_pool_size", 10_000, "Maximum number of connections used for waiting for execution updates.")

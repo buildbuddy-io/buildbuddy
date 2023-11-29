@@ -62,13 +62,13 @@ export default class InvocationExecutionTable extends React.Component<Props> {
                   <div>
                     File download duration: {format.durationUsec(downloadDuration(execution))} (
                     {format.bytes(execution.executedActionMetadata?.ioStats?.fileDownloadSizeBytes ?? 0)} across{" "}
-                    {execution?.executedActionMetadata?.ioStats?.fileDownloadCount} files)
+                    {format.formatWithCommas(execution?.executedActionMetadata?.ioStats?.fileDownloadCount)} files)
                   </div>
                   <div>Execution duration: {format.durationUsec(executionDuration(execution))}</div>
                   <div>
                     File upload duration: {format.durationUsec(uploadDuration(execution))} (
                     {format.bytes(execution.executedActionMetadata?.ioStats?.fileUploadSizeBytes ?? 0)} across{" "}
-                    {execution?.executedActionMetadata?.ioStats?.fileUploadCount} files)
+                    {format.formatWithCommas(execution?.executedActionMetadata?.ioStats?.fileUploadCount)} files)
                   </div>
                 </div>
                 {execution.status?.code !== 0 && execution.status?.message && (

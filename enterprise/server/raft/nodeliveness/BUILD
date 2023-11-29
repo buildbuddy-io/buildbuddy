@@ -26,6 +26,7 @@ go_test(
     deps = [
         ":nodeliveness",
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
         "//server/util/status",
         "@com_github_stretchr_testify//require",

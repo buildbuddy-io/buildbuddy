@@ -44,6 +44,7 @@ ts_library(
         "//app/components/link",
         "//app/format",
         "//app/router",
+        "//app/util:exit_codes",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",

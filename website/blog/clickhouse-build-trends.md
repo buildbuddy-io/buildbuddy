@@ -2,7 +2,7 @@
 slug: clickhouse-build-trends
 title: "How We Use ClickHouse to Analyze Trends Across Millions of Builds"
 author: Lulu Zhang
-author_title: Engineer @ BuildBuddy
+author_title: "Engineer @ BuildBuddy"
 date: 2022-11-22:12:00:00
 author_url: https://www.linkedin.com/in/luluzhang66
 author_image_url: https://avatars.githubusercontent.com/u/3977083?v=4
@@ -79,4 +79,4 @@ optimizations.
 
 We would love to hear your feedback about what stats and graphs you are interested in seeing.
 Join our [Slack channel](https://community.buildbuddy.io) or email us at
-<hello@buildbuddy.io> with any questions, comments, or thoughts.
+[hello@buildbuddy.io](mailto:hello@buildbuddy.io) with any questions, comments, or thoughts.

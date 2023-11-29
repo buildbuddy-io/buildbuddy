@@ -44,6 +44,11 @@ type directorySizeCounter struct {
 	// of the directory.
 	totalSize map[string]int64
 
+	// The total number of child nodes (both directories and files) inside of the
+	// directory with the specified digest.  The directory itself is not counted,
+	// so empty directories have a value of zero.
+	childCount map[string]int64
+
 	digestFunction repb.DigestFunction_Value
 }
 
@@ -53,6 +58,7 @@ func NewDirectorySizeCounter(digestFunction repb.DigestFunction_Value) *director
 		pendingChildren: make(map[string]map[string]struct{}),
 		pendingSize:     make(map[string]int64),
 		totalSize:       make(map[string]int64),
+		childCount:      make(map[string]int64),
 		digestFunction:  digestFunction,
 	}
 }
@@ -64,7 +70,7 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 	}
 	digestString := digest.String(dirDigest)
 	if _, ok := dsc.totalSize[digestString]; ok {
-		// We're already in the process of computing this directory's size.
+		// We already finished computing this directory's size.
 		return nil
 	}
 	if _, ok := dsc.pendingSize[digestString]; ok {
@@ -74,8 +80,11 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 
 	// We haven't seen this digest before, so start tracking it.
 	dsc.pendingSize[digestString] = dirDigest.GetSizeBytes()
+	dsc.childCount[digestString] = 0
+
 	for _, f := range dir.GetFiles() {
 		dsc.pendingSize[digestString] += f.GetDigest().GetSizeBytes()
+		dsc.childCount[digestString] = dsc.childCount[digestString] + 1
 	}
 	// If this directory has no subdirectories, we're already done.
 	if len(dir.GetDirectories()) == 0 {
@@ -86,11 +95,13 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 	dsc.pendingChildren[digestString] = make(map[string]struct{})
 
 	for _, d := range dir.GetDirectories() {
+		dsc.childCount[digestString] = dsc.childCount[digestString] + 1
 		subdirDigest := digest.String(d.GetDigest())
 		// If we've already found the child directory's size, count it
 		// and move on.
 		if subDirTotal, ok := dsc.totalSize[subdirDigest]; ok {
 			dsc.pendingSize[digestString] += subDirTotal
+			dsc.childCount[digestString] += dsc.childCount[subdirDigest]
 			continue
 		}
 
@@ -126,6 +137,7 @@ func (dsc *directorySizeCounter) finish(digest string) {
 	// instead of being a straight set.  Whatever.
 	for _, parent := range dsc.parents[digest] {
 		dsc.pendingSize[parent] += total
+		dsc.childCount[parent] += dsc.childCount[digest]
 	}
 	for _, parent := range dsc.parents[digest] {
 		delete(dsc.pendingChildren[parent], digest)
@@ -144,7 +156,7 @@ func (dsc *directorySizeCounter) finish(digest string) {
 func (dsc *directorySizeCounter) GetOutput() []*capb.DigestWithTotalSize {
 	out := make([]*capb.DigestWithTotalSize, 0, len(dsc.totalSize))
 	for k, v := range dsc.totalSize {
-		out = append(out, &capb.DigestWithTotalSize{Digest: k, TotalSize: v})
+		out = append(out, &capb.DigestWithTotalSize{Digest: k, TotalSize: v, ChildCount: dsc.childCount[k]})
 	}
 	return out
 }

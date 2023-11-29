@@ -10,13 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service/config"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/invocation_stat_service/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -56,28 +57,27 @@ func NewInvocationStatService(env environment.Env, dbh interfaces.DBHandle, olap
 	}
 }
 
-func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggType inpb.AggType) string {
+func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggType inpb.AggType) (string, error) {
 	switch aggType {
 	case inpb.AggType_USER_AGGREGATION_TYPE:
-		return "user"
+		return "user", nil
 	case inpb.AggType_HOSTNAME_AGGREGATION_TYPE:
-		return "host"
+		return "host", nil
 	case inpb.AggType_GROUP_ID_AGGREGATION_TYPE:
-		return "group_id"
+		return "group_id", nil
 	case inpb.AggType_REPO_URL_AGGREGATION_TYPE:
-		return "repo_url"
+		return "repo_url", nil
 	case inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE:
-		return "commit_sha"
+		return "commit_sha", nil
 	case inpb.AggType_DATE_AGGREGATION_TYPE:
 		// TODO(jdhollen): Nobody is using this and we should probably just remove it.
-		return i.dbh.DateFromUsecTimestamp("updated_at_usec", reqCtx.GetTimezoneOffsetMinutes())
+		return i.dbh.DateFromUsecTimestamp("updated_at_usec", reqCtx.GetTimezoneOffsetMinutes()), nil
 	case inpb.AggType_BRANCH_AGGREGATION_TYPE:
-		return "branch_name"
+		return "branch_name", nil
 	case inpb.AggType_PATTERN_AGGREGATION_TYPE:
-		return "pattern"
+		return "pattern", nil
 	default:
-		log.Errorf("Unknown or unsupported aggregation column type: %s", aggType)
-		return ""
+		return "", status.InvalidArgumentErrorf("Unknown or unsupported aggregation column type: %s", aggType)
 	}
 }
 
@@ -587,6 +587,15 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrend
 		return nil, err
 	}
 
+	// Normalize repo URL before we use it in any queries.
+	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
+		repoURL, err := git.NormalizeRepoURL(repoURL)
+		if err == nil {
+			req = proto.Clone(req).(*stpb.GetTrendRequest)
+			req.Query.RepoUrl = repoURL.String()
+		}
+	}
+
 	rsp := &stpb.GetTrendResponse{}
 
 	timeSettings := i.getTrendTimeSettings(req.GetQuery(), req.GetRequestContext().GetTimezone())
@@ -1006,7 +1015,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		limit = l
 	}
 
-	aggColumn := i.getAggColumn(req.GetRequestContext(), req.AggregationType)
+	aggColumn, err := i.getAggColumn(req.GetRequestContext(), req.AggregationType)
+	if err != nil {
+		return nil, err
+	}
 	q := query_builder.NewQuery(i.GetInvocationStatBaseQuery(aggColumn))
 
 	if req.AggregationType != inpb.AggType_DATE_AGGREGATION_TYPE {
@@ -1087,7 +1099,6 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	qStr, qArgs := q.Build()
 	var rows *sql.Rows
-	var err error
 	if i.isOLAPDBEnabled() {
 		rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
 	} else {

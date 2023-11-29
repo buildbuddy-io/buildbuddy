@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -53,10 +54,9 @@ func TestRunHelloWorld(t *testing.T) {
 
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 
-	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
-	result := podman.Run(ctx, cmd, "/work", container.PullCredentials{})
+	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+	result := podman.Run(ctx, cmd, "/work", oci.Credentials{})
 
 	require.NoError(t, result.Error)
 	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
@@ -83,9 +83,8 @@ func TestHelloWorldExec(t *testing.T) {
 
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 
-	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
 
 	err := podman.Create(ctx, "/work")
 	require.NoError(t, err)
@@ -125,9 +124,8 @@ func TestExecStdio(t *testing.T) {
 
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 
-	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
 
 	err := podman.Create(ctx, "/work")
 	require.NoError(t, err)
@@ -164,18 +162,17 @@ func TestRun_Timeout(t *testing.T) {
 	}}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 
 	c := podman.NewPodmanCommandContainer(
-		env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+		env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
 	// Ensure the image is cached
-	err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, "docker.io/library/busybox")
+	err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 
-	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -210,12 +207,11 @@ func TestExec_Timeout(t *testing.T) {
 	}}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 
 	c := podman.NewPodmanCommandContainer(
-		env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+		env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
 	// Ensure the image is cached
-	err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, "docker.io/library/busybox")
+	err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
 	require.NoError(t, err)
 	err = c.Create(ctx, workDir)
 	require.NoError(t, err)
@@ -223,7 +219,7 @@ func TestExec_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 
-	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -251,7 +247,6 @@ func TestIsImageCached(t *testing.T) {
 	defer cancel()
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 
 	tests := []struct {
 		desc    string
@@ -274,9 +269,9 @@ func TestIsImageCached(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		podman := podman.NewPodmanCommandContainer(env, cacheAuth, tc.image, rootDir, &podman.PodmanOptions{})
+		podman := podman.NewPodmanCommandContainer(env, tc.image, rootDir, &podman.PodmanOptions{})
 		if tc.want {
-			err := podman.PullImage(ctx, container.PullCredentials{})
+			err := podman.PullImage(ctx, oci.Credentials{})
 			require.NoError(t, err)
 		}
 		actual, err := podman.IsImageCached(ctx)
@@ -297,7 +292,6 @@ func TestForceRoot(t *testing.T) {
 	defer cancel()
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	image := "gcr.io/flame-public/test-nonroot:test-enterprise-v1.5.4"
 
 	cmd := &repb.Command{
@@ -321,8 +315,8 @@ func TestForceRoot(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		podman := podman.NewPodmanCommandContainer(env, cacheAuth, image, rootDir, &podman.PodmanOptions{ForceRoot: tc.forceRoot})
-		result := podman.Run(ctx, cmd, "/work", container.PullCredentials{})
+		podman := podman.NewPodmanCommandContainer(env, image, rootDir, &podman.PodmanOptions{ForceRoot: tc.forceRoot})
+		result := podman.Run(ctx, cmd, "/work", oci.Credentials{})
 		uid, err := strconv.Atoi(strings.TrimSpace(string(result.Stdout)))
 		assert.NoError(t, err)
 		assert.Equal(t, tc.wantUID, uid)
@@ -340,7 +334,6 @@ func TestUser(t *testing.T) {
 	defer cancel()
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	image := "docker.io/library/busybox"
 
 	tests := []struct {
@@ -364,10 +357,10 @@ func TestUser(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			pm := podman.NewPodmanCommandContainer(env, cacheAuth, image, rootDir, &podman.PodmanOptions{User: tc.user})
+			pm := podman.NewPodmanCommandContainer(env, image, rootDir, &podman.PodmanOptions{User: tc.user})
 			result := pm.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-u", "-n"},
-			}, workDir, container.PullCredentials{})
+			}, workDir, oci.Credentials{})
 			u := strings.TrimSpace(string(result.Stdout))
 			if tc.wantUser != "" {
 				assert.Equal(t, tc.wantUser, u)
@@ -380,7 +373,7 @@ func TestUser(t *testing.T) {
 
 			result = pm.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-g", "-n"},
-			}, workDir, container.PullCredentials{})
+			}, workDir, oci.Credentials{})
 			g := strings.TrimSpace(string(result.Stdout))
 			if tc.wantGroup != "" {
 				assert.Equal(t, tc.wantGroup, g)
@@ -407,10 +400,9 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+	c := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
 
-	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
 }
@@ -441,12 +433,11 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/ubuntu:20.04", rootDir, &podman.PodmanOptions{
+	c := podman.NewPodmanCommandContainer(env, "docker.io/library/ubuntu:20.04", rootDir, &podman.PodmanOptions{
 		EnableStats: true,
 	})
 
-	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 	require.NoError(t, res.Error)
 	t.Log(string(res.Stderr))
 	require.Equal(t, res.ExitCode, 0)

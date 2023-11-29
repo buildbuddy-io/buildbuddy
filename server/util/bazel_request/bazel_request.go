@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
@@ -21,7 +20,11 @@ var (
 	bazelVersionPattern = regexp.MustCompile(`^(?P<major>\d+)\.(?P<minor>\d+)(\.(?P<patch>\d+))?(?P<suffix>.*)?`)
 )
 
-const RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
+const (
+	RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
+
+	requestMetadataContextKey = "bazel_request.request_metadata"
+)
 
 func GetRequestMetadataBytes(ctx context.Context) []byte {
 	vals := metadata.ValueFromIncomingContext(ctx, RequestMetadataKey)
@@ -31,7 +34,20 @@ func GetRequestMetadataBytes(ctx context.Context) []byte {
 	return []byte(vals[0])
 }
 
+func ParseRequestMetadataOnce(ctx context.Context) context.Context {
+	rmd := GetRequestMetadata(ctx)
+
+	// Set the parsed request metadata on the context. By doing this once
+	// and saving the value on the context, we save a bunch of work when
+	// many downstream callers read values from the request metadata.
+	return context.WithValue(ctx, requestMetadataContextKey, rmd)
+}
+
 func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
+	if rmd, ok := ctx.Value(requestMetadataContextKey).(*repb.RequestMetadata); ok {
+		return rmd
+	}
+
 	b := GetRequestMetadataBytes(ctx)
 	if len(b) == 0 {
 		return nil
@@ -44,10 +60,11 @@ func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
 }
 
 func GetInvocationID(ctx context.Context) string {
-	const toolInvocationIDFieldNumber = 3
-	b := GetRequestMetadataBytes(ctx)
-	value, _ := pbwireutil.ConsumeFirstString(b, toolInvocationIDFieldNumber)
-	return value
+	return GetRequestMetadata(ctx).GetToolInvocationId()
+}
+
+func GetToolName(ctx context.Context) string {
+	return GetRequestMetadata(ctx).GetToolDetails().GetToolName()
 }
 
 type Version struct {

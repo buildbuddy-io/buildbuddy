@@ -16,8 +16,6 @@ import (
 	"strings"
 	"time"
 
-	golog "log"
-
 	"github.com/buildbuddy-io/buildbuddy/aws_rds_certs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -39,18 +37,19 @@ import (
 
 	// Allow for "cloudsql" type connections that support workload identity.
 	_ "github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/dialers/mysql"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	rdsauth "github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 	gomysql "github.com/go-sql-driver/mysql"
 	gopostgreserr "github.com/jackc/pgerrcode"
 	gopostgresconn "github.com/jackc/pgx/v5/pgconn"
+	gormutils "gorm.io/gorm/utils"
 )
 
 const (
@@ -567,26 +566,14 @@ func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConf
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
 
-	var l logger.Interface
-	// This is the same as logger.Default, but with colors turned off (since the
-	// output may not support colors) and sending output to stderr (to be
-	// consistent with the rest of our logs).
-	// TODO: Have all logs written to zerolog instead.
-	gormLogger := logger.New(
-		golog.New(os.Stderr, "\r\n", golog.LstdFlags),
-		logger.Config{
-			SlowThreshold: *slowQueryThreshold,
-			LogLevel:      logger.Warn,
-			// Disable log colors when structured logging is enabled.
-			Colorful: *log.EnableStructuredLogging,
-		})
-	l = sqlLogger{Interface: gormLogger, logLevel: logger.Warn}
+	l := &sqlLogger{
+		SlowThreshold: *slowQueryThreshold,
+		LogLevel:      logger.Warn,
+	}
 	if *logQueries {
-		l = l.LogMode(logger.Info)
+		l.LogLevel = logger.Info
 	}
-	config := gorm.Config{
-		Logger: l,
-	}
+	config := gorm.Config{Logger: l}
 	gdb, err := gorm.Open(dialector, &config)
 	if err != nil {
 		return nil, "", err
@@ -738,23 +725,56 @@ func ParseDatasource(ctx context.Context, datasource string, advancedConfig *Adv
 	return nil, status.FailedPreconditionError("no database configured -- please specify at least one in the config")
 }
 
-// sqlLogger is a GORM logger wrapper that supresses "record not found" errors.
+// sqlLogger implements GORM's logger.Interface using zerolog.
+//
+// TODO: maybe implement the optional ParamsFilter interface so that we only log
+// parameterized queries.
 type sqlLogger struct {
-	logger.Interface
-	logLevel logger.LogLevel
+	SlowThreshold time.Duration
+	LogLevel      logger.LogLevel
 }
 
-func (l sqlLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
-	// Avoid logging errors when no records are matched for a lookup as it
-	// generally does not indicate a problem with the server.
-	// Except when log level is "info" where we log all queries.
-	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) && l.logLevel != logger.Info {
+func (l *sqlLogger) Info(ctx context.Context, format string, args ...any) {
+	log.CtxInfof(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+}
+func (l *sqlLogger) Warn(ctx context.Context, format string, args ...any) {
+	log.CtxWarningf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+}
+func (l *sqlLogger) Error(ctx context.Context, format string, args ...any) {
+	log.CtxErrorf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+}
+
+// Trace is called after every SQL query. If `database.log_queries` is true then
+// it will always log the query. Otherwise it will only log slow or failed
+// queries. NotFound errors are ignored.
+func (l *sqlLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	if l.LogLevel <= logger.Silent {
 		return
 	}
-	l.Interface.Trace(ctx, begin, fc, err)
+	duration := time.Since(begin)
+	getInfo := func() string {
+		sql, rows := fc()
+		rowsVal := any(rows)
+		if rows <= 0 {
+			// rows < 0 means the query does not have an associated row count.
+			rowsVal = "-"
+		}
+		return fmt.Sprintf("(duration: %s) (rows: %v) %s", duration, rowsVal, sql)
+	}
+	switch {
+	case err != nil && l.LogLevel >= logger.Error && !IsRecordNotFound(err):
+		log.CtxErrorf(ctx, "SQL: error (%s): %s %s", gormutils.FileWithLineNum(), err, getInfo())
+	case duration > l.SlowThreshold && l.SlowThreshold != 0 && l.LogLevel >= logger.Warn:
+		log.CtxWarningf(ctx, "SQL: slow query (over %s) (%s): %s", l.SlowThreshold, gormutils.FileWithLineNum(), getInfo())
+	case l.LogLevel == logger.Info:
+		log.CtxInfof(ctx, "SQL: OK (%s) %s", gormutils.FileWithLineNum(), getInfo())
+	}
 }
-func (l sqlLogger) LogMode(level logger.LogLevel) logger.Interface {
-	return sqlLogger{l.Interface.LogMode(level), level}
+
+func (l *sqlLogger) LogMode(level logger.LogLevel) logger.Interface {
+	clone := *l
+	clone.LogLevel = level
+	return &clone
 }
 
 func setDBOptions(driver string, gdb *gorm.DB) error {

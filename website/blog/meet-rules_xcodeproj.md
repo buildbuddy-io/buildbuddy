@@ -4,7 +4,7 @@ title: Meet rules_xcodeproj
 description: We are happy to announce that today we are releasing the first
   version of rules_xcodeproj, version 0.1.0.
 author: Brentley Jones
-author_title: Developer Evangelist @ BuildBuddy
+author_title: "Developer Evangelist @ BuildBuddy"
 date: 2022-04-05:08:00:00
 author_url: https://brentleyjones.com
 author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
@@ -61,7 +61,7 @@ Xcode today, using version 0.1.0.
 
 If you run into any problems with rules_xcodeproj, please check if
 [another issue already exists][issues] and comment on it, and if not,
-[file an issue][file-an-issue]! You can also email us at <hello@buildbuddy.io>
+[file an issue][file-an-issue]! You can also email us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io)
 with any questions, comments, or thoughts.
 
 [issues]: https://github.com/buildbuddy-io/rules_xcodeproj/issues

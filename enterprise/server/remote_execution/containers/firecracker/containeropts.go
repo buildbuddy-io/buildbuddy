@@ -16,6 +16,10 @@ type ContainerOpts struct {
 	// is stored along with the state.
 	VMConfiguration *fcpb.VMConfiguration
 
+	// ExecutorConfig contains executor-level configuration, such as firecracker
+	// and jailer paths / versioning info. This is required.
+	ExecutorConfig *ExecutorConfig
+
 	// Saved state pointing to the snapshot manifest in filecache. When set,
 	// the VMConfiguration will be loaded from the snapshot manifest rather than
 	// the VMConfiguration field.
@@ -45,8 +49,4 @@ type ContainerOpts struct {
 	// allowing for multiple locally-started VMs to avoid using
 	// conflicting network interfaces.
 	ForceVMIdx int
-
-	// The root directory to store all files in. This needs to be
-	// short, less than 38 characters. If unset, /tmp will be used.
-	JailerRoot string
 }

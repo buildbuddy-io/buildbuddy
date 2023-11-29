@@ -5,51 +5,48 @@ import (
 	"sync"
 )
 
-// safeSyncPool is a wrapper around `sync.Pool` that provides type safety
-// using Go generics.
-type safeSyncPool[T any] struct {
+type FixedSizePool struct {
 	pool sync.Pool
 }
 
-func newSafeSyncPool[T any](newFn func() T) safeSyncPool[T] {
-	return safeSyncPool[T]{
-		pool: sync.Pool{
-			New: func() interface{} {
-				return newFn()
+func (p *FixedSizePool) Get() []byte {
+	return *(p.pool.Get().(*[]byte))
+}
+
+func (p *FixedSizePool) Put(buf []byte) {
+	p.pool.Put(&buf)
+}
+
+// FixedSize returns a byte buffer pool with fixed size buffers. This is a
+// type-safe wrapper around sync.Pool.
+func FixedSize(bufferSize int) *FixedSizePool {
+	return &FixedSizePool{
+		sync.Pool{
+			New: func() any {
+				buf := make([]byte, bufferSize)
+				return &buf
 			},
 		},
 	}
 }
 
-func (p *safeSyncPool[T]) Get() T {
-	return p.pool.Get().(T)
-}
-
-func (p *safeSyncPool[T]) Put(buf T) {
-	p.pool.Put(buf)
-}
-
-// Pool is a wrapper around `sync.Pool` for use cases where the size of the
-// needed buffer may vary. For fixed size buffers, use sync.Pool directly.
-type Pool struct {
+type VariableSizePool struct {
 	// pools contain slices of capacities that are powers of 2. the slice itself
 	// is indexed by the exponent.
 	// index 0 containing a pool of 2^0 capacity slices, index 1 containing 2^1
 	// capacity slices and so forth.
-	pools         []safeSyncPool[*[]byte]
+	pools         []*FixedSizePool
 	maxBufferSize int
 }
 
-func New(maxBufferSize int) *Pool {
-	bp := &Pool{}
+// VariableSize returns a byte buffer pool that can be used when the buffer
+// size is not fixed. It internally maintains pools of different buffer sizes to
+// accommodate requests of different sizes.
+func VariableSize(maxBufferSize int) *VariableSizePool {
+	bp := &VariableSizePool{}
 	for size := 1; ; size *= 2 {
 		size := size
-		bp.pools = append(bp.pools, newSafeSyncPool(
-			func() *[]byte {
-				a := make([]byte, size)
-				return &a
-			},
-		))
+		bp.pools = append(bp.pools, FixedSize(size))
 		if size >= maxBufferSize {
 			break
 		}
@@ -59,7 +56,7 @@ func New(maxBufferSize int) *Pool {
 
 // Get returns a byte slice of the specified length, up to the maximum length
 // configured in the pool.
-func (bp *Pool) Get(length int64) []byte {
+func (bp *VariableSizePool) Get(length int64) []byte {
 	// Calculate the smallest power of 2 exponent x where 2^x >= length
 	idx := bits.Len64(uint64(length - 1))
 	if length == 0 {
@@ -68,7 +65,7 @@ func (bp *Pool) Get(length int64) []byte {
 	if idx >= len(bp.pools) {
 		idx = len(bp.pools) - 1
 	}
-	buf := *bp.pools[idx].Get()
+	buf := bp.pools[idx].Get()
 	if length > int64(cap(buf)) {
 		length = int64(cap(buf))
 	}
@@ -76,7 +73,7 @@ func (bp *Pool) Get(length int64) []byte {
 }
 
 // Put returns a byte slice back into the pool.
-func (bp *Pool) Put(buf []byte) {
+func (bp *VariableSizePool) Put(buf []byte) {
 	// Calculate the largest power of 2 exponent x where 2^x <= cap
 	idx := bits.Len64(uint64(cap(buf))) - 1
 	if idx < 0 {
@@ -85,5 +82,5 @@ func (bp *Pool) Put(buf []byte) {
 	if idx >= len(bp.pools) {
 		idx = len(bp.pools) - 1
 	}
-	bp.pools[idx].Put(&buf)
+	bp.pools[idx].Put(buf)
 }

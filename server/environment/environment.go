@@ -167,4 +167,8 @@ type Env interface {
 	SetImageCacheAuthenticator(interfaces.ImageCacheAuthenticator)
 	GetServerNotificationService() interfaces.ServerNotificationService
 	SetServerNotificationService(service interfaces.ServerNotificationService)
+	GetGCPService() interfaces.GCPService
+	SetGCPService(service interfaces.GCPService)
+	SetSCIMService(interfaces.SCIMService)
+	GetSCIMService() interfaces.SCIMService
 }

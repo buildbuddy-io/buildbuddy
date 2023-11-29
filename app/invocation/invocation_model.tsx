@@ -1,9 +1,10 @@
-import { HelpCircle, PlayCircle, XCircle, CheckCircle } from "lucide-react";
+import { HelpCircle, PlayCircle, XCircle, CheckCircle, Circle } from "lucide-react";
 import moment from "moment";
 import React from "react";
 import { Subject } from "rxjs";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { api_key } from "../../proto/api_key_ts_proto";
+import { build } from "../../proto/remote_execution_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
@@ -17,6 +18,7 @@ import { formatDate } from "../format/format";
 import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
 import rpcService from "../service/rpc_service";
 import capabilities from "../capabilities/capabilities";
+import { exitCode } from "../util/exit_codes";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
@@ -304,7 +306,10 @@ export default class InvocationModel {
   }
 
   isCacheCompressionEnabled() {
-    return this.optionsMap.get("experimental_remote_cache_compression") === "1";
+    return (
+      this.optionsMap.get("experimental_remote_cache_compression") === "1" ||
+      this.optionsMap.get("remote_cache_compression") === "1"
+    );
   }
 
   getTargetConfiguredCount() {
@@ -360,8 +365,36 @@ export default class InvocationModel {
     return "Cache on";
   }
 
+  getCacheAddress() {
+    const orderedOptions = ["remote_cache", "remote_executor", "cache_backend", "rbe_backend"];
+    let address = "";
+    for (const optionName of orderedOptions) {
+      const option = this.optionsMap.get(optionName);
+      if (!option) continue;
+
+      address = option.replace("grpc://", "").replace("grpcs://", "");
+      break;
+    }
+    if (this.optionsMap.get("remote_instance_name")) {
+      address = address + "/" + this.optionsMap.get("remote_instance_name");
+    }
+    return address;
+  }
+
   getRemoteInstanceName() {
     return this.optionsMap.get("remote_instance_name") ?? "";
+  }
+
+  getDigestFunction() {
+    const digestFnName = this.optionsMap.get("digest_function");
+    if (!digestFnName) {
+      return undefined;
+    }
+    const digestFnEnum =
+      build.bazel.remote.execution.v2.DigestFunction.Value[
+        digestFnName as keyof typeof build.bazel.remote.execution.v2.DigestFunction.Value
+      ];
+    return digestFnEnum || undefined;
   }
 
   getDigestFunctionDir() {
@@ -543,7 +576,7 @@ export default class InvocationModel {
   getStatus() {
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
-        return this.invocation.success ? "Succeeded" : "Failed";
+        return this.invocation.success ? "Succeeded" : exitCode(this.invocation.bazelExitCode);
       case InvocationStatus.PARTIAL_INVOCATION_STATUS:
         return "In progress...";
       case InvocationStatus.DISCONNECTED_INVOCATION_STATUS:
@@ -556,6 +589,9 @@ export default class InvocationModel {
   getStatusClass() {
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
+        if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
+          return "neutral";
+        }
         return this.invocation.success ? "success" : "failure";
       case InvocationStatus.PARTIAL_INVOCATION_STATUS:
         return "in-progress";
@@ -585,6 +621,9 @@ export default class InvocationModel {
     if (!this.finished) {
       return IconType.InProgress;
     }
+    if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
+      return IconType.Default;
+    }
     return this.finished.exitCode?.code == 0 ? IconType.Success : IconType.Failure;
   }
 
@@ -598,6 +637,9 @@ export default class InvocationModel {
     }
     if (!this.finished) {
       return <PlayCircle className="icon blue" />;
+    }
+    if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
+      return <Circle className="icon" />;
     }
     return this.finished.exitCode?.code == 0 ? (
       <CheckCircle className="icon green" />

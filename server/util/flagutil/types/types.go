@@ -64,13 +64,13 @@ func NewJSONSliceFlag[T any](slice *T) *JSONSliceFlag[T] {
 	return &v
 }
 
-func JSONSlice[T any](name string, defaultValue T, usage string) *T {
+func JSONSlice[T any](flagset *flag.FlagSet, name string, defaultValue T, usage string) *T {
 	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
-	JSONSliceVar(value, name, defaultValue, usage)
+	JSONSliceVar(flagset, value, name, defaultValue, usage)
 	return value
 }
 
-func JSONSliceVar[T any](value *T, name string, defaultValue T, usage string) {
+func JSONSliceVar[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, usage string) {
 	src := reflect.ValueOf(defaultValue)
 	if src.Kind() != reflect.Slice {
 		log.Fatalf("JSONSliceVar called for flag %s with non-slice value %v of type %T.", name, defaultValue, defaultValue)
@@ -82,7 +82,7 @@ func JSONSliceVar[T any](value *T, name string, defaultValue T, usage string) {
 		v.Elem().Set(reflect.MakeSlice(reflect.TypeOf((*T)(nil)).Elem(), src.Len(), src.Len()))
 	}
 	reflect.Copy(v.Elem(), src)
-	common.DefaultFlagSet.Var((*JSONSliceFlag[T])(&v), name, usage)
+	flagset.Var((*JSONSliceFlag[T])(&v), name, usage)
 }
 
 func (f *JSONSliceFlag[T]) String() string {
@@ -209,20 +209,20 @@ func NewJSONStructFlag[T any](value *T) *JSONStructFlag[T] {
 	return &v
 }
 
-func JSONStruct[T any](name string, defaultValue T, usage string) *T {
+func JSONStruct[T any](flagset *flag.FlagSet, name string, defaultValue T, usage string) *T {
 	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
-	JSONStructVar(value, name, defaultValue, usage)
+	JSONStructVar(flagset, value, name, defaultValue, usage)
 	return value
 }
 
-func JSONStructVar[T any](value *T, name string, defaultValue T, usage string) {
+func JSONStructVar[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, usage string) {
 	src := reflect.ValueOf(defaultValue)
 	if src.Kind() != reflect.Struct {
 		log.Fatalf("JSONStructVar called for flag %s with non-struct value %v of type %T.", name, defaultValue, defaultValue)
 	}
 	v := reflect.ValueOf(value)
 	v.Elem().Set(reflect.ValueOf(defaultValue))
-	common.DefaultFlagSet.Var((*JSONStructFlag[T])(&v), name, usage)
+	flagset.Var((*JSONStructFlag[T])(&v), name, usage)
 }
 
 func (f *JSONStructFlag[T]) String() string {
@@ -261,20 +261,20 @@ func NewStringSliceFlag(slice *[]string) *StringSliceFlag {
 	return (*StringSliceFlag)(slice)
 }
 
-func StringSlice(name string, defaultValue []string, usage string) *[]string {
+func StringSlice(flagset *flag.FlagSet, name string, defaultValue []string, usage string) *[]string {
 	value := &[]string{}
-	StringSliceVar(value, name, defaultValue, usage)
+	StringSliceVar(flagset, value, name, defaultValue, usage)
 	return value
 }
 
-func StringSliceVar(value *[]string, name string, defaultValue []string, usage string) {
+func StringSliceVar(flagset *flag.FlagSet, value *[]string, name string, defaultValue []string, usage string) {
 	if defaultValue == nil && *value != nil {
 		*value = nil
 	} else if len(*value) != len(defaultValue) || *value == nil {
 		*value = make([]string, len(defaultValue))
 	}
 	copy(*value, defaultValue)
-	common.DefaultFlagSet.Var((*StringSliceFlag)(value), name, usage)
+	flagset.Var((*StringSliceFlag)(value), name, usage)
 }
 
 func (f *StringSliceFlag) String() string {
@@ -317,24 +317,24 @@ func (f *StringSliceFlag) AliasedType() reflect.Type {
 
 type URLFlag url.URL
 
-func URL(name string, defaultValue url.URL, usage string) *url.URL {
+func URL(flagset *flag.FlagSet, name string, defaultValue url.URL, usage string) *url.URL {
 	value := &url.URL{}
-	URLVar(value, name, defaultValue, usage)
+	URLVar(flagset, value, name, defaultValue, usage)
 	return value
 }
 
-func URLVar(value *url.URL, name string, defaultValue url.URL, usage string) {
+func URLVar(flagset *flag.FlagSet, value *url.URL, name string, defaultValue url.URL, usage string) {
 	*value = *defaultValue.ResolveReference(&url.URL{})
-	common.DefaultFlagSet.Var((*URLFlag)(value), name, usage)
+	flagset.Var((*URLFlag)(value), name, usage)
 }
 
-func URLFromString(name, value, usage string) *url.URL {
+func URLFromString(flagset *flag.FlagSet, name, value, usage string) *url.URL {
 	u, err := url.Parse(value)
 	if err != nil {
 		log.Fatalf("Error parsing default URL value '%s' for flag: %v", value, err)
 		return nil
 	}
-	return URL(name, *u, usage)
+	return URL(flagset, name, *u, usage)
 }
 
 func (f *URLFlag) Set(value string) error {
@@ -376,17 +376,21 @@ func (f *URLFlag) YAMLTypeString() string {
 }
 
 type FlagAlias[T any] struct {
-	name string
+	name    string
+	flagset *flag.FlagSet
 }
 
 // Alias defines a new name or names for the existing flag at the passed name
 // and returns a pointer to the data backing it. If no new names are passed,
 // Alias simply returns said pointer without creating any new alias flags.
-func Alias[T any](name string, newNames ...string) *T {
-	f := &FlagAlias[T]{name: name}
+func Alias[T any](flagset *flag.FlagSet, name string, newNames ...string) *T {
+	f := &FlagAlias[T]{
+		name:    name,
+		flagset: flagset,
+	}
 	var flg *flag.Flag
 	for aliaser, ok := common.IsNameAliasing(f), true; ok; aliaser, ok = flg.Value.(common.IsNameAliasing) {
-		if flg = common.DefaultFlagSet.Lookup(aliaser.AliasedName()); flg == nil {
+		if flg = flagset.Lookup(aliaser.AliasedName()); flg == nil {
 			log.Fatalf("Error aliasing flag %s as %s: flag %s does not exist.", name, strings.Join(newNames, ", "), aliaser.AliasedName())
 		}
 	}
@@ -399,13 +403,13 @@ func Alias[T any](name string, newNames ...string) *T {
 		log.Fatalf("Error aliasing flag %s as %s: Failed to assert flag %s of type %T as type %T.", name, strings.Join(newNames, ", "), flg.Name, flg.Value, (*T)(nil))
 	}
 	for _, newName := range newNames {
-		common.DefaultFlagSet.Var(f, newName, "Alias for "+name)
+		flagset.Var(f, newName, "Alias for "+name)
 	}
 	return value
 }
 
 func (f *FlagAlias[T]) Set(value string) error {
-	return common.DefaultFlagSet.Set(f.name, value)
+	return f.flagset.Set(f.name, value)
 }
 
 func (f *FlagAlias[T]) String() string {
@@ -420,7 +424,10 @@ func (f *FlagAlias[T]) AliasedName() string {
 }
 
 func (f *FlagAlias[T]) WrappedValue() flag.Value {
-	flg := common.DefaultFlagSet.Lookup(f.name)
+	if f.flagset == nil {
+		return nil
+	}
+	flg := f.flagset.Lookup(f.name)
 	if flg == nil {
 		return nil
 	}
@@ -450,9 +457,9 @@ type DeprecatedFlag[T any] struct {
 //	"All of our foos were destroyed in a fire, please specify a bar instead.",
 //
 // )
-func DeprecatedVar[T any](value flag.Value, name string, usage, migrationPlan string) *T {
-	common.DefaultFlagSet.Var(value, name, usage)
-	Deprecate[T](name, migrationPlan)
+func DeprecatedVar[T any](flagset *flag.FlagSet, value flag.Value, name string, usage, migrationPlan string) *T {
+	flagset.Var(value, name, usage)
+	Deprecate[T](flagset, name, migrationPlan)
 	converted, err := common.ConvertFlagValue(value)
 	if err != nil {
 		log.Fatalf("Error creating deprecated flag %s: %v", name, err)
@@ -467,8 +474,8 @@ func DeprecatedVar[T any](value flag.Value, name string, usage, migrationPlan st
 // Deprecate deprecates an existing flag by name; generally this should be
 // called in an init func. While simpler to use than DeprecatedVar, it does
 // decouple the flag declaration from the flag deprecation.
-func Deprecate[T any](name, migrationPlan string) {
-	flg := common.DefaultFlagSet.Lookup(name)
+func Deprecate[T any](flagset *flag.FlagSet, name, migrationPlan string) {
+	flg := flagset.Lookup(name)
 	converted, err := common.ConvertFlagValue(flg.Value)
 	if err != nil {
 		log.Fatalf("Error creating deprecated flag %s: %v", name, err)
@@ -515,8 +522,8 @@ type SecretFlag[T any] struct {
 	flag.Value
 }
 
-func Secret[T any](name string) {
-	flg := common.DefaultFlagSet.Lookup(name)
+func Secret[T any](flagset *flag.FlagSet, name string) {
+	flg := flagset.Lookup(name)
 	converted, err := common.ConvertFlagValue(flg.Value)
 	if err != nil {
 		log.Fatalf("Error creating secret flag %s: %v", name, err)

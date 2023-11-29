@@ -209,6 +209,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
           repo={this.state.model.getGithubRepo()}
           commit={this.state.model.getCommit()}
           dark={!this.props.preferences.lightTerminalEnabled}
+          model={this.state.model}
+          search={this.props.search}
         />
       );
     }

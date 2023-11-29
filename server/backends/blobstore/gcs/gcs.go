@@ -3,6 +3,7 @@ package gcs
 import (
 	"context"
 	"io"
+	"math"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -109,15 +111,29 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 }
 
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
-	defer writer.Close()
 	compressedData, err := util.Compress(data)
 	if err != nil {
 		return 0, err
 	}
+
+	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
+
+	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer, but to
+	// avoid unnecessary allocations for blobs << 16MB, ChunkSize should be
+	// set before the first write call to a value "slightly larger" than the
+	// object size. Set it to the next largest power of 2:
+	// 2**CEIL(log2(size)) for values less than 16MB in size.
+	blobSize := len(compressedData)
+	if blobSize < googleapi.DefaultUploadChunkSize {
+		writer.ChunkSize = int(math.Exp2(math.Ceil(math.Log2(float64(blobSize)))))
+	}
+
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	n, err := writer.Write(compressedData)
+	if closeErr := writer.Close(); err == nil && closeErr != nil {
+		err = closeErr
+	}
 	spn.End()
 	util.RecordWriteMetrics(gcsLabel, start, n, err)
 	return n, err

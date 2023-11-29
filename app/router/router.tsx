@@ -4,6 +4,7 @@ import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import format from "../format/format";
 import rpc_service from "../service/rpc_service";
 import { user as user_proto } from "../../proto/user_ts_proto";
+import { grp } from "../../proto/group_ts_proto";
 
 import {
   END_DATE_PARAM_NAME,
@@ -68,6 +69,7 @@ class Router {
     //    IP rules.
     if (
       this.user &&
+      this.user.groups.length > 0 &&
       this.user.selectedGroupAccess != user_proto.SelectedGroup.Access.ALLOWED &&
       // A user may have access to an invocation w/o having access to group.
       !path.startsWith(Path.invocationPath) &&
@@ -385,7 +387,15 @@ class Router {
   }
 
   canCreateOrg(user?: User) {
-    return Boolean(user?.canCall("createGroup"));
+    if (!user?.canCall("createGroup")) {
+      return false;
+    }
+
+    if (user?.selectedGroup.role == grp.Group.Role.ADMIN_ROLE) {
+      return true;
+    }
+
+    return user?.selectedGroup.developerOrgCreationEnabled;
   }
 
   canAccessOrgGitHubLinkPage(user?: User) {

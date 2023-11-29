@@ -46,6 +46,7 @@ ts_library(
     srcs = ["target_artifacts_card.tsx"],
     deps = [
         "//app/capabilities",
+        "//app/components/digest",
         "//app/service:rpc_service",
         "//proto:build_event_stream_ts_proto",
         "//proto:zip_ts_proto",
@@ -130,9 +131,12 @@ ts_library(
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
+        "//app/capabilities",
         "//app/components/button:link_button",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:cache_requests_card",
+        "//app/invocation:invocation_model",
         "//app/invocation:target_util",
         "//app/router",
         "//app/service:rpc_service",

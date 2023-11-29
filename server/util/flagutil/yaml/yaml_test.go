@@ -42,11 +42,11 @@ func TestGenerateYAMLTypeMapFromFlags(t *testing.T) {
 
 	flags.Bool("bool", true, "")
 	flags.Int("one.two.int", 10, "")
-	flagtypes.StringSlice("one.two.string_slice", []string{"hi", "hello"}, "")
+	flagtypes.StringSlice(flags, "one.two.string_slice", []string{"hi", "hello"}, "")
 	flags.Float64("one.two.two_and_a_half.float64", 5.2, "")
-	flagtypes.JSONSlice("one.two.three.struct_slice", []testStruct{{Field: 4, Meadow: "Great"}}, "")
+	flagtypes.JSONSlice(flags, "one.two.three.struct_slice", []testStruct{{Field: 4, Meadow: "Great"}}, "")
 	flags.String("a.b.string", "xxx", "")
-	flagtypes.URLFromString("a.b.url", "https://www.example.com", "")
+	flagtypes.URLFromString(flags, "a.b.url", "https://www.example.com", "")
 	actual, err := flagyaml.GenerateYAMLMapWithValuesFromFlags(
 		func(flg *flag.Flag) (reflect.Type, error) {
 			return flagyaml.GetYAMLTypeForFlagValue(flg.Value)
@@ -228,14 +228,14 @@ func TestPopulateFlagsFromData(t *testing.T) {
 
 	flagBool := flags.Bool("bool", true, "")
 	flagOneTwoInt := flags.Int("one.two.int", 10, "")
-	flagOneTwoStringSlice := flagtypes.StringSlice("one.two.string_slice", []string{"hi", "hello"}, "")
+	flagOneTwoStringSlice := flagtypes.StringSlice(flags, "one.two.string_slice", []string{"hi", "hello"}, "")
 	flagOneTwoTwoAndAHalfFloat := flags.Float64("one.two.two_and_a_half.float64", 5.2, "")
 	flagOneTwoThreeStructSlice := []testStruct{{Field: 4, Meadow: "Great"}}
-	flagtypes.JSONSliceVar(&flagOneTwoThreeStructSlice, "one.two.three.struct_slice", flagOneTwoThreeStructSlice, "")
+	flagtypes.JSONSliceVar(flags, &flagOneTwoThreeStructSlice, "one.two.three.struct_slice", flagOneTwoThreeStructSlice, "")
 	flagABString := flags.String("a.b.string", "xxx", "")
 	flagABStructSlice := []testStruct{{Field: 7, Meadow: "Chimney"}}
-	flagtypes.JSONSliceVar(&flagABStructSlice, "a.b.struct_slice", flagABStructSlice, "")
-	flagABURL := flagtypes.URLFromString("a.b.url", "https://www.example.com", "")
+	flagtypes.JSONSliceVar(flags, &flagABStructSlice, "a.b.struct_slice", flagABStructSlice, "")
+	flagABURL := flagtypes.URLFromString(flags, "a.b.url", "https://www.example.com", "")
 	yamlData := `
 bool: true
 one:
@@ -302,14 +302,14 @@ func TestPopulateFlagsFromYAML(t *testing.T) {
 
 	flagBool := flags.Bool("bool", true, "")
 	flagOneTwoInt := flags.Int("one.two.int", 10, "")
-	flagOneTwoStringSlice := flagtypes.JSONSlice("one.two.string_slice", []string{"hi", "hello"}, "")
+	flagOneTwoStringSlice := flagtypes.JSONSlice(flags, "one.two.string_slice", []string{"hi", "hello"}, "")
 	flagOneTwoTwoAndAHalfFloat := flags.Float64("one.two.two_and_a_half.float64", 5.2, "")
 	flagOneTwoThreeStructSlice := []testStruct{{Field: 4, Meadow: "Great"}}
-	flagtypes.JSONSliceVar(&flagOneTwoThreeStructSlice, "one.two.three.struct_slice", flagOneTwoThreeStructSlice, "")
+	flagtypes.JSONSliceVar(flags, &flagOneTwoThreeStructSlice, "one.two.three.struct_slice", flagOneTwoThreeStructSlice, "")
 	flagABString := flags.String("a.b.string", "xxx", "")
 	flagABStructSlice := []testStruct{{Field: 7, Meadow: "Chimney"}}
-	flagtypes.JSONSliceVar(&flagABStructSlice, "a.b.struct_slice", flagABStructSlice, "")
-	flagABURL := flagtypes.URLFromString("a.b.url", "https://www.example.com", "")
+	flagtypes.JSONSliceVar(flags, &flagABStructSlice, "a.b.struct_slice", flagABStructSlice, "")
+	flagABURL := flagtypes.URLFromString(flags, "a.b.url", "https://www.example.com", "")
 	input := map[string]any{
 		"bool": false,
 		"one": map[string]any{
@@ -379,14 +379,14 @@ func TestOverrideFlagsFromData(t *testing.T) {
 
 	flagBool := flags.Bool("bool", true, "")
 	flagOneTwoInt := flags.Int("one.two.int", 10, "")
-	flagOneTwoStringSlice := flagtypes.StringSlice("one.two.string_slice", []string{"hi", "hello"}, "")
+	flagOneTwoStringSlice := flagtypes.StringSlice(flags, "one.two.string_slice", []string{"hi", "hello"}, "")
 	flagOneTwoTwoAndAHalfFloat := flags.Float64("one.two.two_and_a_half.float64", 5.2, "")
 	flagOneTwoThreeStructSlice := []testStruct{{Field: 4, Meadow: "Great"}}
-	flagtypes.JSONSliceVar(&flagOneTwoThreeStructSlice, "one.two.three.struct_slice", flagOneTwoThreeStructSlice, "")
+	flagtypes.JSONSliceVar(flags, &flagOneTwoThreeStructSlice, "one.two.three.struct_slice", flagOneTwoThreeStructSlice, "")
 	flagABString := flags.String("a.b.string", "xxx", "")
 	flagABStructSlice := []testStruct{{Field: 7, Meadow: "Chimney"}}
-	flagtypes.JSONSliceVar(&flagABStructSlice, "a.b.struct_slice", flagABStructSlice, "")
-	flagABURL := flagtypes.URLFromString("a.b.url", "https://www.example.com", "")
+	flagtypes.JSONSliceVar(flags, &flagABStructSlice, "a.b.struct_slice", flagABStructSlice, "")
+	flagABURL := flagtypes.URLFromString(flags, "a.b.url", "https://www.example.com", "")
 	yamlData := `
 bool: true
 one:

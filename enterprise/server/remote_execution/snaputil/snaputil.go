@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -22,37 +23,65 @@ import (
 
 var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd is true.")
 var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd and executor.firecracker_enable_uffd are true.")
+var RemoteSnapshotReadonly = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
+var VerboseLogging = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
 
-func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, outputPath string) error {
+// ChunkSource represents how a snapshot chunk was initialized
+type ChunkSource int
+
+const (
+	// ChunkSourceUnmapped means the lazy chunk has not been initialized yet
+	ChunkSourceUnmapped ChunkSource = iota
+	// ChunkSourceHole means the chunk was initialized as a hole - i.e. it started
+	// with empty data, though it may have been written to since
+	ChunkSourceHole
+	// ChunkSourceLocalFile means the chunk was created by splitting a snapshot file on disk
+	// into chunks (i.e. this is the first time we're using this snapshot, and it's
+	// not yet cached)
+	ChunkSourceLocalFile
+	// ChunkSourceLocalFilecache means the chunk was fetched from the local filecache
+	ChunkSourceLocalFilecache
+	// ChunkSourceRemoteCache means the chunk was fetched from the remote cache
+	ChunkSourceRemoteCache
+)
+
+func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
 	node := &repb.FileNode{Digest: d}
-	fetchedLocally := localCache.FastLinkFile(node, outputPath)
+	fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
 	if fetchedLocally {
-		return nil
+		return ChunkSourceLocalFilecache, nil
 	}
 
-	if !*EnableRemoteSnapshotSharing {
-		return status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+	if !*EnableRemoteSnapshotSharing || !remoteEnabled {
+		return ChunkSourceUnmapped, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+	}
+
+	if *VerboseLogging {
+		start := time.Now()
+		log.CtxDebugf(ctx, "Fetching remote snapshot artifact...")
+		defer func() { log.CtxDebugf(ctx, "Fetched remote snapshot artifact in %s", time.Since(start)) }()
 	}
 
 	// Fetch from remote cache
 	buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
 	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, buf); err != nil {
-		return status.WrapError(err, "remote fetch snapshot artifact")
+		return ChunkSourceUnmapped, status.WrapError(err, "remote fetch snapshot artifact")
 	}
 
 	// Write file to outputDir so it can be used by the VM
 	writeErr := os.WriteFile(outputPath, buf.Bytes(), 0777)
 
 	// Save to local cache so next time fetching won't require a remote get
-	if err := cacheLocally(localCache, d, outputPath); err != nil {
+	if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
 		log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
 	}
 
-	return writeErr
+	return ChunkSourceRemoteCache, writeErr
 }
 
-func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
+func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return nil, err
@@ -64,7 +93,7 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 		}
 	}()
 
-	if err := GetArtifact(ctx, localCache, bsClient, d, instanceName, tmpPath); err != nil {
+	if _, err := GetArtifact(ctx, localCache, bsClient, remoteEnabled, d, instanceName, tmpPath); err != nil {
 		return nil, err
 	}
 
@@ -73,10 +102,16 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, path string) error {
-	localCacheErr := cacheLocally(localCache, d, path)
-	if !*EnableRemoteSnapshotSharing {
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string) error {
+	localCacheErr := cacheLocally(ctx, localCache, d, path)
+	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
 		return localCacheErr
+	}
+
+	if *VerboseLogging {
+		start := time.Now()
+		log.CtxDebugf(ctx, "Uploading snapshot artifact...")
+		defer func() { log.CtxDebugf(ctx, "Uploaded snapshot artifact in %s", time.Since(start)) }()
 	}
 
 	rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
@@ -92,7 +127,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 
 // CacheBytes saves bytes to the cache.
 // It does this by writing the bytes to a temporary file in tmpDir.
-func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, remoteInstanceName string, b []byte) error {
+func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, b []byte) error {
 	// Write temp file containing bytes
 	randStr, err := random.RandomString(10)
 	if err != nil {
@@ -108,17 +143,34 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 		}
 	}()
 
-	return Cache(ctx, localCache, bsClient, d, remoteInstanceName, tmpPath)
+	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath)
 }
 
 // cacheLocally copies the data at `path` to the local filecache with
 // the given `key`
-func cacheLocally(localCache interfaces.FileCache, d *repb.Digest, path string) error {
+func cacheLocally(ctx context.Context, localCache interfaces.FileCache, d *repb.Digest, path string) error {
 	fileNode := &repb.FileNode{Digest: d}
 	// If EnableLocalSnapshotSharing=true and we're computing real unloadedChunks,
 	// the files will be immutable. We won't need to re-save them to file cache
-	if !*EnableLocalSnapshotSharing || !localCache.ContainsFile(fileNode) {
-		return localCache.AddFile(fileNode, path)
+	if !*EnableLocalSnapshotSharing || !localCache.ContainsFile(ctx, fileNode) {
+		return localCache.AddFile(ctx, fileNode, path)
 	}
 	return nil
+}
+
+func ChunkSourceLabel(c ChunkSource) string {
+	switch c {
+	case ChunkSourceUnmapped:
+		return "unmapped"
+	case ChunkSourceLocalFile:
+		return "local_file"
+	case ChunkSourceLocalFilecache:
+		return "local_filecache"
+	case ChunkSourceHole:
+		return "hole"
+	case ChunkSourceRemoteCache:
+		return "remote_cache"
+	default:
+		return "invalid_chunk_source"
+	}
 }

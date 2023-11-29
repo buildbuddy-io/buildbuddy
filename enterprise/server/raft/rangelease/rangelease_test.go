@@ -136,22 +136,8 @@ func (t *testingSender) SyncPropose(ctx context.Context, key []byte, batch *rfpb
 	return resp, nil
 }
 
-func (t *testingSender) SyncRead(ctx context.Context, key []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	buf, err := proto.Marshal(batch)
-	if err != nil {
-		return nil, err
-	}
-
-	res, err := t.tp.SyncRead(ctx, shardID, buf)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := &rfpb.BatchCmdResponse{}
-	if err := proto.Unmarshal(res.([]byte), resp); err != nil {
-		return nil, err
-	}
-	return resp, nil
+func (t *testingSender) SyncRead(ctx context.Context, key []byte, batch *rfpb.BatchCmdRequest, mods ...sender.Option) (*rfpb.BatchCmdResponse, error) {
+	return nil, status.UnimplementedError("not implemented in testingSender")
 }
 
 func newTestingProposerAndSender(t testing.TB) (*testingProposer, *testingSender) {
@@ -182,7 +168,7 @@ func TestAcquireAndRelease(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -220,7 +206,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -260,7 +246,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	}
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	l := rangelease.New(proposer, liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -304,7 +290,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, liveness, rd)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)

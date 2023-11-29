@@ -453,7 +453,7 @@ func GenerateDocumentedMarshalerFromFlag(flg *flag.Flag) (DocumentedMarshaler, e
 	if err != nil {
 		return nil, status.InternalErrorf("Error encountered generating default YAML from flags when processing flag %s: %s", flg.Name, err)
 	}
-	v, err := common.GetDereferencedValue[any](flg.Name)
+	v, err := common.GetDereferencedValue[any](common.DefaultFlagSet, flg.Name)
 	if err != nil {
 		return nil, status.InternalErrorf("Error encountered generating default YAML from flags: %s", err)
 	}
@@ -744,12 +744,12 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 	if flg == nil {
 		return nil
 	}
-	return setValueForYAML(flg.Value, name, a, setFlags, appendSlice)
+	return setValueForYAML(common.DefaultFlagSet, flg.Value, name, a, setFlags, appendSlice)
 }
 
-func setValueForYAML(flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error {
+func setValueForYAML(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error {
 	if v, ok := flagValue.(YAMLSetValueHooked); ok {
 		setHooks = append(setHooks, v.YAMLSetValueHook)
 	}
-	return common.SetValueWithCustomIndirectBehavior(flagValue, name, newValue, setFlags, appendSlice, setValueForYAML, setHooks...)
+	return common.SetValueWithCustomIndirectBehavior(common.DefaultFlagSet, flagValue, name, newValue, setFlags, appendSlice, setValueForYAML, setHooks...)
 }

@@ -21,9 +21,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -54,11 +56,12 @@ import (
 )
 
 var (
-	rootDirectory        = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
-	hostRootDirectory    = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
-	warmupTimeoutSecs    = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
-	warmupWorkflowImages = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
-	maxRunnerCount       = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
+	rootDirectory          = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
+	hostRootDirectory      = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
+	warmupTimeoutSecs      = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
+	warmupWorkflowImages   = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
+	warmupAdditionalImages = flag.Slice[string]("executor.warmup_additional_images", []string{}, "List of container images to warm up alongside the executor default images on executor start up.")
+	maxRunnerCount         = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerDiskSizeBytes = flag.Int64("executor.runner_pool.max_runner_disk_size_bytes", 16e9, "Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB.")
@@ -66,8 +69,6 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
-
-	enableAnonymousRecycling = flag.Bool("debug_enable_anonymous_runner_recycling", false, "Whether to enable runner recycling for unauthenticated requests. For debugging purposes only - do not use in production.")
 )
 
 const (
@@ -103,11 +104,6 @@ const (
 	// Maximum number of attempts to take a paused runner from the pool before
 	// giving up and creating a new runner.
 	maxUnpauseAttempts = 5
-
-	// Label assigned to runner pool request count metric for fulfilled requests.
-	hitStatusLabel = "hit"
-	// Label assigned to runner pool request count metric for unfulfilled requests.
-	missStatusLabel = "miss"
 
 	// Value for persisent workers that support the JSON persistent worker protocol.
 	workerProtocolJSONValue = "json"
@@ -240,8 +236,8 @@ func (r *commandRunner) String() string {
 		truncate(r.key.InstanceName, 8, "..."), truncate(ph, 8, ""))
 }
 
-func (r *commandRunner) pullCredentials() (container.PullCredentials, error) {
-	return container.GetPullCredentials(r.PlatformProperties)
+func (r *commandRunner) pullCredentials() (oci.Credentials, error) {
+	return oci.CredentialsFromProperties(r.PlatformProperties)
 }
 
 func (r *commandRunner) PrepareForTask(ctx context.Context) error {
@@ -367,9 +363,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		r.p.mu.Lock()
 		r.state = ready
 		r.p.mu.Unlock()
-		break
 	case ready:
-		break
 	case removed:
 		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
 	default:
@@ -539,11 +533,17 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		buildRoot: *rootDirectory,
 		runners:   []*commandRunner{},
 	}
-	if err := p.initContainerProviders(); err != nil {
-		return nil, err
-	}
 	if opts.ContainerProvider != nil {
 		p.overrideProvider = opts.ContainerProvider
+	} else {
+		providers := map[platform.ContainerType]container.Provider{}
+		if err := p.registerContainerProviders(providers, platform.GetExecutorProperties()); err != nil {
+			return nil, err
+		}
+		if len(providers) == 0 {
+			return nil, status.FailedPreconditionErrorf("no isolation types are enabled")
+		}
+		p.containerProviders = providers
 	}
 
 	p.setLimits()
@@ -776,15 +776,14 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		return err
 	}
 
-	creds, err := container.GetPullCredentials(platProps)
+	creds, err := oci.CredentialsFromProperties(platProps)
 	if err != nil {
 		return err
 	}
-	err = container.PullImageIfNecessary(
-		ctx, p.env,
-		c, creds, platProps.ContainerImage,
-	)
-	if err != nil {
+	// Note: intentionally bypassing PullImageIfNecessary here to avoid caching
+	// the auth result, since it makes it tricker to debug per-action
+	// misconfiguration.
+	if err := c.PullImage(ctx, creds); err != nil {
 		return err
 	}
 	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, cfg.Image, time.Since(start))
@@ -820,6 +819,13 @@ func (p *pool) Warmup(ctx context.Context) {
 func (p *pool) warmupConfigs() []WarmupConfig {
 	var out []WarmupConfig
 	for _, isolation := range platform.GetExecutorProperties().SupportedIsolationTypes {
+		for _, image := range *warmupAdditionalImages {
+			out = append(out, WarmupConfig{
+				Image:     image,
+				Isolation: string(isolation),
+			})
+		}
+
 		if isolation == platform.PodmanContainerType && !*podmanWarmupDefaultImages {
 			continue
 		}
@@ -885,7 +891,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if user != nil {
 		groupID = user.GetGroupID()
 	}
-	if !*enableAnonymousRecycling && (props.RecycleRunner && err != nil) {
+	if !*container.DebugEnableAnonymousRecycling && (props.RecycleRunner && err != nil) {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
@@ -900,7 +906,18 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		Platform:            task.GetCommand().GetPlatform(),
 		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
 	}
-	if props.RecycleRunner {
+
+	// If snapshot sharing is enabled, a firecracker VM can be cloned from the
+	// cache and does not rely on previous state set on the runner, so we can
+	// circumvent the runner pool. In fact we *should* circumvent the runner pool
+	// and create a new runner with data from the incoming task, which can be used
+	// to find a better snapshot match than a runner created for a stale task
+	// (Ex. If runner A was created for branch `feature_one` and an incoming
+	// workload is for branch `feature_two`, we should create a new runner intended
+	// for `feature_two`, rather than reuse the runner for branch `feature_one`, which would be more stale
+	snapshotEnabledRunner := platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType &&
+		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
+	if props.RecycleRunner && !snapshotEnabledRunner {
 		r := p.takeWithRetry(ctx, key)
 		if r != nil {
 			p.mu.Lock()
@@ -910,10 +927,18 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			p.mu.Unlock()
 			log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
-				metrics.RecycleRunnerRequestStatusLabel: hitStatusLabel,
+				metrics.RecycleRunnerRequestStatusLabel: metrics.HitStatusLabel,
 			}).Inc()
 			return r, nil
 		}
+	}
+
+	if !snapshotEnabledRunner {
+		// For snapshot enabled runners, the RecycleRunnerRequests metric
+		// is emitted in snaploader.go
+		metrics.RecycleRunnerRequests.With(prometheus.Labels{
+			metrics.RecycleRunnerRequestStatusLabel: metrics.MissStatusLabel,
+		}).Inc()
 	}
 
 	debugID, _ := random.RandomString(8)
@@ -922,10 +947,13 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		DebugId:           debugID,
 		AssignedTaskCount: 1,
 	}
-	metrics.RecycleRunnerRequests.With(prometheus.Labels{
-		metrics.RecycleRunnerRequestStatusLabel: missStatusLabel,
-	}).Inc()
-	return p.newRunner(ctx, props, st, state)
+
+	r, err := p.newRunner(ctx, props, st, state)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
 
 // newRunner creates a runner either for the given task (if set) or restores the
@@ -1320,12 +1348,26 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		log.CtxWarningf(ctx, "Failed to recycle runner %s due to previous execution error", cr)
 		return
 	}
-	// Clean the workspace once before adding it to the pool (to save on disk
-	// space).
+	// Clean the workspace before recycling the runner (to save on disk space).
 	if err := cr.Workspace.Clean(); err != nil {
 		log.CtxErrorf(ctx, "Failed to recycle runner %s: failed to clean workspace: %s", cr, err)
 		return
 	}
+
+	// Don't add snapshot enabled runners back to the pool because we don't need
+	// the pool logic for them. Just save the snapshot with `Container.Pause`,
+	// which also removes the container.
+	snapshotEnabledRunner := platform.ContainerType(cr.PlatformProperties.WorkloadIsolationType) == platform.FirecrackerContainerType &&
+		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
+	if snapshotEnabledRunner {
+		if err := cr.Container.Pause(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to save snapshot for runner %s: %s", cr, err)
+			return
+		}
+		log.CtxInfof(ctx, "Successfully saved snapshot for runner %s", cr)
+		return
+	}
+
 	if err := p.Add(ctx, cr); err != nil {
 		if status.IsResourceExhaustedError(err) || status.IsUnavailableError(err) {
 			log.CtxWarningf(ctx, "Failed to recycle runner %s: %s", cr, err)

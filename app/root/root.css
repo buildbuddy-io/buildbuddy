@@ -1433,28 +1433,19 @@ code .comment {
   transition: 300ms ease-in-out;
 }
 
-.login-buttons .google-button {
-  background-color: #2196f3;
-}
-.login-buttons .google-button:hover {
-  background-color: #42a5f5;
-}
-
+.login-buttons .login-button,
+.login-buttons .sso-button,
+.login-buttons .google-button,
 .login-buttons .github-button {
-  background-color: #424242;
-}
-
-.login-buttons .github-button:hover {
-  background-color: #616161;
-}
-
-.login-buttons .sso-button {
   background-color: #fff;
   color: #424242;
   border: 3px solid #424242;
 }
 
-.login-buttons .sso-button:hover {
+.login-buttons .login-button:hover,
+.login-buttons .sso-button:hover,
+.login-buttons .google-button:hover,
+.login-buttons .github-button:hover {
   background-color: #f5f5f5;
   color: #000;
   border-color: #000;

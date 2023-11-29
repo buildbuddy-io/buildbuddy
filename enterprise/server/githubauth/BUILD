@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/githubauth",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/githubapp",
         "//server/backends/github",
         "//server/environment",
         "//server/interfaces",

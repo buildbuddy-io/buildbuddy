@@ -36,6 +36,7 @@ go_library(
         "@io_gorm_gorm//:gorm",
         "@io_gorm_gorm//logger",
         "@io_gorm_gorm//schema",
+        "@io_gorm_gorm//utils",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",

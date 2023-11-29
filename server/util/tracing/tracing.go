@@ -83,13 +83,8 @@ func (s *fractionSampler) checkForcedTrace(parameters sdktrace.SamplingParameter
 	if s.ignoreForcedTracingHeader {
 		return false
 	}
-	md, ok := metadata.FromIncomingContext(parameters.ParentContext)
-	if !ok {
-		// Not an incoming gRPC request
-		return false
-	}
-	hdrs, ok := md[traceHeader]
-	forced := ok && len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
+	hdrs := metadata.ValueFromIncomingContext(parameters.ParentContext, traceHeader)
+	forced := len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
 	return forced
 }
 

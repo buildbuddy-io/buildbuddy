@@ -23,8 +23,6 @@
   "fiscalYearStartMonth": 0,
   "gnetId": 882,
   "graphTooltip": 1,
-  "id": 4,
-  "iteration": 1663696412335,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -120,8 +118,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "rgba(50, 172, 45, 0.97)",
-                "value": null
+                "color": "rgba(50, 172, 45, 0.97)"
               },
               {
                 "color": "rgba(237, 129, 40, 0.89)",
@@ -264,8 +261,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "rgba(50, 172, 45, 0.97)",
-                "value": null
+                "color": "rgba(50, 172, 45, 0.97)"
               },
               {
                 "color": "rgba(237, 129, 40, 0.89)",
@@ -3831,7 +3827,7 @@
   "schemaVersion": 33,
   "style": "dark",
   "tags": [
-    "clickhouse"
+    "file:clickhouse.json"
   ],
   "templating": {
     "list": [
@@ -3961,6 +3957,5 @@
   "timezone": "browser",
   "title": "ClickHouse Operator Dashboard",
   "uid": "clickhouse-operator",
-  "version": 1,
   "weekStart": ""
 }

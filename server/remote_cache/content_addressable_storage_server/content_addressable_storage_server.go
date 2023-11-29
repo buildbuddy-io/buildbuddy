@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -303,11 +302,11 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 		requestedResources = append(requestedResources, rn)
 		downloadTracker := ht.TrackDownload(rn.GetDigest())
-		closeTrackerFuncs = append(closeTrackerFuncs, func(data downloadTrackerData) {
-			downloadTracker.CloseWithBytesTransferred(int64(data.bytesReadFromCache), int64(data.bytesDownloadedToClient), data.compressor, "cas_server")
-		})
 
 		if !rn.IsEmpty() {
+			closeTrackerFuncs = append(closeTrackerFuncs, func(data downloadTrackerData) {
+				downloadTracker.CloseWithBytesTransferred(int64(data.bytesReadFromCache), int64(data.bytesDownloadedToClient), data.compressor, "cas_server")
+			})
 			if readZstd {
 				rn.SetCompressor(repb.Compressor_ZSTD)
 			}
@@ -363,12 +362,8 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		})
 	}
 
-	if len(closeTrackerFuncs) == len(rsp.Responses) {
-		for i, closeFn := range closeTrackerFuncs {
-			closeFn(closeTrackerData[i])
-		}
-	} else {
-		alert.UnexpectedEvent("cas_batch_response_length_mismatch", "Unexpected batch read response length (%d expected, got %d)", len(closeTrackerFuncs), len(rsp.Responses))
+	for i, closeFn := range closeTrackerFuncs {
+		closeFn(closeTrackerData[i])
 	}
 
 	return rsp, nil
@@ -664,20 +659,17 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 }
 
 func isComplete(children []*capb.DirectoryWithDigest) bool {
-	allDigests := make(map[string]struct{}, len(children))
+	allDigests := make(map[string]*capb.DirectoryWithDigest, len(children))
 	for _, child := range children {
-		rn := digest.ResourceNameFromProto(child.GetResourceName())
-		if rn.IsEmpty() {
+		rn := child.GetResourceName()
+		if digest.IsEmptyHash(rn.GetDigest(), rn.GetDigestFunction()) {
 			continue
 		}
-		allDigests[rn.GetDigest().GetHash()] = struct{}{}
+		allDigests[rn.GetDigest().GetHash()] = child
 	}
-	for _, child := range children {
-		rn := digest.ResourceNameFromProto(child.GetResourceName())
-		if rn.IsEmpty() {
-			continue
-		}
+	for _, child := range allDigests {
 		dir := child.Directory
+		rn := child.GetResourceName()
 		if len(dir.Directories) == 0 && len(dir.Files) == 0 && len(dir.Symlinks) == 0 {
 			log.Warningf("corrupted tree: empty dir: %+v, digest: %q", dir, rn.GetDigest().GetHash())
 			return false

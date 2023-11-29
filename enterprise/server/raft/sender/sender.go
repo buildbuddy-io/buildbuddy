@@ -22,7 +22,7 @@ import (
 
 type ISender interface {
 	SyncPropose(ctx context.Context, key []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error)
-	SyncRead(ctx context.Context, key []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error)
+	SyncRead(ctx context.Context, key []byte, batch *rfpb.BatchCmdRequest, mods ...Option) (*rfpb.BatchCmdResponse, error)
 }
 
 type Sender struct {
@@ -362,7 +362,7 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 	return rsp.GetBatch(), nil
 }
 
-func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest, mods ...Option) (*rfpb.BatchCmdResponse, error) {
 	var rsp *rfpb.SyncReadResponse
 	err := s.Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
@@ -374,7 +374,7 @@ func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchC
 		}
 		rsp = r
 		return nil
-	})
+	}, mods...)
 	if err != nil {
 		return nil, err
 	}

@@ -281,7 +281,7 @@ export default class EnterpriseRootComponent extends React.Component {
                 tests ? "root-tests" : ""
               }`}>
               {!this.state.loading && (
-                <div className={`content ${login ? "content-flex" : ""}`}>
+                <div className={`content ${login || repo ? "content-flex" : ""}`}>
                   {invocationId && (
                     <Suspense fallback={<div className="loading" />}>
                       <InvocationComponent

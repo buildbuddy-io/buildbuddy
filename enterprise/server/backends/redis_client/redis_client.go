@@ -8,7 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 )
 
 var (

@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
@@ -31,6 +32,7 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
+	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 )
 
@@ -462,6 +464,11 @@ func runVMExecServer(ctx context.Context) error {
 		return err
 	}
 	vmxpb.RegisterExecServer(server, vmService)
+	hc := healthcheck.NewHealthChecker("vmexec")
+	// For now, don't register any explicit health checks; if we can ping the
+	// health check service at all (within a short timeframe) then assume all is
+	// well.
+	hlpb.RegisterHealthServer(server, hc)
 
 	// If applicable, wait for dockerd to start before accepting commands, so
 	// that commands depending on dockerd do not need to explicitly wait for it.

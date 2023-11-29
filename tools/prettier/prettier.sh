@@ -3,6 +3,8 @@
 
 set -e
 
+: "${PRETTIER_PATH:=}"
+
 # Replacement for GNU realpath (not available on Mac)
 realpath() {
   [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
@@ -41,11 +43,17 @@ if [[ -z "${paths[*]}" ]]; then
 fi
 
 # Run bazel quietly; see: https://github.com/bazelbuild/bazel/issues/4867#issuecomment-796208829
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-bazel run @npm//prettier/bin:prettier --script_path="$tmp/run.sh" &>"$tmp/build.log" || {
-  cat "$tmp/build.log" >&2
-  exit 1
-}
-chmod +x "$tmp/run.sh"
-"$tmp/run.sh" --bazel_node_working_dir="$PWD" "${paths[@]}" "$@"
+if [[ "$PRETTIER_PATH" ]]; then
+  PRETTIER_COMMAND=("$PRETTIER_PATH")
+else
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  bazel run @npm//prettier/bin:prettier --script_path="$tmp/run.sh" &>"$tmp/build.log" || {
+    cat "$tmp/build.log" >&2
+    exit 1
+  }
+  chmod +x "$tmp/run.sh"
+  PRETTIER_COMMAND=("$tmp/run.sh" --bazel_node_working_dir="$PWD")
+fi
+
+"${PRETTIER_COMMAND[@]}" "${paths[@]}" "$@"

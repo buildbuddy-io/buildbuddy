@@ -25,20 +25,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/go-redis/redis/v8"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
-	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
+	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
 )
 
 var (
@@ -135,24 +135,53 @@ var (
 
 		-- If the client supports reconnect, validate reconnectToken if
 		-- the lease is still in its reconnection grace period.
+		local isNewAttempt = true
 		if ARGV[1] == "true" then
-			local token = redis.call("hget", KEYS[1], "reconnectToken")
-			if token ~= nil and token ~= "" then
-				local periodEnd = redis.call("hget", KEYS[1], "reconnectPeriodEnd")
-				if token ~= ARGV[2] and periodEnd > tonumber(ARGV[3]) then
+			local periodEnd = redis.call("hget", KEYS[1], "reconnectPeriodEnd")
+			if periodEnd ~= nil and periodEnd ~= "" and periodEnd > tonumber(ARGV[3]) then
+				local validToken = false
+
+				-- Temporarily accept either reconnectToken or leaseId.
+				
+				-- TODO(vadim): remove after clients use leaseId as reconnect
+				-- token.
+				local token = redis.call("hget", KEYS[1], "reconnectToken")
+				if token ~= nil and token ~= "" and token == ARGV[2] then
+					validToken = true
+				end
+
+				local leaseId = redis.call("hget", KEYS[1], "leaseId")
+				if leaseId ~= nil and leaseId ~= "" and leaseId == ARGV[2] then
+					validToken = true
+				end
+
+				if not validToken then
 					return 12
 				end
+				isNewAttempt = false
 			end
 		end
+		if isNewAttempt then
+			redis.call("hincrby", KEYS[1], "attemptCount", 1)
+		end
+		redis.call("hset", KEYS[1], "leaseId", ARGV[4])	
 
-		redis.call("hincrby", KEYS[1], "attemptCount", 1)
-
-		return redis.call("hset", KEYS[1], "claimed", "1") 
+		return redis.call("hset", KEYS[1], "claimed", "1")
 		`)
 	// Releases a claim if currently claimed, placing the lease into
 	// "reconnecting" state if the reconnect token arg is set.
+	// Return values:
+	//  - 0 if task is not claimed
+	//  - 1 if the claim was released
+	//  - 2 if lease ID was supplied and did not match the current lease ID
 	redisReleaseClaim = redis.NewScript(`
 		if redis.call("hget", KEYS[1], "claimed") == "1" then
+			local leaseId = redis.call("hget", KEYS[1], "leaseId")
+			-- Ignore the request if the claim has an ID but it doesn't match
+			-- the supplied ID.
+			if leaseId and ARGV[3] ~= "" and leaseId ~= ARGV[3] then
+				return 2
+			end
 			if ARGV[1] ~= "" then
 				redis.call("hset", KEYS[1], "reconnectToken", ARGV[1])
 				redis.call("hset", KEYS[1], "reconnectPeriodEnd", ARGV[2])
@@ -309,8 +338,9 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				// Remove the executor first so that we don't try to send any work its way.
 				removeConnectedExecutor()
 				for _, taskID := range req.GetShuttingDownRequest().GetTaskId() {
+					leaseID := ""
 					reconnectToken := ""
-					if err := h.scheduler.reEnqueueTask(ctx, taskID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down"); err != nil {
+					if err := h.scheduler.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down"); err != nil {
 						log.CtxWarningf(ctx, "Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
 					}
 				}
@@ -679,6 +709,9 @@ func (np *nodePool) FindConnectedExecutorByID(executorID string) *executionNode 
 }
 
 func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	key := np.key.redisUnclaimedTasksKey()
 	m := &redis.Z{
 		Member: taskID,
@@ -748,7 +781,7 @@ type schedulerClient struct {
 
 	localServer *SchedulerServer
 	rpcClient   scpb.SchedulerClient
-	rpcConn     *grpc.ClientConn
+	rpcConn     *grpc_client.ClientConnPool
 
 	lastAccess time.Time
 }
@@ -826,12 +859,14 @@ func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
 type Options struct {
 	LocalPortOverride            int32
 	RequireExecutorAuthorization bool
+	Clock                        clockwork.Clock
 }
 
 type SchedulerServer struct {
 	env                  environment.Env
 	rdb                  redis.UniversalClient
 	taskRouter           interfaces.TaskRouter
+	clock                clockwork.Clock
 	schedulerClientCache *schedulerClientCache
 	shuttingDown         <-chan struct{}
 	// host:port at which this scheduler can be reached
@@ -895,11 +930,17 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		}
 	}
 
+	clock := clockwork.NewRealClock()
+	if options.Clock != nil {
+		clock = options.Clock
+	}
+
 	s := &SchedulerServer{
 		env:                               env,
 		pools:                             make(map[nodePoolKey]*nodePool),
 		rdb:                               env.GetRemoteExecutionRedisClient(),
 		taskRouter:                        taskRouter,
+		clock:                             clock,
 		shuttingDown:                      shuttingDown,
 		enableUserOwnedExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		forceUserOwnedDarwinExecutors:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
@@ -1116,6 +1157,9 @@ func (s *SchedulerServer) redisKeyForTask(taskID string) string {
 }
 
 func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	serializedMetadata, err := proto.Marshal(metadata)
 	if err != nil {
 		return status.InternalErrorf("unable to serialize scheduling metadata: %v", err)
@@ -1162,39 +1206,46 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 	return nil
 }
 
-func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, reconnectToken string) error {
+func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reconnectToken string) error {
 	// The script will return 1 if the task is claimed & claim has been released.
 	r, err := redisReleaseClaim.Run(
 		ctx, s.rdb,
 		[]string{s.redisKeyForTask(taskID)},
-		reconnectToken, time.Now().UnixNano(),
+		reconnectToken, time.Now().UnixNano(), leaseID,
 	).Result()
 	if err != nil {
 		return err
 	}
 	if c, ok := r.(int64); !ok || c != 1 {
+		if c == 2 {
+			return status.PermissionDeniedErrorf("task %q already been re-claimed", taskID)
+		}
 		return status.NotFoundErrorf("unable to release task claim for task %s", taskID)
 	}
 	log.CtxDebugf(ctx, "Released task claim in Redis (reconnecting=%t)", reconnectToken != "")
 	return nil
 }
 
-func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken string, clientSupportsReconnect bool) error {
+func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken string, clientSupportsReconnect bool) (string, error) {
+	leaseId, err := random.RandomString(20)
+	if err != nil {
+		return "", status.InternalErrorf("could not generate lease ID: %s", err)
+	}
 	checkTaskReconnectToken := *leaseReconnectGracePeriod > 0 && clientSupportsReconnect
 	r, err := redisAcquireClaim.Run(
 		ctx, s.rdb,
 		[]string{s.redisKeyForTask(taskID)},
-		checkTaskReconnectToken, reconnectToken, time.Now().UnixNano(),
+		checkTaskReconnectToken, reconnectToken, time.Now().UnixNano(), leaseId,
 	).Result()
 	if err != nil {
 		log.CtxErrorf(ctx, "claimTask error: redis script failed: %s", err)
-		return err
+		return "", err
 	}
 
 	c, ok := r.(int64)
 	if !ok {
 		log.CtxErrorf(ctx, "unexpected result from claim attempt: %v (type %T)", r, r)
-		return status.FailedPreconditionErrorf("unexpected result from claim attempt: %v", r)
+		return "", status.FailedPreconditionErrorf("unexpected result from claim attempt: %v", r)
 	}
 
 	switch c {
@@ -1203,19 +1254,19 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken 
 		break
 	case 10:
 		log.CtxInfof(ctx, "claimTask %q error: task does not exist", taskID)
-		return status.NotFoundError("task does not exist")
+		return "", status.NotFoundError("task does not exist")
 	case 11:
 		// Don't log this; it's extremely common.
-		return status.NotFoundError("task already claimed")
+		return "", status.NotFoundError("task already claimed")
 	case 12:
 		// Don't log this either; it is common during rollouts.
-		return status.NotFoundError("task is waiting for another executor to reconnect")
+		return "", status.NotFoundError("task is waiting for another executor to reconnect")
 	default:
 		log.CtxErrorf(ctx, "claimTask %q error: unknown error code: %d", taskID, c)
-		return status.UnknownErrorf("unknown error %d", c)
+		return "", status.UnknownErrorf("unknown error %d", c)
 	}
 
-	return nil
+	return leaseId, nil
 }
 
 func (s *SchedulerServer) readTasks(ctx context.Context, taskIDs []string) ([]*persistedTask, error) {
@@ -1356,6 +1407,11 @@ func (s *SchedulerServer) isShuttingDown() bool {
 	}
 }
 
+type leaseMessage struct {
+	req *scpb.LeaseTaskRequest
+	err error
+}
+
 // TODO(vadim): we should verify that the executor is authorized to read the task
 func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error {
 	ctx := stream.Context()
@@ -1363,6 +1419,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	claimed := false
 	taskID := ""
 	reconnectToken := ""
+	leaseID := ""
 
 	// TODO(vadim): remove after executor ID in lease request is rolled out
 	executorID := "unknown"
@@ -1380,13 +1437,42 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 		defer cancel()
 		reEnqueueReason := "stream closed with task still claimed"
-		if err := s.reEnqueueTask(ctx, taskID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
+		if err := s.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
 			log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
 		} // Success case will be logged by ReEnqueueTask flow.
 	}()
 
+	msgs := make(chan *leaseMessage)
+	go func() {
+		for {
+			req, err := stream.Recv()
+			select {
+			case msgs <- &leaseMessage{req, err}:
+			case <-stream.Context().Done():
+				return
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	livenessTicker := s.clock.NewTicker(*leaseInterval)
+	defer livenessTicker.Stop()
 	for {
-		req, err := stream.Recv()
+		var req *scpb.LeaseTaskRequest
+		var err error
+		select {
+		case msg := <-msgs:
+			req = msg.req
+			err = msg.err
+		case <-livenessTicker.Chan():
+			if s.clock.Since(lastCheckin) > (*leaseInterval + *leaseGracePeriod) {
+				err = status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
+			} else {
+				continue
+			}
+		}
 		if err == io.EOF {
 			log.CtxWarningf(ctx, "LeaseTask %q got EOF: %s", taskID, err)
 			break
@@ -1407,16 +1493,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			taskID = req.GetTaskId()
 			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 		}
-		if time.Since(lastCheckin) > (*leaseInterval + *leaseGracePeriod) {
-			log.CtxWarningf(ctx, "LeaseTask %q client went away after %s", taskID, time.Since(lastCheckin))
-			break
-		}
 		rsp := &scpb.LeaseTaskResponse{
 			LeaseDurationSeconds: int64(leaseInterval.Seconds()),
 		}
 		if !claimed {
 			log.CtxInfof(ctx, "LeaseTask attempt (reconnect=%t) from executor %q", req.GetReconnectToken() != "", executorID)
-			err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
+			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
 			if err != nil {
 				log.CtxDebugf(ctx, "LeaseTask claim attempt (reconnect=%t) failed: %s", req.GetReconnectToken() != "", err)
 				return err
@@ -1448,6 +1530,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
 			queueWaitTimeMs.Observe(float64(ageInMillis))
 			rsp.SerializedTask = task.serializedTask
+			rsp.LeaseId = leaseID
 			// If both the client and server have lease reconnect enabled,
 			// generate a reconnect token.
 			if *leaseReconnectGracePeriod > 0 && req.GetSupportsReconnect() {
@@ -1484,10 +1567,16 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			// "release" was deprecated in favor of "reEnqueue" but remains
 			// for backwards compatibility with older executors.
 
-			err := s.unclaimTask(ctx, taskID, "" /*reconnectToken*/)
-			if err == nil {
+			err := s.unclaimTask(ctx, taskID, leaseID, "" /*reconnectToken*/)
+			// a "permission denied" error means that the lease is already owned
+			// by someone else.
+			if err == nil || status.IsPermissionDeniedError(err) {
 				claimed = false
-				log.CtxInfof(ctx, "LeaseTask task %q successfully released by %q", taskID, executorID)
+				if err == nil {
+					log.CtxInfof(ctx, "LeaseTask task %q successfully released by %q", taskID, executorID)
+				} else {
+					log.CtxInfof(ctx, "LeaseTask task %q is already claimed by another executor", taskID)
+				}
 			} else {
 				log.CtxWarningf(ctx, "Could not release lease for task %q: %s", taskID, err)
 			}
@@ -1507,7 +1596,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			return status.UnavailableError("server is shutting down")
 		}
 		rsp.ClosedCleanly = !claimed
-		lastCheckin = time.Now()
+		lastCheckin = s.clock.Now()
 		if err := stream.Send(rsp); err != nil {
 			return err
 		}
@@ -1720,7 +1809,7 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 	return &scpb.EnqueueTaskReservationResponse{}, nil
 }
 
-func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, reconnectToken string, numReplicas int, reason string) error {
+func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, reconnectToken string, numReplicas int, reason string) error {
 	if taskID == "" {
 		return status.FailedPreconditionError("A task_id is required")
 	}
@@ -1741,7 +1830,12 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, reconnectTo
 		}
 		return status.ResourceExhaustedErrorf(msg)
 	}
-	if err := s.unclaimTask(ctx, taskID, reconnectToken); err != nil {
+	if err := s.unclaimTask(ctx, taskID, leaseID, reconnectToken); err != nil {
+		// A "permission denied" error means the task is already claimed
+		// by a different leaseholder so we shouldn't touch it.
+		if status.IsPermissionDeniedError(err) {
+			return err
+		}
 		log.CtxDebugf(ctx, "Failed to unclaim task: %s", err)
 		// Proceed despite error - it's fine if it's already unclaimed.
 	}
@@ -1776,7 +1870,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, reconnectTo
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 	reconnectToken := ""
-	if err := s.reEnqueueTask(ctx, req.GetTaskId(), reconnectToken, probesPerTask, req.GetReason()); err != nil {
+	if err := s.reEnqueueTask(ctx, req.GetTaskId(), req.GetLeaseId(), reconnectToken, probesPerTask, req.GetReason()); err != nil {
 		log.CtxErrorf(ctx, "ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err)
 		return nil, err
 	}

@@ -3,19 +3,17 @@ package client
 import (
 	"context"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
-	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -23,9 +21,9 @@ import (
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
-// If a request is received that will result in a nodehost.Sync{Propose/Read},
-// but not deadline is set, defaultContextTimeout will be applied.
-const DefaultContextTimeout = 60 * time.Second
+// A default timeout that can be applied to raft requests that do not have one
+// set.
+const DefaultContextTimeout = 10 * time.Second
 
 type NodeHost interface {
 	ID() string
@@ -39,7 +37,6 @@ type NodeHost interface {
 
 type apiClientAndConn struct {
 	rfspb.ApiClient
-	conn *grpc.ClientConn
 }
 
 type APIClient struct {
@@ -68,7 +65,7 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 		return nil, err
 	}
 	client := rfspb.NewApiClient(conn)
-	c.clients[peer] = &apiClientAndConn{ApiClient: client, conn: conn}
+	c.clients[peer] = &apiClientAndConn{ApiClient: client}
 	return client, nil
 }
 
@@ -76,21 +73,45 @@ func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, erro
 	return c.getClient(ctx, peer)
 }
 
-func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
-	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, DefaultContextTimeout)
-		defer cancel()
-		ctx = c
+func singleOpTimeout(ctx context.Context) time.Duration {
+	// This value should be approximately 10x the config.RTTMilliseconds,
+	// but we want to include a little more time for the operation itself to
+	// complete.
+	const maxTimeout = time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		if dur := deadline.Sub(time.Now()); dur < maxTimeout {
+			return dur
+		}
 	}
-	retrier := retry.New(ctx, &retry.Options{
-		InitialBackoff: 10 * time.Microsecond,
-		MaxBackoff:     100 * time.Millisecond,
-		Multiplier:     1.5,
-		MaxRetries:     math.MaxInt, // retry until context deadline
-	})
-	for retrier.Next() {
-		err := nhf(ctx)
+	return maxTimeout
+}
+
+func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
+	// Ensure that the outer context has a timeout set to limit the total
+	// time we'll attempt to run an operation.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultContextTimeout)
+		defer cancel()
+	}
+	var lastErr error
+	for {
+		select {
+		case <-ctx.Done():
+			if lastErr != nil {
+				return lastErr
+			}
+			return ctx.Err()
+		default:
+			break
+		}
+
+		opCtx, cancel := context.WithTimeout(ctx, singleOpTimeout(ctx))
+		err := nhf(opCtx)
+		cancel()
+
 		if err != nil {
+			lastErr = err
 			if dragonboat.IsTempError(err) {
 				continue
 			}
@@ -98,7 +119,6 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		}
 		return nil
 	}
-	return status.DeadlineExceededErrorf("exceeded retry limit for node host function")
 }
 
 func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
@@ -109,6 +129,7 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 	}
 	var raftResponse dbsm.Result
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
+		defer canary.Start("nodehost.SyncPropose", time.Second)()
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
 			return err
@@ -126,17 +147,7 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 	return batchResponse, err
 }
 
-func getReadIndexTimeout(ctx context.Context) time.Duration {
-	const maxTimeout = time.Second
-	if deadline, ok := ctx.Deadline(); ok {
-		if dur := deadline.Sub(time.Now()); dur < maxTimeout {
-			return dur
-		}
-	}
-	return maxTimeout
-}
-
-func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
@@ -145,12 +156,11 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, batch *rfpb.BatchCmdR
 	if batch.Header == nil {
 		return nil, status.FailedPreconditionError("Header must be set")
 	}
-	shardID := batch.GetHeader().GetReplica().GetShardId()
 	var raftResponseIface interface{}
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		switch batch.GetHeader().GetConsistencyMode() {
 		case rfpb.Header_LINEARIZABLE:
-			rs, err := nodehost.ReadIndex(shardID, getReadIndexTimeout(ctx))
+			rs, err := nodehost.ReadIndex(shardID, singleOpTimeout(ctx))
 			if err != nil {
 				return err
 			}
@@ -203,7 +213,7 @@ func (nhs *NodeHostSender) SyncProposeLocal(ctx context.Context, shardID uint64,
 	return SyncProposeLocal(ctx, nhs.NodeHost, shardID, batch)
 }
 func (nhs *NodeHostSender) SyncReadLocal(ctx context.Context, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	return SyncReadLocal(ctx, nhs.NodeHost, batch)
+	return SyncReadLocal(ctx, nhs.NodeHost, shardID, batch)
 }
 
 func SyncProposeLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
@@ -224,4 +234,51 @@ func SyncProposeLocalBatchNoRsp(ctx context.Context, nodehost *dragonboat.NodeHo
 		return err
 	}
 	return rspBatch.AnyError()
+}
+
+func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rbuilder.TxnBuilder) error {
+	// TODO(tylerw): make this durable if the coordinator restarts by writing
+	// the TxnRequest proto to durable storage with an enum state-field and
+	// building a statemachine that will run them to completion even after
+	// restart.
+	txnProto, err := txn.ToProto()
+	if err != nil {
+		return err
+	}
+
+	prepared := make([]*rfpb.TxnRequest_Statement, 0)
+	for _, statement := range txnProto.GetStatements() {
+		batch := statement.GetRawBatch()
+		batch.TransactionId = txnProto.GetTransactionId()
+
+		// Prepare each statement.
+		rspProto, err := SyncProposeLocal(ctx, nodehost, statement.GetShardId(), batch)
+		if err != nil {
+			log.Errorf("Error preparing txn statement: %s", err)
+			break
+		}
+		rsp := rbuilder.NewBatchResponseFromProto(rspProto)
+		if err := rsp.AnyError(); err != nil {
+			log.Errorf("Error preparing txn statement: %s", err)
+			break
+		}
+		prepared = append(prepared, statement)
+	}
+
+	// Determine whether to ROLLBACK or COMMIT based on whether or not all
+	// statements in the transaction were successfully prepared.
+	operation := rfpb.FinalizeOperation_ROLLBACK
+	if len(prepared) == len(txnProto.GetStatements()) {
+		operation = rfpb.FinalizeOperation_COMMIT
+	}
+
+	for _, statement := range prepared {
+		// Finalize each statement.
+		batch := rbuilder.NewBatchBuilder().SetTransactionID(txnProto.GetTransactionId())
+		batch.SetFinalizeOperation(operation)
+		if _, err := SyncProposeLocalBatch(ctx, nodehost, statement.GetShardId(), batch); err != nil {
+			return err
+		}
+	}
+	return nil
 }

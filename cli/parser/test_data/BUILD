@@ -7,9 +7,11 @@ go_library(
     embedsrcs = [
         "bazel5.3.1_help_startup_options.txt",
         "bazel5.3.1_help_test.txt",
+        "bazel5.3.1_help_query.txt",
+        "bazel5.3.1_help_build.txt",
+        "bazel5.3.1_help_run.txt",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser/test_data",
-    visibility = ["//visibility:public"],
 )
 
 package(default_visibility = ["//cli:__subpackages__"])

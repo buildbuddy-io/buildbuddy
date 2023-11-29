@@ -13,8 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/google/uuid"
 
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 )
 
 const (

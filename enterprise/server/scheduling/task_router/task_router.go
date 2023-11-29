@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	affinityRoutingPermitted = flag.Bool("executor.affinity_routing_permitted", true, "If set, along with the 'affinity-routing' platform property, then (experimental) affinity routing is used. If false, then affinity routing is never used. This flag is intended to be used as an emergency shut-off for this experimental feature.")
+	affinityRoutingEnabled = flag.Bool("executor.affinity_routing_enabled", true, "Enables affinity routing, which attempts to route actions to the executor that most recently ran that action.")
 )
 
 const (
@@ -228,8 +228,7 @@ func (runnerRecycler) Applies(params routingParams) bool {
 }
 
 func (runnerRecycler) preferredNodeLimit(params routingParams) int {
-	workflowID := platform.FindValue(params.cmd.GetPlatform(), platform.WorkflowIDPropertyName)
-	if workflowID != "" {
+	if isWorkflow(params.cmd) {
 		return workflowsPreferredNodeLimit
 	}
 	return defaultPreferredNodeLimit
@@ -252,6 +251,20 @@ func (runnerRecycler) routingKey(params routingParams) (string, error) {
 	}
 	parts = append(parts, hash.Bytes(b))
 
+	// For workflow tasks, route using GIT_BRANCH so that when re-running the
+	// workflow multiple times using the same branch, the runs are more likely
+	// to hit an executor with a warmer snapshot cache.
+	if isWorkflow(params.cmd) {
+		branch := ""
+		for _, envVar := range params.cmd.EnvironmentVariables {
+			if envVar.GetName() == "GIT_BRANCH" {
+				branch = envVar.GetValue()
+				break
+			}
+		}
+		parts = append(parts, hash.String(branch))
+	}
+
 	return strings.Join(parts, "/"), nil
 }
 
@@ -259,6 +272,10 @@ func (s runnerRecycler) RoutingInfo(params routingParams) (int, string, error) {
 	nodeLimit := s.preferredNodeLimit(params)
 	key, err := s.routingKey(params)
 	return nodeLimit, key, err
+}
+
+func isWorkflow(cmd *repb.Command) bool {
+	return platform.FindValue(cmd.GetPlatform(), platform.WorkflowIDPropertyName) != ""
 }
 
 // affinityRouter generates Redis routing keys based on:
@@ -276,9 +293,7 @@ func (s runnerRecycler) RoutingInfo(params routingParams) (int, string, error) {
 type affinityRouter struct{}
 
 func (affinityRouter) Applies(params routingParams) bool {
-	return *affinityRoutingPermitted &&
-		platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.AffinityRoutingPropertyName)) &&
-		getFirstOutput(params.cmd) != ""
+	return *affinityRoutingEnabled && getFirstOutput(params.cmd) != ""
 }
 
 func (affinityRouter) preferredNodeLimit(params routingParams) int {
@@ -322,6 +337,9 @@ func (s affinityRouter) RoutingInfo(params routingParams) (int, string, error) {
 }
 
 func getFirstOutput(cmd *repb.Command) string {
+	if cmd == nil {
+		return ""
+	}
 	if len(cmd.OutputPaths) > 0 && cmd.OutputPaths[0] != "" {
 		return cmd.OutputPaths[0]
 	} else if len(cmd.OutputFiles) > 0 && cmd.OutputFiles[0] != "" {

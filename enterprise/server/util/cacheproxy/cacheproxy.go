@@ -47,7 +47,8 @@ type CacheProxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
 	log                   log.Logger
-	bufferPool            *bytebufferpool.Pool
+	readBufPool           *bytebufferpool.VariableSizePool
+	writeBufPool          sync.Pool
 	mu                    *sync.Mutex
 	server                *grpc.Server
 	clients               map[string]*dcClient
@@ -59,10 +60,15 @@ type CacheProxy struct {
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
 	proxy := &CacheProxy{
-		env:        env,
-		cache:      c,
-		log:        log.NamedSubLogger(fmt.Sprintf("CacheProxy(%s)", listenAddr)),
-		bufferPool: bytebufferpool.New(readBufSizeBytes),
+		env:         env,
+		cache:       c,
+		log:         log.NamedSubLogger(fmt.Sprintf("CacheProxy(%s)", listenAddr)),
+		readBufPool: bytebufferpool.VariableSize(readBufSizeBytes),
+		writeBufPool: sync.Pool{
+			New: func() any {
+				return bufio.NewWriterSize(io.Discard, readBufSizeBytes)
+			},
+		},
 		listenAddr: listenAddr,
 		mu:         &sync.Mutex{},
 		// server goes here
@@ -151,7 +157,7 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 		return client, nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
-	conn, err := grpc_client.DialInternal(c.env, "grpc://"+peer)
+	conn, err := grpc_client.DialInternalWithoutPooling(c.env, "grpc://"+peer)
 	if err != nil {
 		return nil, err
 	}
@@ -315,24 +321,16 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	if resourceSize > 0 && resourceSize < bufSize {
 		bufSize = resourceSize
 	}
-	copyBuf := c.bufferPool.Get(bufSize)
-	defer c.bufferPool.Put(copyBuf)
+	copyBuf := c.readBufPool.Get(bufSize)
+	defer c.readBufPool.Put(copyBuf)
 
 	for {
-		n, err := io.ReadFull(reader, copyBuf)
+		n, err := ioutil.ReadTryFillBuffer(reader, copyBuf)
 		if err == io.EOF {
 			break
-		} else if err == io.ErrUnexpectedEOF {
-			if err := stream.Send(&dcpb.ReadResponse{Data: copyBuf[:n]}); err != nil {
-				return err
-			}
-		} else if err != nil {
+		}
+		if err := stream.Send(&dcpb.ReadResponse{Data: copyBuf[:n]}); err != nil {
 			return err
-		} else {
-			if err := stream.Send(&dcpb.ReadResponse{Data: copyBuf}); err != nil {
-				return err
-			}
-			continue
 		}
 	}
 
@@ -632,8 +630,9 @@ func (wc *streamWriteCloser) Close() error {
 }
 
 type bufferedStreamWriteCloser struct {
-	*streamWriteCloser
+	swc            *streamWriteCloser
 	bufferedWriter *bufio.Writer
+	returnWriter   func()
 }
 
 func (bc *bufferedStreamWriteCloser) Write(data []byte) (int, error) {
@@ -644,13 +643,23 @@ func (bc *bufferedStreamWriteCloser) Commit() error {
 	if err := bc.bufferedWriter.Flush(); err != nil {
 		return err
 	}
-	return bc.streamWriteCloser.Commit()
+	return bc.swc.Commit()
 }
 
-func newBufferedStreadWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCloser {
+func (bc *bufferedStreamWriteCloser) Close() error {
+	bc.returnWriter()
+	return bc.swc.Close()
+}
+
+func (c *CacheProxy) newBufferedStreamWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCloser {
+	bufWriter := c.writeBufPool.Get().(*bufio.Writer)
+	bufWriter.Reset(swc)
 	return &bufferedStreamWriteCloser{
-		streamWriteCloser: swc,
-		bufferedWriter:    bufio.NewWriterSize(swc, readBufSizeBytes),
+		swc:            swc,
+		bufferedWriter: bufWriter,
+		returnWriter: func() {
+			c.writeBufPool.Put(bufWriter)
+		},
 	}
 }
 
@@ -693,7 +702,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		stream:        stream,
 		r:             r,
 	}
-	return newBufferedStreadWriteCloser(wc), nil
+	return c.newBufferedStreamWriteCloser(wc), nil
 }
 
 func (c *CacheProxy) SendHeartbeat(ctx context.Context, peer string) error {

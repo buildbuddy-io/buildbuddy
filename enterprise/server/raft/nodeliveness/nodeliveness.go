@@ -177,12 +177,7 @@ func (h *Liveness) setLastLivenessRecord(nlr *rfpb.NodeLivenessRecord) {
 
 	// Update any listeners.
 	for _, ch := range h.livenessListeners {
-		select {
-		case ch <- nlr:
-			continue
-		default:
-			log.Warning("LivenessUpdate callback dropped.")
-		}
+		ch <- nlr
 	}
 }
 

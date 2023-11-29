@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-const window = time.Minute
-
 type bin struct {
 	c uint64
 }
@@ -27,15 +25,24 @@ func (b *bin) Reset() {
 
 type Counter struct {
 	counts [60]bin
-	once   *sync.Once
 	idx    uint64
+	// The number of bins that should be included in the average. After the
+	// first full averaging period elapses, this will always equal len(counts).
+	nValidBins uint64
+	window     time.Duration
+	startOnce  sync.Once
+	stop       chan struct{}
 }
 
-func NewCounter() *Counter {
-	c := &Counter{
-		once: &sync.Once{},
+// NewCounter returns a QPS counter using the given duration as the averaging
+// window. The caller must call Stop() on the returned counter when it is no
+// longer needed.
+func NewCounter(window time.Duration) *Counter {
+	return &Counter{
+		nValidBins: 1,
+		window:     window,
+		stop:       make(chan struct{}),
 	}
-	return c
 }
 
 func (c *Counter) bin(idx int) *bin {
@@ -48,39 +55,48 @@ func (c *Counter) currentBin() *bin {
 	return c.bin(int(idx))
 }
 
-func (c *Counter) Get() uint64 {
+func (c *Counter) Get() float64 {
 	sum := uint64(0)
-	nonZeroBuckets := -1 // don't count the active bucket
-	for i := 0; i < len(c.counts); i++ {
-		v := c.bin(i).Get()
-
-		if v > 0 {
-			sum += v
-			nonZeroBuckets += 1
-		}
+	nValidBins := atomic.LoadUint64(&c.nValidBins)
+	for i := 0; i < int(nValidBins); i++ {
+		sum += c.bin(i).Get()
 	}
-	if nonZeroBuckets <= 0 {
-		return 0
-	}
-	qps := uint64(float64(sum) / float64(nonZeroBuckets))
+	binDurationSec := float64(c.window) * 1e-9 / float64(len(c.counts))
+	summedDurationSec := binDurationSec * float64(nValidBins)
+	qps := float64(sum) / float64(summedDurationSec)
 	return qps
 }
 
-func (c *Counter) reset() {
+func (c *Counter) start() {
+	t := time.NewTicker(time.Duration(float64(c.window) / float64(len(c.counts))))
+	defer t.Stop()
 	for {
-		t := time.Now().Second()
-		numCounts := len(c.counts)
-		atomic.StoreUint64(&c.idx, uint64(t%numCounts))
-		j := (t + 1) % numCounts
-		c.bin(j).Reset()
+		select {
+		case <-c.stop:
+			return
+		case <-t.C:
+		}
+		// Advance to the next bin, reset its current count, and mark it valid
+		// if we haven't done so already.
+		idx := atomic.LoadUint64(&c.idx)
+		idx = (idx + 1) % uint64(len(c.counts))
+		atomic.StoreUint64(&c.idx, idx)
 
-		time.Sleep(window / time.Duration(numCounts))
+		c.bin(int(idx)).Reset()
+
+		nv := atomic.LoadUint64(&c.nValidBins)
+		nv = min(nv+1, uint64(len(c.counts)))
+		atomic.StoreUint64(&c.nValidBins, nv)
 	}
 }
 
+func (c *Counter) Stop() {
+	close(c.stop)
+}
+
 func (c *Counter) Inc() {
-	c.once.Do(func() {
-		go c.reset()
+	c.startOnce.Do(func() {
+		go c.start()
 	})
 	c.currentBin().Inc()
 }

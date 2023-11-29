@@ -1,7 +1,9 @@
 package testdigest
 
 import (
+	"bytes"
 	"io"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +19,22 @@ var (
 	randomGen      *digest.Generator
 )
 
+func compressibleBlobOfSize(sizeBytes int) []byte {
+	out := make([]byte, 0, sizeBytes)
+	for len(out) < sizeBytes {
+		runEnd := len(out) + 100 + rand.Intn(100)
+		if runEnd > sizeBytes {
+			runEnd = sizeBytes
+		}
+
+		runChar := byte(rand.Intn('Z'-'A'+1)) + 'A'
+		for len(out) < runEnd {
+			out = append(out, runChar)
+		}
+	}
+	return out
+}
+
 func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
 	randomSeedOnce.Do(func() {
 		randomGen = digest.RandomGenerator(time.Now().Unix())
@@ -26,6 +44,15 @@ func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.Read
 		t.Fatal(err)
 	}
 	return d, r
+}
+
+func newRandomCompressibleDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
+	blob := compressibleBlobOfSize(int(sizeBytes))
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d, blob
 }
 
 func newRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
@@ -40,6 +67,11 @@ func newRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 func NewRandomResourceAndBuf(t testing.TB, sizeBytes int64, cacheType rspb.CacheType, instanceName string) (*rspb.ResourceName, []byte) {
 	d, buf := newRandomDigestBuf(t, sizeBytes)
 	return digest.NewResourceName(d, instanceName, cacheType, repb.DigestFunction_SHA256).ToProto(), buf
+}
+
+func RandomCompressibleCASResourceBuf(t testing.TB, sizeBytes int64, instanceName string) (*rspb.ResourceName, []byte) {
+	d, buf := newRandomCompressibleDigestBuf(t, sizeBytes)
+	return digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto(), buf
 }
 
 func RandomCASResourceBuf(t testing.TB, sizeBytes int64) (*rspb.ResourceName, []byte) {

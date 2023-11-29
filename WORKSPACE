@@ -19,12 +19,13 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "884fa7b014167fed6bf7cb8520652e364a904e57d3ce172419af30db5ce6217c",
-    strip_prefix = "rules_go-5206498b4f67ff3e6a9222a923cf67ff5191754e",
+    sha256 = "f6f5ede97567d1c61d6d5227848bb13f419e4ea195b81ba4ca451f20bcd03d66",
+    strip_prefix = "rules_go-4706a513acc1f6e5125b476936060ff71bfb8723",
     urls = [
-        # TODO(sluongng): this track the unreleased version v0.42.0 of rules_go to help us upgrade to Go 1.21
-        # We should replace this once rules_go v0.42.0 is released.
-        "https://github.com/bazelbuild/rules_go/archive/5206498b4f67ff3e6a9222a923cf67ff5191754e.zip",
+        # TODO(sluongng): this track the unreleased version v0.43.0 of rules_go.
+        # See https://github.com/bazelbuild/rules_go/pull/3722#issuecomment-1787954611 for more information.
+        # We should replace this once rules_go v0.43.0 is released.
+        "https://github.com/bazelbuild/rules_go/archive/4706a513acc1f6e5125b476936060ff71bfb8723.zip",
     ],
 )
 
@@ -35,11 +36,17 @@ http_archive(
         "//buildpatches:gazelle.patch",
     ],
     sha256 = "29218f8e0cebe583643cbf93cae6f971be8a2484cdcfa1e45057658df8d54002",
-    # Keep version in sync with .github/workflows/checkstyle.yaml
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.32.0/bazel-gazelle-v0.32.0.tar.gz",
         "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.32.0/bazel-gazelle-v0.32.0.tar.gz",
     ],
+)
+
+http_archive(
+    name = "com_google_absl",
+    sha256 = "987ce98f02eefbaf930d6e38ab16aa05737234d7afbab2d5c4ea7adbe50c28ed",
+    strip_prefix = "abseil-cpp-20230802.1",
+    urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/20230802.1.tar.gz"],
 )
 
 load(":deps.bzl", "install_go_mod_dependencies", "install_static_dependencies")
@@ -56,6 +63,8 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchai
 
 go_rules_dependencies()
 
+GO_SDK_VERSION = "1.21.4"
+
 # Register multiple Go SDKs so that we can perform cross-compilation remotely.
 # i.e. We might want to trigger a Linux AMD64 Go build remotely from a MacOS ARM64 laptop.
 #
@@ -64,42 +73,42 @@ go_download_sdk(
     name = "go_sdk_linux",
     goarch = "amd64",
     goos = "linux",
-    version = "1.21.3",  # Keep in sync with .github/workflows/checkstyle.yaml
+    version = GO_SDK_VERSION,
 )
 
 go_download_sdk(
     name = "go_sdk_linux_arm64",
     goarch = "arm64",
     goos = "linux",
-    version = "1.21.3",
+    version = GO_SDK_VERSION,
 )
 
 go_download_sdk(
     name = "go_sdk_darwin",
     goarch = "amd64",
     goos = "darwin",
-    version = "1.21.3",
+    version = GO_SDK_VERSION,
 )
 
 go_download_sdk(
     name = "go_sdk_darwin_arm64",
     goarch = "arm64",
     goos = "darwin",
-    version = "1.21.3",
+    version = GO_SDK_VERSION,
 )
 
 go_download_sdk(
     name = "go_sdk_windows",
     goarch = "amd64",
     goos = "windows",
-    version = "1.21.3",
+    version = GO_SDK_VERSION,
 )
 
 go_download_sdk(
     name = "go_sdk_windows_arm64",
     goarch = "arm64",
     goos = "windows",
-    version = "1.21.3",
+    version = GO_SDK_VERSION,
 )
 
 go_register_toolchains(
@@ -418,9 +427,10 @@ swc_register_toolchains(
 
 http_archive(
     name = "io_bazel_rules_webtesting",
-    sha256 = "e9abb7658b6a129740c0b3ef6f5a2370864e102a5ba5ffca2cea565829ed825a",
+    sha256 = "3e25ac044ed409545214cf8b013fa7255ccf1d2fa027b0d57a3fcc7d732da667",
+    strip_prefix = "rules_webtesting-9e9361ba887a3b687f537c02409b690b62fecdfe",
     urls = [
-        "https://github.com/bazelbuild/rules_webtesting/releases/download/0.3.5/rules_webtesting.tar.gz",
+        "https://github.com/bazelbuild/rules_webtesting/archive/9e9361ba887a3b687f537c02409b690b62fecdfe.tar.gz",
     ],
 )
 
@@ -461,3 +471,26 @@ load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_
 rules_proto_dependencies()
 
 rules_proto_toolchains()
+
+HERMETIC_CC_TOOLCHAIN_VERSION = "v2.1.2"
+
+http_archive(
+    name = "hermetic_cc_toolchain",
+    sha256 = "28fc71b9b3191c312ee83faa1dc65b38eb70c3a57740368f7e7c7a49bedf3106",
+    urls = [
+        "https://mirror.bazel.build/github.com/uber/hermetic_cc_toolchain/releases/download/{0}/hermetic_cc_toolchain-{0}.tar.gz".format(HERMETIC_CC_TOOLCHAIN_VERSION),
+        "https://github.com/uber/hermetic_cc_toolchain/releases/download/{0}/hermetic_cc_toolchain-{0}.tar.gz".format(HERMETIC_CC_TOOLCHAIN_VERSION),
+    ],
+)
+
+load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
+
+# Plain zig_toolchains() will pick reasonable defaults. See
+# toolchain/defs.bzl:toolchains on how to change the Zig SDK version and
+# download URL.
+zig_toolchains()
+
+register_toolchains(
+    "//toolchains:sh_toolchain",
+    "//toolchains:ubuntu_cc_toolchain",
+)

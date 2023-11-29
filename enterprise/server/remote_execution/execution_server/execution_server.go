@@ -41,12 +41,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -187,6 +187,9 @@ func (s *ExecutionServer) pubSubChannelForExecutionID(executionID string) *pubsu
 }
 
 func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invocationID, snippet string, stage repb.ExecutionStage_Value) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	if s.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
@@ -220,6 +223,9 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 }
 
 func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	// Add the invocation links to Redis. MySQL insertion sometimes can take a
 	// longer time to finish and the insertion can be finished after the
 	// execution is complete.
@@ -417,6 +423,9 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 }
 
 func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest) (string, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	scheduler := s.env.GetSchedulerService()
 	if scheduler == nil {
 		return "", status.FailedPreconditionErrorf("No scheduler service configured")
@@ -815,7 +824,9 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	for {
 		msg, ok := <-streamPubSubChan
 		if !ok {
-			log.CtxInfof(ctx, "WaitExecution %q: exiting early because PubSub channel was closed", req.GetName())
+			if ctx.Err() != nil {
+				log.CtxInfof(ctx, "WaitExecution %q: client disconnected before action completed: %s", req.GetName(), ctx.Err())
+			}
 			return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
 		}
 		var data string

@@ -54,7 +54,7 @@ func (tn *testNode) flush() {
 		rd := &rfpb.RangeDescriptor{
 			RangeId: ru.GetReplica().GetShardId(),
 		}
-		require.NoError(tn.state.tb, tn.state.cm.ObserveLocalReplicaUsage(tn.nhid, ru, rd))
+		require.NoError(tn.state.tb, tn.state.cm.ObserveLocalReplicaUsage(ru, rd))
 	}
 	require.NoError(tn.state.tb, tn.state.cm.ObserveNode(tn.nhid, storeUsage, serf.StatusAlive))
 }

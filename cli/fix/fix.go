@@ -13,11 +13,26 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/translate"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 
 	langs "github.com/buildbuddy-io/buildbuddy/cli/fix/langs"
 
 	gazelle "github.com/bazelbuild/bazel-gazelle/cmd/gazelle"
 	buildifier "github.com/bazelbuild/buildtools/buildifier"
+)
+
+var (
+	flags = flag.NewFlagSet("fix", flag.ContinueOnError)
+	diff  = flags.Bool("diff", false, "Don't apply fixes, just print a diff showing the changes that would be applied.")
+)
+
+const (
+	usage = `
+usage: bb fix [ --diff ]
+
+Applies fixes to WORKSPACE and BUILD files.
+Use the --diff flag to print suggested fixes without applying.
+`
 )
 
 var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9 ]+`)
@@ -33,7 +48,17 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return 1, nil
 	}
 
-	_, _, err = workspace.CreateWorkspaceFileIfNotExists()
+	if err := arg.ParseFlagSet(flags, args[idx+1:]); err != nil {
+		if err == flag.ErrHelp {
+			log.Print(usage)
+			flags.SetOutput(os.Stderr)
+			flags.PrintDefaults()
+			return 1, nil
+		}
+		return -1, err
+	}
+
+	path, _, err := workspace.CreateWorkspaceIfNotExists()
 	if err != nil {
 		return 1, err
 	}
@@ -43,20 +68,20 @@ func HandleFix(args []string) (exitCode int, err error) {
 		log.Printf("Error fixing: %s", err)
 	}
 
-	runGazelle()
+	runGazelle(path)
 
 	return 0, nil
 }
 
-func runGazelle() {
-	// Run gazelle with the transformed args so far (e.g. if we ran bb with
-	// `--verbose=1`, this will make sure we don't pass `--verbose=1` to
-	// gazelle, which doesn't understand that flag).
+func runGazelle(repoRoot string) {
 	originalArgs := os.Args
 	defer func() {
 		os.Args = originalArgs
 	}()
-	os.Args = []string{"gazelle"}
+	os.Args = []string{"gazelle", "-repo_root=" + repoRoot, "--go_prefix="}
+	if *diff {
+		os.Args = append(os.Args, "-mode=diff")
+	}
 	log.Debugf("Calling gazelle with args: %+v", os.Args)
 	gazelle.Run()
 }
@@ -89,7 +114,7 @@ func walk() error {
 				depFiles[fileName] = append(depFiles[fileName], path)
 			}
 			fileNameRoot := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-			if fileNameRoot != "BUILD" && fileNameRoot != "WORKSPACE" {
+			if fileNameRoot != "BUILD" && fileNameRoot != "WORKSPACE" && fileNameRoot != "MODULE" {
 				return nil
 			}
 			fileToFormat, err := translate.Translate(path)
@@ -104,6 +129,11 @@ func walk() error {
 		})
 	if err != nil {
 		return err
+	}
+
+	if *diff {
+		// TODO: support diff mode for other fixes
+		return nil
 	}
 
 	// Add any necessary dependencies for languages that are used in the repo.
@@ -145,7 +175,11 @@ func runBuildifier(path string) {
 	defer func() {
 		os.Args = originalArgs
 	}()
-	os.Args = []string{"buildifier", path}
+	os.Args = []string{"buildifier"}
+	if *diff {
+		os.Args = append(os.Args, "-mode=diff")
+	}
+	os.Args = append(os.Args, path)
 	buildifier.Run()
 }
 

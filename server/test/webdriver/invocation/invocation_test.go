@@ -29,7 +29,7 @@ func TestInvocationPage_SuccessfulInvocation_BESOnly(t *testing.T) {
 	details := wt.Find(".details").Text()
 
 	assert.Contains(t, details, "Succeeded")
-	assert.NotContains(t, details, "Failed")
+	assert.NotContains(t, details, "failed")
 	assert.Contains(t, details, "//:a")
 	assert.Contains(t, details, "Cache off")
 	assert.Contains(t, details, "Remote execution off")
@@ -58,7 +58,7 @@ func TestInvocationPage_FailedInvocation_BESOnly(t *testing.T) {
 	details := wt.Find(".details").Text()
 
 	assert.NotContains(t, details, "Succeeded")
-	assert.Contains(t, details, "Failed")
+	assert.Contains(t, details, "Build failed")
 	assert.Contains(t, details, "//:a")
 	assert.Contains(t, details, "Cache off")
 	assert.Contains(t, details, "Remote execution off")

@@ -10,6 +10,11 @@
   margin-bottom: 32px;
 }
 
+.organization-page-link {
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 .organization-page .banner {
   margin: 16px 0;
 }

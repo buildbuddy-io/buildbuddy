@@ -114,8 +114,11 @@ type RealEnv struct {
 	serverIdentityService            interfaces.ClientIdentityService
 	imageCacheAuthenticator          interfaces.ImageCacheAuthenticator
 	serverNotificationService        interfaces.ServerNotificationService
+	gcpService                       interfaces.GCPService
+	scimService                      interfaces.SCIMService
 }
 
+// NewRealEnv returns an environment for use in servers.
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 	return &RealEnv{
 		healthChecker:       h,
@@ -123,6 +126,11 @@ func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 		executionClients:    make(map[string]*executionClientConfig, 0),
 		httpServerWaitGroup: &sync.WaitGroup{},
 	}
+}
+
+// NewBatchEnv returns an environment for use in command line tools.
+func NewBatchEnv() *RealEnv {
+	return NewRealEnv(nil)
 }
 
 // Required -- no SETTERs for these.
@@ -661,4 +669,20 @@ func (r *RealEnv) GetServerNotificationService() interfaces.ServerNotificationSe
 
 func (r *RealEnv) SetServerNotificationService(service interfaces.ServerNotificationService) {
 	r.serverNotificationService = service
+}
+
+func (r *RealEnv) GetGCPService() interfaces.GCPService {
+	return r.gcpService
+}
+
+func (r *RealEnv) SetGCPService(service interfaces.GCPService) {
+	r.gcpService = service
+}
+
+func (r *RealEnv) GetSCIMService() interfaces.SCIMService {
+	return r.scimService
+}
+
+func (r *RealEnv) SetSCIMService(val interfaces.SCIMService) {
+	r.scimService = val
 }

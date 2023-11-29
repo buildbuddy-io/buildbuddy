@@ -12,6 +12,8 @@ ts_library(
         "//app/components/select",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/icons:github",
+        "//app/icons:google",
         "//app/picker:picker_service",
         "//app/router",
         "//app/service:rpc_service",

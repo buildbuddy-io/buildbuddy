@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/cockroachdb/pebble/vfs"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -29,6 +30,8 @@ var ErrNotFound = pebble.ErrNotFound
 
 var NewCache = pebble.NewCache
 var WithFlushedWAL = pebble.WithFlushedWAL
+var Peek = pebble.Peek
+var DefaultFS = vfs.Default
 
 type Options = pebble.Options
 type IterOptions = pebble.IterOptions
@@ -37,6 +40,9 @@ type Metrics = pebble.Metrics
 type EventListener = pebble.EventListener
 type WriteStallBeginInfo = pebble.WriteStallBeginInfo
 type DiskSlowInfo = pebble.DiskSlowInfo
+type DBDesc = pebble.DBDesc
+
+type FS = vfs.FS
 
 type Iterator interface {
 	io.Closer
@@ -137,6 +143,8 @@ type Batch interface {
 	Count() uint32
 
 	Reader() pebble.BatchReader
+
+	Reset()
 }
 
 // IPebbleDB is an interface the covers the methods on a pebble.DB used by our
@@ -250,6 +258,9 @@ func (ib *instrumentedBatch) Apply(batch Batch, opts *pebble.WriteOptions) error
 
 func (ib *instrumentedBatch) Reader() pebble.BatchReader {
 	return ib.batch.Reader()
+}
+func (ib *instrumentedBatch) Reset() {
+	ib.batch.Reset()
 }
 
 type opMetrics struct {

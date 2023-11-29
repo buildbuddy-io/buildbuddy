@@ -96,7 +96,14 @@ export default class Picker extends React.Component<{}, State> {
                   {o}
                 </div>
               ))}
-              {!Boolean(this.matchingOptions()?.length) && <div className="picker-option">No matches found.</div>}
+              {!Boolean(this.matchingOptions()?.length) && (
+                <div className="picker-option">
+                  {this.state.picker?.emptyState ? this.state.picker.emptyState : <>No matches found.</>}
+                </div>
+              )}
+              {Boolean(this.matchingOptions()?.length) && this.state.picker?.footer && (
+                <div className="picker-option">{this.state.picker?.footer}</div>
+              )}
             </div>
           </div>
         </div>

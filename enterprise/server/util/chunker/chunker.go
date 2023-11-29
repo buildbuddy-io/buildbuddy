@@ -50,7 +50,7 @@ func New(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker
 		ctx:          ctx,
 		pr:           pr,
 		pw:           pw,
-		done:         make(chan struct{}, 0),
+		done:         make(chan struct{}),
 		writeChunkFn: writeChunkFn,
 	}
 	cdcOpts := fastcdc.Options{

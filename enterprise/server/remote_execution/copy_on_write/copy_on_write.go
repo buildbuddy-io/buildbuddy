@@ -2,22 +2,29 @@ package copy_on_write
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/exp/maps"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+	"golang.org/x/time/rate"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -25,7 +32,24 @@ import (
 const (
 	// Suffix used for dirtied chunks.
 	dirtySuffix = ".dirty"
+
+	// We don't want this to be too big, because we want to prioritize fetching
+	// more recently accessed data. If the chan is too big, we may waste time
+	// churning through stale data
+	eagerFetchChanSize = 100
+
+	// If we access a chunk, we will queue this number of contiguous chunks
+	// to be eagerly fetched in the background, anticipating that they will
+	// also be accessed
+	numChunksToEagerFetch = 4
 )
+
+var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
+var eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 8, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
+
+// Total number of mmapped bytes. This is atomically updated and backs the
+// mapped bytes gauge metric.
+var mmappedBytes int64
 
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
@@ -40,7 +64,18 @@ type COWStore struct {
 	env                environment.Env
 	remoteInstanceName string
 
-	mu sync.RWMutex // Protects chunks and dirty
+	// Whether the store supports remote fetching/caching of artifacts
+	// in addition to local caching
+	remoteEnabled bool
+
+	// storeLock locks the entire store.
+	// It can be used to prevent concurrent map access of chunks and dirty.
+	// storeLock has worse performance, so use chunkLock when possible.
+	storeLock sync.RWMutex
+	// chunkLock can be used to lock a single chunk, to synchronize simultaneous
+	// access on that chunk (i.e. two goroutines trying to initialize and copy a chunk
+	// at the same time).
+	chunkLock lockmap.Locker
 
 	// chunks is a mapping of chunk offset to the backing data store
 	chunks map[int64]*Mmap
@@ -66,12 +101,16 @@ type COWStore struct {
 
 	// Concurrency-safe pool of buffers that can be used for copying chunks
 	copyBufPool sync.Pool
+
+	eagerFetchChan chan *eagerFetchData
+	eagerFetchEg   *errgroup.Group
+	quitChan       chan struct{}
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string) (*COWStore, error) {
+func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
@@ -81,10 +120,12 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 		chunkMap[c.Offset] = c
 	}
 
-	return &COWStore{
+	s := &COWStore{
 		ctx:                ctx,
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
+		remoteEnabled:      remoteEnabled,
+		chunkLock:          lockmap.New(),
 		chunks:             chunkMap,
 		dirty:              make(map[int64]bool, 0),
 		dataDir:            dataDir,
@@ -98,7 +139,17 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 		chunkSizeBytes: chunkSizeBytes,
 		totalSizeBytes: totalSizeBytes,
 		ioBlockSize:    int64(stat.Sys().(*syscall.Stat_t).Blksize),
-	}, nil
+		eagerFetchChan: make(chan *eagerFetchData, eagerFetchChanSize),
+		eagerFetchEg:   &errgroup.Group{},
+		quitChan:       make(chan struct{}),
+	}
+
+	s.eagerFetchEg.Go(func() error {
+		s.eagerFetchChunksInBackground()
+		return nil
+	})
+
+	return s, nil
 }
 
 // GetRelativeOffsetFromChunkStart returns the relative offset from the
@@ -139,15 +190,20 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 	chunkStartOffset := c.chunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.eagerFetchNextChunks(chunkStartOffset)
+
 	if write {
 		if err := c.copyChunkIfNotDirty(chunkStartOffset); err != nil {
 			return 0, status.WrapError(err, "copy chunk")
 		}
 	}
 
+	chunkUnlockFn := c.chunkLock.RLock(fmt.Sprintf("%d", chunkStartOffset))
+	defer chunkUnlockFn()
+
+	c.storeLock.RLock()
 	chunk := c.chunks[chunkStartOffset]
+	c.storeLock.RUnlock()
 	if chunk == nil {
 		// No data (yet); map into our static zero-filled buf. Note that this
 		// can only happen for reads, since for writes we call copyChunkIfNotDirty above.
@@ -165,9 +221,9 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 // SortedChunks returns all chunks sorted by offset.
 func (c *COWStore) SortedChunks() []*Mmap {
-	c.mu.RLock()
+	c.storeLock.RLock()
 	chunks := maps.Values(c.chunks)
-	c.mu.RUnlock()
+	c.storeLock.RUnlock()
 
 	sort.Slice(chunks, func(i, j int) bool {
 		return chunks[i].Offset < chunks[j].Offset
@@ -189,8 +245,7 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.eagerFetchNextChunks(chunkOffset)
 
 	for len(p) > 0 {
 		chunkRelativeOffset := off % c.chunkSizeBytes
@@ -199,57 +254,73 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 		if readSize > len(p) {
 			readSize = len(p)
 		}
-		chunk := c.chunks[chunkOffset]
-		if chunk == nil {
-			// No chunk at this index yet; write all 0s.
-			copy(p[:readSize], c.zeroBuf)
-		} else {
-			// chunkActualSize will be different than chunkCalculatedSize only
-			// if this chunk was the last chunk when we called Resize(). This is
-			// because Resize() does not actually resize the chunk itself - it
-			// is a lazy operation that "virtually" right-pads the COWStore with
-			// 0s. So in this case, we need to limit the amount of data
-			// requested from the chunk (readSize) to the amount of data that's
-			// actually remaining in the chunk (remainingDataSize), then fill
-			// the remainder with zeroes.
-			//
-			// For example, let's say we have the following chunks, before
-			// resizing:
-			//     [1111]  [1]
-			//     c1      c2
-			// Now let's say we Resize, increasing the COW's total size by 4
-			// bytes. (Bytes between "[]"" are physically present in the chunk,
-			// while other bytes are "virtual")
-			//     [1111]  [1]000  0
-			//     c1      c2      c3
-			// Now, the chunkActualSize of c2 will still be 1, while the
-			// chunkCalculatedSize will be 4. So when reading from c2, we need
-			// to make sure that we zero-pad when reading offset >= 1.
 
-			chunkActualSize, err := chunk.SizeBytes()
-			if err != nil {
-				return n, err
-			}
-			// Chunk might have less data available than the calculated size
-			// if this was the last chunk when we resized. If so then fill
-			// the range from [dataSize, readSize) with 0s.
-			dataSize := int64(readSize)
-			if remainder := chunkActualSize - chunkRelativeOffset; readSize > int(remainder) {
-				dataSize = max(0, remainder)
-			}
-			if dataSize > 0 {
-				if _, err := readFullAt(chunk, p[:dataSize], chunkRelativeOffset); err != nil {
-					return n, err
-				}
-			}
-			copy(p[dataSize:readSize], c.zeroBuf)
+		if err := c.readChunk(p, chunkRelativeOffset, chunkOffset, readSize); err != nil {
+			return n, err
 		}
+
 		n += readSize
 		p = p[readSize:]
 		off += int64(readSize)
 		chunkOffset += c.chunkSizeBytes
 	}
 	return n, nil
+}
+
+func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffset int64, readSize int) error {
+	chunkUnlockFn := c.chunkLock.RLock(fmt.Sprintf("%d", chunkStartOffset))
+	defer chunkUnlockFn()
+
+	c.storeLock.RLock()
+	chunk := c.chunks[chunkStartOffset]
+	c.storeLock.RUnlock()
+	if chunk == nil {
+		// No chunk at this index yet; write all 0s.
+		copy(p[:readSize], c.zeroBuf)
+		return nil
+	}
+
+	// chunkActualSize will be different than chunkCalculatedSize only
+	// if this chunk was the last chunk when we called Resize(). This is
+	// because Resize() does not actually resize the chunk itself - it
+	// is a lazy operation that "virtually" right-pads the COWStore with
+	// 0s. So in this case, we need to limit the amount of data
+	// requested from the chunk (readSize) to the amount of data that's
+	// actually remaining in the chunk (remainingDataSize), then fill
+	// the remainder with zeroes.
+	//
+	// For example, let's say we have the following chunks, before
+	// resizing:
+	//     [1111]  [1]
+	//     c1      c2
+	// Now let's say we Resize, increasing the COW's total size by 4
+	// bytes. (Bytes between "[]"" are physically present in the chunk,
+	// while other bytes are "virtual")
+	//     [1111]  [1]000  0
+	//     c1      c2      c3
+	// Now, the chunkActualSize of c2 will still be 1, while the
+	// chunkCalculatedSize will be 4. So when reading from c2, we need
+	// to make sure that we zero-pad when reading offset >= 1.
+
+	chunkActualSize, err := chunk.SizeBytes()
+	if err != nil {
+		return err
+	}
+	// Chunk might have less data available than the calculated size
+	// if this was the last chunk when we resized. If so then fill
+	// the range from [dataSize, readSize) with 0s.
+	dataSize := int64(readSize)
+	if remainder := chunkActualSize - readRelativeOffset; readSize > int(remainder) {
+		dataSize = max(0, remainder)
+	}
+	if dataSize > 0 {
+		_, err = readFullAt(chunk, p[:dataSize], readRelativeOffset)
+		if err != nil {
+			return err
+		}
+	}
+	copy(p[dataSize:readSize], c.zeroBuf)
+	return nil
 }
 
 func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
@@ -260,8 +331,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	chunkOffset := c.chunkStartOffset(off)
 	n := 0
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.eagerFetchNextChunks(chunkOffset)
 
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
@@ -275,17 +345,32 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		if writeSize > len(p) {
 			writeSize = len(p)
 		}
-		chunk := c.chunks[chunkOffset]
-		nw, err := chunk.WriteAt(p[:writeSize], chunkRelativeOffset)
+
+		nw, err := c.writeToChunk(p, chunkRelativeOffset, chunkOffset, writeSize)
 		n += nw
 		if err != nil {
 			return n, err
 		}
-		if nw != writeSize {
-			return n, io.ErrShortWrite
-		}
 		p = p[writeSize:]
 		chunkOffset += c.chunkSizeBytes
+	}
+	return n, nil
+}
+
+func (c *COWStore) writeToChunk(p []byte, writeRelativeOffset int64, chunkStartOffset int64, writeSize int) (int, error) {
+	chunkUnlockFn := c.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
+	defer chunkUnlockFn()
+
+	c.storeLock.RLock()
+	chunk := c.chunks[chunkStartOffset]
+	c.storeLock.RUnlock()
+
+	n, err := chunk.WriteAt(p[:writeSize], writeRelativeOffset)
+	if err != nil {
+		return n, err
+	}
+	if n != writeSize {
+		return n, io.ErrShortWrite
 	}
 	return n, nil
 }
@@ -305,6 +390,10 @@ func (c *COWStore) Sync() error {
 }
 
 func (s *COWStore) Close() error {
+	// Close background goroutine eagerly fetching chunks
+	close(s.quitChan)
+	s.eagerFetchEg.Wait()
+
 	var lastErr error
 	// TODO: maybe parallelize
 	for _, c := range s.chunks {
@@ -321,9 +410,16 @@ func (s *COWStore) SizeBytes() (int64, error) {
 
 // Dirty returns whether the chunk at the given offset is dirty.
 func (s *COWStore) Dirty(chunkOffset int64) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.storeLock.RLock()
+	defer s.storeLock.RUnlock()
 	return s.dirty[chunkOffset]
+}
+
+func (s *COWStore) UnmapChunk(chunkOffset int64) error {
+	s.storeLock.RLock()
+	c := s.chunks[chunkOffset]
+	s.storeLock.RUnlock()
+	return c.Unmap()
 }
 
 // ChunkName returns the file name containing the data for the given chunk offset.
@@ -390,9 +486,14 @@ func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 	return size
 }
 
-// NOTE: This function should be executed atomically. Callers should manage locking
 func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
-	if s.dirty[chunkStartOffset] {
+	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
+	defer chunkUnlockFn()
+
+	s.storeLock.RLock()
+	dirty := s.dirty[chunkStartOffset]
+	s.storeLock.RUnlock()
+	if dirty {
 		// Chunk is already dirty - no need to copy
 		return nil
 	}
@@ -461,16 +562,94 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 	if err := syscall.Ftruncate(fd, size); err != nil {
 		return nil, nil, err
 	}
-	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), fd, int(size), offset, s.remoteInstanceName)
+
+	s.storeLock.RLock()
+	ogChunk = s.chunks[offset]
+	s.storeLock.RUnlock()
+	chunkSource := snaputil.ChunkSourceHole
+	if ogChunk != nil {
+		if err := ogChunk.initMap(); err != nil {
+			return nil, nil, err
+		}
+		chunkSource = ogChunk.source
+	}
+	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), true /*=dirty*/, fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	ogChunk = s.chunks[offset]
+	s.storeLock.Lock()
 	s.chunks[offset] = newChunk
 	s.dirty[offset] = true
+	s.storeLock.Unlock()
 
 	return ogChunk, newChunk, nil
+}
+
+type eagerFetchData struct {
+	// Chunk offset to eagerly fetch
+	offset int64
+}
+
+func (s *COWStore) eagerFetchNextChunks(offset int64) {
+	currentOffset := offset + s.chunkSizeBytes
+	for i := 0; i < numChunksToEagerFetch; i++ {
+		s.sendNonBlockingEagerFetch(currentOffset)
+		currentOffset += s.chunkSizeBytes
+	}
+}
+
+func (s *COWStore) sendNonBlockingEagerFetch(offset int64) {
+	select {
+	case s.eagerFetchChan <- &eagerFetchData{offset: offset}:
+	default:
+	}
+}
+
+func (s *COWStore) eagerFetchChunksInBackground() {
+	rateLimiter := rate.NewLimiter(rate.Limit(*maxEagerFetchesPerSec), 1)
+	eg := &errgroup.Group{}
+	eg.SetLimit(*eagerFetchConcurrency)
+
+	for {
+		select {
+		case <-s.quitChan:
+			_ = eg.Wait()
+			return
+		case d := <-s.eagerFetchChan:
+			if err := rateLimiter.Wait(s.ctx); err != nil {
+				if err != nil {
+					log.Errorf("COWStore eager fetch rate limiter failed, stopping eager fetches: %s", err)
+				}
+				_ = eg.Wait()
+				return
+			}
+			eg.Go(func() error {
+				err := s.fetchChunk(d.offset)
+				if err != nil {
+					log.Warningf("COWStore eager fetch chunk failed with: %s", err)
+				}
+				return nil
+			})
+		}
+	}
+}
+
+func (s *COWStore) fetchChunk(offset int64) error {
+	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", offset))
+	defer chunkUnlockFn()
+
+	s.storeLock.RLock()
+	c := s.chunks[offset]
+	s.storeLock.RUnlock()
+
+	// Skip holes
+	if c == nil {
+		return nil
+	}
+
+	// Fetch, but don't mmap (since it incurs extra memory usage).
+	return c.Fetch()
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -488,7 +667,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 // If an error is returned from this function, the caller should decide what to
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
-func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string) (store *COWStore, err error) {
+func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (store *COWStore, err error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -572,7 +751,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 				return nil, err
 			}
 		}
-		return NewMmapFd(ctx, env, dataDir, int(chunkFile.Fd()), int(chunkFileSize), chunkStartOffset, remoteInstanceName)
+		return NewMmapLocalFile(ctx, env, dataDir, false /*=dirty*/, int(chunkFileSize), chunkStartOffset, remoteInstanceName, remoteEnabled)
 	}
 
 	// TODO: iterate through the file with multiple goroutines
@@ -586,7 +765,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		}
 	}
 
-	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName)
+	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
 }
 
 // Mmap uses a memory-mapped file to represent a section of a larger composite
@@ -601,20 +780,31 @@ type Mmap struct {
 	env                environment.Env
 	remoteInstanceName string
 
+	// Whether the store supports remote fetching/caching of artifacts
+	// in addition to local caching
+	remoteEnabled bool
+
 	Offset  int64
 	dataDir string
+	dirty   bool // dirty suffix, only used to compute path
 
-	// Mutex protects the subsequent fields
+	// mu protects the subsequent fields.
+	// RLock should *only* be used in ReadAt.
 	mu         sync.RWMutex
 	data       []byte
-	mapped     bool
+	source     snaputil.ChunkSource
+	fetched    bool
 	closed     bool
 	lazyDigest *repb.Digest
+
+	// initMu is an additional lock that is only used in ReadAt to prevent
+	// concurrent map initialization while still allowing concurrent reads.
+	initMu sync.Mutex
 }
 
 // NewLazyMmap returns an mmap that is set up only when the file is read or
 // written to.
-func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offset int64, digest *repb.Digest, remoteInstanceName string) (*Mmap, error) {
+func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offset int64, digest *repb.Digest, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
 	if dataDir == "" {
 		return nil, status.FailedPreconditionError("missing dataDir")
 	}
@@ -625,26 +815,52 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 		ctx:                ctx,
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
+		remoteEnabled:      remoteEnabled,
 		Offset:             offset,
 		data:               nil,
-		mapped:             false,
+		fetched:            false,
+		source:             snaputil.ChunkSourceUnmapped,
 		dataDir:            dataDir,
 		lazyDigest:         digest,
 	}, nil
 }
 
-func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, fd, size int, offset int64, remoteInstanceName string) (*Mmap, error) {
+// NewMmapFd returns an eagerly mmapped instance from the given fd.
+func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty bool, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
+	if source == snaputil.ChunkSourceUnmapped {
+		return nil, status.InvalidArgumentError("ChunkSourceUnmapped is not a valid source when initializing a chunk from a fd")
+	}
 	data, err := mmapDataFromFd(fd, size)
 	if err != nil {
 		return nil, err
 	}
 	return &Mmap{
-		remoteInstanceName: remoteInstanceName,
 		ctx:                ctx,
 		env:                env,
+		remoteInstanceName: remoteInstanceName,
+		remoteEnabled:      remoteEnabled,
+		dirty:              dirty,
 		Offset:             offset,
 		data:               data,
-		mapped:             true,
+		fetched:            true,
+		source:             source,
+		dataDir:            dataDir,
+	}, nil
+}
+
+// NewMmapLocalFile returns an unmapped instance from the given directory and
+// offset.
+func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, dirty bool, size int, offset int64, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
+	return &Mmap{
+		ctx:                ctx,
+		env:                env,
+		remoteInstanceName: remoteInstanceName,
+		remoteEnabled:      remoteEnabled,
+		dirty:              dirty,
+		Offset:             offset,
+		data:               nil,
+		fetched:            true,
+		source:             snaputil.ChunkSourceLocalFile,
 		dataDir:            dataDir,
 	}, nil
 }
@@ -669,46 +885,74 @@ func mmapDataFromFd(fd, size int) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mmap: %s", err)
 	}
+	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
+		atomic.AddInt64(&mmappedBytes, int64(len(data))),
+	))
 	return data, nil
 }
 
-// TODO(Maggie): Pre-emptively initialize chunks in the background on startup
-func (m *Mmap) initMap() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Mmap) initMap() (err error) {
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
-	if m.mapped {
+	if m.data != nil {
+		return nil
+	}
+	path := m.path()
+	if m.lazyDigest != nil {
+		if err := m.fetch(path); err != nil {
+			return err
+		}
+	}
+	data, err := mmapDataFromPath(path)
+	if err != nil {
+		return status.WrapErrorf(err, "create mmap for path %s", path)
+	}
+	m.data = data
+
+	return nil
+}
+
+func (m *Mmap) path() string {
+	return filepath.Join(m.dataDir, ChunkName(m.Offset, m.dirty))
+}
+
+// Fetch fetches the chunk from cache if applicable.
+func (m *Mmap) Fetch() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.fetch(m.path())
+}
+
+func (m *Mmap) fetch(path string) error {
+	if m.fetched {
 		return nil
 	}
 	if m.lazyDigest == nil {
-		return status.InternalError("cannot initialize chunk without a digest")
+		return status.InternalError("attempted to fetch chunk with nil digest")
 	}
-
-	outputPath := filepath.Join(m.dataDir, ChunkName(m.Offset, false /*dirty*/))
-	if err := snaputil.GetArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.lazyDigest, m.remoteInstanceName, outputPath); err != nil {
+	src, err := snaputil.GetArtifact(m.ctx, m.env.GetFileCache(), m.env.GetByteStreamClient(), m.remoteEnabled, m.lazyDigest, m.remoteInstanceName, path)
+	if err != nil {
 		return status.WrapErrorf(err, "fetch snapshot chunk for offset %d digest %s", m.Offset, m.lazyDigest.Hash)
 	}
-
-	data, err := mmapDataFromPath(outputPath)
-	if err != nil {
-		return status.WrapErrorf(err, "create mmap for path %s", outputPath)
-	}
-
-	m.data = data
-	m.mapped = true
+	m.source = src
+	m.fetched = true
 	return nil
 }
 
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
-	if !m.safeReadMapped() {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
-	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
+	// Prevent concurrent calls to initMap while still allowing multiple
+	// concurrent readers.
+	m.initMu.Lock()
+	if err := m.initMap(); err != nil {
+		m.initMu.Unlock()
+		return 0, err
+	}
+	m.initMu.Unlock()
+
 	if err := checkBounds("read", int64(len(m.data)), p, off); err != nil {
 		return 0, err
 	}
@@ -717,13 +961,11 @@ func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
-	if !m.safeReadMapped() {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.initMap(); err != nil {
+		return 0, err
+	}
 	if err := checkBounds("write", int64(len(m.data)), p, off); err != nil {
 		return 0, err
 	}
@@ -733,68 +975,76 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) Sync() error {
-	if !m.safeReadMapped() {
+	// This func is only reading m.data, but we get an exclusive lock here since
+	// it's not safe to call ReadAt concurrently, as it can affect whether data
+	// is mapped or not.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.data == nil {
 		return nil
 	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	return unix.Msync(m.data, unix.MS_SYNC)
+}
+
+// Unmap unmaps the chunk without marking it closed.
+// It returns nil if the chunk is already unmapped.
+func (m *Mmap) Unmap() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.data == nil {
+		return nil
+	}
+	n := len(m.data)
+	if err := syscall.Munmap(m.data); err != nil {
+		return err
+	}
+	m.data = nil
+	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
+		atomic.AddInt64(&mmappedBytes, int64(-n)),
+	))
+	return nil
 }
 
 func (m *Mmap) Close() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	alreadyClosed := m.closed
 	m.closed = true
-	if !m.mapped {
-		return nil
+	m.mu.Unlock()
+	if alreadyClosed {
+		return status.FailedPreconditionError("mmap is already closed")
 	}
-	m.mapped = false
-	return syscall.Munmap(m.data)
+	return m.Unmap()
 }
 
 func (m *Mmap) SizeBytes() (int64, error) {
-	if !m.safeReadMapped() {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.initMap(); err != nil {
+		return 0, err
 	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	return int64(len(m.data)), nil
 }
 
 // StartAddress returns the address of the first mapped byte. If this is a lazy
 // mmap, calling this func will force an mmap if not already mapped.
 func (m *Mmap) StartAddress() (uintptr, error) {
-	if !m.safeReadMapped() {
-		if err := m.initMap(); err != nil {
-			return 0, err
-		}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.initMap(); err != nil {
+		return 0, err
 	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	return memoryAddress(m.data), nil
 }
 
-func (m *Mmap) safeReadMapped() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.mapped
-}
-
-func (m *Mmap) Mapped() bool {
-	return m.safeReadMapped()
-}
-
-func (m *Mmap) safeReadClosed() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.closed
+func (m *Mmap) Source() snaputil.ChunkSource {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.source
 }
 
 func (m *Mmap) safeReadLazyDigest() *repb.Digest {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.lazyDigest
 }
 

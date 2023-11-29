@@ -83,6 +83,7 @@ func TestBatchUpdateBlobs(t *testing.T) {
 	clientConn := runCASServer(ctx, te, t)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
+	var digests []*repb.Digest
 	req := &repb.BatchUpdateBlobsRequest{}
 	for i := 0; i < 100; i++ {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -90,15 +91,22 @@ func TestBatchUpdateBlobs(t *testing.T) {
 			Digest: rn.GetDigest(),
 			Data:   buf,
 		})
+		digests = append(digests, rn.GetDigest())
 	}
 	rsp, err := casClient.BatchUpdateBlobs(ctx, req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, 100, len(rsp.GetResponses()))
+	require.NoError(t, err)
+	require.Equal(t, 100, len(rsp.GetResponses()))
 	for _, singleRsp := range rsp.GetResponses() {
 		assert.Equal(t, int32(gcodes.OK), singleRsp.GetStatus().GetCode())
 	}
+
+	digests = append(digests[:10], append([]*repb.Digest{{Hash: digest.EmptySha256}}, digests[10:]...)...)
+	readReq := &repb.BatchReadBlobsRequest{
+		Digests: digests,
+	}
+	_, err = casClient.BatchReadBlobs(ctx, readReq)
+	require.NoError(t, err)
+
 }
 
 func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {

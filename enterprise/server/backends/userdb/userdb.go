@@ -244,6 +244,23 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 		}
 	}
 
+	currentGroup, err := d.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	// If the user is in at least one group, and we can't look up the selected group - return an error.
+	if len(u.GetGroupMemberships()) > 0 && err != nil {
+		return "", err
+	}
+
+	err = authutil.AuthorizeGroupRole(u, u.GetGroupID(), role.Admin)
+
+	// We can continue if one of the following is true:
+	// 1) doesn't have an existing group
+	// 2) an user is an admin
+	// 3) developers are allowed to create organizations in their existing organization
+	// Otherwise we return that the user doesn't have permissions to create an organization.
+	if err != nil && currentGroup != nil && !currentGroup.DeveloperOrgCreationEnabled {
+		return "", status.UnauthenticatedErrorf("You don't have permission to create a group")
+	}
+
 	groupID := ""
 	err = d.h.Transaction(ctx, func(tx *db.DB) error {
 		gid, err := d.createGroup(ctx, tx, u.GetUserID(), g)
@@ -333,6 +350,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 				sharing_enabled = ?,
 				user_owned_keys_enabled = ?,
 				bot_suggestions_enabled = ?,
+				developer_org_creation_enabled = ?,
 				use_group_owned_executors = ?,
 				cache_encryption_enabled = ?,
 				suggestion_preference = ?,
@@ -345,6 +363,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			g.SharingEnabled,
 			g.UserOwnedKeysEnabled,
 			g.BotSuggestionsEnabled,
+			g.DeveloperOrgCreationEnabled,
 			g.UseGroupOwnedExecutors,
 			g.CacheEncryptionEnabled,
 			g.SuggestionPreference,
@@ -804,6 +823,7 @@ func (d *UserDB) getUser(tx *db.DB, userID string) (*tables.User, error) {
 			g.sharing_enabled,
 			g.user_owned_keys_enabled,
 			g.bot_suggestions_enabled,
+			g.developer_org_creation_enabled,
 			g.use_group_owned_executors,
 			g.cache_encryption_enabled,
 			g.saml_idp_metadata_url,
@@ -833,6 +853,7 @@ func (d *UserDB) getUser(tx *db.DB, userID string) (*tables.User, error) {
 			&gr.Group.SharingEnabled,
 			&gr.Group.UserOwnedKeysEnabled,
 			&gr.Group.BotSuggestionsEnabled,
+			&gr.Group.DeveloperOrgCreationEnabled,
 			&gr.Group.UseGroupOwnedExecutors,
 			&gr.Group.CacheEncryptionEnabled,
 			&gr.Group.SamlIdpMetadataUrl,
@@ -877,6 +898,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				sharing_enabled,
 				user_owned_keys_enabled,
 				bot_suggestions_enabled,
+				developer_org_creation_enabled,
 				use_group_owned_executors,
 				cache_encryption_enabled,
 				saml_idp_metadata_url,
@@ -901,6 +923,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				&gr.Group.SharingEnabled,
 				&gr.Group.UserOwnedKeysEnabled,
 				&gr.Group.BotSuggestionsEnabled,
+				&gr.Group.DeveloperOrgCreationEnabled,
 				&gr.Group.UseGroupOwnedExecutors,
 				&gr.Group.CacheEncryptionEnabled,
 				&gr.Group.SamlIdpMetadataUrl,

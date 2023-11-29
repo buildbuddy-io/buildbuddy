@@ -17,6 +17,7 @@ ts_library(
     name = "trace_viewer",
     srcs = ["trace_viewer.tsx"],
     deps = [
+        "//app/router",
         "//app/trace:constants",
         "//app/trace:event_hovercard",
         "//app/trace:trace_events",

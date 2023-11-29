@@ -17,9 +17,8 @@ function BlogListPage(props: Props): JSX.Element {
   const title = isBlogOnlyMode ? siteTitle : blogTitle;
   return (
     <Layout title={title} description={blogDescription} wrapperClassName="blog-wrapper">
-      <div className="container margin-vert--lg">
+      <div className="blog-container margin-vert--lg">
         <div className="row">
-          <div className="col col--1"></div>
           <main className="col col--8">
             {items.map(({ content: BlogPostContent }) => (
               <BlogPostItem
@@ -32,6 +31,8 @@ function BlogListPage(props: Props): JSX.Element {
             ))}
             <BlogListPaginator metadata={metadata} />
           </main>
+          <div className="col col--1"></div>
+
           <div className="col col--3">
             <BlogSidebar sidebar={sidebar} />
           </div>

@@ -116,3 +116,8 @@ ts_library(
     name = "popup",
     srcs = ["popup.ts"],
 )
+
+ts_library(
+    name = "exit_codes",
+    srcs = ["exit_codes.ts"],
+)
