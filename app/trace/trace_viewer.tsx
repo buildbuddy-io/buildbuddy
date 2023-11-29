@@ -12,6 +12,7 @@ import { TraceEvent } from "./trace_events";
 import { buildTraceViewerModel, panelScrollHeight } from "./trace_viewer_model";
 import { Profile } from "./trace_events";
 import router from "../router/router";
+import { FilterInput } from "../components/filter_input/filter_input";
 
 export interface TraceViewProps {
   profile: Profile;
@@ -22,6 +23,8 @@ export interface TraceViewProps {
 // scrollbar, so we don't allow the horizontally scrollable width to exceed this
 // value.
 const SCROLL_WIDTH_LIMIT = 18_000_000;
+
+const FILTER_URL_PARAM = "timingFilter";
 
 /**
  * Renders an interactive trace profile viewer for an invocation.
@@ -57,6 +60,8 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
   private mouseScrollTop = 0;
   private panning?: Panel | null;
 
+  private filterInputRef = React.createRef<HTMLInputElement>();
+
   private hovercardRef = React.createRef<EventHovercard>();
 
   private unobserveResize?: () => void;
@@ -84,6 +89,10 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
         passive: false,
       });
     }
+    if (this.filterInputRef.current) {
+      this.filterInputRef.current.addEventListener("keyup", () => this.updateFilter());
+      this.filterInputRef.current.value = this.getFilter();
+    }
   }
 
   componentWillUnmount(): void {
@@ -92,6 +101,10 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     window.removeEventListener("mouseup", this.onWindowMouseUp);
     this.unobserveResize?.();
     document.body.style.cursor = "";
+  }
+
+  private getFilter() {
+    return new URLSearchParams(window.location.search).get(FILTER_URL_PARAM) || "";
   }
 
   /**
@@ -112,6 +125,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
 
     for (const panel of this.panels) {
       panel.resize();
+      panel.filter = this.getFilter();
 
       if (!this.canvasXPerModelX.isAtTarget || this.panning) {
         // If actively zooming or panning, set the panel's scrollX so that the
@@ -248,6 +262,11 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     document.body.style.cursor = "";
   };
 
+  private updateFilter = () => {
+    router.setQueryParam(FILTER_URL_PARAM, this.filterInputRef.current?.value);
+    this.update();
+  };
+
   private onCanvasMouseDown(e: React.MouseEvent, panelIndex: number) {
     this.panning = this.panels[panelIndex];
     this.isUsingZoomButtons = false;
@@ -275,6 +294,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
             "--scrollbar-size": `${constants.SCROLLBAR_SIZE}px`,
           } as CSSProperties),
         }}>
+        <FilterInput className="filter" ref={this.filterInputRef} placeholder="Filter..." />
         {this.model.panels.map((panel, i) => (
           <div
             className="panel-container"

@@ -27,6 +27,7 @@ export const SECTION_PADDING_BOTTOM = 1;
 
 export const TRACK_HEIGHT = 16;
 export const TRACK_VERTICAL_GAP = 1;
+export const TRACK_FILTERED_OUT_COLOR = "#ddd";
 
 export const EVENT_HORIZONTAL_GAP = 0.5;
 export const EVENT_LABEL_WIDTH_THRESHOLD = 20;
