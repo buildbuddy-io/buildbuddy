@@ -137,7 +137,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	rc := rangecache.New()
 	ts.Sender = sender.New(rc, reg, apiClient)
 	reg.AddNode(nodeHost.ID(), ts.RaftAddress, ts.GRPCAddress)
-	s, err := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, []disk.Partition{})
+	s, err := store.New(te, ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, []disk.Partition{})
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	s.Start()
