@@ -145,8 +145,8 @@ BuildBuddy RBE comes with some `exec_properties` that you can use to modify how 
 
 These properties can be used in different ways:
 
-- Set `--remote_default_exec_properties=KEY=VALUE` in `.bazelrc` or in Bazel command line.
-- Set `exec_properties` in Execution Platform definition.
+- Set `--remote_default_exec_properties=KEY=VALUE` in `.bazelrc` or in the Bazel command line.
+- Set `exec_properties` in the Execution Platform definition.
 - Set `exec_properties` in each BUILD target.
 
 Rules authors can also leverage [Execution Group](https://bazel.build/extending/exec-groups) to give users more control over which Execution Properties can be used for each group of actions in each BUILD target.
@@ -164,15 +164,15 @@ These execution properties affect how our Action Scheduler selects which BuildBu
 
 Each BuildBuddy Executor could spin up multiple "Runners" each in charge of executing one Action at a time. Inside each Runner is a "Workspace" which represents the working directory of the Action and the Action's Input Tree. Here are some ways you could customize the Runner and Workspace to help execute your actions:
 
-- `workload-isolation-type`: select which isolation technology the Runners use. Available options are `docker`, `podman`, `firecracker`, `sandbox`, `none`. The Executor must have relevant sandbox options enabled. If unset, use the default isolation configured in Executor. On BuildBuddy Cloud (SaaS), `podman` (default) and `firecracker` isolation are available.
-- `recycle-runner`: Whether to retain the runner after action has executed and reuse it to execute subsequent actions. Available options are `true` and `false`. Recycled runner's workspace is subjected to clean-up operations between Actions.
+- `workload-isolation-type`: select which isolation technology the Runners use. Available options are `docker`, `podman`, `firecracker`, `sandbox`, `none`. The Executor must have relevant sandbox options enabled. If unset, use the default isolation configured in the Executor. On BuildBuddy Cloud (SaaS), `podman` (default) and `firecracker` isolation are available.
+- `recycle-runner`: Whether to retain the runner after an action execution and reuse it to execute subsequent actions. Available options are `true` and `false`. Recycled runner's workspace is subjected to clean-up operations between Actions.
 - `preserve-workspace`: Only applicable when `"recycle-runner": "true"` is set. Whether to re-use the Workspace directory from the previous action. Available options are `true` and `false`.
 - `clean-workspace-inputs`: A glob value that lets the user selectively pick which files in the Action's Input Tree to clean up before the action starts. The string value should follow the specification in [gobwas/glob](https://pkg.go.dev/github.com/gobwas/glob#Compile) library.
-- `nonroot-workspace`: If set to `true`, the workspace directory will be writable by non-root users (permission `0o777`). Otherwise, it will be read-only to non-root users (permission `Oo755`).
+- `nonroot-workspace`: If set to `true`, the workspace directory will be writable by non-root users (permission `0o777`). Otherwise, it will be read-only to non-root users (permission `0o755`).
 
 ### Runner Resource Properties
 
-To help aid our Scheduler in bin-packing Actions into Executor more effectively, users could choose to set the following properties and hint on how much compute resources an action would require.
+To help aid our Scheduler in bin-packing Actions into BuildBudddy Executors more effectively, users could choose to set the following properties and hint on how much compute resources an action would require.
 
 - `EstimatedComputeUnits`: Numerical values (i.e., `1`, `9`). A BuildBuddy's Compute Unit is defined as 1 CPU and 2.5GB of memory.
 - `EstimatedCPU`: The amount of CPU an Action would consume. Example valid values:
