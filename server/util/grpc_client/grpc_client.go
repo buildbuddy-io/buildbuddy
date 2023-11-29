@@ -227,7 +227,7 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 type grpcClientConnPoolCache struct {
 	env         environment.Env
 	connMutex   *sync.RWMutex
-	connPoolMap map[string]*ClientConnPool
+	connPoolMap map[string]interfaces.ClosableClientConn
 }
 
 func RegisterConnPoolCache(env environment.Env) {
@@ -250,20 +250,24 @@ func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (
 		// Make sure someone didn't beat us to making the connection.
 		connPool, ok = cpc.connPoolMap[target]
 		if !ok || connPool == nil {
-			// OKAY, FINALLY MAKE A CONNECTION POOL.
-			connPool, err := DialInternal(cpc.env, target)
-			if err != nil {
-				return nil, false, err
-			}
-			// Taking a gamble here and betting we don't get that many URLs.
-			// Don't share pool if we already have a bunch of pools.
-			if len(cpc.connPoolMap) < *cacheSize {
+			// OKAY, FINALLY MAKE A CONNECTION.
+			if len(cpc.connPoolMap) >= *cacheSize {
+				// We're out of cache space; let's just make a single connection.
+				conn, err := DialInternalWithoutPooling(cpc.env, target)
+				if err != nil {
+					return nil, false, err
+				}
+				// Tell the caller they should close this connection when they're done.
+				return conn, true, nil
+			} else {
+				connPool, err := DialInternal(cpc.env, target)
+				if err != nil {
+					return nil, false, err
+				}
 				cpc.connPoolMap[target] = connPool
 				log.Infof("Cached connection pool for target: %s, %d targets cached so far", target, len(cpc.connPoolMap))
 				return connPool, false, nil
 			}
-			// This connection won't be cached -- tell the caller they should close it.
-			return connPool, true, nil
 		}
 		// Someone managed to make their own connection before we got the lock.
 		return connPool, false, nil
@@ -277,6 +281,6 @@ func NewGrpcClientConnPoolCache(env environment.Env) *grpcClientConnPoolCache {
 	return &grpcClientConnPoolCache{
 		env:         env,
 		connMutex:   &sync.RWMutex{},
-		connPoolMap: make(map[string]*ClientConnPool),
+		connPoolMap: make(map[string]interfaces.ClosableClientConn),
 	}
 }
