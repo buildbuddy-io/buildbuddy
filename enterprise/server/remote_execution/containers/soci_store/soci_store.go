@@ -11,15 +11,15 @@ import (
 type Store interface {
 	// Returns nil if the soci-store is alive and ready to serve traffic, or an
 	// error if not.
-	Exists(ctx context.Context) error
+	Ready(ctx context.Context) error
 
 	// Waits until the store is alive and ready to serve traffic, returning
 	// an error if it takes too lnog.
-	WaitUntilExists() error
+	WaitUntilReady() error
 
-	// Returns the command-line argument to pass to podman in order to stream
+	// Returns the command-line arguments to pass to podman in order to stream
 	// images using this soci-store.
-	EnableStreamingStoreArg() string
+	GetPodmanArgs() []string
 
 	// Fetches the soci artifacts the provided image and stores them locally
 	// for this soci-store to use.
@@ -27,29 +27,29 @@ type Store interface {
 
 	// Passes the provided credentials for the provided image to the store so
 	// it can fetch spans of password-protected images.
-	SeedCredentials(ctx context.Context, image string, credentials oci.Credentials) error
+	PutCredentials(ctx context.Context, image string, credentials oci.Credentials) error
 }
 
 // A SociStore implementation that does not start up a soci-store and causes
 // regular (slow) image pull behavior when used by podman.
 type NoStore struct{}
 
-func (_ NoStore) Exists(ctx context.Context) error {
+func (_ NoStore) Ready(ctx context.Context) error {
 	return nil
 }
 
-func (_ NoStore) WaitUntilExists() error {
+func (_ NoStore) WaitUntilReady() error {
 	return nil
 }
 
-func (_ NoStore) EnableStreamingStoreArg() string {
-	return ""
+func (_ NoStore) GetPodmanArgs() []string {
+	return []string{}
 }
 
 func (_ NoStore) GetArtifacts(ctx context.Context, env environment.Env, image string, creds oci.Credentials) error {
 	return nil
 }
 
-func (_ NoStore) SeedCredentials(ctx context.Context, image string, credentials oci.Credentials) error {
+func (_ NoStore) PutCredentials(ctx context.Context, image string, credentials oci.Credentials) error {
 	return nil
 }

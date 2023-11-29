@@ -646,15 +646,12 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 
 	if c.imageIsStreamable {
 		// Make the image credentials available to the soci-store
-		c.sociStore.SeedCredentials(ctx, c.image, creds)
+		c.sociStore.PutCredentials(ctx, c.image, creds)
 
 		// We still need to run "podman pull" even when image streaming is
 		// enabled to populate the layer info and avoid spitting a bunch of
 		// pull-time logging into the run-time logs.
-		streamingStoreArg := c.sociStore.EnableStreamingStoreArg()
-		if streamingStoreArg != "" {
-			podmanArgs = append(podmanArgs, c.sociStore.EnableStreamingStoreArg())
-		}
+		podmanArgs = append(podmanArgs, c.sociStore.GetPodmanArgs()...)
 	}
 
 	if !creds.IsEmpty() {

@@ -9,10 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
-	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
@@ -77,63 +74,59 @@ type DevStore struct {
 	keychainClient      sspb.LocalKeychainClient
 }
 
-func (s DevStore) Exists(ctx context.Context) error {
+func (s *DevStore) Ready(ctx context.Context) error {
 	_, err := os.Stat(s.path)
 	return err
 }
 
-func (s DevStore) WaitUntilExists() error {
+func (s *DevStore) WaitUntilReady() error {
 	if err := disk.WaitUntilExists(context.Background(), s.path, disk.WaitOpts{}); err != nil {
 		return status.UnavailableErrorf("soci-store unavailable at %s: %s", s.path, err)
 	}
 	return nil
 }
 
-func (s DevStore) EnableStreamingStoreArg() string {
-	return streamingStoreArg(s.path)
+func (s *DevStore) GetPodmanArgs() []string {
+	return []string{streamingStoreArg(s.path)}
 }
 
-func (s DevStore) GetArtifacts(ctx context.Context, env environment.Env, image string, creds oci.Credentials) error {
+func (s *DevStore) GetArtifacts(ctx context.Context, env environment.Env, image string, creds oci.Credentials) error {
 	return getArtifacts(ctx, s.artifactStoreClient, env, image, creds)
 }
 
-func (s DevStore) SeedCredentials(ctx context.Context, image string, credentials oci.Credentials) error {
-	return seedCredentials(ctx, s.keychainClient, image, credentials)
+func (s *DevStore) PutCredentials(ctx context.Context, image string, credentials oci.Credentials) error {
+	return putCredentials(ctx, s.keychainClient, image, credentials)
 }
 
 // A SociStore implementation that runs a soci-store in another process.
 type SociStore struct {
-	rootPath            string
+	path                string
 	artifactStoreClient socipb.SociArtifactStoreClient
 	keychainClient      sspb.LocalKeychainClient
-
-	idx *int
-	mu  *sync.RWMutex
 }
 
-func (s SociStore) Exists(ctx context.Context) error {
-	_, err := os.Stat(s.Path())
+func (s *SociStore) Ready(ctx context.Context) error {
+	_, err := os.Stat(s.path)
 	return err
 }
 
-func (s SociStore) WaitUntilExists() error {
-	path := s.Path()
-	if err := disk.WaitUntilExists(context.Background(), path, disk.WaitOpts{}); err != nil {
-		return status.UnavailableErrorf("soci-store unavailable at %s: %s", path, err)
+func (s *SociStore) WaitUntilReady() error {
+	if err := disk.WaitUntilExists(context.Background(), s.path, disk.WaitOpts{}); err != nil {
+		return status.UnavailableErrorf("soci-store unavailable at %s: %s", s.path, err)
 	}
 	return nil
 }
 
-func (s SociStore) EnableStreamingStoreArg() string {
-	return fmt.Sprintf("--storage-opt=additionallayerstore=%s:ref", s.Path())
+func (s *SociStore) GetPodmanArgs() []string {
+	return []string{fmt.Sprintf("--storage-opt=additionallayerstore=%s:ref", s.path)}
 }
 
-func (s SociStore) GetArtifacts(ctx context.Context, env environment.Env, image string, creds oci.Credentials) error {
+func (s *SociStore) GetArtifacts(ctx context.Context, env environment.Env, image string, creds oci.Credentials) error {
 	return getArtifacts(ctx, s.artifactStoreClient, env, image, creds)
 }
 
-func (s SociStore) SeedCredentials(ctx context.Context, image string, credentials oci.Credentials) error {
-	return seedCredentials(ctx, s.keychainClient, image, credentials)
+func (s *SociStore) PutCredentials(ctx context.Context, image string, credentials oci.Credentials) error {
+	return putCredentials(ctx, s.keychainClient, image, credentials)
 }
 
 // TODO(iain): write this as a temp file and pass it to the store as an arg.
@@ -166,53 +159,40 @@ graphroot = "/var/lib/containers/storage"
 	return nil
 }
 
-func (s SociStore) init(ctx context.Context) error {
+func (s *SociStore) init(ctx context.Context) error {
 	if err := writeSociStoreConf(); err != nil {
 		return err
 	}
 	return writeStorageConf()
 }
 
-func (s SociStore) runWithRetries(ctx context.Context) {
-	path := s.Path()
+func (s *SociStore) runWithRetries(ctx context.Context) {
 	for {
 		log.Infof("Starting soci store")
 		args := []string{fmt.Sprintf("--local_keychain_port=%d", *keychainPort)}
 		if *logLevel != "" {
 			args = append(args, fmt.Sprintf("--log-level=%s", *logLevel))
 		}
-		args = append(args, path)
+		args = append(args, s.path)
 		cmd := exec.CommandContext(ctx, *binary, args...)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
-		log.Infof("mounting soci-store at %s", path)
+		log.Infof("mounting soci-store at %s", s.path)
 		cmd.Run()
 
-		log.Infof("Detected soci store crash, restarting")
+		log.Errorf("Detected soci store crash, restarting")
 		metrics.PodmanSociStoreCrashes.Inc()
 
 		// If the store crashed, the path must be unmounted to recover.
-		if err := syscall.Unmount(path, 0); err == nil {
-			log.Errorf("successfully unmounted dead soci-store path, re-mounting shortly")
+		if err := syscall.Unmount(s.path, 0); err == nil {
+			log.Infof("successfully unmounted dead soci-store path, re-mounting shortly")
 		} else {
-			// If unmounting fails, try to re-mount in a different filesystem
-			// location as a last-ditech effort.
-			s.mu.Lock()
-			(*s.idx)++
-			s.mu.Unlock()
-			path = s.Path()
 			log.Errorf("error unmounting dead soci-store path, re-mounting in new location: %s", err)
 		}
 
 		time.Sleep(500 * time.Millisecond)
 	}
-}
-
-func (s SociStore) Path() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return filepath.Join(s.rootPath, strconv.Itoa(*s.idx))
 }
 
 func Init(env environment.Env) (Store, error) {
@@ -227,38 +207,36 @@ func Init(env environment.Env) (Store, error) {
 		}
 		var store Store
 		if *binary == "" {
-			store = DevStore{
+			store = &DevStore{
 				path:                sociStorePath,
 				artifactStoreClient: artifactStoreClient,
 				keychainClient:      keychainClient,
 			}
 		} else {
-			index := 0
-			sociStore := SociStore{
-				rootPath:            sociStorePath,
+			sociStore := &SociStore{
+				path:                sociStorePath,
 				artifactStoreClient: artifactStoreClient,
 				keychainClient:      keychainClient,
-				idx:                 &index,
-				mu:                  &sync.RWMutex{},
 			}
 			if err = sociStore.init(env.GetServerContext()); err != nil {
 				return nil, err
 			}
 			go sociStore.runWithRetries(env.GetServerContext())
 
-			if err := sociStore.WaitUntilExists(); err != nil {
+			if err := sociStore.WaitUntilReady(); err != nil {
 				return nil, status.UnavailableErrorf("soci-store failed to start: %s", err)
 			}
 			store = sociStore
 		}
 
-		// TODO(iain): there's a concurrency bug in soci-store that causes it
-		// to die occasionally. Report the executor as unhealthy if the
-		// soci-store directory doesn't exist for any reason.
+		// TODO(github.com/buildbuddy-io/buildbuddy-internal/issues/2282):
+		// there's a bug in soci-store that causes it to panic occasionally.
+		// Report the executor as unhealthy if the soci-store directory doesn'
+		// exist for any reason.
 		env.GetHealthChecker().AddHealthCheck(
 			"soci_store", interfaces.CheckerFunc(
 				func(ctx context.Context) error {
-					err := store.Exists(ctx)
+					err := store.Ready(ctx)
 					if err != nil {
 						return fmt.Errorf("soci-store died (stat returned: %s)", err)
 					}
@@ -354,7 +332,7 @@ func getArtifacts(ctx context.Context, client socipb.SociArtifactStoreClient, en
 	return nil
 }
 
-func seedCredentials(ctx context.Context, keychainClient sspb.LocalKeychainClient, image string, credentials oci.Credentials) error {
+func putCredentials(ctx context.Context, keychainClient sspb.LocalKeychainClient, image string, credentials oci.Credentials) error {
 	if credentials.IsEmpty() {
 		return nil
 	}
