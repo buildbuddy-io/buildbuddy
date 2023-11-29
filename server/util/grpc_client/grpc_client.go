@@ -226,7 +226,7 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 
 type grpcClientConnPoolCache struct {
 	env         environment.Env
-	connMutex   *sync.RWMutex
+	connMutex   *sync.Mutex
 	connPoolMap map[string]interfaces.ClosableClientConn
 }
 
@@ -236,51 +236,37 @@ func RegisterConnPoolCache(env environment.Env) {
 }
 
 func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (conn interfaces.ClosableClientConn, shouldClose bool, err error) {
-	cpc.connMutex.RLock()
+	cpc.connMutex.Lock()
+	defer cpc.connMutex.Unlock()
 	connPool, ok := cpc.connPoolMap[target]
-	cpc.connMutex.RUnlock()
-
-	// We didn't find a connection pool, so we'll make one.
-	if !ok || connPool == nil {
-		// Grab write lock
-		cpc.connMutex.Lock()
-		// No matter what, we'll return before this if block ends.
-		defer cpc.connMutex.Unlock()
-
-		// Make sure someone didn't beat us to making the connection.
-		connPool, ok = cpc.connPoolMap[target]
-		if !ok || connPool == nil {
-			// OKAY, FINALLY MAKE A CONNECTION.
-			if len(cpc.connPoolMap) >= *cacheSize {
-				// We're out of cache space; let's just make a single connection.
-				conn, err := DialInternalWithoutPooling(cpc.env, target)
-				if err != nil {
-					return nil, false, err
-				}
-				// Tell the caller they should close this connection when they're done.
-				return conn, true, nil
-			} else {
-				connPool, err := DialInternal(cpc.env, target)
-				if err != nil {
-					return nil, false, err
-				}
-				cpc.connPoolMap[target] = connPool
-				log.Infof("Cached connection pool for target: %s, %d targets cached so far", target, len(cpc.connPoolMap))
-				return connPool, false, nil
-			}
-		}
-		// Someone managed to make their own connection before we got the lock.
+	if ok && connPool != nil {
 		return connPool, false, nil
 	}
 
-	// No locks are held here.  We found a connection pool in the map.
-	return connPool, false, nil
+	// We didn't find a connection pool, so we'll make one.
+	if len(cpc.connPoolMap) >= *cacheSize {
+		// We're out of cache space; let's just make a single connection.
+		conn, err := DialInternalWithoutPooling(cpc.env, target)
+		if err != nil {
+			return nil, false, err
+		}
+		// Tell the caller they should close this connection when they're done.
+		return conn, true, nil
+	} else {
+		connPool, err := DialInternal(cpc.env, target)
+		if err != nil {
+			return nil, false, err
+		}
+		cpc.connPoolMap[target] = connPool
+		log.Infof("Cached connection pool for target: %s, %d targets cached so far", target, len(cpc.connPoolMap))
+		return connPool, false, nil
+	}
 }
 
 func NewGrpcClientConnPoolCache(env environment.Env) *grpcClientConnPoolCache {
 	return &grpcClientConnPoolCache{
 		env:         env,
-		connMutex:   &sync.RWMutex{},
+		connMutex:   &sync.Mutex{},
 		connPoolMap: make(map[string]interfaces.ClosableClientConn),
 	}
 }
