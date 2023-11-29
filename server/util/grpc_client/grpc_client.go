@@ -235,7 +235,7 @@ func RegisterConnPoolCache(env environment.Env) {
 	env.SetGrpcClientConnPoolCache(c)
 }
 
-func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (interfaces.ClosableClientConn, error) {
+func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (conn interfaces.ClosableClientConn, shouldClose bool, err error) {
 	cpc.connMutex.RLock()
 	connPool, ok := cpc.connPoolMap[target]
 	cpc.connMutex.RUnlock()
@@ -253,22 +253,24 @@ func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (
 			// OKAY, FINALLY MAKE A CONNECTION POOL.
 			connPool, err := DialInternal(cpc.env, target)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			// Taking a gamble here and betting we don't get that many URLs.
 			// Don't share pool if we already have a bunch of pools.
 			if len(cpc.connPoolMap) < *cacheSize {
-				log.Infof("Caching connection pool for target: %s", target)
 				cpc.connPoolMap[target] = connPool
+				log.Infof("Cached connection pool for target: %s, %d targets cached so far", target, len(cpc.connPoolMap))
+				return connPool, false, nil
 			}
-			return connPool, nil
+			// This connection won't be cached -- tell the caller they should close it.
+			return connPool, true, nil
 		}
 		// Someone managed to make their own connection before we got the lock.
-		return connPool, nil
+		return connPool, false, nil
 	}
 
 	// No locks are held here.  We found a connection pool in the map.
-	return connPool, nil
+	return connPool, false, nil
 }
 
 func NewGrpcClientConnPoolCache(env environment.Env) *grpcClientConnPoolCache {
