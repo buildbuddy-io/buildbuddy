@@ -697,9 +697,19 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 				if err != nil && err != io.EOF {
 					return err
 				}
+
 				if _, err := out.WriteAt(buf[:n], offset); err != nil {
 					return err
 				}
+
+				// After the store has been updated, unmap the chunk to save memory
+				// usage on the executor
+				if baseSnapshotStore != nil {
+					if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
+						return err
+					}
+				}
+
 				offset += int64(n)
 				if err == io.EOF {
 					break
