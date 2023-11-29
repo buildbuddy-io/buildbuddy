@@ -158,3 +158,32 @@ func BenchmarkReadBlob(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkWriteBlob(b *testing.B) {
+	originalRootDir := *rootDirectory
+	*rootDirectory = b.TempDir()
+	b.Cleanup(func() {
+		*rootDirectory = originalRootDir
+	})
+	var bs interfaces.Blobstore
+	bs, err := NewDiskBlobStore()
+	ctx := context.Background()
+	require.NoError(b, err)
+	for _, size := range []int64{10, 1e3, 1e4, 1e5, 1e6} {
+		blobs := getBlobs(b, 100, size)
+		writeBlobs(b, ctx, bs, blobs)
+		name := fmt.Sprintf("size=%d", size)
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				namedBlob := blobs[rand.Intn(len(blobs))]
+				b.SetBytes(int64(len(namedBlob.buf)))
+				_, err = bs.WriteBlob(ctx, namedBlob.name, namedBlob.buf)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
