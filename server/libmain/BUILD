@@ -37,7 +37,6 @@ go_library(
         "//server/remote_asset/fetch_server",
         "//server/remote_asset/push_server",
         "//server/remote_cache/action_cache_server",
-        "//server/remote_cache/byte_stream_client",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/capabilities_server",
         "//server/remote_cache/content_addressable_storage_server",

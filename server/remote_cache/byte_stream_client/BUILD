@@ -13,7 +13,6 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/flagutil",
         "//server/util/grpc_client",
-        "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/status",
         "//server/util/ziputil",
