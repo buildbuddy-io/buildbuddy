@@ -149,7 +149,7 @@ func contextWithTargetAPIKey(ctx context.Context) context.Context {
 		return metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *targetAPIKey)
 	}
 	if *sourceAPIKey != "" {
-		log.Fatalf("--target_api_key is required when --source_api_key is set")
+		log.Warningf("--target_api_key is not set, but --source_api_key was set. Replaying as anonymous user.")
 	}
 	return ctx
 }
