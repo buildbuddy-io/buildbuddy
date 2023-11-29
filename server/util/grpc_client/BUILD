@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/grpc_client",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/endpoint_urls/cache_api_url",
         "//server/environment",
         "//server/interfaces",
         "//server/rpc/interceptors",
@@ -13,6 +14,7 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/urlutil",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//connectivity",
         "@org_golang_google_grpc//credentials/google",

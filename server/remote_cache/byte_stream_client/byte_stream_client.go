@@ -184,22 +184,20 @@ func getTargetForURL(u *url.URL, grpcs bool) string {
 	return target.String()
 }
 
-func getCachedGrpcClientConnPool(env environment.Env, target string) (interfaces.ClosableClientConn, bool, error) {
+func getCachedGrpcClientConnPool(env environment.Env, target string) (interfaces.ClosableClientConn, error) {
 	if cc := env.GetGrpcClientConnPoolCache(); cc != nil {
 		return cc.GetGrpcClientConnPoolForURL(target)
 	}
-	return nil, false, nil
+	return nil, nil
 }
 
 func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) error {
 	target := getTargetForURL(url, grpcs)
-	conn, shouldClose, err := getCachedGrpcClientConnPool(env, target)
+	conn, err := getCachedGrpcClientConnPool(env, target)
 	if err != nil {
 		return err
 	}
-	if conn != nil && shouldClose {
-		defer conn.Close()
-	} else if conn == nil {
+	if conn == nil {
 		conn, err = grpc_client.DialInternalWithoutPooling(env, target)
 		if err != nil {
 			return err

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -31,7 +33,6 @@ const (
 var (
 	poolSize        = flag.Int("grpc_client.pool_size", 10, "Number of connections to create to each target.")
 	enablePoolCache = flag.Bool("grpc_client.enable_pool_cache", false, "Whether or not to enable the connection pool cache.")
-	cacheSize       = flag.Int("grpc_client.cache_size", 100, "Number of connection pools to cache (keyed by target).")
 )
 
 type ClientConnPool struct {
@@ -235,32 +236,37 @@ func RegisterConnPoolCache(env environment.Env) {
 	env.SetGrpcClientConnPoolCache(c)
 }
 
-func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (conn interfaces.ClosableClientConn, shouldClose bool, err error) {
+func isPermittedForDial(target string) bool {
+	u, err := url.Parse(target)
+	if err != nil {
+		return false
+	}
+	if cache_api_url.String() == "" {
+		return true
+	}
+
+	return u.Hostname() == "localhost" || (urlutil.GetDomain(u.Hostname()) == urlutil.GetDomain(cache_api_url.WithPath("").Hostname()))
+}
+
+func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (conn interfaces.ClosableClientConn, err error) {
 	cpc.connMutex.Lock()
 	defer cpc.connMutex.Unlock()
 	connPool, ok := cpc.connPoolMap[target]
 	if ok && connPool != nil {
-		return connPool, false, nil
+		return connPool, nil
+	}
+	if !isPermittedForDial(target) {
+		return nil, status.InvalidArgumentErrorf("Tried to download from an unpermitted domain: %s", target)
 	}
 
 	// We didn't find a connection pool, so we'll make one.
-	if len(cpc.connPoolMap) >= *cacheSize {
-		// We're out of cache space; let's just make a single connection.
-		conn, err := DialInternalWithoutPooling(cpc.env, target)
-		if err != nil {
-			return nil, false, err
-		}
-		// Tell the caller they should close this connection when they're done.
-		return conn, true, nil
-	} else {
-		connPool, err := DialInternal(cpc.env, target)
-		if err != nil {
-			return nil, false, err
-		}
-		cpc.connPoolMap[target] = connPool
-		log.Infof("Cached connection pool for target: %s, %d targets cached so far", target, len(cpc.connPoolMap))
-		return connPool, false, nil
+	connPool, err = DialInternal(cpc.env, target)
+	if err != nil {
+		return nil, err
 	}
+	cpc.connPoolMap[target] = connPool
+	log.Infof("Cached connection pool for target: %s, %d targets cached so far", target, len(cpc.connPoolMap))
+	return connPool, nil
 }
 
 func NewGrpcClientConnPoolCache(env environment.Env) *grpcClientConnPoolCache {

@@ -287,7 +287,7 @@ type ClosableClientConn interface {
 }
 
 type GrpcClientConnPoolCache interface {
-	GetGrpcClientConnPoolForURL(target string) (ClosableClientConn, bool, error)
+	GetGrpcClientConnPoolForURL(target string) (ClosableClientConn, error)
 }
 
 type TxRunner func(tx *gorm.DB) error
