@@ -278,7 +278,7 @@ function renderBreakdown(data: any[] | undefined, title: string, subtitle: strin
 
   let sum = data?.reduce((prev, current) => {
     return { name: "Sum", value: prev.value + current.value };
-  });
+  }, 0);
 
   let cap = 5;
   let other = 0;
