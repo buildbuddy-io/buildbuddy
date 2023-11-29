@@ -15,6 +15,21 @@ func WithPath(path string) *url.URL {
 	return buildBuddyURL.ResolveReference(&url.URL{Path: path})
 }
 
+func WithSubdomainAndPath(identifier string, path string) *url.URL {
+	bURL := *buildBuddyURL
+	if identifier == "" {
+		return bURL.ResolveReference(&url.URL{Path: path})
+	}
+
+	domain := urlutil.GetDomain(bURL.Hostname())
+	newHost := identifier + "." + domain
+	if bURL.Port() != "" {
+		newHost += ":" + bURL.Port()
+	}
+	bURL.Host = newHost
+	return bURL.ResolveReference(&url.URL{Path: path})
+}
+
 func String() string {
 	return buildBuddyURL.String()
 }

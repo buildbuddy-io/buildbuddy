@@ -25,6 +25,7 @@ var (
 type BuildStatusReporter struct {
 	env                       environment.Env
 	githubClient              *github.GithubClient
+	subdomain                 string
 	buildEventAccumulator     *accumulator.BEValues
 	groups                    map[string]*GroupStatus
 	inFlight                  map[string]bool
@@ -115,6 +116,10 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 		r.githubClient = r.initGHClient(ctx)
 	}
 
+	if r.subdomain == "" {
+		r.subdomain = r.subdomainFromContext(ctx)
+	}
+
 	for _, payload := range r.payloads {
 		if payload.State == github.PendingState {
 			r.inFlight[payload.Context] = true
@@ -145,6 +150,18 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 	}
 
 	r.payloads = make([]*github.GithubStatusPayload, 0)
+}
+
+func (r *BuildStatusReporter) subdomainFromContext(ctx context.Context) string {
+	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return ""
+	}
+	g, err := r.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return ""
+	}
+	return *g.URLIdentifier
 }
 
 func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
@@ -248,17 +265,17 @@ func (r *BuildStatusReporter) invocationID() string {
 }
 
 func (r *BuildStatusReporter) invocationURL() string {
-	return build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.invocationID())).String()
+	return build_buddy_url.WithSubdomainAndPath(r.subdomain, fmt.Sprintf("/invocation/%s", r.invocationID())).String()
 }
 
 func (r *BuildStatusReporter) groupURL(label string) string {
-	u := build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.invocationID()))
+	u := build_buddy_url.WithSubdomainAndPath(r.subdomain, fmt.Sprintf("/invocation/%s", r.invocationID()))
 	u.RawQuery = fmt.Sprintf("targetFilter=%s", label)
 	return u.String()
 }
 
 func (r *BuildStatusReporter) targetURL(label string) string {
-	u := build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.invocationID()))
+	u := build_buddy_url.WithSubdomainAndPath(r.subdomain, fmt.Sprintf("/invocation/%s", r.invocationID()))
 	u.RawQuery = fmt.Sprintf("target=%s", label)
 	return u.String()
 }
