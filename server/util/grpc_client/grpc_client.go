@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -28,12 +29,18 @@ const (
 )
 
 var (
-	poolSize = flag.Int("grpc_client.pool_size", 10, "Number of connections to create to each target.")
+	poolSize        = flag.Int("grpc_client.pool_size", 10, "Number of connections to create to each target.")
+	enablePoolCache = flag.Bool("grpc_client.enable_pool_cache", false, "Whether or not to enable the connection pool cache.")
+	cacheSize       = flag.Int("grpc_client.cache_size", 100, "Number of connection pools to cache (keyed by target).")
 )
 
 type ClientConnPool struct {
 	conns []*grpc.ClientConn
 	idx   atomic.Uint64
+}
+
+func PoolCacheEnabled() bool {
+	return *enablePoolCache
 }
 
 func (p *ClientConnPool) Check(ctx context.Context) error {
@@ -214,5 +221,60 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 			// If true, client sends keepalive pings even with no active RPCs.
 			PermitWithoutStream: true,
 		}),
+	}
+}
+
+type grpcClientConnPoolCache struct {
+	env         environment.Env
+	connMutex   *sync.RWMutex
+	connPoolMap map[string]*ClientConnPool
+}
+
+func RegisterConnPoolCache(env environment.Env) {
+	c := NewGrpcClientConnPoolCache(env)
+	env.SetGrpcClientConnPoolCache(c)
+}
+
+func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (interfaces.ClosableClientConn, error) {
+	cpc.connMutex.RLock()
+	connPool, ok := cpc.connPoolMap[target]
+	cpc.connMutex.RUnlock()
+
+	// We didn't find a connection pool, so we'll make one.
+	if !ok || connPool == nil {
+		// Grab write lock
+		cpc.connMutex.Lock()
+		// No matter what, we'll return before this if block ends.
+		defer cpc.connMutex.Unlock()
+
+		// Make sure someone didn't beat us to making the connection.
+		connPool, ok = cpc.connPoolMap[target]
+		if !ok || connPool == nil {
+			// OKAY, FINALLY MAKE A CONNECTION POOL.
+			connPool, err := DialInternal(cpc.env, target)
+			if err != nil {
+				return nil, err
+			}
+			// Taking a gamble here and betting we don't get that many URLs.
+			// Don't share pool if we already have a bunch of pools.
+			if len(cpc.connPoolMap) < *cacheSize {
+				log.Infof("Caching connection pool for target: %s", target)
+				cpc.connPoolMap[target] = connPool
+			}
+			return connPool, nil
+		}
+		// Someone managed to make their own connection before we got the lock.
+		return connPool, nil
+	}
+
+	// No locks are held here.  We found a connection pool in the map.
+	return connPool, nil
+}
+
+func NewGrpcClientConnPoolCache(env environment.Env) *grpcClientConnPoolCache {
+	return &grpcClientConnPoolCache{
+		env:         env,
+		connMutex:   &sync.RWMutex{},
+		connPoolMap: make(map[string]*ClientConnPool),
 	}
 }

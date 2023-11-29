@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -169,26 +170,40 @@ func stripUser(u *url.URL) *url.URL {
 	return &copy
 }
 
-func grpcTargetForFileURL(u *url.URL, grpcs bool) string {
+func getTargetForURL(u *url.URL, grpcs bool) string {
 	target := url.URL{Scheme: "grpc", User: u.User, Host: u.Host}
 	if grpcs {
 		target.Scheme = "grpcs"
+		if u.Port() == "" {
+			target.Host = u.Hostname() + ":443"
+		}
+	} else if u.Port() == "" {
+		target.Host = u.Hostname() + ":80"
 	}
+
 	return target.String()
 }
 
-func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) error {
-	if url.Port() == "" && grpcs {
-		url.Host = url.Hostname() + ":443"
-	} else if url.Port() == "" {
-		url.Host = url.Hostname() + ":80"
+func getCachedGrpcClientConnPool(env environment.Env, target string) (interfaces.ClosableClientConn, error) {
+	if cc := env.GetGrpcClientConnPoolCache(); cc != nil {
+		return cc.GetGrpcClientConnPoolForURL(target)
 	}
+	return nil, nil
+}
 
-	conn, err := grpc_client.DialInternal(env, grpcTargetForFileURL(url, grpcs))
+func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) error {
+	target := getTargetForURL(url, grpcs)
+	conn, err := getCachedGrpcClientConnPool(env, target)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	if conn == nil {
+		conn, err = grpc_client.DialInternalWithoutPooling(env, target)
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+	}
 
 	if url.Scheme == "actioncache" {
 		acClient := repb.NewActionCacheClient(conn)
