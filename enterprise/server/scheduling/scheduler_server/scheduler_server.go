@@ -493,8 +493,7 @@ type executionNode struct {
 	// the "task streaming" API.
 	schedulerHostPort string
 	// Optional handle for locally connected executor that can be used to enqueue task reservations.
-	handle          *executorHandle
-	schedulingDelay time.Duration
+	handle *executorHandle
 }
 
 type rankedExecutionNode struct {
