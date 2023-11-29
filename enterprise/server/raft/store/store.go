@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -61,6 +62,7 @@ var (
 )
 
 type Store struct {
+	env        environment.Env
 	rootDir    string
 	grpcAddr   string
 	partitions []disk.Partition
@@ -99,12 +101,13 @@ type Store struct {
 	egCancel context.CancelFunc
 }
 
-func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
+func New(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
 	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
 	eventsChan := make(chan events.Event, 100)
 	s := &Store{
+		env:           env,
 		rootDir:       rootDir,
 		grpcAddr:      grpcAddress,
 		nodeHost:      nodeHost,
@@ -294,7 +297,8 @@ func (s *Store) Start() error {
 	// A grpcServer is run which is responsible for presenting a meta API
 	// to manage raft nodes on each host, as well as an API to shuffle data
 	// around between nodes, outside of raft.
-	s.grpcServer = grpc.NewServer()
+	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
+	s.grpcServer = grpc.NewServer(grpcOptions...)
 	reflection.Register(s.grpcServer)
 	grpc_prometheus.Register(s.grpcServer)
 	rfspb.RegisterApiServer(s.grpcServer, s)

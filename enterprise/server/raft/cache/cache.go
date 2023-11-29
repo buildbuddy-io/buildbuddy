@@ -230,7 +230,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	rc.apiClient = client.NewAPIClient(env, rc.nodeHost.ID())
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
-	store, err := store.New(conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, raftListener, rc.apiClient, rc.grpcAddress, rc.conf.Partitions)
+	store, err := store.New(rc.env, conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, raftListener, rc.apiClient, rc.grpcAddress, rc.conf.Partitions)
 	if err != nil {
 		return nil, err
 	}
