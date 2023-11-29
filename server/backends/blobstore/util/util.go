@@ -49,14 +49,15 @@ func Decompress(in []byte, err error) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := io.ReadAll(zr)
+	var buffer bytes.Buffer
+	_, err = io.Copy(&buffer, zr)
 	if err != nil {
 		return nil, err
 	}
 	if err := zr.Close(); err != nil {
 		return nil, err
 	}
-	return rsp, nil
+	return buffer.Bytes(), nil
 }
 
 func Compress(in []byte) ([]byte, error) {
