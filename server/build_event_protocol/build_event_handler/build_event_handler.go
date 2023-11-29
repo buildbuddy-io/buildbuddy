@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
@@ -40,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -1017,6 +1019,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 						return err
 					}
 				}
+				baseBBURL, err := subdomain.ReplaceURLSubdomain(e.ctx, e.env, build_buddy_url.String())
+				if err != nil {
+					return err
+				}
+				e.statusReporter.SetBaseBuildBuddyURL(baseBBURL)
 			}
 		}
 

@@ -23,6 +23,7 @@ var (
 )
 
 type BuildStatusReporter struct {
+	baseBBURL                 string
 	env                       environment.Env
 	githubClient              *github.GithubClient
 	buildEventAccumulator     *accumulator.BEValues
@@ -42,12 +43,17 @@ type GroupStatus struct {
 
 func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumulator.BEValues) *BuildStatusReporter {
 	return &BuildStatusReporter{
+		baseBBURL:                 build_buddy_url.String(),
 		env:                       env,
 		shouldReportStatusPerTest: *statusPerTestTarget,
 		buildEventAccumulator:     buildEventAccumulator,
 		payloads:                  make([]*github.GithubStatusPayload, 0),
 		inFlight:                  make(map[string]bool),
 	}
+}
+
+func (r *BuildStatusReporter) SetBaseBuildBuddyURL(url string) {
+	r.baseBBURL = url
 }
 
 func (r *BuildStatusReporter) initGHClient(ctx context.Context) *github.GithubClient {
@@ -248,19 +254,15 @@ func (r *BuildStatusReporter) invocationID() string {
 }
 
 func (r *BuildStatusReporter) invocationURL() string {
-	return build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.invocationID())).String()
+	return r.baseBBURL + "/invocation/" + r.invocationID()
 }
 
 func (r *BuildStatusReporter) groupURL(label string) string {
-	u := build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.invocationID()))
-	u.RawQuery = fmt.Sprintf("targetFilter=%s", label)
-	return u.String()
+	return r.baseBBURL + "/invocation/" + r.invocationID() + "?targetFilter=" + label
 }
 
 func (r *BuildStatusReporter) targetURL(label string) string {
-	u := build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.invocationID()))
-	u.RawQuery = fmt.Sprintf("target=%s", label)
-	return u.String()
+	return r.baseBBURL + "/invocation/" + r.invocationID() + "?target=" + label
 }
 
 func (r *BuildStatusReporter) initializeGroups(testGroups string) {

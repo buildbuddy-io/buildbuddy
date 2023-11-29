@@ -47,6 +47,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
@@ -1090,6 +1091,10 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 	return tw, nil
 }
 
+func (ws *workflowService) createBBURL(ctx context.Context, path string) (string, error) {
+	return subdomain.ReplaceURLSubdomain(ctx, ws.env, build_buddy_url.WithPath(path).String())
+}
+
 // Creates an action that executes the CI runner for the given workflow and params.
 // Returns the digest of the action as well as the invocation ID that the CI runner
 // will assign to the workflow invocation.
@@ -1149,6 +1154,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if workflowAction.SelfHosted {
 		useSelfHostedExecutors = "true"
 	}
+
+	besResultsURL, err := ws.createBBURL(ctx, "/invocation/")
+	if err != nil {
+		return nil, err
+	}
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
@@ -1159,7 +1169,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--invocation_id=" + invocationID,
 			"--action_name=" + workflowAction.Name,
 			"--bes_backend=" + events_api_url.String(),
-			"--bes_results_url=" + ws.bbUrl.ResolveReference(&url.URL{Path: "/invocation/"}).String(),
+			"--bes_results_url=" + besResultsURL,
 			"--cache_backend=" + cache_api_url.String(),
 			"--rbe_backend=" + remote_exec_api_url.String(),
 			"--remote_instance_name=" + instanceName,
@@ -1539,9 +1549,12 @@ func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf 
 }
 
 func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName, invocationID string) error {
-	invocationURL := ws.bbUrl.ResolveReference(&url.URL{Path: "/invocation/" + invocationID})
-	invocationURL.RawQuery = "queued=true"
-	status := github.NewGithubStatusPayload(actionName, invocationURL.String(), "Queued...", github.PendingState)
+	invocationURL, err := ws.createBBURL(ctx, "/invocation/"+invocationID)
+	if err != nil {
+		return err
+	}
+	invocationURL += "?queued=true"
+	status := github.NewGithubStatusPayload(actionName, invocationURL, "Queued...", github.PendingState)
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
 	if err != nil {
 		return err

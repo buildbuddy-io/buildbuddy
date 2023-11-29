@@ -43,6 +43,7 @@ go_library(
         "//server/util/retry",
         "//server/util/role",
         "//server/util/status",
+        "//server/util/subdomain",
         "@com_github_google_go_github_v43//github",
         "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",
