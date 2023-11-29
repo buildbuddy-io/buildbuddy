@@ -693,25 +693,27 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 				if offset >= regionEnd {
 					break
 				}
-				n, err := gin.ReadAt(buf, offset)
-				if err != nil && err != io.EOF {
-					return err
+				n, readErr := gin.ReadAt(buf, offset)
+				if readErr != nil && readErr != io.EOF {
+					return readErr
 				}
 
 				if _, err := out.WriteAt(buf[:n], offset); err != nil {
 					return err
 				}
 
-				// After the store has been updated, unmap the chunk to save memory
+				// If we've finished processing a chunk, unmap it to save memory
 				// usage on the executor
-				if baseSnapshotStore != nil {
+				nextOffsetInNextChunk := (offset%cowChunkSizeBytes())+int64(n) >= cowChunkSizeBytes()
+				endOfDiffSnapshot := readErr == io.EOF
+				if baseSnapshotStore != nil && (nextOffsetInNextChunk || endOfDiffSnapshot) {
 					if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
 						return err
 					}
 				}
 
 				offset += int64(n)
-				if err == io.EOF {
+				if endOfDiffSnapshot {
 					break
 				}
 			}
