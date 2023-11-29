@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -35,6 +36,10 @@ const (
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
+	// Ensure some memory is allocated for the shared LRU.
+	if err := resources.Configure(true /*=snapshotSharingEnabled*/); err != nil {
+		log.Fatalf("Failed to configure resources: %s", err)
+	}
 }
 
 func TestMmap(t *testing.T) {
@@ -328,7 +333,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 	flags.Set(b, "app.log_level", "error")
 	log.Configure()
 
-	const chunkSize = 512 * 1024 // 512K
+	const chunkSize = 4000 * 1024 // 4MB
 	// TODO: figure out a more realistic distribution of read/write size
 	const ioSize = 4096
 	// Use a relatively small disk size to avoid expensive test setup.

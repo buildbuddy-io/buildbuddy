@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -87,6 +88,12 @@ var (
 func init() {
 	// Set umask to match the executor process.
 	syscall.Umask(0)
+
+	// Configure resource limits to ensure we allocate enough memory for the
+	// shared LRU in copy_on_write.
+	if err := resources.Configure(true /*=snapshotSharingEnabled*/); err != nil {
+		log.Fatalf("Failed to configure resources: %s", err)
+	}
 
 	// Some tests need iptables which is in /usr/sbin.
 	err := os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")

@@ -127,7 +127,7 @@ const (
 	fullMemSnapshotName = "full-mem.snap"
 	diffMemSnapshotName = "diff-mem.snap"
 	// Directory storing the memory file chunks.
-	memoryChunkDirName = "memory"
+	memoryChunkDirName = snaputil.MemoryFileName
 
 	fullSnapshotType = "Full"
 	diffSnapshotType = "Diff"
