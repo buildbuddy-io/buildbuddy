@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[7031],{91269:function(e){e.exports=JSON.parse('{"label":"release-notes","permalink":"/blog/tags/release-notes","allTagsPath":"/blog/tags","count":11}')}}]);
