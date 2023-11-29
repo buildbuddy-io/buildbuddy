@@ -35,7 +35,6 @@ go_library(
         "//server/util/disk",
         "//server/util/grpc_server",
         "//server/util/log",
-        "//server/util/retry",
         "//server/util/status",
         "//server/util/statusz",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
