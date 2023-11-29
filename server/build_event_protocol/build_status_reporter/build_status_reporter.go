@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -116,7 +117,7 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 		r.githubClient = r.initGHClient(ctx)
 	}
 
-	if r.subdomain == "" {
+	if r.subdomain == "" && subdomain.Enabled() {
 		r.subdomain = r.subdomainFromContext(ctx)
 	}
 

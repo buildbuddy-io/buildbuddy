@@ -14,6 +14,7 @@ go_library(
         "//server/tables",
         "//server/util/git",
         "//server/util/log",
+        "//server/util/subdomain",
         "//server/util/timeutil",
     ],
 )
