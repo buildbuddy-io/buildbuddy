@@ -23,7 +23,6 @@ go_library(
         "//server/build_event_protocol/build_status_reporter",
         "//server/build_event_protocol/invocation_format",
         "//server/build_event_protocol/target_tracker",
-        "//server/bytestream",
         "//server/endpoint_urls/build_buddy_url",
         "//server/endpoint_urls/cache_api_url",
         "//server/environment",
