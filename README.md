@@ -7,6 +7,8 @@
   <a href="https://community.buildbuddy.io"><img src="https://img.shields.io/badge/slack-join-brightgreen" /></a>
 </p>
 
+test
+
 # Intro
 
 BuildBuddy is an open source Bazel build event viewer, result store, and remote cache. It helps you collect, view, share and debug build events in a user-friendly web UI.
