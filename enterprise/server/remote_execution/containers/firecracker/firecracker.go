@@ -607,8 +607,19 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 
 		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
 		if recyclingEnabled && *snaputil.EnableLocalSnapshotSharing {
-			_, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
+			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
 			c.createFromSnapshot = (err == nil)
+			label := ""
+			if err != nil {
+				label = metrics.MissStatusLabel
+				log.CtxInfof(ctx, "Failed to get VM snapshot: %s", err)
+			} else {
+				label = metrics.HitStatusLabel
+				log.CtxInfof(ctx, "Found snapshot for ref=%q", snap.GetKey().GetRef())
+			}
+			metrics.RecycleRunnerRequests.With(prometheus.Labels{
+				metrics.RecycleRunnerRequestStatusLabel: label,
+			}).Inc()
 		}
 	} else {
 		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.SavedState.GetSnapshotKey()}
@@ -956,13 +967,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
 	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
-	label := metrics.HitStatusLabel
-	if err != nil {
-		label = metrics.MissStatusLabel
-	}
-	metrics.RecycleRunnerRequests.With(prometheus.Labels{
-		metrics.RecycleRunnerRequestStatusLabel: label,
-	}).Inc()
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}

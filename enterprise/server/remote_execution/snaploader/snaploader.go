@@ -180,6 +180,10 @@ type Snapshot struct {
 	remoteEnabled bool
 }
 
+func (s *Snapshot) GetKey() *fcpb.SnapshotKey {
+	return proto.Clone(s.key).(*fcpb.SnapshotKey)
+}
+
 func (s *Snapshot) GetVMConfiguration() *fcpb.VMConfiguration {
 	return s.manifest.GetVmConfiguration()
 }
@@ -282,11 +286,6 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 		if err != nil {
 			lastErr = err
 			continue
-		}
-		if key == keys.GetBranchKey() {
-			log.CtxInfof(ctx, "Found preferred snapshot ref=%q in cache", key.GetRef())
-		} else {
-			log.CtxInfof(ctx, "Found fallback snapshot ref=%q in cache", key.GetRef())
 		}
 		return &Snapshot{
 			key:           key,
