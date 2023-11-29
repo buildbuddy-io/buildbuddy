@@ -216,8 +216,13 @@ func run(ctx context.Context, env environment.Env) error {
 
 	var c *firecracker.FirecrackerContainer
 	if *remoteSnapshotKeyJSON != "" {
-		// Runner recycling is needed to allow starting from snapshot.
-		p, err := rexec.MakePlatform("recycle-runner=true")
+		p, err := rexec.MakePlatform(
+			// Runner recycling is needed to allow starting from snapshot.
+			"recycle-runner=true",
+			// Remote snapshotting is disabled for non-workflows; just set a fake
+			// workflow ID to work around this.
+			"workflow-id=WF123",
+		)
 		if err != nil {
 			return status.WrapError(err, "make platform")
 		}
