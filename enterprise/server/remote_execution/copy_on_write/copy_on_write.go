@@ -610,24 +610,23 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 	rateLimiter := rate.NewLimiter(rate.Limit(*maxEagerFetchesPerSec), 1)
 	eg := &errgroup.Group{}
 	eg.SetLimit(*eagerFetchConcurrency)
+	defer eg.Wait()
 
 	for {
 		select {
 		case <-s.quitChan:
-			_ = eg.Wait()
 			return
 		case d := <-s.eagerFetchChan:
 			if err := rateLimiter.Wait(s.ctx); err != nil {
-				if err != nil {
-					log.Errorf("COWStore eager fetch rate limiter failed, stopping eager fetches: %s", err)
+				if err != s.ctx.Err() {
+					log.CtxErrorf(s.ctx, "COWStore eager fetch rate limiter failed, stopping eager fetches: %s", err)
 				}
-				_ = eg.Wait()
 				return
 			}
 			eg.Go(func() error {
 				err := s.fetchChunk(d.offset)
 				if err != nil {
-					log.Warningf("COWStore eager fetch chunk failed with: %s", err)
+					log.CtxWarningf(s.ctx, "COWStore eager fetch chunk failed with: %s", err)
 				}
 				return nil
 			})
