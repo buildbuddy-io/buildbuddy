@@ -91,6 +91,7 @@ actions:
       # executing with high concurrency, and remove `--jobs=3`
       - test //... --config=linux-workflows --config=race --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
   - name: Baremetal tests
+    container_image: ubuntu-20.04
     triggers:
       push:
         branches:
