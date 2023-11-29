@@ -628,6 +628,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 	defer span.End()
 
 	var out io.WriterAt
+	var storeChunkSizeBytes int64
 	if baseSnapshotStore == nil {
 		f, err := os.OpenFile(baseSnapshotPath, os.O_WRONLY, 0644)
 		if err != nil {
@@ -637,6 +638,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 		out = f
 	} else {
 		out = baseSnapshotStore
+		storeChunkSizeBytes = baseSnapshotStore.ChunkSizeBytes()
 	}
 
 	in, err := os.Open(diffSnapshotPath)
@@ -656,7 +658,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 	perThreadBytes = alignToMultiple(perThreadBytes, int64(bufSize))
 	if *enableUFFD {
 		// Ensure goroutines don't cross chunk boundaries and cause race conditions when writing
-		perThreadBytes = alignToMultiple(perThreadBytes, cowChunkSizeBytes())
+		perThreadBytes = alignToMultiple(perThreadBytes, storeChunkSizeBytes)
 	}
 	for i := 0; i < concurrency; i++ {
 		i := i
@@ -693,25 +695,29 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 				if offset >= regionEnd {
 					break
 				}
-				n, err := gin.ReadAt(buf, offset)
-				if err != nil && err != io.EOF {
-					return err
+				n, readErr := gin.ReadAt(buf, offset)
+				if readErr != nil && readErr != io.EOF {
+					return readErr
 				}
+				endOfDiffSnapshot := readErr == io.EOF
 
 				if _, err := out.WriteAt(buf[:n], offset); err != nil {
 					return err
 				}
 
-				// After the store has been updated, unmap the chunk to save memory
-				// usage on the executor
 				if baseSnapshotStore != nil {
-					if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
-						return err
+					// If we've finished processing a chunk, unmap it to save memory
+					// usage on the executor
+					nextOffsetInNextChunk := (offset%storeChunkSizeBytes)+int64(n) >= storeChunkSizeBytes
+					if nextOffsetInNextChunk || endOfDiffSnapshot {
+						if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
+							return err
+						}
 					}
 				}
 
 				offset += int64(n)
-				if err == io.EOF {
+				if endOfDiffSnapshot {
 					break
 				}
 			}
