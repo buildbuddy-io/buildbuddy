@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 )
 
@@ -80,11 +82,22 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 		return nil, err
 	}
 	start := time.Now()
-	ctx, spn := tracing.StartSpan(ctx)
-	b, err := disk.ReadFile(ctx, fullPath)
+	_, spn := tracing.StartSpan(ctx)
+	f, err := os.Open(fullPath)
+	if os.IsNotExist(err) {
+		return nil, status.NotFoundError(err.Error())
+	}
+	if err != nil {
+		return nil, err
+	}
 	spn.End()
-	util.RecordReadMetrics(diskLabel, start, b, err)
-	return util.Decompress(b, err)
+	defer f.Close()
+	counter := &ioutil.Counter{}
+	reader := io.TeeReader(f, counter)
+	duration := time.Since(start)
+	bytes, err := util.Decompress(reader)
+	util.RecordReadMetrics(diskLabel, duration, counter.Count(), err)
+	return bytes, err
 }
 
 func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
