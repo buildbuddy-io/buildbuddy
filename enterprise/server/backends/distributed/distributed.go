@@ -643,7 +643,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 
 	mu := sync.RWMutex{} // protects(foundMap)
 	hashResources := make(map[string][]*rspb.ResourceName, 0)
-	foundMap := make(map[string]bool, len(resources))
+	foundMap := make(map[string]struct{}, len(resources))
 	peerMap := make(map[string]*peerset.PeerSet, len(resources))
 	for _, r := range resources {
 		hash := r.GetDigest().GetHash()
@@ -706,8 +706,9 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 				}
 				for _, r := range resources {
 					hash := r.GetDigest().GetHash()
-					_, missing := peerMissingHashes[hash]
-					foundMap[hash] = !missing
+					if _, ok := peerMissingHashes[hash]; !ok {
+						foundMap[hash] = struct{}{}
+					}
 				}
 				return nil
 			})
@@ -720,17 +721,28 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			}
 			continue
 		}
-
 		if len(foundMap) == len(hashResources) {
-			// If we've tried everything, we can exit now.
+			// If we've found everything, we can exit now.
 			break
 		}
+	}
+
+	// For every digest we found, if we did not find it
+	// on the first peer in our list, we want to backfill it.
+	backfills := make([]*backfillOrder, 0)
+	for h := range foundMap {
+		r := hashResources[h][0]
+		ps := peerMap[h]
+		backfills = append(backfills, c.getBackfillOrders(r, ps)...)
+	}
+	if err := c.backfillPeers(ctx, backfills); err != nil {
+		c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
 	}
 
 	var missing []*repb.Digest
 	for _, r := range resources {
 		d := r.GetDigest()
-		if foundOnPeer, ok := foundMap[d.GetHash()]; !ok || !foundOnPeer {
+		if _, ok := foundMap[d.GetHash()]; !ok {
 			missing = append(missing, d)
 		}
 	}
