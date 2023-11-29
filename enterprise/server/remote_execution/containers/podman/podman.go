@@ -168,7 +168,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 	imageIsPublic := props.ContainerRegistryUsername == "" && props.ContainerRegistryPassword == ""
 	imageIsStreamable := (imageIsPublic || *privateImageStreamingEnabled)
 	if imageIsStreamable {
-		if err := p.sociStore.WaitUntilExists(); err != nil {
+		if err := p.sociStore.WaitUntilReady(); err != nil {
 			return nil, status.UnavailableErrorf("soci-store unavailable: %s", err)
 		}
 
@@ -363,10 +363,7 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 			args = append(args, "--runtime-flag=ignore-cgroups")
 		}
 	}
-	streamingStoreArg := c.sociStore.EnableStreamingStoreArg()
-	if streamingStoreArg != "" {
-		args = append(args, streamingStoreArg)
-	}
+	args = append(args, c.sociStore.GetPodmanArgs()...)
 	if c.options.Init {
 		args = append(args, "--init")
 	}
