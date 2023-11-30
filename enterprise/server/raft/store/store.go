@@ -173,14 +173,14 @@ func (s *Store) setMetaRangeBuf(buf []byte) {
 	defer s.metaRangeMu.Unlock()
 	new := &rfpb.RangeDescriptor{}
 	if err := proto.Unmarshal(buf, new); err != nil {
-		log.Errorf("Error unmarshaling new metarange data: %s", err)
+		s.log.Errorf("Error unmarshaling new metarange data: %s", err)
 		return
 	}
 	if len(s.metaRangeData) > 0 {
 		// Compare existing to new -- only update if generation is greater.
 		existing := &rfpb.RangeDescriptor{}
 		if err := proto.Unmarshal(s.metaRangeData, existing); err != nil {
-			log.Errorf("Error unmarshaling existing metarange data: %s", err)
+			s.log.Errorf("Error unmarshaling existing metarange data: %s", err)
 			return
 		}
 		if new.GetGeneration() <= existing.GetGeneration() {
@@ -196,12 +196,12 @@ func (s *Store) queryForMetarange() {
 	start := time.Now()
 	stream, err := s.gossipManager.Query(constants.MetaRangeTag, nil, nil)
 	if err != nil {
-		log.Errorf("Error querying for metarange: %s", err)
+		s.log.Errorf("Error querying for metarange: %s", err)
 	}
 	for p := range stream.ResponseCh() {
 		s.setMetaRangeBuf(p.Payload)
 		stream.Close()
-		log.Infof("Discovered metarange in %s", time.Since(start))
+		s.log.Infof("Discovered metarange in %s", time.Since(start))
 		return
 	}
 }
@@ -265,7 +265,7 @@ func (s *Store) handleEvents(ctx context.Context) error {
 				case ch <- e:
 					continue
 				default:
-					log.Warningf("Dropped event: %s", e)
+					s.log.Warningf("Dropped event: %s", e)
 				}
 			}
 			s.eventsMu.Unlock()
@@ -331,7 +331,7 @@ func (s *Store) Start() error {
 func (s *Store) Stop(ctx context.Context) error {
 	now := time.Now()
 	defer func() {
-		log.Printf("Store shutdown finished in %s", time.Since(now))
+		s.log.Infof("Store shutdown finished in %s", time.Since(now))
 	}()
 
 	s.leaseKeeper.Stop()
@@ -381,7 +381,7 @@ func (s *Store) dropLeadershipForShutdown() {
 			}
 			eg.Go(func() error {
 				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, replicaID); err != nil {
-					log.Warningf("Error transferring leadership: %s", err)
+					s.log.Warningf("Error transferring leadership: %s", err)
 				}
 				return nil
 			})
@@ -548,7 +548,7 @@ func (s *Store) haveLease(rangeID uint64) bool {
 	if r, err := s.GetReplica(rangeID); err == nil {
 		return s.leaseKeeper.HaveLease(r.ShardID)
 	}
-	log.Warningf("haveLease check for unheld range: %d", rangeID)
+	s.log.Warningf("haveLease check for unheld range: %d", rangeID)
 	return false
 }
 
@@ -808,7 +808,7 @@ func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 		if query.Name == constants.MetaRangeTag {
 			if buf := s.getMetaRangeBuf(); len(buf) > 0 {
 				if err := query.Respond(buf); err != nil {
-					log.Debugf("Error responding to metarange query: %s", err)
+					s.log.Debugf("Error responding to metarange query: %s", err)
 				}
 			}
 		}
@@ -897,12 +897,12 @@ func (s *Store) RefreshReplicaUsages() []*rfpb.ReplicaUsage {
 	for _, rd := range openRanges {
 		r, err := s.GetReplica(rd.GetRangeId())
 		if err != nil {
-			log.Warningf("could not get replica %d to refresh usage: %s", rd.GetRangeId(), err)
+			s.log.Warningf("could not get replica %d to refresh usage: %s", rd.GetRangeId(), err)
 			continue
 		}
 		u, err := r.Usage()
 		if err != nil {
-			log.Warningf("could not refresh usage for replica %d: %s", rd.GetRangeId(), err)
+			s.log.Warningf("could not refresh usage for replica %d: %s", rd.GetRangeId(), err)
 			continue
 		}
 		usages = append(usages, u)
