@@ -16,10 +16,10 @@ import (
 )
 
 var (
-	memoryBytes  = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
-	mmapFraction = flag.Float64("executor.mmap_memory_fraction", 0.1, "Fraction of memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. Has no effect if snapshot sharing is disabled.")
-	milliCPU     = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var.")
-	zoneOverride = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
+	memoryBytes     = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
+	mmapMemoryBytes = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if snapshot sharing is disabled.")
+	milliCPU        = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var.")
+	zoneOverride    = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
 )
 
 const (
@@ -103,12 +103,11 @@ func Configure(snapshotSharingEnabled bool) error {
 	}
 
 	if snapshotSharingEnabled {
-		// Allocating more than 50% of memory to mmapped chunks is probably
-		// a mistake, report this as an error for now.
-		if *mmapFraction <= 0 || *mmapFraction > 0.5 {
-			return status.InvalidArgumentErrorf("invalid mmap fraction %f (must be > 0 and <= 0.5)", *mmapFraction)
+		// Check for too little or too much mmap memory.
+		if *mmapMemoryBytes < 64*1024*1024 || *mmapMemoryBytes > allocatedRAMBytes {
+			return status.InvalidArgumentErrorf("invalid mmap_memory_bytes %d (must be >= 64MB and <= allocated memory bytes %d)", *mmapMemoryBytes, allocatedRAMBytes)
 		}
-		allocatedMmapRAMBytes = int64(*mmapFraction * float64(allocatedRAMBytes))
+		allocatedMmapRAMBytes = *mmapMemoryBytes
 		allocatedRAMBytes -= allocatedMmapRAMBytes
 	}
 
