@@ -433,7 +433,7 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
 			for i in $(seq 100); do
-				sleep 0.001
+				sleep 0.0001
 			done
 		`},
 	}
