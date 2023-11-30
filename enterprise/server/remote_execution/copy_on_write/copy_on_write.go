@@ -18,8 +18,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
@@ -769,6 +771,17 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
 }
 
+// getMmapLRU returns the shared LRU instance to be used for the mmap,
+// if applicable.
+func getMmapLRU(dataDir string) (*MmapLRU, error) {
+	// We constrain UFFD memory usage by only allowing one chunk to be mapped
+	// at once, so don't use the shared LRU for UFFD.
+	if filepath.Base(dataDir) != snaputil.MemoryFileName {
+		return getSharedLRU()
+	}
+	return nil, nil
+}
+
 // Mmap uses a memory-mapped file to represent a section of a larger composite
 // COW store at a specific offset.
 //
@@ -777,8 +790,12 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 //
 // Mmap is concurrency safe
 type Mmap struct {
-	ctx                context.Context
-	env                environment.Env
+	ctx context.Context
+	env environment.Env
+
+	// Optional MmapLRU used to control the memory usage of this Mmap.
+	lru *MmapLRU
+
 	remoteInstanceName string
 
 	// Whether the store supports remote fetching/caching of artifacts
@@ -787,7 +804,10 @@ type Mmap struct {
 
 	Offset  int64
 	dataDir string
-	dirty   bool // dirty suffix, only used to compute path
+	// Whether this is a dirty chunk. Only used to compute the file path.
+	dirty bool
+	// Size of the underlying data when mapped.
+	sizeBytes int64
 
 	// mu protects the subsequent fields.
 	// We do not use a RMutex, because Read methods may still need to initialize
@@ -809,12 +829,18 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 	if digest == nil {
 		return nil, status.FailedPreconditionError("missing digest")
 	}
+	lru, err := getMmapLRU(dataDir)
+	if err != nil {
+		return nil, err
+	}
 	return &Mmap{
 		ctx:                ctx,
 		env:                env,
+		lru:                lru,
 		remoteInstanceName: remoteInstanceName,
 		remoteEnabled:      remoteEnabled,
 		Offset:             offset,
+		sizeBytes:          digest.GetSizeBytes(),
 		data:               nil,
 		fetched:            false,
 		source:             snaputil.ChunkSourceUnmapped,
@@ -832,30 +858,47 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty b
 	if err != nil {
 		return nil, err
 	}
-	return &Mmap{
+	lru, err := getMmapLRU(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	m := &Mmap{
 		ctx:                ctx,
 		env:                env,
+		lru:                lru,
 		remoteInstanceName: remoteInstanceName,
 		remoteEnabled:      remoteEnabled,
 		dirty:              dirty,
 		Offset:             offset,
+		sizeBytes:          int64(size),
 		data:               data,
 		fetched:            true,
 		source:             source,
 		dataDir:            dataDir,
-	}, nil
+	}
+	// Since this constructor eagerly maps, need to track this in the LRU.
+	if lru != nil {
+		lru.Add(m)
+	}
+	return m, nil
 }
 
 // NewMmapLocalFile returns an unmapped instance from the given directory and
 // offset.
 func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, dirty bool, size int, offset int64, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
+	lru, err := getMmapLRU(dataDir)
+	if err != nil {
+		return nil, err
+	}
 	return &Mmap{
 		ctx:                ctx,
 		env:                env,
+		lru:                lru,
 		remoteInstanceName: remoteInstanceName,
 		remoteEnabled:      remoteEnabled,
 		dirty:              dirty,
 		Offset:             offset,
+		sizeBytes:          int64(size),
 		data:               nil,
 		fetched:            true,
 		source:             snaputil.ChunkSourceLocalFile,
@@ -864,17 +907,13 @@ func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, 
 }
 
 // mmapDataFromPath memory maps a file and returns the data
-func mmapDataFromPath(path string) ([]byte, error) {
+func mmapDataFromPath(path string, sizeBytes int64) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	s, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	return mmapDataFromFd(int(f.Fd()), int(s.Size()))
+	return mmapDataFromFd(int(f.Fd()), int(sizeBytes))
 }
 
 // mmapDataFromFd memory maps a file descriptor and returns the data
@@ -903,11 +942,15 @@ func (m *Mmap) initMap() (err error) {
 			return err
 		}
 	}
-	data, err := mmapDataFromPath(path)
+	data, err := mmapDataFromPath(path, m.sizeBytes)
 	if err != nil {
 		return status.WrapErrorf(err, "create mmap for path %s", path)
 	}
 	m.data = data
+
+	if m.lru != nil {
+		m.lru.Add(m)
+	}
 
 	return nil
 }
@@ -982,6 +1025,10 @@ func (m *Mmap) Sync() error {
 // Unmap unmaps the chunk without marking it closed.
 // It returns nil if the chunk is already unmapped.
 func (m *Mmap) Unmap() error {
+	return m.unmap(false /*=isLRUEviction*/)
+}
+
+func (m *Mmap) unmap(isLRUEviction bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.data == nil {
@@ -992,6 +1039,12 @@ func (m *Mmap) Unmap() error {
 		return err
 	}
 	m.data = nil
+	// Also remove from the LRU. To avoid a deadlock with lru.Add, skip calling
+	// lru.Remove if we're already being called as part of the LRU eviction
+	// callback.
+	if m.lru != nil && !isLRUEviction {
+		m.lru.Remove(m)
+	}
 	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
 		atomic.AddInt64(&mmappedBytes, int64(-n)),
 	))
@@ -1010,12 +1063,7 @@ func (m *Mmap) Close() error {
 }
 
 func (m *Mmap) SizeBytes() (int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err := m.initMap(); err != nil {
-		return 0, err
-	}
-	return int64(len(m.data)), nil
+	return m.sizeBytes, nil
 }
 
 // StartAddress returns the address of the first mapped byte. If this is a lazy
@@ -1063,6 +1111,70 @@ func (m *Mmap) Digest() (*repb.Digest, error) {
 	}
 	m.SetDigest(d)
 	return d, nil
+}
+
+// MmapLRU limits the number of Mmap instances that can be mapped in memory at
+// once.
+type MmapLRU struct {
+	mu  sync.Mutex
+	lru *lru.LRU[*Mmap]
+}
+
+func NewMmapLRU() (*MmapLRU, error) {
+	// Sanity check that the LRU size is not too small.
+	// Just using 64MB here for now as a reasonable threshold.
+	maxSize := resources.GetAllocatedMmapRAMBytes()
+	const threshold = 64 * 1024 * 1024
+	if maxSize < threshold {
+		return nil, status.InvalidArgumentErrorf("configured mmapped bytes limit is too small (%d bytes)", maxSize)
+	}
+	l, err := lru.NewLRU(&lru.Config[*Mmap]{
+		SizeFn: func(m *Mmap) int64 { return m.sizeBytes },
+		OnEvict: func(m *Mmap, reason lru.EvictionReason) {
+			// Manual evictions are triggered by calling Unmap(). Don't call
+			// unmap again here, not only because it's unnecessary, but also
+			// because it would cause a deadlock.
+			if reason == lru.ManualEviction {
+				return
+			}
+			if err := m.unmap(true /*=isLRUEviction*/); err != nil {
+				log.Errorf("Failed to unmap chunk: %s", err)
+			}
+		},
+		MaxSize: maxSize,
+		// Update in place, otherwise Add() will first call OnEvict which will
+		// unnecessarily munmap.
+		UpdateInPlace: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &MmapLRU{lru: l}, nil
+}
+
+// getSharedLRU returns the shared LRU instance to be used for mmapped disk
+// chunks.
+var getSharedLRU = sync.OnceValues(NewMmapLRU)
+
+func (ml *MmapLRU) key(m *Mmap) string {
+	// There will be multiple Mmaps with the same offset across different COW
+	// instances, so use the pointer identity of the Mmap to disambiguate.
+	// dataDir would also work, but would use more memory for LRU keys.
+	return fmt.Sprintf("%p:%x", m, m.Offset)
+}
+
+func (ml *MmapLRU) Add(m *Mmap) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ml.lru.Add(ml.key(m), m)
+}
+
+// Remove proactively removes the given mmap from the LRU.
+// The caller is expected to call this after manually unmapping the chunk.
+func (ml *MmapLRU) Remove(m *Mmap) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ml.lru.Remove(ml.key(m))
 }
 
 func IsEmptyOrAllZero(data []byte) bool {
