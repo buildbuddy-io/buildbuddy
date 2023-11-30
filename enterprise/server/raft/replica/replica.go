@@ -287,7 +287,7 @@ func (sm *Replica) setRange(key, val []byte) error {
 	if usage, err := sm.Usage(); err == nil {
 		sm.notifyListenersOfUsage(sm.rangeDescriptor, usage)
 	} else {
-		log.Errorf("Error computing usage upon opening replica: %s", err)
+		sm.log.Errorf("Error computing usage upon opening replica: %s", err)
 	}
 	return nil
 }
@@ -505,7 +505,7 @@ func (sm *Replica) releaseLocks(wb pebble.Batch, txid []byte) {
 		keyString := string(ukey)
 		lockingTxid, ok := sm.lockedKeys[keyString]
 		if !ok || !bytes.Equal(txid, lockingTxid) {
-			log.Errorf("Key %q was not locked by %q; should have been", keyString, string(txid))
+			sm.log.Errorf("Key %q was not locked by %q; should have been", keyString, string(txid))
 		} else {
 			delete(sm.lockedKeys, keyString)
 		}
@@ -1309,7 +1309,7 @@ func (sm *Replica) processAccessTimeUpdates() {
 
 		batchProto, err := batch.ToProto()
 		if err != nil {
-			log.Warningf("could not generate atime update batch: %s", err)
+			sm.log.Warningf("could not generate atime update batch: %s", err)
 			return
 		}
 
@@ -1321,7 +1321,7 @@ func (sm *Replica) processAccessTimeUpdates() {
 			return err
 		})
 		if err != nil {
-			log.Warningf("could not update atimes: %s", err)
+			sm.log.Warningf("could not update atimes: %s", err)
 			return
 		}
 
@@ -1385,7 +1385,7 @@ func (sm *Replica) sendAccessTimeUpdate(key []byte, fileMetadata *rfpb.FileMetad
 		case sm.accesses <- up:
 			return
 		default:
-			log.Warningf("Dropping atime update for %+v", fileMetadata.GetFileRecord())
+			sm.log.Warningf("Dropping atime update for %+v", fileMetadata.GetFileRecord())
 		}
 	}
 }
@@ -1817,7 +1817,7 @@ func (sm *Replica) saveRangeData(w io.Writer, snap *pebble.Snapshot) error {
 	sm.rangeMu.RUnlock()
 
 	if rd == nil {
-		log.Warningf("No range descriptor set; not snapshotting range data")
+		sm.log.Warningf("No range descriptor set; not snapshotting range data")
 		return nil
 	}
 	iter := snap.NewIter(&pebble.IterOptions{
