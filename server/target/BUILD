@@ -15,6 +15,7 @@ go_library(
         "//proto/api/v1:common_go_proto",
         "//server/build_event_protocol/event_index",
         "//server/environment",
+        "//server/interfaces",
         "//server/util/db",
         "//server/util/git",
         "//server/util/log",

@@ -2,6 +2,7 @@ package userdb
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"regexp"
 	"strings"
@@ -97,16 +98,17 @@ func NewUserDB(env environment.Env, h interfaces.DBHandle) (*UserDB, error) {
 }
 
 func (d *UserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error) {
-	return d.getGroupByID(d.h.DB(ctx), groupID)
+	return d.getGroupByID(ctx, d.h, groupID)
 }
 
-func (d *UserDB) getGroupByID(tx *db.DB, groupID string) (*tables.Group, error) {
+func (d *UserDB) getGroupByID(ctx context.Context, tx interfaces.DB, groupID string) (*tables.Group, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	query := tx.Raw(`SELECT * FROM "Groups" AS g WHERE g.group_id = ?`, groupID)
+	rq := tx.NewQuery(ctx, "userdb_get_group_by_id").Raw(
+		`SELECT * FROM "Groups" AS g WHERE g.group_id = ?`, groupID)
 	group := &tables.Group{}
-	if err := query.Take(group).Error; err != nil {
+	if err := rq.Take(group); err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.NotFoundError("The requested organization was not found.")
 		}
@@ -117,7 +119,7 @@ func (d *UserDB) getGroupByID(tx *db.DB, groupID string) (*tables.Group, error) 
 
 func (d *UserDB) GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error) {
 	var group *tables.Group
-	err := d.h.Transaction(ctx, func(tx *db.DB) error {
+	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		g, err := d.getGroupByURLIdentifier(ctx, tx, urlIdentifier)
 		if err != nil {
 			return err
@@ -128,13 +130,14 @@ func (d *UserDB) GetGroupByURLIdentifier(ctx context.Context, urlIdentifier stri
 	return group, err
 }
 
-func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx *db.DB, urlIdentifier string) (*tables.Group, error) {
+func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx interfaces.DB, urlIdentifier string) (*tables.Group, error) {
 	if urlIdentifier == "" {
 		return nil, status.InvalidArgumentError("URL identifier cannot be empty.")
 	}
-	query := tx.Raw(`SELECT * FROM "Groups" AS g WHERE g.url_identifier = ?`, urlIdentifier)
+	rq := tx.NewQuery(ctx, "userdb_get_group_by_identifier").Raw(
+		`SELECT * FROM "Groups" AS g WHERE g.url_identifier = ?`, urlIdentifier)
 	group := &tables.Group{}
-	if err := query.Take(group).Error; err != nil {
+	if err := rq.Take(group); err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.NotFoundError("The requested organization was not found.")
 		}
@@ -174,11 +177,11 @@ func isInOwnedDomainBlocklist(email string) bool {
 	return false
 }
 
-func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx *db.DB, domain string) (*tables.Group, error) {
+func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx interfaces.DB, domain string) (*tables.Group, error) {
 	tg := &tables.Group{}
-	existingRow := tx.Raw(`SELECT * FROM "Groups" as g
-                               WHERE g.owned_domain = ?`, domain)
-	err := existingRow.Take(tg).Error
+	rq := tx.NewQuery(ctx, "userdb_get_domain_owner_group").Raw(
+		`SELECT * FROM "Groups" as g WHERE g.owned_domain = ?`, domain)
+	err := rq.Take(tg)
 	if db.IsRecordNotFound(err) {
 		return nil, nil
 	} else if err != nil {
@@ -187,11 +190,11 @@ func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx *db.DB, domain stri
 	return tg, nil
 }
 
-func getUserGroup(tx *db.DB, userID string, groupID string) (*tables.UserGroup, error) {
+func getUserGroup(ctx context.Context, tx interfaces.DB, userID string, groupID string) (*tables.UserGroup, error) {
 	userGroup := &tables.UserGroup{}
-	query := tx.Raw(`SELECT * FROM "UserGroups" AS ug
-                    WHERE ug.user_user_id = ? AND ug.group_group_id = ?`, userID, groupID)
-	if err := query.Take(userGroup).Error; err != nil {
+	rq := tx.NewQuery(ctx, "userdb_get_user_group").Raw(
+		`SELECT * FROM "UserGroups" AS ug WHERE ug.user_user_id = ? AND ug.group_group_id = ?`, userID, groupID)
+	if err := rq.Take(userGroup); err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, nil
 		}
@@ -262,7 +265,7 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 	}
 
 	groupID := ""
-	err = d.h.Transaction(ctx, func(tx *db.DB) error {
+	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		gid, err := d.createGroup(ctx, tx, u.GetUserID(), g)
 		groupID = gid
 		return err
@@ -273,7 +276,7 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 	return groupID, nil
 }
 
-func (d *UserDB) createGroup(ctx context.Context, tx *db.DB, userID string, g *tables.Group) (string, error) {
+func (d *UserDB) createGroup(ctx context.Context, tx interfaces.DB, userID string, g *tables.Group) (string, error) {
 	if g.GroupID != "" {
 		return "", status.InvalidArgumentErrorf("cannot create a Group using an existing group ID")
 	}
@@ -284,15 +287,15 @@ func (d *UserDB) createGroup(ctx context.Context, tx *db.DB, userID string, g *t
 	}
 	newGroup.GroupID = groupID
 
-	if err := tx.Create(&newGroup).Error; err != nil {
+	if err := tx.NewQuery(ctx, "userdb_create_group").Create(&newGroup); err != nil {
 		return "", err
 	}
 	// Initialize the group with a group-owned key.
-	_, err = d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(tx, groupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/)
+	_, err = d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, groupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/)
 	if err != nil {
 		return "", err
 	}
-	if err = d.addUserToGroup(tx, userID, groupID); err != nil {
+	if err = d.addUserToGroup(ctx, tx, userID, groupID); err != nil {
 		return "", err
 	}
 	return groupID, nil
@@ -322,7 +325,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 	}
 
 	groupID := ""
-	err = d.h.Transaction(ctx, func(tx *db.DB) error {
+	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		if g.OwnedDomain != "" {
 			existingDomainOwnerGroup, err := d.getDomainOwnerGroup(ctx, tx, g.OwnedDomain)
 			if err != nil {
@@ -342,7 +345,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			return err
 		}
 
-		res := tx.Exec(`
+		res := tx.NewQuery(ctx, "userdb_update_group").Raw(`
 			UPDATE "Groups" SET
 				name = ?,
 				url_identifier = ?,
@@ -369,7 +372,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			g.SuggestionPreference,
 			g.RestrictCleanWorkflowRunsToAdmins,
 			g.EnforceIPRules,
-			g.GroupID)
+			g.GroupID).Exec()
 		if res.Error != nil {
 			return res.Error
 		}
@@ -389,15 +392,15 @@ func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) err
 	return d.h.DB(ctx).Exec(q, args...).Error
 }
 
-func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) (retErr error) {
+func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, groupID string) (retErr error) {
 	// Count the number of users in the group.
 	// If there are no existing users, then user should join with admin role,
 	// otherwise they should join with default role.
 	row := &struct{ Count int64 }{}
-	err := tx.Raw(`
+	err := tx.NewQuery(ctx, "userdb_check_group_size").Raw(`
 		SELECT COUNT(*) AS count FROM "UserGroups"
 		WHERE group_group_id = ? AND membership_status = ?
-	`, groupID, grpb.GroupMembershipStatus_MEMBER).Take(row).Error
+	`, groupID, grpb.GroupMembershipStatus_MEMBER).Take(row)
 	if err != nil {
 		return err
 	}
@@ -406,13 +409,13 @@ func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) (retErr error
 		r = role.Admin
 	}
 
-	existing, err := getUserGroup(tx, userID, groupID)
+	existing, err := getUserGroup(ctx, tx, userID, groupID)
 	if err != nil && !db.IsRecordNotFound(err) {
 		return err
 	}
 	if existing != nil {
 		if existing.MembershipStatus == int32(grpb.GroupMembershipStatus_REQUESTED) {
-			return tx.Exec(`
+			return tx.NewQuery(ctx, "userdb_add_requested_user_to_group").Raw(`
 				UPDATE "UserGroups"
 				SET membership_status = ?, role = ?
 				WHERE user_user_id = ?
@@ -422,14 +425,14 @@ func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) (retErr error
 				r,
 				userID,
 				groupID,
-			).Error
+			).Exec().Error
 		}
 		return status.AlreadyExistsError("You're already in this organization.")
 	}
-	return tx.Exec(
+	return tx.NewQuery(ctx, "userdb_add_user_to_group").Raw(
 		`INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)`,
 		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
-	).Error
+	).Exec().Error
 }
 
 func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error) {
@@ -445,12 +448,12 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 		return 0, status.InvalidArgumentError("Group ID is required.")
 	}
 	var membershipStatus grpb.GroupMembershipStatus
-	err = d.h.Transaction(ctx, func(tx *db.DB) error {
-		tu, err := d.getUser(tx, u.GetUserID())
+	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		tu, err := d.getUser(ctx, tx, u.GetUserID())
 		if err != nil {
 			return err
 		}
-		group, err := d.getGroupByID(tx, groupID)
+		group, err := d.getGroupByID(ctx, tx, groupID)
 		if err != nil {
 			return err
 		}
@@ -459,11 +462,11 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 		membershipStatus = grpb.GroupMembershipStatus_REQUESTED
 		if group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(tu.Email) {
 			membershipStatus = grpb.GroupMembershipStatus_MEMBER
-			return d.addUserToGroup(tx, userID, groupID)
+			return d.addUserToGroup(ctx, tx, userID, groupID)
 		}
 
 		// Check if there's an existing request and return AlreadyExists if so.
-		existing, err := getUserGroup(tx, userID, groupID)
+		existing, err := getUserGroup(ctx, tx, userID, groupID)
 		if err != nil {
 			return err
 		}
@@ -473,12 +476,12 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 			}
 			return status.AlreadyExistsError("You're already in this organization.")
 		}
-		return tx.Create(&tables.UserGroup{
+		return tx.NewQuery(ctx, "userdb_create_join_group_request").Create(&tables.UserGroup{
 			UserUserID:       userID,
 			GroupGroupID:     groupID,
 			Role:             uint32(role.Default),
 			MembershipStatus: int32(membershipStatus),
-		}).Error
+		})
 	})
 	if err != nil {
 		return 0, err
@@ -542,33 +545,33 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	return users, nil
 }
 
-func (d *UserDB) removeUserFromGroup(ctx context.Context, tx *db.DB, userID string, groupID string) error {
-	ug, err := getUserGroup(tx, userID, groupID)
+func (d *UserDB) removeUserFromGroup(ctx context.Context, tx interfaces.DB, userID string, groupID string) error {
+	ug, err := getUserGroup(ctx, tx, userID, groupID)
 	if err != nil {
 		return err
 	}
 	if ug == nil {
 		return nil
 	}
-	if err := tx.Exec(`
+	if err := tx.NewQuery(ctx, "userdb_remove_user_from_group").Raw(`
 						DELETE FROM "UserGroups"
 						WHERE user_user_id = ? AND group_group_id = ?`,
 		userID,
-		groupID).Error; err != nil {
+		groupID).Exec().Error; err != nil {
 		return err
 	}
-	if err := tx.Exec(`
+	if err := tx.NewQuery(ctx, "userdb_delete_user_api_keys").Raw(`
 						DELETE FROM "APIKeys"
 						WHERE user_id = ? AND group_id = ?`,
 		userID,
-		groupID).Error; err != nil {
+		groupID).Exec().Error; err != nil {
 		return err
 	}
 	return nil
 }
 
-func (d *UserDB) updateUserRole(ctx context.Context, tx *db.DB, userID string, groupID string, newRole role.Role) error {
-	ug, err := getUserGroup(tx, userID, groupID)
+func (d *UserDB) updateUserRole(ctx context.Context, tx interfaces.DB, userID string, groupID string, newRole role.Role) error {
+	ug, err := getUserGroup(ctx, tx, userID, groupID)
 	if err != nil {
 		return err
 	}
@@ -578,12 +581,12 @@ func (d *UserDB) updateUserRole(ctx context.Context, tx *db.DB, userID string, g
 	if role.Role(ug.Role) == newRole {
 		return nil
 	}
-	err = tx.Exec(`
+	err = tx.NewQuery(ctx, "userdb_update_user_role").Raw(`
 					UPDATE "UserGroups"
 					SET role = ?
 					WHERE user_user_id = ? AND group_group_id = ?
 				`, newRole, userID, groupID,
-	).Error
+	).Exec().Error
 	if err != nil {
 		return err
 	}
@@ -599,7 +602,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 			return status.InvalidArgumentError("update contains an empty user ID")
 		}
 	}
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		for _, update := range updates {
 			switch update.GetMembershipAction() {
 			case grpb.UpdateGroupUsersRequest_Update_REMOVE:
@@ -607,7 +610,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 					return err
 				}
 			case grpb.UpdateGroupUsersRequest_Update_ADD:
-				if err := d.addUserToGroup(tx, update.GetUserId().GetId(), groupID); err != nil {
+				if err := d.addUserToGroup(ctx, tx, update.GetUserId().GetId(), groupID); err != nil {
 					return err
 				}
 			case grpb.UpdateGroupUsersRequest_Update_UNKNOWN_MEMBERSHIP_ACTION:
@@ -626,15 +629,15 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 }
 
 func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		var existing tables.Group
-		if err := tx.Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
+		if err := tx.GORM("userdb_check_existing_group").Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
-				g := d.getDefaultGroupConfig()
-				if err := tx.Create(g).Error; err != nil {
+				gc := d.getDefaultGroupConfig()
+				if err := tx.NewQuery(ctx, "userdb_create_default_group").Create(gc); err != nil {
 					return err
 				}
-				if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(tx, DefaultGroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
+				if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, DefaultGroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 					return err
 				}
 				return nil
@@ -642,7 +645,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 			return err
 		}
 
-		return tx.Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
+		return tx.GORM("userdb_update_existing_group").Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
 	})
 }
 
@@ -654,7 +657,7 @@ func (d *UserDB) getDefaultGroupConfig() *tables.Group {
 	}
 }
 
-func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) error {
+func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.User) error {
 	if u.UserID == "" {
 		return status.FailedPreconditionError("UserID is required")
 	}
@@ -698,12 +701,12 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&sug).Error; err != nil {
+		if err := tx.NewQuery(ctx, "userdb_create_user_group").Create(&sug); err != nil {
 			return err
 		}
 		// For now, user-owned groups are assigned an org-level API key, and
 		// users have to explicitly enable user-owned keys.
-		if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(tx, sug.GroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
+		if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, sug.GroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 			return err
 		}
 		groupIDs = append(groupIDs, sug.GroupID)
@@ -717,24 +720,24 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		groupIDs = append(groupIDs, DefaultGroupID)
 	}
 
-	err := tx.Create(u).Error
+	err := tx.NewQuery(ctx, "userdb_create_user").Create(u)
 	if err != nil {
 		return err
 	}
 
 	for _, groupID := range groupIDs {
-		err := tx.Exec(`
+		err := tx.NewQuery(ctx, "userdb_new_user_create_groups").Raw(`
 			INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role)
 			VALUES (?, ?, ?, ?)
 			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(role.Default),
-		).Error
+		).Exec().Error
 		if err != nil {
 			return err
 		}
 		// Promote from default role to admin if the user is the only one in the
 		// group after joining.
 		preExistingUsers := &struct{ Count int64 }{}
-		err = tx.Raw(`
+		err = tx.GORM("userdb_new_user_check_group_size").Raw(`
 			SELECT COUNT(*) AS count
 			FROM "UserGroups"
 			WHERE group_group_id = ? AND user_user_id != ?
@@ -746,12 +749,12 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		if preExistingUsers.Count > 0 {
 			continue
 		}
-		err = tx.Exec(`
+		err = tx.NewQuery(ctx, "userdb_new_user_promote_admin").Raw(`
 			UPDATE "UserGroups"
 			SET role = ?
 			WHERE group_group_id = ?
 			`, uint32(role.Admin), groupID,
-		).Error
+		).Exec().Error
 		if err != nil {
 			return err
 		}
@@ -761,9 +764,9 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 }
 
 func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		var existing tables.User
-		if err := tx.Where("sub_id = ?", u.SubID).First(&existing).Error; err != nil {
+		if err := tx.GORM("userdb_check_existing_user").Where("sub_id = ?", u.SubID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
 				return d.createUser(ctx, tx, u)
 			}
@@ -775,8 +778,8 @@ func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
 
 func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, error) {
 	var user *tables.User
-	err := d.h.Transaction(ctx, func(tx *db.DB) error {
-		u, err := d.getUser(tx, id)
+	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		u, err := d.getUser(ctx, tx, id)
 		if err != nil {
 			return err
 		}
@@ -799,20 +802,21 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		return d.GetImpersonatedUser(ctx)
 	}
 	var user *tables.User
-	err = d.h.Transaction(ctx, func(tx *db.DB) error {
-		user, err = d.getUser(tx, u.GetUserID())
+	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		user, err = d.getUser(ctx, tx, u.GetUserID())
 		return err
 	})
 	return user, err
 }
 
-func (d *UserDB) getUser(tx *db.DB, userID string) (*tables.User, error) {
+func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (*tables.User, error) {
 	user := &tables.User{}
-	userRow := tx.Raw(`SELECT * FROM "Users" WHERE user_id = ?`, userID)
-	if err := userRow.Take(user).Error; err != nil {
+	rq := tx.NewQuery(ctx, "userdb_get_user").Raw(
+		`SELECT * FROM "Users" WHERE user_id = ?`, userID)
+	if err := rq.Take(user); err != nil {
 		return nil, err
 	}
-	groupRows, err := tx.Raw(`
+	q := `
 		SELECT
 			g.user_id,
 			g.group_id,
@@ -834,14 +838,12 @@ func (d *UserDB) getUser(tx *db.DB, userID string) (*tables.User, error) {
 		JOIN "UserGroups" as ug
 		ON g.group_id = ug.group_group_id
 		WHERE ug.user_user_id = ? AND ug.membership_status = ?
-	`, userID, int32(grpb.GroupMembershipStatus_MEMBER)).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer groupRows.Close()
-	for groupRows.Next() {
+	`
+	rq = tx.NewQuery(ctx, "userdb_get_user_groups").Raw(
+		q, userID, int32(grpb.GroupMembershipStatus_MEMBER))
+	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		gr := &tables.GroupRole{}
-		err := groupRows.Scan(
+		err := row.Scan(
 			// NOTE: When updating the group fields here, update GetImpersonatedUser
 			// as well.
 			&gr.Group.UserID,
@@ -862,9 +864,13 @@ func (d *UserDB) getUser(tx *db.DB, userID string) (*tables.User, error) {
 			&gr.Role,
 		)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		user.Groups = append(user.Groups, gr)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return user, nil
 }
@@ -882,12 +888,13 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 		return nil, status.PermissionDeniedError("Authenticated user does not have permissions to impersonate a user.")
 	}
 	user := &tables.User{}
-	err = d.h.Transaction(ctx, func(tx *db.DB) error {
-		userRow := tx.Raw(`SELECT * FROM "Users" WHERE user_id = ?`, u.GetUserID())
-		if err := userRow.Take(user).Error; err != nil {
+	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		rq := tx.NewQuery(ctx, "userdb_impersonation_get_user").Raw(
+			`SELECT * FROM "Users" WHERE user_id = ?`, u.GetUserID())
+		if err := rq.Take(user); err != nil {
 			return err
 		}
-		groupRows, err := tx.Raw(`
+		rq = tx.NewQuery(ctx, "userdb_impersonation_get_group").Raw(`
 			SELECT
 				user_id,
 				group_id,
@@ -906,14 +913,10 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				restrict_clean_workflow_runs_to_admins
 			FROM "Groups"
 			WHERE group_id = ?
-		`, u.GetGroupID()).Rows()
-		if err != nil {
-			return err
-		}
-		defer groupRows.Close()
-		for groupRows.Next() {
+		`, u.GetGroupID())
+		err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 			gr := &tables.GroupRole{}
-			err := groupRows.Scan(
+			err := row.Scan(
 				&gr.Group.UserID,
 				&gr.Group.GroupID,
 				&gr.Group.URLIdentifier,
@@ -936,6 +939,10 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 			// Grant admin role within the impersonated group.
 			gr.Role = uint32(role.Admin)
 			user.Groups = append(user.Groups, gr)
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 		return nil
 	})

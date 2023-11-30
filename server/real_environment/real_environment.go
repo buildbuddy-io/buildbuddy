@@ -150,7 +150,6 @@ func (r *RealEnv) SetDBHandle(h interfaces.DBHandle) {
 func (r *RealEnv) GetDBHandle() interfaces.DBHandle {
 	return r.dbHandle
 }
-
 func (r *RealEnv) SetStaticFilesystem(staticFS fs.FS) {
 	r.staticFilesystem = staticFS
 }

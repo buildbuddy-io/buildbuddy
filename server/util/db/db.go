@@ -384,14 +384,6 @@ func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts interfaces.DBOptio
 	return dbh.gormHandleForOpts(ctx, opts).Raw(sql, values...)
 }
 
-func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts interfaces.DBOptions, txn interfaces.TxRunner) error {
-	return dbh.gormHandleForOpts(ctx, opts).Transaction(txn)
-}
-
-func (dbh *DBHandle) Transaction(ctx context.Context, txn interfaces.TxRunner) error {
-	return dbh.DB(ctx).Transaction(txn)
-}
-
 func IsRecordNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
@@ -996,6 +988,10 @@ func (h *DBHandle) SelectForUpdateModifier() string {
 	return "FOR UPDATE"
 }
 
+func (h *DBHandle) NowFunc() time.Time {
+	return h.db.NowFunc()
+}
+
 func (h *DBHandle) SetNowFunc(now func() time.Time) {
 	h.db.Config.NowFunc = now
 }
@@ -1013,6 +1009,101 @@ func (h *DBHandle) IsDeadlockError(err error) bool {
 	return false
 }
 
+func (dbh *DBHandle) GORM(name string) *gorm.DB {
+	return dbh.db.Set(gormQueryNameKey, name)
+}
+
+type rawQuery struct {
+	db     *gorm.DB
+	ctx    context.Context
+	sql    string
+	values []interface{}
+}
+
+func (r *rawQuery) Exec() interfaces.DBResult {
+	rb := r.db.Exec(r.sql, r.values...)
+	return interfaces.DBResult{Error: rb.Error, RowsAffected: rb.RowsAffected}
+}
+
+func (r *rawQuery) Take(dest interface{}) error {
+	return r.db.Raw(r.sql, r.values...).Take(dest).Error
+}
+
+func (r *rawQuery) Scan(dest interface{}) error {
+	return r.db.Raw(r.sql, r.values...).Scan(dest).Error
+}
+
+func (r *rawQuery) IterateRaw(fn func(ctx context.Context, row *sql.Rows) error) error {
+	rows, err := r.db.Raw(r.sql, r.values...).Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := fn(r.ctx, rows); err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type query struct {
+	db   *gorm.DB
+	ctx  context.Context
+	name string
+}
+
+func (q *query) Create(val interface{}) error {
+	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
+	return db.Create(val).Error
+}
+
+func (q *query) Update(val interface{}) error {
+	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
+	return db.Updates(val).Error
+}
+
+func (q *query) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
+	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
+	return &rawQuery{db: db, ctx: q.ctx, sql: sql, values: values}
+}
+
+type transaction struct {
+	tx  *gorm.DB
+	ctx context.Context
+}
+
+func (t *transaction) NewQuery(ctx context.Context, name string) interfaces.DBQuery {
+	return &query{ctx: ctx, name: name, db: t.tx}
+}
+
+func (t *transaction) GORM(name string) *gorm.DB {
+	return t.tx.Set(gormQueryNameKey, name)
+}
+
+func (t *transaction) NowFunc() time.Time {
+	return t.tx.NowFunc()
+}
+
+func (dbh *DBHandle) NewQuery(ctx context.Context, name string) interfaces.DBQuery {
+	return &query{ctx: ctx, name: name, db: dbh.db}
+}
+
+func (dbh *DBHandle) Transaction(ctx context.Context, txn interfaces.NewTxRunner) error {
+	return dbh.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		return txn(&transaction{tx, ctx})
+	})
+}
+
+func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts interfaces.DBOptions, txn interfaces.NewTxRunner) error {
+	return dbh.gormHandleForOpts(ctx, opts).Transaction(func(tx *gorm.DB) error {
+		return txn(&transaction{tx, ctx})
+	})
+}
+
 // TableSchema can be used to get the schema for a given table.
 func TableSchema(db *DB, model any) (*schema.Schema, error) {
 	stmt := &gorm.Statement{DB: db}
@@ -1021,4 +1112,26 @@ func TableSchema(db *DB, model any) (*schema.Schema, error) {
 		return nil, err
 	}
 	return stmt.Schema, nil
+}
+
+// ScanRows executes the given query and iterates over the result,
+// automatically scanning each row into a struct of the specified type.
+//
+// Example:
+//
+//	err := db.ScanRows(rq, func(ctx context.Context, foo *tables.Foo) error {
+//	  // handle foo
+//	  return nil
+//	})
+func ScanRows[T any](rq interfaces.DBRawQuery, fn func(ctx context.Context, val *T) error) error {
+	return rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
+		var val T
+		if err := rq.(*rawQuery).db.ScanRows(row, &val); err != nil {
+			return err
+		}
+		if err := fn(ctx, &val); err != nil {
+			return err
+		}
+		return nil
+	})
 }

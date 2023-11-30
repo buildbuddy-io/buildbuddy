@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -132,11 +133,13 @@ func deleteExpiredExecutions(c *JanitorConfig) {
 		return
 	}
 
-	err = dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("delete_expired_executions"), func(tx *db.DB) error {
-		if txError := tx.Exec(`DELETE FROM "Executions" WHERE execution_id IN (?`+strings.Repeat(",?", len(executionIDs)-1)+`)`, executionIDs...).Error; txError != nil {
+	err = dbh.Transaction(ctx, func(tx interfaces.DB) error {
+		if txError := tx.NewQuery(ctx, "janitor_delete_executions").Raw(
+			`DELETE FROM "Executions" WHERE execution_id IN (?`+strings.Repeat(",?", len(executionIDs)-1)+`)`, executionIDs...).Exec().Error; txError != nil {
 			return txError
 		}
-		return tx.Exec(`DELETE FROM "InvocationExecutions" WHERE execution_id IN (?`+strings.Repeat(",?", len(executionIDs)-1)+`)`, executionIDs...).Error
+		return tx.NewQuery(ctx, "janitor_delete_execution_links").Raw(
+			`DELETE FROM "InvocationExecutions" WHERE execution_id IN (?`+strings.Repeat(",?", len(executionIDs)-1)+`)`, executionIDs...).Exec().Error
 	})
 	if err != nil && c.errorLoggingEnabled {
 		log.Warningf("Error deleting expired executions: %s", err)
