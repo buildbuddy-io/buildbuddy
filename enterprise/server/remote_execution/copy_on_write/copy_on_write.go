@@ -45,7 +45,7 @@ const (
 	// also be accessed
 	numChunksToEagerFetch = 4
 
-	fileConversionConcurrency = 4
+	fileConversionConcurrency = 8
 )
 
 var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
