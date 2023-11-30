@@ -326,6 +326,13 @@ type DBHandle struct {
 	db            *gorm.DB
 	readReplicaDB *gorm.DB
 	driver        string
+	ctx           context.Context
+}
+
+func (dbh *DBHandle) WithContext(ctx context.Context) *DBHandle {
+	c := *dbh
+	c.ctx = ctx
+	return &c
 }
 
 type Options struct {
@@ -1013,6 +1020,90 @@ func (h *DBHandle) IsDeadlockError(err error) bool {
 	return false
 }
 
+func (dbh *DBHandle) GORM() *gorm.DB {
+	return dbh.db
+}
+
+type PreparedQuery struct {
+	db     *gorm.DB
+	ctx    context.Context
+	sql    string
+	values []interface{}
+}
+
+func (r *PreparedQuery) Error() error {
+	return nil
+}
+
+func (r *PreparedQuery) Exec() interfaces.DBResult {
+	rb := r.db.Exec(r.sql, r.values...)
+	return interfaces.DBResult{Error: rb.Error, RowsAffected: rb.RowsAffected}
+}
+
+func (r *PreparedQuery) Take(dest interface{}) error {
+	return r.db.Raw(r.sql, r.values...).Take(dest).Error
+}
+
+func (r *PreparedQuery) Scan(dest interface{}) error {
+	return r.db.Raw(r.sql, r.values...).Scan(dest).Error
+}
+
+func (r *PreparedQuery) IterateRaw(fn func(ctx context.Context, row *sql.Rows) error) error {
+	rows, err := r.db.Raw(r.sql, r.values...).Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := fn(r.ctx, rows); err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type DBQuery struct {
+	db   *gorm.DB
+	ctx  context.Context
+	name string
+}
+
+func (q *DBQuery) Prepare(sql string, values ...interface{}) interfaces.DBPreparedQuery {
+	return &PreparedQuery{db: q.db, ctx: q.ctx, sql: sql, values: values}
+}
+
+type Transaction struct {
+	tx  *gorm.DB
+	ctx context.Context
+}
+
+func (t *Transaction) NewQuery(ctx context.Context, name string) interfaces.DBQuery {
+	return &DBQuery{ctx: ctx, name: name, db: t.tx}
+}
+
+func (t *Transaction) GORM() *gorm.DB {
+	return t.tx
+}
+
+func (dbh *DBHandle) NewQuery(ctx context.Context, name string) interfaces.DBQuery {
+	return &DBQuery{ctx: ctx, name: name, db: dbh.db}
+}
+
+func (dbh *DBHandle) NewTransaction(ctx context.Context, txn interfaces.NewTxRunner) error {
+	return dbh.Transaction(ctx, func(tx *gorm.DB) error {
+		return txn(&Transaction{tx, ctx})
+	})
+}
+
+func (dbh *DBHandle) NewTransactionWithOptions(ctx context.Context, opts interfaces.DBOptions, txn interfaces.NewTxRunner) error {
+	return dbh.TransactionWithOptions(ctx, opts, func(tx *gorm.DB) error {
+		return txn(&Transaction{tx, ctx})
+	})
+}
+
 // TableSchema can be used to get the schema for a given table.
 func TableSchema(db *DB, model any) (*schema.Schema, error) {
 	stmt := &gorm.Statement{DB: db}
@@ -1021,4 +1112,17 @@ func TableSchema(db *DB, model any) (*schema.Schema, error) {
 		return nil, err
 	}
 	return stmt.Schema, nil
+}
+
+func ScanRows[T any](ctx context.Context, rows interfaces.DBPreparedQuery, fn func(ctx context.Context, val *T) error) error {
+	return rows.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
+		var val T
+		if err := rows.(*PreparedQuery).db.ScanRows(row, &val); err != nil {
+			return err
+		}
+		if err := fn(ctx, &val); err != nil {
+			return err
+		}
+		return nil
+	})
 }

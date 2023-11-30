@@ -982,7 +982,7 @@ func (c *Crypter) disableEncryption(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	err = c.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
+	err = c.env.GetDBHandle().NewTransaction(ctx, func(tx interfaces.DB) error {
 		q := `
 			DELETE FROM "EncryptionKeyVersions"
 			WHERE encryption_key_id IN (
@@ -991,13 +991,16 @@ func (c *Crypter) disableEncryption(ctx context.Context) error {
 				WHERE group_id = ?
 			)
 		`
-		if err := tx.Exec(q, u.GetGroupID()).Error; err != nil {
+		if err := tx.NewQuery(ctx, "crypter_delete_encryption_key_versions").Prepare(
+			q, u.GetGroupID()).Exec().Error; err != nil {
 			return err
 		}
-		if err := tx.Exec(`DELETE FROM "EncryptionKeys" where group_id = ?`, u.GetGroupID()).Error; err != nil {
+		if err := tx.NewQuery(ctx, "crypter_delete_encryption_keys").Prepare(
+			`DELETE FROM "EncryptionKeys" where group_id = ?`, u.GetGroupID()).Exec().Error; err != nil {
 			return err
 		}
-		if err := tx.Exec(`UPDATE "Groups" SET cache_encryption_enabled = false WHERE group_id = ?`, u.GetGroupID()).Error; err != nil {
+		if err := tx.NewQuery(ctx, "crypter_disable_group_encryption").Prepare(
+			`UPDATE "Groups" SET cache_encryption_enabled = false WHERE group_id = ?`, u.GetGroupID()).Exec().Error; err != nil {
 			return err
 		}
 		return nil

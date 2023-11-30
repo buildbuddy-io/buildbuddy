@@ -34,7 +34,6 @@ import (
 type Env interface {
 	// The following dependencies are required.
 	GetServerContext() context.Context
-
 	// Optional dependencies below here. For example: enterprise-only things,
 	// or services that may not always be configured, like webhooks.
 	GetDBHandle() interfaces.DBHandle

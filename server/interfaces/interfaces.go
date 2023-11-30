@@ -3,6 +3,7 @@ package interfaces
 import (
 	"context"
 	"crypto/tls"
+	"database/sql"
 	"io"
 	"net/http"
 	"net/url"
@@ -285,8 +286,6 @@ type GrpcClientConnPoolCache interface {
 	GetGrpcClientConnPoolForURL(target string) (grpc.ClientConnInterface, error)
 }
 
-type TxRunner func(tx *gorm.DB) error
-
 type DBOptions interface {
 	WithStaleReads() DBOptions
 	WithQueryName(queryName string) DBOptions
@@ -295,7 +294,41 @@ type DBOptions interface {
 	QueryName() string
 }
 
+type DBResult struct {
+	Error        error
+	RowsAffected int64
+}
+
+type DBPreparedQuery interface {
+	Take(dest interface{}) error
+	Scan(dest interface{}) error
+	Exec() DBResult
+	IterateRaw(fn func(ctx context.Context, row *sql.Rows) error) error
+}
+
+type DBQuery interface {
+	Prepare(sql string, values ...interface{}) DBPreparedQuery
+}
+
+type DB interface {
+	// NewQuery creates a new query handle with the given name. The name is
+	// included in exported metrics and so should be a constant.
+	NewQuery(ctx context.Context, name string) DBQuery
+
+	// GORM returns a raw handle to the GORM API. New code should prefer to
+	// avoid using this.
+	GORM() *gorm.DB
+}
+
+type TxRunner func(tx *gorm.DB) error
+type NewTxRunner func(tx DB) error
+
 type DBHandle interface {
+	DB
+
+	NewTransaction(ctx context.Context, txn NewTxRunner) error
+	NewTransactionWithOptions(ctx context.Context, opts DBOptions, txn NewTxRunner) error
+
 	DB(ctx context.Context) *gorm.DB
 	RawWithOptions(ctx context.Context, opts DBOptions, sql string, values ...interface{}) *gorm.DB
 	TransactionWithOptions(ctx context.Context, opts DBOptions, txn TxRunner) error
@@ -385,7 +418,7 @@ type AuthDB interface {
 	// CreateAPIKeyWithoutAuthCheck creates a group-level API key without
 	// checking that the user has admin rights on the group. This should only
 	// be used when a new group is being created.
-	CreateAPIKeyWithoutAuthCheck(tx *gorm.DB, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+	CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx DB, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 
 	// CreateImpersonationAPIKey creates a short-lived API key for the target
 	// group ID.
