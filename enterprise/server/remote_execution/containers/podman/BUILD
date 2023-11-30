@@ -36,7 +36,7 @@ go_library(
     ],
 )
 
-# To run this test with remote execution, add a couple of tag_filters:
+# To run this test with remote execution, add a test_tag_filter:
 # bazel test --config=remote --test_tag_filters=+bare \
 # //enterprise/server/remote_execution/containers/podman:podman_test
 go_test(
@@ -53,6 +53,24 @@ go_test(
     target_compatible_with = [
         "@platforms//os:linux",
     ],
+    deps = [
+        ":podman",
+        "//enterprise/server/remote_execution/commandutil",
+        "//enterprise/server/remote_execution/container",
+        "//enterprise/server/util/oci",
+        "//proto:remote_execution_go_proto",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/testutil/testfs",
+        "//server/util/status",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    name = "podman_test",
+    srcs = ["podman_integration_test.go"],
     deps = [
         ":podman",
         "//enterprise/server/remote_execution/commandutil",
