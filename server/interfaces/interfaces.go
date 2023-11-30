@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
@@ -278,6 +279,10 @@ type Cache interface {
 type StoppableCache interface {
 	Cache
 	Stop() error
+}
+
+type GrpcClientConnPoolCache interface {
+	GetGrpcClientConnPoolForURL(target string) (grpc.ClientConnInterface, error)
 }
 
 type TxRunner func(tx *gorm.DB) error

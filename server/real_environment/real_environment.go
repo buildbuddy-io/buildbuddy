@@ -63,6 +63,7 @@ type RealEnv struct {
 	splashPrinter                    interfaces.SplashPrinter
 	actionCacheClient                repb.ActionCacheClient
 	byteStreamClient                 bspb.ByteStreamClient
+	grpcClientConnPoolCache          interfaces.GrpcClientConnPoolCache
 	schedulerClient                  scpb.SchedulerClient
 	capabilitiesClient               repb.CapabilitiesClient
 	remoteExecutionClient            repb.ExecutionClient
@@ -275,6 +276,13 @@ func (r *RealEnv) SetByteStreamClient(b bspb.ByteStreamClient) {
 }
 func (r *RealEnv) GetByteStreamClient() bspb.ByteStreamClient {
 	return r.byteStreamClient
+}
+
+func (r *RealEnv) SetGrpcClientConnPoolCache(b interfaces.GrpcClientConnPoolCache) {
+	r.grpcClientConnPoolCache = b
+}
+func (r *RealEnv) GetGrpcClientConnPoolCache() interfaces.GrpcClientConnPoolCache {
+	return r.grpcClientConnPoolCache
 }
 
 func (r *RealEnv) SetSchedulerClient(s scpb.SchedulerClient) {
