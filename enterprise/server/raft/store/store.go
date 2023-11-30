@@ -320,10 +320,11 @@ func (s *Store) Start() error {
 		return s.handleEvents(gctx)
 	})
 	eg.Go(func() error {
-		return s.acquireNodeLiveness(gctx)
+		s.acquireNodeLiveness(gctx)
+		return nil
 	})
-
 	s.leaseKeeper.Start()
+
 	return nil
 }
 
@@ -821,14 +822,18 @@ func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 	}
 }
 
-func (s *Store) acquireNodeLiveness(ctx context.Context) error {
+func (s *Store) acquireNodeLiveness(ctx context.Context) {
+	start := time.Now()
+	defer func() {
+		s.log.Infof("Acquired node liveness in %s", time.Since(start))
+	}()
+
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-ticker.C:
 			s.metaRangeMu.Lock()
 			haveMetaRange := len(s.metaRangeData) > 0
@@ -838,11 +843,11 @@ func (s *Store) acquireNodeLiveness(ctx context.Context) error {
 				continue
 			}
 			if s.liveness.Valid() {
-				return nil
+				return
 			}
 			err := s.liveness.Lease()
 			if err == nil {
-				return nil
+				return
 			}
 			s.log.Errorf("Error leasing node liveness record: %s", err)
 		}
