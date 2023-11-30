@@ -32,6 +32,8 @@ export default class Panel {
   canvasWidth = 0;
   canvasHeight = 0;
 
+  filter = "";
+
   constructor(readonly model: PanelModel, readonly canvas: HTMLCanvasElement, private fontFamily: string) {
     this.ctx = canvas.getContext("2d")!;
     this.container = canvas.parentElement!;
@@ -390,7 +392,19 @@ export default class Panel {
 
       let color = track.colors[i];
 
-      this.ctx.fillStyle = color;
+      if (
+        this.filter == "" ||
+        track.events[i].name.toLowerCase().includes(this.filter.toLowerCase()) ||
+        track.events[i].cat.toLowerCase().includes(this.filter.toLowerCase()) ||
+        track.events[i].args?.target?.toLowerCase().includes(this.filter.toLowerCase()) ||
+        track.events[i].args?.mnemonic?.toLowerCase().includes(this.filter.toLowerCase()) ||
+        track.events[i].out?.toLowerCase().includes(this.filter.toLowerCase())
+      ) {
+        this.ctx.fillStyle = color;
+      } else {
+        this.ctx.fillStyle = constants.EVENT_FILTERED_OUT_COLOR;
+      }
+
       // TODO: only apply the horizontal gap if there's an event just after us.
       let width = modelWidth * this.canvasXPerModelX - constants.EVENT_HORIZONTAL_GAP;
       if (width <= 0) {

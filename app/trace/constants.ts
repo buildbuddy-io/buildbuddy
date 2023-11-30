@@ -32,6 +32,7 @@ export const EVENT_HORIZONTAL_GAP = 0.5;
 export const EVENT_LABEL_WIDTH_THRESHOLD = 20;
 export const EVENT_LABEL_FONT_SIZE = "11px";
 export const EVENT_LABEL_FONT_COLOR = SECTION_LABEL_FONT_COLOR;
+export const EVENT_FILTERED_OUT_COLOR = "#ddd";
 
 export const TIME_SERIES_HEIGHT = 24;
 export const TIME_SERIES_POINT_RADIUS = 2;
