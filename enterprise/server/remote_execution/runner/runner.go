@@ -1058,26 +1058,42 @@ func (p *pool) String() string {
 // operation fails on a given attempt, the runner is removed from the pool.
 func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *commandRunner {
 	for i := 1; i <= maxUnpauseAttempts; i++ {
-		// Note: take returns (nil, nil) if there are no available runners.
-		r, err := p.take(ctx, key)
-		if err == nil {
-			return r
+		r := p.take(ctx, key)
+		if r == nil {
+			// No matches found; return.
+			return nil
 		}
-		log.CtxWarningf(ctx, "Take attempt %d failed: %s", i, err)
+
+		// Found a match; unpause it.
+		if err := r.Container.Unpause(ctx); err != nil {
+			log.CtxWarningf(ctx, "Unpause attempt for runner %s failed: %s", r, err)
+			// If we fail to unpause, subsequent unpause attempts are also
+			// likely to fail, so remove the container from the pool and also
+			// remove the runner itself.
+			p.mu.Lock()
+			p.remove(r)
+			p.mu.Unlock()
+			r.RemoveInBackground()
+			continue
+		}
+
+		return r
 	}
 	return nil
 }
 
 // take finds the most recently used runner in the pool that matches the given
-// query. If one is found, it is unpaused and returned.
-func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, error) {
+// query. If one is found, it is marked ready and returned. The caller must
+// unpause the runner.
+func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *commandRunner {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	log.CtxInfof(ctx, "Looking for match for %q in runner pool %s", keyString(key), p)
 	taskKeyBytes, err := proto.Marshal(key)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to marshal runner key: %s", err)
+		alert.UnexpectedEvent("proto_marshal_failure", "Failed to marshal runner key: %s", err)
+		return nil
 	}
 
 	for i := len(p.runners) - 1; i >= 0; i-- {
@@ -1085,35 +1101,26 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, e
 		if key.GroupId != r.key.GroupId || r.state != paused {
 			continue
 		}
-
 		// Check for an exact match on the runner pool keys.
 		runnerKeyBytes, err := proto.Marshal(r.key)
 		if err != nil {
-			log.Errorf("Failed to marshal runner key for %s: %s", r, err)
+			alert.UnexpectedEvent("proto_marshal_failure", "Failed to marshal runner key for %s: %s", r, err)
 			continue
 		}
 		if !bytes.Equal(taskKeyBytes, runnerKeyBytes) {
 			continue
 		}
 
-		// TODO(bduffany): Find a way to unpause here without holding the lock.
-		if err := r.Container.Unpause(ctx); err != nil {
-			// If we fail to unpause, subsequent unpause attempts are also likely
-			// to fail, so remove the container from the pool.
-			p.remove(r)
-			r.RemoveInBackground()
-			return nil, status.WrapErrorf(err, "failed to unpause runner %s", r)
-		}
 		r.state = ready
 
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
 		metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
 
-		return r, nil
+		return r
 	}
 
-	return nil, nil
+	return nil
 }
 
 // RunnerCount returns the total number of runners in the pool.
