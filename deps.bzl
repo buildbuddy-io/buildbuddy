@@ -4447,6 +4447,13 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:I2qBYMChEhIjOgazfJmV3/mZM256btk6wkCDRmW7JYs=",
         version = "v1.13.1",
     )
+    go_repository(
+        name = "com_github_planetscale_vtprotobuf",
+        importpath = "github.com/planetscale/vtprotobuf",
+        patch_args = ["-p1"],
+        sum = "h1:l8PXm6Colok5z6qQLNhAj2Jq5BfoMTIHxLER5a6nDqM=",
+        version = "v0.5.0",
+    )
 
     go_repository(
         name = "com_github_pmezard_go_difflib",
