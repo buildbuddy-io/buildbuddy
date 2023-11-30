@@ -260,9 +260,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
 func registerLocalGRPCClients(env environment.Env) error {
 	// Identify ourselves as an app client in gRPC requests to other apps.
 	usageutil.SetClientType("app")
-	if grpc_client.PoolCacheEnabled() {
-		grpc_client.RegisterConnPoolCache(env)
-	}
+	grpc_client.MaybeRegisterConnPoolCache(env)
 
 	// TODO(jdhollen): Share this pool with the cache above.  Not a huge deal for now.
 	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))

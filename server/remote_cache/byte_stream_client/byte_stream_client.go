@@ -210,7 +210,7 @@ func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs
 	var conn grpc.ClientConnInterface
 	if grpc_client.PoolCacheEnabled() {
 		if !isPermittedForDial(target) {
-			return status.InvalidArgumentErrorf("Tried to download from an unpermitted domain: %s", target)
+			return status.InvalidArgumentErrorf("Tried to connect to an unpermitted domain: %s", target)
 		}
 		conn, err = getCachedGrpcClientConnPool(env, target)
 		if err != nil {

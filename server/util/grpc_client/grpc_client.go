@@ -228,7 +228,10 @@ type grpcClientConnPoolCache struct {
 	connPoolMap map[string]grpc.ClientConnInterface
 }
 
-func RegisterConnPoolCache(env environment.Env) {
+func MaybeRegisterConnPoolCache(env environment.Env) {
+	if !*enablePoolCache {
+		return
+	}
 	c := NewGrpcClientConnPoolCache(env)
 	env.SetGrpcClientConnPoolCache(c)
 }
