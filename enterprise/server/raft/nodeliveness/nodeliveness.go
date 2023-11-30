@@ -113,12 +113,12 @@ func (h *Liveness) AddListener() (<-chan *rfpb.NodeLivenessRecord, func()) {
 	h.livenessListeners = append(h.livenessListeners, ch)
 	closeFunc := func() {
 		h.mu.Lock()
-		defer h.mu.Unlock()
 		for i, l := range h.livenessListeners {
 			if l == ch {
 				h.livenessListeners = append(h.livenessListeners[:i], h.livenessListeners[:i+1]...)
 			}
 		}
+		h.mu.Unlock()
 	}
 	if err := h.verifyLease(h.lastLivenessRecord); err == nil {
 		ch <- h.lastLivenessRecord
@@ -338,8 +338,7 @@ func (h *Liveness) string(replicaID []byte, llr *rfpb.NodeLivenessRecord) string
 }
 
 func (h *Liveness) String() string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	return h.string(h.nhid, h.lastLivenessRecord)
 }
