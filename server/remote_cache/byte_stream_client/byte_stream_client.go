@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -23,6 +24,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+var (
+	restrictBytestreamDialing = flag.Bool("app.restrict_bytestream_dialing", false, "If true, only allow dialing localhost or the configured cache backend for bytestream requests.")
 )
 
 func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *url.URL) (*zipb.Manifest, error) {
@@ -207,11 +212,12 @@ func isPermittedForDial(target string) bool {
 
 func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) (err error) {
 	target := getTargetForURL(url, grpcs)
+	if *restrictBytestreamDialing && !isPermittedForDial(target) {
+		return status.InvalidArgumentErrorf("Tried to connect to an unpermitted domain: %s", target)
+	}
+
 	var conn grpc.ClientConnInterface
 	if grpc_client.PoolCacheEnabled() {
-		if !isPermittedForDial(target) {
-			return status.InvalidArgumentErrorf("Tried to connect to an unpermitted domain: %s", target)
-		}
 		conn, err = getCachedGrpcClientConnPool(env, target)
 		if err != nil {
 			return err

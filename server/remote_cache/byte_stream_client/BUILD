@@ -11,6 +11,7 @@ go_library(
         "//server/endpoint_urls/cache_api_url",
         "//server/environment",
         "//server/remote_cache/digest",
+        "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/log",
