@@ -46,6 +46,8 @@ const (
 	InitialRangeID   = 1
 
 	UnsplittableMaxByte = systemMaxByte
+
+	MetaRangeShardID = 1
 )
 
 const CASErrorMessage = "CAS expected value did not match"
