@@ -8,15 +8,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -227,8 +224,8 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 
 type grpcClientConnPoolCache struct {
 	env         environment.Env
-	connMutex   *sync.Mutex
-	connPoolMap map[string]interfaces.ClosableClientConn
+	connMutex   sync.Mutex
+	connPoolMap map[string]grpc.ClientConnInterface
 }
 
 func RegisterConnPoolCache(env environment.Env) {
@@ -236,27 +233,12 @@ func RegisterConnPoolCache(env environment.Env) {
 	env.SetGrpcClientConnPoolCache(c)
 }
 
-func isPermittedForDial(target string) bool {
-	u, err := url.Parse(target)
-	if err != nil {
-		return false
-	}
-	if cache_api_url.String() == "" {
-		return true
-	}
-
-	return u.Hostname() == "localhost" || (urlutil.GetDomain(u.Hostname()) == urlutil.GetDomain(cache_api_url.WithPath("").Hostname()))
-}
-
-func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (conn interfaces.ClosableClientConn, err error) {
+func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (conn grpc.ClientConnInterface, err error) {
 	cpc.connMutex.Lock()
 	defer cpc.connMutex.Unlock()
 	connPool, ok := cpc.connPoolMap[target]
 	if ok && connPool != nil {
 		return connPool, nil
-	}
-	if !isPermittedForDial(target) {
-		return nil, status.InvalidArgumentErrorf("Tried to download from an unpermitted domain: %s", target)
 	}
 
 	// We didn't find a connection pool, so we'll make one.
@@ -272,7 +254,6 @@ func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (
 func NewGrpcClientConnPoolCache(env environment.Env) *grpcClientConnPoolCache {
 	return &grpcClientConnPoolCache{
 		env:         env,
-		connMutex:   &sync.Mutex{},
-		connPoolMap: make(map[string]interfaces.ClosableClientConn),
+		connPoolMap: make(map[string]grpc.ClientConnInterface),
 	}
 }

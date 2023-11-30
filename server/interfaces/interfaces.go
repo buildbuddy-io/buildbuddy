@@ -281,13 +281,8 @@ type StoppableCache interface {
 	Stop() error
 }
 
-type ClosableClientConn interface {
-	grpc.ClientConnInterface
-	Close() error
-}
-
 type GrpcClientConnPoolCache interface {
-	GetGrpcClientConnPoolForURL(target string) (ClosableClientConn, error)
+	GetGrpcClientConnPoolForURL(target string) (grpc.ClientConnInterface, error)
 }
 
 type TxRunner func(tx *gorm.DB) error

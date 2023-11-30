@@ -8,14 +8,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ziputil"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -184,25 +186,44 @@ func getTargetForURL(u *url.URL, grpcs bool) string {
 	return target.String()
 }
 
-func getCachedGrpcClientConnPool(env environment.Env, target string) (interfaces.ClosableClientConn, error) {
+func getCachedGrpcClientConnPool(env environment.Env, target string) (grpc.ClientConnInterface, error) {
 	if cc := env.GetGrpcClientConnPoolCache(); cc != nil {
 		return cc.GetGrpcClientConnPoolForURL(target)
 	}
 	return nil, nil
 }
 
-func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) error {
-	target := getTargetForURL(url, grpcs)
-	conn, err := getCachedGrpcClientConnPool(env, target)
+func isPermittedForDial(target string) bool {
+	u, err := url.Parse(target)
 	if err != nil {
-		return err
+		return false
 	}
-	if conn == nil {
-		conn, err = grpc_client.DialInternalWithoutPooling(env, target)
+	if cache_api_url.String() == "" {
+		return true
+	}
+
+	return u.Hostname() == "localhost" || (urlutil.GetDomain(u.Hostname()) == urlutil.GetDomain(cache_api_url.WithPath("").Hostname()))
+}
+
+func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) (err error) {
+	target := getTargetForURL(url, grpcs)
+	var conn grpc.ClientConnInterface
+	if grpc_client.PoolCacheEnabled() {
+		if !isPermittedForDial(target) {
+			return status.InvalidArgumentErrorf("Tried to download from an unpermitted domain: %s", target)
+		}
+		conn, err = getCachedGrpcClientConnPool(env, target)
 		if err != nil {
 			return err
 		}
-		defer conn.Close()
+	}
+	if conn == nil {
+		closeableConn, err := grpc_client.DialInternalWithoutPooling(env, target)
+		if err != nil {
+			return err
+		}
+		defer closeableConn.Close()
+		conn = closeableConn
 	}
 
 	if url.Scheme == "actioncache" {
