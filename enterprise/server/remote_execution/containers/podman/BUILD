@@ -49,6 +49,7 @@ go_test(
     },
     tags = [
         "bare",  # Podman tests must be run with bare execution so they aren't nested within another container
+        "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
     ],
     target_compatible_with = [
         "@platforms//os:linux",
