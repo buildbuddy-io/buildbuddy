@@ -747,20 +747,9 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 
 		for dataOffset < endOffset {
 			chunkFileDataOffset := dataOffset - chunkStartOffset
-			// TODO - is it a bufPool related problem?
 			dataBuf := *copyBuf
 			if remainder := chunkFileSize - chunkFileDataOffset; remainder < int64(len(dataBuf)) {
 				dataBuf = (*copyBuf)[:remainder]
-			}
-
-			// Seek to the first non-empty offset >= `dataOffset`
-			dataOffset, err = syscall.Seek(fd, dataOffset, unix.SEEK_DATA)
-			if err != nil && err != syscall.ENXIO {
-				return nil, err
-			}
-			if dataOffset >= endOffset || err == syscall.ENXIO {
-				// No more data in the file
-				break
 			}
 
 			// Copy the current data block to the output chunk file.
@@ -773,6 +762,16 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 			// Seek to the next data block, starting from the end of the data
 			// block we just copied.
 			dataOffset += int64(len(dataBuf))
+
+			// Seek to the first non-empty offset >= `dataOffset`
+			dataOffset, err = syscall.Seek(fd, dataOffset, unix.SEEK_DATA)
+			if err != nil && err != syscall.ENXIO {
+				return nil, err
+			}
+			if dataOffset >= endOffset || err == syscall.ENXIO {
+				// No more data in the file
+				break
+			}
 		}
 		return NewMmapLocalFile(ctx, env, dataDir, false /*=dirty*/, int(chunkFileSize), chunkStartOffset, remoteInstanceName, remoteEnabled)
 	}
