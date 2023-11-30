@@ -64,21 +64,21 @@ type LeaseKeeper struct {
 	quitAll chan struct{}
 
 	leaderUpdates       <-chan raftio.LeaderInfo
-	nodeLivenessUpdates       <-chan *rfpb.NodeLivenessRecord
+	nodeLivenessUpdates <-chan *rfpb.NodeLivenessRecord
 }
 
 func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event) *LeaseKeeper {
 	return &LeaseKeeper{
-		nodeHost:  nodeHost,
-		log:       log,
-		liveness:  liveness,
-		listener:  listener,
-		broadcast: broadcast,
-		mu:        sync.Mutex{},
-		leases:    sync.Map{},
-		leaders:   make(map[shardID]bool),
-		open:      make(map[shardID]bool),
-		leaderUpdates: listener.AddLeaderChangeListener(),
+		nodeHost:            nodeHost,
+		log:                 log,
+		liveness:            liveness,
+		listener:            listener,
+		broadcast:           broadcast,
+		mu:                  sync.Mutex{},
+		leases:              sync.Map{},
+		leaders:             make(map[shardID]bool),
+		open:                make(map[shardID]bool),
+		leaderUpdates:       listener.AddLeaderChangeListener(),
 		nodeLivenessUpdates: liveness.AddListener(),
 	}
 }
