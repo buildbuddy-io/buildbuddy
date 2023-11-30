@@ -667,7 +667,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 
 	perThreadBytes := int64(math.Ceil(float64(inInfo.Size()) / float64(concurrency)))
 	perThreadBytes = alignToMultiple(perThreadBytes, int64(bufSize))
-	if *enableUFFD {
+	if baseSnapshotStore != nil {
 		// Ensure goroutines don't cross chunk boundaries and cause race conditions when writing
 		perThreadBytes = alignToMultiple(perThreadBytes, storeChunkSizeBytes)
 	}
