@@ -683,7 +683,6 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		return nil, err
 	}
 	totalSizeBytes := stat.Size()
-	fd := int(f.Fd())
 	var chunks []*Mmap
 	defer func() {
 		// If there's an error, clean up any Store instances we created.
@@ -704,42 +703,17 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		},
 	}
 
-	// Seeking moves the offset of the file descriptor, so lock to ensure concurrent
-	// goroutines are simultaneously moving it
-	var fileMu sync.Mutex
-
-	// readFromOffset starts reading from `startOffset`, but will skip forward if there
-	// is no data at `startOffset`.
-	// Returns the offset it actually started reading from
-	// (the offset of the first non-empty data block >= `startOffset`)
-	readFromOffset := func(startOffset int64, buf []byte) (int64, error) {
-		fileMu.Lock()
-		defer fileMu.Unlock()
-
-		// Seek to the start of a non-empty data block in the file
-		// greater or equal to `startOffset`
-		dataOffset, err := syscall.Seek(fd, startOffset, unix.SEEK_DATA)
-		if err == syscall.ENXIO {
-			// No more data in the file
-			return totalSizeBytes, nil
-		} else if err != nil {
-			return 0, err
-		}
-
-		// TODO: see whether it's faster to mmap the file we're copying
-		// from, rather than issuing read() syscalls for each data block
-		if _, err := io.ReadFull(f, buf); err != nil {
-			return 0, err
-		}
-		return dataOffset, nil
-	}
-
 	createChunk := func(chunkStartOffset int64) (*Mmap, error) {
+		f, err := os.Open(filePath)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		fd := int(f.Fd())
+
 		// Check if there's any data in the chunk, to avoid writing a file if
 		// there isn't
-		fileMu.Lock()
 		dataOffset, err := syscall.Seek(fd, chunkStartOffset, unix.SEEK_DATA)
-		fileMu.Unlock()
 		if err == syscall.ENXIO {
 			// No more data
 			return nil, nil
@@ -772,22 +746,27 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		defer copyBufPool.Put(copyBuf)
 
 		for dataOffset < endOffset {
-			// Copy the current data block to the output chunk file.
 			chunkFileDataOffset := dataOffset - chunkStartOffset
+			// TODO - is it a bufPool related problem?
 			dataBuf := *copyBuf
 			if remainder := chunkFileSize - chunkFileDataOffset; remainder < int64(len(dataBuf)) {
 				dataBuf = (*copyBuf)[:remainder]
 			}
 
-			dataOffset, err = readFromOffset(dataOffset, dataBuf)
-			if err != nil {
+			// Seek to the first non-empty offset >= `dataOffset`
+			dataOffset, err = syscall.Seek(fd, dataOffset, unix.SEEK_DATA)
+			if err != nil && err != syscall.ENXIO {
 				return nil, err
 			}
-
-			if dataOffset >= endOffset {
+			if dataOffset >= endOffset || err == syscall.ENXIO {
+				// No more data in the file
 				break
 			}
 
+			// Copy the current data block to the output chunk file.
+			if _, err := io.ReadFull(f, dataBuf); err != nil {
+				return nil, err
+			}
 			if _, err := chunkFile.WriteAt(dataBuf, chunkFileDataOffset); err != nil {
 				return nil, err
 			}
