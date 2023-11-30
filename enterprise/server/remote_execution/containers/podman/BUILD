@@ -67,21 +67,3 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
-
-go_test(
-    name = "podman_test",
-    srcs = ["podman_integration_test.go"],
-    deps = [
-        ":podman",
-        "//enterprise/server/remote_execution/commandutil",
-        "//enterprise/server/remote_execution/container",
-        "//enterprise/server/util/oci",
-        "//proto:remote_execution_go_proto",
-        "//server/testutil/testauth",
-        "//server/testutil/testenv",
-        "//server/testutil/testfs",
-        "//server/util/status",
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-    ],
-)
