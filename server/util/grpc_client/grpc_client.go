@@ -28,12 +28,17 @@ const (
 )
 
 var (
-	poolSize = flag.Int("grpc_client.pool_size", 10, "Number of connections to create to each target.")
+	poolSize        = flag.Int("grpc_client.pool_size", 10, "Number of connections to create to each target.")
+	enablePoolCache = flag.Bool("grpc_client.enable_pool_cache", false, "Whether or not to enable the connection pool cache.")
 )
 
 type ClientConnPool struct {
 	conns []*grpc.ClientConn
 	idx   atomic.Uint64
+}
+
+func PoolCacheEnabled() bool {
+	return *enablePoolCache
 }
 
 func (p *ClientConnPool) Check(ctx context.Context) error {
@@ -214,5 +219,44 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 			// If true, client sends keepalive pings even with no active RPCs.
 			PermitWithoutStream: true,
 		}),
+	}
+}
+
+type grpcClientConnPoolCache struct {
+	env         environment.Env
+	connMutex   sync.Mutex
+	connPoolMap map[string]grpc.ClientConnInterface
+}
+
+func RegisterConnPoolCache(env environment.Env) {
+	if !*enablePoolCache {
+		return
+	}
+	c := NewGrpcClientConnPoolCache(env)
+	env.SetGrpcClientConnPoolCache(c)
+}
+
+func (cpc *grpcClientConnPoolCache) GetGrpcClientConnPoolForURL(target string) (conn grpc.ClientConnInterface, err error) {
+	cpc.connMutex.Lock()
+	defer cpc.connMutex.Unlock()
+	connPool, ok := cpc.connPoolMap[target]
+	if ok && connPool != nil {
+		return connPool, nil
+	}
+
+	// We didn't find a connection pool, so we'll make one.
+	connPool, err = DialInternal(cpc.env, target)
+	if err != nil {
+		return nil, err
+	}
+	cpc.connPoolMap[target] = connPool
+	log.Infof("Cached connection pool for target: %s, %d targets cached so far", target, len(cpc.connPoolMap))
+	return connPool, nil
+}
+
+func NewGrpcClientConnPoolCache(env environment.Env) *grpcClientConnPoolCache {
+	return &grpcClientConnPoolCache{
+		env:         env,
+		connPoolMap: make(map[string]grpc.ClientConnInterface),
 	}
 }

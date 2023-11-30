@@ -40,6 +40,7 @@ go_library(
         "@com_github_golang_jwt_jwt//:jwt",
         "@com_github_prometheus_client_model//go",
         "@io_gorm_gorm//:gorm",
+        "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_protobuf//proto",
     ],
