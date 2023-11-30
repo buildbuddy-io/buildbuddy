@@ -7,10 +7,10 @@ go_library(
     srcs = ["nodeliveness.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness",
     deps = [
+        "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
-        "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
         "//server/util/log",
         "//server/util/status",
@@ -26,11 +26,15 @@ go_test(
     deps = [
         ":nodeliveness",
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
         "//server/util/status",
+        "@com_github_lni_dragonboat_v4//:dragonboat",
+        "@com_github_lni_dragonboat_v4//client",
+        "@com_github_lni_dragonboat_v4//statemachine",
+        "@com_github_lni_goutils//random",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
     ],
 )

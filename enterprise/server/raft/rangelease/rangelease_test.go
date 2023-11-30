@@ -140,7 +140,7 @@ func (t *testingSender) SyncRead(ctx context.Context, key []byte, batch *rfpb.Ba
 	return nil, status.UnimplementedError("not implemented in testingSender")
 }
 
-func newTestingProposerAndSender(t testing.TB) (*testingProposer, *testingSender) {
+func newTestingProposer(t testing.TB) *testingProposer {
 	randID, err := random.RandomString(10)
 	require.NoError(t, err)
 	p := &testingProposer{
@@ -148,15 +148,15 @@ func newTestingProposerAndSender(t testing.TB) (*testingProposer, *testingSender
 		id:   randID,
 		Data: make(map[string]string),
 	}
-	return p, &testingSender{p}
+	return p
 }
 
 func TestAcquireAndRelease(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 	defer cancel()
 
-	proposer, sender := newTestingProposerAndSender(t)
-	liveness := nodeliveness.New("replicaID-1", sender)
+	proposer := newTestingProposer(t)
+	liveness := nodeliveness.New("replicaID-1", proposer)
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   []byte("a"),
@@ -193,8 +193,8 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 	defer cancel()
 
-	proposer, sender := newTestingProposerAndSender(t)
-	liveness := nodeliveness.New("replicaID-2", sender)
+	proposer := newTestingProposer(t)
+	liveness := nodeliveness.New("replicaID-2", proposer)
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   keys.MinByte,
@@ -231,8 +231,8 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 	defer cancel()
 
-	proposer, sender := newTestingProposerAndSender(t)
-	liveness := nodeliveness.New("replicaID-3", sender)
+	proposer := newTestingProposer(t)
+	liveness := nodeliveness.New("replicaID-3", proposer)
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   keys.MinByte,
@@ -277,8 +277,8 @@ func TestNodeEpochInvalidation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 	defer cancel()
 
-	proposer, sender := newTestingProposerAndSender(t)
-	liveness := nodeliveness.New("replicaID-4", sender)
+	proposer := newTestingProposer(t)
+	liveness := nodeliveness.New("replicaID-4", proposer)
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   []byte("a"),
