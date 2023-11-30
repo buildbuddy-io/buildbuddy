@@ -130,15 +130,13 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction lease
 	valid := la.l.Valid()
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	action := instruction.action
-
-	switch action {
+	switch instruction.action {
 	case Acquire:
 		if err := la.l.Lease(ctx); err != nil {
-			la.log.Errorf("Error acquiring rangelease (%s): %s %s", la.l.String(), err, action)
+			la.log.Errorf("Error acquiring rangelease (%s): %s %s", la.l.String(), err, instruction)
 			return
 		}
 		if !valid {
@@ -148,7 +146,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction lease
 	case Drop:
 		// This is a no-op if we don't have the lease.
 		if err := la.l.Release(ctx); err != nil {
-			la.log.Errorf("Error dropping rangelease (%s): %s (%s)", la.l, err, action)
+			la.log.Errorf("Error dropping rangelease (%s): %s (%s)", la.l, err, instruction)
 			return
 		}
 		if valid {
@@ -264,7 +262,20 @@ func (lk *LeaseKeeper) watchLeases() {
 	}
 }
 
+func (lk *LeaseKeeper) isStopped() bool {
+	select {
+	case <-lk.quitAll:
+		return true
+	default:
+		return false
+	}
+}
+
 func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor) {
+	if lk.isStopped() {
+		return
+	}
+
 	// Don't track ranges that have not been setup yet.
 	if len(rd.GetReplicas()) == 0 {
 		return
@@ -300,6 +311,10 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor) {
 }
 
 func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor) {
+	if lk.isStopped() {
+		return
+	}
+
 	// Don't track ranges that have not been setup yet.
 	if len(rd.GetReplicas()) == 0 {
 		return
@@ -346,6 +361,11 @@ func (lk *LeaseKeeper) HaveLease(shard uint64) bool {
 		shouldHaveLease := leader && open
 		if valid != shouldHaveLease {
 			lk.log.Errorf("HaveLease range: %d valid: %t, should have lease: %t", shard, valid, shouldHaveLease)
+			la.queueInstruction(leaseInstruction{
+				shard:  shardID(shard),
+				reason: "should have range",
+				action: Acquire,
+			})
 		}
 		return valid
 	}

@@ -275,22 +275,13 @@ func (s *Store) handleEvents(ctx context.Context) error {
 	}
 }
 
-func (s *Store) AddEventListener() (<-chan events.Event, func()) {
+func (s *Store) AddEventListener() <-chan events.Event {
 	s.eventsMu.Lock()
 	defer s.eventsMu.Unlock()
 
 	ch := make(chan events.Event, 10)
 	s.eventListeners = append(s.eventListeners, ch)
-	closeFunc := func() {
-		s.eventsMu.Lock()
-		defer s.eventsMu.Unlock()
-		for i, l := range s.eventListeners {
-			if l == ch {
-				s.eventListeners = append(s.eventListeners[:i], s.eventListeners[:i+1]...)
-			}
-		}
-	}
-	return ch, closeFunc
+	return ch
 }
 
 func (s *Store) Start() error {
@@ -334,9 +325,9 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.log.Infof("Store shutdown finished in %s", time.Since(now))
 	}()
 
-	s.leaseKeeper.Stop()
-
 	s.egCancel()
+	s.leaseKeeper.Stop()
+	s.liveness.Release()
 	s.eg.Wait()
 
 	s.log.Info("Store: waitgroups finished")
