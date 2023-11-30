@@ -104,11 +104,8 @@ const (
 	// will make existing cached snapshots unusable.
 	GuestAPIVersion = "3"
 
-	// How long to wait for the VMM to listen on the firecracker socket.
-	firecrackerSocketWaitTimeout = 3 * time.Second
-
 	// How long to wait when dialing the vmexec server inside the VM.
-	vSocketDialTimeout = 30 * time.Second
+	vSocketDialTimeout = 60 * time.Second
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
@@ -215,11 +212,7 @@ func init() {
 	//
 	// We're increasing it from the default here since we do some remote reads
 	// during ResumeVM to handle page faults with UFFD.
-	//
-	// This 30s timeout was determined as the time it takes to load a bb repo
-	// snapshot in dev with a cold filecache (10s), times 3 to account for tail
-	// latency + larger VMs that could take longer to resume.
-	os.Setenv("FIRECRACKER_GO_SDK_REQUEST_TIMEOUT_MILLISECONDS", fmt.Sprint(30_000))
+	os.Setenv("FIRECRACKER_GO_SDK_REQUEST_TIMEOUT_MILLISECONDS", fmt.Sprint(60_000))
 }
 
 func openFile(ctx context.Context, fsys fs.FS, fileName string) (io.ReadCloser, error) {
