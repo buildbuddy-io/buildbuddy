@@ -182,7 +182,7 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch
 				return status.FailedPreconditionError("Failed to read result")
 			}
 
-		case rfpb.Header_STALE:
+		case rfpb.Header_STALE, rfpb.Header_RANGELEASE:
 			raftResponseIface, err = nodehost.StaleRead(shardID, buf)
 			return err
 		default:
