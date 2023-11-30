@@ -433,7 +433,7 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
 			for i in $(seq 100); do
-				sleep 0.0001
+				sleep 0.001
 			done
 		`},
 	}
@@ -449,6 +449,14 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	t.Log(string(res.Stderr))
 	require.Equal(t, res.ExitCode, 0)
 
+	// Give the stats a few seconds to propagate show up to account for polling
+	// intervals, goroutine/process contention, and time to communicate.
+	for i := 0; i < 10; i++ {
+		if res.UsageStats != nil {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
 	assert.Greater(t, res.UsageStats.CpuNanos, int64(0), "CPU should be > 0")
 	assert.Greater(t, res.UsageStats.PeakMemoryBytes, int64(0), "peak mem usage should be > 0")
