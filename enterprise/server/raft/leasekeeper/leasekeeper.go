@@ -64,23 +64,22 @@ type LeaseKeeper struct {
 	quitAll chan struct{}
 
 	leaderUpdates       <-chan raftio.LeaderInfo
-	cancelLeaderUpdates func()
-
-	nodeLivenessUpdates       <-chan *rfpb.NodeLivenessRecord
-	cancelNodeLivenessUpdates func()
+	nodeLivenessUpdates <-chan *rfpb.NodeLivenessRecord
 }
 
 func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event) *LeaseKeeper {
 	return &LeaseKeeper{
-		nodeHost:  nodeHost,
-		log:       log,
-		liveness:  liveness,
-		listener:  listener,
-		broadcast: broadcast,
-		mu:        sync.Mutex{},
-		leases:    sync.Map{},
-		leaders:   make(map[shardID]bool),
-		open:      make(map[shardID]bool),
+		nodeHost:            nodeHost,
+		log:                 log,
+		liveness:            liveness,
+		listener:            listener,
+		broadcast:           broadcast,
+		mu:                  sync.Mutex{},
+		leases:              sync.Map{},
+		leaders:             make(map[shardID]bool),
+		open:                make(map[shardID]bool),
+		leaderUpdates:       listener.AddLeaderChangeListener(),
+		nodeLivenessUpdates: liveness.AddListener(),
 	}
 }
 
@@ -89,8 +88,6 @@ func (lk *LeaseKeeper) Start() {
 	defer lk.mu.Unlock()
 
 	lk.quitAll = make(chan struct{})
-	lk.leaderUpdates, lk.cancelLeaderUpdates = lk.listener.AddLeaderChangeListener()
-	lk.nodeLivenessUpdates, lk.cancelNodeLivenessUpdates = lk.liveness.AddListener()
 
 	go lk.watchLeases()
 	lk.started = true
@@ -112,8 +109,6 @@ func (lk *LeaseKeeper) Stop() {
 	if lk.quitAll != nil {
 		close(lk.quitAll)
 	}
-	lk.cancelLeaderUpdates()
-	lk.cancelNodeLivenessUpdates()
 }
 
 // A leaseAgent keeps a single rangelease up to date based on the instructions
