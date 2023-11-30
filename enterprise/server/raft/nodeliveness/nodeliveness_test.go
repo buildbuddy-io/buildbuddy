@@ -7,15 +7,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/lni/dragonboat/v4"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	dbcl "github.com/lni/dragonboat/v4/client"
-	sm "github.com/lni/dragonboat/v4/statemachine"
-	dbrd "github.com/lni/goutils/random"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -37,8 +33,8 @@ func statusProto(err error) *statuspb.Status {
 	return s.Proto()
 }
 
-func (tp *testingProposer) cmdResponse(kv *rfpb.KV, err error) sm.Result {
-	p := &rfpb.BatchCmdResponse{
+func (tp *testingProposer) cmdResponse(kv *rfpb.KV, err error) *rfpb.BatchCmdResponse {
+	return &rfpb.BatchCmdResponse{
 		Union: []*rfpb.ResponseUnion{{
 			Status: statusProto(err),
 			Value: &rfpb.ResponseUnion_Cas{
@@ -48,24 +44,9 @@ func (tp *testingProposer) cmdResponse(kv *rfpb.KV, err error) sm.Result {
 			},
 		}},
 	}
-	buf, err := proto.Marshal(p)
-	require.NoError(tp.t, err)
-	return sm.Result{Data: buf}
 }
 
-func (tp *testingProposer) ID() string {
-	return ""
-}
-
-func (tp *testingProposer) GetNoOPSession(shardID uint64) *dbcl.Session {
-	return dbcl.NewNoOPSession(shardID, dbrd.LockGuardedRand)
-}
-
-func (tp *testingProposer) SyncPropose(ctx context.Context, session *dbcl.Session, cmd []byte) (sm.Result, error) {
-	batch := &rfpb.BatchCmdRequest{}
-	if err := proto.Unmarshal(cmd, batch); err != nil {
-		return sm.Result{}, err
-	}
+func (tp *testingProposer) SyncPropose(ctx context.Context, _ []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	// This is "fake" sender that only supports CAS values and stores them in a local map for ease of testing.
 	if len(batch.GetUnion()) != 1 {
 		tp.t.Fatal("Only one cmd at a time is allowed.")
@@ -92,19 +73,10 @@ func (tp *testingProposer) SyncPropose(ctx context.Context, session *dbcl.Sessio
 		}
 	}
 	tp.t.Fatal("unsupported batch cmd value was provided.")
-	return sm.Result{}, nil
+	return nil, nil
 }
 
-func (tp *testingProposer) SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error) {
-	return nil, status.UnimplementedError("not implemented in testingProposer")
-}
-func (tp *testingProposer) ReadIndex(shardID uint64, timeout time.Duration) (*dragonboat.RequestState, error) {
-	return nil, status.UnimplementedError("not implemented in testingProposer")
-}
-func (tp *testingProposer) ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error) {
-	return nil, status.UnimplementedError("not implemented in testingProposer")
-}
-func (tp *testingProposer) StaleRead(shardID uint64, query interface{}) (interface{}, error) {
+func (tp *testingProposer) SyncRead(ctx context.Context, _ []byte, batch *rfpb.BatchCmdRequest, mods ...sender.Option) (*rfpb.BatchCmdResponse, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 

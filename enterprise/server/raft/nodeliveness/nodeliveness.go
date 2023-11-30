@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
@@ -29,7 +29,7 @@ const (
 )
 
 type Liveness struct {
-	nodeHost      client.NodeHost
+	sender        sender.ISender
 	nhid          []byte
 	clock         *serf.LamportClock
 	leaseDuration time.Duration
@@ -44,10 +44,10 @@ type Liveness struct {
 	livenessListeners []chan<- *rfpb.NodeLivenessRecord
 }
 
-func New(nodehostID string, nodeHost client.NodeHost) *Liveness {
+func New(nodehostID string, sender sender.ISender) *Liveness {
 	return &Liveness{
 		nhid:                  []byte(nodehostID),
-		nodeHost:              nodeHost,
+		sender:                sender,
 		clock:                 &serf.LamportClock{},
 		leaseDuration:         defaultLeaseDuration,
 		gracePeriod:           defaultGracePeriod,
@@ -230,8 +230,9 @@ func (h *Liveness) sendCasRequest(ctx context.Context, expectedValue, newVal []b
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := client.SyncProposeLocal(ctx, h.nodeHost, constants.MetaRangeShardID, casRequest)
+	rsp, err := h.sender.SyncPropose(ctx, leaseKey, casRequest)
 	if err != nil {
+		// This indicates a communication error proposing the message.
 		return nil, err
 	}
 	casResponse, err := rbuilder.NewBatchResponseFromProto(rsp).CASResponse(0)
