@@ -14,8 +14,6 @@ go_test(
         "test.use-self-hosted-executors": "true",
         "test.container-image": "none",
     },
-    flaky = True,
-    shard_count = 2,
     tags = [
         "bare",  # Podman tests must be run with bare execution so they aren't nested within another container
     ],

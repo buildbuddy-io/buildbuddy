@@ -414,6 +414,10 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 }
 
 func TestPodmanRun_RecordsStats(t *testing.T) {
+	// TODO(go/b/2942): this test is fairly flaky because sometimes the cgroup
+	// cpu.stat file does not contain usage_usec.
+	t.Skip()
+
 	// Note: This test requires root. Under cgroup v2, root is not required, but
 	// some devs' machines are running Ubuntu 20.04 currently, which only has
 	// cgroup v1 enabled (enabling cgroup v2 requires modifying kernel boot
@@ -445,8 +449,6 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	t.Log(string(res.Stderr))
 	require.Equal(t, res.ExitCode, 0)
 
-	// This test is flaky because sometimes the cgroup cpu.stat file does not
-	// contain usage_usec.
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
 	assert.Greater(t, res.UsageStats.CpuNanos, int64(0), "CPU should be > 0")
 	assert.Greater(t, res.UsageStats.PeakMemoryBytes, int64(0), "peak mem usage should be > 0")
