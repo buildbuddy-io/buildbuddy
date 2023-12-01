@@ -40,7 +40,7 @@ echo "Building and running gofmt..."
 GO_SRCS=()
 while IFS= read -r line; do
     GO_SRCS+=("$line")
-done <<< "$(git ls-files '*.go')"
+done < <(git ls-files '*.go')
 bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gofmt -- -w "${GO_SRCS[@]}"
 
 if which clang-format &>/dev/null; then
