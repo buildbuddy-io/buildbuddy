@@ -382,48 +382,63 @@ func TestRedactAPIKey(t *testing.T) {
 func TestRedactRunResidual(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
+		command  string
 		given    []string
 		expected []string
 	}{
 		{
 			name:     "withoutSecret",
+			command:  "run",
 			given:    []string{"-foo=bar", "-baz"},
 			expected: []string{"-foo=bar", "-baz"},
 		},
 		{
 			name:     "withNoSplit",
+			command:  "run",
 			given:    []string{"-api_key=foobar", "-baz"},
 			expected: []string{"-api_key=<REDACTED>", "-baz"},
 		},
 		{
 			name:     "withSplit",
+			command:  "run",
 			given:    []string{"-api_key", "foobar", "-baz"},
 			expected: []string{"-api_key", "<REDACTED>", "-baz"},
 		},
 		{
 			name:     "MultipleEqualSigns",
+			command:  "run",
 			given:    []string{"-api_key=foo=bar=laz", "-baz"},
 			expected: []string{"-api_key=<REDACTED>", "-baz"},
 		},
 		{
 			name:     "MultipleEqualSigns",
+			command:  "run",
 			given:    []string{"-api_key=foo=bar=laz", "-baz"},
 			expected: []string{"-api_key=<REDACTED>", "-baz"},
 		},
 		{
 			name:     "withSecret",
+			command:  "run",
 			given:    []string{"--key", "foobar", "-secret", "loremsumip"},
 			expected: []string{"--key", "<REDACTED>", "-secret", "<REDACTED>"},
 		},
 		{
 			name:     "withPass",
+			command:  "run",
 			given:    []string{"--password=foobar", "--pass=loremsumip"},
 			expected: []string{"--password=<REDACTED>", "--pass=<REDACTED>"},
 		},
 		{
 			name:     "withToken",
+			command:  "run",
 			given:    []string{"--token=foobar", "--baz=loremsumip"},
 			expected: []string{"--token=<REDACTED>", "--baz=loremsumip"},
+		},
+		{
+			name:     "withToken",
+			command:  "build",
+			given:    []string{"//api_keys/...", "//foo/..."},
+			expected: []string{"//api_keys/...", "//foo/..."},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -436,6 +451,14 @@ func TestRedactRunResidual(t *testing.T) {
 				Payload: &bespb.BuildEvent_StructuredCommandLine{
 					StructuredCommandLine: &clpb.CommandLine{
 						Sections: []*clpb.CommandLineSection{
+							{
+								SectionLabel: "command",
+								SectionType: &clpb.CommandLineSection_ChunkList{
+									ChunkList: &clpb.ChunkList{
+										Chunk: []string{tc.command},
+									},
+								},
+							},
 							{
 								SectionLabel: "residual",
 								SectionType: &clpb.CommandLineSection_ChunkList{
