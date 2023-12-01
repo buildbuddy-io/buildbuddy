@@ -3,10 +3,11 @@ package api
 import (
 	"context"
 	"flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
 	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -103,10 +104,10 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 	}
 	queryStr, args := q.Build()
 
-	res := s.env.GetDBHandle().NewQuery(ctx, "api_server_get_invocations").Prepare(queryStr, args...)
+	rq := s.env.GetDBHandle().NewQuery(ctx, "api_server_get_invocations").Raw(queryStr, args...)
 
 	invocations := []*apipb.Invocation{}
-	err = db.ScanRows(ctx, res, func(ctx context.Context, ti *tables.Invocation) error {
+	err = db.ScanRows(ctx, rq, func(ctx context.Context, ti *tables.Invocation) error {
 		apiInvocation := &apipb.Invocation{
 			Id: &apipb.Invocation_Id{
 				InvocationId: ti.InvocationID,

@@ -991,15 +991,15 @@ func (c *Crypter) disableEncryption(ctx context.Context) error {
 				WHERE group_id = ?
 			)
 		`
-		if err := tx.NewQuery(ctx, "crypter_delete_encryption_key_versions").Prepare(
+		if err := tx.NewQuery(ctx, "crypter_delete_encryption_key_versions").Raw(
 			q, u.GetGroupID()).Exec().Error; err != nil {
 			return err
 		}
-		if err := tx.NewQuery(ctx, "crypter_delete_encryption_keys").Prepare(
+		if err := tx.NewQuery(ctx, "crypter_delete_encryption_keys").Raw(
 			`DELETE FROM "EncryptionKeys" where group_id = ?`, u.GetGroupID()).Exec().Error; err != nil {
 			return err
 		}
-		if err := tx.NewQuery(ctx, "crypter_disable_group_encryption").Prepare(
+		if err := tx.NewQuery(ctx, "crypter_disable_group_encryption").Raw(
 			`UPDATE "Groups" SET cache_encryption_enabled = false WHERE group_id = ?`, u.GetGroupID()).Exec().Error; err != nil {
 			return err
 		}

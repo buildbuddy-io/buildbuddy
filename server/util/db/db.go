@@ -1071,7 +1071,7 @@ type DBQuery struct {
 	name string
 }
 
-func (q *DBQuery) Prepare(sql string, values ...interface{}) interfaces.DBPreparedQuery {
+func (q *DBQuery) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
 	return &PreparedQuery{db: q.db, ctx: q.ctx, sql: sql, values: values}
 }
 
@@ -1114,7 +1114,7 @@ func TableSchema(db *DB, model any) (*schema.Schema, error) {
 	return stmt.Schema, nil
 }
 
-func ScanRows[T any](ctx context.Context, rows interfaces.DBPreparedQuery, fn func(ctx context.Context, val *T) error) error {
+func ScanRows[T any](ctx context.Context, rows interfaces.DBRawQuery, fn func(ctx context.Context, val *T) error) error {
 	return rows.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		var val T
 		if err := rows.(*PreparedQuery).db.ScanRows(row, &val); err != nil {

@@ -299,7 +299,7 @@ type DBResult struct {
 	RowsAffected int64
 }
 
-type DBPreparedQuery interface {
+type DBRawQuery interface {
 	Take(dest interface{}) error
 	Scan(dest interface{}) error
 	Exec() DBResult
@@ -307,7 +307,7 @@ type DBPreparedQuery interface {
 }
 
 type DBQuery interface {
-	Prepare(sql string, values ...interface{}) DBPreparedQuery
+	Raw(sql string, values ...interface{}) DBRawQuery
 }
 
 type DB interface {
