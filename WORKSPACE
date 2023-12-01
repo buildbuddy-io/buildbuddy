@@ -19,13 +19,10 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "f6f5ede97567d1c61d6d5227848bb13f419e4ea195b81ba4ca451f20bcd03d66",
-    strip_prefix = "rules_go-4706a513acc1f6e5125b476936060ff71bfb8723",
+    sha256 = "d6ab6b57e48c09523e93050f13698f708428cfd5e619252e369d377af6597707",
     urls = [
-        # TODO(sluongng): this track the unreleased version v0.43.0 of rules_go.
-        # See https://github.com/bazelbuild/rules_go/pull/3722#issuecomment-1787954611 for more information.
-        # We should replace this once rules_go v0.43.0 is released.
-        "https://github.com/bazelbuild/rules_go/archive/4706a513acc1f6e5125b476936060ff71bfb8723.zip",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.43.0/rules_go-v0.43.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.43.0/rules_go-v0.43.0.zip",
     ],
 )
 
@@ -35,10 +32,10 @@ http_archive(
     patches = [
         "//buildpatches:gazelle.patch",
     ],
-    sha256 = "29218f8e0cebe583643cbf93cae6f971be8a2484cdcfa1e45057658df8d54002",
+    sha256 = "b7387f72efb59f876e4daae42f1d3912d0d45563eac7cb23d1de0b094ab588cf",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.32.0/bazel-gazelle-v0.32.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.32.0/bazel-gazelle-v0.32.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.34.0/bazel-gazelle-v0.34.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.34.0/bazel-gazelle-v0.34.0.tar.gz",
     ],
 )
 

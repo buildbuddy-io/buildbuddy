@@ -131,8 +131,8 @@ func TestPartialEviction(t *testing.T) {
 	for _, i := range c.data {
 		remainingAges = append(remainingAges, i.atime)
 	}
-	slices.SortFunc(remainingAges, func(a, b time.Time) bool {
-		return a.Before(b)
+	slices.SortFunc(remainingAges, func(a, b time.Time) int {
+		return a.Compare(b)
 	})
 
 	oldest := remainingAges[int(float64(len(remainingAges))*0.05)]

@@ -15,7 +15,7 @@ go_library(
         "//cli/translate",
         "//cli/workspace",
         "//server/util/flag",
-        "@com_github_bazelbuild_buildtools//buildifier:go_default_library",
+        "@com_github_bazelbuild_buildtools//buildifier:buildifier_lib",
     ],
 )
 
