@@ -190,17 +190,6 @@ message FindSplitPointResponse {
   bytes split_key = 1;
 }
 
-message SimpleSplitRequest {
-  uint64 source_range_id = 1;
-  uint64 new_shard_id = 2;
-  uint64 new_range_id = 3;
-}
-
-message SimpleSplitResponse {
-  RangeDescriptor new_start = 1;
-  RangeDescriptor new_end = 2;
-}
-
 // Raft CMD API, used to encode raft commands that are replicated via raft and
 // written to a log. Everything written via SyncPropose must be a RequestUnion
 // wrapped in a BatchCmdRequest..
@@ -211,7 +200,6 @@ message RequestUnion {
     IncrementRequest increment = 3;
     ScanRequest scan = 4;
     CASRequest cas = 5;
-    SimpleSplitRequest simple_split = 6;
     FindSplitPointRequest find_split_point = 14;
 
     // The following operations are for getting and setting FileMetadata blobs.
@@ -239,7 +227,6 @@ message ResponseUnion {
     IncrementResponse increment = 4;
     ScanResponse scan = 5;
     CASResponse cas = 6;
-    SimpleSplitResponse simple_split = 7;
     FindSplitPointResponse find_split_point = 15;
 
     // The following operations are for getting and setting FileMetadata blobs.

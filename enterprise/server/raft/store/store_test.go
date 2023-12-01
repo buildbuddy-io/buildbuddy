@@ -654,8 +654,8 @@ func TestManySplits(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			waitForRangeLease(t, stores, rsp.GetStart().GetRangeId())
-			waitForRangeLease(t, stores, rsp.GetEnd().GetRangeId())
+			waitForRangeLease(t, stores, rsp.GetLeft().GetRangeId())
+			waitForRangeLease(t, stores, rsp.GetRight().GetRangeId())
 
 			// Expect that a new cluster was added with the new
 			// shardID and 3 replicas.

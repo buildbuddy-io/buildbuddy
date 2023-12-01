@@ -935,69 +935,6 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 	}
 }
 
-func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*rfpb.SimpleSplitResponse, error) {
-	ctx := context.Background()
-
-	splitRsp, err := sm.findSplitPoint()
-	if err != nil {
-		return nil, err
-	}
-	splitKey := splitRsp.GetSplitKey()
-
-	sm.rangeMu.RLock()
-	rd := sm.rangeDescriptor
-	sm.rangeMu.RUnlock()
-
-	peerRangeDescriptor := proto.Clone(rd).(*rfpb.RangeDescriptor)
-	peerRangeDescriptor.Start = splitKey
-	peerRangeDescriptor.RangeId = req.GetNewRangeId()
-	peerRangeDescriptor.Generation += 1
-	for _, r := range peerRangeDescriptor.GetReplicas() {
-		r.ShardId = req.GetNewShardId()
-	}
-
-	buf, err := proto.Marshal(peerRangeDescriptor)
-	if err != nil {
-		return nil, err
-	}
-
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	peerRangeKey := replicaSpecificKey(constants.LocalRangeKey, req.GetNewShardId(), sm.ReplicaID)
-	if err := db.Set(peerRangeKey, buf, pebble.Sync); err != nil {
-		return nil, err
-	}
-	if err := sm.store.AddPeer(ctx, sm.ShardID, req.GetNewShardId()); err != nil {
-		return nil, err
-	}
-
-	// Force compaction so that dragonboat doesn't try to use the existing
-	// raft logs for recovery. The logs are incomplete since we perform the
-	// database clone outside of raft. With the raft snapshot in place,
-	// recovery attempts will ask the state machine (replica) to provide a
-	// snapshot which will reflect the cloned data.
-	if err := sm.store.SnapshotCluster(ctx, req.GetNewShardId()); err != nil {
-		return nil, err
-	}
-
-	rd.End = splitKey
-	rd.Generation += 1
-	buf, err = proto.Marshal(rd)
-	if err != nil {
-		return nil, err
-	}
-	if err := sm.rangeCheckedSet(wb, sm.replicaLocalKey(constants.LocalRangeKey), buf); err != nil {
-		return nil, err
-	}
-	return &rfpb.SimpleSplitResponse{
-		NewStart: rd,
-		NewEnd:   peerRangeDescriptor,
-	}, err
-}
-
 func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 	if len(req.GetStart()) == 0 {
 		return nil, status.InvalidArgumentError("Scan requires a valid key.")
@@ -1192,12 +1129,6 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 		r, err := sm.cas(wb, value.Cas)
 		rsp.Value = &rfpb.ResponseUnion_Cas{
 			Cas: r,
-		}
-		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_SimpleSplit:
-		r, err := sm.simpleSplit(wb, value.SimpleSplit)
-		rsp.Value = &rfpb.ResponseUnion_SimpleSplit{
-			SimpleSplit: r,
 		}
 		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_Set:
