@@ -13,7 +13,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -25,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
