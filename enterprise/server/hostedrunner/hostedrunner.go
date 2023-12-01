@@ -35,7 +35,7 @@ import (
 
 const (
 	runnerPath           = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
-	RunnerContainerImage = "docker://" + platform.Ubuntu18_04WorkflowsImage
+	RunnerContainerImage = "docker://" + platform.Ubuntu20_04WorkflowsImage
 )
 
 type runnerService struct {
