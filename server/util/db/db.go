@@ -391,14 +391,6 @@ func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts interfaces.DBOptio
 	return dbh.gormHandleForOpts(ctx, opts).Raw(sql, values...)
 }
 
-func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts interfaces.DBOptions, txn interfaces.TxRunner) error {
-	return dbh.gormHandleForOpts(ctx, opts).Transaction(txn)
-}
-
-func (dbh *DBHandle) Transaction(ctx context.Context, txn interfaces.TxRunner) error {
-	return dbh.DB(ctx).Transaction(txn)
-}
-
 func IsRecordNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
@@ -1003,6 +995,10 @@ func (h *DBHandle) SelectForUpdateModifier() string {
 	return "FOR UPDATE"
 }
 
+func (h *DBHandle) NowFunc() time.Time {
+	return h.db.NowFunc()
+}
+
 func (h *DBHandle) SetNowFunc(now func() time.Time) {
 	h.db.Config.NowFunc = now
 }
@@ -1020,8 +1016,8 @@ func (h *DBHandle) IsDeadlockError(err error) bool {
 	return false
 }
 
-func (dbh *DBHandle) GORM() *gorm.DB {
-	return dbh.db
+func (dbh *DBHandle) GORM(name string) *gorm.DB {
+	return dbh.db.Set(gormQueryNameKey, name)
 }
 
 type PreparedQuery struct {
@@ -1029,10 +1025,6 @@ type PreparedQuery struct {
 	ctx    context.Context
 	sql    string
 	values []interface{}
-}
-
-func (r *PreparedQuery) Error() error {
-	return nil
 }
 
 func (r *PreparedQuery) Exec() interfaces.DBResult {
@@ -1072,7 +1064,8 @@ type DBQuery struct {
 }
 
 func (q *DBQuery) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
-	return &PreparedQuery{db: q.db, ctx: q.ctx, sql: sql, values: values}
+	db := q.db.Set(gormQueryNameKey, q.name)
+	return &PreparedQuery{db: db, ctx: q.ctx, sql: sql, values: values}
 }
 
 type Transaction struct {
@@ -1084,22 +1077,26 @@ func (t *Transaction) NewQuery(ctx context.Context, name string) interfaces.DBQu
 	return &DBQuery{ctx: ctx, name: name, db: t.tx}
 }
 
-func (t *Transaction) GORM() *gorm.DB {
-	return t.tx
+func (t *Transaction) GORM(name string) *gorm.DB {
+	return t.tx.Set(gormQueryNameKey, name)
+}
+
+func (t *Transaction) NowFunc() time.Time {
+	return t.tx.NowFunc()
 }
 
 func (dbh *DBHandle) NewQuery(ctx context.Context, name string) interfaces.DBQuery {
 	return &DBQuery{ctx: ctx, name: name, db: dbh.db}
 }
 
-func (dbh *DBHandle) NewTransaction(ctx context.Context, txn interfaces.NewTxRunner) error {
-	return dbh.Transaction(ctx, func(tx *gorm.DB) error {
+func (dbh *DBHandle) Transaction(ctx context.Context, txn interfaces.NewTxRunner) error {
+	return dbh.DB(ctx).Transaction(func(tx *gorm.DB) error {
 		return txn(&Transaction{tx, ctx})
 	})
 }
 
-func (dbh *DBHandle) NewTransactionWithOptions(ctx context.Context, opts interfaces.DBOptions, txn interfaces.NewTxRunner) error {
-	return dbh.TransactionWithOptions(ctx, opts, func(tx *gorm.DB) error {
+func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts interfaces.DBOptions, txn interfaces.NewTxRunner) error {
+	return dbh.gormHandleForOpts(ctx, opts).Transaction(func(tx *gorm.DB) error {
 		return txn(&Transaction{tx, ctx})
 	})
 }

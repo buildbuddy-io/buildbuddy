@@ -303,6 +303,7 @@ type DBRawQuery interface {
 	Take(dest interface{}) error
 	Scan(dest interface{}) error
 	Exec() DBResult
+	// XXX check if we need this
 	IterateRaw(fn func(ctx context.Context, row *sql.Rows) error) error
 }
 
@@ -317,7 +318,9 @@ type DB interface {
 
 	// GORM returns a raw handle to the GORM API. New code should prefer to
 	// avoid using this.
-	GORM() *gorm.DB
+	GORM(name string) *gorm.DB
+
+	NowFunc() time.Time
 }
 
 type TxRunner func(tx *gorm.DB) error
@@ -326,13 +329,11 @@ type NewTxRunner func(tx DB) error
 type DBHandle interface {
 	DB
 
-	NewTransaction(ctx context.Context, txn NewTxRunner) error
-	NewTransactionWithOptions(ctx context.Context, opts DBOptions, txn NewTxRunner) error
+	Transaction(ctx context.Context, txn NewTxRunner) error
+	TransactionWithOptions(ctx context.Context, opts DBOptions, txn NewTxRunner) error
 
 	DB(ctx context.Context) *gorm.DB
 	RawWithOptions(ctx context.Context, opts DBOptions, sql string, values ...interface{}) *gorm.DB
-	TransactionWithOptions(ctx context.Context, opts DBOptions, txn TxRunner) error
-	Transaction(ctx context.Context, txn TxRunner) error
 	ReadRow(ctx context.Context, out interface{}, where ...interface{}) error
 	UTCMonthFromUsecTimestamp(fieldName string) string
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string

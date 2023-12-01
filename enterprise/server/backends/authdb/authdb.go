@@ -233,15 +233,15 @@ func (g *apiKeyGroup) GetEnforceIPRules() bool {
 
 func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
 	session.SessionID = sessionID
-	return d.h.NewTransaction(ctx, func(tx interfaces.DB) error {
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		var existing tables.Session
-		if err := tx.GORM().Where("session_id = ?", sessionID).First(&existing).Error; err != nil {
+		if err := tx.GORM("authdb_get_existing_session").Where("session_id = ?", sessionID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
-				return tx.GORM().Create(session).Error
+				return tx.GORM("authdb_create_session").Create(session).Error
 			}
 			return err
 		}
-		return tx.GORM().Model(&existing).Where("session_id = ?", sessionID).Updates(session).Error
+		return tx.GORM("authdb_update_session").Model(&existing).Where("session_id = ?", sessionID).Updates(session).Error
 	})
 }
 
@@ -256,7 +256,7 @@ func (d *AuthDB) ReadSession(ctx context.Context, sessionID string) (*tables.Ses
 }
 
 func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
-	err := d.h.NewTransaction(ctx, func(tx interfaces.DB) error {
+	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		return tx.NewQuery(ctx, "authdb_delete_session").Raw(
 			`DELETE FROM "Sessions" WHERE session_id = ?`, sessionID).Exec().Error
 	})
@@ -360,7 +360,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
 		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
 		keyClauses := query_builder.OrClauses{}
 		if !*encryptOldKeys {
@@ -376,8 +376,8 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 		keyQuery, keyArgs := keyClauses.Build()
 		qb.AddWhereClause(keyQuery, keyArgs...)
 		q, args := qb.Build()
-		existingRow := tx.Raw(q, args...)
-		return existingRow.Take(akg).Error
+		rq := tx.NewQuery(ctx, "authdb_get_api_key_group_by_key").Raw(q, args...)
+		return rq.Take(akg)
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
@@ -408,12 +408,12 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		}
 	}
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
 		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
 		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
 		q, args := qb.Build()
-		existingRow := tx.Raw(q, args...)
-		return existingRow.Take(akg).Error
+		rq := tx.NewQuery(ctx, "").Raw(q, args...)
+		return rq.Take(akg)
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
@@ -429,7 +429,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
 	user := &tables.User{}
-	err := d.h.NewTransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
 		rq := tx.NewQuery(ctx, "authdb_lookup_user_from_subid").Raw(
 			`SELECT * FROM "Users" WHERE sub_id = ? ORDER BY user_id ASC`, subID)
 		if err := rq.Take(user); err != nil {
@@ -727,7 +727,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 	}
 
 	var createdKey *tables.APIKey
-	err = d.h.NewTransaction(ctx, func(tx interfaces.DB) error {
+	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		// Check that the group has user-owned keys enabled.
 		g := &tables.Group{}
 		err := tx.NewQuery(ctx, "authdb_check_user_owned_keys_enabled").Raw(
