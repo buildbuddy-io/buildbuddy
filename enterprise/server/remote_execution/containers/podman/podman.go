@@ -259,23 +259,6 @@ type podmanCommandContainer struct {
 	removed bool
 }
 
-// TODO: remove this and always use provider.New() instead.
-func NewPodmanCommandContainer(env environment.Env, image, buildRoot string, options *PodmanOptions) container.CommandContainer {
-	imageExistsCache, _ := newImageExistsCache()
-	return &podmanCommandContainer{
-		env: env,
-		cgroupPaths: &cgroup.Paths{
-			MemoryTemplate: *memUsagePathTemplate,
-			CPUTemplate:    *cpuUsagePathTemplate,
-		},
-		imageExistsCache: imageExistsCache,
-		image:            image,
-		buildRoot:        buildRoot,
-		options:          options,
-		sociStore:        soci_store.NoStore{},
-	}
-}
-
 func addUserArgs(args []string, options *PodmanOptions) []string {
 	if options.ForceRoot {
 		args = append(args, "--user=0:0")

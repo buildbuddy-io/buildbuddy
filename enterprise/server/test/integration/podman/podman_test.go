@@ -13,12 +13,15 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -55,8 +58,15 @@ func TestRunHelloWorld(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
-	result := podman.Run(ctx, cmd, "/work", oci.Credentials{})
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := platform.Properties{
+		ContainerImage: "docker.io/library/busybox",
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &props, nil, nil, "")
+	require.NoError(t, err)
+	result := c.Run(ctx, cmd, "/work", oci.Credentials{})
 
 	require.NoError(t, result.Error)
 	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
@@ -84,12 +94,19 @@ func TestHelloWorldExec(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
-
-	err := podman.Create(ctx, "/work")
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := platform.Properties{
+		ContainerImage: "docker.io/library/busybox",
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &props, nil, nil, "")
 	require.NoError(t, err)
 
-	result := podman.Exec(ctx, cmd, &commandutil.Stdio{})
+	err = c.Create(ctx, "/work")
+	require.NoError(t, err)
+
+	result := c.Exec(ctx, cmd, &commandutil.Stdio{})
 	assert.NoError(t, result.Error)
 
 	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
@@ -100,7 +117,7 @@ func TestHelloWorldExec(t *testing.T) {
 	assert.Empty(t, string(result.Stderr), "stderr should be empty")
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
 
-	err = podman.Remove(ctx)
+	err = c.Remove(ctx)
 	assert.NoError(t, err)
 }
 
@@ -125,13 +142,20 @@ func TestExecStdio(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := platform.Properties{
+		ContainerImage: "docker.io/library/busybox",
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &props, nil, nil, "")
+	require.NoError(t, err)
 
-	err := podman.Create(ctx, "/work")
+	err = c.Create(ctx, "/work")
 	require.NoError(t, err)
 
 	var stdout, stderr bytes.Buffer
-	res := podman.Exec(ctx, cmd, &commandutil.Stdio{
+	res := c.Exec(ctx, cmd, &commandutil.Stdio{
 		Stdin:  strings.NewReader("TestInput\n"),
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -143,7 +167,7 @@ func TestExecStdio(t *testing.T) {
 	assert.Equal(t, "TestError\n", stderr.String(), "stderr opt should be respected")
 	assert.Empty(t, string(res.Stderr), "stderr in command result should be empty when stderr opt is specified")
 
-	err = podman.Remove(ctx)
+	err = c.Remove(ctx)
 	assert.NoError(t, err)
 }
 
@@ -163,10 +187,17 @@ func TestRun_Timeout(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	c := podman.NewPodmanCommandContainer(
-		env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := platform.Properties{
+		ContainerImage: "docker.io/library/busybox",
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &props, nil, nil, "")
+	require.NoError(t, err)
+
 	// Ensure the image is cached
-	err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -208,10 +239,17 @@ func TestExec_Timeout(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	c := podman.NewPodmanCommandContainer(
-		env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := platform.Properties{
+		ContainerImage: "docker.io/library/busybox",
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &props, nil, nil, "")
+	require.NoError(t, err)
+
 	// Ensure the image is cached
-	err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
 	require.NoError(t, err)
 	err = c.Create(ctx, workDir)
 	require.NoError(t, err)
@@ -269,12 +307,19 @@ func TestIsImageCached(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		podman := podman.NewPodmanCommandContainer(env, tc.image, rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
+		provider, err := podman.NewProvider(env, rootDir)
+		require.NoError(t, err)
+		props := platform.Properties{
+			ContainerImage: tc.image,
+			DockerNetwork:  "off",
+		}
+		c, err := provider.New(ctx, &props, nil, nil, "")
+		require.NoError(t, err)
 		if tc.want {
-			err := podman.PullImage(ctx, oci.Credentials{})
+			err := c.PullImage(ctx, oci.Credentials{})
 			require.NoError(t, err)
 		}
-		actual, err := podman.IsImageCached(ctx)
+		actual, err := c.IsImageCached(ctx)
 		assert.Equal(t, actual, tc.want)
 		if tc.wantErr {
 			assert.Error(t, err)
@@ -315,11 +360,16 @@ func TestForceRoot(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		podman := podman.NewPodmanCommandContainer(env, image, rootDir, &podman.PodmanOptions{
-			ForceRoot:          tc.forceRoot,
-			DefaultNetworkMode: "none",
-		})
-		result := podman.Run(ctx, cmd, "/work", oci.Credentials{})
+		provider, err := podman.NewProvider(env, rootDir)
+		require.NoError(t, err)
+		props := platform.Properties{
+			ContainerImage:  image,
+			DockerForceRoot: tc.forceRoot,
+			DockerNetwork:   "off",
+		}
+		c, err := provider.New(ctx, &props, nil, nil, "")
+		require.NoError(t, err)
+		result := c.Run(ctx, cmd, "/work", oci.Credentials{})
 		uid, err := strconv.Atoi(strings.TrimSpace(string(result.Stdout)))
 		assert.NoError(t, err)
 		assert.Equal(t, tc.wantUID, uid)
@@ -360,11 +410,16 @@ func TestUser(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			pm := podman.NewPodmanCommandContainer(env, image, rootDir, &podman.PodmanOptions{
-				User:               tc.user,
-				DefaultNetworkMode: "none",
-			})
-			result := pm.Run(ctx, &repb.Command{
+			provider, err := podman.NewProvider(env, rootDir)
+			require.NoError(t, err)
+			props := platform.Properties{
+				ContainerImage: image,
+				DockerUser:     tc.user,
+				DockerNetwork:  "off",
+			}
+			c, err := provider.New(ctx, &props, nil, nil, "")
+			require.NoError(t, err)
+			result := c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-u", "-n"},
 			}, workDir, oci.Credentials{})
 			u := strings.TrimSpace(string(result.Stdout))
@@ -377,7 +432,7 @@ func TestUser(t *testing.T) {
 				assert.Equal(t, 1, result.ExitCode, "should exit with error")
 			}
 
-			result = pm.Run(ctx, &repb.Command{
+			result = c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-g", "-n"},
 			}, workDir, oci.Credentials{})
 			g := strings.TrimSpace(string(result.Stdout))
@@ -406,7 +461,15 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	c := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
+
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := platform.Properties{
+		ContainerImage: "docker.io/library/busybox",
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &props, nil, nil, "")
+	require.NoError(t, err)
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
@@ -439,10 +502,16 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	c := podman.NewPodmanCommandContainer(env, "docker.io/library/ubuntu:20.04", rootDir, &podman.PodmanOptions{
-		EnableStats:        true,
-		DefaultNetworkMode: "none",
-	})
+
+	flags.Set(t, "executor.podman.enable_stats", true)
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := platform.Properties{
+		ContainerImage: "docker.io/library/ubuntu:20.04",
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &props, nil, nil, "")
+	require.NoError(t, err)
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 	require.NoError(t, res.Error)
