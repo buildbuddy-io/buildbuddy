@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 
@@ -37,12 +36,6 @@ const (
 	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
 )
 
-type dcClient struct {
-	dcpb.DistributedCacheClient
-	conn         *grpc.ClientConn
-	wasEverReady bool
-}
-
 type CacheProxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
@@ -51,7 +44,7 @@ type CacheProxy struct {
 	writeBufPool          sync.Pool
 	mu                    *sync.Mutex
 	server                *grpc.Server
-	clients               map[string]*dcClient
+	clients               map[string]*grpc_client.ClientConnPool
 	heartbeatCallback     func(ctx context.Context, peer string)
 	hintedHandoffCallback func(ctx context.Context, peer string, r *rspb.ResourceName)
 	listenAddr            string
@@ -72,7 +65,7 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 		listenAddr: listenAddr,
 		mu:         &sync.Mutex{},
 		// server goes here
-		clients: make(map[string]*dcClient, 0),
+		clients: make(map[string]*grpc_client.ClientConnPool),
 	}
 	zone, err := resources.GetZone()
 	if err != nil {
@@ -146,24 +139,19 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if client, ok := c.clients[peer]; ok {
-		// The gRPC client library causes RPCs to block while a connection stays in CONNECTING state, regardless of the
-		// failfast setting. This can happen when a replica goes away due to a rollout (or any other reason).
-		isReady := client.conn.GetState() == connectivity.Ready
-		if client.wasEverReady && !isReady {
-			client.conn.Connect()
-			return nil, status.UnavailableErrorf("connection to peer %q is not ready", peer)
+		conn, err := client.GetReadyConnection()
+		if err != nil {
+			return nil, status.UnavailableErrorf("no connections to peer %q are ready", peer)
 		}
-		client.wasEverReady = client.wasEverReady || isReady
-		return client, nil
+		return dcpb.NewDistributedCacheClient(conn), nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
-	conn, err := grpc_client.DialInternalWithoutPooling(c.env, "grpc://"+peer)
+	conn, err := grpc_client.DialInternal(c.env, "grpc://"+peer)
 	if err != nil {
 		return nil, err
 	}
-	client := dcpb.NewDistributedCacheClient(conn)
-	c.clients[peer] = &dcClient{DistributedCacheClient: client, conn: conn}
-	return client, nil
+	c.clients[peer] = conn
+	return dcpb.NewDistributedCacheClient(conn), nil
 }
 
 func (c *CacheProxy) prepareContext(ctx context.Context) context.Context {
