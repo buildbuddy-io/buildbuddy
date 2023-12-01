@@ -9,7 +9,7 @@ go_library(
         "soci_store_darwin.go",
         "soci_store_linux.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/soci_store",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/soci_store",
     deps = [
         "//enterprise/server/util/oci",
         "//server/environment",
