@@ -83,6 +83,9 @@ message RunRequest {
 
   // If true, start the runner but do not wait for the action to be scheduled.
   bool async = 9;
+
+  // Container image to run on. Defaults to the Ubuntu 20.04 Workflows image.
+  string image = 10;
 }
 
 message RunResponse {
