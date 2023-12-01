@@ -392,7 +392,7 @@ func (s *Store) updateUsages(r *replica.Replica) error {
 		return err
 	}
 	rangeID := usage.GetRangeId()
-	if !s.haveLease(rangeID) {
+	if !s.HaveLease(rangeID) {
 		s.usages.RemoveRange(rangeID)
 		return nil
 	}
@@ -535,11 +535,11 @@ func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.Ran
 	return r, rd, nil
 }
 
-func (s *Store) haveLease(rangeID uint64) bool {
+func (s *Store) HaveLease(rangeID uint64) bool {
 	if r, err := s.GetReplica(rangeID); err == nil {
 		return s.leaseKeeper.HaveLease(r.ShardID)
 	}
-	s.log.Warningf("haveLease check for unheld range: %d", rangeID)
+	s.log.Warningf("HaveLease check for unheld range: %d", rangeID)
 	return false
 }
 
@@ -557,7 +557,7 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 		return r, nil
 	}
 
-	if s.haveLease(header.GetRangeId()) {
+	if s.HaveLease(header.GetRangeId()) {
 		return r, nil
 	}
 	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
@@ -1046,7 +1046,10 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	if err := client.RunTxn(ctx, s.nodeHost, txn); err != nil {
 		return nil, err
 	}
-	return &rfpb.SplitRangeResponse{}, nil
+	return &rfpb.SplitRangeResponse{
+		Start: newSourceRange,
+		End:   destRange,
+	}, nil
 }
 
 func (s *Store) getLastAppliedIndex(header *rfpb.Header) (uint64, error) {

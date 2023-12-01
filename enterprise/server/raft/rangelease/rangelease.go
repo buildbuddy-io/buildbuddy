@@ -263,10 +263,6 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 		}
 	}
 
-	if !alreadyValid {
-		l.log.Debugf("Acquired %s", l.string(l.rangeDescriptor, l.leaseRecord))
-	}
-
 	// We just renewed the lease. If there isn't already a background
 	// thread running to keep it renewed, start one now.
 	if l.stopped {
