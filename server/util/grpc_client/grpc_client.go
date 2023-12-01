@@ -200,6 +200,18 @@ func DialInternal(env environment.Env, target string, extraOptions ...grpc.DialO
 	return DialSimple(target, opts...)
 }
 
+// DialInternalWithoutPooling is a variant of DialInternal that disables
+// connection pooling. Only one connection will be created and that connection
+// RPC throughput will be limited by the concurrent stream limit of the server.
+//
+// This function should not be used unless you need finer control over
+// connection state, which should not generally be the case.
+func DialInternalWithoutPooling(env environment.Env, target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
+	opts = append(opts, extraOptions...)
+	return DialSimpleWithoutPooling(target, opts...)
+}
+
 type rpcCredentials struct {
 	authorization string
 }
