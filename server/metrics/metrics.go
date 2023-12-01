@@ -987,8 +987,11 @@ var (
 		Subsystem: "firecracker",
 		Name:      "stage_duration_usec",
 		Buckets: customDurationMsecBuckets([]time.Duration{
+			25 * time.Millisecond,
+			50 * time.Millisecond,
 			100 * time.Millisecond,
 			500 * time.Millisecond,
+			750 * time.Millisecond,
 			1 * time.Second,
 			3 * time.Second,
 			5 * time.Second,
