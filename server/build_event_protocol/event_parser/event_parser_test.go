@@ -12,6 +12,7 @@ import (
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	options "github.com/buildbuddy-io/buildbuddy/proto/options"
 )
 
 func singleFile() *build_event_stream.File {
@@ -67,8 +68,15 @@ func TestFillInvocation(t *testing.T) {
 		OptionName:   "client_env",
 		OptionValue:  "SECRET=<REDACTED>",
 	}
-	structuredCommandLine := &command_line.CommandLine{
-		CommandLineLabel: "label",
+	remoteCacheOption := &command_line.Option{
+		CombinedForm: "--remote_cache=grpcs://buildbuddy.buildbuddy.io",
+		OptionName:   "remote_cache",
+		OptionValue:  "grpcs://buildbuddy.buildbuddy.io",
+		EffectTags:   []options.OptionEffectTag{options.OptionEffectTag_UNKNOWN},
+	}
+
+	originalCommandLine := &command_line.CommandLine{
+		CommandLineLabel: "original",
 		Sections: []*command_line.CommandLineSection{
 			{
 				SectionLabel: "command",
@@ -77,6 +85,25 @@ func TestFillInvocation(t *testing.T) {
 						Option: []*command_line.Option{
 							shellOption,
 							secretOption,
+							remoteCacheOption,
+							{
+								CombinedForm: "--remote_download_outputs=toplevel",
+								OptionName:   "remote_download_outputs",
+								OptionValue:  "toplevel",
+								EffectTags:   []options.OptionEffectTag{options.OptionEffectTag_AFFECTS_OUTPUTS},
+							},
+							{
+								CombinedForm: "--remote_download_outputs=toplevel",
+								OptionName:   "remote_download_outputs",
+								OptionValue:  "toplevel",
+								EffectTags:   []options.OptionEffectTag{options.OptionEffectTag_AFFECTS_OUTPUTS},
+							},
+							{
+								CombinedForm: "--remote_download_outputs=minimal",
+								OptionName:   "remote_download_outputs",
+								OptionValue:  "minimal",
+								EffectTags:   []options.OptionEffectTag{options.OptionEffectTag_AFFECTS_OUTPUTS},
+							},
 						},
 					},
 				},
@@ -84,7 +111,40 @@ func TestFillInvocation(t *testing.T) {
 		},
 	}
 	events = append(events, &build_event_stream.BuildEvent{
-		Payload: &build_event_stream.BuildEvent_StructuredCommandLine{StructuredCommandLine: structuredCommandLine},
+		Payload: &build_event_stream.BuildEvent_StructuredCommandLine{StructuredCommandLine: originalCommandLine},
+	})
+
+	canonicalCommandLine := &command_line.CommandLine{
+		CommandLineLabel: "canonical",
+		Sections: []*command_line.CommandLineSection{
+			{
+				SectionLabel: "command",
+				SectionType: &command_line.CommandLineSection_OptionList{
+					OptionList: &command_line.OptionList{
+						Option: []*command_line.Option{
+							shellOption,
+							secretOption,
+							remoteCacheOption,
+							{
+								CombinedForm: "--remote_cache=grpcs://buildbuddy.buildbuddy.io",
+								OptionName:   "remote_cache",
+								OptionValue:  "grpcs://buildbuddy.buildbuddy.io",
+								EffectTags:   []options.OptionEffectTag{options.OptionEffectTag_UNKNOWN},
+							},
+							{
+								CombinedForm: "--remote_download_outputs=minimal",
+								OptionName:   "remote_download_outputs",
+								OptionValue:  "minimal",
+								EffectTags:   []options.OptionEffectTag{options.OptionEffectTag_AFFECTS_OUTPUTS},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_StructuredCommandLine{StructuredCommandLine: canonicalCommandLine},
 	})
 
 	optionsParsed := &build_event_stream.OptionsParsed{
@@ -192,7 +252,7 @@ func TestFillInvocation(t *testing.T) {
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", invocation.RepoUrl, "repo URL should be normalized")
 	assert.Equal(t, false, invocation.GetUploadLocalResultsEnabled())
 	assert.Equal(t, false, invocation.GetRemoteExecutionEnabled())
-	assert.Equal(t, inpb.DownloadOutputsOption_NONE, invocation.GetDownloadOutputsOption())
+	assert.Equal(t, inpb.DownloadOutputsOption_MINIMAL, invocation.GetDownloadOutputsOption())
 }
 
 func TestRemoteCacheOptions(t *testing.T) {
@@ -312,7 +372,7 @@ func TestRemoteCacheOptions(t *testing.T) {
 
 	for _, tc := range tests {
 		structuredCommandLine := &command_line.CommandLine{
-			CommandLineLabel: "label",
+			CommandLineLabel: "canonical",
 			Sections: []*command_line.CommandLineSection{
 				{
 					SectionLabel: "command",
