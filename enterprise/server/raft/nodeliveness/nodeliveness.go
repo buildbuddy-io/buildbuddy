@@ -234,29 +234,8 @@ func (h *Liveness) sendCasRequest(ctx context.Context, expectedValue, newVal []b
 }
 
 func (h *Liveness) clearLease() error {
-	var expectedValue []byte
-	if h.lastLivenessRecord != nil {
-		buf, err := proto.Marshal(h.lastLivenessRecord)
-		if err != nil {
-			return err
-		}
-		expectedValue = buf
-	}
-
-	leaseRequest := &rfpb.NodeLivenessRecord{
-		Epoch:      int64(h.clock.Time()),
-		Expiration: 1,
-	}
-	newVal, err := proto.Marshal(leaseRequest)
-	if err != nil {
-		return err
-	}
-
-	_, err = h.sendCasRequest(context.TODO(), expectedValue, newVal)
-	if err == nil {
-		h.setLastLivenessRecord(nil)
-	}
-	return err
+	h.setLastLivenessRecord(nil)
+	return nil
 }
 
 func (h *Liveness) renewLease() error {
