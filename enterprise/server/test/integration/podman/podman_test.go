@@ -431,7 +431,7 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
-		Arguments: []string{"bash", "-c", " head -c 1000000000 /dev/urandom | sha256sum"},
+		Arguments: []string{"bash", "-c", "head -c 1000000000 /dev/urandom | sha256sum"},
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -445,13 +445,8 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	t.Log(string(res.Stderr))
 	require.Equal(t, res.ExitCode, 0)
 
-	// Give the monitoring gorouting a little bit to communicate stats.
-	for i := 0; i < 100; i++ {
-		if res.UsageStats != nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	// This test is flaky because sometimes the cgroup cpu.stat file does not
+	// contain usage_usec.
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
 	assert.Greater(t, res.UsageStats.CpuNanos, int64(0), "CPU should be > 0")
 	assert.Greater(t, res.UsageStats.PeakMemoryBytes, int64(0), "peak mem usage should be > 0")

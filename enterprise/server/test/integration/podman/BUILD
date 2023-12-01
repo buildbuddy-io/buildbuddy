@@ -7,14 +7,15 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 # //enterprise/server/remote_execution/containers/podman:podman_test
 go_test(
     name = "podman_test",
+    size = "large",
     srcs = ["podman_test.go"],
     exec_properties = {
         "test.Pool": "bare",
         "test.use-self-hosted-executors": "true",
         "test.container-image": "none",
     },
-    # TestPodmanRun_RecordsStats is flaky.
     flaky = True,
+    shard_count = 2,
     tags = [
         "bare",  # Podman tests must be run with bare execution so they aren't nested within another container
     ],
