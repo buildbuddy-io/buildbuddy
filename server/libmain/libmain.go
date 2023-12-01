@@ -63,6 +63,7 @@ import (
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	static_bundle "github.com/buildbuddy-io/buildbuddy/static"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	channelzservice "google.golang.org/grpc/channelz/service"
 
 	// Force this package to be a direct dependency in `go.mod` so that
 	// `go mod tidy` doesn't work differently when generated protos are linked
@@ -217,6 +218,7 @@ func registerInternalGRPCServices(grpcServer *grpc.Server, env environment.Env) 
 	if sociArtifactStoreServer := env.GetSociArtifactStoreServer(); sociArtifactStoreServer != nil {
 		socipb.RegisterSociArtifactStoreServer(grpcServer, sociArtifactStoreServer)
 	}
+	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 }
 
 func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
@@ -314,7 +316,7 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
 
-	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	if err := build_event_server.Register(env); err != nil {
 		log.Fatalf("%v", err)

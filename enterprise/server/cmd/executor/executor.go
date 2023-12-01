@@ -242,7 +242,7 @@ func main() {
 	}
 
 	container.Metrics.Start(rootContext)
-	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	// Setup SSL for monitoring endpoints (optional).
 	if *monitoringSSLPort >= 0 {

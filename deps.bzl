@@ -1721,6 +1721,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:0gkP6mzaMqkmpcJYCFOLkIBwI7xFExG03bbkOkCvUPI=",
         version = "v0.0.0-20180628173108-788fd7840127",
     )
+    go_repository(
+        name = "com_github_go_chi_chi_v5",
+        importpath = "github.com/go-chi/chi/v5",
+        sum = "h1:rDTPXLDHGATaeHvVlLcR4Qe0zftYethFucbjVQ1PxU8=",
+        version = "v5.0.7",
+    )
 
     go_repository(
         name = "com_github_go_critic_go_critic",
@@ -4564,6 +4570,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/rakyll/statik",
         sum = "h1:OF3QCZUuyPxuGEP7B4ypUa7sB/iHtqOTDYZXGM8KOdQ=",
         version = "v0.1.7",
+    )
+    go_repository(
+        name = "com_github_rantav_go_grpc_channelz",
+        importpath = "github.com/rantav/go-grpc-channelz",
+        sum = "h1:svoYt8ZD0uO6B/EZVWGNIDRJY/JXfak2y5Ks+1xwaVo=",
+        version = "v0.0.3",
     )
 
     go_repository(

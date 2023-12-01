@@ -1,6 +1,7 @@
 package monitoring
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/pprof"
 
@@ -8,10 +9,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/basicauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagz"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	channelz "github.com/rantav/go-grpc-channelz"
 )
 
 var (
@@ -21,7 +25,7 @@ var (
 
 // Registers monitoring handlers on the provided mux. Note that using
 // StartMonitoringHandler on a monitoring-only port is preferred.
-func RegisterMonitoringHandlers(mux *http.ServeMux) {
+func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 	handle := mux.Handle
 	if *basicAuthUser != "" || *basicAuthPass != "" {
 		auth := basicauth.Middleware(basicauth.DefaultRealm, map[string]string{*basicAuthUser: *basicAuthPass})
@@ -45,14 +49,20 @@ func RegisterMonitoringHandlers(mux *http.ServeMux) {
 
 	// Flagz page
 	handle("/flagz", http.HandlerFunc(flagz.ServeHTTP))
+
+	// Channelz page
+	handle("/channelz/", channelz.CreateHandler("/", fmt.Sprintf("%s:%d", env.GetListenAddr(), grpc_server.InternalPort())))
+	// Redirect "/channelz" to "/channelz/" (so the trailing slash is
+	// optional)
+	handle("/channelz", http.RedirectHandler("/channelz/", http.StatusFound))
 }
 
 // StartMonitoringHandler enables the prometheus and pprof monitoring handlers
 // in the same mux on the specified host and port, which should not have
 // anything else running on it.
-func StartMonitoringHandler(hostPort string) {
+func StartMonitoringHandler(env environment.Env, hostPort string) {
 	mux := http.NewServeMux()
-	RegisterMonitoringHandlers(mux)
+	RegisterMonitoringHandlers(env, mux)
 	s := &http.Server{
 		Addr:    hostPort,
 		Handler: http.Handler(mux),
@@ -72,7 +82,7 @@ func StartSSLMonitoringHandler(env environment.Env, hostPort string) error {
 		return status.InvalidArgumentError("ssl must be enabled in config to use SSL monitoring")
 	}
 	mux := http.NewServeMux()
-	RegisterMonitoringHandlers(mux)
+	RegisterMonitoringHandlers(env, mux)
 	tlsConfig, _ := ssl.ConfigureTLS(mux)
 	s := &http.Server{
 		Addr:      hostPort,

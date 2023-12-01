@@ -45,6 +45,14 @@ func Port() int {
 	return *gRPCPort
 }
 
+func InternalPort() int {
+	return *internalGRPCPort
+}
+
+func InternalGRPCSPort() int {
+	return *internalGRPCSPort
+}
+
 type RegisterServices func(server *grpc.Server, env environment.Env)
 
 func RegisterGRPCServer(env environment.Env, regServices RegisterServices) error {
