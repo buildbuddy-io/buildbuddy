@@ -19,11 +19,7 @@ go_test(
     # overlayfs.
     # TODO(go/b/2944): move to firecracker once
     # firecracker.enable_merged_rootfs works.
-    tags = [
-        "bare",
-        # TODO(go/b/2945): remove manual tag.
-        "manual",
-    ],
+    tags = ["bare"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
