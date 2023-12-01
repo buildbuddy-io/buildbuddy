@@ -431,11 +431,7 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
-		Arguments: []string{"bash", "-c", `
-			for i in $(seq 100); do
-				sleep 0.001
-			done
-		`},
+		Arguments: []string{"bash", "-c", " head -c 1000000000 /dev/urandom | sha256sum"},
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -449,13 +445,12 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	t.Log(string(res.Stderr))
 	require.Equal(t, res.ExitCode, 0)
 
-	// Give the stats a few seconds to propagate show up to account for polling
-	// intervals, goroutine/process contention, and time to communicate.
-	for i := 0; i < 10; i++ {
+	// Give the monitoring gorouting a little bit to communicate stats.
+	for i := 0; i < 100; i++ {
 		if res.UsageStats != nil {
 			break
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(10 * time.Millisecond)
 	}
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
 	assert.Greater(t, res.UsageStats.CpuNanos, int64(0), "CPU should be > 0")

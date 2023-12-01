@@ -13,6 +13,8 @@ go_test(
         "test.use-self-hosted-executors": "true",
         "test.container-image": "none",
     },
+    # TestPodmanRun_RecordsStats is flaky.
+    flaky = True,
     tags = [
         "bare",  # Podman tests must be run with bare execution so they aren't nested within another container
     ],
