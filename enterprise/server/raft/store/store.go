@@ -957,18 +957,18 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		return nil, status.FailedPreconditionError("Splitting not enabled")
 	}
 
-	sourceRange := req.GetRange()
-	if sourceRange == nil {
+	leftRange := req.GetRange()
+	if leftRange == nil {
 		return nil, status.FailedPreconditionErrorf("no range provided to split: %+v", req)
 	}
-	if len(sourceRange.GetReplicas()) == 0 {
-		return nil, status.FailedPreconditionErrorf("no replicas in range: %+v", sourceRange)
+	if len(leftRange.GetReplicas()) == 0 {
+		return nil, status.FailedPreconditionErrorf("no replicas in range: %+v", leftRange)
 	}
 
-	// Copy source range, because it's a pointer and will change when we
+	// Copy left range, because it's a pointer and will change when we
 	// propose the split.
-	sourceRange = proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
-	shardID := sourceRange.GetReplicas()[0].GetShardId()
+	leftRange = proto.Clone(leftRange).(*rfpb.RangeDescriptor)
+	shardID := leftRange.GetReplicas()[0].GetShardId()
 
 	// Reserve new IDs for this cluster.
 	newShardID, newRangeID, err := s.reserveClusterAndRangeID(ctx)
@@ -989,7 +989,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 
 	// Bringup new peers.
 	servers := make(map[string]string)
-	for _, r := range sourceRange.GetReplicas() {
+	for _, r := range leftRange.GetReplicas() {
 		nhid, _, err := s.registry.ResolveNHID(r.GetShardId(), r.GetReplicaId())
 		if err != nil {
 			return nil, err
@@ -1006,37 +1006,37 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	}
 
 	// Assemble new range descriptor.
-	destRange := proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
-	destRange.Start = splitPointResponse.GetSplitKey()
-	destRange.RangeId = newRangeID
-	destRange.Generation += 1
-	for i, r := range destRange.GetReplicas() {
+	newRightRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
+	newRightRange.Start = splitPointResponse.GetSplitKey()
+	newRightRange.RangeId = newRangeID
+	newRightRange.Generation += 1
+	for i, r := range newRightRange.GetReplicas() {
 		r.ReplicaId = uint64(i + 1)
 		r.ShardId = newShardID
 	}
-	destRangeBuf, err := proto.Marshal(destRange)
+	newRightRangeBuf, err := proto.Marshal(newRightRange)
 	if err != nil {
 		return nil, err
 	}
 
-	newSourceRange := proto.Clone(sourceRange).(*rfpb.RangeDescriptor)
-	newSourceRange.End = splitPointResponse.GetSplitKey()
-	newSourceRange.Generation += 1
+	updatedLeftRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
+	updatedLeftRange.End = splitPointResponse.GetSplitKey()
+	updatedLeftRange.Generation += 1
 
 	leftBatch := rbuilder.NewBatchBuilder()
-	if err := addLocalRangeEdits(sourceRange, newSourceRange, leftBatch); err != nil {
+	if err := addLocalRangeEdits(leftRange, updatedLeftRange, leftBatch); err != nil {
 		return nil, err
 	}
 	leftBatch.AddPostCommitHook(&rfpb.SnapshotClusterHook{})
 	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   constants.LocalRangeKey,
-			Value: destRangeBuf,
+			Value: newRightRangeBuf,
 		},
 	})
 	rightBatch.AddPostCommitHook(&rfpb.SnapshotClusterHook{})
 	metaBatch := rbuilder.NewBatchBuilder()
-	if err := addMetaRangeEdits(sourceRange, newSourceRange, destRange, metaBatch); err != nil {
+	if err := addMetaRangeEdits(leftRange, updatedLeftRange, newRightRange, metaBatch); err != nil {
 		return nil, err
 	}
 
@@ -1047,8 +1047,8 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		return nil, err
 	}
 	return &rfpb.SplitRangeResponse{
-		Start: newSourceRange,
-		End:   destRange,
+		Left:  updatedLeftRange,
+		Right: newRightRange,
 	}, nil
 }
 
