@@ -601,7 +601,7 @@ func TestPostFactoSplit(t *testing.T) {
 	// Now verify that all keys that should be on the new node are present.
 	for _, fr := range written {
 		fmk := metadataKey(t, fr)
-		if bytes.Compare(fmk, splitResponse.GetStart().GetEnd()) >= 0 {
+		if bytes.Compare(fmk, splitResponse.GetLeft().GetEnd()) >= 0 {
 			continue
 		}
 		readRecord(ctx, t, s4, fr)

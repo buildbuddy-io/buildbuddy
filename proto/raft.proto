@@ -535,8 +535,8 @@ message SplitRangeRequest {
 }
 
 message SplitRangeResponse {
-  RangeDescriptor start = 1;
-  RangeDescriptor end = 2;
+  RangeDescriptor left = 1;
+  RangeDescriptor right = 2;
 }
 
 message ListReplicasRequest {}
