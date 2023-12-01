@@ -1042,7 +1042,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 
 	txn := rbuilder.NewTxn().AddStatement(shardID, leftBatch)
 	txn = txn.AddStatement(newShardID, rightBatch)
-	txn = txn.AddStatement(1, metaBatch)
+	txn = txn.AddStatement(constants.MetaRangeID, metaBatch)
 	if err := client.RunTxn(ctx, s.nodeHost, txn); err != nil {
 		return nil, err
 	}
@@ -1402,7 +1402,6 @@ func (s *Store) updateMetarange(ctx context.Context, oldStart, start, end *rfpb.
 }
 
 func (s *Store) updateRangeDescriptor(ctx context.Context, shardID uint64, old, new *rfpb.RangeDescriptor) error {
-	// TODO(tylerw): this should use 2PC.
 	oldBuf, err := proto.Marshal(old)
 	if err != nil {
 		return err
@@ -1412,7 +1411,6 @@ func (s *Store) updateRangeDescriptor(ctx context.Context, shardID uint64, old, 
 		return err
 	}
 
-	metaRangeBatch := rbuilder.NewBatchBuilder()
 	localBatch := rbuilder.NewBatchBuilder()
 	if err := addLocalRangeEdits(old, new, localBatch); err != nil {
 		return err
@@ -1425,48 +1423,12 @@ func (s *Store) updateRangeDescriptor(ctx context.Context, shardID uint64, old, 
 		},
 		ExpectedValue: oldBuf,
 	}
+	metaRangeBatch := rbuilder.NewBatchBuilder()
+	metaRangeBatch.Add(metaRangeCasReq)
 
-	if shardID == constants.InitialShardID {
-		localBatch.Add(metaRangeCasReq)
-	} else {
-		metaRangeBatch.Add(metaRangeCasReq)
-	}
-
-	localReq, err := localBatch.ToProto()
-	if err != nil {
-		return err
-	}
-
-	// Update the local range.
-	localRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, shardID, localReq)
-	if err != nil {
-		return err
-	}
-	_, err = rbuilder.NewBatchResponseFromProto(localRsp).CASResponse(0)
-	if err != nil {
-		return err
-	}
-	// If both changes (to local and metarange descriptors) applied to the
-	// MetaRange, they were applied in the localReq, and there's nothing
-	// remaining to do.
-	if metaRangeBatch.Size() == 0 {
-		return nil
-	}
-
-	// Update the metarange.
-	metaReq, err := metaRangeBatch.ToProto()
-	if err != nil {
-		return err
-	}
-	metaRangeRsp, err := s.sender.SyncPropose(ctx, metaRangeDescriptorKey, metaReq)
-	if err != nil {
-		return err
-	}
-	_, err = rbuilder.NewBatchResponseFromProto(metaRangeRsp).CASResponse(0)
-	if err != nil {
-		return err
-	}
-	return nil
+	txn := rbuilder.NewTxn().AddStatement(shardID, localBatch)
+	txn = txn.AddStatement(constants.MetaRangeID, metaRangeBatch)
+	return client.RunTxn(ctx, s.nodeHost, txn)
 }
 
 func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, shardID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
