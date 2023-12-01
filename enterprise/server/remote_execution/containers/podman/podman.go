@@ -272,6 +272,7 @@ func NewPodmanCommandContainer(env environment.Env, image, buildRoot string, opt
 		image:            image,
 		buildRoot:        buildRoot,
 		options:          options,
+		sociStore:        soci_store.NoStore{},
 	}
 }
 

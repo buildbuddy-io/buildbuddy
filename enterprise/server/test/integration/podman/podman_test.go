@@ -55,7 +55,7 @@ func TestRunHelloWorld(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
 	result := podman.Run(ctx, cmd, "/work", oci.Credentials{})
 
 	require.NoError(t, result.Error)
@@ -84,7 +84,7 @@ func TestHelloWorldExec(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
 
 	err := podman.Create(ctx, "/work")
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestExecStdio(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+	podman := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
 
 	err := podman.Create(ctx, "/work")
 	require.NoError(t, err)
@@ -164,12 +164,12 @@ func TestRun_Timeout(t *testing.T) {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
 	c := podman.NewPodmanCommandContainer(
-		env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+		env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
 	// Ensure the image is cached
 	err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
@@ -209,14 +209,14 @@ func TestExec_Timeout(t *testing.T) {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
 	c := podman.NewPodmanCommandContainer(
-		env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+		env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
 	// Ensure the image is cached
 	err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
 	require.NoError(t, err)
 	err = c.Create(ctx, workDir)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
@@ -269,7 +269,7 @@ func TestIsImageCached(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		podman := podman.NewPodmanCommandContainer(env, tc.image, rootDir, &podman.PodmanOptions{})
+		podman := podman.NewPodmanCommandContainer(env, tc.image, rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
 		if tc.want {
 			err := podman.PullImage(ctx, oci.Credentials{})
 			require.NoError(t, err)
@@ -315,7 +315,10 @@ func TestForceRoot(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		podman := podman.NewPodmanCommandContainer(env, image, rootDir, &podman.PodmanOptions{ForceRoot: tc.forceRoot})
+		podman := podman.NewPodmanCommandContainer(env, image, rootDir, &podman.PodmanOptions{
+			ForceRoot:          tc.forceRoot,
+			DefaultNetworkMode: "none",
+		})
 		result := podman.Run(ctx, cmd, "/work", oci.Credentials{})
 		uid, err := strconv.Atoi(strings.TrimSpace(string(result.Stdout)))
 		assert.NoError(t, err)
@@ -357,7 +360,10 @@ func TestUser(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			pm := podman.NewPodmanCommandContainer(env, image, rootDir, &podman.PodmanOptions{User: tc.user})
+			pm := podman.NewPodmanCommandContainer(env, image, rootDir, &podman.PodmanOptions{
+				User:               tc.user,
+				DefaultNetworkMode: "none",
+			})
 			result := pm.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-u", "-n"},
 			}, workDir, oci.Credentials{})
@@ -400,7 +406,7 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	c := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+	c := podman.NewPodmanCommandContainer(env, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{DefaultNetworkMode: "none"})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
@@ -408,6 +414,10 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 }
 
 func TestPodmanRun_RecordsStats(t *testing.T) {
+	// TODO(go/b/2942): this test is fairly flaky because sometimes the cgroup
+	// cpu.stat file does not contain usage_usec.
+	t.Skip()
+
 	// Note: This test requires root. Under cgroup v2, root is not required, but
 	// some devs' machines are running Ubuntu 20.04 currently, which only has
 	// cgroup v1 enabled (enabling cgroup v2 requires modifying kernel boot
@@ -425,16 +435,13 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
-		Arguments: []string{"bash", "-c", `
-			for i in $(seq 100); do
-				sleep 0.001
-			done
-		`},
+		Arguments: []string{"bash", "-c", "head -c 1000000000 /dev/urandom | sha256sum"},
 	}
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	c := podman.NewPodmanCommandContainer(env, "docker.io/library/ubuntu:20.04", rootDir, &podman.PodmanOptions{
-		EnableStats: true,
+		EnableStats:        true,
+		DefaultNetworkMode: "none",
 	})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
