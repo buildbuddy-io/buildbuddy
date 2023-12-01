@@ -2534,17 +2534,11 @@ func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskSta
 		groupID = u.GetGroupID()
 	}
 
-	snapshotSharingStatus := "disabled"
-	if *snaputil.EnableLocalSnapshotSharing {
-		snapshotSharingStatus = "local_sharing_enabled"
-	}
-
 	metrics.FirecrackerStageDurationUsec.With(prometheus.Labels{
 		metrics.Stage:                    taskStage,
 		metrics.StatusHumanReadableLabel: taskStatus,
 		metrics.RecycledRunnerStatus:     recycleStatus,
 		metrics.GroupID:                  groupID,
-		metrics.SnapshotSharingStatus:    snapshotSharingStatus,
 	}).Observe(float64(durationUsec))
 }
 

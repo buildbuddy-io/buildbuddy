@@ -986,14 +986,45 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "stage_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*day, 10),
-		Help:      "The total duration of each firecracker stage, in microseconds",
+		Buckets: customDurationMsecBuckets([]time.Duration{
+			25 * time.Millisecond,
+			50 * time.Millisecond,
+			100 * time.Millisecond,
+			500 * time.Millisecond,
+			750 * time.Millisecond,
+			1 * time.Second,
+			3 * time.Second,
+			5 * time.Second,
+			10 * time.Second,
+			15 * time.Second,
+			20 * time.Second,
+			30 * time.Second,
+			45 * time.Second,
+			1 * time.Minute,
+			90 * time.Second,
+			2 * time.Minute,
+			3 * time.Minute,
+			5 * time.Minute,
+			8 * time.Minute,
+			15 * time.Minute,
+			30 * time.Minute,
+			45 * time.Minute,
+			1 * time.Hour,
+			3 * time.Hour,
+			5 * time.Hour,
+			8 * time.Hour,
+			15 * time.Hour,
+			24 * time.Hour,
+		}),
+		Help: "The total duration of each firecracker stage, in microseconds. " +
+			"NOTE: Remember that these durations represent the upper bounds of " +
+			"histogram buckets. Data points fall within pre-defined buckets," +
+			" and don't represent the actual duration of each event.",
 	}, []string{
 		Stage,
 		StatusHumanReadableLabel,
 		RecycledRunnerStatus,
 		GroupID,
-		SnapshotSharingStatus,
 	})
 
 	// #### Stage label values
