@@ -105,7 +105,8 @@ func (d *UserDB) getGroupByID(ctx context.Context, tx interfaces.DB, groupID str
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	query := tx.NewQuery(ctx, "userdb_get_group_by_id").Prepare(`SELECT * FROM "Groups" AS g WHERE g.group_id = ?`, groupID)
+	query := tx.NewQuery(ctx, "userdb_get_group_by_id").Prepare(
+		`SELECT * FROM "Groups" AS g WHERE g.group_id = ?`, groupID)
 	group := &tables.Group{}
 	if err := query.Take(group); err != nil {
 		if db.IsRecordNotFound(err) {
@@ -133,7 +134,8 @@ func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx interfaces.DB, 
 	if urlIdentifier == "" {
 		return nil, status.InvalidArgumentError("URL identifier cannot be empty.")
 	}
-	query := tx.NewQuery(ctx, "userdb_get_group_by_identifier").Prepare(`SELECT * FROM "Groups" AS g WHERE g.url_identifier = ?`, urlIdentifier)
+	query := tx.NewQuery(ctx, "userdb_get_group_by_identifier").Prepare(
+		`SELECT * FROM "Groups" AS g WHERE g.url_identifier = ?`, urlIdentifier)
 	group := &tables.Group{}
 	if err := query.Take(group); err != nil {
 		if db.IsRecordNotFound(err) {
@@ -177,8 +179,8 @@ func isInOwnedDomainBlocklist(email string) bool {
 
 func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx interfaces.DB, domain string) (*tables.Group, error) {
 	tg := &tables.Group{}
-	existingRow := tx.NewQuery(ctx, "userdb_get_domain_owner_group").Prepare(`SELECT * FROM "Groups" as g
-                               WHERE g.owned_domain = ?`, domain)
+	existingRow := tx.NewQuery(ctx, "userdb_get_domain_owner_group").Prepare(
+		`SELECT * FROM "Groups" as g WHERE g.owned_domain = ?`, domain)
 	err := existingRow.Take(tg)
 	if db.IsRecordNotFound(err) {
 		return nil, nil
@@ -190,8 +192,8 @@ func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx interfaces.DB, doma
 
 func getUserGroup(ctx context.Context, tx interfaces.DB, userID string, groupID string) (*tables.UserGroup, error) {
 	userGroup := &tables.UserGroup{}
-	query := tx.NewQuery(ctx, "userdb_get_user_group").Prepare(`SELECT * FROM "UserGroups" AS ug
-                    WHERE ug.user_user_id = ? AND ug.group_group_id = ?`, userID, groupID)
+	query := tx.NewQuery(ctx, "userdb_get_user_group").Prepare(
+		`SELECT * FROM "UserGroups" AS ug WHERE ug.user_user_id = ? AND ug.group_group_id = ?`, userID, groupID)
 	if err := query.Take(userGroup); err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, nil
@@ -809,7 +811,8 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 
 func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (*tables.User, error) {
 	user := &tables.User{}
-	userRow := tx.NewQuery(ctx, "userdb_get_user").Prepare(`SELECT * FROM "Users" WHERE user_id = ?`, userID)
+	userRow := tx.NewQuery(ctx, "userdb_get_user").Prepare(
+		`SELECT * FROM "Users" WHERE user_id = ?`, userID)
 	if err := userRow.Take(user); err != nil {
 		return nil, err
 	}
@@ -836,7 +839,8 @@ func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (
 		ON g.group_id = ug.group_group_id
 		WHERE ug.user_user_id = ? AND ug.membership_status = ?
 	`
-	pq := tx.NewQuery(ctx, "userdb_get_user_groups").Prepare(q, userID, int32(grpb.GroupMembershipStatus_MEMBER))
+	pq := tx.NewQuery(ctx, "userdb_get_user_groups").Prepare(
+		q, userID, int32(grpb.GroupMembershipStatus_MEMBER))
 	err := pq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		gr := &tables.GroupRole{}
 		err := row.Scan(

@@ -247,7 +247,8 @@ func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string
 
 func (d *AuthDB) ReadSession(ctx context.Context, sessionID string) (*tables.Session, error) {
 	s := &tables.Session{}
-	existingRow := d.h.NewQuery(ctx, "authdb_get_session").Prepare(`SELECT * FROM "Sessions" WHERE session_id = ?`, sessionID)
+	existingRow := d.h.NewQuery(ctx, "authdb_get_session").Prepare(
+		`SELECT * FROM "Sessions" WHERE session_id = ?`, sessionID)
 	if err := existingRow.Take(s); err != nil {
 		return nil, err
 	}
@@ -256,7 +257,8 @@ func (d *AuthDB) ReadSession(ctx context.Context, sessionID string) (*tables.Ses
 
 func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 	err := d.h.NewTransaction(ctx, func(tx interfaces.DB) error {
-		return tx.NewQuery(ctx, "authdb_delete_session").Prepare(`DELETE FROM "Sessions" WHERE session_id = ?`, sessionID).Exec().Error
+		return tx.NewQuery(ctx, "authdb_delete_session").Prepare(
+			`DELETE FROM "Sessions" WHERE session_id = ?`, sessionID).Exec().Error
 	})
 	return err
 }
@@ -428,7 +430,8 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
 	user := &tables.User{}
 	err := d.h.NewTransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
-		userRow := tx.NewQuery(ctx, "authdb_lookup_user_from_subid").Prepare(`SELECT * FROM "Users" WHERE sub_id = ? ORDER BY user_id ASC`, subID)
+		userRow := tx.NewQuery(ctx, "authdb_lookup_user_from_subid").Prepare(
+			`SELECT * FROM "Users" WHERE sub_id = ? ORDER BY user_id ASC`, subID)
 		if err := userRow.Take(user); err != nil {
 			return err
 		}
