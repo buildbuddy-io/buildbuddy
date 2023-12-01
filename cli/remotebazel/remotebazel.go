@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -50,12 +49,14 @@ const (
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
 	defaultRemoteExecutionURL  = "remote.buildbuddy.io"
+
+	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:271e5e3704d861159c75b8dd6713dbe5a12272ec8ee73d17f89ed7be8026553f"
 )
 
 var (
 	execOs            = flag.String("os", "linux", "If set, requests execution on a specific OS.")
 	execArch          = flag.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
-	runnerImage       = flag.String("runner_image", "docker://"+platform.Ubuntu20_04WorkflowsImage, "If set, requests execution on a specific runner image.")
+	runnerImage       = flag.String("runner_image", "docker://"+Ubuntu20_04WorkflowsImage, "If set, requests execution on a specific runner image.")
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
 
@@ -503,7 +504,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		reqArch = *execArch
 	}
 
-	image := "docker://" + platform.Ubuntu20_04WorkflowsImage
+	image := "docker://" + Ubuntu20_04WorkflowsImage
 	if *runnerImage != "" {
 		image = *runnerImage
 	}
