@@ -63,10 +63,6 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_Cas{
 			Cas: value,
 		}
-	case *rfpb.SimpleSplitRequest:
-		req.Value = &rfpb.RequestUnion_SimpleSplit{
-			SimpleSplit: value,
-		}
 	case *rfpb.FindSplitPointRequest:
 		req.Value = &rfpb.RequestUnion_FindSplitPoint{
 			FindSplitPoint: value,
@@ -256,15 +252,6 @@ func (br *BatchResponse) CASResponse(n int) (*rfpb.CASResponse, error) {
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetCas(), br.unionError(u)
-}
-
-func (br *BatchResponse) SimpleSplitResponse(n int) (*rfpb.SimpleSplitResponse, error) {
-	br.checkIndex(n)
-	if br.err != nil {
-		return nil, br.err
-	}
-	u := br.cmd.GetUnion()[n]
-	return u.GetSimpleSplit(), br.unionError(u)
 }
 
 func (br *BatchResponse) FindSplitPointResponse(n int) (*rfpb.FindSplitPointResponse, error) {
