@@ -51,9 +51,9 @@ func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 	handle("/flagz", http.HandlerFunc(flagz.ServeHTTP))
 
 	// Channelz page
-	handle("/", channelz.CreateHandler("/", fmt.Sprintf("%s:%d", env.GetListenAddr(), grpc_server.Port())))
-	// The channelz UI requires a trailing slash. Add a redirect to support
-	// just "/channelz".
+	handle("/channelz/", channelz.CreateHandler("/", fmt.Sprintf("%s:%d", env.GetListenAddr(), grpc_server.InternalPort())))
+	// Redirect "/channelz" to "/channelz/" (so the trailing slash is
+	// optional)
 	handle("/channelz", http.RedirectHandler("/channelz/", http.StatusFound))
 }
 
