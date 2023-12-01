@@ -437,7 +437,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	require.NoError(t, err)
 
 	s := getStoreWithRangeLease(t, stores, 2)
-	rd := s1.GetRange(2)
+	rd := s.GetRange(2)
 	header := headerFromRangeDescriptor(rd)
 
 	// Attempting to Split an empty range will always fail. So write a
@@ -450,7 +450,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	require.NoError(t, err)
 
 	s = getStoreWithRangeLease(t, stores, 4)
-	rd = s1.GetRange(4)
+	rd = s.GetRange(4)
 	header = headerFromRangeDescriptor(rd)
 
 	// Expect that a new cluster was added with shardID = 4
@@ -528,7 +528,7 @@ func TestPostFactoSplit(t *testing.T) {
 	require.NoError(t, err)
 
 	s := getStoreWithRangeLease(t, stores, 2)
-	rd := s1.GetRange(2)
+	rd := s.GetRange(2)
 	header := headerFromRangeDescriptor(rd)
 
 	// Attempting to Split an empty range will always fail. So write a
@@ -623,7 +623,7 @@ func TestManySplits(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	waitForRangeLease(t, stores, 2)
+	s := getStoreWithRangeLease(t, stores, 2)
 
 	var written []*rfpb.FileRecord
 	for i := 0; i < 4; i++ {
@@ -646,9 +646,9 @@ func TestManySplits(t *testing.T) {
 			if shardID == 1 {
 				continue
 			}
-			rd := s1.GetRange(shardID)
+			rd := s.GetRange(shardID)
 			header := headerFromRangeDescriptor(rd)
-			rsp, err := s1.SplitRange(ctx, &rfpb.SplitRangeRequest{
+			rsp, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 				Header: header,
 				Range:  rd,
 			})
