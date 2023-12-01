@@ -2,20 +2,26 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
+# To run this test with remote execution, add a test_tag_filter:
+# bazel test --config=remote --test_tag_filters=+bare \
+# //enterprise/server/test/integration/podman:podman_test
 go_test(
     name = "podman_test",
     size = "large",
     srcs = ["podman_test.go"],
     exec_properties = {
-        # Use the executor image since it has podman installed
-        # and matches our real executor setup
-        "test.container-image": "docker://gcr.io/flame-public/buildbuddy-executor-enterprise:latest",
-
-        # This test pulls some podman images, which can be slow.
-        # Use runner recycling to preserve the podman image cache across runs.
-        "test.recycle-runner": "true",
+        "test.Pool": "bare",
+        "test.use-self-hosted-executors": "true",
+        "test.container-image": "none",
     },
     flaky = True,
+    shard_count = 2,
+    tags = [
+        "bare",  # Podman tests must be run with bare execution so they aren't nested within another container
+    ],
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
