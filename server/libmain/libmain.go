@@ -314,7 +314,7 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
 
-	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	if err := build_event_server.Register(env); err != nil {
 		log.Fatalf("%v", err)

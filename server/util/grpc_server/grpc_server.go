@@ -24,6 +24,7 @@ import (
 
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	channelzservice "google.golang.org/grpc/channelz/service"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
@@ -145,6 +146,8 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 	hlpb.RegisterHealthServer(grpcServer, env.GetHealthChecker())
 
 	regServices(grpcServer, env)
+
+	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 
 	go func() {
 		_ = grpcServer.Serve(lis)
