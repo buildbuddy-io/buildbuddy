@@ -14,12 +14,13 @@ go_test(
         "test.use-self-hosted-executors": "true",
         "test.container-image": "none",
     },
-    tags = [
-        "bare",  # Podman tests must be run with bare execution so they aren't nested within another container
-    ],
-    target_compatible_with = [
-        "@platforms//os:linux",
-    ],
+    # Podman tests must run on the bare executors because podman-on-podman /
+    # podman-on-firecracker don't work due to issues running overlayfs on
+    # overlayfs.
+    # TODO(go/b/2944): move to firecracker once
+    # firecracker.enable_merged_rootfs works.
+    tags = ["bare"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
