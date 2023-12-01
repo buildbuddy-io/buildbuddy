@@ -142,6 +142,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	require.NotNil(t, s)
 	s.Start()
 	ts.Store = s
+
 	t.Cleanup(func() {
 		s.Stop(context.TODO())
 		nodeHost.Close()
@@ -394,14 +395,30 @@ func headerFromRangeDescriptor(rd *rfpb.RangeDescriptor) *rfpb.Header {
 	return &rfpb.Header{RangeId: rd.GetRangeId(), Generation: rd.GetGeneration()}
 }
 
-func getStoreWithRangeLease(t testing.TB, stores []*TestingStore, header *rfpb.Header) *TestingStore {
-	for _, s := range stores {
-		if _, err := s.LeasedRange(header); err == nil {
-			return s
+func getStoreWithRangeLease(t testing.TB, stores []*TestingStore, rangeID uint64) *TestingStore {
+	t.Helper()
+
+	start := time.Now()
+	for {
+		for _, store := range stores {
+			if store.HaveLease(rangeID) {
+				return store
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+		if time.Since(start) > 60*time.Second {
+			break
 		}
 	}
-	t.Fatalf("No store found holding rangelease for header %+v", header)
+
+	t.Fatalf("No store found holding rangelease for range: %d", rangeID)
 	return nil
+}
+
+func waitForRangeLease(t testing.TB, stores []*TestingStore, rangeID uint64) {
+	t.Helper()
+	s := getStoreWithRangeLease(t, stores, rangeID)
+	log.Printf("%s got range lease for range: %d", s.NodeHost.ID(), rangeID)
 }
 
 func TestSplitNonMetaRange(t *testing.T) {
@@ -419,18 +436,22 @@ func TestSplitNonMetaRange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	s := getStoreWithRangeLease(t, stores, 2)
+	rd := s1.GetRange(2)
+	header := headerFromRangeDescriptor(rd)
+
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, s1, 50)
-
-	rd := s1.GetRange(2)
-	header := headerFromRangeDescriptor(rd)
-	s := getStoreWithRangeLease(t, stores, header)
 	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: header,
 		Range:  rd,
 	})
 	require.NoError(t, err)
+
+	s = getStoreWithRangeLease(t, stores, 4)
+	rd = s1.GetRange(4)
+	header = headerFromRangeDescriptor(rd)
 
 	// Expect that a new cluster was added with shardID = 4
 	// having 3 replicas.
@@ -442,20 +463,17 @@ func TestSplitNonMetaRange(t *testing.T) {
 	for _, fr := range written {
 		readRecord(ctx, t, s3, fr)
 	}
-
-	// // Write some more records to the new end range.
+	// Write some more records to the new end range.
 	written = append(written, writeNRecords(ctx, t, s1, 50)...)
-
-	rd = s1.GetRange(4)
-	header = headerFromRangeDescriptor(rd)
-	s = getStoreWithRangeLease(t, stores, header)
 	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: header,
 		Range:  rd,
 	})
 	require.NoError(t, err)
 
-	// Expect that a new cluster was added with shardID = 4
+	waitForRangeLease(t, stores, 5)
+
+	// Expect that a new cluster was added with shardID = 5
 	// having 3 replicas.
 	replicas, err = s1.GetMembership(ctx, 5)
 	require.NoError(t, err)
@@ -480,6 +498,9 @@ func TestListReplicas(t *testing.T) {
 		nh3.ID(): s3.GRPCAddress,
 	})
 	require.NoError(t, err)
+
+	stores := []*TestingStore{s1, s2, s3}
+	waitForRangeLease(t, stores, 2)
 
 	list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 	require.NoError(t, err)
@@ -506,13 +527,14 @@ func TestPostFactoSplit(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	s := getStoreWithRangeLease(t, stores, 2)
+	rd := s1.GetRange(2)
+	header := headerFromRangeDescriptor(rd)
+
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, s1, 50)
 
-	rd := s1.GetRange(2)
-	header := headerFromRangeDescriptor(rd)
-	s := getStoreWithRangeLease(t, stores, header)
 	splitResponse, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: header,
 		Range:  rd,
@@ -575,6 +597,7 @@ func TestPostFactoSplit(t *testing.T) {
 		TargetReplicaId: 4,
 	})
 	require.NoError(t, err)
+
 	// Now verify that all keys that should be on the new node are present.
 	for _, fr := range written {
 		fmk := metadataKey(t, fr)
@@ -600,6 +623,8 @@ func TestManySplits(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	waitForRangeLease(t, stores, 2)
+
 	var written []*rfpb.FileRecord
 	for i := 0; i < 4; i++ {
 		written = append(written, writeNRecords(ctx, t, stores[0], 100)...)
@@ -623,17 +648,18 @@ func TestManySplits(t *testing.T) {
 			}
 			rd := s1.GetRange(shardID)
 			header := headerFromRangeDescriptor(rd)
-			s := getStoreWithRangeLease(t, stores, header)
-			_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+			rsp, err := s1.SplitRange(ctx, &rfpb.SplitRangeRequest{
 				Header: header,
 				Range:  rd,
 			})
 			require.NoError(t, err)
-			require.NoError(t, err)
+
+			waitForRangeLease(t, stores, rsp.GetStart().GetRangeId())
+			waitForRangeLease(t, stores, rsp.GetEnd().GetRangeId())
 
 			// Expect that a new cluster was added with the new
 			// shardID and 3 replicas.
-			replicas, err := s.GetMembership(ctx, shardID)
+			replicas, err := s1.GetMembership(ctx, shardID)
 			require.NoError(t, err)
 			require.Equal(t, 3, len(replicas))
 		}
