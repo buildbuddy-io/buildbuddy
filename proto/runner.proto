@@ -85,7 +85,9 @@ message RunRequest {
   bool async = 9;
 
   // Container image to run on. Defaults to the Ubuntu 20.04 Workflows image.
-  string image = 10;
+  // A `docker://` prefix is required.
+  // Ex. `docker://gcr.io/flame-public/rbe-ubuntu20-04`
+  string container_image = 10;
 }
 
 message RunResponse {

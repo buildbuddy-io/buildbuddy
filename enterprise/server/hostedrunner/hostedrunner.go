@@ -164,8 +164,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	image := DefaultRunnerContainerImage
-	if req.GetImage() != "" {
-		image = req.GetImage()
+	if req.GetContainerImage() != "" {
+		image = req.GetContainerImage()
 	}
 
 	// Hosted Bazel shares the same pool with workflows.
