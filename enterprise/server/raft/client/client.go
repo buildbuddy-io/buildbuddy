@@ -246,6 +246,7 @@ func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rbuilder.Tx
 		return err
 	}
 
+	var prepareError error
 	prepared := make([]*rfpb.TxnRequest_Statement, 0)
 	for _, statement := range txnProto.GetStatements() {
 		batch := statement.GetRawBatch()
@@ -255,11 +256,13 @@ func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rbuilder.Tx
 		rspProto, err := SyncProposeLocal(ctx, nodehost, statement.GetShardId(), batch)
 		if err != nil {
 			log.Errorf("Error preparing txn statement: %s", err)
+			prepareError = err
 			break
 		}
 		rsp := rbuilder.NewBatchResponseFromProto(rspProto)
 		if err := rsp.AnyError(); err != nil {
 			log.Errorf("Error preparing txn statement: %s", err)
+			prepareError = err
 			break
 		}
 		prepared = append(prepared, statement)
@@ -279,6 +282,10 @@ func RunTxn(ctx context.Context, nodehost *dragonboat.NodeHost, txn *rbuilder.Tx
 		if _, err := SyncProposeLocalBatch(ctx, nodehost, statement.GetShardId(), batch); err != nil {
 			return err
 		}
+	}
+
+	if prepareError != nil {
+		return prepareError
 	}
 	return nil
 }

@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"net"
 	"sort"
@@ -55,10 +54,6 @@ import (
 
 const (
 	readBufSizeBytes = 1000000 // 1MB
-)
-
-var (
-	enableSplittingReplicas = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
 )
 
 type Store struct {
@@ -953,10 +948,6 @@ func (s *Store) GetMembership(ctx context.Context, shardID uint64) ([]*rfpb.Repl
 }
 
 func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
-	if !*enableSplittingReplicas {
-		return nil, status.FailedPreconditionError("Splitting not enabled")
-	}
-
 	leftRange := req.GetRange()
 	if leftRange == nil {
 		return nil, status.FailedPreconditionErrorf("no range provided to split: %+v", req)
