@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/protoutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"google.golang.org/protobuf/proto"
@@ -595,7 +596,7 @@ func LookupProto(iter Iterator, key []byte, pb proto.Message) error {
 	if !iter.SeekGE(key) || !bytes.Equal(iter.Key(), key) {
 		return status.NotFoundErrorf("key %q not found", key)
 	}
-	if err := proto.Unmarshal(iter.Value(), pb); err != nil {
+	if err := protoutil.Unmarshal(iter.Value(), pb); err != nil {
 		return status.InternalErrorf("error parsing value for %q: %s", key, err)
 	}
 	return nil

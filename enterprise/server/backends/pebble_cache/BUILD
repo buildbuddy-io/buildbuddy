@@ -28,6 +28,7 @@ go_library(
         "//server/util/ioutil",
         "//server/util/lockmap",
         "//server/util/log",
+        "//server/util/protoutil",
         "//server/util/status",
         "//server/util/statusz",
         "//server/util/tracing",
