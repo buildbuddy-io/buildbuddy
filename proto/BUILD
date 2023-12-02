@@ -13,9 +13,6 @@ go_proto_compiler(
     plugin = "@com_github_planetscale_vtprotobuf//cmd/protoc-gen-go-vtproto",
     suffix = "_vtproto.pb.go",
     valid_archive = False,
-    deps = [
-        "@com_github_planetscale_vtprotobuf//generator",
-    ],
 )
 
 proto_library(
