@@ -200,11 +200,16 @@ func (sm *Replica) replicaLocalKey(key []byte) []byte {
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
+	sm.rangeMu.Lock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.Unlock()
+
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
 			ShardId:   sm.ShardID,
 			ReplicaId: sm.ReplicaID,
 		},
+		RangeId: rd.GetRangeId(),
 	}
 
 	var numFileRecords, sizeBytes int64
@@ -270,8 +275,6 @@ func (sm *Replica) setRange(key, val []byte) error {
 	}
 
 	sm.rangeMu.Lock()
-	defer sm.rangeMu.Unlock()
-
 	if sm.rangeDescriptor != nil {
 		sm.store.RemoveRange(sm.rangeDescriptor, sm)
 	}
@@ -283,9 +286,10 @@ func (sm *Replica) setRange(key, val []byte) error {
 		End:   rangeDescriptor.GetEnd(),
 	}
 	sm.store.AddRange(sm.rangeDescriptor, sm)
+	sm.rangeMu.Unlock()
 
 	if usage, err := sm.Usage(); err == nil {
-		sm.notifyListenersOfUsage(sm.rangeDescriptor, usage)
+		sm.notifyListenersOfUsage(rangeDescriptor, usage)
 	} else {
 		sm.log.Errorf("Error computing usage upon opening replica: %s", err)
 	}
