@@ -1,0 +1,16 @@
+{
+  "files": {
+    "include": ["**/*.ts", "**/*.tsx", "**/*.md", "**/*.yaml"],
+    "ignore": ["bazel-*/**"]
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "lineWidth": 120
+  },
+  "javascript": {
+    "formatter": {
+      "trailingComma": "es5",
+      "bracketSameLine": true
+    }
+  }
+}

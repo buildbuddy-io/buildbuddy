@@ -7167,6 +7167,20 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
 
+    # biome
+    http_file(
+        name = "com_github_biomejs_biome_darwin_arm64",
+        sha256 = "edd8b651084058977988fa3b5cbfc0c6a87175fa7ad3b4554636530b9ea84178",
+        urls = ["https://github.com/biomejs/biome/releases/download/cli/v1.4.1/biome-darwin-arm64"],
+        executable = True,
+    )
+    http_file(
+        name = "com_github_biomejs_biome_linux_x86_64",
+        sha256 = "37aff9d2fb5699306d8ed7b9858af7fa8536d23e49ef1f327f5652b19c6b7125",
+        urls = ["https://github.com/biomejs/biome/releases/download/cli/v1.4.1/biome-linux-x64-musl"],
+        executable = True,
+    )
+
     # TODO: mac build
     http_file(
         name = "org_llvm_llvm_clang-format_linux-x86_64",
