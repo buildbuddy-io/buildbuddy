@@ -1657,7 +1657,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 	if lookup.URL.User == nil {
 		apiKey, _ := s.getAnyAPIKeyForInvocation(ctx, params.Get("invocation_id"))
 		if apiKey != nil {
-			metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey.Value)
+			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey.Value)
 		}
 	}
 
