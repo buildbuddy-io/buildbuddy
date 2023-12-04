@@ -1059,11 +1059,12 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 
 // initRootfsStore creates the initial rootfs chunk layout in the chroot.
 func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
-	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
+	cowChunkDir := filepath.Join(c.getChroot(), rootDriveID)
+	if err := os.MkdirAll(cowChunkDir, 0755); err != nil {
 		return status.InternalErrorf("failed to create rootfs chunk dir: %s", err)
 	}
 	containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
-	cf, err := snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.containerImage, containerExt4Path, c.getChroot(), cowChunkSizeBytes())
+	cf, err := snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes())
 	if err != nil {
 		return status.WrapError(err, "unpack container image")
 	}
