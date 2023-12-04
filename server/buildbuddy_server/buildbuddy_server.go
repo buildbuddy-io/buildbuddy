@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -1486,6 +1487,7 @@ func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
 }
 
 func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invocationID string) (*tables.APIKey, error) {
+	// LookupInvocation implicitly checks the logged-in user's access to invocationID.
 	in, err := s.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
 	if err != nil {
 		return nil, err
@@ -1494,6 +1496,7 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	// We can use any API key because LookupInvocation above already confirmed authorization.
 	groupKey, err := authDB.GetAPIKeyForInternalUseOnly(ctx, in.GroupID)
 	if err != nil && !status.IsNotFoundError(err) {
 		return nil, err
@@ -1654,9 +1657,10 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 	}
 
 	if lookup.URL.User == nil {
+		// Note that this implicitly authorizes the logged-in user's access to the invocation.
 		apiKey, _ := s.getAnyAPIKeyForInvocation(ctx, params.Get("invocation_id"))
 		if apiKey != nil {
-			lookup.URL.User = url.User(apiKey.Value)
+			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey.Value)
 		}
 	}
 
