@@ -250,6 +250,7 @@ func (sm *Replica) notifyListenersOfUsage(rd *rfpb.RangeDescriptor, usage *rfpb.
 	if sm.broadcast == nil {
 		return
 	}
+	usage.RangeId = rd.GetRangeId()
 	up := events.RangeUsageEvent{
 		Type:            events.EventRangeUsageUpdated,
 		RangeDescriptor: rd,
@@ -1172,6 +1173,7 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 }
 
 func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
+	sm.raftProposeQPS.Inc()
 	rsp := &rfpb.ResponseUnion{}
 
 	switch value := req.Value.(type) {

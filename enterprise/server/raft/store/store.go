@@ -956,6 +956,14 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		return nil, status.FailedPreconditionErrorf("no replicas in range: %+v", leftRange)
 	}
 
+	// Validate the header to ensure we don't start new raft nodes if the
+	// split is gonna fail later when the transaction is run on an out-of
+	// -date range.
+	_, _, err := s.validatedRange(req.GetHeader())
+	if err != nil {
+		return nil, err
+	}
+
 	// Copy left range, because it's a pointer and will change when we
 	// propose the split.
 	leftRange = proto.Clone(leftRange).(*rfpb.RangeDescriptor)
