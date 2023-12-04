@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
@@ -30,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -38,12 +40,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -1815,8 +1819,18 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 }
 
 func TestMergeDiffSnapshot(t *testing.T) {
+	for _, cow := range []bool{false, true} {
+		t.Run(fmt.Sprintf("COW=%v", cow), func(t *testing.T) {
+			testMergeDiffSnapshot(t, cow)
+		})
+	}
+}
+
+func testMergeDiffSnapshot(t *testing.T, cow bool) {
 	tmp := testfs.MakeTempDir(t)
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
+		metrics.COWSnapshotMemoryMappedBytes.Reset()
+
 		ctx := context.Background()
 		snapSize := 1e6 + rand.Int63n(1e6)
 		// Create an empty base snapshot
@@ -1841,11 +1855,36 @@ func TestMergeDiffSnapshot(t *testing.T) {
 			require.NoError(t, err)
 		}
 		_ = df.Close()
-		err = firecracker.MergeDiffSnapshot(ctx, basePath, nil /*=COWStore*/, diffPath, 4 /*=concurrency*/, 4096 /*=bufSize*/)
+		var store *copy_on_write.COWStore
+		cowDirName := fmt.Sprintf("cow-%d", i)
+		if cow {
+			env := getTestEnv(ctx, t, envOpts{})
+			dataDir := testfs.MakeDirAll(t, tmp, cowDirName)
+			c, err := copy_on_write.ConvertFileToCOW(ctx, env, basePath, 4096*16, dataDir, "", false /*=remoteEnabled*/)
+			require.NoError(t, err)
+			store = c
+		}
+		err = firecracker.MergeDiffSnapshot(ctx, basePath, store, diffPath, 4 /*=concurrency*/, 4096 /*=bufSize*/)
 		require.NoError(t, err)
 
-		merged, err := os.ReadFile(basePath)
-		require.NoError(t, err)
+		var merged []byte
+		if cow {
+			r, err := interfaces.StoreReader(store)
+			require.NoError(t, err)
+			merged, err = io.ReadAll(r)
+			require.NoError(t, err)
+			// All bytes should have been unmapped afterwards, even though
+			// we haven't closed the COWStore yet.
+			mmappedBytes := testmetrics.GaugeValueForLabels(
+				t, metrics.COWSnapshotMemoryMappedBytes,
+				prometheus.Labels{metrics.FileName: cowDirName})
+			require.Equal(t, float64(0), mmappedBytes, "iteration %d", i)
+			err = store.Close()
+			require.NoError(t, err)
+		} else {
+			merged, err = os.ReadFile(basePath)
+			require.NoError(t, err)
+		}
 		if !bytes.Equal(merged, b) {
 			require.FailNowf(t, "Merged bytes not equal to expected bytes", "")
 		}
