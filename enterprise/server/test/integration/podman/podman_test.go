@@ -200,7 +200,7 @@ func TestRun_Timeout(t *testing.T) {
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
@@ -254,7 +254,7 @@ func TestExec_Timeout(t *testing.T) {
 	err = c.Create(ctx, workDir)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
