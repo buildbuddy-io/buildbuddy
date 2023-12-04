@@ -29,7 +29,7 @@ import (
 )
 
 var (
-	restrictBytestreamDialing = flag.Bool("app.restrict_bytestream_dialing", true, "If true, only allow dialing localhost or the configured cache backend for bytestream requests.")
+	restrictBytestreamDialing = flag.Bool("app.restrict_bytestream_dialing", false, "If true, only allow dialing localhost or the configured cache backend for bytestream requests.")
 )
 
 func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *url.URL) (*zipb.Manifest, error) {
