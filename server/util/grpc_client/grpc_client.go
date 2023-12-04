@@ -32,8 +32,13 @@ var (
 	enablePoolCache = flag.Bool("grpc_client.enable_pool_cache", false, "Whether or not to enable the connection pool cache.")
 )
 
+type clientConn struct {
+	*grpc.ClientConn
+	wasEverReady atomic.Bool
+}
+
 type ClientConnPool struct {
-	conns []*grpc.ClientConn
+	conns []*clientConn
 	idx   atomic.Uint64
 }
 
@@ -73,7 +78,36 @@ func (p *ClientConnPool) Close() error {
 
 func (p *ClientConnPool) getConn() *grpc.ClientConn {
 	idx := p.idx.Add(1)
-	return p.conns[idx%uint64(len(p.conns))]
+	return p.conns[idx%uint64(len(p.conns))].ClientConn
+}
+
+// GetReadyConnection returns a connection from the pool that is known to be
+// in a ready state. If no ready connections are available, an error is
+// returned. This function is useful when it's preferable to get an error
+// rather than potentially blocking while a connection becomes ready.
+func (p *ClientConnPool) GetReadyConnection() (*grpc.ClientConn, error) {
+	idx := (p.idx.Add(1)) % uint64(len(p.conns))
+	startIdx := idx
+	for {
+		conn := p.conns[idx]
+		// The gRPC client library causes RPCs to block while a connection
+		// stays in CONNECTING state, regardless of the failfast setting. This
+		// can happen when a replica goes away due to a rollout (or any
+		// other reason). For use cases where an error is preferred to blocking
+		// we skip over connections that have become unready.
+		isReady := conn.GetState() == connectivity.Ready
+		wasEverReady := conn.wasEverReady.Load()
+		if wasEverReady && !isReady {
+			conn.Connect()
+			idx = (idx + 1) % uint64(len(p.conns))
+			if idx == startIdx {
+				return nil, status.UnavailableErrorf("no ready connections available")
+			}
+			continue
+		}
+		conn.wasEverReady.CompareAndSwap(wasEverReady, wasEverReady || isReady)
+		return conn.ClientConn, nil
+	}
 }
 
 func (p *ClientConnPool) Invoke(ctx context.Context, method string, args any, reply any, opts ...grpc.CallOption) error {
@@ -102,7 +136,7 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 // (app, executor) you should use DialInternal.
 func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
 	var mu sync.Mutex
-	var conns []*grpc.ClientConn
+	var conns []*clientConn
 
 	eg, _ := errgroup.WithContext(context.Background())
 	for i := 0; i < *poolSize; i++ {
@@ -112,7 +146,7 @@ func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool
 				return err
 			}
 			mu.Lock()
-			conns = append(conns, conn)
+			conns = append(conns, &clientConn{ClientConn: conn})
 			mu.Unlock()
 			return nil
 		})
@@ -172,7 +206,6 @@ func DialInternal(env environment.Env, target string, extraOptions ...grpc.DialO
 //
 // This function should not be used unless you need finer control over
 // connection state, which should not generally be the case.
-// TODO(vadim): determine if cacheproxy still needs the extra functionality
 func DialInternalWithoutPooling(env environment.Env, target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
 	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
 	opts = append(opts, extraOptions...)
