@@ -693,6 +693,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 				default:
 					break
 				}
+				originalChunkStartOffset := baseSnapshotStore.ChunkStartOffset(offset)
 				// 3 is the Linux constant for the SEEK_DATA option to lseek.
 				newOffset, err := syscall.Seek(int(gin.Fd()), offset, 3)
 				if err != nil {
@@ -703,6 +704,16 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 					}
 					return err
 				}
+
+				// if newOffset > chunk boundary
+				newChunkStartOffset := baseSnapshotStore.ChunkStartOffset(newOffset)
+				if originalChunkStartOffset != newChunkStartOffset {
+					// unmap the original chunk
+					if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
+						return err
+					}
+				}
+
 				offset = newOffset
 				if offset >= regionEnd {
 					break

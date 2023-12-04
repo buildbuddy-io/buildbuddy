@@ -261,6 +261,10 @@ func (c *COWStore) chunkStartOffset(off int64) int64 {
 	return (off / c.chunkSizeBytes) * c.chunkSizeBytes
 }
 
+func (c *COWStore) ChunkStartOffset(off int64) int64 {
+	return (off / c.chunkSizeBytes) * c.chunkSizeBytes
+}
+
 func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 	if err := checkBounds("read", c.totalSizeBytes, p, off); err != nil {
 		return 0, err
