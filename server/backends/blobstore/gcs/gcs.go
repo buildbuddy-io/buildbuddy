@@ -3,7 +3,6 @@ package gcs
 import (
 	"context"
 	"io"
-	"math"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -12,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"google.golang.org/api/googleapi"
@@ -116,27 +116,43 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 		return 0, err
 	}
 
-	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
-
-	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer, but to
-	// avoid unnecessary allocations for blobs << 16MB, ChunkSize should be
-	// set before the first write call to a value "slightly larger" than the
-	// object size. Set it to the next largest power of 2:
-	// 2**CEIL(log2(size)) for values less than 16MB in size.
-	blobSize := len(compressedData)
-	if blobSize < googleapi.DefaultUploadChunkSize {
-		writer.ChunkSize = int(math.Exp2(math.Ceil(math.Log2(float64(blobSize)))))
-	}
-
-	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
-	n, err := writer.Write(compressedData)
-	if closeErr := writer.Close(); err == nil && closeErr != nil {
-		err = closeErr
+	defer spn.End()
+
+	doWrite := func() (int, error) {
+		start := time.Now()
+		writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
+		// See https://pkg.go.dev/cloud.google.com/go/storage#Writer,
+		// but to avoid unnecessary allocations for blobs << 16MB,
+		// ChunkSize should be set before the first write call to 0.
+		// This will disable internal buffering and automatic retries.
+		blobSize := len(compressedData)
+		if blobSize < googleapi.DefaultUploadChunkSize {
+			writer.ChunkSize = 0
+		}
+		n, err := writer.Write(compressedData)
+		if closeErr := writer.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+		util.RecordWriteMetrics(gcsLabel, start, n, err)
+		return n, err
 	}
-	spn.End()
-	util.RecordWriteMetrics(gcsLabel, start, n, err)
-	return n, err
+
+	lastErr := status.InternalError("GCS write not run")
+	r := retry.New(ctx, &retry.Options{
+		InitialBackoff: 50 * time.Millisecond,
+		MaxBackoff:     3 * time.Second,
+		Multiplier:     2,
+		MaxRetries:     3,
+	})
+	for r.Next() {
+		n, err := doWrite()
+		if err == nil {
+			return n, err
+		}
+		lastErr = err
+	}
+	return 0, lastErr
 }
 
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {

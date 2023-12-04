@@ -11,6 +11,7 @@ go_library(
         "//server/util/flag",
         "//server/util/ioutil",
         "//server/util/log",
+        "//server/util/retry",
         "//server/util/status",
         "//server/util/tracing",
         "@com_google_cloud_go_storage//:storage",
