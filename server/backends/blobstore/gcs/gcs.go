@@ -141,9 +141,9 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	lastErr := status.InternalError("GCS write not run")
 	r := retry.New(ctx, &retry.Options{
 		InitialBackoff: 50 * time.Millisecond,
-		MaxBackoff:     3 * time.Second,
+		MaxBackoff:     10 * time.Second,
 		Multiplier:     2,
-		MaxRetries:     3,
+		MaxRetries:     0,
 	})
 	for r.Next() {
 		n, err := doWrite()
