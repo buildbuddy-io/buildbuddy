@@ -17,6 +17,7 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/status",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_exp//maps",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",

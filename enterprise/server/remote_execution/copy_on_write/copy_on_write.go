@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -51,9 +52,17 @@ const (
 var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
 var eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 8, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
 
-// Total number of mmapped bytes. This is atomically updated and backs the
-// mapped bytes gauge metric.
-var mmappedBytes int64
+// Total number of mmapped bytes by file name. The map value is an int64 pointer
+// which should be atomically updated. This backs the mapped bytes gauge vector
+// metric.
+var mmappedBytes sync.Map
+
+func updateMmappedBytesMetric(delta int64, fileNameLabel string) {
+	gaugeValPtr, _ := mmappedBytes.LoadOrStore(fileNameLabel, new(int64))
+	metrics.COWSnapshotMemoryMappedBytes.
+		With(prometheus.Labels{metrics.FileName: fileNameLabel}).
+		Set(float64(atomic.AddInt64(gaugeValPtr.(*int64), delta)))
+}
 
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
@@ -916,7 +925,7 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty b
 	if source == snaputil.ChunkSourceUnmapped {
 		return nil, status.InvalidArgumentError("ChunkSourceUnmapped is not a valid source when initializing a chunk from a fd")
 	}
-	data, err := mmapDataFromFd(fd, size)
+	data, err := mmapDataFromFd(fd, size, filepath.Base(dataDir))
 	if err != nil {
 		return nil, err
 	}
@@ -969,24 +978,22 @@ func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, 
 }
 
 // mmapDataFromPath memory maps a file and returns the data
-func mmapDataFromPath(path string, sizeBytes int64) ([]byte, error) {
+func mmapDataFromPath(path string, sizeBytes int64, fileNameLabel string) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	return mmapDataFromFd(int(f.Fd()), int(sizeBytes))
+	return mmapDataFromFd(int(f.Fd()), int(sizeBytes), fileNameLabel)
 }
 
 // mmapDataFromFd memory maps a file descriptor and returns the data
-func mmapDataFromFd(fd, size int) ([]byte, error) {
+func mmapDataFromFd(fd, size int, fileNameLabel string) ([]byte, error) {
 	data, err := syscall.Mmap(fd, 0, size, syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return nil, fmt.Errorf("mmap: %s", err)
 	}
-	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
-		atomic.AddInt64(&mmappedBytes, int64(len(data))),
-	))
+	updateMmappedBytesMetric(+int64(size), fileNameLabel)
 	return data, nil
 }
 
@@ -1004,7 +1011,7 @@ func (m *Mmap) initMap() (err error) {
 			return err
 		}
 	}
-	data, err := mmapDataFromPath(path, m.sizeBytes)
+	data, err := mmapDataFromPath(path, m.sizeBytes, filepath.Base(m.dataDir))
 	if err != nil {
 		return status.WrapErrorf(err, "create mmap for path %s", path)
 	}
@@ -1107,9 +1114,7 @@ func (m *Mmap) unmap(isLRUEviction bool) error {
 	if m.lru != nil && !isLRUEviction {
 		m.lru.Remove(m)
 	}
-	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
-		atomic.AddInt64(&mmappedBytes, int64(-n)),
-	))
+	updateMmappedBytesMetric(-int64(n), filepath.Base(m.dataDir))
 	return nil
 }
 
