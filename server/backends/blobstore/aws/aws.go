@@ -175,11 +175,18 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 	return nil
 }
 
-func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
+func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) (rb []byte, retErr error) {
 	start := time.Now()
 	b, err := a.download(ctx, blobName)
-	util.RecordReadMetrics(awsS3Label, start, b, err)
-	return util.Decompress(b, err)
+	duration := time.Since(start)
+	defer func() {
+		util.RecordReadMetrics(awsS3Label, duration, int64(len(b)), retErr)
+	}()
+	if err != nil {
+		return b, err
+	}
+	rd := bytes.NewReader(b)
+	return util.Decompress(rd)
 }
 
 func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte, error) {

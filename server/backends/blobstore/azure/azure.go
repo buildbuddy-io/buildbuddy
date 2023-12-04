@@ -112,14 +112,12 @@ func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 	start := time.Now()
 	readCloser := response.Body(azblob.RetryReaderOptions{})
 	defer readCloser.Close()
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
-	b, err := io.ReadAll(readCloser)
-	spn.End()
-	if err != nil {
-		return nil, err
-	}
-	util.RecordReadMetrics(azureLabel, start, b, err)
-	return util.Decompress(b, err)
+	counter := &ioutil.Counter{}
+	reader := io.TeeReader(readCloser, counter)
+	duration := time.Since(start)
+	bytes, err := util.Decompress(reader)
+	util.RecordReadMetrics(azureLabel, duration, counter.Count(), err)
+	return bytes, err
 }
 
 func (z *AzureBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {

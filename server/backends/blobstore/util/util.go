@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/prometheus/client_golang/prometheus"
 
 	gstatus "google.golang.org/grpc/status"
@@ -27,35 +28,22 @@ func NewCompressReader(r io.Reader) (io.ReadCloser, error) {
 	return gzip.NewReader(r)
 }
 
-func Decompress(in []byte, err error) ([]byte, error) {
+func Decompress(r io.Reader) ([]byte, error) {
+	var wrappedReader io.Reader
+	zr, err := NewCompressReader(r)
 	if err != nil {
-		return in, err
-	}
-
-	var buf bytes.Buffer
-	// Write instead of using NewBuffer because if this is not a gzip file
-	// we want to return "in" directly later, and NewBuffer would take
-	// ownership of it.
-	if _, err := buf.Write(in); err != nil {
-		return nil, err
-	}
-	zr, err := NewCompressReader(&buf)
-	if err == gzip.ErrHeader {
+		if err != gzip.ErrHeader {
+			return nil, err
+		}
 		// Compatibility hack: if we got a header error it means this
 		// is probably an uncompressed record written before we were
 		// compressing. Just read it as-is.
-		return in, nil
-	}
-	if err != nil {
-		return nil, err
+		wrappedReader = r
+	} else {
+		wrappedReader = zr
 	}
 	defer zr.Close()
-	var buffer bytes.Buffer
-	_, err = io.Copy(&buffer, zr)
-	if err != nil {
-		return nil, err
-	}
-	return buffer.Bytes(), nil
+	return ioutil.ReadAll(wrappedReader)
 }
 
 func Compress(in []byte) ([]byte, error) {
@@ -133,9 +121,7 @@ func RecordWriteMetrics(typeLabel string, startTime time.Time, size int, err err
 	}).Observe(float64(size))
 }
 
-func RecordReadMetrics(typeLabel string, startTime time.Time, b []byte, err error) {
-	duration := time.Since(startTime)
-	size := len(b)
+func RecordReadMetrics(typeLabel string, duration time.Duration, size int64, err error) {
 	metrics.BlobstoreReadCount.With(prometheus.Labels{
 		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
 		metrics.BlobstoreTypeLabel: typeLabel,

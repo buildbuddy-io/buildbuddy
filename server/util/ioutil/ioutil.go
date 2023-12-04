@@ -1,6 +1,7 @@
 package ioutil
 
 import (
+	"bytes"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -123,4 +124,20 @@ func ReadTryFillBuffer(r io.Reader, buf []byte) (int, error) {
 		return n, nil
 	}
 	return n, err
+}
+
+// io.Copy performs better than io.ReadAll in terms of cpu and memory allocation
+// because io.ReadAll uses append to resize its buffer, and bytes.Buffer.grow
+// uses a more efficient algorithm.
+// See https://github.com/golang/go/issues/50774.
+// Some benchmark results can be found at
+// https://github.com/buildbuddy-io/buildbuddy/pull/5394 and
+// https://github.com/buildbuddy-io/buildbuddy/pull/5374
+func ReadAll(r io.Reader) ([]byte, error) {
+	var buffer bytes.Buffer
+	_, err := io.Copy(&buffer, r)
+	if err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
 }
