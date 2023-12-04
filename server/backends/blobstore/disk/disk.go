@@ -84,6 +84,17 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 	start := time.Now()
 	_, spn := tracing.StartSpan(ctx)
 	f, err := os.Open(fullPath)
+
+	var duration time.Duration
+	counter := &ioutil.Counter{}
+
+	defer func() {
+		if spn.IsRecording() {
+			spn.End()
+		}
+		util.RecordReadMetrics(diskLabel, duration, counter.Count(), err)
+	}()
+
 	if os.IsNotExist(err) {
 		return nil, status.NotFoundError(err.Error())
 	}
@@ -92,9 +103,8 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 	}
 	spn.End()
 	defer f.Close()
-	counter := &ioutil.Counter{}
 	reader := io.TeeReader(f, counter)
-	duration := time.Since(start)
+	duration = time.Since(start)
 	bytes, err := util.Decompress(reader)
 	util.RecordReadMetrics(diskLabel, duration, counter.Count(), err)
 	return bytes, err
