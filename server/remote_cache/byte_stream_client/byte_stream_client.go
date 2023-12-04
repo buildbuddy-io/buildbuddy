@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ziputil"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -27,7 +29,7 @@ import (
 )
 
 var (
-	restrictBytestreamDialing = flag.Bool("app.restrict_bytestream_dialing", false, "If true, only allow dialing localhost or the configured cache backend for bytestream requests.")
+	restrictBytestreamDialing = flag.Bool("app.restrict_bytestream_dialing", true, "If true, only allow dialing localhost or the configured cache backend for bytestream requests.")
 )
 
 func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *url.URL) (*zipb.Manifest, error) {
@@ -178,7 +180,7 @@ func stripUser(u *url.URL) *url.URL {
 }
 
 func getTargetForURL(u *url.URL, grpcs bool) string {
-	target := url.URL{Scheme: "grpc", User: u.User, Host: u.Host}
+	target := url.URL{Scheme: "grpc", Host: u.Host}
 	if grpcs {
 		target.Scheme = "grpcs"
 		if u.Port() == "" {
@@ -211,6 +213,10 @@ func isPermittedForDial(target string) bool {
 }
 
 func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) (err error) {
+	// Take the user set on the URL to imply an API key, if set.
+	if url.User != nil && url.User.Username() != "" {
+		metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, url.User.Username())
+	}
 	target := getTargetForURL(url, grpcs)
 	if *restrictBytestreamDialing && !isPermittedForDial(target) {
 		return status.InvalidArgumentErrorf("Tried to connect to an unpermitted domain: %s", target)

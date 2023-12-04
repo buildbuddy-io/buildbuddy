@@ -11,6 +11,7 @@ go_library(
         "//server/endpoint_urls/cache_api_url",
         "//server/environment",
         "//server/remote_cache/digest",
+        "//server/util/authutil",
         "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/grpc_client",
@@ -20,6 +21,7 @@ go_library(
         "//server/util/ziputil",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//proto",
     ],
 )
