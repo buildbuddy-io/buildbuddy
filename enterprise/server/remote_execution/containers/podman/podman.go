@@ -60,10 +60,11 @@ var (
 
 	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
-	podmanRuntime     = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
-	podmanEnableStats = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
-	transientStore    = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.", flag.Deprecated("--transient-store is now always applied if the podman version supports it"))
-	podmanDNS         = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
+	podmanRuntime       = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
+	podmanStorageDriver = flag.String("executor.podman.storage_driver", "overlay", "The podman storage driver to use.")
+	podmanEnableStats   = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
+	transientStore      = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.", flag.Deprecated("--transient-store is now always applied if the podman version supports it"))
+	podmanDNS           = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -155,7 +156,7 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 
 var getPodmanVersion = sync.OnceValues(func() (*semver.Version, error) {
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command("podman", "version", "--format={{.Client.Version}}")
+	cmd := exec.Command("podman", "version", fmt.Sprintf("--storage-driver=%s", *podmanStorageDriver), "--format={{.Client.Version}}")
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -746,6 +747,7 @@ func runPodman(ctx context.Context, subCommand string, stdio *commandutil.Stdio,
 		// See https://github.com/containers/podman/issues/19824
 		command = append(command, "--transient-store")
 	}
+	command = append(command, fmt.Sprintf("--storage-driver=%s", *podmanStorageDriver))
 	command = append(command, subCommand)
 	command = append(command, args...)
 	// Note: we don't collect stats on the podman process, and instead use
