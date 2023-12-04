@@ -126,7 +126,10 @@ func ReadTryFillBuffer(r io.Reader, buf []byte) (int, error) {
 	return n, err
 }
 
-// io.Copy performs better than io.ReadAll in terms of cpu and memory allocation.
+// io.Copy performs better than io.ReadAll in terms of cpu and memory allocation
+// because io.ReadAll uses append to resize its buffer, and bytes.Buffer.grow
+// uses a more efficient algorithm.
+// See https://github.com/golang/go/issues/50774.
 // Some benchmark results can be found at
 // https://github.com/buildbuddy-io/buildbuddy/pull/5394 and
 // https://github.com/buildbuddy-io/buildbuddy/pull/5374
