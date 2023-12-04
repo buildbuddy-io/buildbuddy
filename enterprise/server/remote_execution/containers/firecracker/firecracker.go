@@ -691,10 +691,29 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 					// ENXIO is expected when the offset is within a hole at the end of
 					// the file.
 					if err == syscall.ENXIO {
+						if baseSnapshotStore != nil {
+							if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
+								return err
+							}
+						}
 						break
 					}
 					return err
 				}
+
+				if baseSnapshotStore != nil {
+					ogChunkStartOffset := baseSnapshotStore.ChunkStartOffset(offset)
+					newChunkStartOffset := baseSnapshotStore.ChunkStartOffset(newOffset)
+
+					// If we've seeked to a new chunk, unmap the previous chunk to save memory
+					// usage on the executor
+					if newChunkStartOffset != ogChunkStartOffset {
+						if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
+							return err
+						}
+					}
+				}
+
 				offset = newOffset
 				if offset >= regionEnd {
 					break
@@ -712,7 +731,10 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 				if baseSnapshotStore != nil {
 					// If we've finished processing a chunk, unmap it to save memory
 					// usage on the executor
-					nextOffsetInNextChunk := (offset%storeChunkSizeBytes)+int64(n) >= storeChunkSizeBytes
+					currentChunkStartOffset := baseSnapshotStore.ChunkStartOffset(offset)
+					newChunkStartOffset := baseSnapshotStore.ChunkStartOffset(offset + int64(n))
+
+					nextOffsetInNextChunk := newChunkStartOffset != currentChunkStartOffset
 					if nextOffsetInNextChunk || endOfDiffSnapshot {
 						if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
 							return err
