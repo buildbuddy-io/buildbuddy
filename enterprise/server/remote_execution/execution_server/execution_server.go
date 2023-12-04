@@ -215,7 +215,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	execution.Perms = execution.Perms | permissions.Perms
 
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		return tx.GORM("execution_server_create_execution").Create(execution).Error
+		return tx.NewQuery(ctx, "execution_server_create_execution").Create(execution)
 	})
 }
 
@@ -237,7 +237,7 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 		Type:         int8(linkType),
 	}
 	err := s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		return tx.GORM("execution_server_create_invocation_link").Create(link).Error
+		return tx.NewQuery(ctx, "execution_server_create_invocation_link").Create(link)
 	})
 	// This probably means there were duplicate actions in a single invocation
 	// that were merged. Not an error.

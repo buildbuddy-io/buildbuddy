@@ -960,10 +960,10 @@ func (c *Crypter) enableEncryption(ctx context.Context, kmsConfig *enpb.KMSConfi
 		LastEncryptedAtUsec:         now.UnixMicro(),
 	}
 	err = c.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		if err := tx.GORM("crypter_create_key").Create(key).Error; err != nil {
+		if err := tx.NewQuery(ctx, "crypter_create_key").Create(key); err != nil {
 			return err
 		}
-		if err := tx.GORM("crypter_create_key_version").Create(keyVersion).Error; err != nil {
+		if err := tx.NewQuery(ctx, "crypter_create_key_version").Create(keyVersion); err != nil {
 			return err
 		}
 		if err := tx.NewQuery(ctx, "crypter_group_enable_encryption").Raw(

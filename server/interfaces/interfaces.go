@@ -308,6 +308,7 @@ type DBRawQuery interface {
 }
 
 type DBQuery interface {
+	Create(val interface{}) error
 	Raw(sql string, values ...interface{}) DBRawQuery
 }
 

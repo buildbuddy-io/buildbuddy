@@ -333,7 +333,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 			WebhookID:            webhookID,
 			GitProviderWebhookID: providerWebhookID,
 		}
-		return tx.GORM("workflow_service_insert_workflow").Create(wf).Error
+		return tx.NewQuery(ctx, "workflow_service_insert_workflow").Create(wf)
 	})
 	if err != nil {
 		return nil, err

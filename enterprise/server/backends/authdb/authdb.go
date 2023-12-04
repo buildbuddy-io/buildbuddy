@@ -237,7 +237,7 @@ func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string
 		var existing tables.Session
 		if err := tx.GORM("authdb_get_existing_session").Where("session_id = ?", sessionID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
-				return tx.GORM("authdb_create_session").Create(session).Error
+				return tx.NewQuery(ctx, "authdb_create_session").Create(session)
 			}
 			return err
 		}

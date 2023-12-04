@@ -442,7 +442,7 @@ func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketReq
 				if req.GetBucketName() == defaultBucketName {
 					return nil
 				}
-				return tx.GORM("quota_manager_create_quota_group").Create(quotaGroup).Error
+				return tx.NewQuery(ctx, "quota_manager_create_quota_group").Create(quotaGroup)
 			}
 			return err
 		}

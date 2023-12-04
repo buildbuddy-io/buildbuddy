@@ -391,7 +391,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 		if err != nil {
 			return err
 		}
-		return tx.GORM("usage_insert_record").Create(tu).Error
+		return tx.NewQuery(ctx, "usage_insert_record").Create(tu)
 	})
 }
 

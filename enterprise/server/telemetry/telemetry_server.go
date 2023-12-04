@@ -94,7 +94,7 @@ func (t *TelemetryServer) insertLogIfNotExists(ctx context.Context, telemetryLog
 			return nil
 		}
 		if db.IsRecordNotFound(err) {
-			return tx.GORM("telemetry_server_create_log").Create(telemetryLog).Error
+			return tx.NewQuery(ctx, "telemetry_server_create_log").Create(telemetryLog)
 		}
 		return err
 	})

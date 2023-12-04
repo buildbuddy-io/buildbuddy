@@ -287,7 +287,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx interfaces.DB, userID strin
 	}
 	newGroup.GroupID = groupID
 
-	if err := tx.GORM("userdb_create_group").Create(&newGroup).Error; err != nil {
+	if err := tx.NewQuery(ctx, "userdb_create_group").Create(&newGroup); err != nil {
 		return "", err
 	}
 	// Initialize the group with a group-owned key.
@@ -476,12 +476,12 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 			}
 			return status.AlreadyExistsError("You're already in this organization.")
 		}
-		return tx.GORM("userdb_create_join_group_request").Create(&tables.UserGroup{
+		return tx.NewQuery(ctx, "userdb_create_join_group_request").Create(&tables.UserGroup{
 			UserUserID:       userID,
 			GroupGroupID:     groupID,
 			Role:             uint32(role.Default),
 			MembershipStatus: int32(membershipStatus),
-		}).Error
+		})
 	})
 	if err != nil {
 		return 0, err
@@ -634,7 +634,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 		if err := tx.GORM("userdb_check_existing_group").Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
 				gc := d.getDefaultGroupConfig()
-				if err := tx.GORM("userdb_create_default_group").Create(gc).Error; err != nil {
+				if err := tx.NewQuery(ctx, "userdb_create_default_group").Create(gc); err != nil {
 					return err
 				}
 				if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, DefaultGroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
@@ -701,7 +701,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 		if err != nil {
 			return err
 		}
-		if err := tx.GORM("userdb_create_user_group").Create(&sug).Error; err != nil {
+		if err := tx.NewQuery(ctx, "userdb_create_user_group").Create(&sug); err != nil {
 			return err
 		}
 		// For now, user-owned groups are assigned an org-level API key, and
@@ -720,7 +720,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 		groupIDs = append(groupIDs, DefaultGroupID)
 	}
 
-	err := tx.GORM("userdb_create_user").Create(u).Error
+	err := tx.NewQuery(ctx, "userdb_create_user").Create(u)
 	if err != nil {
 		return err
 	}
