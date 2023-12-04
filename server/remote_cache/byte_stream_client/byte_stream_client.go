@@ -215,7 +215,7 @@ func isPermittedForDial(target string) bool {
 func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) (err error) {
 	// Take the user set on the URL to imply an API key, if set.
 	if url.User != nil && url.User.Username() != "" {
-		metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, url.User.Username())
+		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, url.User.Username())
 	}
 	target := getTargetForURL(url, grpcs)
 	if *restrictBytestreamDialing && !isPermittedForDial(target) {
