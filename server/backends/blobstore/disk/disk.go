@@ -76,7 +76,7 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 	return n, err
 }
 
-func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
+func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) (rb []byte, retError error) {
 	fullPath, err := d.blobPath(blobName)
 	if err != nil {
 		return nil, err
@@ -92,7 +92,7 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 		if spn.IsRecording() {
 			spn.End()
 		}
-		util.RecordReadMetrics(diskLabel, duration, counter.Count(), err)
+		util.RecordReadMetrics(diskLabel, duration, counter.Count(), retError)
 	}()
 
 	if os.IsNotExist(err) {
@@ -105,9 +105,7 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 	defer f.Close()
 	reader := io.TeeReader(f, counter)
 	duration = time.Since(start)
-	bytes, err := util.Decompress(reader)
-	util.RecordReadMetrics(diskLabel, duration, counter.Count(), err)
-	return bytes, err
+	return util.Decompress(reader)
 }
 
 func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
