@@ -628,6 +628,14 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 // MergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks
 // into the baseSnapshotPath file or the baseSnapshotStore if non-nil.
 func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapshotStore *copy_on_write.COWStore, diffSnapshotPath string, concurrency int, bufSize int) error {
+	if strings.Contains(baseSnapshotPath, "mem") {
+		fmt.Printf("At top of MergeDiffSnapshot, num of mapped chunks is %d", copy_on_write.MmappedChunks)
+	}
+	defer func() {
+		if strings.Contains(baseSnapshotPath, "mem") {
+			fmt.Printf("At end of MergeDiffSnapshot, num of mapped chunks is %d", copy_on_write.MmappedChunks)
+		}
+	}()
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 

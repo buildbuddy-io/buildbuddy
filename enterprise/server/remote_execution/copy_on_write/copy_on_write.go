@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -62,7 +63,17 @@ func updateMmappedBytesMetric(delta int64, fileNameLabel string) {
 	metrics.COWSnapshotMemoryMappedBytes.
 		With(prometheus.Labels{metrics.FileName: fileNameLabel}).
 		Set(float64(atomic.AddInt64(gaugeValPtr.(*int64), delta)))
+
+	if strings.Contains(fileNameLabel, "mem") {
+		chunkDelta := int64(1)
+		if delta < 1 {
+			chunkDelta = -1
+		}
+		atomic.AddInt64(&MmappedChunks, chunkDelta)
+	}
 }
+
+var MmappedChunks int64
 
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
