@@ -1068,6 +1068,11 @@ func (q *DBQuery) Create(val interface{}) error {
 	return db.Create(val).Error
 }
 
+func (q DBQuery) Update(val interface{}) error {
+	db := q.db.Set(gormQueryNameKey, q.name)
+	return db.Updates(val).Error
+}
+
 func (q *DBQuery) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
 	db := q.db.Set(gormQueryNameKey, q.name)
 	return &PreparedQuery{db: db, ctx: q.ctx, sql: sql, values: values}
