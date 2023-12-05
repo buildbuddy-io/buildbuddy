@@ -300,16 +300,25 @@ type DBResult struct {
 }
 
 type DBRawQuery interface {
+	// Take executes the query and scans the resulting row into the target
+	// struct. An error is returned if no records match. To check for this
+	// error use db.IsRecordNotFound.
 	Take(dest interface{}) error
-	Scan(dest interface{}) error
+	// Exec executes the raw modification query and returns the result.
 	Exec() DBResult
-	// XXX check if we need this
+	// IterateRaw executes the select query and iterates over the raw result
+	// set, executing the passed function for every row. If iterating over
+	// GORM types, use the db.ScanRows convenience function.
 	IterateRaw(fn func(ctx context.Context, row *sql.Rows) error) error
 }
 
 type DBQuery interface {
+	// Create inserts a new row using the passed GORM-annotated struct.
 	Create(val interface{}) error
+	// Update updates an existing row using the primary key of the given
+	// GORM-annotated struct.
 	Update(val interface{}) error
+	// Raw prepares a raw query.
 	Raw(sql string, values ...interface{}) DBRawQuery
 }
 
@@ -328,6 +337,37 @@ type DB interface {
 type TxRunner func(tx *gorm.DB) error
 type NewTxRunner func(tx DB) error
 
+// DBHandle is the API for interacting with the database.
+//
+// Every interaction should start with a call to NewQuery in order to provide
+// a name that is used in monitoring. This name should be fixed as it will
+// be exported as a metric label value.
+//
+// Creating a new record:
+//
+//	myFoo := &tables.Foo{}
+//	err := dbh.NewQuery(ctx, "foo_package_new_foo").Create(myFoo);
+//
+// Updating a record by primary key:
+//
+//	myFoo := &tables.Foo{ID: "foo", SomeCol: "bar"}
+//	err := dbh.NewQuery(ctx, "foo_package_update_foo").Update(myFoo);
+//
+// Getting a single record:
+//
+//	myFoo := &tables.Foo{}
+//	rq := dbh.NewQuery(ctx, "foo_package_get_foo").Raw(`
+//	   SELECT * FROM "Foos" WHERE id = ?`, id)
+//	err := pq.Take(myFoo)
+//
+// Iterating over multiple records:
+//
+//	 rq := dbh.NewQuery(ctx, "foo_package_get_foos").Raw(`
+//		   SELECT * FROM "Foos" WHERE foo = 'bar'`)
+//	 err := db.ScanRows(rq, func(ctx context.Context, foo *tables.Foo) error {
+//	   // process foo
+//	   return nil
+//	})
 type DBHandle interface {
 	DB
 

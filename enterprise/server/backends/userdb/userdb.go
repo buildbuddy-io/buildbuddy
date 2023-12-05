@@ -737,12 +737,12 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 		// Promote from default role to admin if the user is the only one in the
 		// group after joining.
 		preExistingUsers := &struct{ Count int64 }{}
-		err = tx.NewQuery(ctx, "userdb_new_user_check_group_size").Raw(`
+		err = tx.GORM("userdb_new_user_check_group_size").Raw(`
 			SELECT COUNT(*) AS count
 			FROM "UserGroups"
 			WHERE group_group_id = ? AND user_user_id != ?
 			`, groupID, u.UserID,
-		).Scan(preExistingUsers)
+		).Scan(preExistingUsers).Error
 		if err != nil {
 			return err
 		}

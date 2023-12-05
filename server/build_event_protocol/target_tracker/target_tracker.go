@@ -476,10 +476,13 @@ func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL str
 	queryStr, args := q.Build()
 	rq := tx.NewQuery(ctx, "").Raw(queryStr, args...)
 	rsp := make([]*tables.Target, 0)
-	db.ScanRows(ctx, rq, func(ctx context.Context, t *tables.Target) error {
+	err := db.ScanRows(rq, func(ctx context.Context, t *tables.Target) error {
 		rsp = append(rsp, t)
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
 	return rsp, nil
 }
 

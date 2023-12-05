@@ -107,7 +107,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 	rq := s.env.GetDBHandle().NewQuery(ctx, "api_server_get_invocations").Raw(queryStr, args...)
 
 	invocations := []*apipb.Invocation{}
-	err = db.ScanRows(ctx, rq, func(ctx context.Context, ti *tables.Invocation) error {
+	err = db.ScanRows(rq, func(ctx context.Context, ti *tables.Invocation) error {
 		apiInvocation := &apipb.Invocation{
 			Id: &apipb.Invocation_Id{
 				InvocationId: ti.InvocationID,

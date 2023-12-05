@@ -1121,10 +1121,19 @@ func TableSchema(db *DB, model any) (*schema.Schema, error) {
 	return stmt.Schema, nil
 }
 
-func ScanRows[T any](ctx context.Context, rows interfaces.DBRawQuery, fn func(ctx context.Context, val *T) error) error {
-	return rows.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
+// ScanRows executes the given query and iterates over the result,
+// automatically scanning each row into a struct of the specified type.
+//
+// Example:
+//
+//	err := db.ScanRows(rq, func(ctx context.Context, foo *tables.Foo) error {
+//	  // handle foo
+//	  return nil
+//	})
+func ScanRows[T any](rq interfaces.DBRawQuery, fn func(ctx context.Context, val *T) error) error {
+	return rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		var val T
-		if err := rows.(*PreparedQuery).db.ScanRows(row, &val); err != nil {
+		if err := rq.(*PreparedQuery).db.ScanRows(row, &val); err != nil {
 			return err
 		}
 		if err := fn(ctx, &val); err != nil {
