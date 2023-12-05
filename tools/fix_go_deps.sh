@@ -4,7 +4,7 @@ set -euo pipefail
 : "${GO_PATH:=}"
 : "${GAZELLE_PATH:=}"
 
-GAZELLE_COMMAND=(bazelisk run //:gazelle --)
+GAZELLE_COMMAND=(bazelisk run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:gazelle --)
 if [[ "$GAZELLE_PATH" ]]; then
   GAZELLE_COMMAND=("$GAZELLE_PATH")
 fi
