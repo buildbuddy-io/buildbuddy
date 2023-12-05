@@ -137,7 +137,7 @@ func New(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gos
 	s.db = db
 	s.leaser = pebble.NewDBLeaser(db)
 
-	usages, err := usagetracker.New(s, gossipManager, partitions)
+	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
 	if err != nil {
 		return nil, err
 	}
@@ -381,20 +381,6 @@ func (s *Store) GetRange(shardID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(shardID)
 }
 
-func (s *Store) updateUsages(r *replica.Replica) error {
-	usage, err := r.Usage()
-	if err != nil {
-		return err
-	}
-	rangeID := usage.GetRangeId()
-	if !s.HaveLease(rangeID) {
-		s.usages.RemoveRange(rangeID)
-		return nil
-	}
-	s.usages.LocalUpdate(rangeID, usage)
-	return nil
-}
-
 func (s *Store) sendRangeEvent(eventType events.EventType, rd *rfpb.RangeDescriptor) {
 	ev := events.RangeEvent{
 		Type:            eventType,
@@ -453,7 +439,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.leaseKeeper.AddRange(rd)
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.updateTags()
-	go s.updateUsages(r)
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -840,12 +825,17 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	s.rangeMu.Unlock()
 
 	su.LeaseCount = s.leaseKeeper.LeaseCount()
-
-	for _, ru := range s.usages.ReplicaUsages() {
+	s.replicas.Range(func(key, value any) bool {
+		r, _ := value.(*replica.Replica)
+		ru, err := r.Usage()
+		if err != nil {
+			return true // keep going
+		}
 		su.ReadQps += ru.GetReadQps()
 		su.RaftProposeQps += ru.GetRaftProposeQps()
 		su.TotalBytesUsed += ru.GetEstimatedDiskBytesUsed()
-	}
+		return true
+	})
 
 	db, err := s.leaser.DB()
 	if err != nil {
@@ -858,32 +848,6 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	}
 	su.TotalBytesUsed = int64(diskEstimateBytes)
 	return su
-}
-
-// TODO(tylerw): remove this; let usagetracker listen on events channel.
-func (s *Store) RefreshReplicaUsages() []*rfpb.ReplicaUsage {
-	s.rangeMu.RLock()
-	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
-	for _, rd := range s.openRanges {
-		openRanges = append(openRanges, rd)
-	}
-	s.rangeMu.RUnlock()
-
-	var usages []*rfpb.ReplicaUsage
-	for _, rd := range openRanges {
-		r, err := s.GetReplica(rd.GetRangeId())
-		if err != nil {
-			s.log.Warningf("could not get replica %d to refresh usage: %s", rd.GetRangeId(), err)
-			continue
-		}
-		u, err := r.Usage()
-		if err != nil {
-			s.log.Warningf("could not refresh usage for replica %d: %s", rd.GetRangeId(), err)
-			continue
-		}
-		usages = append(usages, u)
-	}
-	return usages
 }
 
 func (s *Store) updateTags() error {

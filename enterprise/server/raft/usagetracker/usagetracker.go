@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -24,6 +25,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/hashicorp/serf/serf"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -44,7 +46,7 @@ const (
 	// considered to be full and eviction will kick in.
 	evictionCutoffThreshold = .90
 
-	// How often stores wil check whether to gossip usage data if it is
+	// How often stores will check whether to gossip usage data if it is
 	// sufficiently different from the last broadcast.
 	storePartitionUsageCheckInterval = 15 * time.Second
 
@@ -58,8 +60,6 @@ const (
 )
 
 type IStore interface {
-	NodeDescriptor() *rfpb.NodeDescriptor
-	RefreshReplicaUsages() []*rfpb.ReplicaUsage
 	Sender() *sender.Sender
 	Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*replica.LRUSample], error)
 }
@@ -67,13 +67,17 @@ type IStore interface {
 type Tracker struct {
 	store         IStore
 	gossipManager *gossip.GossipManager
+	node          *rfpb.NodeDescriptor
 	partitions    []disk.Partition
 
 	quitChan      chan struct{}
 	mu            sync.Mutex
-	byRange       map[uint64]*rfpb.ReplicaUsage
 	byPartition   map[string]*partitionUsage
 	lastBroadcast map[string]*rfpb.PartitionMetadata
+
+	eg       *errgroup.Group
+	egCancel context.CancelFunc
+	events   <-chan events.Event
 }
 
 type nodePartitionUsage struct {
@@ -219,13 +223,14 @@ func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sampl
 	return samples, nil
 }
 
-func New(store IStore, gossipManager *gossip.GossipManager, partitions []disk.Partition) (*Tracker, error) {
+func New(store IStore, gossipManager *gossip.GossipManager, node *rfpb.NodeDescriptor, partitions []disk.Partition, events <-chan events.Event) (*Tracker, error) {
 	ut := &Tracker{
 		store:         store,
 		gossipManager: gossipManager,
+		node:          node,
 		partitions:    partitions,
+		events:        events,
 		quitChan:      make(chan struct{}),
-		byRange:       make(map[uint64]*rfpb.ReplicaUsage),
 		byPartition:   make(map[string]*partitionUsage),
 		lastBroadcast: make(map[string]*rfpb.PartitionMetadata),
 	}
@@ -257,13 +262,29 @@ func New(store IStore, gossipManager *gossip.GossipManager, partitions []disk.Pa
 		u.lru = l
 	}
 
-	go ut.broadcastLoop()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	ut.egCancel = cancelFunc
+
+	eg, gctx := errgroup.WithContext(ctx)
+	ut.eg = eg
+
+	eg.Go(func() error {
+		ut.broadcastLoop(gctx)
+		return nil
+	})
+
+	eg.Go(func() error {
+		ut.eventListener(gctx)
+		return nil
+	})
+
 	gossipManager.AddListener(ut)
 	return ut, nil
 }
 
 func (ut *Tracker) Stop() {
-	close(ut.quitChan)
+	ut.egCancel()
+	ut.eg.Wait()
 	for _, p := range ut.byPartition {
 		p.lru.Stop()
 	}
@@ -371,8 +392,6 @@ func (ut *Tracker) LocalUpdate(rangeID uint64, usage *rfpb.ReplicaUsage) {
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
 
-	ut.byRange[rangeID] = usage
-
 	for _, u := range usage.GetPartitions() {
 		ud, ok := ut.byPartition[u.GetPartitionId()]
 		if !ok {
@@ -398,32 +417,14 @@ func (ut *Tracker) RemoveRange(rangeID uint64) {
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
 
-	delete(ut.byRange, rangeID)
-
 	ut.removeRangePartitions(rangeID)
 }
 
-func (ut *Tracker) ReplicaUsages() []*rfpb.ReplicaUsage {
-	ut.mu.Lock()
-	defer ut.mu.Unlock()
-
-	var us []*rfpb.ReplicaUsage
-	for _, u := range ut.byRange {
-		us = append(us, u)
-	}
-	return us
-}
-
 func (ut *Tracker) computeUsage() *rfpb.NodePartitionUsage {
-	usages := ut.store.RefreshReplicaUsages()
-	for _, u := range usages {
-		ut.LocalUpdate(u.GetRangeId(), u)
-	}
-
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
 	nu := &rfpb.NodePartitionUsage{
-		Node: ut.store.NodeDescriptor(),
+		Node: ut.node,
 	}
 
 	for _, p := range ut.partitions {
@@ -443,12 +444,46 @@ func (ut *Tracker) computeUsage() *rfpb.NodePartitionUsage {
 	return nu
 }
 
-func (ut *Tracker) broadcastLoop() {
+func (ut *Tracker) eventListener(ctx context.Context) {
+	leased := make(map[uint64]bool)
+	byRange := make(map[uint64]*rfpb.ReplicaUsage)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e := <-ut.events:
+			switch e.EventType() {
+			case events.EventRangeUsageUpdated:
+				rangeUsageEvent := e.(events.RangeUsageEvent)
+				byRange[rangeUsageEvent.RangeDescriptor.GetRangeId()] = rangeUsageEvent.ReplicaUsage
+			case events.EventRangeLeaseAcquired:
+				rangeEvent := e.(events.RangeEvent)
+				leased[rangeEvent.RangeDescriptor.GetRangeId()] = true
+			case events.EventRangeLeaseDropped:
+				rangeEvent := e.(events.RangeEvent)
+				leased[rangeEvent.RangeDescriptor.GetRangeId()] = false
+			default:
+				continue
+			}
+		}
+
+		for rangeID, usage := range byRange {
+			if leased[rangeID] {
+				ut.LocalUpdate(rangeID, usage)
+			} else {
+				ut.RemoveRange(rangeID)
+			}
+		}
+	}
+}
+
+func (ut *Tracker) broadcastLoop(ctx context.Context) {
 	idleTimer := time.NewTimer(storePartitionUsageMaxAge)
 
 	for {
 		select {
-		case <-ut.quitChan:
+		case <-ctx.Done():
 			return
 		case <-time.After(storePartitionUsageCheckInterval):
 			if !idleTimer.Stop() {
