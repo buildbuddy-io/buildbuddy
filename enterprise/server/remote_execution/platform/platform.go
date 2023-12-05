@@ -75,7 +75,6 @@ const (
 	persistentWorkerProtocolPropertyName = "persistentWorkerProtocol"
 	WorkflowIDPropertyName               = "workflow-id"
 	workloadIsolationPropertyName        = "workload-isolation-type"
-	WorkloadTypePropertyName             = "workload-type"
 	initDockerdPropertyName              = "init-dockerd"
 	enableDockerdTCPPropertyName         = "enable-dockerd-tcp"
 	enableVFSPropertyName                = "enable-vfs"
@@ -600,4 +599,13 @@ func DockerSocket() string {
 
 func DefaultImage() string {
 	return *defaultImage
+}
+
+// The CI runner is used to run bazel remotely. It is used for workflows and remote
+// bazel
+func IsCIRunner(cmdArgs []string) bool {
+	if len(cmdArgs) > 0 && cmdArgs[0] == "./buildbuddy_ci_runner" {
+		return true
+	}
+	return false
 }

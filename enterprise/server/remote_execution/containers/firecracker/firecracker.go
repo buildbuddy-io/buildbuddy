@@ -571,9 +571,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	isWorkflow := platform.FindValue(task.GetCommand().GetPlatform(), platform.WorkflowIDPropertyName) != ""
-	isRemoteBazel := platform.FindValue(task.GetCommand().GetPlatform(), platform.WorkloadTypePropertyName) == "remote-bazel"
-	c.supportsRemoteSnapshots = (isWorkflow || isRemoteBazel) && *snaputil.EnableRemoteSnapshotSharing
+	c.supportsRemoteSnapshots = platform.IsCIRunner(task.GetCommand().GetArguments()) && *snaputil.EnableRemoteSnapshotSharing
 
 	if opts.SavedState == nil {
 		c.vmConfig.DebugMode = *debugTerminal

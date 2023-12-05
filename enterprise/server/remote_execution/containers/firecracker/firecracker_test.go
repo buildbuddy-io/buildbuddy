@@ -426,8 +426,8 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 				// Note: platform must match in order to share snapshots
 				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 					{Name: "recycle-runner", Value: "true"},
-					{Name: platform.WorkflowIDPropertyName, Value: "workflow"},
 				}},
+				Arguments: []string{"./buildbuddy_ci_runner"},
 			},
 		}
 
@@ -697,8 +697,8 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 			// Note: platform must match in order to share snapshots
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
-				{Name: platform.WorkflowIDPropertyName, Value: "workflow"},
 			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
 		},
 	}
 	baseVM, err := firecracker.NewContainer(ctx, env, task, opts)

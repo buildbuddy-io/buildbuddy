@@ -39,6 +39,7 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsMultipleRunnersThatExecutedWorkfl
 				{Name: "workflow-id", Value: "WF1"},
 			},
 		},
+		Arguments: []string{"./buildbuddy_ci_runner"},
 	}
 	instanceName := "test-instance"
 
@@ -376,6 +377,7 @@ func TestTaskRouter_WorkflowGitRefRouting(t *testing.T) {
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "GIT_BRANCH", Value: "main"},
 		},
+		Arguments: []string{"./buildbuddy_ci_runner"},
 	}
 	router.MarkComplete(ctx, mainBranchCmd, instanceName, executorID1)
 
@@ -394,6 +396,7 @@ func TestTaskRouter_WorkflowGitRefRouting(t *testing.T) {
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "GIT_BRANCH", Value: "my-cool-pr"},
 		},
+		Arguments: []string{"./buildbuddy_ci_runner"},
 	}
 	requireNotAlwaysRanked(0, executorID1, t, router, ctx, prBranchCmd, instanceName)
 }
