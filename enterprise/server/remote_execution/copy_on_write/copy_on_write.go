@@ -171,7 +171,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 // Ex. Let's say there are 100B chunks. For input offset 205, chunkStartOffset
 // would be 200, and this would return 5
 func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
-	chunkStartOffset := c.chunkStartOffset(int64(offset))
+	chunkStartOffset := c.ChunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
 	return chunkRelativeAddress
 }
@@ -180,7 +180,7 @@ func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
 // the input offset, and the size of the chunk. Note that the returned chunk
 // size may not be equal to ChunkSizeBytes() if it's the last chunk in the file.
 func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uintptr, int64, error) {
-	chunkStartOffset := c.chunkStartOffset(int64(offset))
+	chunkStartOffset := c.ChunkStartOffset(int64(offset))
 	chunkStartAddress, err := c.GetPageAddress(uintptr(chunkStartOffset), write)
 	if err != nil {
 		return 0, 0, err
@@ -200,7 +200,7 @@ func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uint
 // performed so that the returned chunk can be written to without modifying
 // readonly chunks.
 func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
-	chunkStartOffset := c.chunkStartOffset(int64(offset))
+	chunkStartOffset := c.ChunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
 
 	c.eagerFetchNextChunks(chunkStartOffset)
@@ -244,9 +244,9 @@ func (c *COWStore) SortedChunks() []*Mmap {
 	return chunks
 }
 
-// chunkStartOffset returns the chunk start offset for an offset within the
+// ChunkStartOffset returns the chunk start offset for an offset within the
 // store.
-func (c *COWStore) chunkStartOffset(off int64) int64 {
+func (c *COWStore) ChunkStartOffset(off int64) int64 {
 	return (off / c.chunkSizeBytes) * c.chunkSizeBytes
 }
 
@@ -255,7 +255,7 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 		return 0, err
 	}
 
-	chunkOffset := c.chunkStartOffset(off)
+	chunkOffset := c.ChunkStartOffset(off)
 	n := 0
 
 	c.eagerFetchNextChunks(chunkOffset)
@@ -341,7 +341,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		return 0, err
 	}
 
-	chunkOffset := c.chunkStartOffset(off)
+	chunkOffset := c.ChunkStartOffset(off)
 	n := 0
 
 	c.eagerFetchNextChunks(chunkOffset)
@@ -430,7 +430,7 @@ func (s *COWStore) Dirty(chunkOffset int64) bool {
 
 // UnmapChunk unmaps the chunk containing the input offset
 func (s *COWStore) UnmapChunk(offset int64) error {
-	chunkStartOffset := s.chunkStartOffset(offset)
+	chunkStartOffset := s.ChunkStartOffset(offset)
 	s.storeLock.RLock()
 	c := s.chunks[chunkStartOffset]
 	s.storeLock.RUnlock()
