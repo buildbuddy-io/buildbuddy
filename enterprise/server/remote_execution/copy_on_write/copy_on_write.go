@@ -434,6 +434,10 @@ func (s *COWStore) UnmapChunk(offset int64) error {
 	s.storeLock.RLock()
 	c := s.chunks[chunkStartOffset]
 	s.storeLock.RUnlock()
+	if c == nil {
+		// This offset contains a hole - do nothing.
+		return nil
+	}
 	return c.Unmap()
 }
 
