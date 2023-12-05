@@ -72,7 +72,7 @@ func benchmarkMarshal(b *testing.B, marshalFn marshalFunc, data []protoMessage) 
 
 	for i := 0; i < b.N; i++ {
 		pb := data[rand.Intn(len(data))]
-		//b.SetBytes(int64(pb.SizeVT()))
+		b.SetBytes(int64(pb.SizeVT()))
 		//fmt.Println("started marshal")
 		_, err := marshalFn(pb)
 		if err != nil {
@@ -88,7 +88,7 @@ func benchmarkUnmarshal(b *testing.B, unmarshalFn unmarshalFunc, providerFn prov
 
 	for i := 0; i < b.N; i++ {
 		buf := data[rand.Intn(len(data))]
-		//b.SetBytes(int64(len(buf)))
+		b.SetBytes(int64(len(buf)))
 		v := providerFn()
 		//fmt.Println("started unmarshal")
 		err := unmarshalFn(buf, v)
@@ -137,6 +137,26 @@ func BenchmarkUnmarshal(b *testing.B) {
 		for name, fn := range unmarshalFns {
 			b.Run(fmt.Sprintf("name=%s/pbName=%s", name, pbName), func(b *testing.B) {
 				benchmarkUnmarshal(b, fn, providerFn, data)
+			})
+
+		}
+
+		if pbName == "TreeCache" {
+			b.Run(fmt.Sprintf("name=protoutilWithPool/pbName=%s", pbName), func(b *testing.B) {
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for i := 0; i < b.N; i++ {
+					buf := data[rand.Intn(len(data))]
+					b.SetBytes(int64(len(buf)))
+					v := capb.TreeCacheFromVTPool()
+					//fmt.Println("started unmarshal")
+					err := protoutil.Unmarshal(buf, v)
+					if err != nil {
+						b.Fatal(err)
+					}
+					v.ReturnToVTPool()
+				}
 			})
 		}
 	}
