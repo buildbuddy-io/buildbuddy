@@ -497,6 +497,11 @@ func (e *Encryptor) Write(p []byte) (n int, err error) {
 	}
 
 	readIdx := 0
+	if len(e.buf) < e.bufCap + encryptedChunkOverhead && e.bufIdx + len(p) > len(e.buf) {
+		tmp := e.buf
+		e.buf = make([]byte, e.bufCap + encryptedChunkOverhead)
+		copy(e.buf, tmp)
+	}
 	for readIdx < len(p) {
 		readLen := e.bufCap - e.bufIdx
 		if readLen > len(p)-readIdx {
@@ -620,13 +625,6 @@ func (c *Crypter) getCipher(compositeKey []byte) (cipher.AEAD, error) {
 	return e, nil
 }
 
-func Min(x, y int64) int64 {
-	if x > y {
-		return y
-	}
-	return x
-}
-
 func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*Encryptor, error) {
 	loadedKey, err := c.cache.encryptionKey(ctx)
 	if err != nil {
@@ -636,7 +634,7 @@ func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Di
 	if err != nil {
 		return nil, err
 	}
-	initialBufSize := Min(int64(chunkSize), digest.GetSizeBytes())
+	initialBufSize := min(int64(chunkSize), digest.GetSizeBytes())
 	if initialBufSize == 0 {
 		initialBufSize = int64(chunkSize)
 	}
