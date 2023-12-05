@@ -620,6 +620,13 @@ func (c *Crypter) getCipher(compositeKey []byte) (cipher.AEAD, error) {
 	return e, nil
 }
 
+func Min(x, y int64) int64 {
+	if x > y {
+		return y
+	}
+	return x
+}
+
 func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*Encryptor, error) {
 	loadedKey, err := c.cache.encryptionKey(ctx)
 	if err != nil {
@@ -629,6 +636,11 @@ func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Di
 	if err != nil {
 		return nil, err
 	}
+	initialBufSize := Min(int64(chunkSize), digest.GetSizeBytes())
+	if initialBufSize == 0 {
+		initialBufSize = int64(chunkSize)
+	}
+	initialBufSize += encryptedChunkOverhead
 	return &Encryptor{
 		md:       loadedKey.metadata,
 		ciph:     ciph,
@@ -638,7 +650,7 @@ func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Di
 		nonceBuf: make([]byte, nonceSize),
 		// We allocate enough space to store an encrypted chunk so that we can
 		// do the encryption in place.
-		buf:    make([]byte, chunkSize+encryptedChunkOverhead),
+		buf:    make([]byte, initialBufSize),
 		bufCap: chunkSize,
 	}, nil
 }
