@@ -121,6 +121,7 @@ proto_library(
     ],
     deps = [
         ":resource_proto",
+		"@com_github_planetscale_vtprotobuf//vtproto:vtproto_proto",
     ],
 )
 
@@ -1369,6 +1370,7 @@ go_proto_library(
     proto = ":distributed_cache_proto",
     deps = [
         ":resource_go_proto",
+		"@com_github_planetscale_vtprotobuf//vtproto:vtproto_go_proto",
     ],
 )
 
