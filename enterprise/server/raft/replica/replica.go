@@ -1173,7 +1173,7 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 }
 
 func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
-	sm.raftProposeQPS.Inc()
+	sm.readQPS.Inc()
 	rsp := &rfpb.ResponseUnion{}
 
 	switch value := req.Value.(type) {

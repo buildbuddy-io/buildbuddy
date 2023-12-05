@@ -342,7 +342,10 @@ func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor) {
 func (lk *LeaseKeeper) LeaseCount() int64 {
 	leaseCount := int64(0)
 	lk.leases.Range(func(key, value any) bool {
-		leaseCount += 1
+		la := value.(leaseAgent)
+		if la.l.Valid() {
+			leaseCount += 1
+		}
 		return true
 	})
 	return leaseCount
