@@ -9,6 +9,7 @@ import "google/rpc/status.proto";
 import "proto/context.proto";
 import "proto/remote_execution.proto";
 import "proto/resource.proto";
+import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 // Next Tag: 17
 message CacheStats {
@@ -254,6 +255,7 @@ message DirectoryWithDigest {
 }
 
 message TreeCache {
+  option (vtproto.mempool) = true;
   repeated DirectoryWithDigest children = 1;
 }
 

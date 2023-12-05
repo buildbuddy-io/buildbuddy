@@ -4451,6 +4451,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_planetscale_vtprotobuf",
         importpath = "github.com/planetscale/vtprotobuf",
         patch_args = ["-p1"],
+        patches = ["@{}//buildpatches:vtprotobuf.patch".format(workspace_name)],
         sum = "h1:l8PXm6Colok5z6qQLNhAj2Jq5BfoMTIHxLER5a6nDqM=",
         version = "v0.5.0",
     )
