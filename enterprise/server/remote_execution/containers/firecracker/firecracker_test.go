@@ -1836,6 +1836,8 @@ func testMergeDiffSnapshot(t *testing.T, cow bool) {
 		// Make a buffer to keep track of our expected bytes.
 		b := make([]byte, snapSize)
 		// Create a base snapshot with some random data pages.
+		// Regions which are not written are holes, in order to test that
+		// we handle holes in the base snapshot properly.
 		basePath := filepath.Join(tmp, fmt.Sprintf("%d.base", i))
 		{
 			bf, err := os.Create(basePath)
@@ -1855,7 +1857,9 @@ func testMergeDiffSnapshot(t *testing.T, cow bool) {
 			assert.FailNowf(t, "Base file bytes are not equal to expected bytes", "")
 		}
 
-		// Write some random diffs to the diff snapshot
+		// Write some random diffs to the diff snapshot.
+		// Regions which are not written are holes, in order to test that
+		// we handle holes in the diff snapshot properly.
 		diffPath := filepath.Join(tmp, fmt.Sprintf("%d.diff", i))
 		{
 			df, err := os.Create(diffPath)
