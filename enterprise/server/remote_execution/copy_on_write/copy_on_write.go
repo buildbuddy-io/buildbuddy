@@ -57,6 +57,11 @@ var eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrenc
 // metric.
 var mmappedBytes sync.Map
 
+func ResetMmmapedBytesMetricForTest() {
+	mmappedBytes = sync.Map{}
+	metrics.COWSnapshotMemoryMappedBytes.Reset()
+}
+
 func updateMmappedBytesMetric(delta int64, fileNameLabel string) {
 	gaugeValPtr, _ := mmappedBytes.LoadOrStore(fileNameLabel, new(int64))
 	metrics.COWSnapshotMemoryMappedBytes.
