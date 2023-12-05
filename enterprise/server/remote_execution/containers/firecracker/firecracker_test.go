@@ -1828,8 +1828,8 @@ func TestMergeDiffSnapshot(t *testing.T) {
 
 func testMergeDiffSnapshot(t *testing.T, cow bool) {
 	tmp := testfs.MakeTempDir(t)
-	for i := 0; i < 10; i++ {
-		metrics.COWSnapshotMemoryMappedBytes.Reset()
+	for i := 0; i < 100; i++ {
+		copy_on_write.ResetMmmapedBytesMetricForTest()
 
 		ctx := context.Background()
 		snapSize := 1e6 + rand.Int63n(1e6)
@@ -1869,16 +1869,17 @@ func testMergeDiffSnapshot(t *testing.T, cow bool) {
 
 		var merged []byte
 		if cow {
-			r, err := interfaces.StoreReader(store)
-			require.NoError(t, err)
-			merged, err = io.ReadAll(r)
-			require.NoError(t, err)
 			// All bytes should have been unmapped afterwards, even though
 			// we haven't closed the COWStore yet.
 			mmappedBytes := testmetrics.GaugeValueForLabels(
 				t, metrics.COWSnapshotMemoryMappedBytes,
 				prometheus.Labels{metrics.FileName: cowDirName})
-			require.Equal(t, float64(0), mmappedBytes, "iteration %d", i)
+			require.Equal(t, float64(0), mmappedBytes)
+
+			r, err := interfaces.StoreReader(store)
+			require.NoError(t, err)
+			merged, err = io.ReadAll(r)
+			require.NoError(t, err)
 			err = store.Close()
 			require.NoError(t, err)
 		} else {
