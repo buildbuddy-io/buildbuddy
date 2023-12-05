@@ -48,14 +48,14 @@ const (
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
-	defaultRemoteAppURL        = "remote.buildbuddy.io"
+	//TODO(Maggie): Make this configurable
+	defaultRemoteExecutionURL = "remote.buildbuddy.io"
 )
 
 var (
 	execOs            = flag.String("os", "linux", "If set, requests execution on a specific OS.")
 	execArch          = flag.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
 	containerImage    = flag.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
-	appTarget         = flag.String("app_target", defaultRemoteAppURL, "The buildbuddy app server to use. Defaults to the prod cloud app server.")
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
 
@@ -625,8 +625,8 @@ func handleRemoteBazel(args, execArgs []string) []string {
 	args = arg.Remove(args, "bes_backend")
 	args = arg.Remove(args, "remote_cache")
 
-	args = append(args, "--bes_backend="+*appTarget)
-	args = append(args, "--remote_cache="+*appTarget)
+	args = append(args, "--bes_backend="+defaultRemoteExecutionURL)
+	args = append(args, "--remote_cache="+defaultRemoteExecutionURL)
 
 	ctx := context.Background()
 	repoConfig, err := Config(".")
@@ -639,7 +639,7 @@ func handleRemoteBazel(args, execArgs []string) []string {
 		log.Fatalf("error finding workspace: %s", err)
 	}
 	exitCode, err := Run(ctx, RunOpts{
-		Server:            "grpcs://" + *appTarget,
+		Server:            "grpcs://" + defaultRemoteExecutionURL,
 		APIKey:            arg.Get(args, "remote_header=x-buildbuddy-api-key"),
 		Args:              arg.JoinExecutableArgs(args, execArgs),
 		WorkspaceFilePath: wsFilePath,
