@@ -326,13 +326,6 @@ type DBHandle struct {
 	db            *gorm.DB
 	readReplicaDB *gorm.DB
 	driver        string
-	ctx           context.Context
-}
-
-func (dbh *DBHandle) WithContext(ctx context.Context) *DBHandle {
-	c := *dbh
-	c.ctx = ctx
-	return &c
 }
 
 type Options struct {
@@ -1064,17 +1057,17 @@ type DBQuery struct {
 }
 
 func (q *DBQuery) Create(val interface{}) error {
-	db := q.db.Set(gormQueryNameKey, q.name)
+	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
 	return db.Create(val).Error
 }
 
-func (q DBQuery) Update(val interface{}) error {
-	db := q.db.Set(gormQueryNameKey, q.name)
+func (q *DBQuery) Update(val interface{}) error {
+	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
 	return db.Updates(val).Error
 }
 
 func (q *DBQuery) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
-	db := q.db.Set(gormQueryNameKey, q.name)
+	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
 	return &PreparedQuery{db: db, ctx: q.ctx, sql: sql, values: values}
 }
 

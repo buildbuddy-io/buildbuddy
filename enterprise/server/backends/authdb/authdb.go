@@ -158,7 +158,7 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 		rq := dbh.NewQuery(ctx, "authdb_select_keys_to_backfill").Raw(query)
 		var keysToUpdate []*tables.APIKey
 		err := db.ScanRows(rq, func(ctx context.Context, key *tables.APIKey) error {
-			keysToUpdate = append(keysTo, key)
+			keysToUpdate = append(keysToUpdate, key)
 			return nil
 		})
 		if err != nil {
