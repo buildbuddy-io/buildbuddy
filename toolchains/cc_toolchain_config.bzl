@@ -38,7 +38,7 @@ def _impl(ctx):
                     tool = ctx.file.c_compile,
                 ),
             ],
-        ) for name in ACTION_NAME_GROUPS.all_cc_compile_actions
+        ) for name in ACTION_NAME_GROUPS.all_cc_compile_actions if name not in ACTION_NAME_GROUPS.all_cpp_compile_actions
     ])
 
     # cpp compile action
@@ -1120,6 +1120,7 @@ def _impl(ctx):
     return cc_common.create_cc_toolchain_config_info(
         ctx = ctx,
         action_configs = action_configs,
+        builtin_sysroot = ctx.attr.builtin_sysroot,
         features = features,
         cxx_builtin_include_directories = ctx.attr.cxx_builtin_include_directories,
         toolchain_identifier = ctx.attr.toolchain_identifier,
@@ -1135,20 +1136,21 @@ def _impl(ctx):
 cc_toolchain_config = rule(
     implementation = _impl,
     attrs = {
-        "ar": attr.label(default="@cosmo_cc_gcc//:ar_bin", allow_single_file=True),
-        "ld": attr.label(default="@cosmo_cc_gcc//:ld_bin", allow_single_file=True),
-        "c_compile": attr.label(default="@cosmo_cc_gcc//:gcc_bin", allow_single_file=True),
-        "cpp_compile": attr.label(default="@cosmo_cc_gcc//:g++_bin", allow_single_file=True),
-        "strip": attr.label(default="@cosmo_cc_gcc//:strip_bin", allow_single_file=True),
+        "ar": attr.label(default="@cosmocc//binaries:ar_bin", allow_single_file=True),
+        "ld": attr.label(default="@cosmocc//binaries:ld_bin", allow_single_file=True),
+        "c_compile": attr.label(default="@cosmocc//binaries:gcc_bin", allow_single_file=True),
+        "cpp_compile": attr.label(default="@cosmocc//binaries:g++_bin", allow_single_file=True),
+        "strip": attr.label(default="@cosmocc//binaries:strip_bin", allow_single_file=True),
         # BEGIN CODE FROM rules_cc/cc/private/toolchain/unix_cc_toolchain_config.bzl
         "abi_libc_version": attr.string(mandatory = True),
         "abi_version": attr.string(mandatory = True),
+        "builtin_sysroot": attr.string(mandatory = True),
         "compile_flags": attr.string_list(),
         "compiler": attr.string(mandatory = True),
         "coverage_compile_flags": attr.string_list(),
         "coverage_link_flags": attr.string_list(),
         "cpu": attr.string(mandatory = True),
-        "cxx_builtin_include_directories": attr.string_list(),
+        "cxx_builtin_include_directories": attr.string_list(default=["bazel-out/k8-opt-exec-2B5CBBC6/bin/external/cosmocc/headers"]),
         "cxx_flags": attr.string_list(),
         "dbg_compile_flags": attr.string_list(),
         "host_system_name": attr.string(mandatory = True),

@@ -62,6 +62,9 @@ install_static_dependencies()
 # gazelle:repository_macro deps.bzl%install_go_mod_dependencies
 install_go_mod_dependencies()
 
+load("@rules_cc//cc:repositories.bzl", "rules_cc_dependencies", "rules_cc_toolchains")
+rules_cc_dependencies()
+
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
 
@@ -489,35 +492,11 @@ http_archive(
 load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
 
 http_archive(
-    name = "cosmo_cc_gcc",
-    build_file_content = """
-package(default_visibility = ["//visibility:public"])
-
-genrule(name = "ar-bin", srcs = ["x86_64-linux-cosmo-ar"], outs = ["ar"], cmd_bash = "cp $(location x86_64-linux-cosmo-ar) $@")
-genrule(name = "as-bin", srcs = ["x86_64-linux-cosmo-as"], outs = ["as"], cmd_bash = "cp $(location x86_64-linux-cosmo-as) $@")
-genrule(name = "ld-bin", srcs = ["x86_64-linux-cosmo-ld"], outs = ["ld"], cmd_bash = "cp $(location x86_64-linux-cosmo-ld) $@")
-genrule(name = "gcc-bin", srcs = ["x86_64-linux-cosmo-gcc"], outs = ["gcc"], cmd_bash = "cp $(location x86_64-linux-cosmo-gcc) $@")
-genrule(name = "g++-bin", srcs = ["x86_64-linux-cosmo-g++"], outs = ["g++"], cmd_bash = "cp $(location x86_64-linux-cosmo-g++) $@")
-genrule(name = "strip-bin", srcs = ["x86_64-linux-cosmo-strip"], outs = ["strip"], cmd_bash = "cp $(location x86_64-linux-cosmo-strip) $@")
-genrule(name = "objcopy-bin", srcs = ["x86_64-linux-cosmo-objcopy"], outs = ["objcopy"], cmd_bash = "cp $(location x86_64-linux-cosmo-objcopy) $@")
-genrule(name = "objdump-bin", srcs = ["x86_64-linux-cosmo-objdump"], outs = ["objdump"], cmd_bash = "cp $(location x86_64-linux-cosmo-objdump) $@")
-genrule(name = "addr2line-bin", srcs = ["x86_64-linux-cosmo-addr2line"], outs = ["addr2line"], cmd_bash = "cp $(location x86_64-linux-cosmo-addr2line) $@")
-genrule(name = "cpp-bin", srcs = ["x86_64-linux-cosmo-cpp"], outs = ["cpp"], cmd_bash = "cp $(location x86_64-linux-cosmo-cpp) $@")
-genrule(name = "elfedit-bin", srcs = ["x86_64-linux-cosmo-elfedit"], outs = ["elfedit"], cmd_bash = "cp $(location x86_64-linux-cosmo-elfedit) $@")
-genrule(name = "gprof-bin", srcs = ["x86_64-linux-cosmo-gprof"], outs = ["gprof"], cmd_bash = "cp $(location x86_64-linux-cosmo-gprof) $@")
-genrule(name = "nm-bin", srcs = ["x86_64-linux-cosmo-nm"], outs = ["nm"], cmd_bash = "cp $(location x86_64-linux-cosmo-nm) $@")
-genrule(name = "ranlib-bin", srcs = ["x86_64-linux-cosmo-ranlib"], outs = ["ranlib"], cmd_bash = "cp $(location x86_64-linux-cosmo-ranlib) $@")
-genrule(name = "readelf-bin", srcs = ["x86_64-linux-cosmo-readelf"], outs = ["readelf"], cmd_bash = "cp $(location x86_64-linux-cosmo-readelf) $@")
-genrule(name = "size-bin", srcs = ["x86_64-linux-cosmo-size"], outs = ["size"], cmd_bash = "cp $(location x86_64-linux-cosmo-size) $@")
-genrule(name = "strings-bin", srcs = ["x86_64-linux-cosmo-strings"], outs = ["strings"], cmd_bash = "cp $(location x86_64-linux-cosmo-strings) $@")
-genrule(name = "c++-bin", srcs = ["x86_64-linux-cosmo-c++"], outs = ["c++"], cmd_bash = "cp $(location x86_64-linux-cosmo-c++) $@")
-genrule(name = "c++filt-bin", srcs = ["x86_64-linux-cosmo-c++filt"], outs = ["c++filt"], cmd_bash = "cp $(location x86_64-linux-cosmo-c++filt) $@")
-
-filegroup(name = "bin", srcs = ["ar-bin", "as-bin", ld-bin", "gcc-bin", "g++-bin", "strip-bin", "objcopy-bin", "objdump-bin", "addr2line-bin", "cpp-bin", "elfedit-bin", "gprof-bin", "nm-bin", "ranlib-bin", "readelf-bin", "size-bin", "strings-bin", "c++-bin", "c++filt-bin"])
-""",
-    sha256 = "453b593f3584d74b9d6992d4c98c9edc51db3dade92a5ed27966481f26259605",
-    strip_prefix = "bin",
-    url = "https://github.com/ahgamut/superconfigure/releases/download/z0.0.18/x86_64-gcc.zip",
+    name = "cosmocc",
+    patch_args = ["-p1"],
+    patches = ["@{}//buildpatches:cosmocc.patch".format("buildbuddy")],
+    sha256 = "7470f05ef28f1941eb655c0359de08118023ba75767c2c47b398569a16397504",
+    url = "https://github.com/jart/cosmopolitan/releases/download/3.1.3/cosmocc-3.1.3.zip",
 )
 
 # Plain zig_toolchains() will pick reasonable defaults. See
