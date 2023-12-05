@@ -1833,28 +1833,43 @@ func testMergeDiffSnapshot(t *testing.T, cow bool) {
 
 		ctx := context.Background()
 		snapSize := 1e6 + rand.Int63n(1e6)
-		// Create an empty base snapshot
-		basePath := filepath.Join(tmp, fmt.Sprintf("%d.base", i))
+		// Make a buffer to keep track of our expected bytes.
 		b := make([]byte, snapSize)
-		err := os.WriteFile(basePath, b, 0644)
-		require.NoError(t, err)
-		// Write some random diffs to the diff snapshot
-		diffPath := filepath.Join(tmp, fmt.Sprintf("%d.diff", i))
-		df, err := os.Create(diffPath)
-		require.NoError(t, err)
-		err = df.Truncate(snapSize)
-		require.NoError(t, err)
-		nDiffs := rand.Int63n(5)
-		for i := 0; i < int(nDiffs); i++ {
-			diffOffset := rand.Int63n(snapSize)
-			diffLen := rand.Int63n(snapSize - diffOffset + 1)
-			for off := diffOffset; off < diffOffset+diffLen; off++ {
-				b[off] = byte(rand.Intn(128))
-			}
-			_, err := df.WriteAt(b[diffOffset:diffOffset+diffLen], diffOffset)
+		// Create a base snapshot with some random data pages.
+		// Regions which are not written are holes, in order to test that
+		// we handle holes in the base snapshot properly.
+		basePath := filepath.Join(tmp, fmt.Sprintf("%d.base", i))
+		{
+			bf, err := os.Create(basePath)
+			require.NoError(t, err)
+			err = bf.Truncate(snapSize)
+			require.NoError(t, err)
+			writeRandomPages(t, bf, rand.Intn(100), b)
+			err = bf.Close()
 			require.NoError(t, err)
 		}
-		_ = df.Close()
+
+		// Sanity check: base snapshot file contents should match our expected
+		// buffer contents.
+		baseBytes, err := os.ReadFile(basePath)
+		require.NoError(t, err)
+		if !bytes.Equal(baseBytes, b) {
+			assert.FailNowf(t, "Base file bytes are not equal to expected bytes", "")
+		}
+
+		// Write some random diffs to the diff snapshot.
+		// Regions which are not written are holes, in order to test that
+		// we handle holes in the diff snapshot properly.
+		diffPath := filepath.Join(tmp, fmt.Sprintf("%d.diff", i))
+		{
+			df, err := os.Create(diffPath)
+			require.NoError(t, err)
+			err = df.Truncate(snapSize)
+			require.NoError(t, err)
+			writeRandomPages(t, df, rand.Intn(100), b)
+			err = df.Close()
+			require.NoError(t, err)
+		}
 		var store *copy_on_write.COWStore
 		cowDirName := fmt.Sprintf("cow-%d", i)
 		if cow {
@@ -1889,6 +1904,25 @@ func testMergeDiffSnapshot(t *testing.T, cow bool) {
 		if !bytes.Equal(merged, b) {
 			require.FailNowf(t, "Merged bytes not equal to expected bytes", "")
 		}
+	}
+}
+
+// Writes n random data pages to the given file. The data pages written are
+// copied into expectedBuf at the same offsets.
+func writeRandomPages(t *testing.T, f *os.File, n int, expectedBuf []byte) {
+	const pageSize = 4096
+	for i := 0; i < n; i++ {
+		offset := rand.Intn(len(expectedBuf))
+		// Round offset down to page-level resolution
+		offset = (offset / pageSize) * pageSize
+		// Write 1 page if possible, or the remainder of the file if we're at
+		// the end
+		length := min(pageSize, len(expectedBuf)-offset)
+		for i := offset; i < offset+length; i++ {
+			expectedBuf[i] = byte(rand.Intn(128))
+		}
+		_, err := f.WriteAt(expectedBuf[offset:offset+length], int64(offset))
+		require.NoError(t, err)
 	}
 }
 
