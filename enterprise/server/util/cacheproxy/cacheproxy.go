@@ -351,7 +351,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			return err
 		}
 		rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
-		if rn.GetCacheType() == rspb.CacheType_CAS {
+		if rn.GetCacheType() == rspb.CacheType_CAS && req.GetAllowAlreadyExists() {
 			missing, err := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn})
 			if err == nil && len(missing) == 0 {
 				return status.AlreadyExistsError("CAS digest already exists")
@@ -593,6 +593,7 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 		Key:         wc.key,
 		Data:        data,
 		FinishWrite: false,
+		AllowAlreadyExists: true,
 		HandoffPeer: wc.handoffPeer,
 		Resource:    wc.r,
 	}
@@ -620,6 +621,7 @@ func (wc *streamWriteCloser) Commit() error {
 		Isolation:   wc.isolation,
 		Key:         wc.key,
 		FinishWrite: true,
+		AllowAlreadyExists: true,
 		HandoffPeer: wc.handoffPeer,
 		Resource:    wc.r,
 	}
