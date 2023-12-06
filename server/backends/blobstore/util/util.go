@@ -41,8 +41,8 @@ func Decompress(r io.Reader) ([]byte, error) {
 		wrappedReader = r
 	} else {
 		wrappedReader = zr
+		defer zr.Close()
 	}
-	defer zr.Close()
 	return ioutil.ReadAll(wrappedReader)
 }
 
