@@ -436,7 +436,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		go s.gossipManager.SendUserEvent(constants.MetaRangeTag, buf /*coalesce=*/, false)
 	}
 
-	s.leaseKeeper.AddRange(rd)
+	s.leaseKeeper.AddRange(rd, r)
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.updateTags()
 }
@@ -460,7 +460,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	}
 
 	s.sendRangeEvent(events.EventRangeRemoved, rd)
-	s.leaseKeeper.RemoveRange(rd)
+	s.leaseKeeper.RemoveRange(rd, r)
 	go s.updateTags()
 }
 

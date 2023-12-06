@@ -12,6 +12,7 @@ go_library(
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rbuilder",
+        "//enterprise/server/raft/replica",
         "//proto:raft_go_proto",
         "//server/util/log",
         "//server/util/rangemap",
