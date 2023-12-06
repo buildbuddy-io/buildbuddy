@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
@@ -45,6 +44,7 @@ import (
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -281,8 +281,10 @@ type StoppableCache interface {
 	Stop() error
 }
 
-type GrpcClientConnPoolCache interface {
-	GetGrpcClientConnPoolForURL(target string) (grpc.ClientConnInterface, error)
+type PooledByteStreamClient interface {
+	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
+	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)
+	StreamSingleFileFromBytestreamZip(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error
 }
 
 type TxRunner func(tx *gorm.DB) error
