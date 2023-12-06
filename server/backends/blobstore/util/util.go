@@ -29,21 +29,12 @@ func NewCompressReader(r io.Reader) (io.ReadCloser, error) {
 }
 
 func Decompress(r io.Reader) ([]byte, error) {
-	var wrappedReader io.Reader
 	zr, err := NewCompressReader(r)
 	if err != nil {
-		if err != gzip.ErrHeader {
-			return nil, err
-		}
-		// Compatibility hack: if we got a header error it means this
-		// is probably an uncompressed record written before we were
-		// compressing. Just read it as-is.
-		wrappedReader = r
-	} else {
-		wrappedReader = zr
-		defer zr.Close()
+		return nil, err
 	}
-	return ioutil.ReadAll(wrappedReader)
+	defer zr.Close()
+	return ioutil.ReadAll(zr)
 }
 
 func Compress(in []byte) ([]byte, error) {
