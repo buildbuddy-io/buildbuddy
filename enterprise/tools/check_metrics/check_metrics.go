@@ -209,7 +209,7 @@ func relativeRangeMetricHealthy(promAPI promapi.API, metricName string, metricVa
 		return false, err
 	}
 
-	log.Debugf("Polling relative range metric %s, metric value is %v, comparison value is %v", metricName, metricValue, comparisonValue)
+	log.Debugf("Polling relative range metric %s: canary value is %v, baseline value is %v", metricName, comparisonValue, metricValue)
 
 	if relativeRange.Within != nil {
 		within := relativeRange.Within
