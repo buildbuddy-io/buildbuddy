@@ -351,6 +351,14 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			return err
 		}
 		rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
+		if rn.GetCacheType() == rspb.CacheType_CAS {
+			missing, err := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn})
+			if err == nil && len(missing) == 0 {
+				return stream.SendAndClose(&dcpb.WriteResponse{
+					CommittedSize: -1,
+				})
+			}
+		}
 		if writeCloser == nil {
 			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
@@ -575,10 +583,14 @@ type streamWriteCloser struct {
 	key           *dcpb.Key
 	isolation     *dcpb.Isolation
 	handoffPeer   string
-	bytesUploaded int64
+	alreadyExists bool
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
+	if wc.alreadyExists {
+		return len(data), nil
+	}
+
 	req := &dcpb.WriteRequest{
 		Isolation:   wc.isolation,
 		Key:         wc.key,
@@ -589,15 +601,23 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 	}
 	err := wc.stream.Send(req)
 	if err == io.EOF {
-		_, streamErr := wc.stream.CloseAndRecv()
-		if streamErr != nil {
+		rsp, streamErr := wc.stream.CloseAndRecv()
+		if streamErr == io.EOF && rsp.GetCommittedSize() == -1 {
+			wc.alreadyExists = true
+		} else if streamErr != nil {
 			return 0, streamErr
+		} else {
+			return 0, io.ErrShortWrite
 		}
 	}
 	return len(data), err
 }
 
 func (wc *streamWriteCloser) Commit() error {
+	if wc.alreadyExists {
+		return nil
+	}
+
 	req := &dcpb.WriteRequest{
 		Isolation:   wc.isolation,
 		Key:         wc.key,
@@ -652,18 +672,6 @@ func (c *CacheProxy) newBufferedStreamWriteCloser(swc *streamWriteCloser) *buffe
 }
 
 func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	// Stopping a write mid-stream is difficult because Write streams are
-	// unidirectional. The server can close the stream early, but this does
-	// not necessarily save the client any work. So, to attempt to reduce
-	// duplicate writes, we call Contains before writing a new digest, and
-	// if it already exists, we'll return a devnull writecloser so no bytes
-	// are transmitted over the network.
-	if r.GetCacheType() == rspb.CacheType_CAS {
-		if alreadyExists, err := c.RemoteContains(ctx, peer, r); err == nil && alreadyExists {
-			log.Debugf("Skipping duplicate CAS write of %q", r.GetDigest().GetHash())
-			return ioutil.DiscardWriteCloser(), nil
-		}
-	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
@@ -682,13 +690,12 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 	}
 
 	wc := &streamWriteCloser{
-		cancelFunc:    cancel,
-		isolation:     isolation,
-		handoffPeer:   handoffPeer,
-		key:           digestToKey(r.GetDigest()),
-		bytesUploaded: 0,
-		stream:        stream,
-		r:             r,
+		cancelFunc:  cancel,
+		isolation:   isolation,
+		handoffPeer: handoffPeer,
+		key:         digestToKey(r.GetDigest()),
+		stream:      stream,
+		r:           r,
 	}
 	return c.newBufferedStreamWriteCloser(wc), nil
 }
