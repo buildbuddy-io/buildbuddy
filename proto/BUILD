@@ -92,11 +92,11 @@ proto_library(
         ":context_proto",
         ":remote_execution_proto",
         ":resource_proto",
+        "@com_github_planetscale_vtprotobuf//vtproto:vtproto_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:field_mask_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/rpc:status_proto",
-		"@com_github_planetscale_vtprotobuf//vtproto:vtproto_proto",
     ],
 )
 
@@ -121,7 +121,7 @@ proto_library(
     ],
     deps = [
         ":resource_proto",
-		"@com_github_planetscale_vtprotobuf//vtproto:vtproto_proto",
+        "@com_github_planetscale_vtprotobuf//vtproto:vtproto_proto",
     ],
 )
 
@@ -1328,8 +1328,8 @@ go_proto_library(
         ":context_go_proto",
         ":remote_execution_go_proto",
         ":resource_go_proto",
+        "@com_github_planetscale_vtprotobuf//vtproto:vtproto_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
-		"@com_github_planetscale_vtprotobuf//vtproto:vtproto_go_proto",
     ],
 )
 
@@ -1370,7 +1370,7 @@ go_proto_library(
     proto = ":distributed_cache_proto",
     deps = [
         ":resource_go_proto",
-		"@com_github_planetscale_vtprotobuf//vtproto:vtproto_go_proto",
+        "@com_github_planetscale_vtprotobuf//vtproto:vtproto_go_proto",
     ],
 )
 
@@ -1941,7 +1941,7 @@ ts_proto_library(
         ":remote_execution_ts_proto",
         ":resource_ts_proto",
         ":timestamp_ts_proto",
-		":vtproto_ts_proto"
+        ":vtproto_ts_proto",
     ],
 )
 

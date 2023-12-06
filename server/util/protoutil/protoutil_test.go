@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	dspb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protoutil"
 )
 
@@ -25,8 +25,11 @@ var (
 		//	"ScoreCard": func() protoMessage {
 		//		return &capb.ScoreCard{}
 		//	},
-		"TreeCache": func() protoMessage {
-			return &capb.TreeCache{}
+		//"TreeCache": func() protoMessage {
+		//	return &capb.TreeCache{}
+		//},
+		"ReadResponse": func() protoMessage {
+			return &dspb.ReadResponse{}
 		},
 	}
 )
@@ -141,7 +144,7 @@ func BenchmarkUnmarshal(b *testing.B) {
 
 		}
 
-		if pbName == "TreeCache" {
+		if pbName == "ReadResponse" {
 			b.Run(fmt.Sprintf("name=protoutilWithPool/pbName=%s", pbName), func(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -149,7 +152,7 @@ func BenchmarkUnmarshal(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					buf := data[rand.Intn(len(data))]
 					b.SetBytes(int64(len(buf)))
-					v := capb.TreeCacheFromVTPool()
+					v := dspb.ReadResponseFromVTPool()
 					//fmt.Println("started unmarshal")
 					err := protoutil.Unmarshal(buf, v)
 					if err != nil {
