@@ -104,6 +104,8 @@ func chroot(path string) error {
 }
 
 func reapChildren(ctx context.Context) {
+	// Note: it's OK to drop some signals here because we reap child processes
+	// in a loop each time we get SIGCHLD.
 	c := make(chan os.Signal, 128)
 	signal.Notify(c, unix.SIGCHLD)
 
@@ -113,7 +115,15 @@ func reapChildren(ctx context.Context) {
 			return
 		case <-c:
 			var status syscall.WaitStatus
-			syscall.Wait4(-1, &status, unix.WNOHANG, nil)
+			// Successful SIGCHLD deliveries are not necessarily 1-to-1 with
+			// child processes terminating. So each time we get SIGCHLD, don't
+			// just reap once - reap all zombie processes in a loop until there
+			// is nothing left to reap.
+			for {
+				if _, err := syscall.Wait4(-1, &status, unix.WNOHANG, nil); err != nil {
+					break
+				}
+			}
 		}
 	}
 }
