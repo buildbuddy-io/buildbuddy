@@ -589,13 +589,13 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 		return len(data), nil
 	}
 	req := &dcpb.WriteRequest{
-		Isolation:   wc.isolation,
-		Key:         wc.key,
-		Data:        data,
-		FinishWrite: false,
+		Isolation:          wc.isolation,
+		Key:                wc.key,
+		Data:               data,
+		FinishWrite:        false,
 		AllowAlreadyExists: true,
-		HandoffPeer: wc.handoffPeer,
-		Resource:    wc.r,
+		HandoffPeer:        wc.handoffPeer,
+		Resource:           wc.r,
 	}
 	err := wc.stream.Send(req)
 	if err == io.EOF {
@@ -618,12 +618,12 @@ func (wc *streamWriteCloser) Commit() error {
 	}
 
 	req := &dcpb.WriteRequest{
-		Isolation:   wc.isolation,
-		Key:         wc.key,
-		FinishWrite: true,
+		Isolation:          wc.isolation,
+		Key:                wc.key,
+		FinishWrite:        true,
 		AllowAlreadyExists: true,
-		HandoffPeer: wc.handoffPeer,
-		Resource:    wc.r,
+		HandoffPeer:        wc.handoffPeer,
+		Resource:           wc.r,
 	}
 	if err := wc.stream.Send(req); err != nil {
 		return err
