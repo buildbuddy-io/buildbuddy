@@ -26,7 +26,7 @@ RUN echo 'deb https://downloadcontent.opensuse.org/repositories/home:/alvistack/
 COPY data/registries.conf /etc/containers/registries.conf
 
 # Install gVisor
-RUN curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" >>  /etc/apt/sources.list.d/gvisor.list && apt-get update && apt-get install -y runsc
+#RUN curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" >>  /etc/apt/sources.list.d/gvisor.list && apt-get update && apt-get install -y runsc
 # ALTERNATIVE non-apt method:
 #RUN ARCH=$(uname -m); URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}; curl -LO ${URL}/runsc && curl -LO ${URL}/runsc.sha512 && sha512sum -c runsc.sha512 && rm -f *.sha512 && chmod a+rx runsc && mv runsc /usr/local/bin
 
