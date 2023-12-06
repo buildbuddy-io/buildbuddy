@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
@@ -132,6 +133,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 		t.Fatal(err)
 	}
 	te.SetCache(c)
+	byte_stream_client.RegisterPooledBytestreamClient(te)
 
 	switch *databaseType {
 	case "sqlite":

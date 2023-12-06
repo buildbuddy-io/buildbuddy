@@ -13,6 +13,7 @@ go_library(
         "//server/buildbuddy_server",
         "//server/nullauth",
         "//server/real_environment",
+        "//server/remote_cache/byte_stream_client",
         "//server/testutil/testclickhouse",
         "//server/testutil/testfs",
         "//server/testutil/testmysql",
