@@ -174,6 +174,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 			// Run from the scratch disk, since the workspace disk is hot-swapped
 			// between runs, which may not be very Bazel-friendly.
 			{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"},
+			{Name: "GIT_BRANCH", Value: req.GetRepoState().GetBranch()},
 		},
 		Arguments: args,
 		Platform: &repb.Platform{

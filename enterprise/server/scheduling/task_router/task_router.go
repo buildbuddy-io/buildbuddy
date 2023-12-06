@@ -241,11 +241,11 @@ func (runnerRecycler) routingKey(params routingParams) (string, error) {
 		parts = append(parts, params.remoteInstanceName)
 	}
 
-	platform := params.cmd.GetPlatform()
-	if platform == nil {
-		platform = &repb.Platform{}
+	p := params.cmd.GetPlatform()
+	if p == nil {
+		p = &repb.Platform{}
 	}
-	b, err := proto.Marshal(platform)
+	b, err := proto.Marshal(p)
 	if err != nil {
 		return "", status.InternalErrorf("failed to marshal Command: %s", err)
 	}
@@ -254,7 +254,7 @@ func (runnerRecycler) routingKey(params routingParams) (string, error) {
 	// For workflow tasks, route using GIT_BRANCH so that when re-running the
 	// workflow multiple times using the same branch, the runs are more likely
 	// to hit an executor with a warmer snapshot cache.
-	if isWorkflow(params.cmd) {
+	if platform.IsCIRunner(params.cmd.GetArguments()) {
 		branch := ""
 		for _, envVar := range params.cmd.EnvironmentVariables {
 			if envVar.GetName() == "GIT_BRANCH" {
