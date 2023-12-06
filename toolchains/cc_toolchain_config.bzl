@@ -1,5 +1,5 @@
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES", "ACTION_NAME_GROUPS")
-load("@rules_cc//cc:cc_toolchain_config_lib.bzl", "action_config", "feature", "feature_set", "with_feature_set", "flag_set", "flag_group", "variable_with_value")
+load("@rules_cc//cc:cc_toolchain_config_lib.bzl", "action_config", "feature", "feature_set", "flag_group", "flag_set", "variable_with_value", "with_feature_set")
 
 all_compile_actions = ACTION_NAME_GROUPS.all_cc_compile_actions + ACTION_NAME_GROUPS.all_cpp_compile_actions
 
@@ -19,13 +19,13 @@ def _impl(ctx):
 
     # static link action
     action_configs.append(action_config(
-            action_name = ACTION_NAMES.cpp_link_static_library,
-            tools = [
-                struct(
-                    type_name = "tool",
-                    tool = ctx.file.ar,
-                ),
-            ],
+        action_name = ACTION_NAMES.cpp_link_static_library,
+        tools = [
+            struct(
+                type_name = "tool",
+                tool = ctx.file.ar,
+            ),
+        ],
     ))
 
     # c compile action
@@ -38,7 +38,9 @@ def _impl(ctx):
                     tool = ctx.file.c_compile,
                 ),
             ],
-        ) for name in ACTION_NAME_GROUPS.all_cc_compile_actions if name not in ACTION_NAME_GROUPS.all_cpp_compile_actions
+        )
+        for name in ACTION_NAME_GROUPS.all_cc_compile_actions
+        if name not in ACTION_NAME_GROUPS.all_cpp_compile_actions
     ])
 
     # cpp compile action
@@ -51,7 +53,8 @@ def _impl(ctx):
                     tool = ctx.file.cpp_compile,
                 ),
             ],
-        ) for name in ACTION_NAME_GROUPS.all_cpp_compile_actions
+        )
+        for name in ACTION_NAME_GROUPS.all_cpp_compile_actions
     ])
 
     # link actions
@@ -64,7 +67,8 @@ def _impl(ctx):
                     tool = ctx.file.ld,
                 ),
             ],
-        ) for name in ACTION_NAME_GROUPS.all_cc_link_actions
+        )
+        for name in ACTION_NAME_GROUPS.all_cc_link_actions
     ])
 
     # BEGIN CODE FROM rules_cc/cc/private/toolchain/unix_cc_toolchain_config.bzl
@@ -1136,11 +1140,11 @@ def _impl(ctx):
 cc_toolchain_config = rule(
     implementation = _impl,
     attrs = {
-        "ar": attr.label(default="@cosmocc//binaries:ar_bin", allow_single_file=True),
-        "ld": attr.label(default="@cosmocc//binaries:ld_bin", allow_single_file=True),
-        "c_compile": attr.label(default="@cosmocc//binaries:gcc_bin", allow_single_file=True),
-        "cpp_compile": attr.label(default="@cosmocc//binaries:g++_bin", allow_single_file=True),
-        "strip": attr.label(default="@cosmocc//binaries:strip_bin", allow_single_file=True),
+        "ar": attr.label(default = "@cosmocc//:x86_64-ar", allow_single_file = True),
+        "ld": attr.label(default = "@cosmocc//:x86_64-ld", allow_single_file = True),
+        "c_compile": attr.label(default = "@cosmocc//:x86_64-gcc", allow_single_file = True),
+        "cpp_compile": attr.label(default = "@cosmocc//:x86_64-g++", allow_single_file = True),
+        "strip": attr.label(default = "@cosmocc//:x86_64-strip", allow_single_file = True),
         # BEGIN CODE FROM rules_cc/cc/private/toolchain/unix_cc_toolchain_config.bzl
         "abi_libc_version": attr.string(mandatory = True),
         "abi_version": attr.string(mandatory = True),
@@ -1150,7 +1154,7 @@ cc_toolchain_config = rule(
         "coverage_compile_flags": attr.string_list(),
         "coverage_link_flags": attr.string_list(),
         "cpu": attr.string(mandatory = True),
-        "cxx_builtin_include_directories": attr.string_list(default=["bazel-out/k8-opt-exec-2B5CBBC6/bin/external/cosmocc/headers"]),
+        "cxx_builtin_include_directories": attr.string_list(default = ["external/cosmocc/include"]),
         "cxx_flags": attr.string_list(),
         "dbg_compile_flags": attr.string_list(),
         "host_system_name": attr.string(mandatory = True),
@@ -1165,7 +1169,6 @@ cc_toolchain_config = rule(
         "toolchain_identifier": attr.string(mandatory = True),
         "unfiltered_compile_flags": attr.string_list(),
         # END CODE FROM rules_cc/cc/private/toolchain/unix_cc_toolchain_config.bzl
-
     },
     provides = [CcToolchainConfigInfo],
 )
