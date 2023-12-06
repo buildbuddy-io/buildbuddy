@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//server/interfaces",
         "//server/metrics",
-        "//server/util/ioutil",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//status",
     ],
