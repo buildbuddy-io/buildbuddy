@@ -139,84 +139,177 @@ go_test(
 )
 ```
 
-## Execution Properties
+## Execution properties
 
-BuildBuddy RBE comes with some `exec_properties` that you can use to modify how the actions are executed in the remote environment.
+BuildBuddy RBE supports various `exec_properties` that modify remote action execution.
 
 These properties can be used in different ways:
 
-- Set `--remote_default_exec_properties=KEY=VALUE` in `.bazelrc` or in the Bazel command line.
-- Set `exec_properties` in the Execution Platform definition.
+- Set `exec_properties` in the execution platform definition.
 - Set `exec_properties` in each BUILD target.
+- Set `--remote_default_exec_properties=KEY=VALUE` in `.bazelrc` or at the Bazel command line.
+  Note that these properties are not apply if you are already using a platform.
+- Set `--remote_header=x-buildbuddy-platform.KEY=VALUE`. This is
+  a BuildBuddy-specific feature and is not generally recommended except
+  for certain properties, described in
+  [Setting properties via remote headers][#setting-properties-via-remote-headers]
 
-Rules authors can also leverage [Execution Group](https://bazel.build/extending/exec-groups) to give users more control over which Execution Properties can be used for each group of actions in each BUILD target.
+[Execution groups](https://bazel.build/extending/exec-groups) allow more control over which execution properties can be used for each group of actions in each BUILD target.
+Execution groups are typically implemented by individual rules,
+but notably, Bazel includes a built-in execution group called `"test"`
+that allows applying execution properties only to tests.
 
-### Executor Selection Properties
+### Setting properties via remote headers
 
-These execution properties affect how our Action Scheduler selects which BuildBuddy Executor to run the Action on:
+BuildBuddy supports setting execution properties via remote headers.
+This can be done by setting `--remote_header=x-buildbuddy-platform.KEY=VALUE`
+at the Bazel command line.
 
-- `Pool`: select which [Executor Pool](./rbe-pools) to use. If unset, we will use the `default` executor pool.
-- `OSFamily`: select which Operating System the Executor should be running on. Available options are `linux` (default), `darwin`, and `windows`.
-- `Arch`: select which CPU architecture the Executor should be running on. Available options are `amd64` (default) and `arm64`.
-- `use-self-hosted-executors`: select from [self-hosted Executors](./enterprise-rbe) instead of BuildBuddy's managed executor pool. Available options are "true" and "false". The default value is configurable on the [Organization's Setting page](https://app.buildbuddy.io/settings/).
+This feature is useful as a more secure option for passing secret property
+values, such as `container-registry-password` or
+`container-registry-username`, since other methods of setting exec
+properties result in the properties being stored in the remote cache,
+while header values are not stored.
 
-### Runner Isolation Properties
+Properties which are set via remote headers take precedence over any
+exec properties set via any other method.
 
-Each BuildBuddy Executor could spin up multiple "Runners" each in charge of executing one Action at a time. Inside each Runner is a "Workspace" which represents the working directory of the Action and the Action's Input Tree. Here are some ways you could customize the Runner and Workspace to help execute your actions:
+The following is the complete list of properties which are officially
+supported for use in `remote_header`. Other properties _may_ work but
+are not officially supported and can break at any time.
 
-- `workload-isolation-type`: select which isolation technology the Runners use. Available options are `docker`, `podman`, `firecracker`, `sandbox`, `none`. The Executor must have relevant sandbox options enabled. If unset, use the default isolation configured in the Executor. On BuildBuddy Cloud (SaaS), `podman` (default) and `firecracker` isolation are available.
-- `recycle-runner`: Whether to retain the runner after an action execution and reuse it to execute subsequent actions. Available options are `true` and `false`. Recycled runner's workspace is subjected to clean-up operations between Actions.
-- `preserve-workspace`: Only applicable when `"recycle-runner": "true"` is set. Whether to re-use the Workspace directory from the previous action. Available options are `true` and `false`.
-- `clean-workspace-inputs`: A glob value that lets the user selectively pick which files in the Action's Input Tree to clean up before the action starts. The string value should follow the specification in [gobwas/glob](https://pkg.go.dev/github.com/gobwas/glob#Compile) library.
-- `nonroot-workspace`: If set to `true`, the workspace directory will be writable by non-root users (permission `0o777`). Otherwise, it will be read-only to non-root users (permission `0o755`).
+- `container-registry-username`
+- `container-registry-password`
 
-### Runner Resource Properties
+### Action scheduling properties
 
-To help aid our Scheduler in bin-packing Actions into BuildBudddy Executors more effectively, users could choose to set the following properties and hint on how much compute resources an action would require.
+These execution properties affect how BuildBuddy's scheduler selects an executor for action execution:
 
-- `EstimatedComputeUnits`: Numerical values (i.e., `1`, `9`). A BuildBuddy's Compute Unit is defined as 1 CPU and 2.5GB of memory.
-- `EstimatedCPU`: The amount of CPU an Action would consume. Example valid values:
-  - `2`: 2000 MilliCPU
+- `Pool`: selects which [executor pool](./rbe-pools) to use.
+- `OSFamily`: selects which operating system the executor must be running. Available options are `linux` (default), `darwin`, and `windows` (`darwin` and `windows` are currently only available for self-hosted executors).
+- `Arch`: selects which CPU architecture the executor must be running on. Available options are `amd64` (default) and `arm64`.
+- `use-self-hosted-executors`: use [self-hosted executors](./enterprise-rbe) instead of BuildBuddy's managed executor pool. Available options are `true` and `false`. The default value is configurable from [organization settings](https://app.buildbuddy.io/settings/).
+
+### Action isolation and hermeticity properties
+
+When executing actions, each BuildBuddy executor can spin up multiple
+action **runners**. Each runner executes one action at a time. Each runner
+has a **workspace** which represents the working directory of the action
+and contains the action's input tree. Each runner also has an
+**isolation** strategy which decides which technology is used to isolate
+the action from others running on the same machine. Isolation strategies
+may also be loosely referred to as **containers** or **sandboxes**.
+
+The following properties allow customizing the behavior of the runner:
+
+- `workload-isolation-type`: selects which isolation technology is the runner should use.
+  When using BuildBuddy Cloud executors, `podman` (the default) and `firecracker` are supported.
+  For self-hosted executors, the available options are `docker`, `podman`, `firecracker`, `sandbox`, and `none`. The executor must have relevant flags enabled.
+- `recycle-runner`: whether to retain the runner after action execution
+  and reuse it to execute subsequent actions. The runner's container is
+  paused between actions, and the workspace is cleaned between actions by
+  default. This option may be useful to improve performance in some
+  situations, but is not generally recommended for most actions as it
+  reduces action hermeticity. Available options are `true` and `false`.
+- `preserve-workspace`: only applicable when `"recycle-runner": "true"` is set. Whether to re-use the Workspace directory from the previous action. Available options are `true` and `false`.
+- `clean-workspace-inputs`: a comma-separated list of glob values that
+  decides which files in the action's input tree to clean up before the
+  action starts. Has no effect unless `preserve-workspace` is `true`. Glob
+  patterns should follow the specification in
+  [gobwas/glob](https://pkg.go.dev/github.com/gobwas/glob#Compile)
+  library.
+- `nonroot-workspace`: If set to `true`, the workspace directory will be
+  writable by non-root users (permission `0o777`). Otherwise, it will be
+  read-only to non-root users (permission `0o755`).
+
+### Runner resource allocation
+
+BuildBuddy's scheduler intelligently allocates resources to actions,
+so it's generally not needed to manually configure resources for actions.
+However, some `exec_properties` are provided as manual overrides:
+
+- `EstimatedCPU`: the CPU time allocated for the action. Example values:
+  - `2`: 2 CPU cores
   - `0.5`: 500 MilliCPU
-  - `+0.1e+1`: 1000 MilliCPU
   - `4000m`: 4000 MilliCPU
-- `EstimatedMemory`: The amount of Memory an Action would consume. Example valid values:
+- `EstimatedMemory`: the memory allocated to the action. Example values:
   - `1M`: 1 MB
   - `2GB`: 2 GB
   - `4.5GB`: 4.5 GB
-- `EstimatedFreeDiskBytes`: The amount of Disk Space an Action would consume. Example valid values:
+- `EstimatedComputeUnits`: a convenience unit that specifies both CPU
+  and memory. One compute unit is defined as 1 CPU and 2.5GB of
+   memory. Accepts numerical values, e.g. `1` or `9`.
+- `EstimatedFreeDiskBytes`: the amount of disk space allocated to the action.
+  Example values:
   - `1M`: 1 MB
   - `2GB`: 2 GB
   - `4.5GB`: 4.5 GB
 
-### Remote Persistent Worker Properties
+### Remote persistent worker properties
 
-Similar to the local execution environment, the remote execution environment could also retain a long-running process acting as a [Persistent Worker](https://bazel.build/remote/persistent) to help reduce cold-start for build Actions with high overhead startup cost. These settings come with the assumption that `"recycle-runner": "true"` is set to enable re-use of action runners.
+Similar to the local execution environment, the remote execution environment may also retain a long-running process acting as a [persistent worker](https://bazel.build/remote/persistent) to help reduce the total cost of cold-starts for build actions with high startup cost.
 
-The Bazel's flag ["--experimental_remote_mark_tool_inputs"](https://bazel.build/reference/command-line-reference#flag--experimental_remote_mark_tool_inputs) should help set these automatically so you don't have to set them manually. However, we do provide these `exec_properties` for rules authors to experiment with.
+To use remote persistent workers, the action must have `"recycle-runner": "true"`
+in `exec_properties`.
 
-- `persistentWorkerKey`: Unique key for the Persistent Worker. This should be automatically set by Bazel.
-- `persistentWorkerProtocol`: The protocol used by the Persistent Worker. Available options are `proto` (default) and `json`.
+The Bazel's flag ["--experimental_remote_mark_tool_inputs"](https://bazel.build/reference/command-line-reference#flag--experimental_remote_mark_tool_inputs) should help set these automatically so you don't have to set them manually. However, we provide these `exec_properties` for rules authors to experiment with.
 
-### Runner Container Support
+- `persistentWorkerKey`: unique key for the persistent worker. This should be automatically set by Bazel.
+- `persistentWorkerProtocol`: the serialization protocol used by the persistent worker. Available options are `proto` (default) and `json`.
 
-For `docker`, `podman`, and `firecracker` isolation, our runner supports running actions in user-provided container images. Here are a few Execution Properties that provide users more customizations.
+### Runner container support
 
-- `container-image`: the container image to use in the format `docker://<container-image>:<tag>`. The default image is `docker://gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0`.
-- `container-registry-username` and `container-registry-password`: credentials to be used to pull private container images. Not needed if the image is public.
+For `docker`, `podman`, and `firecracker` isolation, the executor supports
+running actions in user-provided container images.
 
-- `dockerInit`: Specific to `podman` and `docker` isolation. Determines whether `--init` should be used when starting a container. Available options are "true" and "false".
-- `dockerUser`: Determines which user the action should be run with inside the container image. The default is the user set on the image.
-- `dockerRunAsRoot`: Determines which user the action should be run with inside the container image. Available options are "true" and "false" (default).
-- `dockerNetwork`: Determine what network mode should be used with `podman` and `docker` isolation. For `sandbox` isolation, this determines whether the network is enabled or not. Available options are `off` and `bridge`. Although the default is unset, we strongly recommend setting this to `off` for faster runner startup time.
+Some of these have a `docker` prefix. This is just a historical artifact;
+all properties with this prefix also apply to `podman`. Our goal is to
+support all of these for `firecracker` as well, but we are not there yet.
 
-### Runner Secret Support
+The following execution properties provide more customization.
 
-Please consult our [RBE Secrets](./secrets) doc for more information on the related Properties.
+- `container-image`: the container image to use, in the format `docker://<container-image>:<tag>`. The default value is `docker://gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0`.
+  For Firecracker, the image will be converted to a VM root image automatically.
+- `container-registry-username` and `container-registry-password`:
+  credentials to be used to pull private container images.
+  These are not needed if the image is public. We recommend setting these
+  via remote headers, to avoid storing them in the cache.
+- `dockerUser`: determines which user the action should be run with inside
+  the container. The default is the user set on the image.
+  If setting to a non-root user, you may also need to set
+  `nonroot-workspace` to `true`.
 
-### DockerD Support
+The following properties apply to `podman` and `docker` isolation,
+and are currently unsupported by `firecracker`. (The `docker` prefix is
+just a historical artifact.)
 
-For `firecracker` isolation, we support starting a `dockerd` process for actions requiring access to an isolated [Docker daemon](https://docs.docker.com/config/daemon/). Check out our [RBE with Firecracker MicroVMs](./rbe-microvms) doc for example usages.
+- `dockerInit`: determines whether `--init` should be used when starting a
+  container. Available options are `true` and `false`. Defaults to `false`.
+- `dockerRunAsRoot`: when set to `true`, forces the container to run as
+  root, even the image specification specifies a non-root `USER`.
+  Available options are `true` and `false`. Defaults to `false`.
+- `dockerNetwork`: determines which network mode should be used. For
+  `sandbox` isolation, this determines whether the network is enabled or
+  not. Available options are `off` and `bridge`. The default is `bridge`,
+  but we strongly recommend setting this to `off` for faster runner
+  startup time. The latest version of the BuildBuddy toolchain does this
+  for you automatically.
 
-- `init-dockerd`: Whether to start the `dockerd` process inside Firecracker MicroVM. Available options are `true` and `false` (default).
-- `enable-dockerd-tcp`: Whether to expose `dockerd` host via TCP connection in addition to the default Unix Domain Socket. Available options are `true` and `false` (default).
+### Runner secrets
+
+Please consult [RBE secrets](./secrets) for more information on the related properties.
+
+### Docker daemon support
+
+For `firecracker` isolation, we support starting a [Docker daemon](https://docs.docker.com/config/daemon/)
+(`dockerd`) which allows actions to run Docker containers.
+Check out our [RBE with Firecracker MicroVMs](./rbe-microvms) doc for examples.
+
+The following `exec_properties` are supported:
+
+- `init-dockerd`: whether to start the `dockerd` process inside the VM
+  before execution. Available options are `true` and `false`. Defaults to
+  `false`.
+- `enable-dockerd-tcp`: whether `dockerd` should listen on TCP port 2375
+  in addition to the default Unix domain socket. Available options are
+  `true` and `false`. Defaults to `false`.
