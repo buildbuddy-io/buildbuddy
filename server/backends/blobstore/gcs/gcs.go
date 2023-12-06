@@ -103,12 +103,11 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 		return nil, err
 	}
 	start := time.Now()
-	counter := &ioutil.Counter{}
-	wrappedReader := io.TeeReader(reader, counter)
-	duration := time.Since(start)
-	bytes, err := util.Decompress(wrappedReader)
-	util.RecordReadMetrics(gcsLabel, duration, counter.Count(), err)
-	return bytes, err
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	b, err := io.ReadAll(reader)
+	spn.End()
+	util.RecordReadMetrics(gcsLabel, start, b, err)
+	return util.Decompress(b, err)
 }
 
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 )
 
@@ -76,36 +74,17 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 	return n, err
 }
 
-func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) (rb []byte, retError error) {
+func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
 	fullPath, err := d.blobPath(blobName)
 	if err != nil {
 		return nil, err
 	}
 	start := time.Now()
-	_, spn := tracing.StartSpan(ctx)
-	f, err := os.Open(fullPath)
-
-	var duration time.Duration
-	counter := &ioutil.Counter{}
-
-	defer func() {
-		if spn.IsRecording() {
-			spn.End()
-		}
-		util.RecordReadMetrics(diskLabel, duration, counter.Count(), retError)
-	}()
-
-	if os.IsNotExist(err) {
-		return nil, status.NotFoundError(err.Error())
-	}
-	if err != nil {
-		return nil, err
-	}
+	ctx, spn := tracing.StartSpan(ctx)
+	b, err := disk.ReadFile(ctx, fullPath)
 	spn.End()
-	defer f.Close()
-	reader := io.TeeReader(f, counter)
-	duration = time.Since(start)
-	return util.Decompress(reader)
+	util.RecordReadMetrics(diskLabel, start, b, err)
+	return util.Decompress(b, err)
 }
 
 func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
