@@ -70,10 +70,10 @@ func (p *pooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context,
 	}
 
 	// We dump the full contents out into a buffer, but that should be 64K or less.
-	return parseZipManifestFooter(buf.Bytes(), offset, r.GetDigest().GetSizeBytes())
+	return ParseZipManifestFooter(buf.Bytes(), offset, r.GetDigest().GetSizeBytes())
 }
 
-func parseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*zipb.Manifest, error) {
+func ParseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*zipb.Manifest, error) {
 	eocd, err := ziputil.ReadDirectoryEnd(footer, trueFileSize)
 	if err != nil {
 		return nil, err
@@ -94,21 +94,26 @@ func parseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*z
 	return &zipb.Manifest{Entry: entries}, nil
 }
 
-func (p *pooledByteStreamClient) validateLocalFileHeader(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry) (int, error) {
+// Just a little song and dance so that we can mock out streamingin tests.
+type Bytestreamer func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error
+
+func validateLocalFileHeader(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, streamer Bytestreamer) (int, error) {
 	var buf bytes.Buffer
-	err := p.StreamBytestreamFileChunk(ctx, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
+	err := streamer(ctx, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
 	if err != nil {
 		return -1, err
 	}
 	return ziputil.ValidateLocalFileHeader(buf.Bytes(), entry)
 }
 
-func (p *pooledByteStreamClient) StreamSingleFileFromBytestreamZip(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error {
-	return p.streamSingleFileFromBytestreamZipInternal(ctx, url, entry, out)
+func (p *pooledByteStreamClient) StreamSingleFileFromBytestreamZip(ctx context.Context, u *url.URL, entry *zipb.ManifestEntry, out io.Writer) error {
+	return streamSingleFileFromBytestreamZipInternal(ctx, u, entry, out, func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
+		return p.StreamBytestreamFileChunk(ctx, url, offset, limit, writer)
+	})
 }
 
-func (p *pooledByteStreamClient) streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error {
-	dynamicHeaderBytes, err := p.validateLocalFileHeader(ctx, url, entry)
+func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer, streamer Bytestreamer) error {
+	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, url, entry, streamer)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("Error streaming zip file contents: %s", err)
@@ -120,7 +125,7 @@ func (p *pooledByteStreamClient) streamSingleFileFromBytestreamZipInternal(ctx c
 	reader, writer := io.Pipe()
 	defer reader.Close()
 	go func() {
-		err := p.StreamBytestreamFileChunk(ctx, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
+		err := streamer(ctx, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
 		// StreamBytestreamFileChunk shouldn't return EOF, but let's just be safe.
 		if err != nil && err != io.EOF {
 			writer.CloseWithError(err)

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"google.golang.org/protobuf/proto"
 
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
@@ -46,7 +45,7 @@ func TestManifest_SomeFilesZip(t *testing.T) {
 	}
 	path, _ := bazel.Runfile("some_files.zip")
 	bytes, _ := os.ReadFile(path)
-	manifest, _ := parseZipManifestFooter(bytes, 0, int64(len(bytes)))
+	manifest, _ := ParseZipManifestFooter(bytes, 0, int64(len(bytes)))
 	if !proto.Equal(expected, manifest) {
 		t.Fatalf("Incorrect manifest. Expected: %v\n Actual: %v", expected, manifest)
 	}
@@ -56,7 +55,7 @@ func TestManifest_NoFilesZip(t *testing.T) {
 	expected := &zipb.Manifest{}
 	path, _ := bazel.Runfile("no_files.zip")
 	bytes, _ := os.ReadFile(path)
-	manifest, _ := parseZipManifestFooter(bytes, 0, int64(len(bytes)))
+	manifest, _ := ParseZipManifestFooter(bytes, 0, int64(len(bytes)))
 	if !proto.Equal(expected, manifest) {
 		t.Fatalf("Incorrect manifest. Expected: %v\n Actual: %v", expected, manifest)
 	}
@@ -67,14 +66,14 @@ func TestManifest_TooManyFilesZip(t *testing.T) {
 	bytes, _ := os.ReadFile(path)
 
 	offset := len(bytes) - 65536
-	_, err := parseZipManifestFooter(bytes[65536:], int64(offset), int64(len(bytes)))
+	_, err := ParseZipManifestFooter(bytes[65536:], int64(offset), int64(len(bytes)))
 	if !strings.Contains(err.Error(), "code = Unimplemented") {
 		t.Fatalf("Unexpectedly parsed very large manifest.")
 	}
 }
 
 func createBytestreamer(b []byte) Bytestreamer {
-	return func(ctx context.Context, env environment.Env, url *url.URL, offset int64, limit int64, writer io.Writer) error {
+	return func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
 		writer.Write(b[offset : offset+limit])
 		return nil
 	}
@@ -82,7 +81,7 @@ func createBytestreamer(b []byte) Bytestreamer {
 
 func validateZipContents(t *testing.T, ctx context.Context, entry *zipb.ManifestEntry, expectedContent string, streamer Bytestreamer) {
 	var buf bytes.Buffer
-	streamSingleFileFromBytestreamZipInternal(ctx, nil, nil, entry, &buf, streamer)
+	streamSingleFileFromBytestreamZipInternal(ctx, nil, entry, &buf, streamer)
 	out := make([]byte, entry.GetUncompressedSize())
 	_, err := io.ReadFull(&buf, out)
 	if err != nil {
@@ -96,7 +95,7 @@ func validateZipContents(t *testing.T, ctx context.Context, entry *zipb.Manifest
 func TestReadZipFileContents(t *testing.T) {
 	path, _ := bazel.Runfile("some_files.zip")
 	b, _ := os.ReadFile(path)
-	manifest, _ := parseZipManifestFooter(b, 0, int64(len(b)))
+	manifest, _ := ParseZipManifestFooter(b, 0, int64(len(b)))
 
 	streamer := createBytestreamer(b)
 	ctx := context.Background()
