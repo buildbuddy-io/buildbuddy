@@ -238,7 +238,7 @@ However, some `exec_properties` are provided as manual overrides:
   - `4.5GB`: 4.5 GB
 - `EstimatedComputeUnits`: a convenience unit that specifies both CPU
   and memory. One compute unit is defined as 1 CPU and 2.5GB of
-   memory. Accepts numerical values, e.g. `1` or `9`.
+  memory. Accepts numerical values, e.g. `1` or `9`.
 - `EstimatedFreeDiskBytes`: the amount of disk space allocated to the action.
   Example values:
   - `1M`: 1 MB
