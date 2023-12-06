@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
@@ -111,6 +112,7 @@ func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
 }
 
 func GetTestEnv(t testing.TB) *real_environment.RealEnv {
+	vtprotocodec.Register()
 	flags.PopulateFlagsFromData(t, testConfigData)
 	testRootDir := testfs.MakeTempDir(t)
 	if flag.Lookup("storage.disk.root_directory") != nil {
