@@ -48,7 +48,8 @@ const (
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
-	defaultRemoteExecutionURL  = "remote.buildbuddy.io"
+	//TODO(Maggie): Make this configurable
+	defaultRemoteExecutionURL = "remote.buildbuddy.io"
 )
 
 var (
@@ -623,13 +624,9 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 func handleRemoteBazel(args, execArgs []string) []string {
 	args = arg.Remove(args, "bes_backend")
 	args = arg.Remove(args, "remote_cache")
-	args = arg.Remove(args, "remote_executor")
-	args = arg.Remove(args, "jobs")
 
 	args = append(args, "--bes_backend="+defaultRemoteExecutionURL)
 	args = append(args, "--remote_cache="+defaultRemoteExecutionURL)
-	args = append(args, "--remote_executor="+defaultRemoteExecutionURL)
-	args = append(args, "--jobs=100")
 
 	ctx := context.Background()
 	repoConfig, err := Config(".")
