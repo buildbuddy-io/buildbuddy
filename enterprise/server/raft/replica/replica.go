@@ -112,6 +112,7 @@ type Replica struct {
 	log             log.Logger
 	rangeMu         sync.RWMutex
 	rangeDescriptor *rfpb.RangeDescriptor
+	rangeLease      *rfpb.RangeLeaseRecord
 	mappedRange     *rangemap.Range
 
 	fileStorer filestore.Store
@@ -263,6 +264,26 @@ func (sm *Replica) notifyListenersOfUsage(rd *rfpb.RangeDescriptor, usage *rfpb.
 	default:
 		sm.log.Warningf("dropped usage update: %+v", up)
 	}
+}
+
+func (sm *Replica) setRangeLease(key, val []byte) error {
+	if !bytes.HasPrefix(key, constants.LocalRangeLeaseKey) {
+		return status.FailedPreconditionErrorf("setRangeLease called with non-range-lease key: %s", key)
+	}
+	lease := &rfpb.RangeLeaseRecord{}
+	if err := proto.Unmarshal(val, lease); err != nil {
+		return err
+	}
+	sm.rangeMu.Lock()
+	sm.rangeLease = lease
+	sm.rangeMu.Unlock()
+	return nil
+}
+
+func (sm *Replica) GetRangeLease() *rfpb.RangeLeaseRecord {
+	sm.rangeMu.RLock()
+	defer sm.rangeMu.RUnlock()
+	return sm.rangeLease
 }
 
 func (sm *Replica) setRange(key, val []byte) error {
@@ -693,9 +714,18 @@ func (sm *Replica) loadRangeDescriptor(db ReplicaReader) {
 	sm.setRange(constants.LocalRangeKey, buf)
 }
 
+func (sm *Replica) loadRangeLease(db ReplicaReader) {
+	buf, err := sm.lookup(db, constants.LocalRangeLeaseKey)
+	if err != nil {
+		return
+	}
+	sm.setRangeLease(constants.LocalRangeLeaseKey, buf)
+}
+
 // loadReplicaState loads any in-memory replica state from the DB.
 func (sm *Replica) loadReplicaState(db ReplicaReader) error {
 	sm.loadRangeDescriptor(db)
+	sm.loadRangeLease(db)
 	if err := sm.loadPartitionMetadata(db); err != nil {
 		return err
 	}
@@ -1418,6 +1448,12 @@ func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
 	if buf, ok := batchContainsKey(wb, localRangeKey); ok {
 		sm.setRange(localRangeKey, buf)
 	}
+	// Update the rangelease iff this batch sets it.
+	localRangeLeaseKey := sm.replicaLocalKey(constants.LocalRangeLeaseKey)
+	if buf, ok := batchContainsKey(wb, localRangeLeaseKey); ok {
+		sm.setRangeLease(localRangeLeaseKey, buf)
+	}
+
 }
 
 // Update updates the IOnDiskStateMachine instance. The input Entry slice

@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
@@ -191,11 +192,11 @@ func (la *leaseAgent) broadcastLeaseStatus(eventType events.EventType) {
 	}
 }
 
-func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor) leaseAgent {
+func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) leaseAgent {
 	ctx, cancel := context.WithCancel(context.TODO())
 	return leaseAgent{
 		log:       lk.log,
-		l:         rangelease.New(lk.nodeHost, lk.log, lk.liveness, rd),
+		l:         rangelease.New(lk.nodeHost, lk.log, lk.liveness, rd, r),
 		ctx:       ctx,
 		cancel:    cancel,
 		quit:      make(chan struct{}),
@@ -271,7 +272,7 @@ func (lk *LeaseKeeper) isStopped() bool {
 	}
 }
 
-func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor) {
+func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	if lk.isStopped() {
 		return
 	}
@@ -285,7 +286,7 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor) {
 		shard = shardID(rep.GetShardId())
 		break
 	}
-	laI, _ := lk.leases.LoadOrStore(shard, lk.newLeaseAgent(rd))
+	laI, _ := lk.leases.LoadOrStore(shard, lk.newLeaseAgent(rd, r))
 
 	// When a range is added via AddRange(), the raft leader may already
 	// have been chosen, meaning that `watchLeases` will not receive
@@ -310,7 +311,7 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor) {
 	})
 }
 
-func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor) {
+func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	if lk.isStopped() {
 		return
 	}
@@ -362,12 +363,19 @@ func (lk *LeaseKeeper) HaveLease(shard uint64) bool {
 		lk.mu.Unlock()
 
 		shouldHaveLease := leader && open
-		if valid != shouldHaveLease {
+		if shouldHaveLease && !valid {
 			lk.log.Errorf("HaveLease range: %d valid: %t, should have lease: %t", shard, valid, shouldHaveLease)
 			la.queueInstruction(leaseInstruction{
 				shard:  shardID(shard),
 				reason: "should have range",
 				action: Acquire,
+			})
+		} else if !shouldHaveLease && valid {
+			lk.log.Errorf("HaveLease range: %d valid: %t, should have lease: %t", shard, valid, shouldHaveLease)
+			la.queueInstruction(leaseInstruction{
+				shard:  shardID(shard),
+				reason: "should not have range",
+				action: Drop,
 			})
 		}
 		return valid

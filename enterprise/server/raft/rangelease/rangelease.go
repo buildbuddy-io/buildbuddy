@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -38,7 +39,7 @@ func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
 type Lease struct {
 	nodeHost client.NodeHost
 	log      log.Logger
-	shardID  uint64
+	replica  *replica.Replica
 	liveness *nodeliveness.Liveness
 
 	leaseDuration time.Duration
@@ -53,17 +54,11 @@ type Lease struct {
 	quitLease             chan struct{}
 }
 
-func New(nodeHost client.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
-	var shardID uint64
-	for _, rep := range rd.GetReplicas() {
-		shardID = rep.GetShardId()
-		break
-	}
-
+func New(nodeHost client.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor, r *replica.Replica) *Lease {
 	return &Lease{
 		nodeHost:              nodeHost,
 		log:                   log,
-		shardID:               shardID,
+		replica:               r,
 		liveness:              liveness,
 		leaseDuration:         defaultLeaseDuration,
 		gracePeriod:           defaultGracePeriod,
@@ -118,6 +113,10 @@ func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
 		return status.FailedPreconditionErrorf("Invalid rangeLease: nil")
 	}
 
+	if !proto.Equal(l.replica.GetRangeLease(), rl) {
+		return status.FailedPreconditionErrorf("rangeLease does not match replica")
+	}
+
 	// This is a node epoch based lease, so check node and epoch.
 	if nl := rl.GetNodeLiveness(); nl != nil {
 		return l.liveness.BlockingValidateNodeLiveness(nl)
@@ -143,7 +142,7 @@ func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, l.shardID, casRequest)
+	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, l.replica.ShardID, casRequest)
 	if err != nil {
 		return nil, err
 	}
