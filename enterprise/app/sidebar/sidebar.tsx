@@ -10,15 +10,8 @@ import {
   Github,
   BarChart2,
   LayoutGrid,
-  CheckCircle,
-  Circle,
   GitCommit,
-  ChevronUp,
-  ChevronDown,
   List,
-  LogOut,
-  PlusCircle,
-  ArrowRightCircle,
   Sliders,
   Terminal,
   PanelLeftClose,
@@ -26,14 +19,11 @@ import {
   Fingerprint,
 } from "lucide-react";
 import React from "react";
-import authService, { User } from "../../../app/auth/auth_service";
+import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Link, { LinkProps } from "../../../app/components/link/link";
 import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
-import rpc_service from "../../../app/service/rpc_service";
-import { grp } from "../../../proto/group_ts_proto";
-import { user } from "../../../proto/user_ts_proto";
 import OrgPicker from "../org_picker/org_picker";
 
 interface Props {
