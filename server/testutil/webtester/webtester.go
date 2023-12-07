@@ -287,20 +287,20 @@ func Login(wt *WebTester, target Target) {
 	}
 
 	// Login can have a delay. Wait for the sidebar before proceeding.
-	wt.Find(".sidebar-footer")
+	wt.FindByDebugID("org-picker")
 }
 
 // Logout logs out of the app. It expects that a user is currently logged in,
 // with the sidebar visible in the UI.
 func Logout(wt *WebTester) {
 	ExpandSidebarOptions(wt)
-	wt.Find(".sidebar-logout-item").Click()
+	wt.FindByDebugID("logout-button").Click()
 }
 
 // ExpandSidebarOptions expands the sidebar options, exposing the section
 // containing links to Logout, Settings, etc.
 func ExpandSidebarOptions(wt *WebTester) {
-	toggle := wt.Find(".sidebar-footer")
+	toggle := wt.FindByDebugID("org-picker")
 	if HasClass(toggle, "expanded") {
 		return
 	}
