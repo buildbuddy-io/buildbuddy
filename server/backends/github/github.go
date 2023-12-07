@@ -55,6 +55,8 @@ const (
 	groupIDCookieName        = "Github-Linked-Group-ID"
 	userIDCookieName         = "Github-Linked-User-ID"
 	installationIDCookieName = "Github-Linked-Installation-ID"
+
+	tempCookieDuration = 1 * time.Hour
 )
 
 func AuthEnabled(env environment.Env) bool {
@@ -224,10 +226,11 @@ func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, red
 		redirectWithError(w, r, err)
 		return
 	}
-	setCookie(w, stateCookieName, state, true)
-	setCookie(w, userIDCookieName, userID, true)
-	setCookie(w, groupIDCookieName, groupID, true)
-	setCookie(w, cookie.RedirCookie, redirectURL, true)
+	expiry := time.Now().Add(tempCookieDuration)
+	cookie.SetCookie(w, stateCookieName, state, expiry, true)
+	cookie.SetCookie(w, userIDCookieName, userID, expiry, true)
+	cookie.SetCookie(w, groupIDCookieName, groupID, expiry, true)
+	cookie.SetCookie(w, cookie.RedirCookie, redirectURL, expiry, true)
 
 	var authURL string
 	if r.FormValue("install") == "true" && c.InstallURL != "" {
@@ -441,7 +444,7 @@ func (c *OAuthHandler) handleInstallation(w http.ResponseWriter, r *http.Request
 		return false, err
 	}
 	// Set a client readable cookie with installation id, so it knows which installation was most recently installed.
-	setCookie(w, installationIDCookieName, rawID, false)
+	cookie.SetCookie(w, installationIDCookieName, rawID, time.Now().Add(tempCookieDuration), false)
 	if redirect != "" {
 		http.Redirect(w, r, redirect, http.StatusTemporaryRedirect)
 		return true, nil
@@ -565,26 +568,8 @@ func appendStatusNameSuffix(p *GithubStatusPayload) *GithubStatusPayload {
 	return NewGithubStatusPayload(name, p.TargetURL, p.Description, p.State)
 }
 
-func setCookie(w http.ResponseWriter, name, value string, httpOnly bool) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     name,
-		Value:    value,
-		Expires:  time.Now().Add(time.Hour),
-		HttpOnly: httpOnly,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-	})
-}
-
-func getCookie(r *http.Request, name string) string {
-	if c, err := r.Cookie(name); err == nil {
-		return c.Value
-	}
-	return ""
-}
-
 func getState(r *http.Request, key string) string {
-	if r.FormValue("state") == "" || r.FormValue("state") != getCookie(r, stateCookieName) {
+	if r.FormValue("state") == "" || r.FormValue("state") != cookie.GetCookie(r, stateCookieName) {
 		return ""
 	}
 	c, err := r.Cookie(key)
@@ -601,8 +586,8 @@ func validateState(r *http.Request) (string, error) {
 	if state == "" {
 		return "", nil
 	}
-	if state != getCookie(r, stateCookieName) {
-		return "", status.InvalidArgumentErrorf("OAuth state mismatch: URL param %q does not match cookie value %q", state, getCookie(r, stateCookieName))
+	if state != cookie.GetCookie(r, stateCookieName) {
+		return "", status.InvalidArgumentErrorf("OAuth state mismatch: URL param %q does not match cookie value %q", state, cookie.GetCookie(r, stateCookieName))
 	}
 	return state, nil
 }
