@@ -35,6 +35,10 @@ import (
 
 const (
 	noHandoff = ""
+
+	// Keep under the limit of ~4MB (save 256KB).
+	// (Match the readBufSizeBytes in byte_stream_server.go)
+	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
 )
 
 var (
@@ -78,8 +82,13 @@ func waitUntilServerIsAlive(addr string) {
 }
 
 func copyAndClose(wc interfaces.CommittedWriteCloser, r io.Reader) error {
-	if _, err := io.Copy(wc, r); err != nil {
-		return err
+	for {
+		if _, err := io.CopyN(wc, r, readBufSizeBytes); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
 	}
 	if err := wc.Commit(); err != nil {
 		return err
