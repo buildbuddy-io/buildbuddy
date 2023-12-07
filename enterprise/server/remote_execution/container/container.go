@@ -205,7 +205,9 @@ type CommandContainer interface {
 	// Pause freezes a container so that it no longer consumes CPU resources.
 	Pause(ctx context.Context) error
 	// Remove kills any processes currently running inside the container and
-	// removes any resources associated with the container itself.
+	// removes any resources associated with the container itself. It is safe to
+	// call remove if Create has not been called. If Create has been called but
+	// failed, then Remove should remove any created resources if applicable.
 	Remove(ctx context.Context) error
 
 	// Stats returns the current resource usage of this container.

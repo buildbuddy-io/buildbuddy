@@ -415,30 +415,29 @@ func (r *commandRunner) shutdown(ctx context.Context) error {
 }
 
 func (r *commandRunner) Remove(ctx context.Context) error {
+	r.p.mu.Lock()
+	s := r.state
+	r.state = removed
+	r.p.mu.Unlock()
+	if s == removed {
+		return nil
+	}
+
 	if r.removeCallback != nil {
 		defer r.removeCallback()
 	}
 
-	r.p.mu.RLock()
-	s := r.state
-	r.p.mu.RUnlock()
-
 	errs := []error{}
-	if s != initial && s != removed {
-		r.p.mu.Lock()
-		r.state = removed
-		r.p.mu.Unlock()
-		if err := r.shutdown(ctx); err != nil {
+	if err := r.shutdown(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if r.stopPersistentWorker != nil {
+		if err := r.stopPersistentWorker(); err != nil {
 			errs = append(errs, err)
 		}
-		if r.stopPersistentWorker != nil {
-			if err := r.stopPersistentWorker(); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		if err := r.Container.Remove(ctx); err != nil {
-			errs = append(errs, err)
-		}
+	}
+	if err := r.Container.Remove(ctx); err != nil {
+		errs = append(errs, err)
 	}
 	if err := r.removeVFS(); err != nil {
 		errs = append(errs, err)

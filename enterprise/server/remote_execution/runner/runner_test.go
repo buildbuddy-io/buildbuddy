@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -55,6 +56,29 @@ var (
 		MaxRunnerMemoryUsageBytes: unlimited,
 	}
 )
+
+type fakeContainer struct {
+	container.CommandContainer // TODO: implement all methods
+	CreateError                error
+	Removed                    chan struct{}
+}
+
+func NewFakeContainer() *fakeContainer {
+	return &fakeContainer{Removed: make(chan struct{})}
+}
+
+func (c *fakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+	return nil
+}
+
+func (c *fakeContainer) Create(ctx context.Context, workdir string) error {
+	return c.CreateError
+}
+
+func (c *fakeContainer) Remove(ctx context.Context) error {
+	close(c.Removed)
+	return nil
+}
 
 // fakeFirecrackerContainer behaves like a bare container except it returns
 // 0 mem / CPU resources, like Firecracker.
@@ -425,6 +449,12 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 	assert.Equal(t, 1, pool.PausedRunnerCount())
 }
 
+type providerFunc func(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error)
+
+func (f providerFunc) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error) {
+	return f(ctx, props, task, state, workspaceRoot)
+}
+
 // Returns containers that only consume disk resources when paused (like firecracker).
 type DiskOnlyContainerProvider struct{}
 
@@ -770,4 +800,30 @@ func TestRunnerPool_PersistentWorker_Crash_ShowsWorkerStderrInOutput(t *testing.
 
 	pool.TryRecycle(ctx, r, true)
 	assert.Equal(t, 0, pool.PausedRunnerCount())
+}
+
+func TestRunnerPool_RecycleAfterCreateFailed_CallsRemove(t *testing.T) {
+	env := newTestEnv(t)
+	cfg := *noLimitsCfg
+	var ctr *fakeContainer
+	// Set up a fake command container that always returns a fixed error
+	// when calling Create().
+	fakeCreateError := fmt.Errorf("test-create-error")
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error) {
+		ctr = NewFakeContainer()
+		ctr.CreateError = fakeCreateError
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, &cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	r, err := pool.Get(ctx, newTask())
+	require.NoError(t, err)
+	// Try running a task; Create() should fail with our fixed error, and be
+	// surfaced in the command result.
+	res := r.Run(ctx)
+	require.Equal(t, fakeCreateError, res.Error)
+	pool.TryRecycle(ctx, r, false /*=finishedCleanly*/)
+	// Remove should be called, closing this channel.
+	<-ctr.Removed
 }
