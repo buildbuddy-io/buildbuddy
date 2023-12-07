@@ -558,15 +558,15 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	// Write the ActionResult to the cache only after we've successfully
 	// uploaded all snapshot related artifacts. We'll retrieve this later in
 	// order to unpack the snapshot.
-	return l.cacheActionResult(ctx, key, ar)
+	return l.cacheActionResult(ctx, key, ar, opts)
 }
 
-func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult) error {
+func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult, opts *CacheSnapshotOptions) error {
 	b, err := proto.Marshal(ar)
 	if err != nil {
 		return err
 	}
-	if *snaputil.EnableRemoteSnapshotSharing && !*snaputil.RemoteSnapshotReadonly {
+	if *snaputil.EnableRemoteSnapshotSharing && !*snaputil.RemoteSnapshotReadonly && opts.Remote {
 		d, err := remoteManifestKey(key)
 		if err != nil {
 			return err
