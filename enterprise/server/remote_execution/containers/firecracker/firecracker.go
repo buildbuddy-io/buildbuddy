@@ -82,6 +82,7 @@ var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", f
 var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
+var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 
 //go:embed guest_api_hash.sha256
 var GuestAPIHash string
@@ -571,7 +572,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	c.supportsRemoteSnapshots = platform.IsCIRunner(task.GetCommand().GetArguments()) && *snaputil.EnableRemoteSnapshotSharing
+	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCIRunner(task.GetCommand().GetArguments()) || *forceRemoteSnapshotting)
 
 	if opts.SavedState == nil {
 		c.vmConfig.DebugMode = *debugTerminal

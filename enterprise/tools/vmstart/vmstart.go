@@ -216,7 +216,10 @@ func run(ctx context.Context, env environment.Env) error {
 
 	var c *firecracker.FirecrackerContainer
 	if *remoteSnapshotKeyJSON != "" {
-		// Runner recycling is needed to allow starting from snapshot.
+		// Force remote snapshotting to make sure we consult the remote cache
+		// instead of just local filecache.
+		flagutil.SetValueForFlagName("debug_force_remote_snapshots", true, nil, false)
+		// Runner recycling is also needed to allow starting from snapshot.
 		p, err := rexec.MakePlatform("recycle-runner=true")
 		if err != nil {
 			return status.WrapError(err, "make platform")
