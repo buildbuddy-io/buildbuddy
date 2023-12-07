@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/push_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -262,7 +263,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
 func registerLocalGRPCClients(env environment.Env) error {
 	// Identify ourselves as an app client in gRPC requests to other apps.
 	usageutil.SetClientType("app")
-	grpc_client.RegisterConnPoolCache(env)
+	byte_stream_client.RegisterPooledBytestreamClient(env)
 
 	// TODO(jdhollen): Share this pool with the cache above.  Not a huge deal for now.
 	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))

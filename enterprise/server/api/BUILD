@@ -20,7 +20,6 @@ go_library(
         "//server/eventlog",
         "//server/http/protolet",
         "//server/interfaces",
-        "//server/remote_cache/byte_stream_client",
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/capabilities",

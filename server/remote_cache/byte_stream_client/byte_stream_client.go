@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -28,9 +29,28 @@ import (
 
 var (
 	restrictBytestreamDialing = flag.Bool("app.restrict_bytestream_dialing", false, "If true, only allow dialing localhost or the configured cache backend for bytestream requests.")
+	enablePoolCache           = flag.Bool("grpc_client.enable_pool_cache", false, "Whether or not to enable the connection pool cache.")
 )
 
-func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *url.URL) (*zipb.Manifest, error) {
+type pooledByteStreamClient struct {
+	env         environment.Env
+	connMutex   sync.Mutex
+	connPoolMap map[string]grpc.ClientConnInterface
+}
+
+func RegisterPooledBytestreamClient(env environment.Env) {
+	p := NewPooledByteStreamClient(env)
+	env.SetPooledByteStreamClient(p)
+}
+
+func NewPooledByteStreamClient(env environment.Env) *pooledByteStreamClient {
+	return &pooledByteStreamClient{
+		env:         env,
+		connPoolMap: make(map[string]grpc.ClientConnInterface),
+	}
+}
+
+func (p *pooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error) {
 	r, err := digest.ParseDownloadResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
 	if err != nil {
 		return nil, err
@@ -44,16 +64,16 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 	}
 
 	var buf bytes.Buffer
-	err = StreamBytestreamFileChunk(ctx, env, url, offset, r.GetDigest().GetSizeBytes()-offset, &buf)
+	err = p.StreamBytestreamFileChunk(ctx, url, offset, r.GetDigest().GetSizeBytes()-offset, &buf)
 	if err != nil {
 		return nil, err
 	}
 
 	// We dump the full contents out into a buffer, but that should be 64K or less.
-	return parseZipManifestFooter(buf.Bytes(), offset, r.GetDigest().GetSizeBytes())
+	return ParseZipManifestFooter(buf.Bytes(), offset, r.GetDigest().GetSizeBytes())
 }
 
-func parseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*zipb.Manifest, error) {
+func ParseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*zipb.Manifest, error) {
 	eocd, err := ziputil.ReadDirectoryEnd(footer, trueFileSize)
 	if err != nil {
 		return nil, err
@@ -75,23 +95,25 @@ func parseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*z
 }
 
 // Just a little song and dance so that we can mock out streamingin tests.
-type Bytestreamer func(ctx context.Context, env environment.Env, url *url.URL, offset int64, limit int64, writer io.Writer) error
+type Bytestreamer func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error
 
-func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ManifestEntry, streamer Bytestreamer) (int, error) {
+func validateLocalFileHeader(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, streamer Bytestreamer) (int, error) {
 	var buf bytes.Buffer
-	err := streamer(ctx, env, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
+	err := streamer(ctx, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
 	if err != nil {
 		return -1, err
 	}
 	return ziputil.ValidateLocalFileHeader(buf.Bytes(), entry)
 }
 
-func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error {
-	return streamSingleFileFromBytestreamZipInternal(ctx, env, url, entry, out, StreamBytestreamFileChunk)
+func (p *pooledByteStreamClient) StreamSingleFileFromBytestreamZip(ctx context.Context, u *url.URL, entry *zipb.ManifestEntry, out io.Writer) error {
+	return streamSingleFileFromBytestreamZipInternal(ctx, u, entry, out, func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
+		return p.StreamBytestreamFileChunk(ctx, url, offset, limit, writer)
+	})
 }
 
-func streamSingleFileFromBytestreamZipInternal(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ManifestEntry, out io.Writer, streamer Bytestreamer) error {
-	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, env, url, entry, streamer)
+func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer, streamer Bytestreamer) error {
+	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, url, entry, streamer)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("Error streaming zip file contents: %s", err)
@@ -103,7 +125,7 @@ func streamSingleFileFromBytestreamZipInternal(ctx context.Context, env environm
 	reader, writer := io.Pipe()
 	defer reader.Close()
 	go func() {
-		err := streamer(ctx, env, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
+		err := streamer(ctx, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
 		// StreamBytestreamFileChunk shouldn't return EOF, but let's just be safe.
 		if err != nil && err != io.EOF {
 			writer.CloseWithError(err)
@@ -127,11 +149,11 @@ func streamSingleFileFromBytestreamZipInternal(ctx context.Context, env environm
 	return nil
 }
 
-func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL, writer io.Writer) error {
-	return StreamBytestreamFileChunk(ctx, env, url, 0, 0, writer)
+func (p *pooledByteStreamClient) StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error {
+	return p.StreamBytestreamFileChunk(ctx, url, 0, 0, writer)
 }
 
-func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *url.URL, offset int64, limit int64, writer io.Writer) error {
+func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
 	if url.Scheme != "bytestream" && url.Scheme != "actioncache" {
 		return status.InvalidArgumentErrorf("Only bytestream:// uris are supported")
 	}
@@ -139,25 +161,25 @@ func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *ur
 	var err error
 
 	// If we have a cache enabled, try connecting to that first
-	if env.GetCache() != nil {
+	if p.env.GetCache() != nil {
 		localURL, _ := url.Parse(url.String())
 		grpcPort := "1985"
 		if p, err := flagutil.GetDereferencedValue[int]("grpc_port"); err == nil {
 			grpcPort = strconv.Itoa(p)
 		}
 		localURL.Host = "localhost:" + grpcPort
-		err = streamFromUrl(ctx, env, localURL, false, offset, limit, writer)
+		err = p.streamFromUrl(ctx, localURL, false, offset, limit, writer)
 	}
 
 	// If the local cache did not work, maybe a remote cache is being used.
 	// Try to connect to that, first over grpcs.
-	if err != nil || env.GetCache() == nil {
-		err = streamFromUrl(ctx, env, url, true, offset, limit, writer)
+	if err != nil || p.env.GetCache() == nil {
+		err = p.streamFromUrl(ctx, url, true, offset, limit, writer)
 	}
 
 	// If that didn't work, try plain old grpc.
 	if err != nil {
-		err = streamFromUrl(ctx, env, url, false, offset, limit, writer)
+		err = p.streamFromUrl(ctx, url, false, offset, limit, writer)
 	}
 
 	// Sanitize the error so as to not expose internal services via the
@@ -191,13 +213,6 @@ func getTargetForURL(u *url.URL, grpcs bool) string {
 	return target.String()
 }
 
-func getCachedGrpcClientConnPool(env environment.Env, target string) (grpc.ClientConnInterface, error) {
-	if cc := env.GetGrpcClientConnPoolCache(); cc != nil {
-		return cc.GetGrpcClientConnPoolForURL(target)
-	}
-	return nil, nil
-}
-
 func isPermittedForDial(target string) bool {
 	u, err := url.Parse(target)
 	if err != nil {
@@ -210,21 +225,20 @@ func isPermittedForDial(target string) bool {
 	return u.Hostname() == "localhost" || (urlutil.GetDomain(u.Hostname()) == urlutil.GetDomain(cache_api_url.WithPath("").Hostname()))
 }
 
-func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) (err error) {
+func (p *pooledByteStreamClient) streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) (err error) {
 	target := getTargetForURL(url, grpcs)
 	if *restrictBytestreamDialing && !isPermittedForDial(target) {
 		return status.InvalidArgumentErrorf("Tried to connect to an unpermitted domain: %s", target)
 	}
 
 	var conn grpc.ClientConnInterface
-	if grpc_client.PoolCacheEnabled() {
-		conn, err = getCachedGrpcClientConnPool(env, target)
+	if *enablePoolCache {
+		conn, err = p.getGrpcClientConnPoolForURL(target)
 		if err != nil {
 			return err
 		}
-	}
-	if conn == nil {
-		closeableConn, err := grpc_client.DialInternalWithoutPooling(env, target)
+	} else {
+		closeableConn, err := grpc_client.DialInternalWithoutPooling(p.env, target)
 		if err != nil {
 			return err
 		}
@@ -286,4 +300,22 @@ func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs
 		}
 	}
 	return nil
+}
+
+func (p *pooledByteStreamClient) getGrpcClientConnPoolForURL(target string) (conn grpc.ClientConnInterface, err error) {
+	p.connMutex.Lock()
+	defer p.connMutex.Unlock()
+	connPool, ok := p.connPoolMap[target]
+	if ok && connPool != nil {
+		return connPool, nil
+	}
+
+	// We didn't find a connection pool, so we'll make one.
+	connPool, err = grpc_client.DialInternal(p.env, target)
+	if err != nil {
+		return nil, err
+	}
+	p.connPoolMap[target] = connPool
+	log.Infof("Cached connection pool for target: %s, %d targets cached so far", target, len(p.connPoolMap))
+	return connPool, nil
 }
