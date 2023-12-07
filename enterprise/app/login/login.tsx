@@ -83,7 +83,9 @@ export default class LoginComponent extends React.Component<Props, State> {
   }
 
   handleGithubClicked() {
-    const url = "/login/github/";
+    const url = `/login/github/?${new URLSearchParams({
+      redirect_url: window.location.href,
+    })}`;
     if (capabilities.config.popupAuthEnabled) {
       popup
         .open(url)
