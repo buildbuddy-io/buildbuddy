@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -268,6 +269,8 @@ type fakeExecutor struct {
 
 	ctx context.Context
 
+	unhealthy atomic.Bool
+
 	mu    sync.Mutex
 	tasks map[string]task
 }
@@ -288,22 +291,27 @@ func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedul
 	}
 }
 
+func (e *fakeExecutor) markUnhealthy() {
+	e.unhealthy.Store(true)
+}
+
 func (e *fakeExecutor) Register() {
 	stream, err := e.schedulerClient.RegisterAndStreamWork(e.ctx)
 	require.NoError(e.t, err)
+	err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
+		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{
+			Node: &scpb.ExecutionNode{
+				ExecutorId:            e.id,
+				Os:                    defaultOS,
+				Arch:                  defaultArch,
+				Host:                  "foo",
+				AssignableMemoryBytes: 1000000,
+				AssignableMilliCpu:    1000000,
+			}},
+	})
+	require.NoError(e.t, err)
+
 	go func() {
-		err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
-			RegisterExecutorRequest: &scpb.RegisterExecutorRequest{
-				Node: &scpb.ExecutionNode{
-					ExecutorId:            e.id,
-					Os:                    defaultOS,
-					Arch:                  defaultArch,
-					Host:                  "foo",
-					AssignableMemoryBytes: 1000000,
-					AssignableMilliCpu:    1000000,
-				}},
-		})
-		require.NoError(e.t, err)
 		for {
 			req, err := stream.Recv()
 			if status.IsUnavailableError(err) {
@@ -311,18 +319,25 @@ func (e *fakeExecutor) Register() {
 			}
 			require.NoError(e.t, err)
 			log.Infof("received req: %+v", req)
-			err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
-				EnqueueTaskReservationResponse: &scpb.EnqueueTaskReservationResponse{
-					TaskId: req.GetEnqueueTaskReservationRequest().GetTaskId(),
-				},
-			})
-			require.NoError(e.t, err)
-			e.mu.Lock()
-			log.Infof("got task %q", req.GetEnqueueTaskReservationRequest().GetTaskId())
-			e.tasks[req.GetEnqueueTaskReservationRequest().GetTaskId()] = task{delay: req.GetEnqueueTaskReservationRequest().GetDelay().AsDuration()}
-			e.mu.Unlock()
+			if e.unhealthy.Load() {
+				log.Infof("executor %s got task %q but is unhealthy -- ignoring so it times out", e.id, req.GetEnqueueTaskReservationRequest().GetTaskId())
+			} else {
+				err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
+					EnqueueTaskReservationResponse: &scpb.EnqueueTaskReservationResponse{
+						TaskId: req.GetEnqueueTaskReservationRequest().GetTaskId(),
+					},
+				})
+				require.NoError(e.t, err)
+				e.mu.Lock()
+				log.Infof("executor %s got task %q with scheduling delay %s", e.id, req.GetEnqueueTaskReservationRequest().GetTaskId(), req.GetEnqueueTaskReservationRequest().GetDelay())
+				e.tasks[req.GetEnqueueTaskReservationRequest().GetTaskId()] = task{delay: req.GetEnqueueTaskReservationRequest().GetDelay().AsDuration()}
+				e.mu.Unlock()
+			}
 		}
 	}()
+
+	// Give the executor a moment to register with the scheduler.
+	time.Sleep(100 * time.Millisecond)
 }
 
 func (e *fakeExecutor) WaitForTask(taskID string) {
@@ -338,7 +353,7 @@ func (e *fakeExecutor) WaitForTaskWithDelay(taskID string, delay time.Duration) 
 			if task.delay == delay {
 				return
 			} else {
-				require.FailNowf(e.t, "executor received task with unexpected delay", "task %q expected delay: %s actual delay: %s", taskID, delay, task.delay)
+				require.FailNowf(e.t, "executor received task with unexpected delay", "executor %s task %q expected delay: %s actual delay: %s", e.id, taskID, delay, task.delay)
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -406,49 +421,38 @@ func (e *fakeExecutor) Claim(taskID string) *taskLease {
 }
 
 func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props map[string]string) string {
-	for i := 0; i < 5; i++ {
-		id, err := uuid.NewRandom()
-		require.NoError(t, err)
-		taskID := id.String()
+	id, err := uuid.NewRandom()
+	require.NoError(t, err)
+	taskID := id.String()
 
-		task := &repb.ExecutionTask{
-			ExecutionId: taskID,
-			Command: &repb.Command{
-				Platform: &repb.Platform{
-					Properties: []*repb.Platform_Property{},
-				},
+	task := &repb.ExecutionTask{
+		ExecutionId: taskID,
+		Command: &repb.Command{
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{},
 			},
-		}
-		for k, v := range props {
-			task.Command.Platform.Properties = append(task.Command.Platform.Properties, &repb.Platform_Property{Name: k, Value: v})
-		}
-		taskBytes, err := proto.Marshal(task)
-		require.NoError(t, err)
-		_, err = env.GetSchedulerService().ScheduleTask(ctx, &scpb.ScheduleTaskRequest{
-			TaskId: taskID,
-			Metadata: &scpb.SchedulingMetadata{
-				Os:   defaultOS,
-				Arch: defaultArch,
-				TaskSize: &scpb.TaskSize{
-					EstimatedMemoryBytes:   100,
-					EstimatedMilliCpu:      100,
-					EstimatedFreeDiskBytes: 100,
-				},
-			},
-			SerializedTask: taskBytes,
-		})
-		// Allow time for executor to register.
-		if status.IsUnavailableError(err) {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		require.NoError(t, err)
-		if err == nil {
-			return taskID
-		}
+		},
 	}
-	require.FailNow(t, "could not schedule task")
-	return ""
+	for k, v := range props {
+		task.Command.Platform.Properties = append(task.Command.Platform.Properties, &repb.Platform_Property{Name: k, Value: v})
+	}
+	taskBytes, err := proto.Marshal(task)
+	require.NoError(t, err)
+	_, err = env.GetSchedulerService().ScheduleTask(ctx, &scpb.ScheduleTaskRequest{
+		TaskId: taskID,
+		Metadata: &scpb.SchedulingMetadata{
+			Os:   defaultOS,
+			Arch: defaultArch,
+			TaskSize: &scpb.TaskSize{
+				EstimatedMemoryBytes:   100,
+				EstimatedMilliCpu:      100,
+				EstimatedFreeDiskBytes: 100,
+			},
+		},
+		SerializedTask: taskBytes,
+	})
+	require.NoError(t, err)
+	return taskID
 }
 
 func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
@@ -569,7 +573,7 @@ func TestSchedulingDelay_DelayTooSmall(t *testing.T) {
 	fe1.Register()
 	fe2.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{"cold-runner-scheduling-delay": "-1s"})
+	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "-1s"})
 
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
@@ -583,7 +587,7 @@ func TestSchedulingDelay_NoPreferredExecutors(t *testing.T) {
 	fe1.Register()
 	fe2.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{"cold-runner-scheduling-delay": "5s"})
+	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "5s"})
 
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
@@ -597,7 +601,7 @@ func TestSchedulingDelay_DelayTooLarge(t *testing.T) {
 	fe1.Register()
 	fe2.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{"cold-runner-scheduling-delay": "1h"})
+	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "1h"})
 
 	fe1.WaitForTaskWithDelay(taskID, 15*time.Minute)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
@@ -611,8 +615,23 @@ func TestSchedulingDelay_OnePreferredExecutor(t *testing.T) {
 	fe1.Register()
 	fe2.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{"cold-runner-scheduling-delay": "5s"})
+	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "5s"})
 
 	fe1.WaitForTaskWithDelay(taskID, 5*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
+}
+
+func TestSchedulingDelay_PreferredExecutorUnhealthy(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{preferredExecutors: []string{"2"}}, "user1")
+
+	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
+	fe2 := newFakeExecutorWithId(ctx, t, "2", env.GetSchedulerClient())
+	fe1.Register()
+	fe2.Register()
+	fe2.markUnhealthy()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "5s"})
+
+	fe2.EnsureTaskNotReceived(taskID)
+	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
 }

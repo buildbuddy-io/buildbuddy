@@ -1679,11 +1679,14 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	// the executor is no longer connected.
 	preferredNode := nodeBalancer.FindConnectedExecutorByID(enqueueRequest.GetExecutorId())
 	if preferredNode != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			break
+		}
 		enqueueStart := time.Now()
-		enqueued, err := s.enqueue(ctx, preferredNode, enqueueRequest, opts)
-		if err != nil {
-			return err
-		} else if enqueued {
+		if s.enqueue(ctx, preferredNode, enqueueRequest, opts) {
 			scheduledOnPreferredNode = true
 			successfulReservations = append(successfulReservations, successfulReservation(preferredNode, enqueueStart))
 		}
@@ -1710,6 +1713,13 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	attempts := 0
 	nonPreferredDelay := getNonPreferredSchedulingDelay(cmd)
 	for ; len(successfulReservations) < probeCount; nodeRing = nodeRing.Next() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			break
+		}
+
 		rankedNode, ok := nodeRing.Value.(rankedExecutionNode)
 		if !ok {
 			return status.InternalError("failed to convert nodeRing to executionNode; this should never happen")
@@ -1732,10 +1742,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		} else {
 			enqueueRequest.Delay = nil
 		}
-		enqueued, err := s.enqueue(ctx, rankedNode.node, enqueueRequest, opts)
-		if err != nil {
-			return err
-		} else if enqueued {
+		if s.enqueue(ctx, rankedNode.node, enqueueRequest, opts) {
 			if rankedNode.preferred {
 				scheduledOnPreferredNode = true
 			}
@@ -1748,13 +1755,13 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 // Returns the delay that should be applied to executions scheduled on
 // non-preferred execution nodes.
 func getNonPreferredSchedulingDelay(cmd *repb.Command) time.Duration {
-	delayProperty := platform.FindValue(cmd.GetPlatform(), platform.ColdRunnerSchedulingDelayPropertyName)
+	delayProperty := platform.FindValue(cmd.GetPlatform(), platform.RunnerRecyclingMaxWaitPropertyName)
 	if delayProperty == "" {
 		return defaultSchedulingDelay
 	}
 	d, err := time.ParseDuration(delayProperty)
 	if err != nil {
-		log.Warningf("Could not parse platform property %q as duration: %s", platform.ColdRunnerSchedulingDelayPropertyName, err)
+		log.Warningf("Could not parse platform property %q as duration: %s", platform.RunnerRecyclingMaxWaitPropertyName, err)
 		return defaultSchedulingDelay
 	}
 	if d < 0*time.Second {
@@ -1772,20 +1779,12 @@ func successfulReservation(node *executionNode, enqueueStart time.Time) string {
 	return fmt.Sprintf("%s [%s]", node.String(), time.Since(enqueueStart).String())
 }
 
-func (s *SchedulerServer) enqueue(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest, opts enqueueTaskReservationOpts) (bool, error) {
-	select {
-	case <-ctx.Done():
-		return false, ctx.Err()
-	default:
-		break
-	}
-	enqueued := false
+func (s *SchedulerServer) enqueue(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest, opts enqueueTaskReservationOpts) bool {
 	if opts.scheduleOnConnectedExecutors {
-		enqueued = enqueueOnConnectedExecutor(ctx, node, request)
+		return enqueueOnConnectedExecutor(ctx, node, request)
 	} else {
-		enqueued = s.enqueueOnRemoteExecutor(ctx, node, request)
+		return s.enqueueOnRemoteExecutor(ctx, node, request)
 	}
-	return enqueued, nil
 }
 
 func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) bool {
@@ -1794,6 +1793,9 @@ func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, reques
 		return false
 	}
 	_, err := node.handle.EnqueueTaskReservation(ctx, request)
+	if err != nil {
+		log.Infof("failed to enqueue task on connected executor: %s", err)
+	}
 	return err == nil
 }
 

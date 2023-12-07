@@ -255,21 +255,21 @@ func TestParse_Duration(t *testing.T) {
 		rawValue      string
 		expectedValue time.Duration
 	}{
-		{"cold-runner-scheduling-delay", "", 0 * time.Second},
-		{"cold-runner-scheduling-delay", "100", 0 * time.Second},
-		{"cold-runner-scheduling-delay", "blah", 0 * time.Second},
-		{"cold-runner-scheduling-delay", "10ms", 10 * time.Millisecond},
-		{"cold-runner-scheduling-delay", "-20ms", -20 * time.Millisecond},
-		{"cold-runner-scheduling-delay", "2s", 2 * time.Second},
-		{"cold-runner-scheduling-delay", "4m", 4 * time.Minute},
-		{"cold-runner-scheduling-delay", "-7m", -7 * time.Minute},
+		{"runner-recycling-max-wait", "", 0 * time.Second},
+		{"runner-recycling-max-wait", "100", 0 * time.Second},
+		{"runner-recycling-max-wait", "blah", 0 * time.Second},
+		{"runner-recycling-max-wait", "10ms", 10 * time.Millisecond},
+		{"runner-recycling-max-wait", "-20ms", -20 * time.Millisecond},
+		{"runner-recycling-max-wait", "2s", 2 * time.Second},
+		{"runner-recycling-max-wait", "4m", 4 * time.Minute},
+		{"runner-recycling-max-wait", "-7m", -7 * time.Minute},
 	} {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.name, Value: testCase.rawValue},
 		}}
 		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		require.NoError(t, err)
-		assert.Equal(t, testCase.expectedValue, platformProps.ColdRunnerSchedulingDelay)
+		assert.Equal(t, testCase.expectedValue, platformProps.RunnerRecyclingMaxWait)
 	}
 }
 
