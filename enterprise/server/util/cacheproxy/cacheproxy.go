@@ -625,12 +625,16 @@ func (wc *streamWriteCloser) Commit() error {
 		HandoffPeer:        wc.handoffPeer,
 		Resource:           wc.r,
 	}
-	if err := wc.stream.Send(req); err != nil {
+	sendErr := wc.stream.Send(req)
+	if sendErr != nil && sendErr != io.EOF {
 		return err
 	}
 	_, err := wc.stream.CloseAndRecv()
 	if status.IsAlreadyExistsError(err) {
 		return nil
+	}
+	if sendErr != nil {
+		return sendErr
 	}
 	return err
 }
