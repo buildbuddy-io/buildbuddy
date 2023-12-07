@@ -18,14 +18,14 @@ func (p *pool) registerContainerProviders(providers map[platform.ContainerType]c
 	return nil
 }
 
-func (r *CommandRunner) startVFS() error {
+func (r *commandRunner) startVFS() error {
 	return nil
 }
 
-func (r *CommandRunner) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
+func (r *commandRunner) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
 	return nil
 }
 
-func (r *CommandRunner) removeVFS() error {
+func (r *commandRunner) removeVFS() error {
 	return nil
 }

@@ -10,10 +10,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -343,34 +341,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		log.CtxInfof(ctx, "Task finished cleanly.")
 		finishedCleanly = true
 	}
-
-	// If the runner has exceeded 90% of memory or disk usage, don't try to recycle
-	// it, because that may cause failures if it's reused
-	usedMemoryBytes := cmdResult.UsageStats.MemoryBytes
-	totalMemoryBytes := st.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes()
-	maxedOutStr := ""
-	if usedMemoryBytes >= int64(float64(totalMemoryBytes)*.9) {
-		maxedOutStr += fmt.Sprintf("%d/%d B memory used", usedMemoryBytes, totalMemoryBytes)
-	}
-	for _, fsUsage := range cmdResult.UsageStats.GetPeakFileSystemUsage() {
-		if float64(fsUsage.UsedBytes)/float64(fsUsage.TotalBytes) >= .9 {
-			maxedOutStr += fmt.Sprintf(" %d/%d B disk used for %s", fsUsage.UsedBytes, fsUsage.TotalBytes, fsUsage.GetSource())
-		}
-	}
-
-	if maxedOutStr != "" {
-		finishedCleanly = false
-
-		errStr := fmt.Sprintf("%v runner exceeded 90%% of memory or disk usage, not recycling: %s", r.GetIsolationType(), maxedOutStr)
-		if cr, ok := r.(*runner.CommandRunner); ok {
-			if fc, ok := cr.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
-				errStr += fmt.Sprintf("\nSnapshot debug key: %s", fc.SnapshotDebugString(ctx))
-			}
-		}
-		alert.UnexpectedEvent("runner_maxed_out", errStr)
-		log.Errorf(errStr)
-	}
-
 	return false, nil
 }
 

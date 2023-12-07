@@ -2575,6 +2575,10 @@ func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {
 	return snaploader.KeyDebugString(ctx, c.env, c.snapshot.GetKey())
 }
 
+func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {
+	return c.vmConfig
+}
+
 func isExitErrorSIGTERM(err error) bool {
 	err = errors.Unwrap(err)
 	exitErr, ok := err.(*exec.ExitError)
