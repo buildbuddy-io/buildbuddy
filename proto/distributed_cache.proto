@@ -29,9 +29,14 @@ message ReadResponse {
   bytes data = 1;
 }
 
+// Next Tag: 9
 message WriteRequest {
   reserved 1;
   bool finish_write = 3;
+
+  // If check_already_exists, the server should return an ALREADY_EXISTS error
+  // for CAS blobs (not AC!) that already exist in the cache.
+  bool check_already_exists = 8;
   bytes data = 4;
   resource.ResourceName resource = 7;
 
