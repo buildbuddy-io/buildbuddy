@@ -27,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -39,7 +38,6 @@ import (
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"gorm.io/gorm"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -217,8 +215,8 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	execution.GroupID = permissions.GroupID
 	execution.Perms = execution.Perms | permissions.Perms
 
-	return s.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
-		return tx.Create(execution).Error
+	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		return tx.NewQuery(ctx, "execution_server_create_execution").Create(execution)
 	})
 }
 
@@ -239,8 +237,8 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 		ExecutionID:  executionID,
 		Type:         int8(linkType),
 	}
-	err := s.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
-		return tx.Create(link).Error
+	err := s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		return tx.NewQuery(ctx, "execution_server_create_invocation_link").Create(link)
 	})
 	// This probably means there were duplicate actions in a single invocation
 	// that were merged. Not an error.
@@ -316,12 +314,14 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	dbErr := s.env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_execution"), func(tx *db.DB) error {
+	dbErr := s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		var existing tables.Execution
-		if err := tx.Where("execution_id = ?", executionID).First(&existing).Error; err != nil {
+		if err := tx.GORM("execution_server_get_execution_for_update").Where(
+			"execution_id = ?", executionID).First(&existing).Error; err != nil {
 			return err
 		}
-		return tx.Model(&existing).Where("execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution).Error
+		return tx.GORM("execution_server_update_execution").Model(&existing).Where(
+			"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution).Error
 	})
 
 	if stage == repb.ExecutionStage_COMPLETED {

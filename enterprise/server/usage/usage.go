@@ -339,7 +339,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 
 func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
 	dbh := ut.env.GetDBHandle()
-	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("insert_usage"), func(tx *db.DB) error {
+	return dbh.Transaction(ctx, func(tx interfaces.DB) error {
 		tu := &tables.Usage{
 			GroupID:         groupID,
 			PeriodStartUsec: p.Start().UnixMicro(),
@@ -356,14 +356,14 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 		// with the same key. Note that this locking should not affect
 		// performance since only one app should be writing to the DB at a time
 		// anyway.
-		unlock, err := tables.LockExclusive(tx, &tables.Usage{})
+		unlock, err := tables.LockExclusive(tx.GORM("usage_lock_table"), &tables.Usage{})
 		if err != nil {
 			return err
 		}
 		defer unlock()
 
 		// First check whether the row already exists.
-		err = tx.Raw(`
+		err = tx.NewQuery(ctx, "usage_check_exists").Raw(`
 			SELECT *
 			FROM "Usages"
 			WHERE
@@ -378,7 +378,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 			tu.PeriodStartUsec,
 			tu.Origin,
 			tu.Client,
-		).Take(&tables.Usage{}).Error
+		).Take(&tables.Usage{})
 		if err != nil && !db.IsRecordNotFound(err) {
 			return err
 		}
@@ -391,7 +391,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 		if err != nil {
 			return err
 		}
-		return tx.Create(tu).Error
+		return tx.NewQuery(ctx, "usage_insert_record").Create(tu)
 	})
 }
 

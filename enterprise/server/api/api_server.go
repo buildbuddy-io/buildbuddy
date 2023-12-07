@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -102,18 +103,10 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 	}
 	queryStr, args := q.Build()
 
-	rows, err := s.env.GetDBHandle().DB(ctx).Raw(queryStr, args...).Rows()
-	if err != nil {
-		return nil, err
-	}
+	rq := s.env.GetDBHandle().NewQuery(ctx, "api_server_get_invocations").Raw(queryStr, args...)
 
 	invocations := []*apipb.Invocation{}
-	for rows.Next() {
-		var ti tables.Invocation
-		if err := s.env.GetDBHandle().DB(ctx).ScanRows(rows, &ti); err != nil {
-			return nil, err
-		}
-
+	err = db.ScanRows(rq, func(ctx context.Context, ti *tables.Invocation) error {
 		apiInvocation := &apipb.Invocation{
 			Id: &apipb.Invocation_Id{
 				InvocationId: ti.InvocationID,
@@ -135,6 +128,10 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		}
 
 		invocations = append(invocations, apiInvocation)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	if req.IncludeMetadata {
