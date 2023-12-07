@@ -627,7 +627,7 @@ func (wc *streamWriteCloser) Commit() error {
 	}
 	sendErr := wc.stream.Send(req)
 	if sendErr != nil && sendErr != io.EOF {
-		return err
+		return sendErr
 	}
 	_, err := wc.stream.CloseAndRecv()
 	if status.IsAlreadyExistsError(err) {
