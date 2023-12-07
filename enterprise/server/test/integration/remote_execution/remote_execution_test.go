@@ -1787,7 +1787,7 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 	// Set a short lease TTL since we want to test killing an app while an
 	// update stream is in progress, and want to catch the error early.
-	flags.Set(t, "remote_execution.lease_duration", 50*time.Millisecond)
+	flags.Set(t, "remote_execution.lease_duration", 1*time.Second)
 	initialTasksStartedCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	rbe := rbetest.NewRBETestEnv(t)
@@ -1838,7 +1838,9 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 	}
 
 	// Maybe give enough time for a few lease pings to occur.
-	randSleepMillis(0, 100)
+	randSleepMillis(0, 3000)
+
+	log.Warningf("GRACEFUL SHUTDOWN OF APP")
 
 	// Initiate a graceful shutdown of app 1 and have the proxy start directing
 	// to app2. As soon as the graceful shutdown starts, the executor should try
@@ -1848,10 +1850,14 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 	mu.Unlock()
 	app1.Shutdown()
 
+	log.Warningf("HARD STOP OF APP")
+
 	// Simulate the shutdown grace period elapsing, which should cause a
 	// hard stop of the gRPC server on app 1.
 	time.Sleep(200 * time.Millisecond)
 	app1.Stop()
+
+	log.Warningf("LET COMMANDS FINISH")
 
 	eg := &errgroup.Group{}
 	for _, cmd := range cmds {
@@ -1866,13 +1872,20 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 			return res.Err
 		})
 	}
+
+	log.Warningf("WAITING FOR COMMANDS TO FINISH...")
+
 	err := eg.Wait()
 	require.NoError(t, err)
+
+	log.Warningf("DONE WAITING FOR COMMANDS TO FINISH...")
 
 	// Make sure we only ever started a single task execution per command (tasks
 	// should not be re-executed just because the app goes down).
 	tasksStartedCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount) - initialTasksStartedCount
 	require.Equal(t, float64(len(cmds)), tasksStartedCount, "no tasks should have been retried")
+
+	log.Warningf("TEST DONE")
 }
 
 func randSleepMillis(min, max int) {

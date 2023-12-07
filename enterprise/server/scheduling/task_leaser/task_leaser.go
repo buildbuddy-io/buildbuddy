@@ -124,15 +124,27 @@ func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 func (t *TaskLeaser) keepLease(ctx context.Context) {
 	go func() {
 		for {
+			log.CtxInfof(ctx, "lease TTL %s", t.ttl)
+			refreshTimer := time.NewTimer(t.ttl)
+			expireTimer := time.NewTimer(t.ttl * 2)
+
 			select {
 			case <-t.quit:
+				refreshTimer.Stop()
+				expireTimer.Stop()
 				return
-			case <-time.After(t.ttl):
+			case <-refreshTimer.C:
+				expireTimer.Stop()
 				if _, err := t.pingServer(ctx); err != nil {
 					log.CtxWarningf(ctx, "Error updating lease for task: %q: %s", t.taskID, err.Error())
 					t.cancelFunc()
 					return
 				}
+			case <-expireTimer.C:
+				refreshTimer.Stop()
+				log.CtxWarningf(ctx, "Lease for task %q was not renewed before expiration", t.taskID)
+				t.cancelFunc()
+				return
 			}
 		}
 	}()

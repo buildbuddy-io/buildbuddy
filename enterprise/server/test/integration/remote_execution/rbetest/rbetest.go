@@ -279,9 +279,9 @@ func NewRBETestEnv(t *testing.T) *Env {
 			e.env.GetHealthChecker().Shutdown()
 			wg.Add(1)
 			go func() {
-				log.Infof("Waiting for executor %q to shut down.", id)
+				log.Warningf("VVVVV Waiting for executor %q to shut down.", id)
 				e.env.GetHealthChecker().WaitForGracefulShutdown()
-				log.Infof("Shut down for executor %q completed.", id)
+				log.Warningf("VVVVV Shut down for executor %q completed.", id)
 				wg.Done()
 			}()
 		}
