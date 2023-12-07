@@ -78,7 +78,7 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 		} else {
 			ti.Attempt += 1
 		}
-		result = tx.GORM("invocationdb_update_invocatin_attempt").Updates(ti)
+		result = tx.GORM("invocationdb_update_invocation_attempt").Updates(ti)
 		created = result.RowsAffected > 0
 		return result.Error
 	})
