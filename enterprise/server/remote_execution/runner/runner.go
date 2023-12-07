@@ -377,32 +377,36 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 
 	execResult := r.Container.Exec(ctx, command, &commandutil.Stdio{})
 
-	// If the runner has exceeded 90% of memory or disk usage, don't try to recycle
-	// it, because that may cause failures if it's reused
-	maxedOutStr := ""
-	for _, fsUsage := range execResult.UsageStats.GetPeakFileSystemUsage() {
-		if float64(fsUsage.UsedBytes)/float64(fsUsage.TotalBytes) >= .9 {
-			maxedOutStr += fmt.Sprintf(" %d/%d B disk used for %s", fsUsage.UsedBytes, fsUsage.TotalBytes, fsUsage.GetSource())
-		}
-	}
-	// Only firecracker containers set max memory limits on the VMs
+	// If a firecracker runner has exceeded 90% of memory or disk usage, don't try to recycle
+	// it, because that may cause failures if it's reused, and we don't want to save
+	// bad snapshots to the cache.
 	if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
+		maxedOutStr := ""
+		for _, fsUsage := range execResult.UsageStats.GetPeakFileSystemUsage() {
+			if float64(fsUsage.UsedBytes)/float64(fsUsage.TotalBytes) >= .9 {
+				maxedOutStr += fmt.Sprintf(" %d/%d B disk used for %s", fsUsage.UsedBytes, fsUsage.TotalBytes, fsUsage.GetSource())
+			}
+		}
 		usedMemoryBytes := execResult.UsageStats.GetMemoryBytes()
 		totalMemoryBytes := fc.VMConfig().GetMemSizeMb() * 1e6
 		if usedMemoryBytes >= int64(float64(totalMemoryBytes)*.9) {
 			maxedOutStr += fmt.Sprintf("%d/%d B memory used", usedMemoryBytes, totalMemoryBytes)
 		}
-	}
 
-	if maxedOutStr != "" {
-		r.doNotReuse = true
+		if maxedOutStr != "" {
+			r.doNotReuse = true
 
-		errStr := fmt.Sprintf("%v runner exceeded 90%% of memory or disk usage, not recycling: %s", r.GetIsolationType(), maxedOutStr)
-		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
-			errStr += fmt.Sprintf("\nSnapshot debug key: %s", fc.SnapshotDebugString(ctx))
+			errStr := fmt.Sprintf("%v runner exceeded 90%% of memory or disk usage, not recycling: %s", r.GetIsolationType(), maxedOutStr)
+			debugStr := fc.SnapshotDebugString(ctx)
+			if debugStr == "" {
+				errStr += "\nRunner had started clean (not from a snapshot)"
+			} else {
+				errStr += fmt.Sprintf("\nSnapshot debug key: %s", fc.SnapshotDebugString(ctx))
+			}
+
+			alert.UnexpectedEvent("runner_maxed_out", errStr)
+			log.Errorf("%s", errStr)
 		}
-		alert.UnexpectedEvent("runner_maxed_out", errStr)
-		log.Errorf(errStr)
 	}
 
 	return execResult
