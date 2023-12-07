@@ -24,10 +24,7 @@ module.exports = {
       "enterprise-mac-rbe",
       "enterprise-api",
     ],
-    Monitoring: [
-	  "prometheus-metrics-on-prem",
-	  "prometheus-metrics-for-cloud"
-	],
+    Monitoring: ["prometheus-metrics-on-prem", "prometheus-metrics-for-cloud"],
     Architecture: [
       "architecture-overview",
       "architecture-data-storage",
