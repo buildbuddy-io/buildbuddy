@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_test(
     name = "remote_execution_test",
     size = "small",
@@ -46,5 +48,3 @@ go_test(
         "@org_golang_x_sync//errgroup",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
