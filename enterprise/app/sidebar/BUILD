@@ -13,6 +13,7 @@ ts_library(
         "//app/components/link",
         "//app/router",
         "//app/service:rpc_service",
+        "//enterprise/app/org_picker",
         "//proto:group_ts_proto",
         "//proto:user_ts_proto",
         "@npm//@types/react",
