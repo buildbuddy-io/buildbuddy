@@ -237,8 +237,7 @@ func (p *pooledByteStreamClient) streamFromUrl(ctx context.Context, url *url.URL
 		if err != nil {
 			return err
 		}
-	}
-	if conn == nil {
+	} else {
 		closeableConn, err := grpc_client.DialInternalWithoutPooling(p.env, target)
 		if err != nil {
 			return err
