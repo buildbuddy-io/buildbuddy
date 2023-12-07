@@ -123,6 +123,8 @@ type COWStore struct {
 	eagerFetchChan chan *eagerFetchData
 	eagerFetchEg   *errgroup.Group
 	quitChan       chan struct{}
+
+	ForceCache bool
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be

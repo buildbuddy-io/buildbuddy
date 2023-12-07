@@ -716,7 +716,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			// to re-cache it.
 			// If it was chunked directly from a snapshot file, it may not exist
 			// in the cache yet, and we should cache it.
-			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
+			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile) || cow.ForceCache
 			if shouldCache {
 				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
 				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path); err != nil {
@@ -809,7 +809,7 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 //
 // If the image is not cached, this func will split up the given ext4 image
 // file and create a new ChunkedFile from it, then add that to cache.
-func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, imageExt4Path string, outDir string, chunkSize int64) (*copy_on_write.COWStore, error) {
+func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, imageExt4Path string, outDir string, chunkSize int64, instanceName string) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -831,6 +831,9 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, ima
 		cf := unpacked.ChunkedFiles[rootfsFileName]
 		if cf == nil {
 			return nil, status.InternalError("missing rootfs artifact in snapshot")
+		}
+		if instanceName != "" {
+			cf.ForceCache = true
 		}
 		return cf, nil
 	}
