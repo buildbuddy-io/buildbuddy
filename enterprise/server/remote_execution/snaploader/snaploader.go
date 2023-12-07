@@ -145,7 +145,7 @@ func remoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 	}, nil
 }
 
-func keyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) string {
+func KeyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) string {
 	d, err := remoteManifestKey(s)
 	var dStr string
 	if err != nil {
@@ -303,7 +303,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 			log.CtxInfof(ctx, "Failed to fetch remote snapshot manifest: %s", err)
 			return nil, status.WrapError(err, "fetch remote manifest")
 		}
-		log.CtxInfof(ctx, "Fetched remote snapshot manifest %s", keyDebugString(ctx, l.env, key))
+		log.CtxInfof(ctx, "Fetched remote snapshot manifest %s", KeyDebugString(ctx, l.env, key))
 		return manifest, nil
 	}
 
@@ -575,7 +575,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar); err != nil {
 			return err
 		}
-		log.CtxInfof(ctx, "Cached remote snapshot manifest %s", keyDebugString(ctx, l.env, key))
+		log.CtxInfof(ctx, "Cached remote snapshot manifest %s", KeyDebugString(ctx, l.env, key))
 		return nil
 	}
 

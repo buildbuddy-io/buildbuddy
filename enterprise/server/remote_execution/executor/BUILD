@@ -9,8 +9,10 @@ go_library(
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/remote_execution/commandutil",
+        "//enterprise/server/remote_execution/containers/firecracker",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/remote_execution/runner",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
