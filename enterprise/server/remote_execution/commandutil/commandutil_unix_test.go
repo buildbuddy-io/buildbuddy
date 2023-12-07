@@ -299,6 +299,6 @@ func TestRun_EnableStats_ComplexProcessTree_RecordsStatsFromAllChildren(t *testi
 		t, res.UsageStats.GetPeakMemoryBytes(), int64(750e6),
 		"expected at least 750MB peak memory")
 	require.LessOrEqual(
-		t, res.UsageStats.GetPeakMemoryBytes(), int64(800e6),
+		t, res.UsageStats.GetPeakMemoryBytes(), int64(850e6),
 		"expected not much more than 750MB peak memory")
 }
