@@ -67,6 +67,7 @@ const (
 
 	RecycleRunnerPropertyName            = "recycle-runner"
 	AffinityRoutingPropertyName          = "affinity-routing"
+	RunnerRecyclingMaxWaitPropertyName   = "runner-recycling-max-wait"
 	preserveWorkspacePropertyName        = "preserve-workspace"
 	nonrootWorkspacePropertyName         = "nonroot-workspace"
 	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
@@ -144,6 +145,7 @@ type Properties struct {
 	DockerNetwork             string
 	RecycleRunner             bool
 	AffinityRouting           bool
+	RunnerRecyclingMaxWait    time.Duration
 	EnableVFS                 bool
 	IncludeSecrets            bool
 
@@ -269,6 +271,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		AffinityRouting:           boolProp(m, AffinityRoutingPropertyName, false),
+		RunnerRecyclingMaxWait:    durationProp(m, RunnerRecyclingMaxWaitPropertyName, 0*time.Second),
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
@@ -574,6 +577,19 @@ func stringListProp(props map[string]string, name string) []string {
 		}
 	}
 	return vals
+}
+
+func durationProp(props map[string]string, name string, defaultValue time.Duration) time.Duration {
+	val := props[strings.ToLower(name)]
+	if val == "" {
+		return defaultValue
+	}
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		log.Warningf("Could not parse platform property %q as duration: %s", name, err)
+		return defaultValue
+	}
+	return d
 }
 
 // FindValue scans the platform properties for the given property name (ignoring

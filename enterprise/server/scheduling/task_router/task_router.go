@@ -78,9 +78,30 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	}, nil
 }
 
+type rankedExecutionNode struct {
+	node      interfaces.ExecutionNode
+	preferred bool
+}
+
+func (n rankedExecutionNode) GetExecutionNode() interfaces.ExecutionNode {
+	return n.node
+}
+
+func (n rankedExecutionNode) IsPreferred() bool {
+	return n.preferred
+}
+
+func nonePreferred(nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
+	for i, node := range nodes {
+		rankedNodes[i] = rankedExecutionNode{node: node}
+	}
+	return rankedNodes
+}
+
 // RankNodes returns the input nodes ordered by their affinity to the given
 // routing properties.
-func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
+func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	nodes = copyNodes(nodes)
 
 	rand.Shuffle(len(nodes), func(i, j int) {
@@ -90,22 +111,22 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(params)
 	if strategy == nil {
-		return nodes
+		return nonePreferred(nodes)
 	}
 
 	preferredNodeLimit, routingKey, err := strategy.RoutingInfo(params)
 	if err != nil {
 		log.Errorf("Failed to compute routing info: %s", err)
-		return nodes
+		return nonePreferred(nodes)
 	}
 	if preferredNodeLimit == 0 {
-		return nodes
+		return nonePreferred(nodes)
 	}
 
 	preferredNodeIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
 	if err != nil {
 		log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
-		return nodes
+		return nonePreferred(nodes)
 	}
 
 	nodeByID := map[string]interfaces.ExecutionNode{}
@@ -113,7 +134,7 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 		nodeByID[node.GetExecutorID()] = node
 	}
 	preferredSet := map[string]struct{}{}
-	ranked := make([]interfaces.ExecutionNode, 0, len(nodes))
+	ranked := make([]interfaces.RankedExecutionNode, 0, len(nodes))
 
 	log.Debugf("Preferred executor IDs for %q: %v", routingKey, preferredNodeIDs)
 
@@ -125,13 +146,13 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 			continue
 		}
 		preferredSet[id] = struct{}{}
-		ranked = append(ranked, node)
+		ranked = append(ranked, rankedExecutionNode{node: node, preferred: true})
 	}
 	for _, node := range nodes {
 		if _, ok := preferredSet[node.GetExecutorID()]; ok {
 			continue
 		}
-		ranked = append(ranked, node)
+		ranked = append(ranked, rankedExecutionNode{node: node})
 	}
 
 	return ranked
