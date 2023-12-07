@@ -1,22 +1,19 @@
 load("//rules/typescript:index.bzl", "ts_library")
 
-package(default_visibility = ["//enterprise:__subpackages__"])
-
-exports_files(["sidebar.css"])
+exports_files(glob(["*.css"]))
 
 ts_library(
-    name = "sidebar",
-    srcs = ["sidebar.tsx"],
+    name = "org_picker",
+    srcs = ["org_picker.tsx"],
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
-        "//app/components/link",
         "//app/router",
-        "//app/service:rpc_service",
-        "//enterprise/app/org_picker",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
         "@npm//tslib",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

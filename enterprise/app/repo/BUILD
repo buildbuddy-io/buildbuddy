@@ -18,6 +18,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:popup",
+        "//enterprise/app/org_picker",
         "//enterprise/app/secrets:secret_util",
         "//proto:github_ts_proto",
         "//proto:repo_ts_proto",
