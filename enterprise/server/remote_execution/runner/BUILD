@@ -79,6 +79,7 @@ go_test(
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",
+        "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//proto:worker_go_proto",
