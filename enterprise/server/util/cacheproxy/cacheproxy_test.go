@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 
@@ -1067,7 +1068,8 @@ func BenchmarkRead(b *testing.B) {
 				// Remote-read the random bytes back.
 				r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 				require.NoError(b, err)
-				_ = testdigest.ReadDigestAndClose(b, r)
+				out := testdigest.ReadDigestAndClose(b, r)
+				runtime.KeepAlive(out)
 			}
 		})
 	}
