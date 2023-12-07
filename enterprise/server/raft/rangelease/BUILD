@@ -27,7 +27,6 @@ go_test(
     srcs = ["rangelease_test.go"],
     deps = [
         ":rangelease",
-        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/replica",
@@ -43,8 +42,6 @@ go_test(
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_lni_goutils//random",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_rpc//status",
-        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],
 )
