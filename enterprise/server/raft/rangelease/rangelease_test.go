@@ -5,11 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -18,43 +20,45 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	dbcl "github.com/lni/dragonboat/v4/client"
-	sm "github.com/lni/dragonboat/v4/statemachine"
+	dbsm "github.com/lni/dragonboat/v4/statemachine"
 	dbrd "github.com/lni/goutils/random"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	statuspb "google.golang.org/genproto/googleapis/rpc/status"
-	gstatus "google.golang.org/grpc/status"
 )
+
+type fakeStore struct{}
+
+func (fs *fakeStore) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica)    {}
+func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {}
+func (fs *fakeStore) Sender() *sender.Sender {
+	return nil
+}
+func (fs *fakeStore) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error {
+	return nil
+}
+func (fs *fakeStore) SnapshotCluster(ctx context.Context, shardID uint64) error {
+	return nil
+}
+func newTestReplica(t testing.TB, rootDir string, shardID, replicaID uint64, store replica.IStore) *replica.Replica {
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	return replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/)
+}
 
 const shardID = 1
 
 type testingProposer struct {
-	t    testing.TB
-	id   string
-	Data map[string]string
-}
-
-var _ sender.ISender = &testingSender{}
-
-func statusProto(err error) *statuspb.Status {
-	s, _ := gstatus.FromError(err)
-	return s.Proto()
-}
-
-func (tp *testingProposer) cmdResponse(kv *rfpb.KV, err error) sm.Result {
-	p := &rfpb.BatchCmdResponse{
-		Union: []*rfpb.ResponseUnion{{
-			Status: statusProto(err),
-			Value: &rfpb.ResponseUnion_Cas{
-				Cas: &rfpb.CASResponse{
-					Kv: kv,
-				},
-			},
-		}},
-	}
-	buf, err := proto.Marshal(p)
-	require.NoError(tp.t, err)
-	return sm.Result{Data: buf}
+	t   testing.TB
+	id  string
+	r   *replica.Replica
+	idx uint64
 }
 
 func (tp *testingProposer) ID() string {
@@ -65,37 +69,17 @@ func (tp *testingProposer) GetNoOPSession(shardID uint64) *dbcl.Session {
 	return dbcl.NewNoOPSession(shardID, dbrd.LockGuardedRand)
 }
 
-func (tp *testingProposer) SyncPropose(ctx context.Context, session *dbcl.Session, cmd []byte) (sm.Result, error) {
-	batch := &rfpb.BatchCmdRequest{}
-	if err := proto.Unmarshal(cmd, batch); err != nil {
-		return sm.Result{}, err
+func (tp *testingProposer) makeEntry(cmd []byte) dbsm.Entry {
+	tp.idx += 1
+	return dbsm.Entry{Cmd: cmd, Index: tp.idx}
+}
+
+func (tp *testingProposer) SyncPropose(ctx context.Context, session *dbcl.Session, cmd []byte) (dbsm.Result, error) {
+	entries, err := tp.r.Update([]dbsm.Entry{tp.makeEntry(cmd)})
+	if err != nil {
+		return dbsm.Result{}, err
 	}
-	// This is "fake" sender that only supports CAS values and stores them in a local map for ease of testing.
-	if len(batch.GetUnion()) != 1 {
-		tp.t.Fatal("Only one cmd at a time is allowed.")
-	}
-	for _, req := range batch.GetUnion() {
-		switch value := req.Value.(type) {
-		case *rfpb.RequestUnion_Cas:
-			kv := value.Cas.GetKv()
-			key := string(kv.GetKey())
-			expected := string(value.Cas.GetExpectedValue())
-			existing := tp.Data[key]
-			if expected != existing {
-				currentKV := &rfpb.KV{
-					Key:   kv.Key,
-					Value: []byte(existing),
-				}
-				return tp.cmdResponse(currentKV, status.FailedPreconditionError(constants.CASErrorMessage)), nil
-			}
-			tp.Data[key] = string(kv.GetValue())
-			return tp.cmdResponse(kv, nil), nil
-		default:
-			break
-		}
-	}
-	tp.t.Fatal("unsupported batch cmd value was provided.")
-	return sm.Result{}, nil
+	return entries[0].Result, nil
 }
 
 func (tp *testingProposer) SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error) {
@@ -110,6 +94,8 @@ func (tp *testingProposer) ReadLocalNode(rs *dragonboat.RequestState, query inte
 func (tp *testingProposer) StaleRead(shardID uint64, query interface{}) (interface{}, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
+
+var _ sender.ISender = &testingSender{}
 
 // testingSender forwards all requests directly to the underlying proposer.
 type testingSender struct {
@@ -140,22 +126,27 @@ func (t *testingSender) SyncRead(ctx context.Context, key []byte, batch *rfpb.Ba
 	return nil, status.UnimplementedError("not implemented in testingSender")
 }
 
-func newTestingProposerAndSender(t testing.TB) (*testingProposer, *testingSender) {
+func newTestingProposerAndSenderAndReplica(t testing.TB) (*testingProposer, *testingSender, *replica.Replica) {
+	rootDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	r := newTestReplica(t, rootDir, 1, 1, store)
+	require.NotNil(t, r)
+
 	randID, err := random.RandomString(10)
 	require.NoError(t, err)
 	p := &testingProposer{
-		t:    t,
-		id:   randID,
-		Data: make(map[string]string),
+		t:  t,
+		id: randID,
+		r:  r,
 	}
-	return p, &testingSender{p}
+	return p, &testingSender{p}, r
 }
 
 func TestAcquireAndRelease(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 	defer cancel()
 
-	proposer, sender := newTestingProposerAndSender(t)
+	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-1", sender)
 
 	rd := &rfpb.RangeDescriptor{
@@ -168,7 +159,7 @@ func TestAcquireAndRelease(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd, rep)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -193,7 +184,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 	defer cancel()
 
-	proposer, sender := newTestingProposerAndSender(t)
+	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-2", sender)
 
 	rd := &rfpb.RangeDescriptor{
@@ -206,7 +197,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd, rep)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -231,7 +222,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 	defer cancel()
 
-	proposer, sender := newTestingProposerAndSender(t)
+	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-3", sender)
 
 	rd := &rfpb.RangeDescriptor{
@@ -246,7 +237,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	}
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd).WithTimeouts(leaseDuration, gracePeriod)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd, rep).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -277,7 +268,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
 	defer cancel()
 
-	proposer, sender := newTestingProposerAndSender(t)
+	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-4", sender)
 
 	rd := &rfpb.RangeDescriptor{
@@ -290,7 +281,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd)
+	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd, rep)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
