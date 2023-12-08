@@ -300,10 +300,8 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	if *snaputil.EnableRemoteSnapshotSharing && remoteEnabled {
 		manifest, err := l.fetchRemoteManifest(ctx, key)
 		if err != nil {
-			log.CtxInfof(ctx, "Failed to fetch remote snapshot manifest: %s", err)
 			return nil, status.WrapError(err, "fetch remote manifest")
 		}
-		log.CtxInfof(ctx, "Fetched remote snapshot manifest %s", KeyDebugString(ctx, l.env, key))
 		return manifest, nil
 	}
 

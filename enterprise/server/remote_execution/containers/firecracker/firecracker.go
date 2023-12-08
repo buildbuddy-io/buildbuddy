@@ -608,10 +608,14 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			label := ""
 			if err != nil {
 				label = metrics.MissStatusLabel
-				log.CtxInfof(ctx, "Failed to get VM snapshot: %s", err)
+				keySetStr := snaploader.KeyDebugString(ctx, c.env, c.snapshotKeySet.GetBranchKey())
+				for _, key := range c.snapshotKeySet.FallbackKeys {
+					keySetStr += fmt.Sprintf(", %s", snaploader.KeyDebugString(ctx, c.env, key))
+				}
+				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", keySetStr, err)
 			} else {
 				label = metrics.HitStatusLabel
-				log.CtxInfof(ctx, "Found snapshot for ref=%q", snap.GetKey().GetRef())
+				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey()))
 			}
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
 				metrics.RecycleRunnerRequestStatusLabel: label,
