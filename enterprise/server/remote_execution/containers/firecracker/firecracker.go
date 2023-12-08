@@ -2176,6 +2176,12 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 	}
 	c.pulled = true
 
+	// If we're creating from a snapshot, we don't need to pull the base image
+	// since the rootfs image contains our full desired disk contents.
+	if c.createFromSnapshot && *EnableRootfs {
+		return nil
+	}
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
