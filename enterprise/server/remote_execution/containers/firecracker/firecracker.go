@@ -608,11 +608,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			label := ""
 			if err != nil {
 				label = metrics.MissStatusLabel
-				keySetStr := snaploader.KeyDebugString(ctx, c.env, c.snapshotKeySet.GetBranchKey())
-				for _, key := range c.snapshotKeySet.FallbackKeys {
-					keySetStr += fmt.Sprintf(", %s", snaploader.KeyDebugString(ctx, c.env, key))
-				}
-				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", keySetStr, err)
+				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.SnapshotKeySet()), err)
 			} else {
 				label = metrics.HitStatusLabel
 				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey()))

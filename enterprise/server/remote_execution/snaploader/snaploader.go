@@ -164,6 +164,14 @@ func KeyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKe
 	return fmt.Sprintf(`{"group_id": %q, "instance_name": %q, "key_digest": %q, "key": %s}`, gid, s.InstanceName, dStr, string(jb))
 }
 
+func KeysetDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKeySet) string {
+	keySetStr := KeyDebugString(ctx, env, s.GetBranchKey())
+	for _, key := range s.FallbackKeys {
+		keySetStr += fmt.Sprintf(", %s", KeyDebugString(ctx, env, key))
+	}
+	return keySetStr
+}
+
 func fileDigest(filePath string) (*repb.Digest, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
