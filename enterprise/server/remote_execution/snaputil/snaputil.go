@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -50,6 +51,23 @@ const (
 	ChunkSourceRemoteCache
 )
 
+func (s ChunkSource) String() string {
+	switch s {
+	case ChunkSourceUnmapped:
+		return "Unmapped"
+	case ChunkSourceHole:
+		return "Hole"
+	case ChunkSourceLocalFile:
+		return "LocalFile"
+	case ChunkSourceLocalFilecache:
+		return "LocalFilecache"
+	case ChunkSourceRemoteCache:
+		return "RemoteCache"
+	default:
+		return ""
+	}
+}
+
 func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
 	node := &repb.FileNode{Digest: d}
 	fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
@@ -63,7 +81,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 
 	if *VerboseLogging {
 		start := time.Now()
-		log.CtxDebugf(ctx, "Fetching remote snapshot artifact...")
+		log.CtxDebugf(ctx, "Fetching snapshot artifact: instance=%q file=%s hash=%s", instanceName, StripChroot(outputPath), d.GetHash())
 		defer func() { log.CtxDebugf(ctx, "Fetched remote snapshot artifact in %s", time.Since(start)) }()
 	}
 
@@ -115,7 +133,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 
 	if *VerboseLogging {
 		start := time.Now()
-		log.CtxDebugf(ctx, "Uploading snapshot artifact...")
+		log.CtxDebugf(ctx, "Uploading snapshot artifact: instance=%q file=%s hash=%s", remoteInstanceName, StripChroot(path), d.GetHash())
 		defer func() { log.CtxDebugf(ctx, "Uploaded snapshot artifact in %s", time.Since(start)) }()
 	}
 
@@ -149,6 +167,15 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 	}()
 
 	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath)
+}
+
+var chrootPrefix = regexp.MustCompile("^.*/firecracker/[^/]+/root/")
+
+// StripChroot removes the jailer chroot directory from a given snapshot
+// artifact path. Intended only for debugging purposes (to make paths more
+// readable).
+func StripChroot(path string) string {
+	return chrootPrefix.ReplaceAllLiteralString(path, "")
 }
 
 // cacheLocally copies the data at `path` to the local filecache with

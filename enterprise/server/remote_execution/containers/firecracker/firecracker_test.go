@@ -785,6 +785,81 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	require.Equal(t, "Base\nFork remote fetch\n", string(res.Stdout))
 }
 
+func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
+	if !*snaputil.EnableRemoteSnapshotSharing {
+		t.Skip("Snapshot sharing is not enabled")
+	}
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	cfg := getExecutorConfig(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
+	// Set up a task with remote snapshot sharing enabled.
+	task := &repb.ExecutionTask{
+		ExecuteRequest: &repb.ExecuteRequest{
+			InstanceName: "",
+		},
+		Command: &repb.Command{
+			// Enable remote snapshotting
+			Arguments: []string{"./buildbuddy_ci_runner"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+		},
+	}
+	workdir := testfs.MakeTempDir(t)
+	opts := firecracker.ContainerOpts{
+		ExecutorConfig: cfg,
+		// The image name here matters - the issue which originally prompted
+		// this test didn't reproduce on busybox, likely because the image is
+		// smaller and disk chunks were more likely to be dirtied.
+		ContainerImage: platform.Ubuntu20_04WorkflowsImage,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			ScratchDiskSizeMb: 100,
+		},
+		ActionWorkingDirectory: workdir,
+	}
+
+	// This command just increments the current value in a counter file
+	// "/root/attempts" (if missing, defaults to 0), then prints the new value.
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+cd /root
+ATTEMPT_NUMBER=$(cat ./attempts 2>/dev/null || echo 0)
+ATTEMPT_NUMBER=$(( ATTEMPT_NUMBER + 1 ))
+printf '%s' $ATTEMPT_NUMBER | tee ./attempts
+`}}
+
+	run := func(instanceName string, expectedLogs string) {
+		log.Debugf("\n\n\n=== run: instance=%q expectedLogs=%q ===", instanceName, expectedLogs)
+
+		task.ExecuteRequest.InstanceName = instanceName
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
+		err = c.Create(ctx, workdir)
+		require.NoError(t, err)
+		res := c.Exec(ctx, cmd, nil)
+		// Make sure we pause before doing any other assertions,
+		// since this also cleans up the VM.
+		{
+			err = c.Pause(ctx)
+			require.NoError(t, err)
+		}
+		require.Empty(t, string(res.Stderr))
+		require.Equal(t, 0, res.ExitCode)
+		require.NoError(t, res.Error)
+		assert.Equal(t, expectedLogs, string(res.Stdout))
+		log.Debugf("=== output: %q ===", string(res.Stdout))
+	}
+
+	run("", "1")  // Should start clean
+	run("A", "1") // New instance name "A"; should start clean
+	run("A", "2") // Should resume from previous, and increment the counter
+}
+
 func TestFirecrackerSnapshotVersioning(t *testing.T) {
 	if !*snaputil.EnableLocalSnapshotSharing {
 		t.SkipNow()
