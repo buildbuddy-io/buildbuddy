@@ -55,7 +55,7 @@ interface State extends CommitGrouping {
 
 type ColorMode = "status" | "timing";
 
-type SortMode = "target" | "count" | "pass" | "avgDuration" | "maxDuration";
+type SortMode = "target" | "count" | "pass" | "avgDuration" | "maxDuration" | "flake";
 
 type SortDirection = "asc" | "desc";
 
@@ -76,6 +76,7 @@ interface Stat {
   totalDuration: number;
   maxDuration: number;
   avgDuration: number;
+  flake: number;
 }
 
 const Status = api.v1.Status;
@@ -214,7 +215,7 @@ export default class TapComponent extends React.Component<Props, State> {
     let maxInvocations = 0;
     let maxDuration = 1;
     for (let targetHistory of histories) {
-      let stats: Stat = { count: 0, pass: 0, totalDuration: 0, maxDuration: 0, avgDuration: 0 };
+      let stats: Stat = { count: 0, pass: 0, totalDuration: 0, maxDuration: 0, avgDuration: 0, flake: 0 };
       for (let status of targetHistory.targetStatus) {
         stats.count += 1;
         let duration = this.durationToNum(status.timing?.duration || undefined);
@@ -222,6 +223,8 @@ export default class TapComponent extends React.Component<Props, State> {
         stats.maxDuration = Math.max(stats.maxDuration, duration);
         if (status.status == Status.PASSED) {
           stats.pass += 1;
+        } else if (status.status == Status.FLAKY) {
+          stats.flake += 1;
         }
       }
       stats.avgDuration = stats.totalDuration / stats.count;
@@ -448,6 +451,8 @@ export default class TapComponent extends React.Component<Props, State> {
         return firstStats!.avgDuration - secondStats!.avgDuration;
       case "maxDuration":
         return firstStats!.maxDuration - secondStats!.maxDuration;
+      case "flake":
+        return firstStats!.flake / firstStats!.count - secondStats!.flake / secondStats!.count;
     }
     return 0;
   }
@@ -576,6 +581,7 @@ export default class TapComponent extends React.Component<Props, State> {
                       <Option value="pass">Pass percentage</Option>
                       <Option value="avgDuration">Average duration</Option>
                       <Option value="maxDuration">Max duration</Option>
+                      <Option value="flake">Flake percentage</Option>
                     </Select>
                   </div>
                   <div className="tap-sort-control">
@@ -626,6 +632,7 @@ export default class TapComponent extends React.Component<Props, State> {
                   <span className="tap-target-stats">
                     ({format.formatWithCommas(stats?.count || 0)} invocations,{" "}
                     {format.percent((stats?.pass || 0) / (stats?.count || Number.MAX_VALUE))}% pass,{" "}
+                    {format.percent((stats?.flake || 0) / (stats?.count || Number.MAX_VALUE))}% flaky,{" "}
                     {format.durationSec(stats?.avgDuration || 0)} avg, {format.durationSec(stats?.maxDuration || 0)}{" "}
                     max)
                   </span>
