@@ -229,6 +229,7 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.RecvBufferPool(grpc.NewSharedBufferPool()),
 		grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes),
+		grpc.ServerEncoderBufferPool(grpc.NewSharedBufferPool()),
 		KeepaliveEnforcementPolicy(),
 	}
 }

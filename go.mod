@@ -10,6 +10,7 @@ replace (
 	github.com/jotfs/fastcdc-go v0.2.0 => github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2
 	github.com/lni/dragonboat/v4 => github.com/tylerwilliams/dragonboat/v4 v4.0.0-pre1
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
+	google.golang.org/grpc v1.59.0 => github.com/buildbuddy-io/grpc-go v1.59.0-rc
 )
 
 require (

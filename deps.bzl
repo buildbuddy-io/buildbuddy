@@ -2117,8 +2117,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_golang_glog",
         importpath = "github.com/golang/glog",
-        sum = "h1:DVjP2PbBOzHyzA+dn3WhHIq4NdVu3Q+pvivFICf/7fo=",
-        version = "v1.1.2",
+        sum = "h1:/d3pCKDPWNnvIWe0vVUpNP32qc8U3PDVxySP/y360qE=",
+        version = "v1.1.0",
     )
     go_repository(
         name = "com_github_golang_groupcache",
@@ -6379,8 +6379,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         # server gracefully, it's safe for us to allow gRPC to wait for all
         # ongoing requests to finish.
         patches = ["@{}//buildpatches:org_golang_google_grpc_remove_drain_panic.patch".format(workspace_name)],
-        sum = "h1:Z5Iec2pjwb+LEOqzpB2MR12/eKFhDPhuqW91O+4bwUk=",
-        version = "v1.59.0",
+        replace = "github.com/buildbuddy-io/grpc-go",
+        sum = "h1:iveMKv2sUWZ+ok88rGpK51nowFGasqF/M0oW6VQ1Erw=",
+        version = "v1.59.0-rc",
     )
     go_repository(
         name = "org_golang_google_grpc_cmd_protoc_gen_go_grpc",
