@@ -126,10 +126,6 @@
   transition: 300ms ease-in-out;
 }
 
-.org-picker-container .org-picker-item.admin-only {
-  color: #ffc107;
-}
-
 .org-picker-container .org-picker-item svg {
   padding-right: 16px;
   width: 18px;
@@ -148,6 +144,10 @@
 
 .org-picker-container:not(.floating) .org-picker-item {
   color: #90a4ae;
+}
+
+.org-picker-container:not(.floating) .org-picker-item.admin-only {
+  color: #ffc107;
 }
 
 .org-picker-container:not(.floating) .org-picker-item svg {
