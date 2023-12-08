@@ -479,6 +479,9 @@ type FirecrackerContainer struct {
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
 
+	// If set, the snapshot used to load the VM
+	snapshot *snaploader.Snapshot
+
 	// When the VM was initialized (i.e. created or unpaused) for the command
 	// it is currently executing
 	//
@@ -985,6 +988,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
+	c.snapshot = snap
 
 	// Use vmCtx for COWs since IO may be done outside of the task ctx.
 	unpacked, err := c.loader.UnpackSnapshot(vmCtx, snap, c.getChroot())
@@ -2563,6 +2567,17 @@ func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskSta
 		metrics.RecycledRunnerStatus:     recycleStatus,
 		metrics.GroupID:                  groupID,
 	}).Observe(float64(durationUsec))
+}
+
+func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {
+	if c.snapshot == nil {
+		return ""
+	}
+	return snaploader.KeyDebugString(ctx, c.env, c.snapshot.GetKey())
+}
+
+func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {
+	return c.vmConfig
 }
 
 func isExitErrorSIGTERM(err error) bool {

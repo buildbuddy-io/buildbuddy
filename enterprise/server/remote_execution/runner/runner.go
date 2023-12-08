@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -112,6 +113,10 @@ const (
 
 	// Where to store the RunnerPoolState proto, relative to rootDirectory.
 	stateFileName = "_runner_pool_state.bin"
+
+	// If a runner exceeds this percentage of its total memory or disk allocation,
+	// it should not be recycled, because it may cause failures if it's reused
+	maxRecyclableResourceUtilization = .9
 )
 
 var (
@@ -374,7 +379,41 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	return r.Container.Exec(ctx, command, &commandutil.Stdio{})
+	execResult := r.Container.Exec(ctx, command, &commandutil.Stdio{})
+
+	// If a firecracker runner has exceeded a certain % of allocated memory or disk, don't try to recycle
+	// it, because that may cause failures if it's reused, and we don't want to save
+	// bad snapshots to the cache.
+	if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
+		maxedOutStr := ""
+		for _, fsUsage := range execResult.UsageStats.GetPeakFileSystemUsage() {
+			if float64(fsUsage.UsedBytes)/float64(fsUsage.TotalBytes) >= maxRecyclableResourceUtilization {
+				maxedOutStr += fmt.Sprintf(" %d/%d B disk used for %s", fsUsage.UsedBytes, fsUsage.TotalBytes, fsUsage.GetSource())
+			}
+		}
+		usedMemoryBytes := execResult.UsageStats.GetMemoryBytes()
+		totalMemoryBytes := fc.VMConfig().GetMemSizeMb() * 1e6
+		if usedMemoryBytes >= int64(float64(totalMemoryBytes)*maxRecyclableResourceUtilization) {
+			maxedOutStr += fmt.Sprintf("%d/%d B memory used", usedMemoryBytes, totalMemoryBytes)
+		}
+
+		if maxedOutStr != "" {
+			r.doNotReuse = true
+
+			errStr := fmt.Sprintf("%v runner exceeded 90%% of memory or disk usage, not recycling: %s", r.GetIsolationType(), maxedOutStr)
+			debugStr := fc.SnapshotDebugString(ctx)
+			if debugStr == "" {
+				errStr += "\nRunner had started clean (not from a snapshot)"
+			} else {
+				errStr += fmt.Sprintf("\nSnapshot debug key: %s", fc.SnapshotDebugString(ctx))
+			}
+
+			alert.UnexpectedEvent("runner_maxed_out", errStr)
+			log.Errorf("%s", errStr)
+		}
+	}
+
+	return execResult
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
