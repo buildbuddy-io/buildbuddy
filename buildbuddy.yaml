@@ -101,6 +101,20 @@ actions:
           - "*"
     bazel_commands:
       - test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare
+  - name: 90 tests
+    container_image: ubuntu-20.04
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    bazel_commands:
+      - test //test_90:test_disk --config=linux-workflows --nocache_test_results --runs_per_test=1 --test_output=streamed
+    resource_requests:
+      memory: 2GB
+      disk: 9_000_000_000
 
 plugins:
   - path: cli/plugins/go-deps
