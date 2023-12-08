@@ -350,9 +350,9 @@ func (c *OAuthHandler) requestAccessToken(r *http.Request, code string) error {
 			return status.WrapError(err, "failed to link GitHub account: role not authorized")
 		}
 		log.Infof("Linking GitHub account for group %s", groupID)
-		err = c.env.GetDBHandle().DB(ctx).Exec(
+		err = c.env.GetDBHandle().NewQuery(ctx, "github_set_group_token").Raw(
 			`UPDATE "Groups" SET github_token = ? WHERE group_id = ?`,
-			accessToken, groupID).Error
+			accessToken, groupID).Exec().Error
 		if err != nil {
 			return status.PermissionDeniedErrorf("error linking github account to group: %v", err)
 		}
@@ -364,9 +364,9 @@ func (c *OAuthHandler) requestAccessToken(r *http.Request, code string) error {
 			return status.PermissionDeniedErrorf("user ID unexpectedly changed to %s while authenticating with GitHub", userID)
 		}
 		log.Infof("Linking GitHub account for user %s", userID)
-		err = c.env.GetDBHandle().DB(ctx).Exec(
+		err = c.env.GetDBHandle().NewQuery(ctx, "github_set_user_token").Raw(
 			`UPDATE "Users" SET github_token = ? WHERE user_id = ?`,
-			accessToken, userID).Error
+			accessToken, userID).Exec().Error
 		if err != nil {
 			return status.PermissionDeniedErrorf("Error linking github account to user: %v", err)
 		}
@@ -548,8 +548,8 @@ func (c *GithubClient) populateTokenIfNecessary(ctx context.Context, ownerRepo s
 	}
 
 	var group tables.Group
-	err = dbHandle.DB(ctx).Raw(`SELECT github_token FROM "Groups" WHERE group_id = ?`,
-		userInfo.GetGroupID()).First(&group).Error
+	err = dbHandle.NewQuery(ctx, "github_get_token").Raw(`SELECT github_token FROM "Groups" WHERE group_id = ?`,
+		userInfo.GetGroupID()).Take(&group)
 	if err != nil {
 		return err
 	}

@@ -37,6 +37,7 @@ go_test(
         "//server/tables",
         "//server/testutil/pubsub",
         "//server/testutil/testenv",
+        "//server/util/db",
         "//server/util/query_builder",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",

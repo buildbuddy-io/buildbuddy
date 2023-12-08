@@ -2,6 +2,7 @@ package janitor
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"strings"
 	"time"
@@ -9,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
@@ -98,25 +98,18 @@ func lookupExpiredExecutionIDs(ctx context.Context, c *JanitorConfig) ([]interfa
 	dbh := c.env.GetDBHandle()
 	cutoff := time.Now().Add(-1 * c.ttl)
 
-	dbOpts := db.Opts().WithQueryName("lookup_expired_executions")
 	stmt := `SELECT execution_id FROM "Executions" WHERE created_at_usec < ? LIMIT ?`
-	rows, err := dbh.RawWithOptions(ctx, dbOpts, stmt, cutoff.UnixMicro(), c.batchSize).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	rq := dbh.NewQuery(ctx, "janitor_lookup_expired_executions").Raw(stmt, cutoff.UnixMicro(), c.batchSize)
 	executionIDs := make([]interface{}, 0, c.batchSize)
-	for rows.Next() {
+	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		var executionID *string
-		if err := rows.Scan(&executionID); err != nil {
-			return nil, err
+		if err := row.Scan(&executionID); err != nil {
+			return err
 		}
 		executionIDs = append(executionIDs, *executionID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return executionIDs, nil
+		return nil
+	})
+	return executionIDs, err
 }
 
 func deleteExpiredExecutions(c *JanitorConfig) {

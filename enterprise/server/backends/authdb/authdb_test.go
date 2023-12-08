@@ -260,7 +260,7 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	require.NoError(t, err)
 	key := keys[0]
 	key.UserID = admin.UserID
-	err = env.GetDBHandle().DB(ctx).Updates(key).Error
+	err = env.GetDBHandle().NewQuery(ctx, "update_key").Update(key)
 	require.NoError(t, err)
 	g, err := env.GetUserDB().GetGroupByID(adminCtx, key.GroupID)
 	require.NoError(t, err)

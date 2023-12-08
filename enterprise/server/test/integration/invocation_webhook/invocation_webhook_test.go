@@ -50,12 +50,12 @@ func TestInvocationUploadWebhook(t *testing.T) {
 	ctx := context.Background()
 	dbh, err := db.GetConfiguredDatabase(ctx, env)
 	require.NoError(t, err)
-	db := dbh.DB(ctx)
-	err = db.Exec(`UPDATE "Groups" SET invocation_webhook_url = ?`, ws.URL.String()).Error
+	err = dbh.NewQuery(ctx, "set_webhook").Raw(`UPDATE "Groups" SET invocation_webhook_url = ?`, ws.URL.String()).Exec().Error
 	require.NoError(t, err)
 	apiKey := tables.APIKey{}
-	dbResult := db.Where("group_id = ?", userdb.DefaultGroupID).First(&apiKey)
-	require.NoError(t, dbResult.Error)
+	err = dbh.NewQuery(ctx, "get_api_key").Raw(
+		`SELECT * FROM "APIKeys" where group_id = ?`, userdb.DefaultGroupID).Take(&apiKey)
+	require.NoError(t, err)
 
 	// Now run an invocation (with BES and remote cache) as the default group,
 	// expecting a cache miss.

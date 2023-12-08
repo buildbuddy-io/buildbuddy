@@ -434,7 +434,7 @@ func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketReq
 			BucketName: req.GetBucketName(),
 		}
 		var existing tables.QuotaGroup
-		if err := tx.GORM("quota_manager_get_existing_quota_group").Where(
+		if err := tx.GORM(ctx, "quota_manager_get_existing_quota_group").Where(
 			"namespace = ? AND quota_key = ?", req.GetNamespace(), quotaKey).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
 				if req.GetBucketName() == defaultBucketName {
@@ -448,7 +448,7 @@ func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketReq
 			return tx.NewQuery(ctx, "quota_manager_apply_bucket_delete_key").Raw(
 				`DELETE FROM "QuotaGroups" WHERE namespace = ? AND quota_key = ?`, req.GetNamespace(), quotaKey).Exec().Error
 		} else {
-			return tx.GORM("quota_manager_apply_bucket_update_group").Model(&existing).Where(
+			return tx.GORM(ctx, "quota_manager_apply_bucket_update_group").Model(&existing).Where(
 				"namespace = ? AND quota_key = ?", req.GetNamespace(), quotaKey).Updates(quotaGroup).Error
 		}
 	})
@@ -499,7 +499,7 @@ func (qm *QuotaManager) addBucket(ctx context.Context, namespace string, bucket 
 	}
 	row := bucketToRow(namespace, bucket)
 
-	return qm.env.GetDBHandle().DB(ctx).Create(&row).Error
+	return qm.env.GetDBHandle().NewQuery(ctx, "quota_manager_add_bucket").Create(&row)
 }
 
 func (qm *QuotaManager) updateBucket(ctx context.Context, namespace string, bucket *qpb.Bucket) error {
@@ -508,14 +508,12 @@ func (qm *QuotaManager) updateBucket(ctx context.Context, namespace string, buck
 	}
 	bucketRow := bucketToRow(namespace, bucket)
 
-	db := qm.env.GetDBHandle().DB(ctx)
-	res := db.Model(bucketRow).Where("namespace = ? AND name= ?", bucketRow.Namespace, bucketRow.Name).Updates(bucketRow)
-
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return status.InvalidArgumentErrorf("bucket %q doesn't exist", bucket.GetName())
+	err := qm.env.GetDBHandle().NewQuery(ctx, "quota_manager_update_bucket").Update(bucketRow)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return status.InvalidArgumentErrorf("bucket %q doesn't exist", bucket.GetName())
+		}
+		return err
 	}
 	return nil
 }

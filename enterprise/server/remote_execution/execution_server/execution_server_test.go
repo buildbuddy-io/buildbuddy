@@ -2,6 +2,7 @@ package execution_server_test
 
 import (
 	"context"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
@@ -24,7 +25,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
-	"gorm.io/gorm"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -74,22 +74,15 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	return env
 }
 
-func createExecution(t *testing.T, db *gorm.DB, execution *tables.Execution) {
-	err := db.Create(execution).Error
+func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
+	err := db.NewQuery(ctx, "create_execution").Create(execution)
 	require.NoError(t, err)
 }
 
 func getExecutions(t *testing.T, env environment.Env) []*tables.Execution {
-	db := env.GetDBHandle().DB(env.GetServerContext())
-	rows, err := db.Raw(`SELECT * FROM Executions`).Rows()
+	rq := env.GetDBHandle().NewQuery(env.GetServerContext(), "get_executions").Raw(`SELECT * FROM Executions`)
+	out, err := db.ScanAll(rq, &tables.Execution{})
 	require.NoError(t, err)
-	var out []*tables.Execution
-	for rows.Next() {
-		row := &tables.Execution{}
-		err := db.ScanRows(rows, row)
-		require.NoError(t, err)
-		out = append(out, row)
-	}
 	return out
 }
 
@@ -145,7 +138,6 @@ func TestCancel(t *testing.T) {
 	s := env.GetRemoteExecutionService()
 
 	// Create Execution rows to be canceled
-	db := env.GetDBHandle().DB(ctx)
 	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
 	testInvocationID := testUUID.String()
@@ -156,7 +148,7 @@ func TestCancel(t *testing.T) {
 		InvocationID: testInvocationID,
 		Stage:        int64(repb.ExecutionStage_EXECUTING),
 	}
-	createExecution(t, db, execution)
+	createExecution(ctx, t, env.GetDBHandle(), execution)
 
 	err = s.Cancel(ctx, testInvocationID)
 	require.NoError(t, err)
@@ -171,7 +163,6 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 	s := env.GetRemoteExecutionService()
 
 	// Create Execution rows to be canceled
-	db := env.GetDBHandle().DB(ctx)
 	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
 	testInvocationID := testUUID.String()
@@ -188,8 +179,8 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 		InvocationID: testInvocationID,
 		Stage:        int64(repb.ExecutionStage_EXECUTING),
 	}
-	createExecution(t, db, completeExecution)
-	createExecution(t, db, incompleteExecution)
+	createExecution(ctx, t, env.GetDBHandle(), completeExecution)
+	createExecution(ctx, t, env.GetDBHandle(), incompleteExecution)
 
 	err = s.Cancel(ctx, testInvocationID)
 	require.NoError(t, err)
@@ -204,7 +195,6 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 	s := env.GetRemoteExecutionService()
 
 	// Create Execution rows to be canceled
-	db := env.GetDBHandle().DB(ctx)
 	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
 	testInvocationID := testUUID.String()
@@ -227,9 +217,9 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 		InvocationID: testInvocationID,
 		Stage:        int64(repb.ExecutionStage_EXECUTING),
 	}
-	createExecution(t, db, completeExecution)
-	createExecution(t, db, incompleteExecution1)
-	createExecution(t, db, incompleteExecution2)
+	createExecution(ctx, t, env.GetDBHandle(), completeExecution)
+	createExecution(ctx, t, env.GetDBHandle(), incompleteExecution1)
+	createExecution(ctx, t, env.GetDBHandle(), incompleteExecution2)
 
 	err = s.Cancel(ctx, testInvocationID)
 	require.NoError(t, err)

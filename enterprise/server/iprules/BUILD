@@ -16,6 +16,7 @@ go_library(
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/clientip",
+        "//server/util/db",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/perms",

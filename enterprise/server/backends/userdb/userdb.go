@@ -154,10 +154,10 @@ func (d *UserDB) DeleteUserGitHubToken(ctx context.Context) error {
 	if u.GetUserID() == "" {
 		return status.FailedPreconditionError("user ID must not be empty")
 	}
-	return d.h.DB(ctx).Exec(
+	return d.h.NewQuery(ctx, "userdb_delete_user_github_token").Raw(
 		`UPDATE "Users" SET github_token = '' WHERE user_id = ?`,
 		u.GetUserID(),
-	).Error
+	).Exec().Error
 }
 
 func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {
@@ -389,7 +389,7 @@ func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) err
 		NewQuery(`UPDATE "Groups" SET github_token = ''`).
 		AddWhereClause("group_id = ?", groupID).
 		Build()
-	return d.h.DB(ctx).Exec(q, args...).Error
+	return d.h.NewQuery(ctx, "userdb_delete_group_github_token").Raw(q, args...).Exec().Error
 }
 
 func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, groupID string) (retErr error) {
@@ -520,28 +520,26 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	q.SetOrderBy(`u.email`, true /*=ascending*/)
 
 	qString, qArgs := q.Build()
-	rows, err := d.h.DB(ctx).Raw(qString, qArgs...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
+	rq := d.h.NewQuery(ctx, "userdb_get_group_users").Raw(qString, qArgs...)
+	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		groupUser := &grpb.GetGroupUsersResponse_GroupUser{}
 		user := &tables.User{}
 		var groupRole uint32
-		err := rows.Scan(
+		err := row.Scan(
 			&user.UserID, &user.Email, &user.FirstName, &user.LastName,
 			&groupUser.GroupMembershipStatus, &groupRole,
 		)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		groupUser.User = user.ToProto()
 		groupUser.Role = role.ToProto(role.Role(groupRole))
 		users = append(users, groupUser)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-
 	return users, nil
 }
 
@@ -631,7 +629,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		var existing tables.Group
-		if err := tx.GORM("userdb_check_existing_group").Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
+		if err := tx.GORM(ctx, "userdb_check_existing_group").Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
 				gc := d.getDefaultGroupConfig()
 				if err := tx.NewQuery(ctx, "userdb_create_default_group").Create(gc); err != nil {
@@ -645,7 +643,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 			return err
 		}
 
-		return tx.GORM("userdb_update_existing_group").Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
+		return tx.GORM(ctx, "userdb_update_existing_group").Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
 	})
 }
 
@@ -737,7 +735,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 		// Promote from default role to admin if the user is the only one in the
 		// group after joining.
 		preExistingUsers := &struct{ Count int64 }{}
-		err = tx.GORM("userdb_new_user_check_group_size").Raw(`
+		err = tx.GORM(ctx, "userdb_new_user_check_group_size").Raw(`
 			SELECT COUNT(*) AS count
 			FROM "UserGroups"
 			WHERE group_group_id = ? AND user_user_id != ?
@@ -766,7 +764,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		var existing tables.User
-		if err := tx.GORM("userdb_check_existing_user").Where("sub_id = ?", u.SubID).First(&existing).Error; err != nil {
+		if err := tx.GORM(ctx, "userdb_check_existing_user").Where("sub_id = ?", u.SubID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
 				return d.createUser(ctx, tx, u)
 			}
@@ -950,7 +948,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 }
 
 func (d *UserDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error {
-	counts := d.h.DB(ctx).Raw(`
+	rq := d.h.NewQuery(ctx, "userdb_get_user_count").Raw(`
 		SELECT 
 			COUNT(DISTINCT user_id) as registered_user_count
 		FROM "Users" as u
@@ -960,7 +958,7 @@ func (d *UserDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) erro
 		time.Now().Truncate(24*time.Hour).Add(-24*time.Hour).UnixMicro(),
 		time.Now().Truncate(24*time.Hour).UnixMicro())
 
-	if err := counts.Take(stat).Error; err != nil {
+	if err := rq.Take(stat); err != nil {
 		return err
 	}
 	return nil
@@ -981,9 +979,9 @@ func (d *UserDB) GetOrCreatePublicKey(ctx context.Context, groupID string) (stri
 		return "", err
 	}
 
-	err = d.h.DB(ctx).Exec(
+	err = d.h.NewQuery(ctx, "userdb_update_encryption_key").Raw(
 		`UPDATE "Groups" SET public_key = ?, encrypted_private_key = ? WHERE group_id = ?`,
-		pubKey, encPrivKey, groupID).Error
+		pubKey, encPrivKey, groupID).Exec().Error
 	if err != nil {
 		return "", err
 	}

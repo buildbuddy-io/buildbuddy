@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"io"
 	"net/http"
 	"os"
@@ -182,10 +183,10 @@ func (a *GitHubApp) handleInstallationEvent(ctx context.Context, eventType strin
 	if event.GetAction() != "deleted" {
 		return nil
 	}
-	result := a.env.GetDBHandle().DB(ctx).Exec(`
+	result := a.env.GetDBHandle().NewQuery(ctx, "githubapp_uninstall_app").Raw(`
 		DELETE FROM "GitHubAppInstallations"
 		WHERE installation_id = ?
-	`, event.GetInstallation().GetID())
+	`, event.GetInstallation().GetID()).Exec()
 	if result.Error != nil {
 		return status.InternalErrorf("failed to delete installation: %s", result.Error)
 	}
@@ -216,13 +217,13 @@ func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, eventType string, e
 		InstallationID int64
 		*tables.GitRepository
 	}{}
-	err = a.env.GetDBHandle().DB(ctx).Raw(`
+	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_for_event").Raw(`
 		SELECT i.installation_id, r.*
 		FROM "GitHubAppInstallations" i, "GitRepositories" r
 		WHERE r.repo_url = ?
 		AND i.owner = ?
 		AND i.group_id = r.group_id
-	`, repoURL.String(), repoURL.Owner).Take(row).Error
+	`, repoURL.String(), repoURL.Owner).Take(row)
 	if err != nil {
 		return status.NotFoundError("the repository as well as a BuildBuddy GitHub app installation must be linked to a BuildBuddy org in order to use workflows")
 	}
@@ -236,11 +237,11 @@ func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, eventType string, e
 
 func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (string, error) {
 	var installation tables.GitHubAppInstallation
-	err := a.env.GetDBHandle().DB(ctx).Raw(`
+	err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token_for_status").Raw(`
 		SELECT *
 		FROM "GitHubAppInstallations"
 		WHERE owner = ?
-	`, owner).Take(&installation).Error
+	`, owner).Take(&installation)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
@@ -263,12 +264,12 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 		return "", err
 	}
 	var installation tables.GitHubAppInstallation
-	err = a.env.GetDBHandle().DB(ctx).Raw(`
+	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token").Raw(`
 		SELECT *
 		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		AND owner = ?
-	`, repo.GroupID, repoURL.Owner).Take(&installation).Error
+	`, repo.GroupID, repoURL.Owner).Take(&installation)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
@@ -288,30 +289,23 @@ func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.Get
 		return nil, err
 	}
 	// List installations linked to the org.
-	db := a.env.GetDBHandle().DB(ctx)
-	rows, err := db.Raw(`
+	rq := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations").Raw(`
 		SELECT *
 		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		ORDER BY owner ASC
-	`, u.GetGroupID()).Rows()
-	if err != nil {
-		return nil, status.InternalErrorf("failed to get installations: %s", err)
-	}
+	`, u.GetGroupID())
 	res := &ghpb.GetAppInstallationsResponse{}
-	for rows.Next() {
-		var row tables.GitHubAppInstallation
-		if err := db.ScanRows(rows, &row); err != nil {
-			return nil, status.InternalErrorf("failed to scan installation row: %s", err)
-		}
+	err = db.ScanRows(rq, func(ctx context.Context, row *tables.GitHubAppInstallation) error {
 		res.Installations = append(res.Installations, &ghpb.AppInstallation{
 			GroupId:        row.GroupID,
 			InstallationId: row.InstallationID,
 			Owner:          row.Owner,
 		})
-	}
-	if rows.Err() != nil {
-		return nil, status.InternalErrorf("failed to scan all installation rows: %s", err)
+		return nil
+	})
+	if err != nil {
+		return nil, status.InternalErrorf("failed to get installations: %s", err)
 	}
 	return res, nil
 }
@@ -367,21 +361,21 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 	log.CtxInfof(ctx,
 		"Linking GitHub app installation %d (%s) to group %s",
 		in.InstallationID, in.Owner, in.GroupID)
-	return a.env.GetDBHandle().DB(ctx).Transaction(func(tx *db.DB) error {
+	return a.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		// If an installation already exists with the given owner, unlink it
 		// first. That installation must be stale since GitHub only allows
 		// one installation per owner.
-		err := tx.Exec(`
+		err := tx.NewQuery(ctx, "githubapp_delete_existing_installation").Raw(`
 			DELETE FROM "GitHubAppInstallations"
 			WHERE owner = ?`,
 			in.Owner,
-		).Error
+		).Exec().Error
 		if err != nil {
 			return err
 		}
 		// Note: (GroupID, InstallationID) is the primary key, so this will fail
 		// if the installation is already linked to another group.
-		return tx.Create(in).Error
+		return tx.NewQuery(ctx, "githubapp_create_installation").Create(in)
 	})
 }
 
@@ -394,24 +388,24 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 		return nil, status.FailedPreconditionError("missing installation_id")
 	}
 	dbh := a.env.GetDBHandle()
-	err = dbh.DB(ctx).Transaction(func(tx *db.DB) error {
+	err = dbh.Transaction(ctx, func(tx interfaces.DB) error {
 		var ti tables.GitHubAppInstallation
-		err := tx.Raw(`
+		err := tx.NewQuery(ctx, "githubapp_get_installation_for_unlink").Raw(`
 			SELECT *
 			FROM "GitHubAppInstallations"
 			WHERE installation_id = ?
 			`+dbh.SelectForUpdateModifier()+`
-		`, req.GetInstallationId()).Take(&ti).Error
+		`, req.GetInstallationId()).Take(&ti)
 		if err != nil {
 			return err
 		}
 		if err := authutil.AuthorizeGroupRole(u, ti.GroupID, role.Admin); err != nil {
 			return err
 		}
-		return tx.Exec(`
+		return tx.NewQuery(ctx, "githubapp_unlink_installation").Raw(`
 			DELETE FROM "GitHubAppInstallations"
 			WHERE installation_id = ?
-		`, req.GetInstallationId()).Error
+		`, req.GetInstallationId()).Exec().Error
 	})
 	if err != nil {
 		return nil, err
@@ -425,11 +419,11 @@ func (a *GitHubApp) GetInstallationByOwner(ctx context.Context, owner string) (*
 		return nil, err
 	}
 	installation := &tables.GitHubAppInstallation{}
-	err = a.env.GetDBHandle().DB(ctx).Raw(`
+	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations_by_owner").Raw(`
 		SELECT * FROM "GitHubAppInstallations"
 		WHERE group_id = ?
 		AND owner = ?
-	`, u.GetGroupID(), owner).Take(installation).Error
+	`, u.GetGroupID(), owner).Take(installation)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.NotFoundErrorf("no GitHub app installation for %q was found for the authenticated group", owner)
@@ -444,26 +438,22 @@ func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetLinkedRe
 	if err != nil {
 		return nil, err
 	}
-	d := a.env.GetDBHandle().DB(ctx)
-	rows, err := d.Raw(`
+	rq := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_linked_repos").Raw(`
 		SELECT *
 		FROM "GitRepositories"
 		WHERE group_id = ?
 		ORDER BY repo_url ASC
-	`, u.GetGroupID()).Rows()
+	`, u.GetGroupID())
 	if err != nil {
 		return nil, status.InternalErrorf("failed to query repo rows: %s", err)
 	}
 	res := &ghpb.GetLinkedReposResponse{}
-	for rows.Next() {
-		var row tables.GitRepository
-		if err := d.ScanRows(rows, &row); err != nil {
-			return nil, status.InternalErrorf("failed to scan repo row: %s", err)
-		}
+	err = db.ScanRows(rq, func(ctx context.Context, row *tables.GitRepository) error {
 		res.RepoUrls = append(res.RepoUrls, row.RepoURL)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, status.InternalErrorf("failed to query all repo rows: %s", err)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return res, nil
 }
@@ -501,7 +491,7 @@ func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoReques
 		Perms:   p.Perms,
 		RepoURL: repoURL.String(),
 	}
-	if err := a.env.GetDBHandle().DB(ctx).Create(repo).Error; err != nil {
+	if err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_create_repo").Create(repo); err != nil {
 		return nil, status.InternalErrorf("failed to link repo: %s", err)
 	}
 
@@ -529,11 +519,11 @@ func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRe
 	if err != nil {
 		return nil, err
 	}
-	result := a.env.GetDBHandle().DB(ctx).Exec(`
+	result := a.env.GetDBHandle().NewQuery(ctx, "githubapp_unlink_repo").Raw(`
 		DELETE FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
-	`, u.GetGroupID(), req.GetRepoUrl())
+	`, u.GetGroupID(), req.GetRepoUrl()).Exec()
 	if result.Error != nil {
 		return nil, status.InternalErrorf("failed to unlink repo: %s", err)
 	}

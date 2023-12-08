@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -403,19 +404,17 @@ func (ws *workflowService) GetLinkedWorkflows(ctx context.Context, accessToken s
 		NewQuery(`SELECT workflow_id FROM "Workflows"`).
 		AddWhereClause("access_token = ?", accessToken).
 		Build()
-	rows, err := ws.env.GetDBHandle().DB(ctx).Raw(q, args...).Rows()
-	if err != nil {
-		return nil, err
-	}
+	rq := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_linked_workflows").Raw(q, args...)
 	var ids []string
-	for rows.Next() {
+	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		id := ""
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
+		if err := row.Scan(&id); err != nil {
+			return err
 		}
 		ids = append(ids, id)
-	}
-	return ids, nil
+		return nil
+	})
+	return ids, err
 }
 
 func (ws *workflowService) providerForRepo(u *url.URL) (interfaces.GitProvider, error) {
@@ -652,10 +651,10 @@ func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID strin
 	isLegacyWorkflow := !isRepositoryWorkflowID(workflowID)
 	if isLegacyWorkflow {
 		wf := &tables.Workflow{}
-		err := ws.env.GetDBHandle().DB(ctx).Raw(
+		err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_by_id").Raw(
 			`SELECT * FROM Workflows WHERE workflow_id = ?`,
 			workflowID,
-		).Take(wf).Error
+		).Take(wf)
 		if err != nil {
 			if db.IsRecordNotFound(err) {
 				return nil, status.NotFoundError("Workflow not found")
@@ -715,20 +714,20 @@ func (ws *workflowService) useCleanWorkflow(ctx context.Context, wf *tables.Work
 
 	if isRepositoryWorkflowID(wf.WorkflowID) {
 		log.CtxInfof(ctx, "Workflow clean run requested for repo %q (group %s)", wf.RepoURL, wf.GroupID)
-		err = ws.env.GetDBHandle().DB(ctx).Exec(`
+		err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_update_repo_instance_name").Raw(`
 				UPDATE GitRepositories
 				SET instance_name_suffix = ?
 				WHERE group_id = ? AND repo_url = ?`,
 			suffix, wf.GroupID, wf.RepoURL,
-		).Error
+		).Exec().Error
 	} else {
 		log.CtxInfof(ctx, "Workflow clean run requested for workflow %q (group %s)", wf.WorkflowID, wf.GroupID)
-		err = ws.env.GetDBHandle().DB(ctx).Exec(`
+		err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_update_workflow_instance_name").Raw(`
 				UPDATE Workflows
 				SET instance_name_suffix = ?
 				WHERE workflow_id = ?`,
 			wf.InstanceNameSuffix, wf.WorkflowID,
-		).Error
+		).Exec().Error
 	}
 	return err
 }
@@ -742,12 +741,12 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 		return nil, err
 	}
 	gitRepository := &tables.GitRepository{}
-	err := ws.env.GetDBHandle().DB(ctx).Raw(`
+	err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_for_repo").Raw(`
 		SELECT *
 		FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
-	`, groupID, repoURL.String()).Take(gitRepository).Error
+	`, groupID, repoURL.String()).Take(gitRepository)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.NotFoundErrorf("repo %q not found", repoURL)
@@ -943,11 +942,8 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	}
 	finalActionHistoryQStr := strings.Join(actionHistoryQStrs, " UNION ALL ")
 
-	historyRows, err := ws.env.GetDBHandle().RawWithOptions(ctx, db.Opts().WithQueryName("query_workflow_action_history"), finalActionHistoryQStr, actionHistoryQArgs...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer historyRows.Close()
+	rq := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_query_history").Raw(
+		finalActionHistoryQStr, actionHistoryQArgs...)
 
 	type historyQueryOut struct {
 		RepoUrl          string
@@ -962,11 +958,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		Success          bool
 	}
 
-	for historyRows.Next() {
-		row := &historyQueryOut{}
-		if err := ws.env.GetDBHandle().DB(ctx).ScanRows(historyRows, &row); err != nil {
-			return nil, err
-		}
+	err = db.ScanRows(rq, func(ctx context.Context, row *historyQueryOut) error {
 		entry := &wfpb.ActionHistory_Entry{
 			Status:        inspb.InvocationStatus(row.InvocationStatus),
 			Success:       row.Success,
@@ -979,8 +971,9 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		}
 
 		workflows[row.RepoUrl][row.Pattern].Entries = append(workflows[row.RepoUrl][row.Pattern].Entries, entry)
-	}
-	if err := historyRows.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 

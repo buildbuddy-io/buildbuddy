@@ -31,9 +31,9 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, created)
 
-		err = dbh.DB(ctx).Exec(`
+		err = dbh.NewQuery(ctx, "insert").Raw(`
 			INSERT INTO "InvocationExecutions" (invocation_id, execution_id)
-			VALUES (?, ?)`, iid, iid+"-execution").Error
+			VALUES (?, ?)`, iid, iid+"-execution").Exec().Error
 		require.NoError(t, err)
 	}
 
@@ -43,10 +43,10 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 	inv, err := idb.LookupInvocation(ctx, "invocation-0")
 	require.Nil(t, inv)
 	require.True(t, db.IsRecordNotFound(err), "expected RecordNotFound, got: %v", err)
-	err = dbh.DB(ctx).Raw(
+	err = dbh.NewQuery(ctx, "get_invocation_executions").Raw(
 		`SELECT * FROM "InvocationExecutions" WHERE invocation_id = ?`,
 		"invocation-0",
-	).Take(&tables.InvocationExecution{}).Error
+	).Take(&tables.InvocationExecution{})
 	require.True(t, db.IsRecordNotFound(err))
 
 	// Update invocation 1 (attempt 1) then look up again, should be updated.
@@ -63,10 +63,10 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "//pattern:2", inv.Pattern)
 	ie := &tables.InvocationExecution{}
-	err = dbh.DB(ctx).Raw(
+	err = dbh.NewQuery(ctx, "get_invocation_executions").Raw(
 		`SELECT * FROM "InvocationExecutions" WHERE invocation_id = ?`,
 		"invocation-2",
-	).Take(ie).Error
+	).Take(ie)
 	require.NoError(t, err)
 	require.Equal(t, "invocation-2-execution", ie.ExecutionID)
 }

@@ -318,7 +318,8 @@ type DBQuery interface {
 	// Create inserts a new row using the passed GORM-annotated struct.
 	Create(val interface{}) error
 	// Update updates an existing row using the primary key of the given
-	// GORM-annotated struct.
+	// GORM-annotated struct. Returns gorm.ErrRecordNotFound if a matching
+	// row does not exist.
 	Update(val interface{}) error
 	// Raw prepares a raw query.
 	Raw(sql string, values ...interface{}) DBRawQuery
@@ -331,7 +332,7 @@ type DB interface {
 
 	// GORM returns a raw handle to the GORM API. New code should prefer to
 	// avoid using this.
-	GORM(name string) *gorm.DB
+	GORM(ctx context.Context, name string) *gorm.DB
 
 	NowFunc() time.Time
 }

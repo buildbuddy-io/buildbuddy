@@ -208,9 +208,9 @@ func createKey(t *testing.T, env environment.Env, clock clockwork.Clock, keyID, 
 		LastEncryptedAtUsec:         clock.Now().UnixMicro(),
 	}
 	ctx := context.Background()
-	err = env.GetDBHandle().DB(ctx).Create(key).Error
+	err = env.GetDBHandle().NewQuery(ctx, "create_key").Create(key)
 	require.NoError(t, err)
-	err = env.GetDBHandle().DB(ctx).Create(keyVersion).Error
+	err = env.GetDBHandle().NewQuery(ctx, "create_key_version").Create(keyVersion)
 	require.NoError(t, err)
 	return keyVersion
 }
@@ -838,9 +838,10 @@ func TestKeyReencryption(t *testing.T) {
 	var user1NewKeyDBEntry, user2NewKeyDBEntry tables.EncryptionKeyVersion
 	for i := 0; i < 5; i++ {
 		q := `SELECT * FROM "EncryptionKeyVersions" WHERE encryption_key_id = ? AND version = 1`
-		err = env.GetDBHandle().DB(context.Background()).Raw(q, group1KeyID).Take(&user1NewKeyDBEntry).Error
+		ctx := context.Background()
+		err = env.GetDBHandle().NewQuery(ctx, "get_key1").Raw(q, group1KeyID).Take(&user1NewKeyDBEntry)
 		require.NoError(t, err)
-		err = env.GetDBHandle().DB(context.Background()).Raw(q, group2KeyID).Take(&user2NewKeyDBEntry).Error
+		err = env.GetDBHandle().NewQuery(ctx, "get_key2").Raw(q, group2KeyID).Take(&user2NewKeyDBEntry)
 		require.NoError(t, err)
 		if user1NewKeyDBEntry.LastEncryptionAttemptAtUsec > user1KeyDBEntry.LastEncryptionAttemptAtUsec &&
 			user2NewKeyDBEntry.LastEncryptionAttemptAtUsec > user2KeyDBEntry.LastEncryptionAttemptAtUsec {

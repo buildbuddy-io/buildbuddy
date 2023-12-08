@@ -356,7 +356,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 		// with the same key. Note that this locking should not affect
 		// performance since only one app should be writing to the DB at a time
 		// anyway.
-		unlock, err := tables.LockExclusive(tx.GORM("usage_lock_table"), &tables.Usage{})
+		unlock, err := tables.LockExclusive(tx.GORM(ctx, "usage_lock_table"), &tables.Usage{})
 		if err != nil {
 			return err
 		}
@@ -421,7 +421,7 @@ func (ut *tracker) supportsCollection(ctx context.Context, encodedCollection str
 	if err != nil {
 		return false, nil
 	}
-	schema, err := db.TableSchema(ut.env.GetDBHandle().DB(ctx), &tables.Usage{})
+	schema, err := db.TableSchema(ut.env.GetDBHandle().GORM(ctx, "usage_service_get_schema"), &tables.Usage{})
 	if err != nil {
 		return false, err
 	}

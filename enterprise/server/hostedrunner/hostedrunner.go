@@ -67,7 +67,7 @@ func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
-	if err := r.env.GetDBHandle().DB(ctx).Raw(qStr, qArgs...).Take(&k).Error; err != nil {
+	if err := r.env.GetDBHandle().NewQuery(ctx, "hostedrunner_get_api_key").Raw(qStr, qArgs...).Take(&k); err != nil {
 		return "", err
 	}
 	return k.Value, nil

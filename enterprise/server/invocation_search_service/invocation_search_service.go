@@ -71,19 +71,10 @@ func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, 
 
 	qStr, qArgs := q.Build()
 
-	rows, err := s.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("hydrate_invocation_search"), qStr, qArgs...).Rows()
+	rq := s.dbh.NewQuery(ctx, "invocation_search_hydrate").Raw(qStr, qArgs...)
+	out, err := db.ScanAll(rq, &tables.Invocation{})
 	if err != nil {
 		return nil, err
-	}
-
-	defer rows.Close()
-	out := make([]*tables.Invocation, 0)
-	for rows.Next() {
-		var ti tables.Invocation
-		if err := s.dbh.DB(ctx).ScanRows(rows, &ti); err != nil {
-			return nil, err
-		}
-		out = append(out, &ti)
 	}
 
 	invocations := make([]*inpb.Invocation, 0)
@@ -131,18 +122,10 @@ func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, req *
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("search_invocations"), sql, args...).Rows()
+	rq := s.dbh.NewQuery(ctx, "invocation_search").Raw(sql, args...)
+	tis, err := db.ScanAll(rq, &tables.Invocation{})
 	if err != nil {
 		return nil, 0, err
-	}
-	defer rows.Close()
-	tis := make([]*tables.Invocation, 0)
-	for rows.Next() {
-		var ti tables.Invocation
-		if err := s.dbh.DB(ctx).ScanRows(rows, &ti); err != nil {
-			return nil, 0, err
-		}
-		tis = append(tis, &ti)
 	}
 
 	invocations := make([]*inpb.Invocation, 0)
