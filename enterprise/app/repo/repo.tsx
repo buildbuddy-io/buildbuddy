@@ -512,7 +512,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             </div>
           )}
         </div>
-        {this.getSecrets().length > 0 && (
+        {this.getSecrets().length > 0 && !this.state.workflowResponse && (
           <div className={`repo-block card repo-create ${!this.state.repoResponse && "disabled"}`}>
             <div className="repo-title">Configure deployment</div>
             {Boolean(this.getUnsetSecrets().length) && (
