@@ -79,7 +79,7 @@ cc_toolchain_config(
         "-isystem",
         "external/cosmocc/include",
         "-include",
-        "libc/integral/normalize.inc",
+        "external/cosmocc/include/libc/integral/normalize.inc",
     ] + [
         "-U_FORTIFY_SOURCE",
         "-fstack-protector",
@@ -97,9 +97,7 @@ cc_toolchain_config(
         "-fno-semantic-interposition",
         "-fno-optimize-sibling-calls",
         "-mno-omit-leaf-frame-pointer",
-        "-fno-rtti",
         "-fno-exceptions",
-        "-fuse-cxa-atexit",
         "-mno-red-zone",
         "-D__COSMOPOLITAN__",
         "-D__COSMOCC__",
@@ -117,6 +115,8 @@ cc_toolchain_config(
     cpu = "k8",
     cxx_flags = [
         # "-std=c++17",
+        "-fno-rtti",
+        "-fuse-cxa-atexit",
     ],
     dbg_compile_flags = ["-g"],
     host_system_name = "local",

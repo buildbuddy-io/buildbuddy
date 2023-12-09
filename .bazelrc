@@ -152,8 +152,10 @@ common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/
 
 build:cosmo --repo_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 build:cosmo --extra_toolchains=//toolchains:cosmo_toolchain
-build:static --@io_bazel_rules_go//go/config:static=true
-build:static --copt=-fPIC
+build:cosmo --@io_bazel_rules_go//go/config:static=true
+build:cosmo --dynamic_mode=off
+build:cosmo --linkopt="-static"
+# build:cosmo --copt=-fPIC
 
 # Static build configuration. MacOS is currently unsupported.
 # On multi-user machines, specify HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX in your
