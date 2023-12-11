@@ -885,26 +885,34 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 	timer := time.NewTicker(*zombieNodeScanInterval)
 	defer timer.Stop()
 
+	nInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{SkipLogInfo: true})
+	idx := 0
+
 	for {
-		nInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{SkipLogInfo: true})
-		for _, sInfo := range nInfo.ShardInfoList {
-			select {
-			case <-ctx.Done():
-				return
-			case <-timer.C:
-				if s.isZombieNode(ctx, sInfo) || s.isRangelessNode(sInfo.ShardID) {
-					s.log.Debugf("Removing zombie node: %+v...", sInfo)
-					if err := s.nodeHost.StopReplica(sInfo.ShardID, sInfo.ReplicaID); err != nil {
-						s.log.Errorf("Error stopping zombie replica: %s", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			if idx == len(nInfo.ShardInfoList) {
+				idx = 0
+				nInfo = s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{SkipLogInfo: true})
+				continue
+			}
+			sInfo := nInfo.ShardInfoList[idx]
+			idx += 1
+
+			if s.isZombieNode(ctx, sInfo) || s.isRangelessNode(sInfo.ShardID) {
+				s.log.Debugf("Removing zombie node: %+v...", sInfo)
+				if err := s.nodeHost.StopReplica(sInfo.ShardID, sInfo.ReplicaID); err != nil {
+					s.log.Errorf("Error stopping zombie replica: %s", err)
+				} else {
+					if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
+						ShardId:   sInfo.ShardID,
+						ReplicaId: sInfo.ReplicaID,
+					}); err != nil {
+						s.log.Errorf("Error removing zombie replica data: %s", err)
 					} else {
-						if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
-							ShardId:   sInfo.ShardID,
-							ReplicaId: sInfo.ReplicaID,
-						}); err != nil {
-							s.log.Errorf("Error removing zombie replica data: %s", err)
-						} else {
-							s.log.Infof("Successfully removed zombie node: %+v", sInfo)
-						}
+						s.log.Infof("Successfully removed zombie node: %+v", sInfo)
 					}
 				}
 			}
