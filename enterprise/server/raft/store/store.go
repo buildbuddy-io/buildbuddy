@@ -909,6 +909,9 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 				}
 			}
 		}
+		if len(nInfo.ShardInfoList) == 0 {
+			time.Sleep(*zombieNodeScanInterval)
+		}
 	}
 }
 
