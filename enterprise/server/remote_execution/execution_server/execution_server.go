@@ -984,8 +984,42 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return err
 			}
+
+			response := operation.ExtractExecuteResponse(op)
+			if response != nil {
+				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {
+					log.CtxErrorf(ctx, "Failed to cache execute response: %s", err)
+				}
+			}
 		}
 	}
+}
+
+// cacheExecuteResponse caches the ExecuteResponse so that the client can see
+// the exact response that was originally returned to Bazel.
+func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID string, response *repb.ExecuteResponse) error {
+	taskRN, err := digest.ParseUploadResourceName(taskID)
+	if err != nil {
+		return err
+	}
+
+	// Store the response as an AC entry so that we don't have to explicitly
+	// store the digest anywhere. The key is the hash of the task ID, and the
+	// value is an ActionResult with stdout_raw set to the marshaled
+	// ExecuteResponse.
+	d, err := digest.Compute(strings.NewReader(taskID), taskRN.GetDigestFunction())
+	if err != nil {
+		return err
+	}
+	arn := digest.NewResourceName(d, taskRN.GetInstanceName(), rspb.CacheType_AC, taskRN.GetDigestFunction())
+
+	b, err := proto.Marshal(response)
+	if err != nil {
+		return err
+	}
+	ar := &repb.ActionResult{StdoutRaw: b}
+
+	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), arn, ar)
 }
 
 // markTaskComplete contains logic to be run when the task is complete but
