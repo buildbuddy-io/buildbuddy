@@ -741,8 +741,14 @@ func runPodman(ctx context.Context, subCommand string, stdio *commandutil.Stdio,
 	ctx, span := tracing.StartSpan(ctx)
 	tracing.AddStringAttributeToCurrentSpan(ctx, "podman.subcommand", subCommand)
 	defer span.End()
+
 	command := []string{"podman"}
+
+	ctx, versionSpan := tracing.StartSpan(ctx)
+	versionSpan.SetName("podman.getPodmanVersion")
 	podmanVersion, err := getPodmanVersion()
+	versionSpan.End()
+
 	if err != nil {
 		return commandutil.ErrorResult(err)
 	}
