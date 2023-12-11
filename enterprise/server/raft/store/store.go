@@ -934,11 +934,9 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
 			case events.EventRangeUsageUpdated:
 				rangeUsageEvent := e.(events.RangeUsageEvent)
 				if !s.leaseKeeper.HaveLease(rangeUsageEvent.RangeDescriptor.GetRangeId()) {
-					s.log.Debugf("Usage event for non-leased range")
 					continue
 				}
 				if rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed() <= *maxRangeSizeBytes {
-					s.log.Debugf("Usage event for undersize range")
 					continue
 				}
 				rd := proto.Clone(rangeUsageEvent.RangeDescriptor).(*rfpb.RangeDescriptor)
