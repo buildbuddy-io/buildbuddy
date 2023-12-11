@@ -79,7 +79,6 @@ func isStreamingRPCMethod(m reflect.Method) bool {
 	return true
 }
 
-
 func ReadRequestToProto(r *http.Request, req proto.Message) error {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -166,8 +165,8 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{},
 			}
 
 			methodType := method.Type()
-			requestIndex := 2 
-			// If we're dealing with a streaming method, the request proto is the first input 
+			requestIndex := 2
+			// If we're dealing with a streaming method, the request proto is the first input
 			if method.Type().In(1).Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
 				requestIndex = 1
 			}
@@ -241,9 +240,9 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{},
 }
 
 type wrappedResponse struct {
-	w http.ResponseWriter
+	w           http.ResponseWriter
 	wroteHeader bool
-	wroteBody    bool
+	wroteBody   bool
 }
 
 func (w *wrappedResponse) Header() http.Header {
