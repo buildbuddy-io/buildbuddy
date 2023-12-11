@@ -83,7 +83,7 @@ func RandomACResourceBuf(t testing.TB, sizeBytes int64) (*rspb.ResourceName, []b
 	return NewRandomResourceAndBuf(t, sizeBytes, rspb.CacheType_AC, "" /*instanceName*/)
 }
 
-func ReadDigestAndClose(t require.TestingT, r io.ReadCloser) *repb.Digest {
+func ReadDigestAndClose(t testing.TB, r io.ReadCloser) *repb.Digest {
 	defer r.Close()
 	d, err := digest.Compute(r, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
