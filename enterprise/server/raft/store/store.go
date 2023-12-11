@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
@@ -53,12 +52,9 @@ import (
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
-const (
-	readBufSizeBytes = 1000000 // 1MB
-)
-
 var (
-	zombieNodeScanInterval = flag.Duration("zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often.")
+	zombieNodeScanInterval = flag.Duration("zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
+	maxRangeSizeBytes      = flag.Int64("cache.raft.max_range_size_bytes", 1e8, "If set to a value greater than 0, ranges will be split until smaller than this size")
 )
 
 type Store struct {
@@ -89,13 +85,12 @@ type Store struct {
 	eventsMu       sync.Mutex
 	events         chan events.Event
 	eventListeners []chan events.Event
+	splitRequests  chan *rfpb.RangeDescriptor
 
 	usages *usagetracker.Tracker
 
 	metaRangeMu   sync.Mutex
 	metaRangeData []byte
-
-	fileStorer filestore.Store
 
 	eg       *errgroup.Group
 	egCancel context.CancelFunc
@@ -129,10 +124,10 @@ func New(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gos
 		eventsMu:       sync.Mutex{},
 		events:         eventsChan,
 		eventListeners: make([]chan events.Event, 0),
+		splitRequests:  make(chan *rfpb.RangeDescriptor, 100),
 
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
-		fileStorer:    filestore.New(),
 	}
 
 	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
@@ -325,6 +320,14 @@ func (s *Store) Start() error {
 	})
 	eg.Go(func() error {
 		s.cleanupZombieNodes(gctx)
+		return nil
+	})
+	eg.Go(func() error {
+		s.checkIfReplicasNeedSplitting(gctx)
+		return nil
+	})
+	eg.Go(func() error {
+		s.processSplitRequests(gctx)
 		return nil
 	})
 
@@ -915,6 +918,66 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 						s.log.Infof("Successfully removed zombie node: %+v", sInfo)
 					}
 				}
+			}
+		}
+	}
+}
+
+func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
+	eventsCh := s.AddEventListener()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e := <-eventsCh:
+			switch e.EventType() {
+			case events.EventRangeUsageUpdated:
+				rangeUsageEvent := e.(events.RangeUsageEvent)
+				if !s.leaseKeeper.HaveLease(rangeUsageEvent.RangeDescriptor.GetRangeId()) {
+					s.log.Debugf("Usage event for non-leased range")
+					continue
+				}
+				if rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed() <= *maxRangeSizeBytes {
+					s.log.Debugf("Usage event for undersize range")
+					continue
+				}
+				rd := proto.Clone(rangeUsageEvent.RangeDescriptor).(*rfpb.RangeDescriptor)
+				s.log.Infof("Requesting split for range: %+v", rd)
+				select {
+				case s.splitRequests <- rd:
+					break
+				default:
+					s.log.Debugf("Split queue full. Dropping message.")
+				}
+			default:
+				break
+			}
+		}
+	}
+}
+
+func makeHeader(rangeDescriptor *rfpb.RangeDescriptor) *rfpb.Header {
+	return &rfpb.Header{
+		RangeId:         rangeDescriptor.GetRangeId(),
+		Generation:      rangeDescriptor.GetGeneration(),
+		ConsistencyMode: rfpb.Header_LINEARIZABLE,
+	}
+}
+
+func (s *Store) processSplitRequests(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case rd := <-s.splitRequests:
+			splitReq := &rfpb.SplitRangeRequest{
+				Header: makeHeader(rd),
+				Range:  rd,
+			}
+			if rsp, err := s.SplitRange(ctx, splitReq); err != nil {
+				s.log.Errorf("Error splitting range: %s", err)
+			} else {
+				s.log.Infof("Successfully split range: %+v", rsp)
 			}
 		}
 	}
