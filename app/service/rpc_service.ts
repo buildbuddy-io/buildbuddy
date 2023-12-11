@@ -171,7 +171,7 @@ class RpcService {
         while (true) {
           let result = await reader?.read();
           if (result?.done) {
-            break;
+            return;
           }
 
           // Ignore the first 5 byte length-prefix, see the comment for lengthPrefixMessage for more info.
