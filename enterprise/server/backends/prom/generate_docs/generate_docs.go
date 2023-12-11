@@ -19,7 +19,7 @@ var (
 )
 
 const docTemplateContents = "\n" +
-	"### ** `{{.Name}}`** ({{.Type}})\n" +
+	"### **`{{.Name}}`** ({{.Type}})\n" +
 	`{{.Help}}
 {{with .LabelNames}}
 #### Labels
