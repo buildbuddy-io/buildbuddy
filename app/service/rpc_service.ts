@@ -175,6 +175,8 @@ class RpcService {
           }
 
           // Ignore the first 5 byte length-prefix, see the comment for lengthPrefixMessage for more info.
+          // TODO(siggisim): Support messages that come across flushes, though I'm not sure if this will
+          // happen much (if at all) in practice.
           let value = result?.value.slice(5) || new Uint8Array();
           callback(null, value);
           this.events.next(method.name);
