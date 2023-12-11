@@ -9,10 +9,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -253,7 +255,13 @@ func main() {
 }
 
 func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, rn *digest.ResourceName, req *repb.ExecuteRequest) {
-	log.Infof("Starting action %d of %d...", i, *n)
+	iid := uuid.New()
+	rmd := &repb.RequestMetadata{ToolInvocationId: iid}
+	ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
+	if err != nil {
+		log.Fatalf("Could not set request metadata: %s", err)
+	}
+	log.Infof("Starting action %d of %d (invocation id %q)...", i, *n, iid)
 	stream, err := execClient.Execute(ctx, req)
 	if err != nil {
 		log.Fatalf(err.Error())
