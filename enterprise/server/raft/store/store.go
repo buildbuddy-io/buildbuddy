@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"net"
 	"sort"
@@ -54,6 +55,10 @@ import (
 
 const (
 	readBufSizeBytes = 1000000 // 1MB
+)
+
+var (
+	zombieNodeScanInterval = flag.Duration("zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often.")
 )
 
 type Store struct {
@@ -316,6 +321,10 @@ func (s *Store) Start() error {
 	})
 	eg.Go(func() error {
 		s.queryForMetarange(gctx)
+		return nil
+	})
+	eg.Go(func() error {
+		s.cleanupZombieNodes(gctx)
 		return nil
 	})
 
@@ -825,6 +834,78 @@ func (s *Store) acquireNodeLiveness(ctx context.Context) {
 	}
 }
 
+func (s *Store) isRangelessNode(shardID uint64) bool {
+	if rd := s.lookupRange(shardID); rd != nil {
+		for _, r := range rd.GetReplicas() {
+			if r.GetShardId() == shardID {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// If the replica is behind: don’t kill
+// If the replica is one of the replicas specified in the range: don’t kill
+// Otherwise: kill
+func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo) bool {
+	// Get the config change index for this shard.
+	membership, err := s.getMembership(ctx, shardInfo.ShardID)
+	if err != nil {
+		s.log.Errorf("Error gettting membership for shard %d: %s", shardInfo.ShardID, err)
+		return false
+	}
+
+	if shardInfo.ConfigChangeIndex > 0 && shardInfo.ConfigChangeIndex <= membership.ConfigChangeID {
+		return false
+	}
+
+	for replicaID := range membership.Nodes {
+		if replicaID == shardInfo.ReplicaID {
+			return false
+		}
+	}
+	for replicaID := range membership.NonVotings {
+		if replicaID == shardInfo.ReplicaID {
+			return false
+		}
+	}
+	for replicaID := range membership.Witnesses {
+		if replicaID == shardInfo.ReplicaID {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Store) cleanupZombieNodes(ctx context.Context) {
+	for {
+		nInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{SkipLogInfo: true})
+		for _, sInfo := range nInfo.ShardInfoList {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(*zombieNodeScanInterval):
+				if s.isZombieNode(ctx, sInfo) || s.isRangelessNode(sInfo.ShardID) {
+					s.log.Debugf("Removing zombie node: %+v...", sInfo)
+					if err := s.nodeHost.StopReplica(sInfo.ShardID, sInfo.ReplicaID); err != nil {
+						s.log.Errorf("Error stopping zombie replica: %s", err)
+					} else {
+						if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
+							ShardId:   sInfo.ShardID,
+							ReplicaId: sInfo.ReplicaID,
+						}); err != nil {
+							s.log.Errorf("Error removing zombie replica data: %s", err)
+						} else {
+							s.log.Infof("Successfully removed zombie node: %+v", sInfo)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func (s *Store) Usage() *rfpb.StoreUsage {
 	su := &rfpb.StoreUsage{
 		Node: s.NodeDescriptor(),
@@ -1057,7 +1138,7 @@ func (s *Store) waitForReplicaToCatchUp(ctx context.Context, shardID uint64, des
 	return nil
 }
 
-func (s *Store) getConfigChangeID(ctx context.Context, shardID uint64) (uint64, error) {
+func (s *Store) getMembership(ctx context.Context, shardID uint64) (*dragonboat.Membership, error) {
 	var membership *dragonboat.Membership
 	var err error
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
@@ -1074,10 +1155,18 @@ func (s *Store) getConfigChangeID(ctx context.Context, shardID uint64) (uint64, 
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if membership == nil {
-		return 0, status.InternalErrorf("null cluster membership for cluster: %d", shardID)
+		return nil, status.InternalErrorf("nil cluster membership for cluster: %d", shardID)
+	}
+	return membership, nil
+}
+
+func (s *Store) getConfigChangeID(ctx context.Context, shardID uint64) (uint64, error) {
+	membership, err := s.getMembership(ctx, shardID)
+	if err != nil {
+		return 0, err
 	}
 	return membership.ConfigChangeID, nil
 }
