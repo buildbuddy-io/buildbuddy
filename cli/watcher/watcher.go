@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/shlex"
 )
@@ -30,11 +29,6 @@ func Watch() (exitCode int, err error) {
 		return -1, nil
 	}
 	args = append(args[:idx], args[idx+1:]...)
-
-	err = rlimit.MaxRLimit()
-	if err != nil {
-		log.Printf("Failed to bump open file limits: %s", err)
-	}
 
 	// Allow specifying --watcher_flags to forward args to the watcher.
 	// Mostly useful for debugging, e.g. --watcher_flags='--verbose'

@@ -8,7 +8,6 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//cli/workspace",
-        "//server/util/rlimit",
         "//server/util/status",
         "@com_github_bduffany_godemon//:godemon",
         "@com_github_google_shlex//:shlex",

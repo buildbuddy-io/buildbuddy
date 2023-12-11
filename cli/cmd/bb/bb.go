@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	sidecarmain "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar"
@@ -63,6 +64,11 @@ func run() (exitCode int, err error) {
 	log.Debugf("env: BB_USE_BAZEL_VERSION=%s", os.Getenv("BB_USE_BAZEL_VERSION"))
 
 	bazelisk.ResolveVersion()
+
+	err = rlimit.MaxRLimit()
+	if err != nil {
+		log.Printf("Failed to bump open file limits: %s", err)
+	}
 
 	// Make sure startup args are always in the format --foo=bar.
 	args, err = parser.CanonicalizeStartupArgs(args)

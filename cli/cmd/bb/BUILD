@@ -34,6 +34,7 @@ go_library(
         "//cli/upload",
         "//cli/version",
         "//cli/watcher",
+        "//server/util/rlimit",
         "//server/util/status",
     ],
 )
