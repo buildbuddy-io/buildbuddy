@@ -259,7 +259,7 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 	rmd := &repb.RequestMetadata{ToolInvocationId: iid}
 	ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
 	if err != nil {
-		log.Fatalf("Could not generate invocation ID: %s", err)
+		log.Fatalf("Could not set request metadata: %s", err)
 	}
 	log.Infof("Starting action %d of %d (invocation id %q)...", i, *n, iid)
 	stream, err := execClient.Execute(ctx, req)
