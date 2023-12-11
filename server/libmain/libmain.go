@@ -310,13 +310,6 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("%v", err)
 	}
 
-	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
-	// can be called over HTTP(s).
-	protoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/BuildBuddyService/", env.GetBuildBuddyServer())
-	if err != nil {
-		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
-	}
-
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	if err := build_event_server.Register(env); err != nil {
@@ -357,6 +350,13 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("%v", err)
 	}
 
+	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
+	// can be called over HTTP(s).
+	protoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/BuildBuddyService/", "buildbuddy.service.BuildBuddyService", env.GetBuildBuddyServer(), env.GetGRPCServer())
+	if err != nil {
+		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
+	}
+
 	mux := env.GetMux()
 	// Register all of our HTTP handlers on the default mux.
 	mux.Handle("/", interceptors.WrapExternalHandler(env, staticFileServer))
@@ -382,7 +382,7 @@ func StartAndRunServices(env environment.Env) {
 
 	// Register API as an HTTP service.
 	if api := env.GetAPIService(); api != nil {
-		apiProtoHandlers, err := protolet.GenerateHTTPHandlers("/api/v1/", api)
+		apiProtoHandlers, err := protolet.GenerateHTTPHandlers("/api/v1/", "api.v1", api, env.GetGRPCServer())
 		if err != nil {
 			log.Fatalf("Error initializing RPC over HTTP handlers for API: %s", err)
 		}
