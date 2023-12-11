@@ -50,7 +50,7 @@ func diffTimeProtos(start, end *tspb.Timestamp) time.Duration {
 	return end.AsTime().Sub(start.AsTime())
 }
 
-func logExecutionMetadata(i int, d *repb.Digest, md *repb.ExecutedActionMetadata) {
+func logExecutionMetadata(i int, md *repb.ExecutedActionMetadata) {
 	qTime := diffTimeProtos(md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
 	fetchTime := diffTimeProtos(md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
 	execTime := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
@@ -60,8 +60,8 @@ func logExecutionMetadata(i int, d *repb.Digest, md *repb.ExecutedActionMetadata
 		i, *n, qTime.Milliseconds(), fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds(), cpuMillis)
 }
 
-func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, d *repb.Digest) error {
-	outd := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value) error {
+	outd := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, digestType)
 	exists, err := fmb.Exists(targetCtx, outd.GetDigest())
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 		return nil
 	}
 	buf := &bytes.Buffer{}
-	ind := digest.NewResourceName(d, *sourceRemoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	ind := digest.NewResourceName(d, *sourceRemoteInstanceName, rspb.CacheType_CAS, digestType)
 	if err := cachetools.GetBlob(srcCtx, from, ind, buf); err != nil {
 		return err
 	}
@@ -87,20 +87,20 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 	return nil
 }
 
-func copyTree(ctx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, tree *repb.Tree) error {
+func copyTree(ctx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, tree *repb.Tree, digestType repb.DigestFunction_Value) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(100)
 	srcCtx := contextWithSourceAPIKey(ctx)
 	targetCtx := contextWithTargetAPIKey(ctx)
 	copyDir := func(dir *repb.Directory) {
 		eg.Go(func() error {
-			_, err := cachetools.UploadProto(targetCtx, to, *targetRemoteInstanceName, repb.DigestFunction_SHA256, dir)
+			_, err := cachetools.UploadProto(targetCtx, to, *targetRemoteInstanceName, digestType, dir)
 			return err
 		})
 		for _, file := range dir.GetFiles() {
 			file := file
 			eg.Go(func() error {
-				return copyFile(srcCtx, targetCtx, fmb, to, from, file.GetDigest())
+				return copyFile(srcCtx, targetCtx, fmb, to, from, file.GetDigest(), digestType)
 			})
 		}
 	}
@@ -111,9 +111,9 @@ func copyTree(ctx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteSt
 	return eg.Wait()
 }
 
-func printOutputFile(ctx context.Context, from bspb.ByteStreamClient, d *repb.Digest, tag string) error {
+func printOutputFile(ctx context.Context, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value, tag string) error {
 	buf := &bytes.Buffer{}
-	ind := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	ind := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, digestType)
 	if err := cachetools.GetBlob(ctx, from, ind, buf); err != nil {
 		return err
 	}
@@ -207,24 +207,24 @@ func main() {
 		fmb := NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, destCASClient, FindMissingBatcherOpts{})
 		eg, targetCtx := errgroup.WithContext(targetCtx)
 		eg.Go(func() error {
-			if err := copyFile(srcCtx, targetCtx, fmb, destBSClient, sourceBSClient, d); err != nil {
+			if err := copyFile(srcCtx, targetCtx, fmb, destBSClient, sourceBSClient, d, actionInstanceDigest.GetDigestFunction()); err != nil {
 				return status.WrapError(err, "copy action")
 			}
 			return nil
 		})
 		eg.Go(func() error {
-			if err := copyFile(srcCtx, targetCtx, fmb, destBSClient, sourceBSClient, action.GetCommandDigest()); err != nil {
+			if err := copyFile(srcCtx, targetCtx, fmb, destBSClient, sourceBSClient, action.GetCommandDigest(), actionInstanceDigest.GetDigestFunction()); err != nil {
 				return status.WrapError(err, "copy command")
 			}
 			return nil
 		})
 		eg.Go(func() error {
-			treeRN := digest.NewResourceName(action.GetInputRootDigest(), *sourceRemoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+			treeRN := digest.NewResourceName(action.GetInputRootDigest(), *sourceRemoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction())
 			tree, err := cachetools.GetTreeFromRootDirectoryDigest(srcCtx, sourceCASClient, treeRN)
 			if err != nil {
 				return status.WrapError(err, "GetTree")
 			}
-			if err := copyTree(rootCtx, fmb, destBSClient, sourceBSClient, tree); err != nil {
+			if err := copyTree(rootCtx, fmb, destBSClient, sourceBSClient, tree, actionInstanceDigest.GetDigestFunction()); err != nil {
 				return status.WrapError(err, "copy tree")
 			}
 			return nil
@@ -245,14 +245,14 @@ func main() {
 	for i := 1; i <= *n; i++ {
 		i := i
 		eg.Go(func() error {
-			execute(targetCtx, execClient, destBSClient, i, d, execReq)
+			execute(targetCtx, execClient, destBSClient, i, actionInstanceDigest, execReq)
 			return nil
 		})
 	}
 	eg.Wait()
 }
 
-func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, d *repb.Digest, req *repb.ExecuteRequest) {
+func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, rn *digest.ResourceName, req *repb.ExecuteRequest) {
 	log.Infof("Starting action %d of %d...", i, *n)
 	stream, err := execClient.Execute(ctx, req)
 	if err != nil {
@@ -295,10 +295,10 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			}
 			// Print stdout and stderr but only when running a single action.
 			if *n == 1 {
-				printOutputFile(ctx, bsClient, result.GetStdoutDigest(), "stdout")
-				printOutputFile(ctx, bsClient, result.GetStderrDigest(), "stderr")
+				printOutputFile(ctx, bsClient, result.GetStdoutDigest(), rn.GetDigestFunction(), "stdout")
+				printOutputFile(ctx, bsClient, result.GetStderrDigest(), rn.GetDigestFunction(), "stderr")
 			}
-			logExecutionMetadata(i, d, response.GetResult().GetExecutionMetadata())
+			logExecutionMetadata(i, response.GetResult().GetExecutionMetadata())
 			break
 		}
 	}
