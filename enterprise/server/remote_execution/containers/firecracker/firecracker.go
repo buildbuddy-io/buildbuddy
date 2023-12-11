@@ -434,6 +434,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 	} else {
 		vmConfig = state.GetContainerState().GetFirecrackerState().GetVmConfiguration()
 	}
+	log.Warningf("Maggie: In firecracker, disk size is %v", vmConfig.ScratchDiskSizeMb*1e6)
 	opts := ContainerOpts{
 		VMConfiguration:        vmConfig,
 		SavedState:             savedState,

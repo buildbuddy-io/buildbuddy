@@ -1142,6 +1142,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if estimatedDisk == "" {
 		estimatedDisk = fmt.Sprintf("%d", 20_000_000_000) // 20 GB
 	}
+	log.Warningf("Maggie: Disk is %s", estimatedDisk)
 	useSelfHostedExecutors := "false"
 	if workflowAction.SelfHosted {
 		useSelfHostedExecutors = "true"

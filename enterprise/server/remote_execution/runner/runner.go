@@ -385,9 +385,12 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	// it, because that may cause failures if it's reused, and we don't want to save
 	// bad snapshots to the cache.
 	if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
+		log.Warningf("Maggie: In 90 code block")
 		maxedOutStr := ""
 		for _, fsUsage := range execResult.UsageStats.GetPeakFileSystemUsage() {
+			log.Warningf("Maggie: Fs source %s used %d of %d B, percent is %f", fsUsage.Source, fsUsage.UsedBytes, fsUsage.TotalBytes, float64(fsUsage.UsedBytes)/float64(fsUsage.TotalBytes))
 			if float64(fsUsage.UsedBytes)/float64(fsUsage.TotalBytes) >= maxRecyclableResourceUtilization {
+				log.Warningf("Maggie: Maxed out disk")
 				maxedOutStr += fmt.Sprintf(" %d/%d B disk used for %s", fsUsage.UsedBytes, fsUsage.TotalBytes, fsUsage.GetSource())
 			}
 		}
@@ -396,8 +399,10 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		if usedMemoryBytes >= int64(float64(totalMemoryBytes)*maxRecyclableResourceUtilization) {
 			maxedOutStr += fmt.Sprintf("%d/%d B memory used", usedMemoryBytes, totalMemoryBytes)
 		}
+		log.Warningf("Maggie: Used memory is %d, total %d, threshold is %d", usedMemoryBytes, totalMemoryBytes, int64(float64(totalMemoryBytes)*maxRecyclableResourceUtilization))
 
 		if maxedOutStr != "" {
+			log.Warningf("Maggie: Maxed out str exists")
 			r.doNotReuse = true
 
 			errStr := fmt.Sprintf("%v runner exceeded 90%% of memory or disk usage, not recycling: %s", r.GetIsolationType(), maxedOutStr)

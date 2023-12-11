@@ -1,3 +1,5 @@
 df -h /root
-yes | head -c 8200000000 > /root/bigfile.txt
+yes | head -c 86200000000 > /root/bigfile2.txt
 df -h /root
+echo Now all
+df -h
