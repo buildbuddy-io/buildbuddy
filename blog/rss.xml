@@ -4,10 +4,18 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Wed, 15 Nov 2023 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Mon, 11 Dec 2023 03:30:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[What's New in Bazel 7.0]]></title>
+            <link>https://www.buildbuddy.io/blog/whats-new-in-bazel-7-0</link>
+            <guid>https://www.buildbuddy.io/blog/whats-new-in-bazel-7-0</guid>
+            <pubDate>Mon, 11 Dec 2023 03:30:00 GMT</pubDate>
+            <description><![CDATA[You know the drill 😁; We reviewed over 3,700 commits and summarized them, so you don't have to!]]></description>
+            <category>bazel</category>
+        </item>
         <item>
             <title><![CDATA[Lazily Pulling Container Images with Podman and SOCI Snapshotter]]></title>
             <link>https://www.buildbuddy.io/blog/image-streaming</link>
@@ -174,17 +182,6 @@
             <description><![CDATA[All about the new cache requests card and how to use it.]]></description>
             <category>product</category>
             <category>engineering</category>
-        </item>
-        <item>
-            <title><![CDATA[Distributed Scheduling for Faster Builds]]></title>
-            <link>https://www.buildbuddy.io/blog/distributed-scheduling-for-faster-builds</link>
-            <guid>https://www.buildbuddy.io/blog/distributed-scheduling-for-faster-builds</guid>
-            <pubDate>Thu, 07 Apr 2022 08:00:00 GMT</pubDate>
-            <description><![CDATA[The distributed scheduler that powers BuildBuddy remote execution]]></description>
-            <category>engineering</category>
-            <category>go</category>
-            <category>sparrow</category>
-            <category>scheduler</category>
         </item>
     </channel>
 </rss>
