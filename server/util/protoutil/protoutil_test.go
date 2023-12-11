@@ -9,7 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	dspb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protoutil"
 )
 
@@ -18,18 +20,38 @@ const (
 )
 
 var (
-	testProtoTypes = map[string]providerFunc{
-		//"FileMetadata": func() protoMessage {
-		//		return &rfpb.FileMetadata{}
-		//	},
-		//	"ScoreCard": func() protoMessage {
-		//		return &capb.ScoreCard{}
-		//	},
-		//"TreeCache": func() protoMessage {
-		//	return &capb.TreeCache{}
-		//},
-		"ReadResponse": func() protoMessage {
-			return &dspb.ReadResponse{}
+	testProtoTypes = map[string]testProtoType{
+		"FileMetadata": testProtoType{
+			providerFn: func() protoMessage {
+				return &rfpb.FileMetadata{}
+			},
+			providerFnWithPool: func() protoMessageWithPoolEnabled {
+				return rfpb.FileMetadataFromVTPool()
+			},
+		},
+		"ScoreCard": testProtoType{
+			providerFn: func() protoMessage {
+				return &capb.ScoreCard{}
+			},
+			providerFnWithPool: func() protoMessageWithPoolEnabled {
+				return capb.ScoreCardFromVTPool()
+			},
+		},
+		"TreeCache": testProtoType{
+			providerFn: func() protoMessage {
+				return &capb.TreeCache{}
+			},
+			providerFnWithPool: func() protoMessageWithPoolEnabled {
+				return capb.TreeCacheFromVTPool()
+			},
+		},
+		"ReadResponse": testProtoType{
+			providerFn: func() protoMessage {
+				return &dspb.ReadResponse{}
+			},
+			providerFnWithPool: func() protoMessageWithPoolEnabled {
+				return dspb.ReadResponseFromVTPool()
+			},
 		},
 	}
 )
@@ -41,17 +63,27 @@ type protoMessage interface {
 	proto.Message
 }
 
+type protoMessageWithPoolEnabled interface {
+	protoMessage
+	ReturnToVTPool()
+}
+
+type providerFunc func() protoMessage
+type providerWithPoolFunc func() protoMessageWithPoolEnabled
+
+type testProtoType struct {
+	providerFn         providerFunc
+	providerFnWithPool providerWithPoolFunc
+}
+
 func generateProtos(t testing.TB, providerFn providerFunc) []protoMessage {
-	//fmt.Println("started generate protos")
 	res := make([]protoMessage, 0, numSamples)
 	for i := 0; i < numSamples; i++ {
 		pb := providerFn()
 		err := faker.FakeData(pb)
-		//fmt.Printf("%d: len=%d/n", i, len(pb.(*capb.TreeCache).GetChildren()))
 		require.NoError(t, err, "unable to fake data")
 		res = append(res, pb)
 	}
-	//fmt.Println("finished generate protos")
 	return res
 }
 
@@ -67,7 +99,6 @@ func generateBytes(t testing.TB, protos []protoMessage) [][]byte {
 
 type marshalFunc func(v protoMessage) ([]byte, error)
 type unmarshalFunc func([]byte, protoMessage) error
-type providerFunc func() protoMessage
 
 func benchmarkMarshal(b *testing.B, marshalFn marshalFunc, data []protoMessage) {
 	b.ReportAllocs()
@@ -76,7 +107,6 @@ func benchmarkMarshal(b *testing.B, marshalFn marshalFunc, data []protoMessage) 
 	for i := 0; i < b.N; i++ {
 		pb := data[rand.Intn(len(data))]
 		b.SetBytes(int64(pb.SizeVT()))
-		//fmt.Println("started marshal")
 		_, err := marshalFn(pb)
 		if err != nil {
 			b.Fatal(err)
@@ -93,7 +123,6 @@ func benchmarkUnmarshal(b *testing.B, unmarshalFn unmarshalFunc, providerFn prov
 		buf := data[rand.Intn(len(data))]
 		b.SetBytes(int64(len(buf)))
 		v := providerFn()
-		//fmt.Println("started unmarshal")
 		err := unmarshalFn(buf, v)
 		if err != nil {
 			b.Fatal(err)
@@ -112,9 +141,8 @@ func BenchmarkMarshal(b *testing.B) {
 		},
 	}
 
-	for pbName, providerFn := range testProtoTypes {
-		protos := generateProtos(b, providerFn)
-		//fmt.Println("data generated")
+	for pbName, pbType := range testProtoTypes {
+		protos := generateProtos(b, pbType.providerFn)
 		for name, fn := range marshalFns {
 			b.Run(fmt.Sprintf("name=%s/pbName=%s", name, pbName), func(b *testing.B) {
 				benchmarkMarshal(b, fn, protos)
@@ -125,26 +153,25 @@ func BenchmarkMarshal(b *testing.B) {
 
 func BenchmarkUnmarshal(b *testing.B) {
 	unmarshalFns := map[string]unmarshalFunc{
-		"proto": func(buf []byte, v protoMessage) error {
+		"protoutil": func(buf []byte, v protoMessage) error {
 			return protoutil.Unmarshal(buf, v)
 		},
-		"protoutil": func(buf []byte, v protoMessage) error {
+		"proto": func(buf []byte, v protoMessage) error {
 			return proto.Unmarshal(buf, v)
 		},
 	}
 
-	for pbName, providerFn := range testProtoTypes {
-		protos := generateProtos(b, providerFn)
+	for pbName, pbType := range testProtoTypes {
+		protos := generateProtos(b, pbType.providerFn)
 		data := generateBytes(b, protos)
-		//fmt.Println("data generated")
 		for name, fn := range unmarshalFns {
 			b.Run(fmt.Sprintf("name=%s/pbName=%s", name, pbName), func(b *testing.B) {
-				benchmarkUnmarshal(b, fn, providerFn, data)
+				benchmarkUnmarshal(b, fn, pbType.providerFn, data)
 			})
 
 		}
 
-		if pbName == "ReadResponse" {
+		if pbType.providerFnWithPool != nil {
 			b.Run(fmt.Sprintf("name=protoutilWithPool/pbName=%s", pbName), func(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -152,8 +179,7 @@ func BenchmarkUnmarshal(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					buf := data[rand.Intn(len(data))]
 					b.SetBytes(int64(len(buf)))
-					v := dspb.ReadResponseFromVTPool()
-					//fmt.Println("started unmarshal")
+					v := pbType.providerFnWithPool()
 					err := protoutil.Unmarshal(buf, v)
 					if err != nil {
 						b.Fatal(err)

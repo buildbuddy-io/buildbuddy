@@ -164,6 +164,7 @@ enum ResponseType {
 }
 
 message ScoreCard {
+  option (vtproto.mempool) = true;
   // Result holds details about the result of a single cache request.
   message Result {
     // The short action name of the action relevant to the transfer,

@@ -3,6 +3,7 @@ syntax = "proto3";
 import "proto/resource.proto";
 import "proto/remote_execution.proto";
 import "google/rpc/status.proto";
+import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package raft;
 
@@ -73,6 +74,7 @@ message StorageMetadata {
 }
 
 message FileMetadata {
+  option (vtproto.mempool) = true;
   FileRecord file_record = 1;
   StorageMetadata storage_metadata = 2;
   EncryptionMetadata encryption_metadata = 6;
