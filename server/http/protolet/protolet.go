@@ -206,6 +206,11 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{},
 			return
 		}
 
+		if method.Type().NumOut() != 2 {
+			http.Error(w, "Streaming not enabled.", http.StatusNotImplemented)
+			return
+		}
+
 		// If we know this is a protolet request and we expect to handle it,
 		// override the span name to something legible instead of the generic
 		// handled-path name. This means instead of the span appearing with a
