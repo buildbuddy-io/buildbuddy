@@ -74,6 +74,7 @@ var (
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
+	workflowsRunnerMaxWait        = flag.Duration("remote_execution.workflows_runner_recycling_max_wait", 3*time.Second, "Max duration that a workflow task should wait for a warm runner before running on a potentially cold runner.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
@@ -1189,6 +1190,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// possible, and also keep the git repo around so it doesn't need to be
 				// re-cloned each time.
 				{Name: "recycle-runner", Value: "true"},
+				{Name: "runner-recycling-max-wait", Value: (*workflowsRunnerMaxWait).String()},
 				{Name: "preserve-workspace", Value: "true"},
 				{Name: "use-self-hosted-executors", Value: useSelfHostedExecutors},
 				// Pass the workflow ID to the executor so that it can try to assign

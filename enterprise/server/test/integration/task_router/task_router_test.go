@@ -26,7 +26,7 @@ const (
 	executorID2 = "42"
 )
 
-func TestTaskRouter_RankNodes_Workflows_ReturnsMultipleRunnersThatExecutedWorkflow(t *testing.T) {
+func TestTaskRouter_RankNodes_Workflows_ReturnsLatestRunnerThatExecutedWorkflow(t *testing.T) {
 	// Mark a routable workflow task complete by executor 1.
 
 	env := newTestEnv(t)
@@ -61,15 +61,13 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsMultipleRunnersThatExecutedWorkfl
 
 	router.MarkComplete(ctx, cmd, instanceName, executorID2)
 
-	// Task should now be routed to executor 2 then 1 in order, since executor 2
-	// ran the task more recently, and we memorize several recent executors for
-	// workflow tasks.
+	// Task should now be routed to executor 2, since executor 2 ran the task
+	// more recently.
 
 	ranked = router.RankNodes(ctx, cmd, instanceName, nodes)
 
 	requireSameExecutionNodes(t, nodes, ranked)
 	require.Equal(t, executorID2, ranked[0].GetExecutionNode().GetExecutorID())
-	require.Equal(t, executorID1, ranked[1].GetExecutionNode().GetExecutorID())
 	requireNonSequential(t, ranked[2:])
 }
 

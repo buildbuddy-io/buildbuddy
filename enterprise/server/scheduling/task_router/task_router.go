@@ -39,7 +39,7 @@ const (
 	// workflow tasks to hit a node with a warm bazel workspace, but it is
 	// set less than the number of probes so that we can autoscale the workflow
 	// executor pool effectively.
-	workflowsPreferredNodeLimit = 2
+	workflowsPreferredNodeLimit = 1
 )
 
 type taskRouter struct {
