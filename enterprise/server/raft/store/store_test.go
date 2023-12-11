@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
@@ -188,6 +190,50 @@ func TestStartShard(t *testing.T) {
 		nh3.ID(): s3.GRPCAddress,
 	})
 	require.NoError(t, err)
+}
+
+func TestCleanupZombieShards(t *testing.T) {
+	flag.Set("zombie_node_scan_interval", "100ms")
+
+	sf := newStoreFactory(t)
+	s1, nh1 := sf.NewStore(t)
+	s2, nh2 := sf.NewStore(t)
+	s3, nh3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+		nh1.ID(): s1.GRPCAddress,
+		nh2.ID(): s2.GRPCAddress,
+		nh3.ID(): s3.GRPCAddress,
+	})
+	require.NoError(t, err)
+
+	stores := []*TestingStore{s1, s2, s3}
+	waitForRangeLease(t, stores, 2)
+
+	// Reach in and zero out the range descriptor on one of the ranges,
+	// effectively making it a zombie range.
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: nil,
+		},
+	}).ToProto()
+	require.NoError(t, err)
+	writeRsp, err := s1.Sender.SyncPropose(ctx, append([]byte("a"), constants.LocalRangeKey...), writeReq)
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	require.NoError(t, err)
+
+	for i := 0; i < 30; i++ {
+		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		if len(list.GetReplicas()) == 1 {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatalf("Zombie killer never cleaned up zombie range 2")
 }
 
 func TestGetMembership(t *testing.T) {

@@ -59,6 +59,7 @@ go_test(
         ":store",
         "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
+        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/listener",
         "//enterprise/server/raft/logger",
