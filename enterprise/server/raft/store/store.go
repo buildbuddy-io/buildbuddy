@@ -879,13 +879,19 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 }
 
 func (s *Store) cleanupZombieNodes(ctx context.Context) {
+	if *zombieNodeScanInterval == 0 {
+		return
+	}
+	timer := time.NewTicker(*zombieNodeScanInterval)
+	defer timer.Stop()
+
 	for {
 		nInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{SkipLogInfo: true})
 		for _, sInfo := range nInfo.ShardInfoList {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(*zombieNodeScanInterval):
+			case <-timer.C:
 				if s.isZombieNode(ctx, sInfo) || s.isRangelessNode(sInfo.ShardID) {
 					s.log.Debugf("Removing zombie node: %+v...", sInfo)
 					if err := s.nodeHost.StopReplica(sInfo.ShardID, sInfo.ReplicaID); err != nil {
