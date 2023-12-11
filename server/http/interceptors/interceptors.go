@@ -89,6 +89,19 @@ func (w *wrappedCompressionResponseWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
 
+func (w *wrappedCompressionResponseWriter) Flush() {
+	if f, ok := w.Writer.(flusherWithError); ok {
+		f.Flush()
+	}
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+type flusherWithError interface {
+	Flush() error
+}
+
 func Gzip(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
@@ -252,6 +265,12 @@ func (w *instrumentedResponseWriter) Write(bytes []byte) (int, error) {
 func (w *instrumentedResponseWriter) WriteHeader(statusCode int) {
 	w.statusCode = statusCode
 	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *instrumentedResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func alertOnPanic() {
