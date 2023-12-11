@@ -41,9 +41,9 @@ var (
 )
 
 // Example usage:
-// $ blaze run tools/replay_action:replay_action -- \
+// $ bazel run //enterprise/tools/replay_action:replay_action -- \
 //   --source_executor="grpcs://remote.buildbuddy.io" \
-//   --action_digest="f31e59431cdc5d631853e28151fb664f859b5f4c5dc94f0695408a6d31b84724/142"
+//   --action_digest="blake3/f31e59431cdc5d631853e28151fb664f859b5f4c5dc94f0695408a6d31b84724/142"
 //
 
 func diffTimeProtos(start, end *tspb.Timestamp) time.Duration {
