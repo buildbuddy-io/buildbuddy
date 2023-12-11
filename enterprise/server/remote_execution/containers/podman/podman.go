@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
@@ -737,6 +738,9 @@ func (c *podmanCommandContainer) State(ctx context.Context) (*rnpb.ContainerStat
 }
 
 func runPodman(ctx context.Context, subCommand string, stdio *commandutil.Stdio, args ...string) *interfaces.CommandResult {
+	ctx, span := tracing.StartSpan(ctx)
+	tracing.AddStringAttributeToCurrentSpan(ctx, "podman.subcommand", subCommand)
+	defer span.End()
 	command := []string{"podman"}
 	podmanVersion, err := getPodmanVersion()
 	if err != nil {
