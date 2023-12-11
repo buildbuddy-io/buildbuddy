@@ -44,18 +44,18 @@ const (
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
-
-	// Estimated disk usage will be re-computed when more than this many
-	// state machine updates have happened since the last check.
-	// Assuming 1024 size chunks, checking every 1000 writes will mean
-	// re-evaluating our size when it's increased by ~1MB.
-	entriesBetweenUsageChecks = 1000
 )
 
 var (
 	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
 	atimeWriteBatchSize  = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
 	atimeBufferSize      = flag.Int("cache.raft.atime_buffer_size", 1_000, "Buffer up to this many atime updates in a channel before dropping atime updates")
+
+	// Estimated disk usage will be re-computed when more than this many
+	// state machine updates have happened since the last check.
+	// Assuming 1024 size chunks, checking every 1000 writes will mean
+	// re-evaluating our size when it's increased by ~1MB.
+	entriesBetweenUsageChecks = flag.Int("cache.raft.entries_between_usage_checks", 1_000, "Re-check usage after this many updates")
 )
 
 // Replicas need a reference back to the Store that holds them in order to
@@ -1611,7 +1611,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		entries[i] = e
 	}
 
-	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > entriesBetweenUsageChecks {
+	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > uint64(*entriesBetweenUsageChecks) {
 		usage, err := sm.Usage()
 		if err != nil {
 			sm.log.Warningf("Error computing usage: %s", err)

@@ -193,7 +193,7 @@ func TestStartShard(t *testing.T) {
 }
 
 func TestCleanupZombieShards(t *testing.T) {
-	flag.Set("zombie_node_scan_interval", "100ms")
+	flag.Set("cache.raft.zombie_node_scan_interval", "100ms")
 
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
@@ -234,6 +234,30 @@ func TestCleanupZombieShards(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 	t.Fatalf("Zombie killer never cleaned up zombie range 2")
+}
+
+func TestAutomaticSplitting(t *testing.T) {
+	flag.Set("cache.raft.entries_between_usage_checks", "1")
+	flag.Set("cache.raft.max_range_size_bytes", "10000")
+
+	sf := newStoreFactory(t)
+	s1, nh1 := sf.NewStore(t)
+	s2, nh2 := sf.NewStore(t)
+	s3, nh3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+		nh1.ID(): s1.GRPCAddress,
+		nh2.ID(): s2.GRPCAddress,
+		nh3.ID(): s3.GRPCAddress,
+	})
+	require.NoError(t, err)
+
+	stores := []*TestingStore{s1, s2, s3}
+	waitForRangeLease(t, stores, 2)
+	writeNRecords(ctx, t, s1, 15) // each write is 1000 bytes
+
+	waitForRangeLease(t, stores, 4)
 }
 
 func TestGetMembership(t *testing.T) {
