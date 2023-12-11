@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 
@@ -1018,5 +1019,58 @@ func BenchmarkWrite(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+func BenchmarkRead(b *testing.B) {
+	flags.Set(b, "app.log_level", "error")
+	log.Configure()
+	testSizes := []int64{
+		128, 16384, 16_777_216,
+	}
+	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
+
+	for _, testSize := range testSizes {
+		b.Run(fmt.Sprintf("digest%s", units.BytesSize(float64(testSize))), func(b *testing.B) {
+			b.ReportAllocs()
+			ctx := context.Background()
+			te := getTestEnv(b, emptyUserMap)
+			peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
+			c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+			require.NoError(b, err)
+			remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
+			err = c.StartListening()
+			require.NoError(b, err)
+			waitUntilServerIsAlive(peer)
+
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				b.StopTimer()
+				buf := new(bytes.Buffer)
+				io.CopyN(buf, randomSrc, testSize)
+				// Read some random bytes.
+				readSeeker := bytes.NewReader(buf.Bytes())
+				// Compute a digest for the random bytes.
+				d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
+				require.NoError(b, err)
+				rn := &rspb.ResourceName{
+					Digest:       d,
+					CacheType:    rspb.CacheType_CAS,
+					InstanceName: remoteInstanceName,
+				}
+				readSeeker.Seek(0, 0)
+				// Set the random bytes in the cache (with a prefix)
+				err = te.GetCache().Set(ctx, rn, buf.Bytes())
+				require.NoError(b, err)
+				b.StartTimer()
+				// Remote-read the random bytes back.
+				r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
+				require.NoError(b, err)
+				out := testdigest.ReadDigestAndClose(b, r)
+				runtime.KeepAlive(out)
+			}
+		})
 	}
 }
