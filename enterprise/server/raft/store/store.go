@@ -146,7 +146,6 @@ func New(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gos
 	gossipManager.AddListener(s)
 	statusz.AddSection("raft_store", "Store", s)
 
-	go s.queryForMetarange()
 	go s.updateTags()
 
 	return s, nil
@@ -187,17 +186,23 @@ func (s *Store) setMetaRangeBuf(buf []byte) {
 	s.sender.UpdateRange(new)
 }
 
-func (s *Store) queryForMetarange() {
+func (s *Store) queryForMetarange(ctx context.Context) {
 	start := time.Now()
 	stream, err := s.gossipManager.Query(constants.MetaRangeTag, nil, nil)
 	if err != nil {
 		s.log.Errorf("Error querying for metarange: %s", err)
 	}
-	for p := range stream.ResponseCh() {
-		s.setMetaRangeBuf(p.Payload)
-		stream.Close()
-		s.log.Infof("Discovered metarange in %s", time.Since(start))
-		return
+	for {
+		select {
+		case p := <-stream.ResponseCh():
+			s.setMetaRangeBuf(p.Payload)
+			stream.Close()
+			s.log.Infof("Discovered metarange in %s", time.Since(start))
+			return
+		case <-ctx.Done():
+			stream.Close()
+			return
+		}
 	}
 }
 
@@ -309,6 +314,11 @@ func (s *Store) Start() error {
 		s.acquireNodeLiveness(gctx)
 		return nil
 	})
+	eg.Go(func() error {
+		s.queryForMetarange(gctx)
+		return nil
+	})
+
 	s.leaseKeeper.Start()
 
 	return nil
