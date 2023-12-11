@@ -224,6 +224,9 @@ func TestAddNodeToCluster(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	stores := []*TestingStore{s1, s2, s3, s4}
+	waitForRangeLease(t, stores, 2)
+
 	rd := s1.GetRange(1)
 	_, err = s1.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: rd,
@@ -241,7 +244,6 @@ func TestAddNodeToCluster(t *testing.T) {
 }
 
 func TestRemoveNodeFromCluster(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -256,6 +258,9 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 		nh4.ID(): s4.GRPCAddress,
 	})
 	require.NoError(t, err)
+
+	stores := []*TestingStore{s1, s2, s3, s4}
+	waitForRangeLease(t, stores, 2)
 
 	rd := s1.GetRange(1)
 	_, err = s1.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
