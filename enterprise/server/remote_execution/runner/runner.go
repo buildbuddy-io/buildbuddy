@@ -409,7 +409,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 			}
 
 			alert.UnexpectedEvent("runner_maxed_out", errStr)
-			log.Errorf("%s", errStr)
+			log.CtxError(ctx, errStr)
 		}
 	}
 
