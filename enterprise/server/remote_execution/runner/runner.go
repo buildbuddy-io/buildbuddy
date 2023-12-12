@@ -116,7 +116,7 @@ const (
 
 	// If a runner exceeds this percentage of its total memory or disk allocation,
 	// it should not be recycled, because it may cause failures if it's reused
-	maxRecyclableResourceUtilization = .9
+	maxRecyclableResourceUtilization = .99
 )
 
 var (
