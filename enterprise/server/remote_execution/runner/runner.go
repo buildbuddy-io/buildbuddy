@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -381,39 +382,72 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 
 	execResult := r.Container.Exec(ctx, command, &commandutil.Stdio{})
 
+	r.checkMaxResourceUtilization(ctx, execResult.UsageStats)
+
+	return execResult
+}
+
+func (r *commandRunner) checkMaxResourceUtilization(ctx context.Context, usageStats *repb.UsageStats) {
 	// If a firecracker runner has exceeded a certain % of allocated memory or disk, don't try to recycle
 	// it, because that may cause failures if it's reused, and we don't want to save
 	// bad snapshots to the cache.
 	if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
 		maxedOutStr := ""
-		for _, fsUsage := range execResult.UsageStats.GetPeakFileSystemUsage() {
+		maxMemory := false
+		maxDisk := false
+
+		for _, fsUsage := range usageStats.GetPeakFileSystemUsage() {
 			if float64(fsUsage.UsedBytes)/float64(fsUsage.TotalBytes) >= maxRecyclableResourceUtilization {
 				maxedOutStr += fmt.Sprintf(" %d/%d B disk used for %s", fsUsage.UsedBytes, fsUsage.TotalBytes, fsUsage.GetSource())
+				maxDisk = true
 			}
 		}
-		usedMemoryBytes := execResult.UsageStats.GetMemoryBytes()
+
+		usedMemoryBytes := usageStats.GetMemoryBytes()
 		totalMemoryBytes := fc.VMConfig().GetMemSizeMb() * 1e6
 		if usedMemoryBytes >= int64(float64(totalMemoryBytes)*maxRecyclableResourceUtilization) {
 			maxedOutStr += fmt.Sprintf("%d/%d B memory used", usedMemoryBytes, totalMemoryBytes)
+			maxMemory = true
 		}
 
 		if maxedOutStr != "" {
 			r.doNotReuse = true
 
-			errStr := fmt.Sprintf("%v runner exceeded 90%% of memory or disk usage, not recycling: %s", r.GetIsolationType(), maxedOutStr)
-			debugStr := fc.SnapshotDebugString(ctx)
-			if debugStr == "" {
-				errStr += "\nRunner had started clean (not from a snapshot)"
-			} else {
-				errStr += fmt.Sprintf("\nSnapshot debug key: %s", fc.SnapshotDebugString(ctx))
+			var groupID string
+			u, err := perms.AuthenticatedUser(ctx, r.env)
+			if err == nil {
+				groupID = u.GetGroupID()
 			}
 
-			alert.UnexpectedEvent("runner_maxed_out", errStr)
-			log.CtxError(ctx, errStr)
+			errStr := fmt.Sprintf("%v runner (group_id=%s) exceeded 90%% of memory or disk usage, not recycling: %s", r.GetIsolationType(), groupID, maxedOutStr)
+			debugStr := fc.SnapshotDebugString(ctx)
+			var recycledLabel string
+			if debugStr == "" {
+				errStr += "\nRunner had started clean (not from a snapshot)"
+				recycledLabel = "clean"
+			} else {
+				errStr += fmt.Sprintf("\nSnapshot debug key: %s", fc.SnapshotDebugString(ctx))
+				recycledLabel = "recycled"
+			}
+
+			if maxDisk {
+				metrics.MaxRecyclableResourceUsageEvent.With(prometheus.Labels{
+					metrics.GroupID:              groupID,
+					metrics.EventName:            "disk",
+					metrics.RecycledRunnerStatus: recycledLabel,
+				}).Inc()
+			}
+			if maxMemory {
+				metrics.MaxRecyclableResourceUsageEvent.With(prometheus.Labels{
+					metrics.GroupID:              groupID,
+					metrics.EventName:            "memory",
+					metrics.RecycledRunnerStatus: recycledLabel,
+				}).Inc()
+			}
+
+			log.CtxErrorf(ctx, "%s", errStr)
 		}
 	}
-
-	return execResult
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
