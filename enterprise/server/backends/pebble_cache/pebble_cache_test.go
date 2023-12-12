@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/cockroachdb/pebble"
+	"github.com/docker/go-units"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -2812,27 +2813,10 @@ func TestEncryptionAndCompression(t *testing.T) {
 	}
 }
 
-func BenchmarkGetMulti(b *testing.B) {
-	*log.LogLevel = "error"
-	*log.IncludeShortFileName = true
-	log.Configure()
-
-	te := testenv.GetTestEnv(b)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
-	ctx := getAnonContext(b, te)
-
-	maxSizeBytes := int64(100_000_000)
-	rootDir := testfs.MakeTempDir(b)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
-	if err != nil {
-		b.Fatal(err)
-	}
-	pc.Start()
-	defer pc.Stop()
-
+func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
-		r, buf := newResourceAndBuf(b, 1000, rspb.CacheType_CAS, "" /*instanceName*/)
+		r, buf := newResourceAndBuf(b, digestSizeBytes, rspb.CacheType_CAS, "" /*instanceName*/)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
@@ -2865,7 +2849,11 @@ func BenchmarkGetMulti(b *testing.B) {
 	}
 }
 
-func BenchmarkFindMissing(b *testing.B) {
+func BenchmarkGetMulti(b *testing.B) {
+	*log.LogLevel = "error"
+	*log.IncludeShortFileName = true
+	log.Configure()
+
 	te := testenv.GetTestEnv(b)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(b, te)
@@ -2879,9 +2867,19 @@ func BenchmarkFindMissing(b *testing.B) {
 	pc.Start()
 	defer pc.Stop()
 
+	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
+	for _, size := range sizes {
+		name := fmt.Sprintf("size=%s", units.BytesSize(float64(size)))
+		b.Run(name, func(b *testing.B) {
+			benchmarkGetMulti(b, pc, ctx, size)
+		})
+	}
+}
+
+func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
-		r, buf := newCASResourceBuf(b, 1000)
+		r, buf := newCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
@@ -2914,7 +2912,10 @@ func BenchmarkFindMissing(b *testing.B) {
 	}
 }
 
-func BenchmarkContains1(b *testing.B) {
+func BenchmarkFindMissing(b *testing.B) {
+	*log.LogLevel = "error"
+	*log.IncludeShortFileName = true
+	log.Configure()
 	te := testenv.GetTestEnv(b)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(b, te)
@@ -2928,9 +2929,20 @@ func BenchmarkContains1(b *testing.B) {
 	pc.Start()
 	defer pc.Stop()
 
+	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
+	for _, size := range sizes {
+		name := fmt.Sprintf("size=%s", units.BytesSize(float64(size)))
+		b.Run(name, func(b *testing.B) {
+			benchmarkFindMissing(b, pc, ctx, size)
+		})
+	}
+
+}
+
+func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
-		r, buf := newCASResourceBuf(b, 1000)
+		r, buf := newCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
@@ -2940,8 +2952,9 @@ func BenchmarkContains1(b *testing.B) {
 	b.ReportAllocs()
 	b.StopTimer()
 	for n := 0; n < b.N; n++ {
+		d := digestKeys[rand.Intn(len(digestKeys))]
 		b.StartTimer()
-		found, err := pc.Contains(ctx, digestKeys[rand.Intn(len(digestKeys))])
+		found, err := pc.Contains(ctx, d)
 		b.StopTimer()
 		if err != nil {
 			b.Fatal(err)
@@ -2952,7 +2965,10 @@ func BenchmarkContains1(b *testing.B) {
 	}
 }
 
-func BenchmarkSet(b *testing.B) {
+func BenchmarkContains1(b *testing.B) {
+	*log.LogLevel = "error"
+	*log.IncludeShortFileName = true
+	log.Configure()
 	te := testenv.GetTestEnv(b)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(b, te)
@@ -2966,16 +2982,53 @@ func BenchmarkSet(b *testing.B) {
 	pc.Start()
 	defer pc.Stop()
 
+	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
+	for _, size := range sizes {
+		name := fmt.Sprintf("size=%s", units.BytesSize(float64(size)))
+		b.Run(name, func(b *testing.B) {
+			benchmarkContains1(b, pc, ctx, size)
+		})
+	}
+}
+
+func benchmarkSet(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	b.ReportAllocs()
 	b.StopTimer()
 	for n := 0; n < b.N; n++ {
-		r, buf := newCASResourceBuf(b, 1000)
+		r, buf := newCASResourceBuf(b, digestSizeBytes)
 		b.StartTimer()
 		err := pc.Set(ctx, r, buf)
 		b.StopTimer()
 		if err != nil {
 			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
+	}
+}
+
+func BenchmarkSet(b *testing.B) {
+	*log.LogLevel = "error"
+	*log.IncludeShortFileName = true
+	log.Configure()
+
+	te := testenv.GetTestEnv(b)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(b, te)
+
+	maxSizeBytes := int64(100_000_000)
+	rootDir := testfs.MakeTempDir(b)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
+	if err != nil {
+		b.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
+	for _, size := range sizes {
+		name := fmt.Sprintf("size=%s", units.BytesSize(float64(size)))
+		b.Run(name, func(b *testing.B) {
+			benchmarkSet(b, pc, ctx, size)
+		})
 	}
 }
 
