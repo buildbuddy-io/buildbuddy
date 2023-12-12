@@ -255,8 +255,9 @@ func main() {
 }
 
 func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, rn *digest.ResourceName, req *repb.ExecuteRequest) {
+	actionId := rn.GetDigest().GetHash()
 	iid := uuid.New()
-	rmd := &repb.RequestMetadata{ToolInvocationId: iid}
+	rmd := &repb.RequestMetadata{ActionId: actionId, ToolInvocationId: iid}
 	ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
 	if err != nil {
 		log.Fatalf("Could not set request metadata: %s", err)
