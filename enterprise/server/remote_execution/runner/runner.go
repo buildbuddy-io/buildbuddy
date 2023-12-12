@@ -382,15 +382,17 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 
 	execResult := r.Container.Exec(ctx, command, &commandutil.Stdio{})
 
-	r.checkMaxResourceUtilization(ctx, execResult.UsageStats)
+	if r.hasMaxResourceUtilization(ctx, execResult.UsageStats) {
+		r.doNotReuse = true
+	}
 
 	return execResult
 }
 
-func (r *commandRunner) checkMaxResourceUtilization(ctx context.Context, usageStats *repb.UsageStats) {
-	// If a firecracker runner has exceeded a certain % of allocated memory or disk, don't try to recycle
-	// it, because that may cause failures if it's reused, and we don't want to save
-	// bad snapshots to the cache.
+// If a firecracker runner has exceeded a certain % of allocated memory or disk, don't try to recycle
+// it, because that may cause failures if it's reused, and we don't want to save
+// bad snapshots to the cache.
+func (r *commandRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *repb.UsageStats) bool {
 	if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
 		maxedOutStr := ""
 		maxMemory := false
@@ -411,8 +413,6 @@ func (r *commandRunner) checkMaxResourceUtilization(ctx context.Context, usageSt
 		}
 
 		if maxedOutStr != "" {
-			r.doNotReuse = true
-
 			var groupID string
 			u, err := perms.AuthenticatedUser(ctx, r.env)
 			if err == nil {
@@ -446,8 +446,10 @@ func (r *commandRunner) checkMaxResourceUtilization(ctx context.Context, usageSt
 			}
 
 			log.CtxErrorf(ctx, "%s", errStr)
+			return true
 		}
 	}
+	return false
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
