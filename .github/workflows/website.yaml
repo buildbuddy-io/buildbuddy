@@ -8,6 +8,7 @@ on:
       - "docs/**"
       - "website/**"
       - "server/metrics/**"
+      - "enterprise/server/backends/prom/**"
 
 jobs:
   build:
