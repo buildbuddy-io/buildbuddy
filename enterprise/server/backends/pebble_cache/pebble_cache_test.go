@@ -2867,7 +2867,7 @@ func BenchmarkGetMulti(b *testing.B) {
 	pc.Start()
 	defer pc.Stop()
 
-	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1042}
+	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
 	for _, size := range sizes {
 		name := fmt.Sprintf("size=%s", units.BytesSize(float64(size)))
 		b.Run(name, func(b *testing.B) {
@@ -2929,7 +2929,7 @@ func BenchmarkFindMissing(b *testing.B) {
 	pc.Start()
 	defer pc.Stop()
 
-	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1042}
+	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
 	for _, size := range sizes {
 		name := fmt.Sprintf("size=%s", units.BytesSize(float64(size)))
 		b.Run(name, func(b *testing.B) {
@@ -2937,6 +2937,58 @@ func BenchmarkFindMissing(b *testing.B) {
 		})
 	}
 
+}
+
+func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
+	digestKeys := make([]*rspb.ResourceName, 0, 100000)
+	for i := 0; i < 100; i++ {
+		r, buf := newCASResourceBuf(b, digestSizeBytes)
+		digestKeys = append(digestKeys, r)
+		if err := pc.Set(ctx, r, buf); err != nil {
+			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
+		}
+	}
+
+	b.ReportAllocs()
+	b.StopTimer()
+	for n := 0; n < b.N; n++ {
+		d := digestKeys[rand.Intn(len(digestKeys))]
+		b.StartTimer()
+		found, err := pc.Contains(ctx, d)
+		b.StopTimer()
+		if err != nil {
+			b.Fatal(err)
+		}
+		if !found {
+			b.Fatalf("All digests should be present")
+		}
+	}
+}
+
+func BenchmarkContains1(b *testing.B) {
+	*log.LogLevel = "error"
+	*log.IncludeShortFileName = true
+	log.Configure()
+	te := testenv.GetTestEnv(b)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(b, te)
+
+	maxSizeBytes := int64(100_000_000)
+	rootDir := testfs.MakeTempDir(b)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
+	if err != nil {
+		b.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
+	for _, size := range sizes {
+		name := fmt.Sprintf("size=%s", units.BytesSize(float64(size)))
+		b.Run(name, func(b *testing.B) {
+			benchmarkContains1(b, pc, ctx, size)
+		})
+	}
 }
 
 func benchmarkSet(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
@@ -2971,7 +3023,7 @@ func BenchmarkSet(b *testing.B) {
 	pc.Start()
 	defer pc.Stop()
 
-	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1042}
+	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
 	for _, size := range sizes {
 		name := fmt.Sprintf("size=%s", units.BytesSize(float64(size)))
 		b.Run(name, func(b *testing.B) {
