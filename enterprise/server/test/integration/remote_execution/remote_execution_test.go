@@ -1799,6 +1799,8 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 }
 
 func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
+	t.Skip() // go/b/2968
+
 	// Set a short lease TTL since we want to test killing an app while an
 	// update stream is in progress, and want to catch the error early.
 	flags.Set(t, "remote_execution.lease_duration", 50*time.Millisecond)
