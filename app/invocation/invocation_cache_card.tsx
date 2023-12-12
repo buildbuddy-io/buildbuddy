@@ -276,9 +276,12 @@ export default class CacheCardComponent extends React.Component<Props> {
 function renderBreakdown(data: any[] | undefined, title: string, subtitle: string) {
   data = data?.filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
 
-  let sum = data?.reduce((prev, current) => {
-    return { name: "Sum", value: prev.value + current.value };
-  });
+  let sum = data?.reduce(
+    (prev, current) => {
+      return { name: "Sum", value: prev.value + current.value };
+    },
+    { name: "Sum", value: 0 }
+  );
 
   let cap = 5;
   let other = 0;

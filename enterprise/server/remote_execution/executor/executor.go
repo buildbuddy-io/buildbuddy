@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -122,7 +123,7 @@ func isTaskMisconfigured(err error) bool {
 func isClientBazel(task *repb.ExecutionTask) bool {
 	// TODO(bduffany): Find a more reliable way to determine this.
 	args := task.GetCommand().GetArguments()
-	return len(args) == 0 || args[0] != "./buildbuddy_ci_runner"
+	return !platform.IsCIRunner(args)
 }
 
 func shouldRetry(task *repb.ExecutionTask, taskError error) bool {

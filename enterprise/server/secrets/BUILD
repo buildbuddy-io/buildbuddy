@@ -11,11 +11,12 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:secrets_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/tables",
+        "//server/util/db",
         "//server/util/hash",
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
-        "@io_gorm_gorm//:gorm",
     ],
 )

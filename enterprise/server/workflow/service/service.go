@@ -74,6 +74,7 @@ var (
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
+	workflowsRunnerMaxWait        = flag.Duration("remote_execution.workflows_runner_recycling_max_wait", 3*time.Second, "Max duration that a workflow task should wait for a warm runner before running on a potentially cold runner.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
@@ -314,7 +315,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	}
 	rsp.WebhookRegistered = (providerWebhookID != "")
 
-	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+	err = ws.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		workflowID, err := tables.PrimaryKeyForTable("Workflows")
 		if err != nil {
 			return status.InternalError(err.Error())
@@ -333,7 +334,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 			WebhookID:            webhookID,
 			GitProviderWebhookID: providerWebhookID,
 		}
-		return tx.Create(wf).Error
+		return tx.NewQuery(ctx, "workflow_service_insert_workflow").Create(wf)
 	})
 	if err != nil {
 		return nil, err
@@ -353,28 +354,29 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		return nil, err
 	}
 	var wf tables.Workflow
-	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
-		var q *db.DB
+	err = ws.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		var q interfaces.DBRawQuery
 		if req.GetId() != "" {
-			q = tx.Raw(`
+			q = tx.NewQuery(ctx, "workflow_get_for_delete_by_id").Raw(`
 				SELECT * FROM "Workflows" WHERE workflow_id = ?
 				`+ws.env.GetDBHandle().SelectForUpdateModifier()+`
 			`, req.GetId())
 		} else {
-			q = tx.Raw(`
+			q = tx.NewQuery(ctx, "workflow_get_for_delete_by_repo").Raw(`
 				SELECT * FROM "Workflows"
 				WHERE group_id = ? AND repo_url = ?
 				`+ws.env.GetDBHandle().SelectForUpdateModifier()+`
 			`, authenticatedUser.GetGroupID(), req.GetRepoUrl())
 		}
-		if err := q.Take(&wf).Error; err != nil {
+		if err := q.Take(&wf); err != nil {
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: wf.UserID}, wf.GroupID, wf.Perms)
 		if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
 			return err
 		}
-		return tx.Exec(`DELETE FROM "Workflows" WHERE workflow_id = ?`, wf.WorkflowID).Error
+		return tx.NewQuery(ctx, "workflow_delete").Raw(
+			`DELETE FROM "Workflows" WHERE workflow_id = ?`, wf.WorkflowID).Exec().Error
 	})
 	if err != nil {
 		return nil, err
@@ -447,19 +449,10 @@ func (ws *workflowService) GetWorkflows(ctx context.Context) (*wfpb.GetWorkflows
 	}
 	q.SetOrderBy("created_at_usec" /*ascending=*/, true)
 	qStr, qArgs := q.Build()
-	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
-		rows, err := tx.Raw(qStr, qArgs...).Rows()
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-
+	err = ws.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		rq := tx.NewQuery(ctx, "workflow_get_workflows").Raw(qStr, qArgs...)
 		rsp.Workflow = make([]*wfpb.GetWorkflowsResponse_Workflow, 0)
-		for rows.Next() {
-			var tw tables.Workflow
-			if err := tx.ScanRows(rows, &tw); err != nil {
-				return err
-			}
+		return db.ScanRows(rq, func(ctx context.Context, tw *tables.Workflow) error {
 			u, err := ws.getWebhookURL(tw.WebhookID)
 			if err != nil {
 				return err
@@ -470,8 +463,8 @@ func (ws *workflowService) GetWorkflows(ctx context.Context) (*wfpb.GetWorkflows
 				RepoUrl:    tw.RepoURL,
 				WebhookUrl: u,
 			})
-		}
-		return nil
+			return nil
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -1197,6 +1190,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// possible, and also keep the git repo around so it doesn't need to be
 				// re-cloned each time.
 				{Name: "recycle-runner", Value: "true"},
+				{Name: "runner-recycling-max-wait", Value: (*workflowsRunnerMaxWait).String()},
 				{Name: "preserve-workspace", Value: "true"},
 				{Name: "use-self-hosted-executors", Value: useSelfHostedExecutors},
 				// Pass the workflow ID to the executor so that it can try to assign

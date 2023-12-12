@@ -10,15 +10,8 @@ import {
   Github,
   BarChart2,
   LayoutGrid,
-  CheckCircle,
-  Circle,
   GitCommit,
-  ChevronUp,
-  ChevronDown,
   List,
-  LogOut,
-  PlusCircle,
-  ArrowRightCircle,
   Sliders,
   Terminal,
   PanelLeftClose,
@@ -26,14 +19,12 @@ import {
   Fingerprint,
 } from "lucide-react";
 import React from "react";
-import authService, { User } from "../../../app/auth/auth_service";
+import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Link, { LinkProps } from "../../../app/components/link/link";
 import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
-import rpc_service from "../../../app/service/rpc_service";
-import { grp } from "../../../proto/group_ts_proto";
-import { user } from "../../../proto/user_ts_proto";
+import OrgPicker from "../org_picker/org_picker";
 
 interface Props {
   user?: User;
@@ -55,27 +46,9 @@ export default class SidebarComponent extends React.Component<Props, State> {
     profileExpanded: false,
   };
 
-  handleProfileClicked() {
-    this.setState({ profileExpanded: !this.state.profileExpanded });
-  }
-
   handleSidebarToggled(newState: boolean) {
     localStorage[sidebarExpandedKey] = newState ? "true" : "false";
     this.setState({ sidebarExpanded: newState });
-  }
-
-  handleCreateOrgClicked(e: React.MouseEvent) {
-    router.navigateToCreateOrg();
-  }
-
-  handleSearchGroupsClicked() {
-    window.dispatchEvent(new CustomEvent("groupSearchClick"));
-  }
-
-  async handleOrgClicked(groupId: string, groupURL: string) {
-    if (this.props.user?.selectedGroup?.id === groupId) return;
-
-    await authService.setSelectedGroupId(groupId, groupURL, { reload: true });
   }
 
   isHomeSelected() {
@@ -250,70 +223,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
             )}
           </div>
         </div>
-        <div className={`sidebar-footer ${this.state.profileExpanded ? "expanded" : ""}`}>
-          {this.state.profileExpanded && (
-            <div className="sidebar-expanded-profile">
-              <div className="org-picker">
-                <div className="org-picker-header">Organization</div>
-                <div className="org-list" role="menu">
-                  {this.props.user?.groups.map((group) => (
-                    <div
-                      key={group.id}
-                      role="menuitem"
-                      className={`sidebar-item org-picker-item ${
-                        group.id === this.props.user?.selectedGroup.id ? "selected" : ""
-                      }`}
-                      onClick={this.handleOrgClicked.bind(this, group.id, group.url)}>
-                      {group.id === this.props.user?.selectedGroup.id ? (
-                        <CheckCircle className="icon" />
-                      ) : (
-                        <Circle className="icon" />
-                      )}
-                      <div className="org-picker-item-label">{group.name}</div>
-                    </div>
-                  ))}
-                </div>
-                {this.props.user && router.canCreateOrg(this.props.user) && (
-                  <div className="sidebar-item create-organization" onClick={this.handleCreateOrgClicked.bind(this)}>
-                    <PlusCircle className="icon" />
-                    Create org
-                  </div>
-                )}
-                {Boolean(this.props.user?.canImpersonate()) && (
-                  <div className="sidebar-item admin-only" onClick={this.handleSearchGroupsClicked.bind(this)}>
-                    <ArrowRightCircle className="icon" />
-                    Go to org
-                  </div>
-                )}
-              </div>
-              <hr />
-              <div className="sidebar-item sidebar-logout-item" onClick={() => authService.logout()}>
-                <LogOut className="icon" /> Logout
-              </div>
-            </div>
-          )}
-          {capabilities.auth && this.props.user && (
-            <div onClick={this.handleProfileClicked.bind(this)} className="sidebar-profile">
-              <img
-                className={`sidebar-profile-photo ${
-                  this.props.user?.displayUser?.profileImageUrl ? "" : "default-photo"
-                }`}
-                src={this.props.user?.displayUser?.profileImageUrl || "/image/user-regular.svg"}
-              />
-              <div className="sidebar-profile-name">
-                <div className="sidebar-profile-user">
-                  {this.props.user?.displayUser?.name?.full || this.props.user?.displayUser?.email}
-                </div>
-                <div className="sidebar-profile-org">{this.props.user?.selectedGroupName()}</div>
-              </div>
-              {this.state.profileExpanded ? (
-                <ChevronDown className="icon sidebar-profile-arrow" />
-              ) : (
-                <ChevronUp className="icon sidebar-profile-arrow" />
-              )}
-            </div>
-          )}
-        </div>
+        <OrgPicker user={this.props.user} />
       </div>
     );
   }

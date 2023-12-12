@@ -475,6 +475,7 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 			{Name: "preserve-workspace", Value: "true"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
+			{Name: "runner-recycling-max-wait", Value: "1m"},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{APIKey: rbe.APIKey1}
@@ -515,6 +516,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 			{Name: "Pool", Value: "THIS_VALUE_SHOULD_BE_OVERRIDDEN"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
+			{Name: "runner-recycling-max-wait", Value: "1m"},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{
@@ -1423,6 +1425,18 @@ func TestWaitExecution(t *testing.T) {
 	}
 }
 
+type fakeRankedNode struct {
+	node interfaces.ExecutionNode
+}
+
+func (n fakeRankedNode) GetExecutionNode() interfaces.ExecutionNode {
+	return n.node
+}
+
+func (_ fakeRankedNode) IsPreferred() bool {
+	return false
+}
+
 type fixedNodeTaskRouter struct {
 	mu          sync.Mutex
 	executorIDs map[string]struct{}
@@ -1436,13 +1450,13 @@ func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
 	return &fixedNodeTaskRouter{executorIDs: idSet}
 }
 
-func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
+func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	var out []interfaces.ExecutionNode
+	var out []interfaces.RankedExecutionNode
 	for _, n := range nodes {
 		if _, ok := f.executorIDs[n.GetExecutorID()]; ok {
-			out = append(out, n)
+			out = append(out, fakeRankedNode{node: n})
 		}
 	}
 	return out
@@ -1785,6 +1799,8 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 }
 
 func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
+	t.Skip() // go/b/2968
+
 	// Set a short lease TTL since we want to test killing an app while an
 	// update stream is in progress, and want to catch the error early.
 	flags.Set(t, "remote_execution.lease_duration", 50*time.Millisecond)

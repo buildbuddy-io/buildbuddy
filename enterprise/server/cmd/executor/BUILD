@@ -27,6 +27,7 @@ go_library(
         "//enterprise/server/remote_execution/executor",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/runner",
+        "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/scheduling/priority_task_scheduler",
         "//enterprise/server/scheduling/scheduler_client",
         "//enterprise/server/tasksize",

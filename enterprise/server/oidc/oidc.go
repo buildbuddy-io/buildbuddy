@@ -843,6 +843,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 	code := r.URL.Query().Get("code")
 	oauth2Token, err := auth.exchange(ctx, code, a.getAuthCodeOptions(r)...)
 	if err != nil {
+		log.Debugf("Error exchanging code for auth token for code %s, got error: %s", code, err)
 		return status.PermissionDeniedErrorf("Error exchanging code for auth token: %s", code)
 	}
 

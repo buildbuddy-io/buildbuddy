@@ -44,18 +44,18 @@ const (
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
-
-	// Estimated disk usage will be re-computed when more than this many
-	// state machine updates have happened since the last check.
-	// Assuming 1024 size chunks, checking every 1000 writes will mean
-	// re-evaluating our size when it's increased by ~1MB.
-	entriesBetweenUsageChecks = 1000
 )
 
 var (
 	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
 	atimeWriteBatchSize  = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
 	atimeBufferSize      = flag.Int("cache.raft.atime_buffer_size", 1_000, "Buffer up to this many atime updates in a channel before dropping atime updates")
+
+	// Estimated disk usage will be re-computed when more than this many
+	// state machine updates have happened since the last check.
+	// Assuming 1024 size chunks, checking every 1000 writes will mean
+	// re-evaluating our size when it's increased by ~1MB.
+	entriesBetweenUsageChecks = flag.Int("cache.raft.entries_between_usage_checks", 1_000, "Re-check usage after this many updates")
 )
 
 // Replicas need a reference back to the Store that holds them in order to
@@ -112,6 +112,7 @@ type Replica struct {
 	log             log.Logger
 	rangeMu         sync.RWMutex
 	rangeDescriptor *rfpb.RangeDescriptor
+	rangeLease      *rfpb.RangeLeaseRecord
 	mappedRange     *rangemap.Range
 
 	fileStorer filestore.Store
@@ -200,11 +201,16 @@ func (sm *Replica) replicaLocalKey(key []byte) []byte {
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
+	sm.rangeMu.Lock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.Unlock()
+
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
 			ShardId:   sm.ShardID,
 			ReplicaId: sm.ReplicaID,
 		},
+		RangeId: rd.GetRangeId(),
 	}
 
 	var numFileRecords, sizeBytes int64
@@ -245,6 +251,7 @@ func (sm *Replica) notifyListenersOfUsage(rd *rfpb.RangeDescriptor, usage *rfpb.
 	if sm.broadcast == nil {
 		return
 	}
+	usage.RangeId = rd.GetRangeId()
 	up := events.RangeUsageEvent{
 		Type:            events.EventRangeUsageUpdated,
 		RangeDescriptor: rd,
@@ -259,6 +266,26 @@ func (sm *Replica) notifyListenersOfUsage(rd *rfpb.RangeDescriptor, usage *rfpb.
 	}
 }
 
+func (sm *Replica) setRangeLease(key, val []byte) error {
+	if !bytes.HasPrefix(key, constants.LocalRangeLeaseKey) {
+		return status.FailedPreconditionErrorf("setRangeLease called with non-range-lease key: %s", key)
+	}
+	lease := &rfpb.RangeLeaseRecord{}
+	if err := proto.Unmarshal(val, lease); err != nil {
+		return err
+	}
+	sm.rangeMu.Lock()
+	sm.rangeLease = lease
+	sm.rangeMu.Unlock()
+	return nil
+}
+
+func (sm *Replica) GetRangeLease() *rfpb.RangeLeaseRecord {
+	sm.rangeMu.RLock()
+	defer sm.rangeMu.RUnlock()
+	return sm.rangeLease
+}
+
 func (sm *Replica) setRange(key, val []byte) error {
 	if !bytes.HasPrefix(key, constants.LocalRangeKey) {
 		return status.FailedPreconditionErrorf("setRange called with non-range key: %s", key)
@@ -270,8 +297,6 @@ func (sm *Replica) setRange(key, val []byte) error {
 	}
 
 	sm.rangeMu.Lock()
-	defer sm.rangeMu.Unlock()
-
 	if sm.rangeDescriptor != nil {
 		sm.store.RemoveRange(sm.rangeDescriptor, sm)
 	}
@@ -283,11 +308,12 @@ func (sm *Replica) setRange(key, val []byte) error {
 		End:   rangeDescriptor.GetEnd(),
 	}
 	sm.store.AddRange(sm.rangeDescriptor, sm)
+	sm.rangeMu.Unlock()
 
 	if usage, err := sm.Usage(); err == nil {
-		sm.notifyListenersOfUsage(sm.rangeDescriptor, usage)
+		sm.notifyListenersOfUsage(rangeDescriptor, usage)
 	} else {
-		log.Errorf("Error computing usage upon opening replica: %s", err)
+		sm.log.Errorf("Error computing usage upon opening replica: %s", err)
 	}
 	return nil
 }
@@ -505,7 +531,7 @@ func (sm *Replica) releaseLocks(wb pebble.Batch, txid []byte) {
 		keyString := string(ukey)
 		lockingTxid, ok := sm.lockedKeys[keyString]
 		if !ok || !bytes.Equal(txid, lockingTxid) {
-			log.Errorf("Key %q was not locked by %q; should have been", keyString, string(txid))
+			sm.log.Errorf("Key %q was not locked by %q; should have been", keyString, string(txid))
 		} else {
 			delete(sm.lockedKeys, keyString)
 		}
@@ -688,9 +714,18 @@ func (sm *Replica) loadRangeDescriptor(db ReplicaReader) {
 	sm.setRange(constants.LocalRangeKey, buf)
 }
 
+func (sm *Replica) loadRangeLease(db ReplicaReader) {
+	buf, err := sm.lookup(db, constants.LocalRangeLeaseKey)
+	if err != nil {
+		return
+	}
+	sm.setRangeLease(constants.LocalRangeLeaseKey, buf)
+}
+
 // loadReplicaState loads any in-memory replica state from the DB.
 func (sm *Replica) loadReplicaState(db ReplicaReader) error {
 	sm.loadRangeDescriptor(db)
+	sm.loadRangeLease(db)
 	if err := sm.loadPartitionMetadata(db); err != nil {
 		return err
 	}
@@ -935,69 +970,6 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 	}
 }
 
-func (sm *Replica) simpleSplit(wb pebble.Batch, req *rfpb.SimpleSplitRequest) (*rfpb.SimpleSplitResponse, error) {
-	ctx := context.Background()
-
-	splitRsp, err := sm.findSplitPoint()
-	if err != nil {
-		return nil, err
-	}
-	splitKey := splitRsp.GetSplitKey()
-
-	sm.rangeMu.RLock()
-	rd := sm.rangeDescriptor
-	sm.rangeMu.RUnlock()
-
-	peerRangeDescriptor := proto.Clone(rd).(*rfpb.RangeDescriptor)
-	peerRangeDescriptor.Start = splitKey
-	peerRangeDescriptor.RangeId = req.GetNewRangeId()
-	peerRangeDescriptor.Generation += 1
-	for _, r := range peerRangeDescriptor.GetReplicas() {
-		r.ShardId = req.GetNewShardId()
-	}
-
-	buf, err := proto.Marshal(peerRangeDescriptor)
-	if err != nil {
-		return nil, err
-	}
-
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	peerRangeKey := replicaSpecificKey(constants.LocalRangeKey, req.GetNewShardId(), sm.ReplicaID)
-	if err := db.Set(peerRangeKey, buf, pebble.Sync); err != nil {
-		return nil, err
-	}
-	if err := sm.store.AddPeer(ctx, sm.ShardID, req.GetNewShardId()); err != nil {
-		return nil, err
-	}
-
-	// Force compaction so that dragonboat doesn't try to use the existing
-	// raft logs for recovery. The logs are incomplete since we perform the
-	// database clone outside of raft. With the raft snapshot in place,
-	// recovery attempts will ask the state machine (replica) to provide a
-	// snapshot which will reflect the cloned data.
-	if err := sm.store.SnapshotCluster(ctx, req.GetNewShardId()); err != nil {
-		return nil, err
-	}
-
-	rd.End = splitKey
-	rd.Generation += 1
-	buf, err = proto.Marshal(rd)
-	if err != nil {
-		return nil, err
-	}
-	if err := sm.rangeCheckedSet(wb, sm.replicaLocalKey(constants.LocalRangeKey), buf); err != nil {
-		return nil, err
-	}
-	return &rfpb.SimpleSplitResponse{
-		NewStart: rd,
-		NewEnd:   peerRangeDescriptor,
-	}, err
-}
-
 func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 	if len(req.GetStart()) == 0 {
 		return nil, status.InvalidArgumentError("Scan requires a valid key.")
@@ -1194,12 +1166,6 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 			Cas: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_SimpleSplit:
-		r, err := sm.simpleSplit(wb, value.SimpleSplit)
-		rsp.Value = &rfpb.ResponseUnion_SimpleSplit{
-			SimpleSplit: r,
-		}
-		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_Set:
 		r, err := sm.set(wb, value.Set)
 		rsp.Value = &rfpb.ResponseUnion_Set{
@@ -1237,6 +1203,7 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 }
 
 func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
+	sm.readQPS.Inc()
 	rsp := &rfpb.ResponseUnion{}
 
 	switch value := req.Value.(type) {
@@ -1309,7 +1276,7 @@ func (sm *Replica) processAccessTimeUpdates() {
 
 		batchProto, err := batch.ToProto()
 		if err != nil {
-			log.Warningf("could not generate atime update batch: %s", err)
+			sm.log.Warningf("could not generate atime update batch: %s", err)
 			return
 		}
 
@@ -1321,7 +1288,7 @@ func (sm *Replica) processAccessTimeUpdates() {
 			return err
 		})
 		if err != nil {
-			log.Warningf("could not update atimes: %s", err)
+			sm.log.Warningf("could not update atimes: %s", err)
 			return
 		}
 
@@ -1385,7 +1352,7 @@ func (sm *Replica) sendAccessTimeUpdate(key []byte, fileMetadata *rfpb.FileMetad
 		case sm.accesses <- up:
 			return
 		default:
-			log.Warningf("Dropping atime update for %+v", fileMetadata.GetFileRecord())
+			sm.log.Warningf("Dropping atime update for %+v", fileMetadata.GetFileRecord())
 		}
 	}
 }
@@ -1481,6 +1448,12 @@ func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
 	if buf, ok := batchContainsKey(wb, localRangeKey); ok {
 		sm.setRange(localRangeKey, buf)
 	}
+	// Update the rangelease iff this batch sets it.
+	localRangeLeaseKey := sm.replicaLocalKey(constants.LocalRangeLeaseKey)
+	if buf, ok := batchContainsKey(wb, localRangeLeaseKey); ok {
+		sm.setRangeLease(localRangeLeaseKey, buf)
+	}
+
 }
 
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
@@ -1638,7 +1611,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		entries[i] = e
 	}
 
-	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > entriesBetweenUsageChecks {
+	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > uint64(*entriesBetweenUsageChecks) {
 		usage, err := sm.Usage()
 		if err != nil {
 			sm.log.Warningf("Error computing usage: %s", err)
@@ -1817,7 +1790,7 @@ func (sm *Replica) saveRangeData(w io.Writer, snap *pebble.Snapshot) error {
 	sm.rangeMu.RUnlock()
 
 	if rd == nil {
-		log.Warningf("No range descriptor set; not snapshotting range data")
+		sm.log.Warningf("No range descriptor set; not snapshotting range data")
 		return nil
 	}
 	iter := snap.NewIter(&pebble.IterOptions{

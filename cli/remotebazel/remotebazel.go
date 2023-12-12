@@ -48,12 +48,14 @@ const (
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
-	defaultRemoteExecutionURL  = "remote.buildbuddy.io"
+	//TODO(Maggie): Make this configurable
+	defaultRemoteExecutionURL = "remote.buildbuddy.io"
 )
 
 var (
 	execOs            = flag.String("os", "linux", "If set, requests execution on a specific OS.")
 	execArch          = flag.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
+	containerImage    = flag.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
 
@@ -523,6 +525,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		BazelCommand:       strings.Join(bazelArgs, " "),
 		Os:                 reqOS,
 		Arch:               reqArch,
+		ContainerImage:     *containerImage,
 	}
 
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
@@ -621,13 +624,9 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 func handleRemoteBazel(args, execArgs []string) []string {
 	args = arg.Remove(args, "bes_backend")
 	args = arg.Remove(args, "remote_cache")
-	args = arg.Remove(args, "remote_executor")
-	args = arg.Remove(args, "jobs")
 
 	args = append(args, "--bes_backend="+defaultRemoteExecutionURL)
 	args = append(args, "--remote_cache="+defaultRemoteExecutionURL)
-	args = append(args, "--remote_executor="+defaultRemoteExecutionURL)
-	args = append(args, "--jobs=100")
 
 	ctx := context.Background()
 	repoConfig, err := Config(".")

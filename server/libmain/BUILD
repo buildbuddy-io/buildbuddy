@@ -37,6 +37,7 @@ go_library(
         "//server/remote_asset/fetch_server",
         "//server/remote_asset/push_server",
         "//server/remote_cache/action_cache_server",
+        "//server/remote_cache/byte_stream_client",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/capabilities_server",
         "//server/remote_cache/content_addressable_storage_server",
@@ -58,5 +59,6 @@ go_library(
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//channelz/service",
     ],
 )

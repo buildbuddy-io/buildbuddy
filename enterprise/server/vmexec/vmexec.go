@@ -347,10 +347,11 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 	go func() {
 		defer close(statsDone)
 		delay := initialStatsPollInterval
-		for {
+		for done := false; !done; {
 			select {
 			case <-commandDone:
-				return
+				// Collect stats one more time, then terminate the loop.
+				done = true
 			case <-time.After(delay):
 			}
 			delay = min(maxStatsPollInterval, time.Duration(float64(delay)*statsPollBackoff))

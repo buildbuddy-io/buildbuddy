@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -466,26 +467,21 @@ func isTestCommand(command string) bool {
 	return command == "test" || command == "coverage"
 }
 
-func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL string, tx *db.DB) ([]*tables.Target, error) {
+func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL string, tx interfaces.DB) ([]*tables.Target, error) {
 	q := query_builder.NewQuery(`SELECT * FROM "Targets" as t`)
 	q = q.AddWhereClause(`t.repo_url = ?`, repoURL)
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()
-	rows, err := tx.Raw(queryStr, args...).Rows()
+	rq := tx.NewQuery(ctx, "target_tracker_get_targets_by_url").Raw(queryStr, args...)
+	rsp := make([]*tables.Target, 0)
+	err := db.ScanRows(rq, func(ctx context.Context, t *tables.Target) error {
+		rsp = append(rsp, t)
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	defer rows.Close()
-
-	rsp := make([]*tables.Target, 0)
-	for rows.Next() {
-		t := &tables.Target{}
-		if err := tx.ScanRows(rows, t); err != nil {
-			return nil, err
-		}
-		rsp = append(rsp, t)
 	}
 	return rsp, nil
 }
@@ -496,7 +492,7 @@ func readRepoTargets(ctx context.Context, env environment.Env, repoURL string) (
 	}
 	var err error
 	rsp := make([]*tables.Target, 0)
-	err = env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+	err = env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		rsp, err = readRepoTargetsWithTx(ctx, env, repoURL, tx)
 		return err
 	})
@@ -518,12 +514,14 @@ func updateTargets(ctx context.Context, env environment.Env, targets []*tables.T
 		return status.FailedPreconditionError("database not configured")
 	}
 	for _, t := range targets {
-		err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+		err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 			var existing tables.Target
-			if err := tx.Where("target_id = ?", t.TargetID).First(&existing).Error; err != nil {
+			if err := tx.GORM("target_tracker_get_target").Where(
+				"target_id = ?", t.TargetID).First(&existing).Error; err != nil {
 				return err
 			}
-			return tx.Model(&existing).Where("target_id = ?", t.TargetID).Updates(t).Error
+			return tx.GORM("target_tracker_update_target").Model(&existing).Where(
+				"target_id = ?", t.TargetID).Updates(t).Error
 		})
 		if err != nil {
 			return err
@@ -553,9 +551,9 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 			valueArgs = append(valueArgs, nowUsec)
 			valueArgs = append(valueArgs, nowUsec)
 		}
-		err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("target_tracker_insert_targets"), func(tx *db.DB) error {
+		err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 			stmt := fmt.Sprintf(`INSERT INTO "Targets" (repo_url, target_id, user_id, group_id, perms, label, rule_type, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
-			return tx.Exec(stmt, valueArgs...).Error
+			return tx.NewQuery(ctx, "target_tracker_insert_targets").Raw(stmt, valueArgs...).Exec().Error
 		})
 		if err != nil {
 			return err
@@ -595,9 +593,9 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 			valueArgs = append(valueArgs, nowUsec)
 			valueArgs = append(valueArgs, nowUsec)
 		}
-		err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("target_tracker_insert_target_statuses"), func(tx *db.DB) error {
+		err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 			stmt := fmt.Sprintf(`INSERT INTO "TargetStatuses" (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
-			return tx.Exec(stmt, valueArgs...).Error
+			return tx.NewQuery(ctx, "target_tracker_insert_target_statuses").Raw(stmt, valueArgs...).Exec().Error
 		})
 		if err != nil {
 			return err

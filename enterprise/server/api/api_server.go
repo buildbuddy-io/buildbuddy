@@ -14,10 +14,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -102,18 +102,10 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 	}
 	queryStr, args := q.Build()
 
-	rows, err := s.env.GetDBHandle().DB(ctx).Raw(queryStr, args...).Rows()
-	if err != nil {
-		return nil, err
-	}
+	rq := s.env.GetDBHandle().NewQuery(ctx, "api_server_get_invocations").Raw(queryStr, args...)
 
 	invocations := []*apipb.Invocation{}
-	for rows.Next() {
-		var ti tables.Invocation
-		if err := s.env.GetDBHandle().DB(ctx).ScanRows(rows, &ti); err != nil {
-			return nil, err
-		}
-
+	err = db.ScanRows(rq, func(ctx context.Context, ti *tables.Invocation) error {
 		apiInvocation := &apipb.Invocation{
 			Id: &apipb.Invocation_Id{
 				InvocationId: ti.InvocationID,
@@ -135,6 +127,10 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		}
 
 		invocations = append(invocations, apiInvocation)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	if req.IncludeMetadata {
@@ -387,7 +383,7 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 
 	writer := &getFileWriter{s: server}
 
-	return byte_stream_client.StreamBytestreamFile(ctx, s.env, parsedURL, writer)
+	return s.env.GetPooledByteStreamClient().StreamBytestreamFile(ctx, parsedURL, writer)
 }
 
 func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {
@@ -458,7 +454,7 @@ func (s *APIServer) handleGetFileRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = byte_stream_client.StreamBytestreamFile(r.Context(), s.env, parsedURL, w)
+	err = s.env.GetPooledByteStreamClient().StreamBytestreamFile(r.Context(), parsedURL, w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

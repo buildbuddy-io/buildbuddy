@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	runnerPath           = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
-	RunnerContainerImage = "docker://" + platform.Ubuntu18_04WorkflowsImage
+	runnerPath                  = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
+	DefaultRunnerContainerImage = "docker://" + platform.Ubuntu20_04WorkflowsImage
 )
 
 type runnerService struct {
@@ -163,19 +163,25 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		affinityKey = repoURL.String()
 	}
 
+	image := DefaultRunnerContainerImage
+	if req.GetContainerImage() != "" {
+		image = req.GetContainerImage()
+	}
+
 	// Hosted Bazel shares the same pool with workflows.
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			// Run from the scratch disk, since the workspace disk is hot-swapped
 			// between runs, which may not be very Bazel-friendly.
 			{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"},
+			{Name: "GIT_BRANCH", Value: req.GetRepoState().GetBranch()},
 		},
 		Arguments: args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "Pool", Value: r.env.GetWorkflowService().WorkflowsPoolName()},
 				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
-				{Name: "container-image", Value: RunnerContainerImage},
+				{Name: "container-image", Value: image},
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "workload-isolation-type", Value: "firecracker"},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},

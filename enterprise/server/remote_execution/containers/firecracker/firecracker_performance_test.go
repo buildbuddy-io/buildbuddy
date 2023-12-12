@@ -102,8 +102,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 				// Note: platform must match in order to share snapshots
 				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 					{Name: "recycle-runner", Value: "true"},
-					{Name: platform.WorkflowIDPropertyName, Value: "workflow"},
 				}},
+				Arguments: []string{"./buildbuddy_ci_runner"},
 			},
 		}
 

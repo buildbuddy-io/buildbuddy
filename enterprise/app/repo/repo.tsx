@@ -17,6 +17,7 @@ import popup from "../../../app/util/popup";
 import picker_service from "../../../app/picker/picker_service";
 import { GithubIcon } from "../../../app/icons/github";
 import { GoogleIcon } from "../../../app/icons/google";
+import OrgPicker from "../org_picker/org_picker";
 
 export interface RepoComponentProps {
   path: string;
@@ -418,6 +419,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     let deployDestination = isGCPDeploy ? " to Google Cloud" : "";
     return (
       <div className="create-repo-page">
+        <OrgPicker user={this.props.user} floating={true} />
         <div className="create-repo-page-details">
           {this.getTemplateName() && (
             <div className="repo-block card template-block">
@@ -510,7 +512,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             </div>
           )}
         </div>
-        {this.getSecrets().length > 0 && (
+        {this.getSecrets().length > 0 && !this.state.workflowResponse && (
           <div className={`repo-block card repo-create ${!this.state.repoResponse && "disabled"}`}>
             <div className="repo-title">Configure deployment</div>
             {Boolean(this.getUnsetSecrets().length) && (

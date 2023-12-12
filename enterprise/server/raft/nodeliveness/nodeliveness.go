@@ -105,25 +105,16 @@ func (h *Liveness) Release() error {
 // Returns a channel and associated close function. rfpb.NodeLivenessUpdates
 // will be published on the channel when the liveness record changes.
 // Listeners *must not block* or they risk dropping updates.
-func (h *Liveness) AddListener() (<-chan *rfpb.NodeLivenessRecord, func()) {
+func (h *Liveness) AddListener() <-chan *rfpb.NodeLivenessRecord {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	ch := make(chan *rfpb.NodeLivenessRecord, 5)
 	h.livenessListeners = append(h.livenessListeners, ch)
-	closeFunc := func() {
-		h.mu.Lock()
-		defer h.mu.Unlock()
-		for i, l := range h.livenessListeners {
-			if l == ch {
-				h.livenessListeners = append(h.livenessListeners[:i], h.livenessListeners[:i+1]...)
-			}
-		}
-	}
 	if err := h.verifyLease(h.lastLivenessRecord); err == nil {
 		ch <- h.lastLivenessRecord
 	}
-	return ch, closeFunc
+	return ch
 }
 
 func (h *Liveness) BlockingGetCurrentNodeLiveness() (*rfpb.RangeLeaseRecord_NodeLiveness, error) {
@@ -243,29 +234,8 @@ func (h *Liveness) sendCasRequest(ctx context.Context, expectedValue, newVal []b
 }
 
 func (h *Liveness) clearLease() error {
-	var expectedValue []byte
-	if h.lastLivenessRecord != nil {
-		buf, err := proto.Marshal(h.lastLivenessRecord)
-		if err != nil {
-			return err
-		}
-		expectedValue = buf
-	}
-
-	leaseRequest := &rfpb.NodeLivenessRecord{
-		Epoch:      int64(h.clock.Time()),
-		Expiration: 1,
-	}
-	newVal, err := proto.Marshal(leaseRequest)
-	if err != nil {
-		return err
-	}
-
-	_, err = h.sendCasRequest(context.TODO(), expectedValue, newVal)
-	if err == nil {
-		h.setLastLivenessRecord(nil)
-	}
-	return err
+	h.setLastLivenessRecord(nil)
+	return nil
 }
 
 func (h *Liveness) renewLease() error {
@@ -339,8 +309,7 @@ func (h *Liveness) string(replicaID []byte, llr *rfpb.NodeLivenessRecord) string
 }
 
 func (h *Liveness) String() string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	return h.string(h.nhid, h.lastLivenessRecord)
 }

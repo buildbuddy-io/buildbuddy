@@ -18,9 +18,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -42,14 +45,29 @@ const (
 	// to be eagerly fetched in the background, anticipating that they will
 	// also be accessed
 	numChunksToEagerFetch = 4
+
+	fileConversionConcurrency = 8
 )
 
 var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
 var eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 8, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
 
-// Total number of mmapped bytes. This is atomically updated and backs the
-// mapped bytes gauge metric.
-var mmappedBytes int64
+// Total number of mmapped bytes by file name. The map value is an int64 pointer
+// which should be atomically updated. This backs the mapped bytes gauge vector
+// metric.
+var mmappedBytes sync.Map
+
+func ResetMmmapedBytesMetricForTest() {
+	mmappedBytes = sync.Map{}
+	metrics.COWSnapshotMemoryMappedBytes.Reset()
+}
+
+func updateMmappedBytesMetric(delta int64, fileNameLabel string) {
+	gaugeValPtr, _ := mmappedBytes.LoadOrStore(fileNameLabel, new(int64))
+	metrics.COWSnapshotMemoryMappedBytes.
+		With(prometheus.Labels{metrics.FileName: fileNameLabel}).
+		Set(float64(atomic.AddInt64(gaugeValPtr.(*int64), delta)))
+}
 
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
@@ -158,7 +176,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 // Ex. Let's say there are 100B chunks. For input offset 205, chunkStartOffset
 // would be 200, and this would return 5
 func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
-	chunkStartOffset := c.chunkStartOffset(int64(offset))
+	chunkStartOffset := c.ChunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
 	return chunkRelativeAddress
 }
@@ -167,7 +185,7 @@ func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
 // the input offset, and the size of the chunk. Note that the returned chunk
 // size may not be equal to ChunkSizeBytes() if it's the last chunk in the file.
 func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uintptr, int64, error) {
-	chunkStartOffset := c.chunkStartOffset(int64(offset))
+	chunkStartOffset := c.ChunkStartOffset(int64(offset))
 	chunkStartAddress, err := c.GetPageAddress(uintptr(chunkStartOffset), write)
 	if err != nil {
 		return 0, 0, err
@@ -187,7 +205,7 @@ func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uint
 // performed so that the returned chunk can be written to without modifying
 // readonly chunks.
 func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
-	chunkStartOffset := c.chunkStartOffset(int64(offset))
+	chunkStartOffset := c.ChunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
 
 	c.eagerFetchNextChunks(chunkStartOffset)
@@ -231,9 +249,9 @@ func (c *COWStore) SortedChunks() []*Mmap {
 	return chunks
 }
 
-// chunkStartOffset returns the chunk start offset for an offset within the
+// ChunkStartOffset returns the chunk start offset for an offset within the
 // store.
-func (c *COWStore) chunkStartOffset(off int64) int64 {
+func (c *COWStore) ChunkStartOffset(off int64) int64 {
 	return (off / c.chunkSizeBytes) * c.chunkSizeBytes
 }
 
@@ -242,7 +260,7 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 		return 0, err
 	}
 
-	chunkOffset := c.chunkStartOffset(off)
+	chunkOffset := c.ChunkStartOffset(off)
 	n := 0
 
 	c.eagerFetchNextChunks(chunkOffset)
@@ -328,7 +346,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		return 0, err
 	}
 
-	chunkOffset := c.chunkStartOffset(off)
+	chunkOffset := c.ChunkStartOffset(off)
 	n := 0
 
 	c.eagerFetchNextChunks(chunkOffset)
@@ -415,10 +433,16 @@ func (s *COWStore) Dirty(chunkOffset int64) bool {
 	return s.dirty[chunkOffset]
 }
 
-func (s *COWStore) UnmapChunk(chunkOffset int64) error {
+// UnmapChunk unmaps the chunk containing the input offset
+func (s *COWStore) UnmapChunk(offset int64) error {
+	chunkStartOffset := s.ChunkStartOffset(offset)
 	s.storeLock.RLock()
-	c := s.chunks[chunkOffset]
+	c := s.chunks[chunkStartOffset]
 	s.storeLock.RUnlock()
+	if c == nil {
+		// This offset contains a hole - do nothing.
+		return nil
+	}
 	return c.Unmap()
 }
 
@@ -667,17 +691,6 @@ func (s *COWStore) fetchChunk(offset int64) error {
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
 func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (store *COWStore, err error) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	stat, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	totalSizeBytes := stat.Size()
-	fd := int(f.Fd())
 	var chunks []*Mmap
 	defer func() {
 		// If there's an error, clean up any Store instances we created.
@@ -689,21 +702,31 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		}
 	}()
 
-	// Copy buffer (large enough to copy one data block at a time).
-	ioBlockSize := int64(stat.Sys().(*syscall.Stat_t).Blksize)
-	copyBuf := make([]byte, ioBlockSize)
-
-	// dataOffset points to the start of the current non-empty data block in the
-	// file. It is updated every time we consume a data block.
-	dataOffset, err := syscall.Seek(fd, 0, unix.SEEK_DATA)
-	if err == syscall.ENXIO {
-		// No more data
-		dataOffset = totalSizeBytes
-	} else if err != nil {
-		return nil, status.InternalErrorf("initial data seek failed: %s", err)
+	totalSizeBytes, ioBlockSize, err := getFileDetails(filePath)
+	if err != nil {
+		return nil, err
 	}
 
-	createChunk := func(chunkStartOffset int64) (*Mmap, error) {
+	// Copy buffer (large enough to copy one data block at a time).
+	copyBufPool := sync.Pool{
+		New: func() any {
+			copyBuf := make([]byte, ioBlockSize)
+			return &copyBuf
+		},
+	}
+
+	createChunk := func(f *os.File, chunkStartOffset int64) (*Mmap, error) {
+		fd := int(f.Fd())
+		// Check if there's any data in the chunk, to avoid writing a file if
+		// there isn't
+		dataOffset, err := syscall.Seek(fd, chunkStartOffset, unix.SEEK_DATA)
+		if err == syscall.ENXIO {
+			// No more data
+			return nil, nil
+		} else if err != nil {
+			return nil, status.InternalErrorf("initial data seek failed: %s", err)
+		}
+
 		chunkFileSize := chunkSizeBytes
 		if remainder := totalSizeBytes - chunkStartOffset; chunkFileSize > remainder {
 			chunkFileSize = remainder
@@ -724,15 +747,18 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		if endOffset > totalSizeBytes {
 			endOffset = totalSizeBytes
 		}
+
+		copyBuf := copyBufPool.Get().(*[]byte)
+		defer copyBufPool.Put(copyBuf)
+
 		for dataOffset < endOffset {
-			// Copy the current data block to the output chunk file.
 			chunkFileDataOffset := dataOffset - chunkStartOffset
-			dataBuf := copyBuf
+			dataBuf := *copyBuf
 			if remainder := chunkFileSize - chunkFileDataOffset; remainder < int64(len(dataBuf)) {
-				dataBuf = copyBuf[:remainder]
+				dataBuf = (*copyBuf)[:remainder]
 			}
-			// TODO: see whether it's faster to mmap the file we're copying
-			// from, rather than issuing read() syscalls for each data block
+
+			// Copy the current data block to the output chunk file.
 			if _, err := io.ReadFull(f, dataBuf); err != nil {
 				return nil, err
 			}
@@ -742,29 +768,98 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 			// Seek to the next data block, starting from the end of the data
 			// block we just copied.
 			dataOffset += int64(len(dataBuf))
+
+			// Seek to the first non-empty offset >= `dataOffset`
 			dataOffset, err = syscall.Seek(fd, dataOffset, unix.SEEK_DATA)
-			if err == syscall.ENXIO {
-				// No more data
-				dataOffset = totalSizeBytes
-			} else if err != nil {
+			if err != nil && err != syscall.ENXIO {
 				return nil, err
+			}
+			if dataOffset >= endOffset || err == syscall.ENXIO {
+				// No more data in the file
+				break
 			}
 		}
 		return NewMmapLocalFile(ctx, env, dataDir, false /*=dirty*/, int(chunkFileSize), chunkStartOffset, remoteInstanceName, remoteEnabled)
 	}
 
-	// TODO: iterate through the file with multiple goroutines
-	for chunkStartOffset := int64(0); chunkStartOffset < totalSizeBytes; chunkStartOffset += chunkSizeBytes {
-		c, err := createChunk(chunkStartOffset)
-		if err != nil {
-			return nil, status.WrapError(err, "failed to create chunk")
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(fileConversionConcurrency)
+
+	openFilePool := make(chan *os.File, fileConversionConcurrency)
+	defer func() {
+		for len(openFilePool) > 0 {
+			f := <-openFilePool
+			f.Close()
 		}
-		if c != nil {
-			chunks = append(chunks, c)
+		close(openFilePool)
+	}()
+	for i := 0; i < fileConversionConcurrency; i++ {
+		f, err := os.Open(filePath)
+		if err != nil {
+			return nil, err
+		}
+		openFilePool <- f
+	}
+
+	var chunksMu sync.Mutex
+	for chunkStartOffset := int64(0); chunkStartOffset < totalSizeBytes; chunkStartOffset += chunkSizeBytes {
+		select {
+		case <-egCtx.Done():
+			// One goroutine failed - exit the for loop
+			break
+		default:
+			chunkStartOffset := chunkStartOffset
+			eg.Go(func() error {
+				f := <-openFilePool
+				defer func() {
+					openFilePool <- f
+				}()
+
+				c, err := createChunk(f, chunkStartOffset)
+				if err != nil {
+					return status.WrapError(err, "failed to create chunk")
+				}
+				if c != nil {
+					chunksMu.Lock()
+					chunks = append(chunks, c)
+					chunksMu.Unlock()
+				}
+				return nil
+			})
 		}
 	}
 
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
 	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
+}
+
+func getFileDetails(filePath string) (totalSizeBytes int64, ioBlockSize int64, err error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		return 0, 0, err
+	}
+	totalSizeBytes = stat.Size()
+	ioBlockSize = int64(stat.Sys().(*syscall.Stat_t).Blksize)
+	return totalSizeBytes, ioBlockSize, nil
+}
+
+// getMmapLRU returns the shared LRU instance to be used for the mmap,
+// if applicable.
+func getMmapLRU(dataDir string) (*MmapLRU, error) {
+	// We constrain UFFD memory usage by only allowing one chunk to be mapped
+	// at once, so don't use the shared LRU for UFFD.
+	if filepath.Base(dataDir) != snaputil.MemoryFileName {
+		return getSharedLRU()
+	}
+	return nil, nil
 }
 
 // Mmap uses a memory-mapped file to represent a section of a larger composite
@@ -775,8 +870,12 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 //
 // Mmap is concurrency safe
 type Mmap struct {
-	ctx                context.Context
-	env                environment.Env
+	ctx context.Context
+	env environment.Env
+
+	// Optional MmapLRU used to control the memory usage of this Mmap.
+	lru *MmapLRU
+
 	remoteInstanceName string
 
 	// Whether the store supports remote fetching/caching of artifacts
@@ -785,7 +884,10 @@ type Mmap struct {
 
 	Offset  int64
 	dataDir string
-	dirty   bool // dirty suffix, only used to compute path
+	// Whether this is a dirty chunk. Only used to compute the file path.
+	dirty bool
+	// Size of the underlying data when mapped.
+	sizeBytes int64
 
 	// mu protects the subsequent fields.
 	// We do not use a RMutex, because Read methods may still need to initialize
@@ -807,12 +909,18 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 	if digest == nil {
 		return nil, status.FailedPreconditionError("missing digest")
 	}
+	lru, err := getMmapLRU(dataDir)
+	if err != nil {
+		return nil, err
+	}
 	return &Mmap{
 		ctx:                ctx,
 		env:                env,
+		lru:                lru,
 		remoteInstanceName: remoteInstanceName,
 		remoteEnabled:      remoteEnabled,
 		Offset:             offset,
+		sizeBytes:          digest.GetSizeBytes(),
 		data:               nil,
 		fetched:            false,
 		source:             snaputil.ChunkSourceUnmapped,
@@ -826,34 +934,51 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty b
 	if source == snaputil.ChunkSourceUnmapped {
 		return nil, status.InvalidArgumentError("ChunkSourceUnmapped is not a valid source when initializing a chunk from a fd")
 	}
-	data, err := mmapDataFromFd(fd, size)
+	data, err := mmapDataFromFd(fd, size, filepath.Base(dataDir))
+	if err != nil {
+		return nil, err
+	}
+	lru, err := getMmapLRU(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	m := &Mmap{
+		ctx:                ctx,
+		env:                env,
+		lru:                lru,
+		remoteInstanceName: remoteInstanceName,
+		remoteEnabled:      remoteEnabled,
+		dirty:              dirty,
+		Offset:             offset,
+		sizeBytes:          int64(size),
+		data:               data,
+		fetched:            true,
+		source:             source,
+		dataDir:            dataDir,
+	}
+	// Since this constructor eagerly maps, need to track this in the LRU.
+	if lru != nil {
+		lru.Add(m)
+	}
+	return m, nil
+}
+
+// NewMmapLocalFile returns an unmapped instance from the given directory and
+// offset.
+func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, dirty bool, size int, offset int64, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
+	lru, err := getMmapLRU(dataDir)
 	if err != nil {
 		return nil, err
 	}
 	return &Mmap{
 		ctx:                ctx,
 		env:                env,
+		lru:                lru,
 		remoteInstanceName: remoteInstanceName,
 		remoteEnabled:      remoteEnabled,
 		dirty:              dirty,
 		Offset:             offset,
-		data:               data,
-		fetched:            true,
-		source:             source,
-		dataDir:            dataDir,
-	}, nil
-}
-
-// NewMmapLocalFile returns an unmapped instance from the given directory and
-// offset.
-func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, dirty bool, size int, offset int64, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
-	return &Mmap{
-		ctx:                ctx,
-		env:                env,
-		remoteInstanceName: remoteInstanceName,
-		remoteEnabled:      remoteEnabled,
-		dirty:              dirty,
-		Offset:             offset,
+		sizeBytes:          int64(size),
 		data:               nil,
 		fetched:            true,
 		source:             snaputil.ChunkSourceLocalFile,
@@ -862,28 +987,22 @@ func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, 
 }
 
 // mmapDataFromPath memory maps a file and returns the data
-func mmapDataFromPath(path string) ([]byte, error) {
+func mmapDataFromPath(path string, sizeBytes int64, fileNameLabel string) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	s, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	return mmapDataFromFd(int(f.Fd()), int(s.Size()))
+	return mmapDataFromFd(int(f.Fd()), int(sizeBytes), fileNameLabel)
 }
 
 // mmapDataFromFd memory maps a file descriptor and returns the data
-func mmapDataFromFd(fd, size int) ([]byte, error) {
+func mmapDataFromFd(fd, size int, fileNameLabel string) ([]byte, error) {
 	data, err := syscall.Mmap(fd, 0, size, syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return nil, fmt.Errorf("mmap: %s", err)
 	}
-	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
-		atomic.AddInt64(&mmappedBytes, int64(len(data))),
-	))
+	updateMmappedBytesMetric(+int64(size), fileNameLabel)
 	return data, nil
 }
 
@@ -901,11 +1020,15 @@ func (m *Mmap) initMap() (err error) {
 			return err
 		}
 	}
-	data, err := mmapDataFromPath(path)
+	data, err := mmapDataFromPath(path, m.sizeBytes, filepath.Base(m.dataDir))
 	if err != nil {
 		return status.WrapErrorf(err, "create mmap for path %s", path)
 	}
 	m.data = data
+
+	if m.lru != nil {
+		m.lru.Add(m)
+	}
 
 	return nil
 }
@@ -980,6 +1103,10 @@ func (m *Mmap) Sync() error {
 // Unmap unmaps the chunk without marking it closed.
 // It returns nil if the chunk is already unmapped.
 func (m *Mmap) Unmap() error {
+	return m.unmap(false /*=isLRUEviction*/)
+}
+
+func (m *Mmap) unmap(isLRUEviction bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.data == nil {
@@ -990,9 +1117,13 @@ func (m *Mmap) Unmap() error {
 		return err
 	}
 	m.data = nil
-	metrics.COWSnapshotMemoryMappedBytes.Set(float64(
-		atomic.AddInt64(&mmappedBytes, int64(-n)),
-	))
+	// Also remove from the LRU. To avoid a deadlock with lru.Add, skip calling
+	// lru.Remove if we're already being called as part of the LRU eviction
+	// callback.
+	if m.lru != nil && !isLRUEviction {
+		m.lru.Remove(m)
+	}
+	updateMmappedBytesMetric(-int64(n), filepath.Base(m.dataDir))
 	return nil
 }
 
@@ -1008,12 +1139,7 @@ func (m *Mmap) Close() error {
 }
 
 func (m *Mmap) SizeBytes() (int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err := m.initMap(); err != nil {
-		return 0, err
-	}
-	return int64(len(m.data)), nil
+	return m.sizeBytes, nil
 }
 
 // StartAddress returns the address of the first mapped byte. If this is a lazy
@@ -1061,6 +1187,70 @@ func (m *Mmap) Digest() (*repb.Digest, error) {
 	}
 	m.SetDigest(d)
 	return d, nil
+}
+
+// MmapLRU limits the number of Mmap instances that can be mapped in memory at
+// once.
+type MmapLRU struct {
+	mu  sync.Mutex
+	lru *lru.LRU[*Mmap]
+}
+
+func NewMmapLRU() (*MmapLRU, error) {
+	// Sanity check that the LRU size is not too small.
+	// Just using 64MB here for now as a reasonable threshold.
+	maxSize := resources.GetAllocatedMmapRAMBytes()
+	const threshold = 64 * 1024 * 1024
+	if maxSize < threshold {
+		return nil, status.InvalidArgumentErrorf("configured mmapped bytes limit is too small (%d bytes)", maxSize)
+	}
+	l, err := lru.NewLRU(&lru.Config[*Mmap]{
+		SizeFn: func(m *Mmap) int64 { return m.sizeBytes },
+		OnEvict: func(m *Mmap, reason lru.EvictionReason) {
+			// Manual evictions are triggered by calling Unmap(). Don't call
+			// unmap again here, not only because it's unnecessary, but also
+			// because it would cause a deadlock.
+			if reason == lru.ManualEviction {
+				return
+			}
+			if err := m.unmap(true /*=isLRUEviction*/); err != nil {
+				log.Errorf("Failed to unmap chunk: %s", err)
+			}
+		},
+		MaxSize: maxSize,
+		// Update in place, otherwise Add() will first call OnEvict which will
+		// unnecessarily munmap.
+		UpdateInPlace: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &MmapLRU{lru: l}, nil
+}
+
+// getSharedLRU returns the shared LRU instance to be used for mmapped disk
+// chunks.
+var getSharedLRU = sync.OnceValues(NewMmapLRU)
+
+func (ml *MmapLRU) key(m *Mmap) string {
+	// There will be multiple Mmaps with the same offset across different COW
+	// instances, so use the pointer identity of the Mmap to disambiguate.
+	// dataDir would also work, but would use more memory for LRU keys.
+	return fmt.Sprintf("%p:%x", m, m.Offset)
+}
+
+func (ml *MmapLRU) Add(m *Mmap) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ml.lru.Add(ml.key(m), m)
+}
+
+// Remove proactively removes the given mmap from the LRU.
+// The caller is expected to call this after manually unmapping the chunk.
+func (ml *MmapLRU) Remove(m *Mmap) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ml.lru.Remove(ml.key(m))
 }
 
 func IsEmptyOrAllZero(data []byte) bool {

@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -44,9 +43,9 @@ func getACL(i *tables.Invocation) *aclpb.ACL {
 func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	ti.Attempt = 1
 	created := false
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_invocation"), func(tx *db.DB) error {
+	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		// First, try inserting the invocation. This will work for first attempts.
-		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(ti)
+		result := tx.GORM("invocationdb_insert_invocation").Clauses(clause.OnConflict{DoNothing: true}).Create(ti)
 		if result.Error != nil {
 			return result.Error
 		} else if created = result.RowsAffected > 0; created {
@@ -54,14 +53,14 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 			return nil
 		}
 		// Insert failed due to conflict; update the existing row instead.
-		err := tx.Raw(`
+		err := tx.NewQuery(ctx, "invocationdb_find_existing_attempt").Raw(`
 				SELECT attempt FROM "Invocations"
 				WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ? 
 				`+d.h.SelectForUpdateModifier(),
 			ti.InvocationID,
 			int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 			tx.NowFunc().Add(time.Hour*-4).UnixMicro(),
-		).Take(ti).Error
+		).Take(ti)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				// The invocation either succeeded or is more than 4 hours old. It may
@@ -79,7 +78,7 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 		} else {
 			ti.Attempt += 1
 		}
-		result = tx.Updates(ti)
+		result = tx.GORM("invocationdb_update_invocation_attempt").Updates(ti)
 		created = result.RowsAffected > 0
 		return result.Error
 	})
@@ -111,8 +110,9 @@ func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocati
 	updated := false
 	var err error
 	for r := retry.DefaultWithContext(ctx); r.Next(); {
-		err = d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("update_invocation"), func(tx *db.DB) error {
-			result := tx.Where("invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
+		err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
+			result := tx.GORM("invocationdb_update_invocation").Where(
+				"invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
 			updated = result.RowsAffected > 0
 			return result.Error
 		})
@@ -130,13 +130,15 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 	if err != nil {
 		return err
 	}
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		var in tables.Invocation
-		if err := tx.Raw(`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
+		if err := tx.NewQuery(ctx, "invocationdb_get_invocation_for_update_acl").Raw(
+			`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
 			return err
 		}
 		var group tables.Group
-		if err := tx.Raw(`SELECT sharing_enabled FROM "Groups" WHERE group_id = ?`, in.GroupID).Take(&group).Error; err != nil {
+		if err := tx.NewQuery(ctx, "invocationdb_get_group_for_update_acl").Raw(
+			`SELECT sharing_enabled FROM "Groups" WHERE group_id = ?`, in.GroupID).Take(&group); err != nil {
 			return err
 		}
 		if !group.SharingEnabled {
@@ -146,10 +148,12 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 		if err := perms.AuthorizeWrite(authenticatedUser, getACL(&in)); err != nil {
 			return err
 		}
-		if err := tx.Exec(`UPDATE "Invocations" SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
+		if err := tx.NewQuery(ctx, "invocationdb_update_invocation_acl").Raw(
+			`UPDATE "Invocations" SET perms = ? WHERE invocation_id = ?`, p, invocationID).Exec().Error; err != nil {
 			return err
 		}
-		if err := tx.Exec(`UPDATE "Executions" SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
+		if err := tx.NewQuery(ctx, "invocationdb_update_execution_acl").Raw(
+			`UPDATE "Executions" SET perms = ? WHERE invocation_id = ?`, p, invocationID).Exec().Error; err != nil {
 			return err
 		}
 		return nil
@@ -241,31 +245,35 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 }
 
 func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string) error {
-	return d.deleteInvocation(d.h.DB(ctx), invocationID)
+	return d.deleteInvocation(ctx, d.h, invocationID)
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		var in tables.Invocation
-		if err := tx.Raw(`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
+		if err := tx.NewQuery(ctx, "invocationdb_get_invocation_for_delete").Raw(
+			`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
 		if err := perms.AuthorizeWrite(authenticatedUser, acl); err != nil {
 			return err
 		}
-		return d.deleteInvocation(tx, invocationID)
+		return d.deleteInvocation(ctx, tx, invocationID)
 	})
 }
 
-func (d *InvocationDB) deleteInvocation(tx *db.DB, invocationID string) error {
-	if err := tx.Exec(`DELETE FROM "Invocations" WHERE invocation_id = ?`, invocationID).Error; err != nil {
+func (d *InvocationDB) deleteInvocation(ctx context.Context, tx interfaces.DB, invocationID string) error {
+	if err := tx.NewQuery(ctx, "invocationdb_delete_invocation").Raw(
+		`DELETE FROM "Invocations" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
 		return err
 	}
-	if err := tx.Exec(`DELETE FROM "Executions" WHERE invocation_id = ?`, invocationID).Error; err != nil {
+	if err := tx.NewQuery(ctx, "invocationdb_delete_executions").Raw(
+		`DELETE FROM "Executions" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
 		return err
 	}
-	if err := tx.Exec(`DELETE FROM "InvocationExecutions" WHERE invocation_id = ?`, invocationID).Error; err != nil {
+	if err := tx.NewQuery(ctx, "invocationdb_delete_execution_links").Raw(
+		`DELETE FROM "InvocationExecutions" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
 		return err
 	}
 	return nil

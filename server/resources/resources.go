@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	memoryBytes  = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
-	milliCPU     = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var.")
-	zoneOverride = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
+	memoryBytes     = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
+	mmapMemoryBytes = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if snapshot sharing is disabled.")
+	milliCPU        = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var.")
+	zoneOverride    = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
 )
 
 const (
@@ -36,9 +37,10 @@ const (
 )
 
 var (
-	allocatedRAMBytes  int64
-	allocatedCPUMillis int64
-	once               sync.Once
+	allocatedRAMBytes     int64
+	allocatedMmapRAMBytes int64
+	allocatedCPUMillis    int64
+	once                  sync.Once
 )
 
 var (
@@ -80,7 +82,7 @@ func setSysMilliCPUCapacity() {
 	allocatedCPUMillis = int64(numCores * 1000)
 }
 
-func Configure() error {
+func Configure(snapshotSharingEnabled bool) error {
 	if *memoryBytes > 0 {
 		if os.Getenv(memoryEnvVarName) != "" {
 			return status.InvalidArgumentErrorf("Only one of the 'executor.memory_bytes' config option and 'SYS_MEMORY_BYTES' environment variable may be set")
@@ -100,6 +102,15 @@ func Configure() error {
 		setSysMilliCPUCapacity()
 	}
 
+	if snapshotSharingEnabled {
+		// Check for too little or too much mmap memory.
+		if *mmapMemoryBytes < 64*1024*1024 || *mmapMemoryBytes > allocatedRAMBytes {
+			return status.InvalidArgumentErrorf("invalid mmap_memory_bytes %d (must be >= 64MB and <= allocated memory bytes %d)", *mmapMemoryBytes, allocatedRAMBytes)
+		}
+		allocatedMmapRAMBytes = *mmapMemoryBytes
+		allocatedRAMBytes -= allocatedMmapRAMBytes
+	}
+
 	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
 	log.Debugf("Set allocatedCPUMillis to %d", allocatedCPUMillis)
 
@@ -114,6 +125,10 @@ func GetSysFreeRAMBytes() int64 {
 
 func GetAllocatedRAMBytes() int64 {
 	return allocatedRAMBytes
+}
+
+func GetAllocatedMmapRAMBytes() int64 {
+	return allocatedMmapRAMBytes
 }
 
 func GetAllocatedCPUMillis() int64 {

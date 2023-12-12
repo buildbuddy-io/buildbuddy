@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
@@ -527,31 +528,25 @@ func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *quer
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
 	var nextPageToken *tppb.PaginationToken
 
-	err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
-		rows, err := tx.Raw(queryStr, args...).Rows()
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			row := struct {
-				Label         string
-				RuleType      string
-				CommitSHA     string
-				BranchName    string
-				RepoURL       string
-				InvocationID  string
-				TargetID      int64
-				CreatedAtUsec int64
-				StartTimeUsec int64
-				DurationUsec  int64
-				TargetType    int32
-				TestSize      int32
-				Status        int32
-			}{}
-			if err := tx.ScanRows(rows, &row); err != nil {
-				return err
-			}
+	type target struct {
+		Label         string
+		RuleType      string
+		CommitSHA     string
+		BranchName    string
+		RepoURL       string
+		InvocationID  string
+		TargetID      int64
+		CreatedAtUsec int64
+		StartTimeUsec int64
+		DurationUsec  int64
+		TargetType    int32
+		TestSize      int32
+		Status        int32
+	}
+
+	err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		rq := tx.NewQuery(ctx, "target_get_target_history").Raw(queryStr, args...)
+		return db.ScanRows(rq, func(ctx context.Context, row *target) error {
 			targetID := fmt.Sprintf("%d", row.TargetID)
 			if _, ok := seenTargets[targetID]; !ok {
 				seenTargets[targetID] = struct{}{}
@@ -579,12 +574,12 @@ func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *quer
 					InvocationEndTimeUsec: row.CreatedAtUsec,
 				}
 				if nextPageToken.GetInvocationEndTimeUsec() == row.CreatedAtUsec && nextPageToken.GetCommitSha() > row.CommitSHA {
-					continue
+					return nil
 				}
 				nextPageToken.CommitSha = row.CommitSHA
 			}
-		}
-		return nil
+			return nil
+		})
 	})
 	if err != nil {
 		return nil, err

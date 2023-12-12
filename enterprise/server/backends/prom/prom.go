@@ -29,53 +29,69 @@ import (
 var (
 	address = flag.String("prometheus.address", "", "the address of the promethus HTTP API")
 
-	// metricConfigs define a list of metrics we will fetch from prometheus and
+	// MetricConfigs define a list of metrics we will fetch from prometheus and
 	// export to customers.
-	metricConfigs = []*metricConfig{
+	MetricConfigs = []*MetricConfig{
 		{
 			sourceMetricName: "buildbuddy_remote_execution_queue_length",
-			labelNames:       []string{},
-			exportedFamily: &dto.MetricFamily{
+			LabelNames:       []string{},
+			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_execution_queue_length"),
 				Help: proto.String("Number of actions currently waiting in the executor queue."),
 				Type: dto.MetricType_GAUGE.Enum(),
 			},
+			Examples: "sum(exported_buildbuddy_remote_execution_queue_length)",
 		},
 		{
 			sourceMetricName: "buildbuddy_invocation_duration_usec_exported",
-			labelNames:       []string{metrics.InvocationStatusLabel},
-			exportedFamily: &dto.MetricFamily{
+			LabelNames:       []string{metrics.InvocationStatusLabel},
+			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_invocation_duration_usec"),
 				Help: proto.String("The total duration of each invocation, in **microseconds**."),
 				Type: dto.MetricType_HISTOGRAM.Enum(),
 			},
+			Examples: `# Median invocation duration in the past 5 minutes
+histogram_quantile(
+0.5,
+sum(rate(exported_buildbuddy_invocation_duration_usec_bucket[5m])) by (le)
+)
+
+# Number of invocations per Second
+sum by (invocation_status) (rate(exported_buildbuddy_invocation_duration_usec_count[5m]))
+`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_num_hits_exported",
-			labelNames:       []string{metrics.CacheTypeLabel},
-			exportedFamily: &dto.MetricFamily{
+			LabelNames:       []string{metrics.CacheTypeLabel},
+			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_num_hits"),
-				Help: proto.String("Number of cache hits"),
+				Help: proto.String("Number of cache hits."),
 				Type: dto.MetricType_GAUGE.Enum(),
 			},
+			Examples: `# Number of Hits as measured over the last week
+sum by (cache_type) (increase(exported_buildbuddy_remote_cache_num_hits[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_download_size_bytes_exported",
-			labelNames:       []string{},
-			exportedFamily: &dto.MetricFamily{
+			LabelNames:       []string{},
+			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_download_size_bytes"),
-				Help: proto.String("Number of bytes downloaded from the remote cache"),
+				Help: proto.String("Number of bytes downloaded from the remote cache."),
 				Type: dto.MetricType_GAUGE.Enum(),
 			},
+			Examples: `# Number of bytes downloaded as measured over the last week
+sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_upload_size_bytes_exported",
-			labelNames:       []string{},
-			exportedFamily: &dto.MetricFamily{
+			LabelNames:       []string{},
+			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_upload_size_bytes"),
-				Help: proto.String("Number of bytes uploaded to the remote cache"),
+				Help: proto.String("Number of bytes uploaded to the remote cache."),
 				Type: dto.MetricType_GAUGE.Enum(),
 			},
+			Examples: `# Number of bytes uploaded as measured over the last week
+sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))`,
 		},
 	}
 )
@@ -101,10 +117,12 @@ type promQuerier struct {
 	rdb redis.UniversalClient
 }
 
-type metricConfig struct {
+type MetricConfig struct {
 	sourceMetricName string
-	labelNames       []string
-	exportedFamily   *dto.MetricFamily
+	LabelNames       []string
+	ExportedFamily   *dto.MetricFamily
+	// The examples should be in promql, and is going to be shown in the docs.
+	Examples string
 }
 
 // bbMetric implements prometheus.Metric Interface.
@@ -174,9 +192,9 @@ func newCollector(env environment.Env, groupID string) *bbMetricsCollector {
 
 // Describe implements the prometheus.Collector interface
 func (c *bbMetricsCollector) Describe(out chan<- *prometheus.Desc) {
-	for _, c := range metricConfigs {
-		f := c.exportedFamily
-		out <- prometheus.NewDesc(f.GetName(), f.GetHelp(), c.labelNames, nil)
+	for _, c := range MetricConfigs {
+		f := c.ExportedFamily
+		out <- prometheus.NewDesc(f.GetName(), f.GetHelp(), c.LabelNames, nil)
 	}
 }
 
@@ -232,30 +250,30 @@ func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[str
 	res := make(map[string]model.Vector)
 	mu := &sync.Mutex{}
 
-	queryParams := make([]*promQueryParams, 0, 3*len(metricConfigs))
-	for _, config := range metricConfigs {
-		switch config.exportedFamily.GetType() {
+	queryParams := make([]*promQueryParams, 0, 3*len(MetricConfigs))
+	for _, config := range MetricConfigs {
+		switch config.ExportedFamily.GetType() {
 		case dto.MetricType_GAUGE:
 			queryParams = append(queryParams, &promQueryParams{
-				metricName: config.sourceMetricName, sumByFields: config.labelNames,
+				metricName: config.sourceMetricName, sumByFields: config.LabelNames,
 			})
 		case dto.MetricType_HISTOGRAM:
 			queryParams = append(queryParams,
 				&promQueryParams{
 					metricName:  config.sourceMetricName + countSuffix,
-					sumByFields: config.labelNames,
+					sumByFields: config.LabelNames,
 				},
 				&promQueryParams{
 					metricName:  config.sourceMetricName + sumSuffix,
-					sumByFields: config.labelNames,
+					sumByFields: config.LabelNames,
 				},
 				&promQueryParams{
 					metricName:  config.sourceMetricName + bucketSuffix,
-					sumByFields: append(config.labelNames, leLabel),
+					sumByFields: append(config.LabelNames, leLabel),
 				},
 			)
 		default:
-			return nil, status.InvalidArgumentErrorf("unsupported type :%s", config.exportedFamily.GetType())
+			return nil, status.InvalidArgumentErrorf("unsupported type :%s", config.ExportedFamily.GetType())
 		}
 	}
 
@@ -302,37 +320,37 @@ func (q *promQuerier) query(ctx context.Context, metricName string, sumByFields 
 func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error) {
 	m := make(map[string]*dto.MetricFamily)
 
-	for _, config := range metricConfigs {
-		family, ok := m[config.exportedFamily.GetName()]
+	for _, config := range MetricConfigs {
+		family, ok := m[config.ExportedFamily.GetName()]
 		if !ok {
-			family = proto.Clone(config.exportedFamily).(*dto.MetricFamily)
+			family = proto.Clone(config.ExportedFamily).(*dto.MetricFamily)
 		}
 
-		if config.exportedFamily.GetType() == dto.MetricType_GAUGE {
+		if config.ExportedFamily.GetType() == dto.MetricType_GAUGE {
 			vector, ok := vectors[config.sourceMetricName]
 			if !ok {
 				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
 			}
-			metric, err := gaugeVecToMetrics(vector, config.labelNames)
+			metric, err := gaugeVecToMetrics(vector, config.LabelNames)
 			if err != nil {
 				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
 			}
 			family.Metric = append(family.GetMetric(), metric...)
-		} else if config.exportedFamily.GetType() == dto.MetricType_HISTOGRAM {
+		} else if config.ExportedFamily.GetType() == dto.MetricType_HISTOGRAM {
 			sumVector, sumExists := vectors[config.sourceMetricName+sumSuffix]
 			countVector, countExists := vectors[config.sourceMetricName+countSuffix]
 			bucketVector, bucketExists := vectors[config.sourceMetricName+bucketSuffix]
 			if !countExists || !sumExists || !bucketExists {
 				return nil, status.InternalErrorf("missing metric %q for histogram", config.sourceMetricName)
 			}
-			metric, err := histogramVecToMetrics(countVector, sumVector, bucketVector, config.labelNames)
+			metric, err := histogramVecToMetrics(countVector, sumVector, bucketVector, config.LabelNames)
 			if err != nil {
 				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
 			}
 			family.Metric = append(family.GetMetric(), metric...)
 		}
 
-		m[config.exportedFamily.GetName()] = family
+		m[config.ExportedFamily.GetName()] = family
 	}
 
 	res := &mpb.Metrics{}

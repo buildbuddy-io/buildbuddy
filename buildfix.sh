@@ -37,7 +37,11 @@ echo "Formatting WORKSPACE/BUILD files..."
 buildifier -r .
 
 echo "Building and running gofmt..."
-bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gofmt -- -w .
+GO_SRCS=()
+while IFS= read -r line; do
+    GO_SRCS+=("$line")
+done < <(git ls-files '*.go')
+bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gofmt -- -w "${GO_SRCS[@]}"
 
 if which clang-format &>/dev/null; then
   echo "Formatting .proto files..."
@@ -62,7 +66,7 @@ fi
 
 if ((GAZELLE)); then
   echo "Fixing BUILD deps with gazelle..."
-  CLI_VERSION="5.0.21" # keep in sync with checkstyle.yaml
+  CLI_VERSION="5.0.25" # Update this to latest version from `git tag -l 'cli-*' --sort=creatordate | tail -n1`
   USE_BAZEL_VERSION="buildbuddy-io/$CLI_VERSION" bazel fix
 fi
 

@@ -7,12 +7,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"gorm.io/gorm"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
@@ -155,29 +156,34 @@ func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecret
 	}
 
 	newSecret := false
-	err = dbHandle.Transaction(ctx, func(tx *gorm.DB) error {
-		rows, err := tx.Raw(`
+	err = dbHandle.Transaction(ctx, func(tx interfaces.DB) error {
+		var secret tables.Secret
+		err := tx.NewQuery(ctx, "secrets_get_for_update)").Raw(`
 			SELECT * 
 			FROM "Secrets" 
 			WHERE group_id = ? AND name = ?
-			`+dbHandle.SelectForUpdateModifier(), u.GetGroupID(), req.GetSecret().GetName()).Rows()
+			`+dbHandle.SelectForUpdateModifier(), u.GetGroupID(), req.GetSecret().GetName()).Take(secret)
+		existingSecret := true
 		if err != nil {
-			return err
+			if db.IsRecordNotFound(err) {
+				existingSecret = false
+			} else {
+				return err
+			}
 		}
-		existingSecret := rows.Next()
-		_ = rows.Close()
 		if existingSecret {
-			err = tx.Exec(`
+			err = tx.NewQuery(ctx, "secrets_update_secret").Raw(`
 				UPDATE "Secrets"
 				SET value = ?
 				WHERE group_id = ? AND name = ?`,
-				req.GetSecret().GetValue(), u.GetGroupID(), req.GetSecret().GetName()).Error
+				req.GetSecret().GetValue(), u.GetGroupID(), req.GetSecret().GetName()).Exec().Error
 			if err != nil {
 				return err
 			}
 		} else {
-			err = tx.Exec(`INSERT INTO "Secrets" (user_id, group_id, name, value, perms) VALUES(?, ?, ?, ?, ?)`,
-				u.GetUserID(), u.GetGroupID(), req.GetSecret().GetName(), req.GetSecret().GetValue(), secretPerms.Perms).Error
+			err = tx.NewQuery(ctx, "secrets_insert_secret").Raw(
+				`INSERT INTO "Secrets" (user_id, group_id, name, value, perms) VALUES(?, ?, ?, ?, ?)`,
+				u.GetUserID(), u.GetGroupID(), req.GetSecret().GetName(), req.GetSecret().GetValue(), secretPerms.Perms).Exec().Error
 			if err != nil {
 				return err
 			}

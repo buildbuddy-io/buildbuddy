@@ -1,0 +1,1025 @@
+---
+slug: whats-new-in-bazel-7-0
+title: "What's New in Bazel 7.0"
+description: "You know the drill 😁; We reviewed over 3,700 commits and summarized them, so you don't have to!"
+author: Brentley Jones
+author_title: "Developer Evangelist @ BuildBuddy"
+date: 2023-12-11:3:30:00
+author_url: https://brentleyjones.com
+author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
+image: /img/bazel_7_0.png
+tags: [bazel]
+---
+
+import VersionPill from '@site/src/components/version_pill/version_pill';
+
+[Bazel 7.0][bazel-7-0] includes [over 3,700 changes][diff] since 6.0.
+It's the latest major release,
+following the release of 6.0 in December of last year,
+and it's Bazel's [fourth LTS release][lts-releases].
+
+[bazel-7-0]: https://blog.bazel.build/2023/12/11/bazel-7-release.html
+[diff]: https://github.com/bazelbuild/bazel/compare/6.0.0...7.0.0
+[lts-releases]: https://bazel.build/versions/7.0.0/release
+
+Since there were so many changes,
+many of them quite impactful,
+I felt I needed to review them all and provide a nice summary for y'all.
+
+<!-- truncate -->
+
+While I reviewed every change,
+I didn't _understand_ every change 😅.
+I just wanted to mention that,
+since this isn't an exhaustive list of changes,
+but it is a lot of changes I felt were relevant to a large portion of the community.
+Also, this year I've included changes that appeared in the Bazel 6 minor releases
+(e.g. Bazel 6.1).
+While you might already be on a version greater than 6.0,
+you might not know about all of the neat changes that made it into these "minor" releases.
+
+Similar to [Bazel 6.0's changes][whats-new-in-bazel-6],
+the end result was quite big,
+so I've included a table of contents to allow easy navigation to the changes that interest you the most:
+
+[whats-new-in-bazel-6]: whats-new-in-bazel-6-0.md
+
+<nav className="toc">
+
+- [Command-line flag changes](#command-line-flag-changes)
+  - [Renamed](#renamed)
+  - [Default values changed](#default-values-changed)
+  - [Undeprecated](#undeprecated)
+  - [No-op](#no-op)
+  - [Removed](#removed)
+- [Remote](#remote)
+  - [Remote caching (RBC)](#remote-caching-rbc)
+  - [Remote execution (RBE)](#remote-execution-rbe)
+  - [Dynamic execution](#dynamic-execution)
+  - [Build Event Service (BES)](#build-event-service-bes)
+- [Logging](#logging)
+  - [Build Event Protocol (BEP)](#build-event-protocol-bep)
+  - [Timing profile](#timing-profile)
+  - [Execution log](#execution-log)
+  - [Execution graph](#execution-graph)
+  - [Other](#other)
+- [Execution](#execution)
+  - [Running and testing](#running-and-testing)
+  - [Runfiles](#runfiles)
+  - [Coverage](#coverage)
+  - [Persistent workers](#persistent-workers)
+- [Querying](#querying)
+  - [`query`](#query)
+  - [`cquery`](#cquery)
+  - [`aquery`](#aquery)
+- [Dependency management](#dependency-management)
+  - [Bzlmod](#bzlmod)
+- [Platforms](#platforms)
+  - [Android](#android)
+  - [Apple](#apple)
+  - [Linux](#linux)
+  - [Windows](#windows)
+- [Languages](#languages)
+  - [Bash](#bash)
+  - [C and C++](#c-and-c)
+  - [Java](#java)
+  - [Objective-C](#objective-c)
+  - [Proto](#proto)
+  - [Python](#python)
+- [Configuration](#configuration)
+- [Starlark and Build API](#starlark-and-build-api)
+  - [Aspects](#aspects)
+- [Platforms and toolchains API](#platforms-and-toolchains-api)
+- [Misc](#misc)
+
+</nav>
+
+[starlarkification-roadmap]: https://docs.google.com/document/d/12mYYtp2aJ6q1_yhguyMKh6onSZ2afJW9VctRz0hy6-Q
+
+## Command-line flag changes
+
+Bazel's [LTS strategy][lts-releases] allows for breaking changes between major versions.
+In particular,
+it allows for command-line flags to be removed,
+renamed,
+made to do nothing,
+or have their default values changed.
+In the following sections I collected all such flag changes I could find.
+
+### Renamed
+
+- <VersionPill version="6.1.0"/> `--experimental_strict_conflict_checks` to `--incompatible_strict_conflict_checks` ([77f82f4](https://github.com/bazelbuild/bazel/commit/77f82f4fab189fd042754be0a7747042d9b01b8f))
+- <VersionPill version="6.2.0"/> `--experimental_remote_grpc_log` to `--remote_grpc_log` ([2715120](https://github.com/bazelbuild/bazel/commit/271512031d1a43f85eede12cd05b0ebeec66bc9a))
+- <VersionPill version="6.3.0"/> `--experimental_credential_helper` to `--credential_helper` ([0573eee](https://github.com/bazelbuild/bazel/commit/0573eee38d7d3b695267dfd125ab8e08d83a2640))
+- <VersionPill version="6.3.0"/> `--experimental_credential_helper_cache_duration` to `--credential_helper_cache_duration` ([0573eee](https://github.com/bazelbuild/bazel/commit/0573eee38d7d3b695267dfd125ab8e08d83a2640))
+- <VersionPill version="6.3.0"/> `--experimental_credential_helper_timeout` to `--credential_helper_timeout` ([0573eee](https://github.com/bazelbuild/bazel/commit/0573eee38d7d3b695267dfd125ab8e08d83a2640))
+- `--experimental_allow_unresolved_symlinks` `--allow_unresolved_symlinks` ([215f698](https://github.com/bazelbuild/bazel/commit/215f6982d3caec22e67d2fe345a61d63351c7937))
+- `--experimental_heuristically_drop_nodes` to `--heuristically_drop_nodes` ([e8a69f5](https://github.com/bazelbuild/bazel/commit/e8a69f5d5acaeb6af760631490ecbf73e8a04eeb))
+- `--experimental_remote_build_event_upload` to `--remote_build_event_upload` ([fb16e8c](https://github.com/bazelbuild/bazel/commit/fb16e8cd96a8adaeede743a505c9d4a3992d35b5))
+- `--experimental_remote_cache_compression` to `--remote_cache_compression` ([0cdd409](https://github.com/bazelbuild/bazel/commit/0cdd40972ba5253b4b4f0de80f080a911dc8c99b))
+- `--experimental_remote_download_regex` to `--remote_download_regex` ([6d04d38](https://github.com/bazelbuild/bazel/commit/6d04d386eee5f856742c9ede664cb816e85b63d7))
+- `--experimental_repository_disable_download` to `--repository_disable_download` ([4c7baa2](https://github.com/bazelbuild/bazel/commit/4c7baa254ba0918f57a7ebfc97f21c6c22a57579))
+- `--experimental_sandbox_memory_limit` to `--experimental_sandbox_memory_limit_mb` ([09a07a4](https://github.com/bazelbuild/bazel/commit/09a07a45ad71b839e0bca1036d99f1c5fadeaea4))
+- `--experimental_worker_multiplex` to `--worker_multiplex` ([4ad970d](https://github.com/bazelbuild/bazel/commit/4ad970d90c0638556c4faeca2744c236204edcbc))
+
+### Default values changed
+
+- <VersionPill version="6.3.0"/> `--experimental_credential_helper_timeout=10s` ([5a71d9b](https://github.com/bazelbuild/bazel/commit/5a71d9b8b73098cf97bd05773f7c13cb0a3dd67c))
+- <VersionPill version="6.4.0"/> `--experimental_cc_implementation_deps=true` ([05787f3](https://github.com/bazelbuild/bazel/commit/05787f3f8bc3f3866ccb4d7650b331373a053640))
+- `--android_fixed_resource_neverlinking=true` ([253e986](https://github.com/bazelbuild/bazel/commit/253e9862112e7ab6bdbe5d0b3fadabb8e544315d))
+- `--enable_bzlmod=true` ([30d033c](https://github.com/bazelbuild/bazel/commit/30d033cd7e2153e8b8d7eb034a5323053192ecaa))
+- `--experimental_build_transitive_python_runfiles=false` ([2f9c7d6](https://github.com/bazelbuild/bazel/commit/2f9c7d60ea676f9f8e929b20a3ff74e786995c91))
+- `--experimental_exec_configuration_distinguisher=off` ([94d8bd3](https://github.com/bazelbuild/bazel/commit/94d8bd3c152c42b6c75d980b4302b22a3543437c))
+- `--experimental_link_static_libraries_once=true` ([1456361](https://github.com/bazelbuild/bazel/commit/1456361e1b471e635e6ab02d4553978e860a69e1))
+- `--experimental_merged_skyframe_analysis_execution=true` ([1b729a5](https://github.com/bazelbuild/bazel/commit/1b729a5bb44c244556437ed6a330d25f7e19e3c4))
+- `--experimental_output_directory_naming_scheme=diff_against_dynamic_baseline` ([81d12db](https://github.com/bazelbuild/bazel/commit/81d12dbfa24d047453e96e10eedabc9126b108b4))
+- `--experimental_sandbox_async_tree_delete_idle_threads=4` ([d169556](https://github.com/bazelbuild/bazel/commit/d169556e1630c1ea2a670b8ecf405141356a504e))
+- `--incompatible_allow_tags_propagation=true` ([d0625f5](https://github.com/bazelbuild/bazel/commit/d0625f5b37e7cfe4ecfcff02b15f634c53d7440c))
+- `--incompatible_check_sharding_support=true` ([d6257ee](https://github.com/bazelbuild/bazel/commit/d6257ee582d593453af022f785072099c26462c1))
+- `--incompatible_disallow_java_import_exports=true` ([b740189](https://github.com/bazelbuild/bazel/commit/b740189b2209493b65f75b99709741fa58936417))
+- `--incompatible_enable_android_toolchain_resolution=true` ([05bea52](https://github.com/bazelbuild/bazel/commit/05bea52ed3159aa5d15d967f5f56fc084a2b6c73))
+- `--incompatible_enable_cc_toolchain_resolution=true` ([1be55d8](https://github.com/bazelbuild/bazel/commit/1be55d8add84c2d04c3353b7e481a7866a92eac7))
+- `--incompatible_exclusive_test_sandboxed=true` ([23580aa](https://github.com/bazelbuild/bazel/commit/23580aaee7d040d7bff49c68ac0d8dfa7333225b))
+- `--incompatible_fail_on_unknown_attributes=true` ([5f4a0b2](https://github.com/bazelbuild/bazel/commit/5f4a0b26fa751544362fa07ff92aa8fce69c543b))
+- `--incompatible_legacy_local_fallback=false` ([0f75c57](https://github.com/bazelbuild/bazel/commit/0f75c57fc55ac21223a5ef4dd9eb337bfc128595))
+- `--incompatible_remote_use_new_exit_code_for_lost_inputs=true` ([c77790f](https://github.com/bazelbuild/bazel/commit/c77790f55e90a4f66d3c439b583ad7fe0b9a34fd))
+- `--incompatible_sandbox_hermetic_tmp=true` ([fe85936](https://github.com/bazelbuild/bazel/commit/fe85936f7d38c4a279eec78eee7371b37f800000))
+- `--incompatible_merge_fixed_and_default_shell_env=true` ([8c191d8](https://github.com/bazelbuild/bazel/commit/8c191d8627d178682484d80fdcb587f8de76568c))
+- `--incompatible_multi_release_deploy_jars=true` ([36998c5](https://github.com/bazelbuild/bazel/commit/36998c56fbe056ee6ca3ea2cf571a887144cc2b6))
+- `--incompatible_strict_conflict_checks=true` ([53035bf](https://github.com/bazelbuild/bazel/commit/53035bfcfe8077d995d97b815094dfd56e3950b0))
+- `--incompatible_use_host_features=true` ([93f2216](https://github.com/bazelbuild/bazel/commit/93f22166187cea8bce1f7a083cc29ca2567c4f31))
+- `--incompatible_visibility_private_attributes_at_definition=true` ([0656103](https://github.com/bazelbuild/bazel/commit/0656103c9bc23b627e1a49fe4544f068469f8f1b))
+- `--lockfile_mode=update` ([8ba6618](https://github.com/bazelbuild/bazel/commit/8ba66188e378fe3df5db9549b3b9661d62cf93bb))
+- `--java_language_version=""` ([f23440b](https://github.com/bazelbuild/bazel/commit/f23440b60337c9d74b9dfde1f7fd66e42181714f))
+- `--remote_build_event_upload=minimal` ([bfdff54](https://github.com/bazelbuild/bazel/commit/bfdff5455da3c5106ba31393568556441ef1b9b5))
+- `--remote_download_outputs=toplevel` ([9c96529](https://github.com/bazelbuild/bazel/commit/9c96529fca4a135c162e35ce2882834b879438fb))
+- `--watchos_cpus=x86_64` ([0205bf7](https://github.com/bazelbuild/bazel/commit/0205bf78a3075006ec27a3ea5671cf582c3c12e7))
+- `--dynamic_local_strategy` now includes `standalone` when `--experimental_local_lockfree_output` is set ([40cf855](https://github.com/bazelbuild/bazel/commit/40cf855ce6a0c7c9dd5126ce2d10a7e1fbe21b78))
+- Removed `--experimental_inmemory_jdeps_files` and `--experimental_inmemory_dotd_files` from the expansion of `--remote_download_minimal` and `--remote_download_toplevel` ([0d9e477](https://github.com/bazelbuild/bazel/commit/0d9e477675b72a9d13e5be53071696b4ca32c6b4))
+- Removed `--nobuild_runfile_links` from the expansion of `--remote_download_minimal` ([24ba4fa](https://github.com/bazelbuild/bazel/commit/24ba4fa60cc82380196f03ad978717da84b9984b))
+
+### Undeprecated
+
+Surprisingly, a flag was undeprecated in Bazel 7.0:
+
+- `--allowed_local_actions_regex` ([a1dcaea](https://github.com/bazelbuild/bazel/commit/a1dcaea019a63c13dbe10bfd07861fa0beae19b7))
+
+### No-op
+
+These flags now do nothing, but still exist to allow for migration off of them:
+
+- <VersionPill version="6.2.0"/> `--use_workers_with_dexbuilder` ([765c0eb](https://github.com/bazelbuild/bazel/commit/765c0ebc9cf544d70bc22ed89acf7b1592cca59d))
+- <VersionPill version="6.3.0"/> `--experimental_use_fork_join_pool` ([30cf799](https://github.com/bazelbuild/bazel/commit/30cf799f58128d2922d3af59a6a907c4d8115952))
+- `--action_cache_store_output_metadata` ([ec6ce5b](https://github.com/bazelbuild/bazel/commit/ec6ce5bdeb6c0977eab3f4e3925fb3ccd5a06460))
+- `--android_databinding_use_androidx` ([6a19449](https://github.com/bazelbuild/bazel/commit/6a19449233d6e51d8a862545726a60a611943068))
+- `--android_databinding_use_v3_4_args` ([6a19449](https://github.com/bazelbuild/bazel/commit/6a19449233d6e51d8a862545726a60a611943068))
+- `--collapse_duplicate_defines` ([68a4780](https://github.com/bazelbuild/bazel/commit/68a47806d1fcacef49445115ebf2144dbd4f244f))
+- `--experimental_allow_android_library_deps_without_srcs` ([2c16f3f](https://github.com/bazelbuild/bazel/commit/2c16f3f00d72e36a94bc3e4ddde415ac3c974915))
+- `--experimental_android_databinding_v2` ([6a19449](https://github.com/bazelbuild/bazel/commit/6a19449233d6e51d8a862545726a60a611943068))
+- `--experimental_collect_local_action_metrics` ([549254e](https://github.com/bazelbuild/bazel/commit/549254e48c6976a3a16ca8c22122a423c8c6d7a0))
+- `--experimental_collect_local_sandbox_action_metrics` ([549254e](https://github.com/bazelbuild/bazel/commit/549254e48c6976a3a16ca8c22122a423c8c6d7a0))
+- `--experimental_enable_aspect_hints` ([86d4f48](https://github.com/bazelbuild/bazel/commit/86d4f4874b2f8cfa848ea9422c112fb69831e5b7))
+- `--experimental_genquery_use_graphless_query` ([b7678af](https://github.com/bazelbuild/bazel/commit/b7678aff8a85ff315890d0022bea2fa9bae56fcc))
+- `--experimental_parse_headers_skipped_if_corresponding_srcs_found` ([d4625cf](https://github.com/bazelbuild/bazel/commit/d4625cfb5345128528015598a696b39e5d039bc2))
+- `--experimental_require_availability_info` ([c02d128](https://github.com/bazelbuild/bazel/commit/c02d128cdd59e54b2e3a03944084d495cd32eb82))
+- `--experimental_sandboxfs_map_symlink_targets` ([217fafe](https://github.com/bazelbuild/bazel/commit/217fafe2b492de7349547cc3be2b9eef38628055))
+- `--experimental_worker_as_resource` ([660f441](https://github.com/bazelbuild/bazel/commit/660f44183d5984022729d11013e803a2cac7a610))
+- `--high_priority_workers` ([8e359e7](https://github.com/bazelbuild/bazel/commit/8e359e7f1b707a45f61ebf96510988eae07f13b4))
+- `--legacy_bazel_java_test` ([08d3187](https://github.com/bazelbuild/bazel/commit/08d31877bd5c1500e3ca67f47bcd3b79b4af226d))
+- `--incompatible_auto_configure_host_platform` ([f95df42](https://github.com/bazelbuild/bazel/commit/f95df4222d55b167b8af2dc53fe203f339867d6a), [51396c3](https://github.com/bazelbuild/bazel/commit/51396c3051a0aa17b1d63b614fa757161f6295c6))
+- `--incompatible_disallow_symlink_file_to_dir` ([8d375a9](https://github.com/bazelbuild/bazel/commit/8d375a90b4af71c40042bc414ee2518a642beb11))
+- `--incompatible_generated_protos_in_virtual_imports` ([3efaa32](https://github.com/bazelbuild/bazel/commit/3efaa325a1e142831744e8a021c4d25e1c6869f2))
+- `--incompatible_remote_build_event_upload_respect_no_cache` ([fe97f20](https://github.com/bazelbuild/bazel/commit/fe97f2090828340a0687116bcd973fc529bcca7f))
+- `--incompatible_remote_results_ignore_disk` ([c88f374](https://github.com/bazelbuild/bazel/commit/c88f374246c0a7b3a87c58553d3b9ad0ef4e9ad4))
+- `--incompatible_remove_rule_name_parameter` ([fcf6b79](https://github.com/bazelbuild/bazel/commit/fcf6b79cb0626da093990aa55fabc0d216015712))
+- `--incompatible_require_javaplugininfo_in_javacommon` ([192702c](https://github.com/bazelbuild/bazel/commit/192702ca7416b853a8a64443d6d730a88ed1f7c1))
+- `--target_platform_fallback` ([51396c3](https://github.com/bazelbuild/bazel/commit/51396c3051a0aa17b1d63b614fa757161f6295c6))
+- `--use_top_level_targets_for_symlinks` ([32df891](https://github.com/bazelbuild/bazel/commit/32df89144bb119476ad69a306290482a899e3217))
+
+### Removed
+
+- `--android_include_proguard_location_references` ([bbf11ed](https://github.com/bazelbuild/bazel/commit/bbf11ed97516322aa31f6eb7a990d2564d752d1a))
+- `--apple_bitcode` ([37b8e1b](https://github.com/bazelbuild/bazel/commit/37b8e1b37d5676b3d047b528149546bf2bfefdd1))
+- `--apple_compiler` ([1acdfc4](https://github.com/bazelbuild/bazel/commit/1acdfc422e724b4fe12c7bf5248086ab514ec4be))
+- `--apple_enable_auto_dsym_dbg` ([40ef6d3](https://github.com/bazelbuild/bazel/commit/40ef6d3c50eb901d278326c460b63add3a1cb90c))
+- `--apple_grte_top` ([fb4106b](https://github.com/bazelbuild/bazel/commit/fb4106bdbd23c365337ea99704921ada7b86c2df))
+- `--compress_in_memory_genquery_results` ([554f309](https://github.com/bazelbuild/bazel/commit/554f3097253322a5b0c04ad390c7972e5cdfe12c))
+- `--debug_print_action_contexts` ([737830a](https://github.com/bazelbuild/bazel/commit/737830ac34c0c89d8b64bcd01b575ee007ae94ff))
+- `--distinct_host_configuration` ([9c01a5a](https://github.com/bazelbuild/bazel/commit/9c01a5adb09f30feadc8d84c7ee19a3944a42bdb))
+- `--deduplicate_depsets` ([53ca28c](https://github.com/bazelbuild/bazel/commit/53ca28cfaaaf66feb135c719f56e98d7dc31cbf6))
+- `--dynamic_worker_strategy` ([2ca7c18](https://github.com/bazelbuild/bazel/commit/2ca7c18df10fdd978f092e4519bee22780dd42f6))
+- `--experimental_allow_top_level_aspects_parameters` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_analysis_test_call` ([b747a4f](https://github.com/bazelbuild/bazel/commit/b747a4f698f8119e767bbe1a5b8cf3b1b392e0a4))
+- `--experimental_android_local_test_binary_resources` ([6122700](https://github.com/bazelbuild/bazel/commit/612270080eb829b294c74031f18516a93c948144))
+- `--experimental_apple_mandatory_minimum_version` ([dbd9e18](https://github.com/bazelbuild/bazel/commit/dbd9e1889f899fe20c7e1195bbde57a8c40b4327))
+- `--experimental_async_execution` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_availability_info_exempt` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_build_setting_api` ([d72760b](https://github.com/bazelbuild/bazel/commit/d72760b4bcca1414327e97d862d58e359be5d641))
+- `--experimental_cc_shared_library_debug` ([92e16da](https://github.com/bazelbuild/bazel/commit/92e16da9f2960fb76a9078a4277131c4b7940612))
+- `--experimental_cpp_compile_argv_ignore_param_file` ([b34ea66](https://github.com/bazelbuild/bazel/commit/b34ea66e1edd268ed93bee21a9094f79c40b3a62))
+- `--experimental_enable_objc_cc_deps` ([51f45c4](https://github.com/bazelbuild/bazel/commit/51f45c4173704649e246ee759e62939137e6a535))
+- `--experimental_enable_target_export_check` ([1456361](https://github.com/bazelbuild/bazel/commit/1456361e1b471e635e6ab02d4553978e860a69e1))
+- `--experimental_execution_graph_log` ([8ab9c6e](https://github.com/bazelbuild/bazel/commit/8ab9c6e5497ccfe88fdedb2c86ce0ae9461115dc))
+- `--experimental_execution_graph_log_cached` ([6b204c0](https://github.com/bazelbuild/bazel/commit/6b204c013bbb6d4ec9fb88938832bc3166145e2b))
+- `--experimental_execution_graph_log_missed` ([6b204c0](https://github.com/bazelbuild/bazel/commit/6b204c013bbb6d4ec9fb88938832bc3166145e2b))
+- `--experimental_execution_log_spawn_metrics` ([c0f2e14](https://github.com/bazelbuild/bazel/commit/c0f2e146583a18f24e3af542ba0068a7add3f823))
+- `--experimental_dynamic_execution_cpu_limited` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_dynamic_skip_first_build` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_includes_attribute_subpackage_traversal` ([1961b09](https://github.com/bazelbuild/bazel/commit/1961b0955cca1a3a1a394c7271ac50a29e3f810a))
+- `--experimental_java_proto_library_default_has_services` ([0c8b3ed](https://github.com/bazelbuild/bazel/commit/0c8b3ed31a10aec6c160798bba8fada09f1ba4ba))
+- `--experimental_keep_config_nodes_on_analysis_discard` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_lazy_template_expansion` ([61c31d2](https://github.com/bazelbuild/bazel/commit/61c31d255b6ba65c372253f65043d6ea3f10e1f9))
+- `--experimental_local_memory_estimate` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_multi_cpu` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_multi_threaded_digest` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_persistent_javac` ([7fe8fa2](https://github.com/bazelbuild/bazel/commit/7fe8fa2041039347caa1bf910b17d822dc444819))
+- `--experimental_prioritize_local_actions` ([e45b8d4](https://github.com/bazelbuild/bazel/commit/e45b8d40ac5cf380c713bfdb860ab011c602714c))
+- `--experimental_replay_action_out_err` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_repository_cache_urls_as_default_canonical_id` ([a6f8923](https://github.com/bazelbuild/bazel/commit/a6f8923d6f0ddf37cd101f348779dd93335fca6e))
+- `--experimental_repository_hash_file` ([176b07f](https://github.com/bazelbuild/bazel/commit/176b07f7d7ed364fabd241a4dd2557ec77883b32))
+- `--experimental_sandboxfs_path` ([217fafe](https://github.com/bazelbuild/bazel/commit/217fafe2b492de7349547cc3be2b9eef38628055))
+- `--experimental_shortened_obj_file_path` ([6b2ff30](https://github.com/bazelbuild/bazel/commit/6b2ff306848d501ac6d1fc2087ddc62b1fd94d10))
+- `--experimental_show_artifacts` ([bdcd311](https://github.com/bazelbuild/bazel/commit/bdcd3110587359a03c372ad5187d18793ea262fd))
+- `--experimental_skip_runfiles_manifests` ([2dc7375](https://github.com/bazelbuild/bazel/commit/2dc73754f44a87402849dd4e5cb6798d26869d1b))
+- `--experimental_skyframe_include_scanning` ([205091e](https://github.com/bazelbuild/bazel/commit/205091ef05b056ce284262c88ae72bf85b02184b))
+- `--experimental_skymeld_ui` ([681a0c1](https://github.com/bazelbuild/bazel/commit/681a0c181510674a69035138735026156e2e6dd8))
+- `--experimental_supports_info_crosstool_configuration` ([1ebfb7d](https://github.com/bazelbuild/bazel/commit/1ebfb7dceb8d4794f5843cf8246a93f3194451ee))
+- `--experimental_use_sh_binary_stub_script` ([f2d82c6](https://github.com/bazelbuild/bazel/commit/f2d82c61487a82034d8a95f06a4dc54627af18db))
+- `--experimental_verify_repository_rules` ([176b07f](https://github.com/bazelbuild/bazel/commit/176b07f7d7ed364fabd241a4dd2557ec77883b32))
+- `--incompatible_avoid_conflict_dlls` ([e1eef7c](https://github.com/bazelbuild/bazel/commit/e1eef7c9dd0499aa1a311b009d803eb1a621b04c))
+- `--incompatible_disallow_legacy_javainfo` ([606dac7](https://github.com/bazelbuild/bazel/commit/606dac73643269eecb762422759e59a3ca54eb97))
+- `--incompatible_disable_cc_configuration_make_variables` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_disable_cc_toolchain_label_from_crosstool_proto` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_disable_crosstool_file` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_disable_depset_in_cc_user_flags` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_disable_expand_if_all_available_in_flag_set` ([ff37230](https://github.com/bazelbuild/bazel/commit/ff372304604629627c0b74f3457d8821976d88ce))
+- `--incompatible_disable_legacy_cpp_toolchain_skylark_api` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_disable_legacy_flags_cc_toolchain_api` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_disable_managed_directories` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_disable_runtimes_filegroups` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_display_source_file_location` ([8c24877](https://github.com/bazelbuild/bazel/commit/8c2487756ec6ee32414117a3157f6e72b13aab10))
+- `--incompatible_disable_sysroot_from_configuration` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_disable_tools_defaults_package` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_disable_third_party_license_checking` ([ae40562](https://github.com/bazelbuild/bazel/commit/ae405626c63cbea9f98b1a7dd08238b0200d780b))
+- `--incompatible_dont_emit_static_libgcc` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_enable_legacy_cpp_toolchain_skylark_api` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_force_strict_header_check_from_starlark` ([3f36464](https://github.com/bazelbuild/bazel/commit/3f3646473d9a5838bd3ef1e5597498f255addb70))
+- `--incompatible_genquery_use_graphless_query` ([58a44d4](https://github.com/bazelbuild/bazel/commit/58a44d46f3964618d9667903d953aaf67e04fd12))
+- `--incompatible_linkopts_in_user_link_flags` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_load_cc_rules_from_bzl` ([65b5640](https://github.com/bazelbuild/bazel/commit/65b564013c077c5bdb649aa38c547f51357341f2))
+- `--incompatible_provide_cc_toolchain_info_from_cc_toolchain_suite` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_remove_cpu_and_compiler_attributes_from_cc_toolchain` ([0567176](https://github.com/bazelbuild/bazel/commit/0567176074348037ec9d8ee32544784e1e319a10))
+- `--incompatible_require_feature_configuration_for_pic` ([20528af](https://github.com/bazelbuild/bazel/commit/20528afbd02f7f46dc69894219a4cf38c9fecc13))
+- `--incompatible_use_platforms_repo_for_constraints` ([a7f7df3](https://github.com/bazelbuild/bazel/commit/a7f7df301b0fbc1769764b060dfd762357c9f3f8))
+- `--legacy_spawn_scheduler` ([f2c11f7](https://github.com/bazelbuild/bazel/commit/f2c11f7f2225e0a881585bf866ce5117f3c51735))
+- `--print_workspace_in_output_paths_if_needed` ([f2c11f7](https://github.com/bazelbuild/bazel/commit/f2c11f7f2225e0a881585bf866ce5117f3c51735))
+- `--remove_all_convenience_symlinks` ([002bd04](https://github.com/bazelbuild/bazel/commit/002bd04dddbe72ef10c13dd8dfc0c40bd1a4c52c))
+- `--resource_autosense` ([c6ba553](https://github.com/bazelbuild/bazel/commit/c6ba55312039f0e34c8f9e3e898143c7f433faad))
+- `--show_warnings` ([53b0081](https://github.com/bazelbuild/bazel/commit/53b00813459e5b69c2d6f9159b050c2d7c2a1309))
+- `--toolchain_resolution_override` ([60a3c5b](https://github.com/bazelbuild/bazel/commit/60a3c5bea68fb6354c0bc7a611f916d2e26f988e))
+- `--tvos_simulator_version` ([f2c11f7](https://github.com/bazelbuild/bazel/commit/f2c11f7f2225e0a881585bf866ce5117f3c51735))
+- `--tvos_simulator_device` ([f2c11f7](https://github.com/bazelbuild/bazel/commit/f2c11f7f2225e0a881585bf866ce5117f3c51735))
+- `--use_single_jar_apk_builder` ([669c8aa](https://github.com/bazelbuild/bazel/commit/669c8aa147b65186c8f85373609a3b07c9e59e10))
+- `--use_workers_with_dexbuilder` ([f2c11f7](https://github.com/bazelbuild/bazel/commit/f2c11f7f2225e0a881585bf866ce5117f3c51735))
+- `--watchos_simulator_version` ([f2c11f7](https://github.com/bazelbuild/bazel/commit/f2c11f7f2225e0a881585bf866ce5117f3c51735))
+- `--watchos_simulator_device` ([f2c11f7](https://github.com/bazelbuild/bazel/commit/f2c11f7f2225e0a881585bf866ce5117f3c51735))
+
+## Remote
+
+One of Bazel's most powerful features is its ability to use [remote caching and remote execution][remote-explained].
+Numerous improvements and fixes to Bazel's remote capabilities made it into Bazel since 6.0.
+
+Below are some changes that weren't tied to any specific remote feature
+(e.g. gRPC connections):
+
+[remote-explained]: bazels-remote-caching-and-remote-execution-explained.md
+
+- <VersionPill version="6.2.0"/> Added the `--remote_retry_max_delay` flag, which allows remote retry max delay to be user configurable. ([060fea5](https://github.com/bazelbuild/bazel/commit/060fea547102b8bdb31b9b5a6396208227bf6c53))
+- <VersionPill version="6.3.0"/> Added the `--experimental_circuit_breaker_strategy`, `--experimental_remote_failure_rate_threshold`, and `--experimental_remote_failure_window_interval` flags, which causes Bazel to stop using the remote cache or remote execution after a certain rate of failures. ([5575ff2](https://github.com/bazelbuild/bazel/commit/5575ff24aff3c2ba6e487158f8d79f72d86e6800), [10fb5f6](https://github.com/bazelbuild/bazel/commit/10fb5f6c39b945fe280e2d694c1be1a53d326810))
+- <VersionPill version="6.4.0"/> The `digest_function` field is now set as part of all relevant gRPC requests. ([0a8380b](https://github.com/bazelbuild/bazel/commit/0a8380bec9dceae1bffabddcccd459e82d8674b1))
+- <VersionPill version="6.4.0"/> The stack trace is now included in all gRPC errors when `--verbose_failures` is set. ([454f11d](https://github.com/bazelbuild/bazel/commit/454f11de856c9cc89f0f5f7b5d7f3a862c7c28b0))
+- <VersionPill version="6.4.0"/> SSL `BAD_DECRYPT` errors are now retried. ([fb38c3a](https://github.com/bazelbuild/bazel/commit/fb38c3aa8d3c7691e23f9e129d8986a06323a613))
+- Optimized fetching of `ServerCapabilities`. ([35642f4](https://github.com/bazelbuild/bazel/commit/35642f49a35e55b17a85edc30d13a6155ebfbb10), [0d36c6b](https://github.com/bazelbuild/bazel/commit/0d36c6baee286fabef4a5188208a02c61031c762))
+- `exec_properties` is now used when `remote_execution_properties` is empty. ([6f24fa5](https://github.com/bazelbuild/bazel/commit/6f24fa5de1a376ea93e95458cf7bc2cfcae9ce17))
+
+### Remote caching (RBC)
+
+Using a remote cache is one of the most popular ways of speeding up a Bazel build.
+Thankfully these changes make using a remote cache both more performant and more reliable:
+
+- <VersionPill version="6.1.0"/> Added the `--incompatible_remote_use_new_exit_code_for_lost_inputs` flag, which causes Bazel to exit with code 39 if the remote cache evicted blobs that Bazel needed. ([99cff33](https://github.com/bazelbuild/bazel/commit/99cff33e955bd5ceb9a7802b9bd161200c6d7a28))
+- <VersionPill version="6.1.0"/> Background download progress is now reported in the UI. ([0f524c6](https://github.com/bazelbuild/bazel/commit/0f524c63f3ea769793c4b801bc2dc882570cffc4))
+- <VersionPill version="6.1.0"/> Bazel now cleans up stale metadata when it detects that remote cache blobs have been evicted. ([963640a](https://github.com/bazelbuild/bazel/commit/963640a8d75747c3891911940566cc115eacc340), [32e4f23](https://github.com/bazelbuild/bazel/commit/32e4f23ec67909e92313be4d3334b62ccb490d55), [c05ba76](https://github.com/bazelbuild/bazel/commit/c05ba7658b36f44bbd77e949c9b13092af06c038))
+- <VersionPill version="6.1.0"/> When using a combined cache, the AC integrity check now applies to disk part as well. ([5f2866f](https://github.com/bazelbuild/bazel/commit/5f2866f8434ce9a17cf82c001efb7b236f189115))
+- <VersionPill version="6.1.0"/> Fixed `--remote_download_minimal` to work with `bazel test`. ([e8182ce](https://github.com/bazelbuild/bazel/commit/e8182ce32931560406fee1c30745e56a2ee9a6b3))
+- <VersionPill version="6.2.0"/> Added the `--experimental_remote_cache_eviction_retries` flag, which automatically retries the build if it encounters a remote cache eviction error. ([24b4589](https://github.com/bazelbuild/bazel/commit/24b45890c431de98d586fdfe5777031612049135))
+- <VersionPill version="6.2.0"/> All remote metadata is now cleared if any blobs are detected as evicted from the remote cache. ([49a9502](https://github.com/bazelbuild/bazel/commit/49a9502312b6af391a10e1a5c3e05d245ad54899))
+- <VersionPill version="6.2.0"/> Removed `action_id` metadata from prefetched inputs. ([f62a8b9](https://github.com/bazelbuild/bazel/commit/f62a8b9f6a7e840c648f44f094390c3b85b236df))
+- <VersionPill version="6.2.0"/> `ALREADY_EXISTS` when uploading is now treated as a success. ([daa3dbe](https://github.com/bazelbuild/bazel/commit/daa3dbe22adb03338c75b53ea97954c9434099b4))
+- <VersionPill version="6.2.0"/> Improved the upload early return logic. ([50ec6bb](https://github.com/bazelbuild/bazel/commit/50ec6bbff08cc00de4dfdea68e7483f383674222))
+- <VersionPill version="6.2.0"/> Fixed failures creating output directories. ([4050120](https://github.com/bazelbuild/bazel/commit/405012066d2394ad9986830ca028badd3c65ad38))
+- <VersionPill version="6.3.0"/> `--experimental_remote_cache_eviction_retries` is now disabled if `--invocation_id` is set. ([d9b94cb](https://github.com/bazelbuild/bazel/commit/d9b94cbc86a5eb063974c159d404cce68ee56409))
+- <VersionPill version="6.2.0"/> Output symlinks are now gracefully handled when using Build without the Bytes. ([ca30372](https://github.com/bazelbuild/bazel/commit/ca30372e210a638cfce8334b6dc3396c83424baa))
+- <VersionPill version="6.3.0"/> The `prefetecher` `action_id` metadata is now set for prefected inputs. ([3b39ab8](https://github.com/bazelbuild/bazel/commit/3b39ab8e0b0cc91a4970141eaa3469047076dcca))
+- <VersionPill version="6.3.0"/> Fixed local action non-declared symlink issue when using Build without the Bytes. ([5c4cf47](https://github.com/bazelbuild/bazel/commit/5c4cf47a131c84506aad9ce0e014c6643c31a4ac))
+- <VersionPill version="6.3.0"/> Fixed a potential memory leak in the UI. ([ce8836d](https://github.com/bazelbuild/bazel/commit/ce8836dd05de94b92a494be12a47a56bf9819107))
+- <VersionPill version="6.4.0"/> Added the `--experimental_remote_require_cached` flag, which fails the build if any remotely cachable actions aren't cached. ([22f518c](https://github.com/bazelbuild/bazel/commit/22f518c04babd1b01cdacfbdda7c1781558fc508))
+- <VersionPill version="6.4.0"/> Added support new-style digest functions. ([88412ce](https://github.com/bazelbuild/bazel/commit/88412ce8ef94dfc7b27c0331d625e14056fc0bc8))
+- <VersionPill version="6.4.0"/> Added support for multiple digest functions. ([f8c8875](https://github.com/bazelbuild/bazel/commit/f8c88752acf6da4448df52d87e9fee54ca9d826c))
+- Added the `--incompatible_disallow_unsound_directory_outputs` flag, which disallows materializing an output file as a directory. ([77f8603](https://github.com/bazelbuild/bazel/commit/77f8603a4cebeccdb1d873d6e7bcaa788e9b09a7))
+- Added the `--remote_download_all` flag, which is similar to the `--remote_download_{toplevel,minimal}` flags. ([d097b5d](https://github.com/bazelbuild/bazel/commit/d097b5d6cd3bc9fdb725b379b6cf3ef247126008))
+- Added the `--experimental_remote_cache_ttl` flag, which causes old blobs to be considered potentially evicted from the remote cache. ([1ebb04b](https://github.com/bazelbuild/bazel/commit/1ebb04bb5b7773837f6d5653b65378c4bb8df7f6))
+- Added the `--experimental_remote_cache_lease_extension` flag, which causes a background thread to periodically send `FindMissingBlobs` requests to the remote cache during a build. ([1a2b792](https://github.com/bazelbuild/bazel/commit/1a2b792e580ec2e1d23f22e16f23b3f957d2acbe))
+- Added the `--experimental_remote_scrubbing_config` flag, which allows scrubbing remote cache keys for locally run actions. ([24de276](https://github.com/bazelbuild/bazel/commit/24de276977b44c6135813ced5e113c36da7e9953))
+- Build without the Bytes now works without setting the `--experimental_inmemory_*_files` flags. ([ba5e617](https://github.com/bazelbuild/bazel/commit/ba5e61798b358f81071786843dd0d93902cda28c))
+- Changing `--remote_download_mode` no longer invalidates the analysis cache. ([d426b3d](https://github.com/bazelbuild/bazel/commit/d426b3d36d6fd2e0427caa1a64bd629bfaab4569))
+- HTTP remote cache failures are now retried. ([6115d94](https://github.com/bazelbuild/bazel/commit/6115d94cd05864fe5c6e5f774e9482b3b4976976))
+- If the remote cache is unavailable at the start of the build, it will now automatically fall back to local execution. ([0d36c6b](https://github.com/bazelbuild/bazel/commit/0d36c6baee286fabef4a5188208a02c61031c762))
+- Tree objects are now emitted in topological order. ([c20d7ed](https://github.com/bazelbuild/bazel/commit/c20d7ed4d3c3a0a70b3ccd54eb2d539c5583527a))
+- The mtime is now updated on files stored or retrieved from the disk cache. ([7a774ff](https://github.com/bazelbuild/bazel/commit/7a774ff7c5850e7bd57af840a0e097ad4ec25417))
+- Fixed `--experimental_remote_download_regex` to work in incremental builds. ([20552d8](https://github.com/bazelbuild/bazel/commit/20552d8a2a29d411e641ee18a70b4c7b83d8076a))
+- Fixed Build without the Bytes when using multiple source roots. ([de4746d](https://github.com/bazelbuild/bazel/commit/de4746da2394e49d028b5327ee5e65c6b60011cc))
+- Fixed prefetching symlinks. ([0a1d505](https://github.com/bazelbuild/bazel/commit/0a1d50533078283fab93024681c917303a91c46c))
+- Fixed runfile symlink handling when using Build without the Bytes. ([fb76e6e](https://github.com/bazelbuild/bazel/commit/fb76e6e28556401389d65468e96f87aa19b441af))
+
+### Remote execution (RBE)
+
+For some projects,
+using remote execution is the ultimate performance unlock for their Bazel builds.
+In addition to the remote caching changes covered above,
+which also apply to remote execution,
+the following changes improve the remote execution experience:
+
+- <VersionPill version="6.1.0"/> Added the `--experimental_remote_discard_merkle_trees` flag, which discards in-memory copies of the input root's Merkle tree and associated input mappings during calls to `GetActionResult` and `Execute`. ([4069a87](https://github.com/bazelbuild/bazel/commit/4069a87611886532a19c7e558ab4c2f1e83f53f0))
+- <VersionPill version="6.1.0"/> Made Bazel more responsive and use less memory when `--jobs` is set to a high value. ([4069a87](https://github.com/bazelbuild/bazel/commit/4069a87611886532a19c7e558ab4c2f1e83f53f0))
+- <VersionPill version="6.1.0"/> Fixed handling of remote cache eviction when uploading inputs. ([c1168e1](https://github.com/bazelbuild/bazel/commit/c1168e13965ccd61ae9d948cf1e30bcdf459ae6a))
+- <VersionPill version="6.2.0"/> Optimized building Merkle trees. ([f63ce79](https://github.com/bazelbuild/bazel/commit/f63ce7973b8f3f2560f41daf7321a40d20b22fab), [6d6fa81](https://github.com/bazelbuild/bazel/commit/6d6fa81e47591f41b9dce5e2a9a8512ec13d3f4a))
+- <VersionPill version="6.2.0"/> Tree artifacts are now included in the Merkle cache. ([0f55d12](https://github.com/bazelbuild/bazel/commit/0f55d124c05ee2654c3ff56e0332e71ff1eb437c))
+- <VersionPill version="6.3.0"/> Added support for `output_symlinks` in `ActionResult`. ([e842fd5](https://github.com/bazelbuild/bazel/commit/e842fd5197bfa549c6ec70696d62b024deabb09d), [d3fb047](https://github.com/bazelbuild/bazel/commit/d3fb04748392addf2568d1e9fa1db7e8262a2b49))
+- <VersionPill version="6.3.0"/> Remote symlink outputs are now supported when using building without the bytes. ([0ff6b88](https://github.com/bazelbuild/bazel/commit/0ff6b88d8ade0a539a101d8428d35cd004523472))
+- <VersionPill version="6.4.0"/> The `no-remote-exec` execution requirement is now part of the action salt. ([5a23ab2](https://github.com/bazelbuild/bazel/commit/5a23ab2f6416b7ed450bb7b0a59d7aa0f68eea8d))
+
+### Dynamic execution
+
+[Dynamic execution][dynamic-execution] allows for Bazel to race remote and local execution of actions,
+potentially allowing you to get the benefit of both modes,
+without the drawbacks of either.
+Bazel 7.0 only included a single notable user-facing change to dynamic execution:
+
+[dynamic-execution]: https://bazel.build/versions/7.0.0/remote/dynamic
+
+- Added the `--experimental_dynamic_ignore_local_signals` flag, which allows local failures under dynamic execution to be ignored for exit codes > 127 (signals). ([07ee4b7](https://github.com/bazelbuild/bazel/commit/07ee4b7c566c46c259ef050a1eedbde4a1d4ab5f))
+
+### Build Event Service (BES)
+
+Using a build event service can give you unparalleled insight into your Bazel builds at scale.
+There were a couple nice changes to BES support:
+
+- <VersionPill version="6.1.0"/> stdout and stderr logs are now uploaded when using `--experimental_remote_build_event_upload=minimal`. ([17b8e44](https://github.com/bazelbuild/bazel/commit/17b8e448a5e5589f96c2794cb38c86b0c64e86c0))
+- <VersionPill version="6.1.0"/> When using `--experimental_remote_build_event_upload=minimal`, `bytestream://` is always used for BEP referenced files. ([b0c5eb3](https://github.com/bazelbuild/bazel/commit/b0c5eb30b2738bf6454c3026a3e0f37579d5854c))
+- Added the `--bes_system_keywords` flag, which allows specifying non-prefixed notification keywords. ([8daa3dc](https://github.com/bazelbuild/bazel/commit/8daa3dc47cf6a1803350eb249709d847f945d25f))
+- Added the `--build_event_{binary,json,text}_file_upload_mode` flags, which specify the upload mode to use for each file type. ([ca62ca1](https://github.com/bazelbuild/bazel/commit/ca62ca133459ad83f2b886b20fb02e8f100a386a))
+
+## Logging
+
+Bazel offers various methods to gain insight into your build.
+I cover some of the notable changes to those methods below.
+
+### Build Event Protocol (BEP)
+
+The build event protocol is used by [build event services](#build-event-service-bes),
+so all of these changes could have also been listed in that section as well.
+The BEP can also be collected locally with [`--build_event_json_file`][build_event_json_file], [`--build_event_binary_file`][build_event_binary_file], and [`--build_event_text_file`][build_event_text_file].
+
+[build_event_binary_file]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--build_event_binary_file
+[build_event_json_file]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--build_event_json_file
+[build_event_text_file]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--build_event_text_file
+
+The vast majority of changes added additional information to the BEP,
+though some are fixes and improvements:
+
+- <VersionPill version="6.3.0"/> Added the `action_cache_statistics` field to `BuildMetrics.ActionSummary`. ([7963528](https://github.com/bazelbuild/bazel/commit/79635280a69c92085674c448f2a2f72f8ed1d442))
+- Added the `end_time`, `start_time`, and `strategy_details` fields to `ActionExecuted`. ([2ddacab](https://github.com/bazelbuild/bazel/commit/2ddacab80af1dca3c04e74809827c47ec4bc8498))
+- Added the `exec_kind` field to `BuildMetrics.ActionSummary.RunnerCount`. ([0e1d1b6](https://github.com/bazelbuild/bazel/commit/0e1d1b6b759ab403db40ffcfa0dc586adcf7f94b))
+- Added the `execution_phase_time_in_ms` field to `BuildMetrics.ActionSummary.TimingMetrics`. ([be63eee](https://github.com/bazelbuild/bazel/commit/be63eeefa9736d66f4b773bf6043958575eb02d7))
+- Added the `package_load_metrics` field to `BuildMetrics.ActionSummary.PackageMetrics`. ([0597a07](https://github.com/bazelbuild/bazel/commit/0597a070853e6b483aa7bbdcb97a47bbf83a67b5))
+- Added the `symlink_target_path` field to `File`. ([7fa5796](https://github.com/bazelbuild/bazel/commit/7fa5796de6094ff529ceb17ee73c7eac9e42eb15))
+- Added the `system_time` and `user_time` fields to `BuildMetrics.ActionSummary.ActionData`. ([5f1a570](https://github.com/bazelbuild/bazel/commit/5f1a5709b34ca578f9bbb995d62cd028dac3b03c))
+- Added the `worker_ids` field to `BuildMetrics.WorkerMetrics`. ([d31dd09](https://github.com/bazelbuild/bazel/commit/d31dd094c56270d892040ce65586af9b76a99744))
+- Added the `worker_key_hash` field to `BuildMetrics.WorkerMetrics`. ([58eeea1](https://github.com/bazelbuild/bazel/commit/58eeea17db80cc85d685d9319655f2dc398f063d))
+- Added the `worker_pool_metrics` field to `BuildMetrics`. ([284e5a3](https://github.com/bazelbuild/bazel/commit/284e5a3aee6f7290b19af5c8a5ffc0b1811305d1))
+- Added the `CoverageActionsFinishedId` event. ([c2a6f0c](https://github.com/bazelbuild/bazel/commit/c2a6f0c38b75743158a3a8cbe7d6adf4202c2110))
+- Added the `ExecRequest` event. ([9a047de](https://github.com/bazelbuild/bazel/commit/9a047de5f6cd5c2f1204b2389746d5a9862f10c8))
+- Added the `TestProgress` event. ([d8b8ab0](https://github.com/bazelbuild/bazel/commit/d8b8ab0165aa813161d4d7528cbcbdf5c78e1593))
+- Added the `--experimental_publish_package_metrics_in_bep` flag, which populates the `BuildMetrics.ActionSummary.PackageMetrics.package_load_metrics` field. ([0597a07](https://github.com/bazelbuild/bazel/commit/0597a070853e6b483aa7bbdcb97a47bbf83a67b5))
+- Added the `--experimental_run_bep_event_include_residue` flag, which populates the `ExecRequest.argv` field. ([9a047de](https://github.com/bazelbuild/bazel/commit/9a047de5f6cd5c2f1204b2389746d5a9862f10c8), [dab6383](https://github.com/bazelbuild/bazel/commit/dab6383ecef2d3996a67b2b1e4760369abc08de7))
+- Deprecated the `worker_id` field in `BuildMetrics.WorkerMetrics`. ([d31dd09](https://github.com/bazelbuild/bazel/commit/d31dd094c56270d892040ce65586af9b76a99744))
+- Fixed Starlark flags set in `.bazelrc` from appearing in `UnstructuredCommandLine`. ([f272df3](https://github.com/bazelbuild/bazel/commit/f272df3908db3cc0aab884a77d0c8cc338abab40))
+
+### Timing profile
+
+The action timing profile,
+which is enabled by default with [`--profile`][profile],
+is viewable both [locally in Chrome][performance-profiling] and on [build event services](#build-event-service-bes).
+These changes add more detail and clarity to the profile:
+
+[performance-profiling]: https://bazel.build/versions/7.0.0/advanced/performance/json-trace-profile
+[profile]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--profile
+
+- <VersionPill version="6.1.0"/> Added the `bazel_version` field to `otherData`. ([7569b0d](https://github.com/bazelbuild/bazel/commit/7569b0df723b5397501ac63f01a37fd757921331))
+- <VersionPill version="6.2.0"/> Added the `profile_finish_ts` field to `otherData`. ([dbc8423](https://github.com/bazelbuild/bazel/commit/dbc842326c09084005bb59729c9551081eb72084))
+- <VersionPill version="6.4.0"/> Added profiling of Bzlmod operations. ([e7cfd2e](https://github.com/bazelbuild/bazel/commit/e7cfd2e9aeeaa4dfe7e1079eaa3b52421c4bb590), [8a68310](https://github.com/bazelbuild/bazel/commit/8a683109239314aa561a8422bb060f9d5b8c33bb))
+- Added local action cache hits as a stacked chart. ([610b56f](https://github.com/bazelbuild/bazel/commit/610b56f50d98181ee5051f2644295e0fea43560a))
+- Added the `--experimental_collect_pressure_stall_indicators` flag, which adds Linux PSI data to the profile. ([50446bc](https://github.com/bazelbuild/bazel/commit/50446bcb2eb825d799d88ecf82fff6097371ffb1))
+- Added the `--experimental_collect_resource_estimation` flag, which adds CPU and memory estimation profiling. ([2e2f5d9](https://github.com/bazelbuild/bazel/commit/2e2f5d901d3178eafb2b6a248c952f395c714f43))
+- Added the `ANALYZE_AND_EXECUTE` (`interleaved loading, analysis and execution`) phase. ([78140bf](https://github.com/bazelbuild/bazel/commit/78140bf57f42fad30c00349d3d5ec07457bb3c8b))
+- Added profiling of checking outputs. ([df3d00a](https://github.com/bazelbuild/bazel/commit/df3d00aa9937061fb0f59a6adc217486b7f06695))
+- Added profiling of execution log creation, writing, and sorting. ([c2e25ea](https://github.com/bazelbuild/bazel/commit/c2e25ea70376b5c5dc7e304eb986163c332621d5))
+- Added profiling of long wait times for cancelling the other branch in dynamic execution. ([9f2cc56](https://github.com/bazelbuild/bazel/commit/9f2cc569c26914a96337525022a73ded515df813))
+- Added profiling of network handshakes. ([bf9b177](https://github.com/bazelbuild/bazel/commit/bf9b177b7d6f32978ee42d356b7300a8764b2c7e))
+- Added profiling of symlink tree creation and deletion. ([f84329e](https://github.com/bazelbuild/bazel/commit/f84329e007e2421c92805b50da135af411ee754c))
+- Doubles are now used instead of strings for counter series. ([6d1dd4e](https://github.com/bazelbuild/bazel/commit/6d1dd4ee40d23bdf60a21bb4275f33e3a7833358))
+- `REMOTE_DOWNLOAD` (`remote output download`) now has a 10ms threshold. ([b8e2c5f](https://github.com/bazelbuild/bazel/commit/b8e2c5f0d4966f1039a22c8306b02cb9932616eb))
+- Extended the span of checking action cache hits to include all of the work and not only the actual cache lookup. ([df3d00a](https://github.com/bazelbuild/bazel/commit/df3d00aa9937061fb0f59a6adc217486b7f06695))
+- Removed `taskId`. ([bf2368a](https://github.com/bazelbuild/bazel/commit/bf2368a65a05201e8fed73201a9f7b68ef8af3d3))
+- Fixed local execution to use `LOCAL_PROCESS_TIME` (`Local execution process wall time`) instead of `REMOTE_PROCESS_TIME` (`Remote execution process wall time`). ([480b234](https://github.com/bazelbuild/bazel/commit/480b23451ed4a74422a7b77b70bd77af4b4149bc))
+
+### Execution log
+
+Bazel logs all of the [spawns][spawns] it executes in the execution log,
+which is enabled with the [`--execution_log_json_file`][execution_log_json_file] or [`--execution_log_binary_file`][execution_log_binary_file] flags.
+This feature is relatively stable,
+with just a few noticeable changes:
+
+[execution_log_binary_file]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--execution_log_binary_file
+[execution_log_json_file]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--execution_log_json_file
+[spawns]: bazels-remote-caching-and-remote-execution-explained.md#spawns
+
+- <VersionPill version="6.1.0"/> Added the `--execution_log_sort` flag, which allows disabling execution log sorting. ([1a6ffe6](https://github.com/bazelbuild/bazel/commit/1a6ffe6d453708e3cefc98a07965c680e48d6bac))
+- <VersionPill version="6.4.0"/> Added the `is_tool` field to `File`. ([0434287](https://github.com/bazelbuild/bazel/commit/04342878d02ed47735051c343a888eab591422af))
+- `--execution_log_json_file` and `--execution_log_binary_file` are now mutually exclusive. ([61fa933](https://github.com/bazelbuild/bazel/commit/61fa9331099dbc73df4b9d51ad1143f23369d8a2))
+- Renamed the `remote_cache_hit` field in `SpawnExec` to `cache_hit`. ([60dbc64](https://github.com/bazelbuild/bazel/commit/60dbc6436ede4088f953186bea74f023484fdb43))
+- Removed the `progress_message` field from `SpawnExec`. ([0ca0510](https://github.com/bazelbuild/bazel/commit/0ca0510f42339bf30693ff3d4353f4ef198134db))
+- Removed the `walltime` field from `SpawnExec`. ([60e03bf](https://github.com/bazelbuild/bazel/commit/60e03bf0535090e7c011180cdc95ba89942c2bbc))
+
+### Execution graph
+
+The execution graph,
+which is enabled with the [`--experimental_enable_execution_graph_log`][experimental_enable_execution_graph_log] flag,
+logs all actions executed during a build.
+It differs from the [execution log](#execution-log) in that it contains additional information needed to reconstruct the full dependency graph.
+
+[experimental_enable_execution_graph_log]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--experimental_enable_execution_graph_log
+
+Even though there aren't many changes to the execution graph in Bazel 7.0,
+I only recently learned about its existence,
+and wanted to call attention to it:
+
+- Added the `discover_inputs_millis` field to `Metrics`. ([0e099d9](https://github.com/bazelbuild/bazel/commit/0e099d92b4340f424e224c0b73ae8c111b3a409a))
+- Added the `--experimental_execution_graph_enable_edges_from_filewrite_actions` flag, which adjusts how filewrite action edges are handled. ([4973166](https://github.com/bazelbuild/bazel/commit/49731660d8348d4ce243c4531bd5f3b14006f1df))
+- Added the `--experimental_enable_execution_graph_log` and `--experimental_execution_graph_log_path` flags, which replace the `--experimental_execution_graph_log` flag. ([8ab9c6e](https://github.com/bazelbuild/bazel/commit/8ab9c6e5497ccfe88fdedb2c86ce0ae9461115dc))
+- The execution graph is now written to the output base instead of the workspace. ([b5808a4](https://github.com/bazelbuild/bazel/commit/b5808a4c095102609e4dd1d480592aeda473dc24))
+- Shared actions are now included in the execution graph. ([2036a0f](https://github.com/bazelbuild/bazel/commit/2036a0f0fa093d6e48fc02431e28734907cfca63))
+- Test actions no longer output an extra node. ([c3260c4](https://github.com/bazelbuild/bazel/commit/c3260c4ec429664c44f0905518d3bb4057b10da3))
+
+### Other
+
+- <VersionPill version="6.3.0"/> Changed `--memory_profile_stable_heap_parameters` to accept more than one GC specification. ([3dc6951](https://github.com/bazelbuild/bazel/commit/3dc69515210897c00d645e323dff23dfd178970c))
+- Added the `--experimental_command_profile` flag, which records a Java Flight Recorder CPU profile into a `profile.jfr` file in the output base. ([5cbb153](https://github.com/bazelbuild/bazel/commit/5cbb153c839f13c07d777a0175e88dc8a1ab2780))
+
+## Execution
+
+Executing build commands is a primary function of Bazel.
+Some execution related changes can be classified in a particular way,
+such as [remote execution](#remote-execution-rbe)
+or [dynamic execution](#dynamic-execution).
+For the rest,
+I've collected them here.
+
+Below I summarize some foundational execution related changes,
+including "local execution" strategies:
+
+- <VersionPill version="6.1.0"/> Added the `--experimental_writable_outputs` flag, which causes the permissions of all output files to `0755` instead of `0555`. ([88c426e](https://github.com/bazelbuild/bazel/commit/88c426e73cc0eb0a41c0d7995e36acd94e7c9a48))
+- <VersionPill version="6.1.0"/> Added the `--local_extra_resources` flag, which allows specifying additional resource types that can limit concurrently running actions. ([2b2bea4](https://github.com/bazelbuild/bazel/commit/2b2bea4ee9d51ad875a8d273aa344ac9c5b6742c))
+- <VersionPill version="6.1.0"/> Fixed symlink creation overhead. ([c15148a](https://github.com/bazelbuild/bazel/commit/c15148af6c0227ea8360bcf180bd0784113472db))
+- <VersionPill version="6.2.0"/> ctime is now used in file digest cache keys. ([763f1d9](https://github.com/bazelbuild/bazel/commit/763f1d976ba679e5b7aebe63a978a4ab80fca310))
+- <VersionPill version="6.2.0"/> Optimized file checksumming. ([368bf11](https://github.com/bazelbuild/bazel/commit/368bf117513731909337b6e2bd5082c046399506))
+- <VersionPill version="6.3.0"/> Adjusted `--top_level_targets_for_symlinks` to work in more cases. ([ceb9955](https://github.com/bazelbuild/bazel/commit/ceb9955cc36e65e48923dbe51437f589ce277eef))
+- <VersionPill version="6.4.0"/> Added the `--allow_analysis_cache_discard` flag, which when false causes the build to fail if the analysis cache would be discarded. ([1997f09](https://github.com/bazelbuild/bazel/commit/1997f09a83d8bb91247617afeb199381b5c03cc4))
+- <VersionPill version="6.4.0"/> Added the `blake3` option to `--digest_function`. ([cc49d68](https://github.com/bazelbuild/bazel/commit/cc49d68644521d3e0577d27ae1f2bed8ab385117))
+- <VersionPill version="6.4.0"/> Added the `diff_against_dynamic_baseline` option to `--experimental_output_directory_naming_scheme`. ([39b450c](https://github.com/bazelbuild/bazel/commit/39b450c004a6641499aba617bd7980c329f6d031))
+- <VersionPill version="6.4.0"/> Added the `FORMATTED_DATE` entry to the volatile workspace status file. ([ee36d32](https://github.com/bazelbuild/bazel/commit/ee36d322c038bd4a8bd9a5fcd25685ad76c56123))
+- Added a `forced=k` option to `--test_sharding_strategy`. ([bd5f3c3](https://github.com/bazelbuild/bazel/commit/bd5f3c33559489690d8107a66096b2ffded22b47))
+- Added the `--experimental_gc_thrashing_limits` and `--gc_thrashing_limits_retained_heap_limiter_mutually_exclusive` flags, which causes Bazel to trigger an OOM crash when too much garbage collection thrashing happens. ([9f93780](https://github.com/bazelbuild/bazel/commit/9f93780eafb4f98500f3bc6a828c43b6da363089))
+- Added the `--experimental_throttle_action_cache_check` flag, which throttles action cache checks. ([3d29b2e](https://github.com/bazelbuild/bazel/commit/3d29b2e14f143cd56dfee4d49d991a6e330f3a85))
+- Added the `--experimental_skymeld_analysis_overlap_percentage` flag, which limits amount of analysis phase and execution phase overlap. ([9adbe0f](https://github.com/bazelbuild/bazel/commit/9adbe0f3b1c725419e7cc8c40a6c393a8ae86009))
+- Added the `--experimental_use_semaphore_for_jobs` flag, which limits the number of concurrent action execution with a semaphore. ([a83a97e](https://github.com/bazelbuild/bazel/commit/a83a97eb3a3b36f0f48c5aee726ce56a1e1e7b6b))
+- Added the `--skip_incompatible_explicit_targets` flag, which skips incompatible targets that are explicitly listed on the command line. ([136a1ee](https://github.com/bazelbuild/bazel/commit/136a1ee4be934f91bb1388dc289338f213fac181))
+- Actions can now opt into path mapping with the `supports-path-mapping` execution requirement. ([a239ea8](https://github.com/bazelbuild/bazel/commit/a239ea84832f18ee8706682145e9595e71b39680))
+- `--flag_alias` can now be set on `common` and `always`. ([86fe599](https://github.com/bazelbuild/bazel/commit/86fe599f7fc67d09c2f9ab4ef0c177a0fb8445f7))
+- Elevated the `analysis cache discarded` message from `INFO` to `WARN`. ([0a47a1f](https://github.com/bazelbuild/bazel/commit/0a47a1fb04efef598376d4ee7b383add1febcc6c))
+- Normalized `--action_env`, `--flag_alias`, `--host_action_env`, and `--test_env` values. ([4dc5de8](https://github.com/bazelbuild/bazel/commit/4dc5de80a26c00ddd5a60980f723cc8b2becb40d))
+- `0755` instead of `0777` is now used when creating a writable directory. ([ff0e61a](https://github.com/bazelbuild/bazel/commit/ff0e61a66b5a96d1557ed5cbf6288f8d124d668e), [4da0642](https://github.com/bazelbuild/bazel/commit/4da06426be298a350260879852db651da389c6c8))
+- Optimized computing digests from the filesystem. ([e2a57ac](https://github.com/bazelbuild/bazel/commit/e2a57acbb9949040f9190a56c707ca5123e59a66))
+- When using `--experimental_merged_skyframe_analysis_execution`, symlinks aren't planted for paths in `.bazelignore`. ([e1fbc83](https://github.com/bazelbuild/bazel/commit/e1fbc8349850145a12136d2488e0ca70e46fc8e9))
+- When using `--subcommands` the mnemonic is now reported. ([afa2500](https://github.com/bazelbuild/bazel/commit/afa2500c0d3b53c8c99cdeab24674bc2176270a1))
+- Removed the `sandboxfs` strategy. ([217fafe](https://github.com/bazelbuild/bazel/commit/217fafe2b492de7349547cc3be2b9eef38628055))
+- Fixed `--reuse_sandbox_directories` to work with differently-named workspaces. ([2dc5ba9](https://github.com/bazelbuild/bazel/commit/2dc5ba992bd461748a43351ef9f5d2d5cfc53ecb))
+- Fixed encoding of non-ascii contents written to parameter files. ([dc80fa7](https://github.com/bazelbuild/bazel/commit/dc80fa79b29b83acac72f1bc4abda718e87a295d))
+- Fixed state tracking for actions that run under multiple strategies. ([d46aed6](https://github.com/bazelbuild/bazel/commit/d46aed621d1eebd166428bbf1e15ccd180e3c4b6))
+- Fixed docker strategy `GID` clash. ([4082e0f](https://github.com/bazelbuild/bazel/commit/4082e0f574634cde37d04cfb50f9a6a4e1f869f8))
+
+### Running and testing
+
+In addition to building targets,
+Bazel can run applications and tests with the `run` and `test` commands.
+Here were some notable changes to that functionality:
+
+- <VersionPill version="6.1.0"/> Non-test actions are no longer reported as tests in the UI. ([fcb0077](https://github.com/bazelbuild/bazel/commit/fcb007749f7f24b36c2b7c4284378bba20fc8b69))
+- <VersionPill version="6.1.0"/> Non-started tests now count as skipped. ([16427c9](https://github.com/bazelbuild/bazel/commit/16427c9050db140d6cb90d7d6324d4a2ff1e249a))
+- <VersionPill version="6.2.0"/> `SIGWINCH` is now correctly handled when `bazel run`-ing test rules. ([38ece3c](https://github.com/bazelbuild/bazel/commit/38ece3c04105698fc84daa89ba30c5fa692e0403))
+- <VersionPill version="6.2.0"/> Fixed missing output from quick tests run with `bazel run`. ([c04f0d4](https://github.com/bazelbuild/bazel/commit/c04f0d41317bfe1f6ff42da94dddb4023587fc26))
+- <VersionPill version="6.3.0"/> Added the `--incompatible_check_sharding_support` flag, which will fail sharded tests that don't touch the `TEST_SHARD_STATUS_FILE` file. ([f7d795a](https://github.com/bazelbuild/bazel/commit/f7d795a3846645bc7d73c30587fe2acc0494a112))
+- <VersionPill version="6.3.0"/> `test-setup.sh` now raises a signal on exit codes above 128. ([90c4bdf](https://github.com/bazelbuild/bazel/commit/90c4bdfba8e71d50275c6106a6e9c273b7510618))
+- <VersionPill version="6.4.0"/> Runfiles related environment variables are now cleared when using `bazel run`. ([bc83389](https://github.com/bazelbuild/bazel/commit/bc83389808d5a970a56fb826e86d0efe56b65d2b))
+- <VersionPill version="6.4.0"/> When `--test_summary=detailed` is used, passing methods are now also included in the test summary. ([c75fda9](https://github.com/bazelbuild/bazel/commit/c75fda99e714e9adfb5754701a9c450dfb29992f))
+- Added the `--run` flag, which if false prevents bazel from running the built executable. ([6069512](https://github.com/bazelbuild/bazel/commit/6069512ef6fa576613fbe0612929033d251a2328))
+- Added the `//command_line_option/fragment:test` option for the `transitive_configs` attribute. ([6bd7878](https://github.com/bazelbuild/bazel/commit/6bd7878be3d61110733f82f50794f72345034757))
+- Made `--experimental_inprocess_symlink_creation` work with `--nobuild_runfile_links`. ([7b87ae1](https://github.com/bazelbuild/bazel/commit/7b87ae1b81b681d4fc7e42282b6966fbcaf6301c))
+- When switching from `--enable_runfiles` to `--noenable_runfiles` the previous runfiles symlink tree is now cleaned up. ([f84329e](https://github.com/bazelbuild/bazel/commit/f84329e007e2421c92805b50da135af411ee754c))
+- Fixed incrementality issues related to runfiles and a changing `--output_base`. ([c9d7ff9](https://github.com/bazelbuild/bazel/commit/c9d7ff9384fa06e9fe676c2c8935c675f2238c57))
+
+### Coverage
+
+Bazel can collect [code coverage][code-coverage] when running tests.
+Recent changes made the default settings work for more people:
+
+[code-coverage]: https://bazel.build/versions/7.0.0/configure/coverage
+
+- <VersionPill version="6.1.0"/> `bazel coverage` now works with `--remote_download_minimal`. ([e8ff51f](https://github.com/bazelbuild/bazel/commit/e8ff51f4d498380b7287df8b007f5bb0810c2b2c))
+- <VersionPill version="6.1.0"/> `@remote_coverage_tools` is now only fetched when collecting coverage. ([4d188a9](https://github.com/bazelbuild/bazel/commit/4d188a9beaf3b003d2cb3409000424acf5fd82b7))
+- <VersionPill version="6.1.0"/> Fixed LLVM coverage collection for source file paths with a `tmp` segment. ([88b51f5](https://github.com/bazelbuild/bazel/commit/88b51f57d09e43dec31a84d4b636595924d5bfef))
+- <VersionPill version="6.3.0"/> Added the flag `--experimental_collect_code_coverage_for_generated_files`, which collects code coverage for generated files. ([9c83049](https://github.com/bazelbuild/bazel/commit/9c83049a707a761db8bb2450f105e9e9c66a87be))
+- <VersionPill version="6.3.0"/> Added the `metadata_files` parameter to the `coverage_common.instrumented_files_info` function. ([ef54ef5](https://github.com/bazelbuild/bazel/commit/ef54ef5d17a013c863c4e2fb0583e6bd209645f2))
+- <VersionPill version="6.3.0"/> `--experimental_split_coverage_postprocessing` now works in combination with `--experimental_generate_llvm_lcov`. ([9d3b375](https://github.com/bazelbuild/bazel/commit/9d3b375fa6071fc7138d57f30cfcd91a3a2bfa7a))
+- <VersionPill version="6.3.0"/> Fixed `json.gz` check to not rely on `gcov --version`. ([7f628d7](https://github.com/bazelbuild/bazel/commit/7f628d7178b660b69fe87d0a30d93290c808e957))
+- The `CoverageReport` action now uses the `no-remote` execution requirement instead of `local`. ([188b4ef](https://github.com/bazelbuild/bazel/commit/188b4ef8b742223a25b1f94b4f0c567cdbd829df))
+- The `coverage_support_files` parameter on the `coverage_common.instrumented_files_info` function now accepts `FilesToRunProvider` arguments. ([062b83f](https://github.com/bazelbuild/bazel/commit/062b83fcf48206aba254607c701bdae5c928de0b))
+- Fixed coverage combining to happen after exclusive tests have run. ([6eb7dbb](https://github.com/bazelbuild/bazel/commit/6eb7dbb2f2634a0acaee5dc8c73f0aab710e1256))
+
+### Persistent Workers
+
+[Persistent workers][workers] improve build performance by sending multiple requests to long-running processes.
+Here are some notable changes to persistent worker support:
+
+[workers]: https://bazel.build/versions/7.0.0/remote/persistent
+
+- Added the `--experimental_shrink_worker_pool` flag, which shrinks the worker pool if memory pressure gets too high. ([dce697d](https://github.com/bazelbuild/bazel/commit/dce697d10a1684f75cc8a2df001c6f6ee5f46e6a))
+- Added the `--experimental_worker_allowlist` flag, which specifies which mnemonics can use persistent workers. ([85dcafe](https://github.com/bazelbuild/bazel/commit/85dcafeba92479bee5b2cd2cb3f33f84be7de7f7))
+- Added the `--experimental_worker_memory_limit_mb` flag, which kills workers using more than a given amount of memory. ([8d1db5b](https://github.com/bazelbuild/bazel/commit/8d1db5bfce66f1f7f3184e2be37d964eb2ebd8a7))
+- Added the `--experimental_worker_metrics_poll_interval` flag, which allows changing the interval between collecting worker metrics and possibly attempting evictions. ([a95847c](https://github.com/bazelbuild/bazel/commit/a95847c654f121d00ab769f86d65e190091b10e2))
+- Added the `--experimental_worker_sandbox_hardening` flag, which uses the linux sandbox for worker sandboxing. ([6669a4f](https://github.com/bazelbuild/bazel/commit/6669a4fc8e18d1ac2c0ffef102ec6d7c5b87fbd8))
+- Removed support for high priority workers. ([8e359e7](https://github.com/bazelbuild/bazel/commit/8e359e7f1b707a45f61ebf96510988eae07f13b4))
+
+## Querying
+
+Here are some changes that were made to the `query` family of commands,
+starting with ones that applied to more than one of the commands:
+
+- <VersionPill version="6.2.0"/> The `aquery` and `cquery` commands now respect the `--query_file` flag just like the `query` command. ([fb23246](https://github.com/bazelbuild/bazel/commit/fb2324620a4adee19bb4e8a030b6fba58f672dc0))
+- <VersionPill version="6.4.0"/> Added the `--consistent_labels` flag, which forces consistent label formatting across all output modes that is also compatible with `str(Label(...))` in Starlark. ([20cdacc](https://github.com/bazelbuild/bazel/commit/20cdacc22ab4f3ec8ae4337d535a1846bcbfd382))
+- Added the `--proto:include_attribute_source_aspects` flag, which includes a new field `source_aspect_name` to the `Attribute` message that indicates the source aspect that the attribute comes from. ([5c7a159](https://github.com/bazelbuild/bazel/commit/5c7a1598deb67ca46f47943891a687fa0af6dd4f))
+- Added a filter in `cquery`/`aquery` to skip targets with mismatched configurations. ([a2bd3ef](https://github.com/bazelbuild/bazel/commit/a2bd3ef39d7133d8fab8074a9d48023d8553bd79))
+- `label_flag` and `label_setting` values now consider defaults. ([658b3a6](https://github.com/bazelbuild/bazel/commit/658b3a6a4811c7907dd07e949182ba571e96138a))
+
+### `query`
+
+- <VersionPill version="6.3.0"/> Added `jsonproto` option to the `--output` flag. ([a94383f](https://github.com/bazelbuild/bazel/commit/a94383f8928abd379f7edef61bbaa04d262bcf98))
+- <VersionPill version="6.3.0"/> Fixed `--output=proto --order_output=deps` not returning targets in topological order. ([2ff87be](https://github.com/bazelbuild/bazel/commit/2ff87be508101737f113709ae82fa82b772c0452))
+- <VersionPill version="6.4.0"/> Renamed `--output=jsonproto` to `streamed_jsonproto` and made the format valid ndjson. ([2cd583a](https://github.com/bazelbuild/bazel/commit/2cd583a4868354c2198fbb63f124136ad1c0d29b))
+- Duplicates in `<rule-inputs>` when using `query --output=xml --aspect_deps=precise` are removed. ([5c7a159](https://github.com/bazelbuild/bazel/commit/5c7a1598deb67ca46f47943891a687fa0af6dd4f))
+
+### `cquery`
+
+- <VersionPill version="6.2.0"/> Added support for `alias` targets to the `providers` function. ([156325e](https://github.com/bazelbuild/bazel/commit/156325e676cf15c49379eda317b662b2307a7f7e))
+- Added the `streamed_proto` option to the `--output` flag. ([aa88357](https://github.com/bazelbuild/bazel/commit/aa8835753cbbed5a837fc10a37464ee4a84941ba))
+- Starlark transitions now have full fidelity in `cquery`. ([9575c7f](https://github.com/bazelbuild/bazel/commit/9575c7fa86458717c154f08ff8a7f7aff000f6ae))
+- `cquery --output=starlark` now respects `BuildLanguageOptions`. ([1447f24](https://github.com/bazelbuild/bazel/commit/1447f2422ba345e57511a246a58e485422fa2f93))
+
+### `aquery`
+
+- <VersionPill version="6.1.0"/> The effective environment is now printed for for all `CommandAction`s. ([2ae409b](https://github.com/bazelbuild/bazel/commit/2ae409bc88aaab5683f1890acec21c337b73a812))
+- Added `streamed_proto` option to the `--output` flag. ([8490321](https://github.com/bazelbuild/bazel/commit/849032185b7a01684aa84bde31b54366e9e1a315))
+- Added the target paths of `UnresolvedSymlink` actions. ([df82dcd](https://github.com/bazelbuild/bazel/commit/df82dcd1b57a9a7460156ff2d53b376737115dbc))
+- Added whether or not a `FileWrite` action's output is executable. ([abac1c6](https://github.com/bazelbuild/bazel/commit/abac1c632ef0f2c2fac8858abf9b6f9657cb19c2))
+- Added `RepoMappingManifest` to the set of files that `--include_file_write_contents` affects. ([604a9ef](https://github.com/bazelbuild/bazel/commit/604a9ef6332d49110d14d427317bd726225fff1d))
+- Removed duplicate printing of `ExecutionInfo`. ([dd3b0ec](https://github.com/bazelbuild/bazel/commit/dd3b0ec5d494224cf88fc5201331c19007255665))
+
+## Dependency management
+
+With Bazel 7.0 external dependencies can be managed either with [Bzlmod](#bzlmod) or the `WORKSPACE` file.
+Here are some changes that apply to either method:
+
+- <VersionPill version="6.1.0"/> Improved readability of human-readable download progress. ([66b58ee](https://github.com/bazelbuild/bazel/commit/66b58ee904efa22696edc1b78a59bac91da9ed8d))
+- <VersionPill version="6.1.0"/> Repository fetch progress is now reported during main repo mapping computation. ([51e6c38](https://github.com/bazelbuild/bazel/commit/51e6c38ae808df4f2bf8fb29b4c5173e06ac014a))
+- <VersionPill version="6.3.0"/> Added the `archive_type` attribute to `http_archive`. ([c7695ce](https://github.com/bazelbuild/bazel/commit/c7695ce4a50f6ce4e7ab286bd3702e1d60c7c2ff))
+- <VersionPill version="6.3.0"/> Download progress now includes a percentage complete if possible. ([6ffff17](https://github.com/bazelbuild/bazel/commit/6ffff174a226d799d72312550e77541a19e69443))
+- <VersionPill version="6.3.0"/> Hash strings can now contain uppercase characters. ([cc8ecc5](https://github.com/bazelbuild/bazel/commit/cc8ecc5ad847969cc7e4b23c3a4facc8bd56ee36))
+- <VersionPill version="6.4.0"/> Fixed handling of non-ASCII characters in archive entry file names. ([10169bb](https://github.com/bazelbuild/bazel/commit/10169bbe66e818868ec37f7d853ab5a567cd2ced))
+- <VersionPill version="6.4.0"/> Generated patches files now use `\n` for line endings on all platforms. ([07e0d31](https://github.com/bazelbuild/bazel/commit/07e0d316a345a3cb2593f98525320590bbc56e30))
+- Added support for `.tbz` files in the `repository_ctx.download_and_extract` function. ([6e01b25](https://github.com/bazelbuild/bazel/commit/6e01b25954d974a36bd345be730611507df902cd))
+- Added the `--experimental_worker_for_repo_fetching` flag, which allows fetching repositories using a worker thread. ([1590dbc](https://github.com/bazelbuild/bazel/commit/1590dbc4be2ce262ee9348e12cdb44c3b6ee0544))
+- Added the `--http_connector_attempts` and `--http_connector_retry_max_timeout` flags, which makes connection retry attempts and timeout configurable. ([f29db1b](https://github.com/bazelbuild/bazel/commit/f29db1bf54ffb5c49b3027d3ebe762fcfd10ee1b))
+- `.git` directories are now deleted from `git_repository` external repositories when using `strip_prefix`. ([2977ba6](https://github.com/bazelbuild/bazel/commit/2977ba69d39509f0982156ab03589aeef5b84dd5))
+- Extended `--unix_digest_hash_attribute_name` to also work in the repository cache. ([87d6e9a](https://github.com/bazelbuild/bazel/commit/87d6e9ab89d6119a429daede7ae1c719e4244971))
+- HTTP 429 (Too Many Requests) errors are now retried. ([4ed6a2f](https://github.com/bazelbuild/bazel/commit/4ed6a2f2d89eb5de6422fc683b51f26e158d7f68))
+- URLs are now used as default canonical IDs in common repo rules. ([a6f8923](https://github.com/bazelbuild/bazel/commit/a6f8923d6f0ddf37cd101f348779dd93335fca6e))
+
+### Bzlmod
+
+With Bazel 7.0 Bzlmod is enabled by default.
+While Bzlmod was made non-experimental in Bazel 6.0,
+the minor releases contained a lot of additional quality-of-life and feature improvements:
+
+- <VersionPill version="6.1.0"/> Tildes are now acceped in `--override_module`. ([094a0aa](https://github.com/bazelbuild/bazel/commit/094a0aabed1e018e6503bc3ac844c8022b71a527))
+- <VersionPill version="6.2.0"/> Added the `--lockfile_mode` flag, which controls how the bzlmod lockfile is generated and checked. ([3b11a2f](https://github.com/bazelbuild/bazel/commit/3b11a2f69535521f0886cf470edd3b9602c34d55))
+- <VersionPill version="6.2.0"/> Added the `dev_dependency` attribute to `register_execution_platforms` and `register_toolchains`. ([f39454f](https://github.com/bazelbuild/bazel/commit/f39454f0eb85e08f849c8c76123191205224d269))
+- <VersionPill version="6.2.0"/> Added the `is_dev_dependency` attribute to `module_ctx`. ([1a719ce](https://github.com/bazelbuild/bazel/commit/1a719cea3f9bf7ee427620d779b6c287f885eff8))
+- <VersionPill version="6.2.0"/> Added the `extension_metadata` attribute to `module_ctx`. ([6a47481](https://github.com/bazelbuild/bazel/commit/6a47481ca48415515a51c701864c244f08da1c0d))
+- <VersionPill version="6.2.0"/> Added the `max_compatibility_level` attribute to `bazel_dep`, which allows version selection to upgrade a dependency up to the specified compatibility level. ([152a001](https://github.com/bazelbuild/bazel/commit/152a001f422795722a5dd497370b71662fb5d558))
+- <VersionPill version="6.2.0"/> Added support for relative paths in `--override_module`. ([f7627e0](https://github.com/bazelbuild/bazel/commit/f7627e00bf96c9159ab79a32afc4f6a622f0deeb))
+- <VersionPill version="6.2.0"/> Fixed an issue where WORKSPACE and WORKSPACE-loaded .bzl files couldn't see the Bzlmod root module's mappings when Bzlmod is enabled. ([dfdf63a](https://github.com/bazelbuild/bazel/commit/dfdf63a398ef3909364d31d00d1860bf42d6151f))
+- <VersionPill version="6.3.0"/> Added the `root_module_has_non_dev_dependency` attribute to `module_ctx`. ([640e850](https://github.com/bazelbuild/bazel/commit/640e8502c979d353fcac421f12e7170635c74292))
+- <VersionPill version="6.3.0"/> Added the `show` command to `bazel mod`. ([1ae56c2](https://github.com/bazelbuild/bazel/commit/1ae56c294502ee3f5532c285ef491a673353f064))
+- <VersionPill version="6.3.0"/> `REPO.bazel` and `MODULE.bazel` files are now considered workspace boundary markers. ([f93b2f3](https://github.com/bazelbuild/bazel/commit/f93b2f31630fa5c0b8f6be1f75a3a8a5f0eba3f3))
+- <VersionPill version="6.3.0"/> Overrides specified by non-root modules no longer cause an error, and are silently ignored instead. ([78cb7d5](https://github.com/bazelbuild/bazel/commit/78cb7d5b652ee155a0d1ad5cef3a3131e9705152))
+- <VersionPill version="6.3.0"/> The canonical repo name of the `platforms` module is now forced to be `platforms`. ([343ab03](https://github.com/bazelbuild/bazel/commit/343ab03d0c6e5828b498765cd83c80cb731b1e3d))
+- <VersionPill version="6.3.0"/> Renamed `modquery` command to `mod`. ([f6c2ef9](https://github.com/bazelbuild/bazel/commit/f6c2ef95adeba852888d406a0f333e8dd2aeba8f))
+- <VersionPill version="6.3.0"/> Yanked module versions no longer contribute dependency requirements or emit `DEBUG` messages for `print()` statements. ([2a2a474](https://github.com/bazelbuild/bazel/commit/2a2a4743ad624f7f238b7771b8ceedb7649e8f5c))
+- <VersionPill version="6.4.0"/> Added the `environ` attribute to `module_extension`. ([64554a3](https://github.com/bazelbuild/bazel/commit/64554a32d0836bf8c5eaa5d5f2bebb7163ac73bc))
+- <VersionPill version="6.4.0"/> Added the `--experimental_isolated_extension_usages` flag, which enables the `isolate` parameter of `use_extension`. ([19a9710](https://github.com/bazelbuild/bazel/commit/19a971089952e53bba130a8e3e8b28b6b1e310e6), [3a4b04f](https://github.com/bazelbuild/bazel/commit/3a4b04f3e5e74f16a981a265e95b196899c79d54))
+- <VersionPill version="6.4.0"/> Builtin modules are now injected at the end of the `MODULE.bazel` file. ([0e58b0d](https://github.com/bazelbuild/bazel/commit/0e58b0d94d9867f5c22da704a66fe4da0ad53f1f))
+- <VersionPill version="6.4.0"/> Release candidates are now considered equivalent to the actual release for `module.bazel_compatibility`. ([21cd4ef](https://github.com/bazelbuild/bazel/commit/21cd4efaa8c766ac9f1d930c7b10052d91a3958e))
+- <VersionPill version="6.4.0"/> Optimized computing root repository mapping. ([8a68310](https://github.com/bazelbuild/bazel/commit/8a683109239314aa561a8422bb060f9d5b8c33bb))
+- <VersionPill version="6.4.0"/> Optimized memory usage. ([74aadb2](https://github.com/bazelbuild/bazel/commit/74aadb265c1cae614ae636146f7a1e9e195b7e97))
+- <VersionPill version="6.4.0"/> Optimized registry downloading. ([8337dd7](https://github.com/bazelbuild/bazel/commit/8337dd704237d2d21fd999c9484a23174b6074d5))
+- Added the `--all` flag to the `fetch` command. ([0356a3f](https://github.com/bazelbuild/bazel/commit/0356a3ff1d978fe645f71a546680bd89391466dc))
+- Added the `--repo` flag to the `fetch` command. ([9a1d385](https://github.com/bazelbuild/bazel/commit/9a1d3858bfa8138b62e9f7c6ca5a78b195c179eb))
+- Added support for the `use_repo_rule` directive in `MODULE.bazel` files. ([ab016be](https://github.com/bazelbuild/bazel/commit/ab016bec63d7afaf868b81ad7341fde5909dbffd))
+- All labels in Bazel error messages, log output, Build Event Protocol, etc. are now prefixed with `@@` instead `@` where applicable, to properly denote that they contain canonical repo names. ([c456082](https://github.com/bazelbuild/bazel/commit/c4560822cc9d48f6642fd946ae0eac93a40668cc))
+- Optimized CPU usage. ([57b0bd7](https://github.com/bazelbuild/bazel/commit/57b0bd7f743481e7eca4f9c78f3bd36c18a8ac77))
+
+## Platforms
+
+[Platforms][platforms] are where your build tools run (i.e. execution platforms)
+or where your built products will run (i.e. target platforms).
+In previous years I catagorized changes along those lines,
+but this year I'm not making that distinction.
+
+[platforms]: https://bazel.build/versions/7.0.0/extending/platforms
+
+### Android
+
+- Continued progress on Starlarkifying the Android rules
+- <VersionPill version="6.1.0"/> Made desugar dependencies deterministic. ([a306f4f](https://github.com/bazelbuild/bazel/commit/a306f4f7fd440d006aa6ae9234b4430f13bc8cf9))
+- <VersionPill version="6.1.0"/> Fixed multiplexed workers for busybox tools. ([8b1521e](https://github.com/bazelbuild/bazel/commit/8b1521ebfa4a7333148ddaa63eea8a9d3702579d))
+- <VersionPill version="6.2.0"/> Added test coverage support to `android_local_test`. ([6bd2cc3](https://github.com/bazelbuild/bazel/commit/6bd2cc345b459de3b0b0a47be5707bff2f0ab044))
+- <VersionPill version="6.2.0"/> Fixed worker and multiplex workers for `DexBuilder` and `Desugar` actions. ([765c0eb](https://github.com/bazelbuild/bazel/commit/765c0ebc9cf544d70bc22ed89acf7b1592cca59d))
+- Added the `--experimental_persistent_aar_extractor` flag, which uses persistent workers for aar extractors. ([74bc046](https://github.com/bazelbuild/bazel/commit/74bc04653cd8635f19a887bd1171d2e8566166c1))
+- Added the `--optimizing_dexer` flag, which allows specifying a binary to use to do dexing without sharding. ([9337dfe](https://github.com/bazelbuild/bazel/commit/9337dfe28c00fc1faf4331416ed1d65ad7336cca))
+- Added the `bazel_android` fragment. ([bd0f9b0](https://github.com/bazelbuild/bazel/commit/bd0f9b08561403a3dcbf95facff6ef8e863381da))
+- Added the `dexdump` tool to `android_sdk_repository`. ([773b50f](https://github.com/bazelbuild/bazel/commit/773b50f979b8f40e73cf547049bb8e1114fb670a))
+- Added the `dexdump` attribute to `android_sdk`. ([1e4b275](https://github.com/bazelbuild/bazel/commit/1e4b275bb0c292f5d434d97522ab51c3581b6cd6))
+- Added persistent worker support for `GenerateDataBindingBaseClasses`. ([9092e29](https://github.com/bazelbuild/bazel/commit/9092e29f1bd0fe8a94bcee18fe108a9ca2dab075))
+- Added persistent worker support for `ProcessDatabinding`. ([9092e29](https://github.com/bazelbuild/bazel/commit/9092e29f1bd0fe8a94bcee18fe108a9ca2dab075))
+- Added support for `R.txt` files generated with `aapt2 link --package-id`. ([41f894f](https://github.com/bazelbuild/bazel/commit/41f894f5adcb04f1860344793ea113d2308973aa))
+- Added support for optimizers rewriting baseline profiles. ([5391486](https://github.com/bazelbuild/bazel/commit/53914865fc26850a1f282a83f3846c6103af217e))
+- `AndroidDataBindingProcessingAction` now emits deterministic zip file timestamps. ([10af780](https://github.com/bazelbuild/bazel/commit/10af780af88b794c1497e771c6d8bab925297c3c))
+- Made `AndroidInstall` actions hermetic with respect to dex shards. ([2b104c8](https://github.com/bazelbuild/bazel/commit/2b104c8fd5e54e31abbe1c84b04ba64530cd74ed))
+- The `--no_proguard_location_reference` flag is now added unconditionally to the command line of `aapt2`. ([7d911b5](https://github.com/bazelbuild/bazel/commit/7d911b52688cc214b13e4282698827ea4b48fba8))
+- The default Android SDK toolchain is now registered first. ([9be1e9b](https://github.com/bazelbuild/bazel/commit/9be1e9ba923139fd0dbc44aa359d3b7d3abfff89))
+- Baseline profile wildcards are now expanded before optimizer tools see them. ([52c3566](https://github.com/bazelbuild/bazel/commit/52c35661db52a79e17984a7da0f0506ae0106030))
+- Removed support for Databinding v1. ([6a19449](https://github.com/bazelbuild/bazel/commit/6a19449233d6e51d8a862545726a60a611943068))
+
+### Apple
+
+- <VersionPill version="6.1.0"/> `xcrun` is now used to invoke `install_name_tool`. ([8ec8743](https://github.com/bazelbuild/bazel/commit/8ec874348226995c4101b2173a465ddc65cab591))
+- <VersionPill version="6.1.0"/> Dropped support for macOS versions prior to 10.13. ([43dadb2](https://github.com/bazelbuild/bazel/commit/43dadb275b3f9690242bf2d94a0757c721d231a9))
+- <VersionPill version="6.2.0"/> Patched `zlib` to fix compatibility with latest Xcode. ([1f2b3ed](https://github.com/bazelbuild/bazel/commit/1f2b3ed4ac717b814d02a0d125f160ddabe78003))
+- <VersionPill version="6.3.0"/> Bumped `default_macos_sdk_version` to `10.11`. ([86ef4f4](https://github.com/bazelbuild/bazel/commit/86ef4f4cc2b8f7fd58101eb49c266be63f6e923c))
+- <VersionPill version="6.4.0"/> Added initial visionOS support. ([c113e62](https://github.com/bazelbuild/bazel/commit/c113e6261aa0c5d593ff6091200463c01fd101cd))
+- <VersionPill version="6.4.0"/> The `xcode_autoconf` repository rule will now re-run when the `DEVELOPER_DIR` or `XCODE_VERSION` environment variable changes. ([19979e6](https://github.com/bazelbuild/bazel/commit/19979e619ccbb8257a6d696553e1b00fafccb504))
+- <VersionPill version="6.4.0"/> Removed the `-s` flag from `libtool` invocation. ([ae7cfa5](https://github.com/bazelbuild/bazel/commit/ae7cfa59461b2c694226be689662d387e9c38427))
+- Added `-dead_strip` to `opt` linker flags. ([1da8a82](https://github.com/bazelbuild/bazel/commit/1da8a825c0fba882f33ea6998a76ff8265fcd32c))
+- Added the `extra_requested_features` and `extra_disabled_features` parameters to the `apple_common.link_multi_arch_binary` function. ([1f8951c](https://github.com/bazelbuild/bazel/commit/1f8951c15a6d8384d51f5854e0485e7ad32cf33e))
+- Linker framework arguments now use the two-argument form (e.g. `["-framework", "UIKit"]` instead of `["-Wl,-framework,UIKit"]`). ([32fb0a2](https://github.com/bazelbuild/bazel/commit/32fb0a282685c721926dce7c1b1afd55cdb8eaaa))
+- Moved Apple toolchain setup to apple_support. ([699e403](https://github.com/bazelbuild/bazel/commit/699e40373f95e42390a85f29dfa1098636336103))
+- `xcode_autoconf` now used `configure = True` instead of `local = True`. ([c747ae7](https://github.com/bazelbuild/bazel/commit/c747ae7aab077227099409f2f0774b485d42eaa4))
+- `xcrunwrapper` is no longer used for the `ObjcBinarySymbolStrip` action. ([80621fd](https://github.com/bazelbuild/bazel/commit/80621fdbd20a2240320be0225c324b3452488e56))
+- Removed `apple_common.multi_arch_split`. ([a76763c](https://github.com/bazelbuild/bazel/commit/a76763c4125fbbea17f415a40d9efca846b0b6f0))
+- Removed `apple_common.apple_crosstool_transition`. ([534e6f8](https://github.com/bazelbuild/bazel/commit/534e6f86df7022700d1b5349c58c429269e93669))
+- Removed `darwin` as a `--cpu` value. ([d1b4fb7](https://github.com/bazelbuild/bazel/commit/d1b4fb746e7c1865ce9631636c227e1aaca732d0))
+- Removed bitcode support. ([37b8e1b](https://github.com/bazelbuild/bazel/commit/37b8e1b37d5676b3d047b528149546bf2bfefdd1))
+- Removed the use of `-undefined dynamic_lookup`. ([4853dfd](https://github.com/bazelbuild/bazel/commit/4853dfd02ac7440a04caada830b7b61b6081bdfe))
+
+### Linux
+
+- <VersionPill version="6.3.0"/> `--local_termination_grace_seconds` is now used when testing sandbox availability. ([d0e19ae](https://github.com/bazelbuild/bazel/commit/d0e19ae1943ce50f91bb64f1aca132632245f3e8))
+- Added the `--experimental_sandbox_memory_limit` flag, which allows setting per-sandbox memory limits. ([03996c1](https://github.com/bazelbuild/bazel/commit/03996c167d0a87d228ef727cc5db063929f2f5cf))
+- `.bazelignore` paths on Linux are no longer watched for changes. ([4dabe43](https://github.com/bazelbuild/bazel/commit/4dabe43494cf4b13d3b08349ba92d6e7c662a20b))
+- Bazel's local CPU resource on Linux is now container aware. Use `--local_cpu_resources`, `--loading_phase_threads` or `--jobs` to override. ([ab2953c](https://github.com/bazelbuild/bazel/commit/ab2953ca55dfc61595bd465852a83e21d9a3716f))
+
+### Windows
+
+- <VersionPill version="6.1.0"/> The `archive_param_file` feature is now enabled by default for Windows. ([bb0b886](https://github.com/bazelbuild/bazel/commit/bb0b886271d45209e3bef476da37811b9dd2afe5))
+- <VersionPill version="6.1.0"/> Fixed `--nozip_undeclared_test_outputs` on Windows. ([cd10d50](https://github.com/bazelbuild/bazel/commit/cd10d508e20a4964586b46f7edea8a6dc900157c))
+- <VersionPill version="6.2.0"/> C++ deps pruning is now enabled on Windows when PARSE_SHOWINCLUDES is available. ([788801a](https://github.com/bazelbuild/bazel/commit/788801a8fd30985a1831de805172d257c6f63691))
+- <VersionPill version="6.3.0"/> Fixed VS 2022 autodetection. ([cd33d14](https://github.com/bazelbuild/bazel/commit/cd33d148ad31a23ba87aa59c745e3ce826dcd967))
+- <VersionPill version="6.4.0"/> Compilation actions using the auto-configured MSVC toolchain are forced to emit error messages in English if the English language pack for Visual Studio is installed. ([0f10359](https://github.com/bazelbuild/bazel/commit/0f103598bba32439355c94b2c226fb60625c94dd))
+- <VersionPill version="6.4.0"/> Fixed Bash runfiles failure when the output base contains uppercase letters. ([ea4ab7d](https://github.com/bazelbuild/bazel/commit/ea4ab7d8e696f48253fd172fcfbd37661e4710d5))
+- Added the `external_include_paths` feature to the windows cc toolchain. ([850b334](https://github.com/bazelbuild/bazel/commit/850b33430edbe188249a9dde784271fbd8919c7f))
+- `.bazelignore` paths on Windows are no longer watched for changes. ([4dabe43](https://github.com/bazelbuild/bazel/commit/4dabe43494cf4b13d3b08349ba92d6e7c662a20b))
+- The execution platform, instead of the host platform, is now used to decide whether to do Windows-specific things in a few places. ([2f0948b](https://github.com/bazelbuild/bazel/commit/2f0948bcbdf8bb4361d6433bf8b3953fa54054d9))
+- The arm64 version of the embedded JDK is now used for Windows ARM64. ([b43418d](https://github.com/bazelbuild/bazel/commit/b43418d2ab69bdc7e504c2d79c627c6a88afa1d5))
+- Enabled the `compiler_param_file` feature in the Windows MSVC toolchain. ([d47a410](https://github.com/bazelbuild/bazel/commit/d47a4100320b85aa44e6eb933c2a218c8e2fc0f1))
+- Removed forced link to `clang_rt.builtins` in the Windows MSVC toolchain. ([761b280](https://github.com/bazelbuild/bazel/commit/761b2804501de523deafe1ce98533f55ea0cc401))
+- Fixed `launcher_maker` to work with long paths on Windows. ([33fed24](https://github.com/bazelbuild/bazel/commit/33fed243eed7986441076794d370082d17db4790))
+
+## Languages
+
+While there are lots of programming languages that are supported through standalone Starlark rules,
+some are still written as "native" rules in Bazel core,
+or are bundled Starlark rules while [Starlarkification][starlarkification-roadmap] is in progress.
+In the following sections I summarize the notable changes in support of these languages.
+
+### Bash
+
+- <VersionPill version="6.1.0"/> Fixed `runfiles_current_repository` with RBE. ([497b7e4](https://github.com/bazelbuild/bazel/commit/497b7e403d6e5523bd1310bd1fe83c4ce1a6b1ec))
+- <VersionPill version="6.1.0"/> Fix root symlink edge case in runfiles library. ([dd24a00](https://github.com/bazelbuild/bazel/commit/dd24a0022a0ff959598da2c9bc097d27083be1a0))
+- Fixed runfiles calling repository lookup for directly run scripts. ([da1a6d7](https://github.com/bazelbuild/bazel/commit/da1a6d7225e487901de629d22fe53bc054b4cc5c))
+
+### C and C++
+
+- Continued progress on Starlarkifying C/C++ rules. ([starlarkification roadmap][starlarkification-roadmap])
+- <VersionPill version="6.1.0"/> Added support for `.pyd` extensions. ([073f54b](https://github.com/bazelbuild/bazel/commit/073f54b9a7c46afd2c28b4a99a235bdd6b63bb5f))
+- <VersionPill version="6.1.0"/> Added support for `.wasm` extensions. ([de062a6](https://github.com/bazelbuild/bazel/commit/de062a6750fdea75361e42f8d198c09bf6825d76), [4b6f014](https://github.com/bazelbuild/bazel/commit/4b6f0141b8df49f4911af725f766e9dd8128a000))
+- <VersionPill version="6.1.0"/> Added the sanitizer features to `unix_cc_toolchain_config`. ([abae5ca](https://github.com/bazelbuild/bazel/commit/abae5ca3e8142f93cf0c2597e3410ed955c4dd59))
+- <VersionPill version="6.1.0"/> The exec transition is now applied to `lcov_merger` in `sh_test` and `cc_test`. ([37953c5](https://github.com/bazelbuild/bazel/commit/37953c56ea77c7aa7bea677f3481557fdb2c2a15))
+- <VersionPill version="6.1.0"/> The `cc_shared_library.roots` attribute was renamed to `deps`. ([68aad18](https://github.com/bazelbuild/bazel/commit/68aad18cfc01400bf6c3f447b6cd7d21dcc8f01f))
+- <VersionPill version="6.1.0"/> `libtool` is no longer hardcoded when using the unix cc toolchain. ([3c47b47](https://github.com/bazelbuild/bazel/commit/3c47b4716e6eca2b8ab06253915ef8d1bdd28038))
+- <VersionPill version="6.1.0"/> Removed the `-O1` flag from sanitizer feature flags. ([e132653](https://github.com/bazelbuild/bazel/commit/e132653ead5e50f4226dbff7776466fef1918f49))
+- <VersionPill version="6.1.0"/> Removed the `static_deps` attribute from `cc_shared_library`. ([9815b76](https://github.com/bazelbuild/bazel/commit/9815b76121d4e36bdaae110de7e68131916478ca))
+- <VersionPill version="6.2.0"/> Exposed `cc_proto_aspect` as a toplevel symbol. ([2aa06cf](https://github.com/bazelbuild/bazel/commit/2aa06cf227fe349195191107286167035f0c5431))
+- <VersionPill version="6.3.0"/> Added the `force_no_whole_archive` feature, which force disables `--whole-archive`. ([661ebef](https://github.com/bazelbuild/bazel/commit/661ebef465b08697a82fc3ee4c9fd540d953dc84))
+- <VersionPill version="6.3.0"/> Added the `additional_compiler_inputs` attribute to `cc_library`. ([ade32e6](https://github.com/bazelbuild/bazel/commit/ade32e68dc7aa23b5038cd44a4b86cb491818139))
+- <VersionPill version="6.3.0"/> Added the `CcSharedLibraryHintInfo` provider. ([dbb09c9](https://github.com/bazelbuild/bazel/commit/dbb09c9ea84cc6099ad7a30fa8206130d025f7ad))
+- <VersionPill version="6.3.0"/> File extensions are case sensitive again. ([e4990f8](https://github.com/bazelbuild/bazel/commit/e4990f8a20e44f7a7875f614e9fc2fe24b051fd9))
+- <VersionPill version="6.3.0"/> Unused targets listed in `cc_shared_library.dynamic_deps` are now linked. ([ba5c740](https://github.com/bazelbuild/bazel/commit/ba5c74038ed3ae633a9bf8346c88b01e1931992e))
+- <VersionPill version="6.3.0"/> `cc_binary` targets with `dynamic_deps` attributes no longer link indirect `dynamic_deps` on Unix. ([95ae4db](https://github.com/bazelbuild/bazel/commit/95ae4dbfe34fee7b033c4b7918e1afdc1cee017a))
+- <VersionPill version="6.3.0"/> Added the `exclude_bazel_rpaths_in_transitive_libs` and `link_indirect_dynamic_deps_in_binary` features. ([95ae4db](https://github.com/bazelbuild/bazel/commit/95ae4dbfe34fee7b033c4b7918e1afdc1cee017a))
+- <VersionPill version="6.3.0"/> Removed `cc_shared_library_permissions`. ([adfd4df](https://github.com/bazelbuild/bazel/commit/adfd4dff773161ce5280a80f568b3584a94f277a))
+- <VersionPill version="6.3.0"/> Removed the `preloaded_deps` attribute from `cc_shared_library`. ([3b7e233](https://github.com/bazelbuild/bazel/commit/3b7e2335d9624b63a2e190fd27b960826bf8f649))
+- <VersionPill version="6.3.0"/> Fixed the `cc_shared_library` aspect to propagate along all attributes. ([590ee17](https://github.com/bazelbuild/bazel/commit/590ee17c225244efd48793899170bc11f64b65d2))
+- <VersionPill version="6.3.0"/> Fixed the order of linker inputs in `cc_binary` and `cc_shared_library`. ([a772452](https://github.com/bazelbuild/bazel/commit/a77245215e61187dba763dd619cc60c62fb346bb))
+- <VersionPill version="6.3.0"/> Fixed rpath for symlinks in `cc_shared_library`. ([044a14c](https://github.com/bazelbuild/bazel/commit/044a14cca2747aeff258fc71eaeb153c08cb34d5))
+- <VersionPill version="6.3.0"/> Fixed `cc_shared_library` to take into account unused `CcInfo`s. ([b6b9eec](https://github.com/bazelbuild/bazel/commit/b6b9eec8ea44ceca80d345c1b3b81412bbd97a81))
+- <VersionPill version="6.3.0"/> Fixed `cc_shared_library` to take into account indirect top level deps. ([f9008f6](https://github.com/bazelbuild/bazel/commit/f9008f698467eb85657711c608db16086a9908eb))
+- <VersionPill version="6.3.0"/> Fixed `exports_filter` in `cc_shared_library`. ([bc33ac2](https://github.com/bazelbuild/bazel/commit/bc33ac2d4f0ce39524ca88833aaf26427a3d7e00))
+- <VersionPill version="6.4.0"/> Added the `additional_linker_inputs` attribute to `cc_library`. ([0589995](https://github.com/bazelbuild/bazel/commit/05899953a1726328b0ff9d940720e363260ce5c4))
+- <VersionPill version="6.4.0"/> Debug info context is now collected from the `cc_library.implementation_deps` attribute. ([e55fee2](https://github.com/bazelbuild/bazel/commit/e55fee2938b38605cd3da7fc9c790da71961dd1a))
+- <VersionPill version="6.4.0"/> Data dependencies are now propagated through the `cc_library.implementation_deps` attribute. ([56e9020](https://github.com/bazelbuild/bazel/commit/56e9020b434e321d51d077428cd5f49bee940ee2))
+- <VersionPill version="6.4.0"/> `c++14` is now used as the default C++ standard. ([978cd23](https://github.com/bazelbuild/bazel/commit/978cd23e80f202a03e99a87f2089a9a0622b5d5d))
+- Added auto-configured Unix toolchain support for `BAZEL_CONLYOPTS`. ([b272cef](https://github.com/bazelbuild/bazel/commit/b272cef7d4b2d1be4e3f82b737c3c14d5e768aea))
+- Added a feature definition for `static_link_cpp_runtimes` to the unix cc toolchain config. ([6c7147b](https://github.com/bazelbuild/bazel/commit/6c7147b71ea99225f3a2fd604706039492fb5d97))
+- Added support for optional toolchains to `find_cpp_toolchain`. ([6b126d6](https://github.com/bazelbuild/bazel/commit/6b126d60c319c574ed598eb38c0bdcc6b10fde03))
+- Added the `external_includes` attribute to `compilation_context`. ([a6ef0b3](https://github.com/bazelbuild/bazel/commit/a6ef0b341a8ffe8ab27e5ace79d8eaae158c422b))
+- Added the `validates_layering_check_in_textual_hdrs` feature, which skips the `parse_headers` action. ([8ef60d0](https://github.com/bazelbuild/bazel/commit/8ef60d09f99189f9f68ff58c326a6149d14612a9))
+- Added the `prefer_pic_for_opt_binaries` feature, that indicates that PIC compiles are preferred for binaries even in optimized builds. ([4084671](https://github.com/bazelbuild/bazel/commit/40846718e4f54c28fddc063b80b5ea30a82988c1))
+- Added the `--memprof_profile` flag, which allows passing an LLVM MemProf to `CppCompile` actions. ([617a3bd](https://github.com/bazelbuild/bazel/commit/617a3bd0aee6aca477758b9072f74aa54a4d65c6))
+- Added the `--@bazel_tools//tools/cpp:link_extra_libs` flag, which allow. ([9f2c62a](https://github.com/bazelbuild/bazel/commit/9f2c62aa489394ae882e07fb97eefb0556075944))
+- Added the `link_extra_lib` attribute to `cc_binary`s specifying extra libraries to be linked into every binary. ([5eff703](https://github.com/bazelbuild/bazel/commit/5eff703556815068c8f93cafbd893fd9e752faff))
+- Added the `module_files` output group, which enables building PCMs from `cc_library` targets directly. ([9b30bf7](https://github.com/bazelbuild/bazel/commit/9b30bf761a7526433c56251c49d7da3b8286bf8b))
+- Added support for `expand_if_available` to `env_entry`. ([cc335fd](https://github.com/bazelbuild/bazel/commit/cc335fd27e3f8b5a57f98328a67e874d28f4d558))
+- Added the `use_lto_native_object_directory` feature, which adds tree artifact support to the `thin_lto` feature. ([db34798](https://github.com/bazelbuild/bazel/commit/db347988dfd1b4b8cd5685de63d937f2ffa76b25), [480c8c8](https://github.com/bazelbuild/bazel/commit/480c8c81972a5866a380d75fb711bbe129828d91))
+- Added a tool name for `objcopy`. ([2d1f37d](https://github.com/bazelbuild/bazel/commit/2d1f37dd88d4c080e76326831bb234f44f94d263))
+- `cc_test` can now be configured by using a `native.toolchain()`. ([99b672b](https://github.com/bazelbuild/bazel/commit/99b672b631a075b25fe9215709f53703924dccf0))
+- `--crosstool_top` is now unset when `--incompatible_enable_cc_toolchain_resolution` is set. ([0013115](https://github.com/bazelbuild/bazel/commit/0013115fb495380d262a2cc30bcffef248ecb105))
+- `--fdo_optimize` no longer accepts a relative path. ([afe070e](https://github.com/bazelbuild/bazel/commit/afe070ecd70b00b61d6191eda177ff0c32fc7acd))
+- C++ branch coverage is now enabled when using gcov 8 or later. ([57ae1ff](https://github.com/bazelbuild/bazel/commit/57ae1ff52ffbb2494ac9d43c1e49c2ba9425495e))
+- The `BAZEL_CURRENT_REPOSITORY` preprocessor variable is now only set during compilation if the target depends on the runfiles library via `deps` or `implementation_deps`. ([1b214d2](https://github.com/bazelbuild/bazel/commit/1b214d2c13d4f8841c459e80ff455021b997fddb))
+- The `includes` parameter in the `cc_common.compile()` function now accepts depsets as well as lists. ([c8d6c11](https://github.com/bazelbuild/bazel/commit/c8d6c118ae6bd8843f80c770b8fec360f1791f82))
+- Made `generate_system_module_map.sh` more deterministic. ([78f98e7](https://github.com/bazelbuild/bazel/commit/78f98e760d7577104a2c6b44c0561f59d9b2d040))
+- Moved `CcSharedLibraryHintInfo` to cc_common. ([b1c2e8d](https://github.com/bazelbuild/bazel/commit/b1c2e8d975ea2eb642bc82c06749ce414c455bd5))
+- `libstdc++` (`libc++` on macOS) and `libm` are no longer linked in if none of their symbols are referenced, e.g., in a pure C target. ([2482322](https://github.com/bazelbuild/bazel/commit/2482322fedb463e0bbecd29c5e8e6d0f087ed884))
+- When building C++ modules, FDO variables and profile inputs are no longer added. ([edeb037](https://github.com/bazelbuild/bazel/commit/edeb037adadf32cd57dd67443fce689c078fc431))
+- Relocatable object files are no longer wrapped in `-Wl,-whole-archive` `-Wl,-no-whole-archive`. ([61267b3](https://github.com/bazelbuild/bazel/commit/61267b3e96aa8bb51dfde3ba120fc8194e79d808))
+- Removed the `cc_host_toolchain_alias` rule. ([3543b19](https://github.com/bazelbuild/bazel/commit/3543b194b1be005ba950191b223722bfa5908cfa))
+- Removed the `grep_includes` parameter from `cc_common` functions. ([b82e202](https://github.com/bazelbuild/bazel/commit/b82e202d4f5191b9f03fb8a76b077bb00fe9949d))
+
+### Java
+
+- Continued progress on Starlarkifying Java rules. ([starlarkification roadmap][starlarkification-roadmap])
+- <VersionPill version="6.1.0"/> Coverage can now be collected for external targets. ([00e9af1](https://github.com/bazelbuild/bazel/commit/00e9af1985cc0227599516fe7568785ca4334050))
+- <VersionPill version="6.1.0"/> Fixed coverage collection with the Java 8 runtime. ([c266651](https://github.com/bazelbuild/bazel/commit/c26665102d0d524bb42be8cd205c7b31a22a75c9))
+- <VersionPill version="6.1.0"/> Fixed `--experimental_java_classpath=bazel`. ([ac504cb](https://github.com/bazelbuild/bazel/commit/ac504cbb463e76b1374d0060534acabbccb408d2))
+- <VersionPill version="6.2.0"/> Added the `version` attribute to `java_runtime` and `JavaRuntimeInfo`. ([7556e11](https://github.com/bazelbuild/bazel/commit/7556e1107b666d10b660470a571631463c7eb4ec))
+- <VersionPill version="6.2.0"/> Added `-Xep:IgnoredPureGetter:OFF` to default `javacopts`. ([3b57894](https://github.com/bazelbuild/bazel/commit/3b5789473db34481e4d121d08461c19961bf729b))
+- <VersionPill version="6.2.0"/> Added `-Xep:LenientFormatStringValidation:OFF` to default `javacopts`. ([33a3b01](https://github.com/bazelbuild/bazel/commit/33a3b01d7ecfcf27102e8cde1253dac987f4a958))
+- <VersionPill version="6.2.0"/> Added `-Xep:ReturnMissingNullable:OFF` to default `javacopts`. ([e80ca15](https://github.com/bazelbuild/bazel/commit/e80ca154239d189a69323048eba0cd6c31e60da4))
+- <VersionPill version="6.2.0"/> JVM warnings are now redirected to stderr. ([abea37b](https://github.com/bazelbuild/bazel/commit/abea37b3519172ce8810e765b10aa377ef70de3b))
+- <VersionPill version="6.3.0"/> `local_java_repository` now sets the `version` attribute of `java_runtime`. ([1c1584b](https://github.com/bazelbuild/bazel/commit/1c1584b4081972c69d7746243f023257387d8121))
+- <VersionPill version="6.3.0"/> `ijar` now handles dynamic constants. ([69d2991](https://github.com/bazelbuild/bazel/commit/69d299165743613d303f19f47d8b3db4481d58b5))
+- <VersionPill version="6.4.0"/> Added a toolchain type for the Java bootstrap runtime. ([8715e9a](https://github.com/bazelbuild/bazel/commit/8715e9ae6f5c2fd42607018b3adaad14bf601a1c))
+- <VersionPill version="6.4.0"/> Optimized classpath pre-processing in `java_stub_template.txt`. ([4e8f0bd](https://github.com/bazelbuild/bazel/commit/4e8f0bdb4eca04844a86e3c7affc8aa85245e75a))
+- Added `-Xep:EmptyTopLevelDeclaration:OFF` to default `javacopts`. ([8d9a06e](https://github.com/bazelbuild/bazel/commit/8d9a06ed7e2b08efe71a4e181a94e244804673bb))
+- Added the `bootclasspath` parameter to the `java_common.compile` function. ([a75f516](https://github.com/bazelbuild/bazel/commit/a75f51693b6cd023912019b9279f7986c98e80ff))
+- Added the `default_cds` attribute to `java_runtime` and `JavaRuntimeInfo`. ([53ff268](https://github.com/bazelbuild/bazel/commit/53ff268c7e7d61614e3fdba74d55103e64b8f80b))
+- Added the `exec_compatibility_with` and `target_compatibility_with` attributes to `local_java_runtime` and `default_java_toolchain`. ([27fe30b](https://github.com/bazelbuild/bazel/commit/27fe30bb7cc1fdea7c60d7f73774149c0dd21457))
+- Added the `ijar` attribute to `JavaToolchainInfo`. ([0dd6a49](https://github.com/bazelbuild/bazel/commit/0dd6a4994d45fe9b5770eef6b4ac4f49ead26140))
+- Added the `proguard_allowlister` attribute to `JavaToolchainInfo`. ([8b9e8d5](https://github.com/bazelbuild/bazel/commit/8b9e8d571f5a03ed185fe9e0f64e272d15883cef))
+- Added the `javac_options_list` attribute to `compilation_info`. ([ea154dc](https://github.com/bazelbuild/bazel/commit/ea154dc3e44a9c9180eb2535998b9895ca9eb059))
+- Added the `--incompatible_disable_non_executable_java_binary` flag, which removes the `create_executable` attribute from `java_binary`. ([d12c7fa](https://github.com/bazelbuild/bazel/commit/d12c7fae71b7011a8a1af49474218af939519905))
+- Added the `--incompatible_java_info_merge_runtime_module_flags` flag, which causes the `JavaInfo` constructor to merge `add_exports` and `add_opens` of `runtime_deps` in addition to `deps` and `exports`. ([e2249f9](https://github.com/bazelbuild/bazel/commit/e2249f91ff84541565d8ba841592a0a8a43fcb66))
+- Added the `--build_target` flag to `singlejar`, which allows changing the `build.target` property when stamping is enabled. ([a1a5f33](https://github.com/bazelbuild/bazel/commit/a1a5f3341f2e3052886fee79cffb5c6fcc80c1bd))
+- `darwin_x86_64` and `darwin_arm64` now have separate `java_tools` releases. ([3b475b3](https://github.com/bazelbuild/bazel/commit/3b475b322643bf026251daa19018ac425ff6e689))
+- `java_stub_template.txt` is now exported from `@java_tools//jdk`. ([1465771](https://github.com/bazelbuild/bazel/commit/146577133acf1a384133b0fbc70e693bd0e5b45a))
+- The `--experimental_local_java_optimization_configuration` flag now only accepts a single-label. ([6e3a421](https://github.com/bazelbuild/bazel/commit/6e3a421264b860e7e75dbfddde0d465b8a1ff55c))
+- Proto toolchains are now used in `java_lite_proto_library`. ([8c38be3](https://github.com/bazelbuild/bazel/commit/8c38be3230ba97003276dfbf53c5ccb6a2b6af87))
+- Proto toolchains are now used in `java_proto_library`. ([51970d2](https://github.com/bazelbuild/bazel/commit/51970d25d9920c358e716d094e1bcffafdb357c2))
+- Optimized `java_common.merge` memory usage. ([8ffb972](https://github.com/bazelbuild/bazel/commit/8ffb9728e6a25033005eb527b9e2999693557331))
+- Upgraded default `java_toolchain.java_runtime` to JDK 17. ([75e0f7d](https://github.com/bazelbuild/bazel/commit/75e0f7dfea71a7bd40b4bdb601f64217650e8d47))
+- Replaced remote JDK 18 with JDK 20. ([19b2e2f](https://github.com/bazelbuild/bazel/commit/19b2e2f448bdd50c42d53c3b3d1c45a95eaadd44), [0e8e611](https://github.com/bazelbuild/bazel/commit/0e8e611aafec9ad9b948296d725bee8d48bddc24), [7ff98ba](https://github.com/bazelbuild/bazel/commit/7ff98ba28a21025fccdf82a3d148407be48fae40))
+- Removed the `transitive_deps` and `transitive_runtime_deps` attributes from `JavaInfo`. ([72058be](https://github.com/bazelbuild/bazel/commit/72058be0628e84741232cb116a7199eb92638f84))
+- Removed deprecated targets from `@java_tools//jdk`. ([844b5d2](https://github.com/bazelbuild/bazel/commit/844b5d2dbc3ff1dda43d78b81a00c6323e4e8115))
+- Fixed proguard output map symlink when `proguard_specs` is a `select()`. ([c2761af](https://github.com/bazelbuild/bazel/commit/c2761af5045315a4e77954c71509ad84e938277b))
+
+### Objective-C
+
+- <VersionPill version="6.3.0"/> Added the `implementation_deps` attribute to `objc_library`. ([ae7b9c5](https://github.com/bazelbuild/bazel/commit/ae7b9c5a32ce1ce0c102221265db641229870c54))
+- <VersionPill version="6.4.0"/> Added the `--incompatible_disable_objc_library_transition` flag, which removes `objc_libary`'s custom transition. ([0f34e76](https://github.com/bazelbuild/bazel/commit/0f34e76f45a2d9a6407431ea3a371a9d62814527))
+- Added the `target_should_alwayslink` attribute to the `objc` fragment. ([c878b59](https://github.com/bazelbuild/bazel/commit/c878b59eb73316293e08755314e3526a33869537), [3c0f394](https://github.com/bazelbuild/bazel/commit/3c0f39465c5c69f1e50c024ac68acaded0e0b604))
+- Added the `--incompatible_disallow_sdk_frameworks_attributes` flag, which disallows the `sdk_frameworks` and `weak_sdk_frameworks` attributes in `objc_library` and `objc_import`. ([66121a7](https://github.com/bazelbuild/bazel/commit/66121a75d67b92990966fc94771a22b0b4a062e3))
+- Added the `--incompatible_objc_alwayslink_by_default` flag, which changes the default of `objc.target_should_alwayslink` to `True`. ([a8b36c1](https://github.com/bazelbuild/bazel/commit/a8b36c1749f7b32365d2185266c60f1b0e9b75dd))
+- Added the `--incompatible_objc_provider_remove_linking_info` flag, which removes linking information from `ObjcProvider`. ([3e170fb](https://github.com/bazelbuild/bazel/commit/3e170fbaed2bb28b3cf1cef10e51c5c3bb0f56ed))
+- The `apple_common.new_executable_binary_provider` and `apple_common.new_dynamic_framework_provider` functions no longer require the `objc` argument. ([28f9056](https://github.com/bazelbuild/bazel/commit/28f905675c98c652badbcbc7510134aab08dc4fb))
+- The `variables_extension` parameter on the `apple_common.link_multi_arch_binary` function can now be `None`. ([87bd420](https://github.com/bazelbuild/bazel/commit/87bd420a2a0ee863c073f903d2f7b2eccb5940d6))
+- `objc_common` no longer sets linking information in `ObjcProvider`. ([0fa7933](https://github.com/bazelbuild/bazel/commit/0fa793364e6c88e76d2fa5d57aa01404a5190427))
+- Linking no longer uses `ObjcProvider` information. ([426f225](https://github.com/bazelbuild/bazel/commit/426f2254669f62b7d332094a0af6d4dc6200ad51))
+- Linking features, in addition to linkopts, are considered when determining the stripping type. ([3a31a6c](https://github.com/bazelbuild/bazel/commit/3a31a6c3f4c6f6fb0048337894e6671461a7763e))
+- Tree artifacts in source attributes of `objc_library` can now have arbitrary extensions. ([280ae1a](https://github.com/bazelbuild/bazel/commit/280ae1a8bc01bc26c7ba85453921b3c2b7073ac0))
+- Removed the `runtime_deps` attribute from `objc_library`. ([3ea60b7](https://github.com/bazelbuild/bazel/commit/3ea60b7cb45f6a90612b44d8c0d70a66184a3788))
+- Removed the `objc_archive` action (`cpp_static_library` is used instead). ([e1cb203](https://github.com/bazelbuild/bazel/commit/e1cb203f6eeb376a5b8495de27272d4c952f9e19))
+- Removed the `objc++-executable` action (`objc-executable` is used instead). ([1623f7e](https://github.com/bazelbuild/bazel/commit/1623f7eb7850b6e92010d5f76607c0cb019cb159), [6d0c210](https://github.com/bazelbuild/bazel/commit/6d0c21081b92da498f4b7eff9e5c921f32a37c09), [004c73c](https://github.com/bazelbuild/bazel/commit/004c73c4e5735dcea238e24a0e4e2acdf9eb28f0))
+- Fixed the `includes` attribute of `objc_library` when `--experimental_sibling_repository_layout` is set. ([bbe453e](https://github.com/bazelbuild/bazel/commit/bbe453e38d5da8597e2cf9732d5bfe393334404b))
+
+### Proto
+
+- Continued progress on Starlarkifying Proto rules. ([starlarkification roadmap][starlarkification-roadmap])
+- <VersionPill version="6.3.0"/> Added the `output_files` attribute to `proto_lang_toolchain`. ([4d14d3f](https://github.com/bazelbuild/bazel/commit/4d14d3f0bb7e49a7ca60540707312982036e086c))
+- Added the `--incompatible_enable_proto_toolchain_resolution` flag, which causes proto language rules to use toolchain resolution. ([d435c6d](https://github.com/bazelbuild/bazel/commit/d435c6dd6e977a5c3ea1bc726557a9321948a317))
+- Removed the `proto_compiler` attribute from `proto_lang_toolchain`. ([f5fb2f6](https://github.com/bazelbuild/bazel/commit/f5fb2f6a5fc67a25181f8eb5c777da07b9cbb359))
+- Fixed proto generation when using `--experimental_sibling_repository_layout`. ([6c6c196](https://github.com/bazelbuild/bazel/commit/6c6c196ceffe14c9cf29960ef4049469df73d991))
+
+### Python
+
+- Continued progress on Starlarkifying Python rules. ([starlarkification roadmap][starlarkification-roadmap])
+- <VersionPill version="6.1.0"/> Added host transition to the `lcov_merger` attribute of `py_test`. ([4a6d056](https://github.com/bazelbuild/bazel/commit/4a6d056a8d058ab98a01348fb0c046660ee99a71))
+- <VersionPill version="6.2.0"/> Fixed runfiles lookup when using a manifest file. ([91584dd](https://github.com/bazelbuild/bazel/commit/91584dd4f189f60b67d1984aeeaf2de8496ea824))
+- Added the `--incompatible_python_disable_py2` flag, which causes `python_version=PY2`, `srcs_version=PY2` or `srcs_version=PY2ONLY` with `py_binary`, `py_test`, `py_library`, `py_runtime`, or `py_runtime_pair` to throw an error. ([d1bbf4b](https://github.com/bazelbuild/bazel/commit/d1bbf4b7698e019c11b7d1c483eb0b4959954060), [95a57ef](https://github.com/bazelbuild/bazel/commit/95a57efad3ada93ebd46b56a1c3cce8b6f4e07ee))
+- Added the `--incompatible_python_disallow_native_rules` flag, which causes an error if a native Python rule is used without going through rule_python. ([2e558ed](https://github.com/bazelbuild/bazel/commit/2e558ed5dccdcc72622df52bf6d4dfe90ddc390c))
+- Added the `build_python_zip` attribute to the `py` fragment. ([38b2789](https://github.com/bazelbuild/bazel/commit/38b278944f7f0131d4eb2e1863009b7aabc39e2d))
+- Added the `default_python_version` attribute to the `py` fragment. ([c3b2be9](https://github.com/bazelbuild/bazel/commit/c3b2be967b9b03bbce75002968cf0c22905719d9))
+- Added the `default_to_explicit_init_py` attribute to the `py` fragment. ([38b2789](https://github.com/bazelbuild/bazel/commit/38b278944f7f0131d4eb2e1863009b7aabc39e2d))
+- Added the `use_toolchains` attribute to the `py` fragment. ([c3b2be9](https://github.com/bazelbuild/bazel/commit/c3b2be967b9b03bbce75002968cf0c22905719d9))
+- Added the `bootstrap_template` attribute to `py_runtime`. ([0696ba3](https://github.com/bazelbuild/bazel/commit/0696ba32a789bbf3100f62fa2c1547fc74e36006))
+- Removed the `py_transitions` module. ([e2c4d3c](https://github.com/bazelbuild/bazel/commit/e2c4d3c86b582e23af16a965ebf4bbbab60403b9))
+
+## Starlark and Build API
+
+[Starlark][starlark] is the configuration language used to configure your project.
+It is also the programming language used to define [rules][rules].
+Bazel also has a Build API which defines standard functions,
+modules,
+and rules
+that can be used from Starlark.
+Here are some notable changes to both:
+
+[rules]: https://bazel.build/versions/7.0.0/extending/rules
+[starlark]: https://bazel.build/versions/7.0.0/rules/language
+
+- <VersionPill version="6.1.0"/> Added the `--incompatible_use_host_features` flag, which causes the `--features` flag to only apply to the target configuration, while the `--host_features` flag only applies to the exec configuration. ([0ef9c7c](https://github.com/bazelbuild/bazel/commit/0ef9c7c2ad097b555f0dc25a5e65d5440a20d7df))
+- <VersionPill version="6.1.0"/> Added the `package_relative_label` function on the `native` module. ([b859571](https://github.com/bazelbuild/bazel/commit/b859571804f2095caaf018b172b59c90f185fd51))
+- <VersionPill version="6.1.0"/> The `map_each` callback in `template_dict.add_joined` can now return `None`. ([db68419](https://github.com/bazelbuild/bazel/commit/db684196afd3b1a0a0e7d883674324bd161ae8bf))
+- <VersionPill version="6.1.0"/> The `map_each` callback in `template_dict.add_joined` can now return a list of strings. ([8783459](https://github.com/bazelbuild/bazel/commit/87834594eff2a312b84832f382dc1f8844b1e8a3))
+- <VersionPill version="6.2.0"/> Added the `module_name` and `module_version` attributes on the `native` module. ([bcf309b](https://github.com/bazelbuild/bazel/commit/bcf309b88949fe1bbff1776d88fdaa5c3e1d2d37))
+- <VersionPill version="6.2.0"/> `json.decode` now accepts duplicate keys. ([8548e20](https://github.com/bazelbuild/bazel/commit/8548e202a6871a17f0d097e2cedc9ff8064ef962))
+- <VersionPill version="6.2.0"/> Multiple matching `select` branches are now allowed if they resolve to the same value. ([d43737f](https://github.com/bazelbuild/bazel/commit/d43737f95d28789bb2d9ef2d7f62320e9a840ab0))
+- <VersionPill version="6.4.0"/> Added the `--incompatible_merge_fixed_and_default_shell_env` flag, which merges rule supplied and shell provided environment variables. ([d1fdc53](https://github.com/bazelbuild/bazel/commit/d1fdc5303fd3cc22c5091aa4ce7df02eef09d922))
+- <VersionPill version="6.4.0"/> Optimized empty depsets. ([fa0ff49](https://github.com/bazelbuild/bazel/commit/fa0ff4996a7d3b8cff974e96a604651d6c6e9f9e))
+- <VersionPill version="6.4.0"/> Optimized single transitive depsets. ([216fce5](https://github.com/bazelbuild/bazel/commit/216fce58b81de2c597a78c16514006a4be4891f5))
+- <VersionPill version="6.4.0"/> Rule and aspect validation output groups are now merged. ([cd72583](https://github.com/bazelbuild/bazel/commit/cd725834eba3edb53b7a7dd9867363ef1fe00e57))
+- <VersionPill version="6.4.0"/> When the `repr` function is called on an exported rule the name of the rule is now included in the output. ([002490b](https://github.com/bazelbuild/bazel/commit/002490b9a2376f0b2ea4a37102c5e94fc50a65ba))
+- Added the `abs()` function. ([5e37989](https://github.com/bazelbuild/bazel/commit/5e37989cc937cf58276dc46de98820adc8b27326))
+- Added the `allow_closure` attribute to `template_dict.add_all`. ([4188edd](https://github.com/bazelbuild/bazel/commit/4188eddbfd12776b359b054c93294aa5013ec77f))
+- Added the `compressed_output` attribute to `genquery`. ([7f639c6](https://github.com/bazelbuild/bazel/commit/7f639c657446715746680f8a33afeca3aa35d9dd))
+- Added the `format_joined` callback to `template_dict.add_all`. ([4188edd](https://github.com/bazelbuild/bazel/commit/4188eddbfd12776b359b054c93294aa5013ec77f))
+- Added the `initializer` parameter to the `rule` function, which allows specifying a function that computes default values for attributes. ([45bac19](https://github.com/bazelbuild/bazel/commit/45bac19b6435863a21731787938caa02cac8beb4))
+- Added the `--experimental_enable_scl_dialect` flag, which allows loading `.scl` (Starlark Configuration Langauge) files. ([a0cd355](https://github.com/bazelbuild/bazel/commit/a0cd355347b57b17f28695a84af168f9fd200ba1))
+- Added the `--experimental_rule_extension_api` flag, which enables the use of rule extension and subrules. ([8815980](https://github.com/bazelbuild/bazel/commit/8815980aa2acba6cc51ab76495668fda8f560b5d))
+- Added the `--incompatible_no_package_distribs` flag, which disables the `distribs` attribute of `package`. ([e8184e0](https://github.com/bazelbuild/bazel/commit/e8184e0e8c87d5efe357c18e9e9e6b52efd0b3a9))
+- Added the `starlark_doc_extract` rule, which is used by newer versions of Stardoc. ([fa65782](https://github.com/bazelbuild/bazel/commit/fa6578261dabd3973cb9db2c72c99a9075fe84f8))
+- Changed the default value of `attrs` in `rule()` and `aspect()` to an empty dictionary. ([e8f5082](https://github.com/bazelbuild/bazel/commit/e8f5082a266ad71693aa436ef56280e6c457353b))
+- `--deleted_packages` now accumulates multiple values. ([2a5d9c7](https://github.com/bazelbuild/bazel/commit/2a5d9c71d3b986c4d667336f51f46a837cba2f10))
+- `attr` objects now use value equality rather than reference equality. ([31fd464](https://github.com/bazelbuild/bazel/commit/31fd464af77f084049386af02dbcc5189c745892))
+- `json.decode` now takes an optional `default` positional parameter. If this parameter is specified and decoding fails, `json.decode` will return the `default` value instead of failing Starlark evaluation. ([71fb1e4](https://github.com/bazelbuild/bazel/commit/71fb1e4188b01e582a308cfe4bcbf1c730eded1b))
+- `proto.encode_text()` now omits struct fields with `None` values. ([88346f1](https://github.com/bazelbuild/bazel/commit/88346f191104f76cc42f90234125980eeba88e4b))
+- Besides for `implementation`, all arguments to the `rule` function now need to be named. ([cbd63ea](https://github.com/bazelbuild/bazel/commit/cbd63ea193545a2f96ef3ec26d375fd4f5c7daf6))
+- The `location` of rules that explicitly specify `generator_name` and/or `generator_function` attributes is now the top-level call in the `BUILD` file. ([9800ffd](https://github.com/bazelbuild/bazel/commit/9800ffd1a471582fb42fd782e2e2eeb39dba6c9b))
+- Transitions can now inspect attribute value. ([ceddfb1](https://github.com/bazelbuild/bazel/commit/ceddfb1ece1f8ed7ff81558fa1751e6526df031b))
+- `_whitelist_function_transition` is now applied automatically. ([60f3319](https://github.com/bazelbuild/bazel/commit/60f3319ebca47080b7af823c8aba52b391a8baa6))
+- Optimized calls to functions with `kwargs`. ([2fc7ab9](https://github.com/bazelbuild/bazel/commit/2fc7ab9a884499d6de08bf34a05e4ff00bc756c4))
+- Optimized depsets in providers. ([cb5a033](https://github.com/bazelbuild/bazel/commit/cb5a033ce4cfd8dcb9628b343463a4ede4c666c7))
+- Optimized provider memory layout. ([fc86f15](https://github.com/bazelbuild/bazel/commit/fc86f15a0b37cd36d03573c5f6a7cb347ecd2451))
+- Optimized singleton tuples (e.g. `(single_value, )`). ([2cc9e13](https://github.com/bazelbuild/bazel/commit/2cc9e13516054368af69a1554f473db89a87f7b3))
+- Optimized statement/expression heavy code. ([704027e](https://github.com/bazelbuild/bazel/commit/704027e3e7ea4249d39bd04490a065ba94a4f36e))
+- Optimized string `find`/`index` calls when `end` isn't specified. ([70c821a](https://github.com/bazelbuild/bazel/commit/70c821ad1c2f8029643716cf738cf2aaca7a92a4))
+- Optimized string `{l,r,}strip` calls. ([62ceeaf](https://github.com/bazelbuild/bazel/commit/62ceeaff6563c76cf67d615e4efedd84295e0999))
+- Optimized string key dictionary lookups. ([6087258](https://github.com/bazelbuild/bazel/commit/60872586296e898e7734f6d2628eb3851952e7e5))
+- Optimized tuple and list `in` checks. ([d027d48](https://github.com/bazelbuild/bazel/commit/d027d485c97ed15e3e8852b0701337c0b9d1a8dc))
+- Optimized type checks. ([2e4694d](https://github.com/bazelbuild/bazel/commit/2e4694dd6026595a113601caef83ffeab4fc7a4f))
+- Optimized `OutputGroupInfo`. ([655849b](https://github.com/bazelbuild/bazel/commit/655849b472f8e77f00ec49d0e125983877f619fa))
+- Removed the `default_provider` attribute from the `ctx` module. ([2ce1a1b](https://github.com/bazelbuild/bazel/commit/2ce1a1b335a09a1e70260ee01af4a6f29cb1c61b))
+- Removed the `host_configuration` attribute from the `ctx` module. ([51e1da9](https://github.com/bazelbuild/bazel/commit/51e1da9a2201f92e6b60c666e474bce284c76d48))
+- Removed the `host_fragments` attribute from the `ctx` module. ([0ca7857](https://github.com/bazelbuild/bazel/commit/0ca78579ffc00ddc28517ad817bf29153ccd926d))
+- Removed the `new_file` function from the `ctx` module. ([ffe595c](https://github.com/bazelbuild/bazel/commit/ffe595cc8b3fd15d9e5339da5528f619425696f2))
+- Removed the `exec_tools` attribute from `genrule`. ([5ce12ee](https://github.com/bazelbuild/bazel/commit/5ce12ee3363c62218f096d16bd2424a86ebdae19))
+- Removed the `cmd_helper` module. ([b3749b3](https://github.com/bazelbuild/bazel/commit/b3749b3456053cb521d5bb519e08e810163967fb))
+- Removed support for `_whitelist_function_transition`. ([4064d78](https://github.com/bazelbuild/bazel/commit/4064d7827a3382a4fb5d7af07fb0969af9b5e12e))
+- Fixed `ctx.expand_location` handling of binary target inputs. ([4148241](https://github.com/bazelbuild/bazel/commit/414824173363e579d34afc1aa16bc97a220743dc))
+- Fixed `genrule` to use the execution platform to determine which `cmd*` to run. ([c64fa6d](https://github.com/bazelbuild/bazel/commit/c64fa6d54192448b7f083b813765eb1fc6c382e3))
+- Fixed encoding of positive infinity in `proto.encode_text`. ([98e3752](https://github.com/bazelbuild/bazel/commit/98e375207f8945fd7e523bed65f36ce60ce69e6d))
+
+### Aspects
+
+[Aspects][aspects] allow augmenting build dependency graphs with additional information and actions.
+
+[aspects]: https://bazel.build/versions/7.0.0/extending/aspects
+
+- Console output now includes target status, even if non-validation aspects are requested. ([944b154](https://github.com/bazelbuild/bazel/commit/944b154135444813a6eed464b19b4cc6d71dde73))
+- Only the visibility of an aspect's implicit dependencies are checked now. ([bc1df91](https://github.com/bazelbuild/bazel/commit/bc1df918074883660b74c40e0ee43db9aa0ced87))
+- Fixed resolving aspect attributes with the same name as an underlying target attribute. ([93ad589](https://github.com/bazelbuild/bazel/commit/93ad5890883b7591eef23ae3c3334a245c2aa6ef))
+
+## Platforms and toolchains API
+
+In Bazel 7.0 the C++, Android, and Apple rules completed their migration to support [building with Platforms][building-with-platforms].
+
+[building-with-platforms]: https://bazel.build/versions/7.0.0/concepts/platforms
+
+Here are some of the platforms and toolchains related changes which weren't tied to any of those migrations:
+
+- <VersionPill version="6.1.0"/> `--platforms` is no longer cleared in transitions when no change is made to `--cpu`. ([5b4de12](https://github.com/bazelbuild/bazel/commit/5b4de12b37cb4ba921b6bdfe810bbb47921ab3a6))
+- Added support for platform to Starlark flags platform mappings. ([8a7f5e2](https://github.com/bazelbuild/bazel/commit/8a7f5e2f488609085f62f933cdfbf87e97cbf0fd))
+- Added the `--experimental_exec_config` flag, which allows setting a custom transition to be used for `cfg = "exec"`. ([23de211](https://github.com/bazelbuild/bazel/commit/23de2117d33325ee02043c2da4d1d9a578ae2b04), [f847e3f](https://github.com/bazelbuild/bazel/commit/f847e3f9b3c99a459f88383971d326019f30f9da))
+- Added the `--incompatible_auto_exec_groups` flag, which automatically creates exec groups for each toolchain used by a rule. ([design doc](https://docs.google.com/document/d/1-rbP_hmKs9D639YWw5F_JyxPxL2bi6dSmmvj_WXak9M), [6194956](https://github.com/bazelbuild/bazel/commit/6194956b552413f8f7ccff8491714d7dcf8af6a3))
+- Added the `--incompatible_check_visibility_for_toolchains` flag, which applies visibility checking to toolchain implementations. ([eecd04f](https://github.com/bazelbuild/bazel/commit/eecd04f25b8c3a4e34647744317b2e0bf6629a0c))
+- Added the `--use_target_platform_for_tests` flag, which uses the target platform for running tests. ([d181353](https://github.com/bazelbuild/bazel/commit/d181353c17f9e6127c9aa8011ebd8dd17cf01cd6))
+- `--extra_toolchains` precedence is now last-wins, instead of first-wins. ([a4576c1](https://github.com/bazelbuild/bazel/commit/a4576c1760a3c15890fe2f8658e96871d4557aa6))
+- Attributes on `platform` are now non-configurable. ([b8faa69](https://github.com/bazelbuild/bazel/commit/b8faa69f9dc94e620d93525da00e5a606558caa9))
+- The `platform` rule is now non-configurable. ([87fb462](https://github.com/bazelbuild/bazel/commit/87fb4620c6edd0e525d4621ecdca4bd47d69484c))
+- Made `target_compatible_with` work better on `alias()` targets. ([1d2e9c8](https://github.com/bazelbuild/bazel/commit/1d2e9c87f50051aa4031a432a53e076d382f63be))
+- Root repository mappings now work in the `platform_mappings` file. ([c0fc433](https://github.com/bazelbuild/bazel/commit/c0fc433ba86e266dc8b80b662733af05eca96cff))
+- Target incompatibility is now checked before toolchain resolution. ([8482c7c](https://github.com/bazelbuild/bazel/commit/8482c7cf494686eb7498cec6ee58dad03b07ef0d))
+- Subsequent settings of `--extra_execution_platforms` now override previous settings, instead of adding them to a list. ([c602cec](https://github.com/bazelbuild/bazel/commit/c602cec7887470db3e8ed69600f5bd2f38e160d5))
+- Removed the `copy_from_rule` attribute from `exec_group`. ([f48412f](https://github.com/bazelbuild/bazel/commit/f48412f04e0af9b0c989da7199668975281a0a6c))
+- Removed the `host` transition. ([c18e6d5](https://github.com/bazelbuild/bazel/commit/c18e6d54659ef34e7ee5a1ce05c18a97375d6661))
+
+## Misc
+
+There were a handful of changes that I couldn't find a nice home for in the sections above,
+but I still felt were important or interesting enough to call attention to:
+
+- <VersionPill version="6.2.0"/> `@foo` labels can now be used on the command line as the top-level target. ([24f6fe8](https://github.com/bazelbuild/bazel/commit/24f6fe802ebb68da71e1e071c9e84c89b4aa0772))
+- <VersionPill version="6.3.0"/> Options specified on the pseudo-command `common` in `.rc` files are now ignored by commands that do not support them as long as they are valid options for any Bazel command. ([44d3953](https://github.com/bazelbuild/bazel/commit/44d395338ab9a27596b0796c14076641f4cb2093))
+- <VersionPill version="6.3.0"/> Added the `always` pseudo-command which has the semantics of pre-6.3.0 `common` in `.rc` files. ([44d3953](https://github.com/bazelbuild/bazel/commit/44d395338ab9a27596b0796c14076641f4cb2093))
+- <VersionPill version="6.3.0"/> Credential helpers now apply to repository fetching as well. ([9731e69](https://github.com/bazelbuild/bazel/commit/9731e6906cba63a1eba0c1fb335290d76efabf16))
+- <VersionPill version="6.3.0"/> Wall-time is now used for credential helper invalidation. ([5f77aba](https://github.com/bazelbuild/bazel/commit/5f77abaca0457d83a78e89ba1549196ce2f4d798))
+- Added the `--experimental_include_default_values` flag, which includes default values for Starlark flags in the `canonicalize-flags` command. ([33e9bf1](https://github.com/bazelbuild/bazel/commit/33e9bf119550950ebcf0ffb2c7b372c17748dd7d))
+- `--ui_event_filters` now accumulates multiple values. ([3d1aeb5](https://github.com/bazelbuild/bazel/commit/3d1aeb569599ae5a671396bcf9c22824fe62b1bc))
+- JVM options in the `JAVA_TOOL_OPTIONS` and `JDK_JAVA_OPTIONS` environment variables no loner propagate to the Bazel server; use `--host_jvm_args` instead. ([22e3ba5](https://github.com/bazelbuild/bazel/commit/22e3ba59692f74a85c6d9689e656cbed58642696))
+- The repo mapping manifest is now generated when possible, not only when Bzlmod is enabled. ([cb55897](https://github.com/bazelbuild/bazel/commit/cb558978820b1fb9b579d8e9578cbb9ca590fe60))
+
+## Summary
+
+As you can see,
+Bazel 7.0 was another _massive_ release (20% larger than last year!).
+Thankfully,
+through the [rolling releases][rolling-releases] process,
+people were able to test,
+or even actively depend on,
+these changes well before the first 7.0 release candidate was cut.
+
+[rolling-releases]: https://bazel.build/versions/7.0.0/release#rolling-releases
+
+Work on Bazel 8.0 is well underway,
+and I look forward to summarizing its changes next year.
+Until then, 👋.

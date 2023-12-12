@@ -11,7 +11,7 @@ OUTPUT_DIR="$(dirname "$(readlink -f "$0")")"
 pushd "$(mktemp -d -q)"
 PROFILE_DIR="$(pwd)"
 
-for i in {1..15}; do
+for i in {0..15}; do
     kubectl --namespace=buildbuddy-prod port-forward "buildbuddy-app-$i" 9090:9090 > /dev/null 2>&1 &
     pid=$!
 

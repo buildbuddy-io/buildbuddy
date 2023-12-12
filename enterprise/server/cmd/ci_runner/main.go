@@ -1530,8 +1530,11 @@ func (ws *workspace) config(ctx context.Context) error {
 	// workflows are isolated.
 	// TODO(bduffany): find a solution that works for Mac workflows too.
 	if runtime.GOOS == "linux" {
-		// Credential helper is used for external git deps fetched by bazel so
-		// it needs to be in the global config.
+		// SSH URL rewrites and git credential helper are used for external git
+		// deps fetched by bazel, so these need to be in the global config.
+		if err := configureGlobalURLRewrites(ctx); err != nil {
+			return err
+		}
 		if err := configureGlobalCredentialHelper(ctx); err != nil {
 			return err
 		}
@@ -1858,6 +1861,21 @@ func configureGlobalCredentialHelper(ctx context.Context) error {
 	configValue := fmt.Sprintf("!%s --credential_helper", os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"))
 	if _, err := git(ctx, io.Discard, "config", "--global", configKey, configValue); err != nil {
 		return err
+	}
+	return nil
+}
+
+// Replaces some known SSH git URLs with HTTPS equivalents, since we won't
+// necessarily have any SSH private keys available that we can use to clone
+// repos over SSH.
+func configureGlobalURLRewrites(ctx context.Context) error {
+	for original, replacement := range map[string]string{
+		"ssh://git@github.com:": "https://github.com/",
+		"git@github.com:":       "https://github.com/",
+	} {
+		if _, err := git(ctx, io.Discard, "config", "--global", "url."+replacement+".insteadOf", original); err != nil {
+			return err
+		}
 	}
 	return nil
 }

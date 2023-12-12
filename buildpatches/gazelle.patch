@@ -1,3 +1,16 @@
+diff --git a/cmd/gazelle/BUILD.bazel b/cmd/gazelle/BUILD.bazel
+index 464f670..0e0df57 100644
+--- a/cmd/gazelle/BUILD.bazel
++++ b/cmd/gazelle/BUILD.bazel
+@@ -1,6 +1,8 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+ load("//:def.bzl", "DEFAULT_LANGUAGES", "gazelle_binary")
+ 
++exports_files(srcs = glob(["*.go"]))
++
+ gazelle_binary(
+     name = "gazelle",
+     languages = DEFAULT_LANGUAGES,
 diff --git a/cmd/gazelle/gazelle.go b/cmd/gazelle/gazelle.go
 index 2ff57db..7d0c6be 100644
 --- a/cmd/gazelle/gazelle.go
@@ -12,23 +25,9 @@ index 2ff57db..7d0c6be 100644
 +func Run() {
  	log.SetPrefix("gazelle: ")
  	log.SetFlags(0) // don't print timestamps
-
-diff --git a/cmd/gazelle/BUILD.bazel b/cmd/gazelle/BUILD.bazel
-index 1cbaea7..4f9a083 100644
---- a/cmd/gazelle/BUILD.bazel
-+++ b/cmd/gazelle/BUILD.bazel
-@@ -1,6 +1,8 @@
- load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
- load("//:def.bzl", "DEFAULT_LANGUAGES", "gazelle_binary")
-
-+exports_files(srcs = glob(["*.go"]))
-+
- gazelle_binary(
-     name = "gazelle",
-     languages = DEFAULT_LANGUAGES,
-
+ 
 diff --git a/internal/module/BUILD.bazel b/internal/module/BUILD.bazel
-index 9ed4db9..69db844 100644
+index f5ae5e5..74678b4 100644
 --- a/internal/module/BUILD.bazel
 +++ b/internal/module/BUILD.bazel
 @@ -4,7 +4,7 @@ go_library(
@@ -37,6 +36,6 @@ index 9ed4db9..69db844 100644
      importpath = "github.com/bazelbuild/bazel-gazelle/internal/module",
 -    visibility = ["//:__subpackages__"],
 +    visibility = ["//visibility:public"],
-     deps = ["@com_github_bazelbuild_buildtools//build:go_default_library"],
+     deps = ["@com_github_bazelbuild_buildtools//build"],
  )
  

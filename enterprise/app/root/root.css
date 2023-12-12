@@ -146,32 +146,17 @@ body {
     height: 36px;
   }
 
-  .sidebar .sidebar-footer:not(.expanded) {
-    background-color: transparent;
-  }
-
-  .sidebar .sidebar-expanded-profile {
-    margin-bottom: 0;
-  }
-
-  .sidebar .sidebar-footer .sidebar-profile {
-    position: absolute;
-    top: 0;
-    right: 0;
-    padding: 24px;
-  }
-
-  .dense .sidebar .sidebar-profile-photo {
+  .dense .sidebar .org-picker-profile-photo {
     display: block;
   }
 
-  .dense .sidebar .sidebar-profile-name,
-  .sidebar .sidebar-profile-name {
+  .dense .sidebar .org-picker-profile-name,
+  .sidebar .org-picker-profile-name {
     display: none;
   }
 
-  .dense .sidebar .sidebar-profile-arrow,
-  .sidebar .sidebar-profile-arrow {
+  .dense .sidebar .org-picker-profile-arrow,
+  .sidebar .org-picker-profile-arrow {
     display: none;
   }
 }

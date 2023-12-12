@@ -44,6 +44,7 @@ const (
 	InitialShardID   = 1
 	InitialReplicaID = 1
 	InitialRangeID   = 1
+	MetaRangeID      = 1
 
 	UnsplittableMaxByte = systemMaxByte
 )

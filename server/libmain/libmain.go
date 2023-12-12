@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/push_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -63,6 +64,7 @@ import (
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	static_bundle "github.com/buildbuddy-io/buildbuddy/static"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	channelzservice "google.golang.org/grpc/channelz/service"
 
 	// Force this package to be a direct dependency in `go.mod` so that
 	// `go mod tidy` doesn't work differently when generated protos are linked
@@ -217,6 +219,7 @@ func registerInternalGRPCServices(grpcServer *grpc.Server, env environment.Env) 
 	if sociArtifactStoreServer := env.GetSociArtifactStoreServer(); sociArtifactStoreServer != nil {
 		socipb.RegisterSociArtifactStoreServer(grpcServer, sociArtifactStoreServer)
 	}
+	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 }
 
 func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
@@ -260,7 +263,9 @@ func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
 func registerLocalGRPCClients(env environment.Env) error {
 	// Identify ourselves as an app client in gRPC requests to other apps.
 	usageutil.SetClientType("app")
+	byte_stream_client.RegisterPooledBytestreamClient(env)
 
+	// TODO(jdhollen): Share this pool with the cache above.  Not a huge deal for now.
 	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))
 	if err != nil {
 		return status.InternalErrorf("Error initializing ByteStreamClient: %s", err)
@@ -305,14 +310,7 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("%v", err)
 	}
 
-	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
-	// can be called over HTTP(s).
-	protoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/BuildBuddyService/", env.GetBuildBuddyServer())
-	if err != nil {
-		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
-	}
-
-	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	if err := build_event_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
@@ -352,6 +350,13 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("%v", err)
 	}
 
+	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
+	// can be called over HTTP(s).
+	protoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/BuildBuddyService/", "buildbuddy.service.BuildBuddyService", env.GetBuildBuddyServer(), env.GetGRPCServer())
+	if err != nil {
+		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
+	}
+
 	mux := env.GetMux()
 	// Register all of our HTTP handlers on the default mux.
 	mux.Handle("/", interceptors.WrapExternalHandler(env, staticFileServer))
@@ -377,7 +382,7 @@ func StartAndRunServices(env environment.Env) {
 
 	// Register API as an HTTP service.
 	if api := env.GetAPIService(); api != nil {
-		apiProtoHandlers, err := protolet.GenerateHTTPHandlers("/api/v1/", api)
+		apiProtoHandlers, err := protolet.GenerateHTTPHandlers("/api/v1/", "api.v1", api, env.GetGRPCServer())
 		if err != nil {
 			log.Fatalf("Error initializing RPC over HTTP handlers for API: %s", err)
 		}

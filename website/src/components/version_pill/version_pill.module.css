@@ -1,0 +1,15 @@
+.pill {
+  background: #0c713a;
+  border-radius: 2em;
+  color: #fff;
+  font-weight: 500;
+  margin-right: 0.166em;
+  width: 3.75em;
+  display: inline-block;
+  font-size: smaller;
+  text-align: center;
+}
+
+.hide {
+  display: none;
+}

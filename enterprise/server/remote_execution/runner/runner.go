@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -112,6 +113,10 @@ const (
 
 	// Where to store the RunnerPoolState proto, relative to rootDirectory.
 	stateFileName = "_runner_pool_state.bin"
+
+	// If a runner exceeds this percentage of its total memory or disk allocation,
+	// it should not be recycled, because it may cause failures if it's reused
+	maxRecyclableResourceUtilization = .9
 )
 
 var (
@@ -374,7 +379,41 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	return r.Container.Exec(ctx, command, &commandutil.Stdio{})
+	execResult := r.Container.Exec(ctx, command, &commandutil.Stdio{})
+
+	// If a firecracker runner has exceeded a certain % of allocated memory or disk, don't try to recycle
+	// it, because that may cause failures if it's reused, and we don't want to save
+	// bad snapshots to the cache.
+	if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
+		maxedOutStr := ""
+		for _, fsUsage := range execResult.UsageStats.GetPeakFileSystemUsage() {
+			if float64(fsUsage.UsedBytes)/float64(fsUsage.TotalBytes) >= maxRecyclableResourceUtilization {
+				maxedOutStr += fmt.Sprintf(" %d/%d B disk used for %s", fsUsage.UsedBytes, fsUsage.TotalBytes, fsUsage.GetSource())
+			}
+		}
+		usedMemoryBytes := execResult.UsageStats.GetMemoryBytes()
+		totalMemoryBytes := fc.VMConfig().GetMemSizeMb() * 1e6
+		if usedMemoryBytes >= int64(float64(totalMemoryBytes)*maxRecyclableResourceUtilization) {
+			maxedOutStr += fmt.Sprintf("%d/%d B memory used", usedMemoryBytes, totalMemoryBytes)
+		}
+
+		if maxedOutStr != "" {
+			r.doNotReuse = true
+
+			errStr := fmt.Sprintf("%v runner exceeded 90%% of memory or disk usage, not recycling: %s", r.GetIsolationType(), maxedOutStr)
+			debugStr := fc.SnapshotDebugString(ctx)
+			if debugStr == "" {
+				errStr += "\nRunner had started clean (not from a snapshot)"
+			} else {
+				errStr += fmt.Sprintf("\nSnapshot debug key: %s", fc.SnapshotDebugString(ctx))
+			}
+
+			alert.UnexpectedEvent("runner_maxed_out", errStr)
+			log.Errorf("%s", errStr)
+		}
+	}
+
+	return execResult
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
@@ -415,30 +454,29 @@ func (r *commandRunner) shutdown(ctx context.Context) error {
 }
 
 func (r *commandRunner) Remove(ctx context.Context) error {
+	r.p.mu.Lock()
+	s := r.state
+	r.state = removed
+	r.p.mu.Unlock()
+	if s == removed {
+		return nil
+	}
+
 	if r.removeCallback != nil {
 		defer r.removeCallback()
 	}
 
-	r.p.mu.RLock()
-	s := r.state
-	r.p.mu.RUnlock()
-
 	errs := []error{}
-	if s != initial && s != removed {
-		r.p.mu.Lock()
-		r.state = removed
-		r.p.mu.Unlock()
-		if err := r.shutdown(ctx); err != nil {
+	if err := r.shutdown(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if r.stopPersistentWorker != nil {
+		if err := r.stopPersistentWorker(); err != nil {
 			errs = append(errs, err)
 		}
-		if r.stopPersistentWorker != nil {
-			if err := r.stopPersistentWorker(); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		if err := r.Container.Remove(ctx); err != nil {
-			errs = append(errs, err)
-		}
+	}
+	if err := r.Container.Remove(ctx); err != nil {
+		errs = append(errs, err)
 	}
 	if err := r.removeVFS(); err != nil {
 		errs = append(errs, err)
@@ -1058,26 +1096,42 @@ func (p *pool) String() string {
 // operation fails on a given attempt, the runner is removed from the pool.
 func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *commandRunner {
 	for i := 1; i <= maxUnpauseAttempts; i++ {
-		// Note: take returns (nil, nil) if there are no available runners.
-		r, err := p.take(ctx, key)
-		if err == nil {
-			return r
+		r := p.take(ctx, key)
+		if r == nil {
+			// No matches found; return.
+			return nil
 		}
-		log.CtxWarningf(ctx, "Take attempt %d failed: %s", i, err)
+
+		// Found a match; unpause it.
+		if err := r.Container.Unpause(ctx); err != nil {
+			log.CtxWarningf(ctx, "Unpause attempt for runner %s failed: %s", r, err)
+			// If we fail to unpause, subsequent unpause attempts are also
+			// likely to fail, so remove the container from the pool and also
+			// remove the runner itself.
+			p.mu.Lock()
+			p.remove(r)
+			p.mu.Unlock()
+			r.RemoveInBackground()
+			continue
+		}
+
+		return r
 	}
 	return nil
 }
 
 // take finds the most recently used runner in the pool that matches the given
-// query. If one is found, it is unpaused and returned.
-func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, error) {
+// query. If one is found, it is marked ready and returned. The caller must
+// unpause the runner.
+func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *commandRunner {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	log.CtxInfof(ctx, "Looking for match for %q in runner pool %s", keyString(key), p)
 	taskKeyBytes, err := proto.Marshal(key)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to marshal runner key: %s", err)
+		alert.UnexpectedEvent("proto_marshal_failure", "Failed to marshal runner key: %s", err)
+		return nil
 	}
 
 	for i := len(p.runners) - 1; i >= 0; i-- {
@@ -1085,35 +1139,26 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) (*commandRunner, e
 		if key.GroupId != r.key.GroupId || r.state != paused {
 			continue
 		}
-
 		// Check for an exact match on the runner pool keys.
 		runnerKeyBytes, err := proto.Marshal(r.key)
 		if err != nil {
-			log.Errorf("Failed to marshal runner key for %s: %s", r, err)
+			alert.UnexpectedEvent("proto_marshal_failure", "Failed to marshal runner key for %s: %s", r, err)
 			continue
 		}
 		if !bytes.Equal(taskKeyBytes, runnerKeyBytes) {
 			continue
 		}
 
-		// TODO(bduffany): Find a way to unpause here without holding the lock.
-		if err := r.Container.Unpause(ctx); err != nil {
-			// If we fail to unpause, subsequent unpause attempts are also likely
-			// to fail, so remove the container from the pool.
-			p.remove(r)
-			r.RemoveInBackground()
-			return nil, status.WrapErrorf(err, "failed to unpause runner %s", r)
-		}
 		r.state = ready
 
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
 		metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
 
-		return r, nil
+		return r
 	}
 
-	return nil, nil
+	return nil
 }
 
 // RunnerCount returns the total number of runners in the pool.

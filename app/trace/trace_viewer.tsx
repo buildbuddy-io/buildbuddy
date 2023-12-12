@@ -12,6 +12,7 @@ import { TraceEvent } from "./trace_events";
 import { buildTraceViewerModel, panelScrollHeight } from "./trace_viewer_model";
 import { Profile } from "./trace_events";
 import router from "../router/router";
+import { FilterInput } from "../components/filter_input/filter_input";
 
 export interface TraceViewProps {
   profile: Profile;
@@ -22,6 +23,8 @@ export interface TraceViewProps {
 // scrollbar, so we don't allow the horizontally scrollable width to exceed this
 // value.
 const SCROLL_WIDTH_LIMIT = 18_000_000;
+
+const FILTER_URL_PARAM = "timingFilter";
 
 /**
  * Renders an interactive trace profile viewer for an invocation.
@@ -94,6 +97,10 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     document.body.style.cursor = "";
   }
 
+  private getFilter() {
+    return new URLSearchParams(window.location.search).get(FILTER_URL_PARAM) || "";
+  }
+
   /**
    * Main update loop called in each animation frame by `this.animation`. This
    * steps the zoom animation if applicable and re-renders the canvas contents.
@@ -112,6 +119,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
 
     for (const panel of this.panels) {
       panel.resize();
+      panel.filter = this.getFilter();
 
       if (!this.canvasXPerModelX.isAtTarget || this.panning) {
         // If actively zooming or panning, set the panel's scrollX so that the
@@ -248,6 +256,11 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     document.body.style.cursor = "";
   };
 
+  private updateFilter = (value: string) => {
+    router.setQueryParam(FILTER_URL_PARAM, value);
+    this.update();
+  };
+
   private onCanvasMouseDown(e: React.MouseEvent, panelIndex: number) {
     this.panning = this.panels[panelIndex];
     this.isUsingZoomButtons = false;
@@ -275,6 +288,12 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
             "--scrollbar-size": `${constants.SCROLLBAR_SIZE}px`,
           } as CSSProperties),
         }}>
+        <FilterInput
+          className="filter"
+          onChange={(e) => this.updateFilter(e.target.value)}
+          value={this.getFilter()}
+          placeholder="Filter..."
+        />
         {this.model.panels.map((panel, i) => (
           <div
             className="panel-container"

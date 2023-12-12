@@ -135,3 +135,7 @@
   border-top: 1px solid #eee;
   margin-bottom: 4px;
 }
+
+.trace-viewer .filter {
+  margin-bottom: 16px;
+}

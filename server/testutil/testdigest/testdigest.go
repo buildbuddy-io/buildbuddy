@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -82,11 +83,9 @@ func RandomACResourceBuf(t testing.TB, sizeBytes int64) (*rspb.ResourceName, []b
 	return NewRandomResourceAndBuf(t, sizeBytes, rspb.CacheType_AC, "" /*instanceName*/)
 }
 
-func ReadDigestAndClose(t *testing.T, r io.ReadCloser) *repb.Digest {
+func ReadDigestAndClose(t testing.TB, r io.ReadCloser) *repb.Digest {
 	defer r.Close()
 	d, err := digest.Compute(r, repb.DigestFunction_SHA256)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return d
 }

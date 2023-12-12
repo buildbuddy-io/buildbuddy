@@ -66,6 +66,8 @@ type Env interface {
 	GetActionCacheClient() repb.ActionCacheClient
 	GetByteStreamClient() bspb.ByteStreamClient
 	SetByteStreamClient(bspb.ByteStreamClient)
+	GetPooledByteStreamClient() interfaces.PooledByteStreamClient
+	SetPooledByteStreamClient(interfaces.PooledByteStreamClient)
 	GetSchedulerClient() scpb.SchedulerClient
 	GetCapabilitiesClient() repb.CapabilitiesClient
 	GetRemoteExecutionClient() repb.ExecutionClient

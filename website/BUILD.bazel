@@ -13,6 +13,7 @@ SRCS = glob([
     "//server/cmd/buildbuddy/yaml_doc:generate_mdx",
     "//server/metrics:generate_mdx",
     "//enterprise/server/cmd/server/yaml_doc:generate_mdx",
+    "//enterprise/server/backends/prom/generate_docs:generate_mdx",
     "//enterprise/server/cmd/executor/yaml_doc:generate_mdx",
 ]
 

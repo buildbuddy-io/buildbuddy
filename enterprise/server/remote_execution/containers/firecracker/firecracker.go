@@ -82,6 +82,7 @@ var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", f
 var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
+var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 
 //go:embed guest_api_hash.sha256
 var GuestAPIHash string
@@ -102,13 +103,10 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "3"
-
-	// How long to wait for the VMM to listen on the firecracker socket.
-	firecrackerSocketWaitTimeout = 3 * time.Second
+	GuestAPIVersion = "5"
 
 	// How long to wait when dialing the vmexec server inside the VM.
-	vSocketDialTimeout = 30 * time.Second
+	vSocketDialTimeout = 60 * time.Second
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
@@ -127,7 +125,7 @@ const (
 	fullMemSnapshotName = "full-mem.snap"
 	diffMemSnapshotName = "diff-mem.snap"
 	// Directory storing the memory file chunks.
-	memoryChunkDirName = "memory"
+	memoryChunkDirName = snaputil.MemoryFileName
 
 	fullSnapshotType = "Full"
 	diffSnapshotType = "Diff"
@@ -215,11 +213,7 @@ func init() {
 	//
 	// We're increasing it from the default here since we do some remote reads
 	// during ResumeVM to handle page faults with UFFD.
-	//
-	// This 30s timeout was determined as the time it takes to load a bb repo
-	// snapshot in dev with a cold filecache (10s), times 3 to account for tail
-	// latency + larger VMs that could take longer to resume.
-	os.Setenv("FIRECRACKER_GO_SDK_REQUEST_TIMEOUT_MILLISECONDS", fmt.Sprint(30_000))
+	os.Setenv("FIRECRACKER_GO_SDK_REQUEST_TIMEOUT_MILLISECONDS", fmt.Sprint(60_000))
 }
 
 func openFile(ctx context.Context, fsys fs.FS, fileName string) (io.ReadCloser, error) {
@@ -485,6 +479,9 @@ type FirecrackerContainer struct {
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
 
+	// If set, the snapshot used to load the VM
+	snapshot *snaploader.Snapshot
+
 	// When the VM was initialized (i.e. created or unpaused) for the command
 	// it is currently executing
 	//
@@ -578,8 +575,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	isWorkflow := platform.FindValue(task.GetCommand().GetPlatform(), platform.WorkflowIDPropertyName) != ""
-	c.supportsRemoteSnapshots = isWorkflow && *snaputil.EnableRemoteSnapshotSharing
+	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCIRunner(task.GetCommand().GetArguments()) || *forceRemoteSnapshotting)
 
 	if opts.SavedState == nil {
 		c.vmConfig.DebugMode = *debugTerminal
@@ -607,8 +603,19 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 
 		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
 		if recyclingEnabled && *snaputil.EnableLocalSnapshotSharing {
-			_, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
+			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
 			c.createFromSnapshot = (err == nil)
+			label := ""
+			if err != nil {
+				label = metrics.MissStatusLabel
+				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.SnapshotKeySet()), err)
+			} else {
+				label = metrics.HitStatusLabel
+				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey()))
+			}
+			metrics.RecycleRunnerRequests.With(prometheus.Labels{
+				metrics.RecycleRunnerRequestStatusLabel: label,
+			}).Inc()
 		}
 	} else {
 		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.SavedState.GetSnapshotKey()}
@@ -628,6 +635,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 	defer span.End()
 
 	var out io.WriterAt
+	var storeChunkSizeBytes int64
 	if baseSnapshotStore == nil {
 		f, err := os.OpenFile(baseSnapshotPath, os.O_WRONLY, 0644)
 		if err != nil {
@@ -637,6 +645,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 		out = f
 	} else {
 		out = baseSnapshotStore
+		storeChunkSizeBytes = baseSnapshotStore.ChunkSizeBytes()
 	}
 
 	in, err := os.Open(diffSnapshotPath)
@@ -654,9 +663,9 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 
 	perThreadBytes := int64(math.Ceil(float64(inInfo.Size()) / float64(concurrency)))
 	perThreadBytes = alignToMultiple(perThreadBytes, int64(bufSize))
-	if *enableUFFD {
+	if baseSnapshotStore != nil {
 		// Ensure goroutines don't cross chunk boundaries and cause race conditions when writing
-		perThreadBytes = alignToMultiple(perThreadBytes, cowChunkSizeBytes())
+		perThreadBytes = alignToMultiple(perThreadBytes, storeChunkSizeBytes)
 	}
 	for i := 0; i < concurrency; i++ {
 		i := i
@@ -685,23 +694,59 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 					// ENXIO is expected when the offset is within a hole at the end of
 					// the file.
 					if err == syscall.ENXIO {
+						if baseSnapshotStore != nil {
+							if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
+								return err
+							}
+						}
 						break
 					}
 					return err
 				}
+
+				if baseSnapshotStore != nil {
+					ogChunkStartOffset := baseSnapshotStore.ChunkStartOffset(offset)
+					newChunkStartOffset := baseSnapshotStore.ChunkStartOffset(newOffset)
+
+					// If we've seeked to a new chunk, unmap the previous chunk to save memory
+					// usage on the executor
+					if newChunkStartOffset != ogChunkStartOffset {
+						if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
+							return err
+						}
+					}
+				}
+
 				offset = newOffset
 				if offset >= regionEnd {
 					break
 				}
-				n, err := gin.ReadAt(buf, offset)
-				if err != nil && err != io.EOF {
-					return err
+				n, readErr := gin.ReadAt(buf, offset)
+				if readErr != nil && readErr != io.EOF {
+					return readErr
 				}
+				endOfDiffSnapshot := readErr == io.EOF
+
 				if _, err := out.WriteAt(buf[:n], offset); err != nil {
 					return err
 				}
+
+				if baseSnapshotStore != nil {
+					// If we've finished processing a chunk, unmap it to save memory
+					// usage on the executor
+					currentChunkStartOffset := baseSnapshotStore.ChunkStartOffset(offset)
+					newChunkStartOffset := baseSnapshotStore.ChunkStartOffset(offset + int64(n))
+
+					nextOffsetInNextChunk := newChunkStartOffset != currentChunkStartOffset
+					if nextOffsetInNextChunk || endOfDiffSnapshot {
+						if err := baseSnapshotStore.UnmapChunk(offset); err != nil {
+							return err
+						}
+					}
+				}
+
 				offset += int64(n)
-				if err == io.EOF {
+				if endOfDiffSnapshot {
 					break
 				}
 			}
@@ -940,16 +985,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
 	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
-	label := metrics.HitStatusLabel
-	if err != nil {
-		label = metrics.MissStatusLabel
-	}
-	metrics.RecycleRunnerRequests.With(prometheus.Labels{
-		metrics.RecycleRunnerRequestStatusLabel: label,
-	}).Inc()
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
+	c.snapshot = snap
 
 	// Use vmCtx for COWs since IO may be done outside of the task ctx.
 	unpacked, err := c.loader.UnpackSnapshot(vmCtx, snap, c.getChroot())
@@ -1046,11 +1085,12 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 
 // initRootfsStore creates the initial rootfs chunk layout in the chroot.
 func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
-	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
+	cowChunkDir := filepath.Join(c.getChroot(), rootDriveID)
+	if err := os.MkdirAll(cowChunkDir, 0755); err != nil {
 		return status.InternalErrorf("failed to create rootfs chunk dir: %s", err)
 	}
 	containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
-	cf, err := snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.containerImage, containerExt4Path, c.getChroot(), cowChunkSizeBytes())
+	cf, err := snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes())
 	if err != nil {
 		return status.WrapError(err, "unpack container image")
 	}
@@ -2068,7 +2108,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	defer func() {
 		// TODO(bduffany): Figure out a good way to surface this in the command result.
-		if err := c.parseOOMError(); err != nil {
+		if result.Error != nil {
+			log.CtxWarningf(ctx, "Execution error occurred. VM logs: %s", string(c.vmLog.Tail()))
+		} else if err := c.parseOOMError(); err != nil {
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
 		}
 		if err := c.parseSegFault(result); err != nil {
@@ -2137,6 +2179,12 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		return nil
 	}
 	c.pulled = true
+
+	// If we're creating from a snapshot, we don't need to pull the base image
+	// since the rootfs image contains our full desired disk contents.
+	if c.createFromSnapshot && *EnableRootfs {
+		return nil
+	}
 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -2519,18 +2567,23 @@ func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskSta
 		groupID = u.GetGroupID()
 	}
 
-	snapshotSharingStatus := "disabled"
-	if *snaputil.EnableLocalSnapshotSharing {
-		snapshotSharingStatus = "local_sharing_enabled"
-	}
-
 	metrics.FirecrackerStageDurationUsec.With(prometheus.Labels{
 		metrics.Stage:                    taskStage,
 		metrics.StatusHumanReadableLabel: taskStatus,
 		metrics.RecycledRunnerStatus:     recycleStatus,
 		metrics.GroupID:                  groupID,
-		metrics.SnapshotSharingStatus:    snapshotSharingStatus,
 	}).Observe(float64(durationUsec))
+}
+
+func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {
+	if c.snapshot == nil {
+		return ""
+	}
+	return snaploader.KeyDebugString(ctx, c.env, c.snapshot.GetKey())
+}
+
+func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {
+	return c.vmConfig
 }
 
 func isExitErrorSIGTERM(err error) bool {

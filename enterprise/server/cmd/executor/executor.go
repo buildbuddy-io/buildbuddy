@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -110,7 +111,8 @@ func getExecutorHostID() string {
 func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) environment.Env {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
-	if err := resources.Configure(); err != nil {
+	snapshotSharingEnabled := *snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing
+	if err := resources.Configure(snapshotSharingEnabled); err != nil {
 		log.Fatal(status.Message(err))
 	}
 	// Note: Using math.Floor here to match the int64() conversions in
@@ -240,7 +242,7 @@ func main() {
 	}
 
 	container.Metrics.Start(rootContext)
-	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	// Setup SSL for monitoring endpoints (optional).
 	if *monitoringSSLPort >= 0 {

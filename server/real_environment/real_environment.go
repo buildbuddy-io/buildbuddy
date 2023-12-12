@@ -63,6 +63,7 @@ type RealEnv struct {
 	splashPrinter                    interfaces.SplashPrinter
 	actionCacheClient                repb.ActionCacheClient
 	byteStreamClient                 bspb.ByteStreamClient
+	pooledByteStreamClient           interfaces.PooledByteStreamClient
 	schedulerClient                  scpb.SchedulerClient
 	capabilitiesClient               repb.CapabilitiesClient
 	remoteExecutionClient            repb.ExecutionClient
@@ -149,7 +150,6 @@ func (r *RealEnv) SetDBHandle(h interfaces.DBHandle) {
 func (r *RealEnv) GetDBHandle() interfaces.DBHandle {
 	return r.dbHandle
 }
-
 func (r *RealEnv) SetStaticFilesystem(staticFS fs.FS) {
 	r.staticFilesystem = staticFS
 }
@@ -275,6 +275,13 @@ func (r *RealEnv) SetByteStreamClient(b bspb.ByteStreamClient) {
 }
 func (r *RealEnv) GetByteStreamClient() bspb.ByteStreamClient {
 	return r.byteStreamClient
+}
+
+func (r *RealEnv) SetPooledByteStreamClient(p interfaces.PooledByteStreamClient) {
+	r.pooledByteStreamClient = p
+}
+func (r *RealEnv) GetPooledByteStreamClient() interfaces.PooledByteStreamClient {
+	return r.pooledByteStreamClient
 }
 
 func (r *RealEnv) SetSchedulerClient(s scpb.SchedulerClient) {

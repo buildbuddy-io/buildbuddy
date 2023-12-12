@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
@@ -30,19 +31,23 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -88,6 +93,12 @@ func init() {
 	// Set umask to match the executor process.
 	syscall.Umask(0)
 
+	// Configure resource limits to ensure we allocate enough memory for the
+	// shared LRU in copy_on_write.
+	if err := resources.Configure(true /*=snapshotSharingEnabled*/); err != nil {
+		log.Fatalf("Failed to configure resources: %s", err)
+	}
+
 	// Some tests need iptables which is in /usr/sbin.
 	err := os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
 	if err != nil {
@@ -128,8 +139,8 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "ce69b4a932a47c8763a4390171eee6fdb6191920eab50fafe29a72f7d496ce38"
-		expectedVersion = "3"
+		expectedHash    = "dba052af79775a1d586dfcd32c4b841a4ccb363139bf8469c5706a66d91700f4"
+		expectedVersion = "5"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -415,8 +426,8 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 				// Note: platform must match in order to share snapshots
 				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 					{Name: "recycle-runner", Value: "true"},
-					{Name: platform.WorkflowIDPropertyName, Value: "workflow"},
 				}},
+				Arguments: []string{"./buildbuddy_ci_runner"},
 			},
 		}
 
@@ -686,8 +697,8 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 			// Note: platform must match in order to share snapshots
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
-				{Name: platform.WorkflowIDPropertyName, Value: "workflow"},
 			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
 		},
 	}
 	baseVM, err := firecracker.NewContainer(ctx, env, task, opts)
@@ -772,6 +783,81 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	// and the current VM, but not from any of the other VMs sharing
 	// the same original snapshot
 	require.Equal(t, "Base\nFork remote fetch\n", string(res.Stdout))
+}
+
+func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
+	if !*snaputil.EnableRemoteSnapshotSharing {
+		t.Skip("Snapshot sharing is not enabled")
+	}
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	cfg := getExecutorConfig(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
+	// Set up a task with remote snapshot sharing enabled.
+	task := &repb.ExecutionTask{
+		ExecuteRequest: &repb.ExecuteRequest{
+			InstanceName: "",
+		},
+		Command: &repb.Command{
+			// Enable remote snapshotting
+			Arguments: []string{"./buildbuddy_ci_runner"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+		},
+	}
+	workdir := testfs.MakeTempDir(t)
+	opts := firecracker.ContainerOpts{
+		ExecutorConfig: cfg,
+		// The image name here matters - the issue which originally prompted
+		// this test didn't reproduce on busybox, likely because the image is
+		// smaller and disk chunks were more likely to be dirtied.
+		ContainerImage: platform.Ubuntu20_04WorkflowsImage,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			ScratchDiskSizeMb: 100,
+		},
+		ActionWorkingDirectory: workdir,
+	}
+
+	// This command just increments the current value in a counter file
+	// "/root/attempts" (if missing, defaults to 0), then prints the new value.
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+cd /root
+ATTEMPT_NUMBER=$(cat ./attempts 2>/dev/null || echo 0)
+ATTEMPT_NUMBER=$(( ATTEMPT_NUMBER + 1 ))
+printf '%s' $ATTEMPT_NUMBER | tee ./attempts
+`}}
+
+	run := func(instanceName string, expectedLogs string) {
+		log.Debugf("\n\n\n=== run: instance=%q expectedLogs=%q ===", instanceName, expectedLogs)
+
+		task.ExecuteRequest.InstanceName = instanceName
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
+		err = c.Create(ctx, workdir)
+		require.NoError(t, err)
+		res := c.Exec(ctx, cmd, nil)
+		// Make sure we pause before doing any other assertions,
+		// since this also cleans up the VM.
+		{
+			err = c.Pause(ctx)
+			require.NoError(t, err)
+		}
+		require.Empty(t, string(res.Stderr))
+		require.Equal(t, 0, res.ExitCode)
+		require.NoError(t, res.Error)
+		assert.Equal(t, expectedLogs, string(res.Stdout))
+		log.Debugf("=== output: %q ===", string(res.Stdout))
+	}
+
+	run("", "1")  // Should start clean
+	run("A", "1") // New instance name "A"; should start clean
+	run("A", "2") // Should resume from previous, and increment the counter
 }
 
 func TestFirecrackerSnapshotVersioning(t *testing.T) {
@@ -1808,40 +1894,110 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 }
 
 func TestMergeDiffSnapshot(t *testing.T) {
+	for _, cow := range []bool{false, true} {
+		t.Run(fmt.Sprintf("COW=%v", cow), func(t *testing.T) {
+			testMergeDiffSnapshot(t, cow)
+		})
+	}
+}
+
+func testMergeDiffSnapshot(t *testing.T, cow bool) {
 	tmp := testfs.MakeTempDir(t)
 	for i := 0; i < 100; i++ {
+		copy_on_write.ResetMmmapedBytesMetricForTest()
+
 		ctx := context.Background()
 		snapSize := 1e6 + rand.Int63n(1e6)
-		// Create an empty base snapshot
-		basePath := filepath.Join(tmp, fmt.Sprintf("%d.base", i))
+		// Make a buffer to keep track of our expected bytes.
 		b := make([]byte, snapSize)
-		err := os.WriteFile(basePath, b, 0644)
-		require.NoError(t, err)
-		// Write some random diffs to the diff snapshot
-		diffPath := filepath.Join(tmp, fmt.Sprintf("%d.diff", i))
-		df, err := os.Create(diffPath)
-		require.NoError(t, err)
-		err = df.Truncate(snapSize)
-		require.NoError(t, err)
-		nDiffs := rand.Int63n(5)
-		for i := 0; i < int(nDiffs); i++ {
-			diffOffset := rand.Int63n(snapSize)
-			diffLen := rand.Int63n(snapSize - diffOffset + 1)
-			for off := diffOffset; off < diffOffset+diffLen; off++ {
-				b[off] = byte(rand.Intn(128))
-			}
-			_, err := df.WriteAt(b[diffOffset:diffOffset+diffLen], diffOffset)
+		// Create a base snapshot with some random data pages.
+		// Regions which are not written are holes, in order to test that
+		// we handle holes in the base snapshot properly.
+		basePath := filepath.Join(tmp, fmt.Sprintf("%d.base", i))
+		{
+			bf, err := os.Create(basePath)
+			require.NoError(t, err)
+			err = bf.Truncate(snapSize)
+			require.NoError(t, err)
+			writeRandomPages(t, bf, rand.Intn(100), b)
+			err = bf.Close()
 			require.NoError(t, err)
 		}
-		_ = df.Close()
-		err = firecracker.MergeDiffSnapshot(ctx, basePath, nil /*=COWStore*/, diffPath, 4 /*=concurrency*/, 4096 /*=bufSize*/)
+
+		// Sanity check: base snapshot file contents should match our expected
+		// buffer contents.
+		baseBytes, err := os.ReadFile(basePath)
+		require.NoError(t, err)
+		if !bytes.Equal(baseBytes, b) {
+			assert.FailNowf(t, "Base file bytes are not equal to expected bytes", "")
+		}
+
+		// Write some random diffs to the diff snapshot.
+		// Regions which are not written are holes, in order to test that
+		// we handle holes in the diff snapshot properly.
+		diffPath := filepath.Join(tmp, fmt.Sprintf("%d.diff", i))
+		{
+			df, err := os.Create(diffPath)
+			require.NoError(t, err)
+			err = df.Truncate(snapSize)
+			require.NoError(t, err)
+			writeRandomPages(t, df, rand.Intn(100), b)
+			err = df.Close()
+			require.NoError(t, err)
+		}
+		var store *copy_on_write.COWStore
+		cowDirName := fmt.Sprintf("cow-%d", i)
+		if cow {
+			env := getTestEnv(ctx, t, envOpts{})
+			dataDir := testfs.MakeDirAll(t, tmp, cowDirName)
+			c, err := copy_on_write.ConvertFileToCOW(ctx, env, basePath, 4096*16, dataDir, "", false /*=remoteEnabled*/)
+			require.NoError(t, err)
+			store = c
+		}
+		err = firecracker.MergeDiffSnapshot(ctx, basePath, store, diffPath, 4 /*=concurrency*/, 4096 /*=bufSize*/)
 		require.NoError(t, err)
 
-		merged, err := os.ReadFile(basePath)
-		require.NoError(t, err)
+		var merged []byte
+		if cow {
+			// All bytes should have been unmapped afterwards, even though
+			// we haven't closed the COWStore yet.
+			mmappedBytes := testmetrics.GaugeValueForLabels(
+				t, metrics.COWSnapshotMemoryMappedBytes,
+				prometheus.Labels{metrics.FileName: cowDirName})
+			require.Equal(t, float64(0), mmappedBytes)
+
+			r, err := interfaces.StoreReader(store)
+			require.NoError(t, err)
+			merged, err = io.ReadAll(r)
+			require.NoError(t, err)
+			err = store.Close()
+			require.NoError(t, err)
+		} else {
+			merged, err = os.ReadFile(basePath)
+			require.NoError(t, err)
+		}
 		if !bytes.Equal(merged, b) {
 			require.FailNowf(t, "Merged bytes not equal to expected bytes", "")
 		}
+	}
+}
+
+// Writes n random data pages to the given file. The data pages written are
+// copied into expectedBuf at the same offsets.
+func writeRandomPages(t *testing.T, f *os.File, n int, expectedBuf []byte) {
+	const pageSize = 4096
+	for i := 0; i < n; i++ {
+		offset := rand.Intn(len(expectedBuf))
+		// Round offset down to page-level resolution
+		offset = (offset / pageSize) * pageSize
+		// Write 1 page if possible, or the remainder of the file if we're at
+		// the end
+		length := min(pageSize, len(expectedBuf)-offset)
+		for i := offset; i < offset+length; i++ {
+			expectedBuf[i] = byte(rand.Intn(128))
+		}
+		_, err := f.WriteAt(expectedBuf[offset:offset+length], int64(offset))
+		require.NoError(t, err)
 	}
 }
 

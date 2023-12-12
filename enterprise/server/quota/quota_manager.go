@@ -104,24 +104,15 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 	}
 	ctx := env.GetServerContext()
 	config := make(map[string]*namespaceConfig)
-	err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("fetch_quota_config"), func(tx *db.DB) error {
+	err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		q := query_builder.NewQuery(`SELECT * FROM "QuotaBuckets"`)
 		if namespace != "" {
 			q = q.AddWhereClause(`namespace = ?`, namespace)
 		}
 		queryStr, args := q.Build()
-		bucketRows, err := tx.Raw(queryStr, args...).Rows()
-		if err != nil {
-			return status.InternalErrorf("failed to read table QuotaBuckets: %s", err)
-		}
-		defer bucketRows.Close()
-
-		for bucketRows.Next() {
-			var tb tables.QuotaBucket
-			if err := tx.ScanRows(bucketRows, &tb); err != nil {
-				return status.InternalErrorf("failed to scan QuotaBuckets: %s", err)
-			}
-			if err := validateBucket(bucketToProto(&tb)); err != nil {
+		rq := tx.NewQuery(ctx, "quota_manager_get_quota_buckets").Raw(queryStr, args...)
+		err := db.ScanRows(rq, func(ctx context.Context, tb *tables.QuotaBucket) error {
+			if err := validateBucket(bucketToProto(tb)); err != nil {
 				return status.InternalErrorf("invalid bucket: %v", tb)
 			}
 			ns := config[tb.Namespace]
@@ -133,8 +124,12 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 				config[tb.Namespace] = ns
 			}
 			ns.assignedBuckets[tb.Name] = &assignedBucket{
-				bucket: &tb,
+				bucket: tb,
 			}
+			return nil
+		})
+		if err != nil {
+			return status.InternalErrorf("failed to read table QuotaBuckets: %s", err)
 		}
 
 		groupQuery := query_builder.NewQuery(`SELECT * FROM "QuotaGroups"`)
@@ -142,32 +137,27 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 			groupQuery = groupQuery.AddWhereClause(`namespace = ?`, namespace)
 		}
 		groupQueryStr, groupArgs := groupQuery.Build()
-		groupRows, err := tx.Raw(groupQueryStr, groupArgs...).Rows()
-		if err != nil {
-			return status.InternalErrorf("failed to read table QuotaGroups: %s", err)
-		}
-		defer groupRows.Close()
-
-		for groupRows.Next() {
-			var tg tables.QuotaGroup
-			if err := tx.ScanRows(groupRows, &tg); err != nil {
-				return status.InternalErrorf("failed to scan QuotaGroups: %s", err)
-			}
+		rq = tx.NewQuery(ctx, "quota_manager_get_quota_groups").Raw(groupQueryStr, groupArgs...)
+		err = db.ScanRows(rq, func(ctx context.Context, tg *tables.QuotaGroup) error {
 			ns := config[tg.Namespace]
 			if ns == nil {
 				alert.UnexpectedEvent("invalid_quota_config", "namespace %q doesn't exist", tg.Namespace)
-				continue
+				return nil
 			}
 			assignedBucket, ok := ns.assignedBuckets[tg.BucketName]
 			if !ok {
 				alert.UnexpectedEvent("invalid_quota_config", "namespace %q bucket name %q doesn't exist", tg.Namespace, tg.BucketName)
-				continue
+				return nil
 			}
 			if tg.BucketName == defaultBucketName {
 				log.Warningf("Doesn't need to create QuotaGroup for default bucket in namespace %q", tg.Namespace)
-				continue
+				return nil
 			}
 			assignedBucket.quotaKeys = append(assignedBucket.quotaKeys, tg.QuotaKey)
+			return nil
+		})
+		if err != nil {
+			return status.InternalErrorf("failed to read table QuotaGroups: %s", err)
 		}
 		return nil
 	})
@@ -378,12 +368,14 @@ func (qm *QuotaManager) RemoveNamespace(ctx context.Context, req *qpb.RemoveName
 	if qm.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
-	err := qm.env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("query_manager_insert_buckets"), func(tx *db.DB) error {
+	err := qm.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		ns := req.GetNamespace()
-		if err := tx.Exec(`DELETE FROM "QuotaGroups" WHERE namespace = ?`, ns).Error; err != nil {
+		if err := tx.NewQuery(ctx, "quota_manager_delete_namespace_groups").Raw(
+			`DELETE FROM "QuotaGroups" WHERE namespace = ?`, ns).Exec().Error; err != nil {
 			return err
 		}
-		if err := tx.Exec(`DELETE FROM "QuotaBuckets" WHERE namespace = ?`, ns).Error; err != nil {
+		if err := tx.NewQuery(ctx, "quota_manager_delete_namespace_buckets").Raw(
+			`DELETE FROM "QuotaBuckets" WHERE namespace = ?`, ns).Exec().Error; err != nil {
 			return err
 		}
 		return nil
@@ -423,11 +415,12 @@ func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketReq
 	}
 
 	dbh := qm.env.GetDBHandle()
-	err := dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("apply_bucket"), func(tx *db.DB) error {
+	err := dbh.Transaction(ctx, func(tx interfaces.DB) error {
+		// apply_bucket
 		row := &struct{ Count int64 }{}
-		err := tx.Raw(
+		err := tx.NewQuery(ctx, "quota_manager_get_num_buckets").Raw(
 			`SELECT COUNT(*) AS count FROM "QuotaBuckets" WHERE namespace = ? AND name = ?`, req.GetNamespace(), req.GetBucketName(),
-		).Take(row).Error
+		).Take(row)
 		if err != nil {
 			return err
 		}
@@ -441,19 +434,22 @@ func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketReq
 			BucketName: req.GetBucketName(),
 		}
 		var existing tables.QuotaGroup
-		if err := tx.Where("namespace = ? AND quota_key = ?", req.GetNamespace(), quotaKey).First(&existing).Error; err != nil {
+		if err := tx.GORM("quota_manager_get_existing_quota_group").Where(
+			"namespace = ? AND quota_key = ?", req.GetNamespace(), quotaKey).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
 				if req.GetBucketName() == defaultBucketName {
 					return nil
 				}
-				return tx.Create(quotaGroup).Error
+				return tx.NewQuery(ctx, "quota_manager_create_quota_group").Create(quotaGroup)
 			}
 			return err
 		}
 		if req.GetBucketName() == defaultBucketName {
-			return tx.Exec(`DELETE FROM "QuotaGroups" WHERE namespace = ? AND quota_key = ?`, req.GetNamespace(), quotaKey).Error
+			return tx.NewQuery(ctx, "quota_manager_apply_bucket_delete_key").Raw(
+				`DELETE FROM "QuotaGroups" WHERE namespace = ? AND quota_key = ?`, req.GetNamespace(), quotaKey).Exec().Error
 		} else {
-			return tx.Model(&existing).Where("namespace = ? AND quota_key = ?", req.GetNamespace(), quotaKey).Updates(quotaGroup).Error
+			return tx.GORM("quota_manager_apply_bucket_update_group").Model(&existing).Where(
+				"namespace = ? AND quota_key = ?", req.GetNamespace(), quotaKey).Updates(quotaGroup).Error
 		}
 	})
 	if err != nil {
@@ -526,11 +522,13 @@ func (qm *QuotaManager) updateBucket(ctx context.Context, namespace string, buck
 
 func (qm *QuotaManager) removeBucket(ctx context.Context, namespace string, bucketName string) error {
 	dbh := qm.env.GetDBHandle()
-	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("remove_bucket"), func(tx *db.DB) error {
-		if err := tx.Exec(`DELETE FROM "QuotaGroups" WHERE namespace = ? AND bucket_name = ?`, namespace, bucketName).Error; err != nil {
+	return dbh.Transaction(ctx, func(tx interfaces.DB) error {
+		if err := tx.NewQuery(ctx, "quota_manager_delete_group").Raw(
+			`DELETE FROM "QuotaGroups" WHERE namespace = ? AND bucket_name = ?`, namespace, bucketName).Exec().Error; err != nil {
 			return err
 		}
-		return tx.Exec(`DELETE FROM "QuotaBuckets" WHERE namespace = ? AND name = ?`, namespace, bucketName).Error
+		return tx.NewQuery(ctx, "quota_manager_delete_bucket").Raw(
+			`DELETE FROM "QuotaBuckets" WHERE namespace = ? AND name = ?`, namespace, bucketName).Exec().Error
 	})
 }
 

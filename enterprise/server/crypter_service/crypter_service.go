@@ -959,14 +959,15 @@ func (c *Crypter) enableEncryption(ctx context.Context, kmsConfig *enpb.KMSConfi
 		LastEncryptionAttemptAtUsec: now.UnixMicro(),
 		LastEncryptedAtUsec:         now.UnixMicro(),
 	}
-	err = c.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
-		if err := tx.Create(key).Error; err != nil {
+	err = c.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		if err := tx.NewQuery(ctx, "crypter_create_key").Create(key); err != nil {
 			return err
 		}
-		if err := tx.Create(keyVersion).Error; err != nil {
+		if err := tx.NewQuery(ctx, "crypter_create_key_version").Create(keyVersion); err != nil {
 			return err
 		}
-		if err := tx.Exec(`UPDATE "Groups" SET cache_encryption_enabled = true WHERE group_id = ?`, u.GetGroupID()).Error; err != nil {
+		if err := tx.NewQuery(ctx, "crypter_group_enable_encryption").Raw(
+			`UPDATE "Groups" SET cache_encryption_enabled = true WHERE group_id = ?`, u.GetGroupID()).Exec().Error; err != nil {
 			return err
 		}
 		return nil
@@ -982,7 +983,7 @@ func (c *Crypter) disableEncryption(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	err = c.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
+	err = c.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		q := `
 			DELETE FROM "EncryptionKeyVersions"
 			WHERE encryption_key_id IN (
@@ -991,13 +992,16 @@ func (c *Crypter) disableEncryption(ctx context.Context) error {
 				WHERE group_id = ?
 			)
 		`
-		if err := tx.Exec(q, u.GetGroupID()).Error; err != nil {
+		if err := tx.NewQuery(ctx, "crypter_delete_encryption_key_versions").Raw(
+			q, u.GetGroupID()).Exec().Error; err != nil {
 			return err
 		}
-		if err := tx.Exec(`DELETE FROM "EncryptionKeys" where group_id = ?`, u.GetGroupID()).Error; err != nil {
+		if err := tx.NewQuery(ctx, "crypter_delete_encryption_keys").Raw(
+			`DELETE FROM "EncryptionKeys" where group_id = ?`, u.GetGroupID()).Exec().Error; err != nil {
 			return err
 		}
-		if err := tx.Exec(`UPDATE "Groups" SET cache_encryption_enabled = false WHERE group_id = ?`, u.GetGroupID()).Error; err != nil {
+		if err := tx.NewQuery(ctx, "crypter_disable_group_encryption").Raw(
+			`UPDATE "Groups" SET cache_encryption_enabled = false WHERE group_id = ?`, u.GetGroupID()).Exec().Error; err != nil {
 			return err
 		}
 		return nil

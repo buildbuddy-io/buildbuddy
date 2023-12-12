@@ -15,6 +15,12 @@ import (
 )
 
 const (
+	StructuredCommandLineLabelCanonical string = "canonical"
+	StructuredCommandLineLabelOriginal  string = "original"
+	StructuredCommandLineLabelTool      string = "tool"
+)
+
+const (
 	envVarOptionName = "client_env"
 	envVarSeparator  = "="
 )
@@ -230,6 +236,10 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 }
 
 func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine) {
+	if commandLine.CommandLineLabel != StructuredCommandLineLabelCanonical {
+		return
+	}
+
 	priority := envPriority
 	commandLineOptions := parseCommandLine(commandLine)
 	envVarMap := commandLineOptions.envVarMap

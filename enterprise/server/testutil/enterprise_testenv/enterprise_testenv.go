@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhealthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -41,6 +42,7 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 		}
 		cache := redis_cache.NewCache(redisClient)
 		env.SetCache(cache)
+		byte_stream_client.RegisterPooledBytestreamClient(env)
 	}
 
 	// Use Cloud userdb settings by default.

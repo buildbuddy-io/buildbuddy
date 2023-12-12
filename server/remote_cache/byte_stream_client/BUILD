@@ -8,14 +8,18 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:zip_go_proto",
+        "//server/endpoint_urls/cache_api_url",
         "//server/environment",
         "//server/remote_cache/digest",
+        "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/urlutil",
         "//server/util/ziputil",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_protobuf//proto",
     ],
 )
@@ -32,7 +36,6 @@ go_test(
     embed = [":byte_stream_client"],
     deps = [
         "//proto:zip_go_proto",
-        "//server/environment",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@org_golang_google_protobuf//proto",
     ],

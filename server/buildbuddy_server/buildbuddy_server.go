@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
@@ -37,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -207,7 +207,7 @@ func (s *BuildBuddyServer) GetZipManifest(ctx context.Context, req *zipb.GetZipM
 	if err != nil {
 		return nil, err
 	}
-	man, err := byte_stream_client.FetchBytestreamZipManifest(ctx, s.env, u)
+	man, err := s.env.GetPooledByteStreamClient().FetchBytestreamZipManifest(ctx, u)
 	if err != nil {
 		return nil, err
 	}
@@ -1486,6 +1486,7 @@ func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
 }
 
 func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invocationID string) (*tables.APIKey, error) {
+	// LookupInvocation implicitly checks the logged-in user's access to invocationID.
 	in, err := s.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
 	if err != nil {
 		return nil, err
@@ -1494,6 +1495,7 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	// We can use any API key because LookupInvocation above already confirmed authorization.
 	groupKey, err := authDB.GetAPIKeyForInternalUseOnly(ctx, in.GroupID)
 	if err != nil && !status.IsNotFoundError(err) {
 		return nil, err
@@ -1654,9 +1656,10 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 	}
 
 	if lookup.URL.User == nil {
+		// Note that this implicitly authorizes the logged-in user's access to the invocation.
 		apiKey, _ := s.getAnyAPIKeyForInvocation(ctx, params.Get("invocation_id"))
 		if apiKey != nil {
-			lookup.URL.User = url.User(apiKey.Value)
+			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey.Value)
 		}
 	}
 
@@ -1678,7 +1681,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", entry.GetName()))
 		// TODO(jdhollen): Parse output mime type from bazel-generated MANIFEST file.
 		w.Header().Set("Content-Type", "application/octet-stream")
-		err = byte_stream_client.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, entry, w)
+		err = s.env.GetPooledByteStreamClient().StreamSingleFileFromBytestreamZip(ctx, lookup.URL, entry, w)
 		if err != nil {
 			if status.IsInvalidArgumentError(err) {
 				return http.StatusBadRequest, err
@@ -1692,7 +1695,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	err = byte_stream_client.StreamBytestreamFile(ctx, s.env, lookup.URL, w)
+	err = s.env.GetPooledByteStreamClient().StreamBytestreamFile(ctx, lookup.URL, w)
 
 	if err != nil {
 		if status.IsInvalidArgumentError(err) {

@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/raft/listener",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rangelease",
+        "//enterprise/server/raft/replica",
         "//proto:raft_go_proto",
         "//server/util/log",
         "@com_github_lni_dragonboat_v4//:dragonboat",
