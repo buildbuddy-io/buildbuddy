@@ -59,6 +59,10 @@ func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
 	return rmd
 }
 
+func GetActionID(ctx context.Context) string {
+	return GetRequestMetadata(ctx).GetActionId()
+}
+
 func GetInvocationID(ctx context.Context) string {
 	return GetRequestMetadata(ctx).GetToolInvocationId()
 }
