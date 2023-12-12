@@ -196,6 +196,15 @@ func GRPCShutdownFunc(grpcServer *grpc.Server) func(ctx context.Context) error {
 	}
 }
 
+func propagateActionIDToSpan(ctx context.Context) {
+	actionId := bazel_request.GetActionID(ctx)
+	if actionId == "" {
+		return
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("action_id", actionId))
+}
+
 func propagateInvocationIDToSpan(ctx context.Context) {
 	invocationId := bazel_request.GetInvocationID(ctx)
 	if invocationId == "" {
@@ -205,16 +214,19 @@ func propagateInvocationIDToSpan(ctx context.Context) {
 	span.SetAttributes(attribute.String("invocation_id", invocationId))
 }
 
-func propagateInvocationIDToSpanUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+func propagateRequestMetadataIDsToSpanUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
 		propagateInvocationIDToSpan(ctx)
+		propagateActionIDToSpan(ctx)
 		return handler(ctx, req)
 	}
 }
 
-func propagateInvocationIDToSpanStreamServerInterceptor() grpc.StreamServerInterceptor {
+func propagateRequestMetadataIDsToSpanStreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		propagateInvocationIDToSpan(stream.Context())
+		ctx := stream.Context()
+		propagateInvocationIDToSpan(ctx)
+		propagateActionIDToSpan(ctx)
 		return handler(srv, stream)
 	}
 }
@@ -223,8 +235,8 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 	return []grpc.ServerOption{
 		interceptors.GetUnaryInterceptor(env),
 		interceptors.GetStreamInterceptor(env),
-		grpc.ChainUnaryInterceptor(otelgrpc.UnaryServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())), propagateInvocationIDToSpanUnaryServerInterceptor()),
-		grpc.ChainStreamInterceptor(otelgrpc.StreamServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())), propagateInvocationIDToSpanStreamServerInterceptor()),
+		grpc.ChainUnaryInterceptor(otelgrpc.UnaryServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())), propagateRequestMetadataIDsToSpanUnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(otelgrpc.StreamServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())), propagateRequestMetadataIDsToSpanStreamServerInterceptor()),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.RecvBufferPool(grpc.NewSharedBufferPool()),
