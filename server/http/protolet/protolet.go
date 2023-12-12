@@ -284,6 +284,7 @@ func (w *wrappedResponse) sendErrorIfNeeded(req *http.Request) {
 	}
 	if i == 0 {
 		w.WriteHeader(200)
+		return
 	}
 
 	// Match our current behavior where we return 500 for all errors and return the message in the response body
