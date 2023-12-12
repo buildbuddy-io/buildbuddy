@@ -1,5 +1,5 @@
 def _remote_docker_build_impl(ctx):
-    archive = ctx.actions.declare_file("dockerfile_image.tar.gz")
+    archive = ctx.actions.declare_file("dockerfile_image.tar")
     build_script = ctx.actions.declare_file("docker_build.sh")
     ctx.actions.expand_template(
         template = ctx.file._build_script_template,
@@ -48,11 +48,6 @@ def remote_docker_build(name, recycling_key = "", exec_properties = {}, **kwargs
             "recycle-runner": "true",
             "runner-recycling-key": "remote_docker_build_" + recycling_key,
         } | exec_properties,
-        target_compatible_with = [
-            # We don't depend on cc toolchain, but we use this to differentiate
-            # between local and remote build.
-            "@bazel_tools//tools/cpp:gcc",
-        ],
         tags = ["manual", "docker"],
         **kwargs
     )

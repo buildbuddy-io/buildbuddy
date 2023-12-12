@@ -165,6 +165,6 @@ container_image(
 # already have a docker image specified.
 container_image(
     name = "default_base_image",
-    base = "@default_execution_image//image:dockerfile_image.tar",
+    base = "//dockerfiles/default_execution_image",
     tags = ["manual"],
 )
