@@ -594,8 +594,6 @@ func TestSchedulingDelay_NoPreferredExecutors(t *testing.T) {
 }
 
 func TestSchedulingDelay_DelayTooLarge(t *testing.T) {
-	t.Skip()
-
 	env, ctx := getEnv(t, &schedulerOpts{preferredExecutors: []string{"2"}}, "user1")
 
 	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
@@ -610,8 +608,6 @@ func TestSchedulingDelay_DelayTooLarge(t *testing.T) {
 }
 
 func TestSchedulingDelay_OnePreferredExecutor(t *testing.T) {
-	t.Skip()
-
 	env, ctx := getEnv(t, &schedulerOpts{preferredExecutors: []string{"2"}}, "user1")
 
 	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())

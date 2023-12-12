@@ -107,6 +107,11 @@ const (
 
 	// Platform property value corresponding with the darwin (Mac) operating system.
 	darwinOperatingSystemName = "darwin"
+
+	// Upper bound on the scheduling delay applied for tasks scheduled on
+	// non-preferred execution nodes, to prevent indefinite scheduling delays.
+	maxPermittedSchedulingDelay = 15 * time.Minute
+	defaultSchedulingDelay      = 0 * time.Second
 )
 
 var (
@@ -486,6 +491,11 @@ type executionNode struct {
 	handle *executorHandle
 }
 
+type rankedExecutionNode struct {
+	node      *executionNode
+	preferred bool
+}
+
 func (en *executionNode) CanFit(size *scpb.TaskSize) bool {
 	return int64(float64(en.assignableMemoryBytes)*tasksize.MaxResourceCapacityRatio) >= size.GetEstimatedMemoryBytes() &&
 		int64(float64(en.assignableMilliCpu)*tasksize.MaxResourceCapacityRatio) >= size.GetEstimatedMilliCpu()
@@ -523,14 +533,14 @@ func toNodeInterfaces(nodes []*executionNode) []interfaces.ExecutionNode {
 	return out
 }
 
-func fromNodeInterfaces(nodes []interfaces.RankedExecutionNode) ([]*executionNode, error) {
-	out := make([]*executionNode, 0, len(nodes))
+func fromNodeInterfaces(nodes []interfaces.RankedExecutionNode) ([]*rankedExecutionNode, error) {
+	out := make([]*rankedExecutionNode, 0, len(nodes))
 	for _, node := range nodes {
 		en, ok := node.GetExecutionNode().(*executionNode)
 		if !ok {
 			return nil, status.InternalError("failed to convert executionNode to interface; this should never happen")
 		}
-		out = append(out, en)
+		out = append(out, &rankedExecutionNode{node: en, preferred: node.IsPreferred()})
 	}
 	return out, nil
 }
@@ -1646,6 +1656,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 	probeCount := min(opts.numReplicas, nodeCount)
 	probesSent := 0
+	scheduledOnPreferredNode := false
 
 	startTime := time.Now()
 	var successfulReservations []string
@@ -1664,8 +1675,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	preferredNode := nodeBalancer.FindConnectedExecutorByID(enqueueRequest.GetExecutorId())
 
 	attempts := 0
-	var nodes []*executionNode
+	var rankedNodes []*rankedExecutionNode
 	sampleIndex := 0
+	nonPreferredDelay := getNonPreferredSchedulingDelay(cmd)
+	delaySpecified := enqueueRequest.GetDelay() != nil
 	for probesSent < probeCount {
 		attempts++
 		select {
@@ -1682,38 +1695,47 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		}
 		if sampleIndex == 0 {
 			if preferredNode != nil {
-				nodes = []*executionNode{preferredNode}
+				rankedNodes = []*rankedExecutionNode{&rankedExecutionNode{node: preferredNode, preferred: true}}
 				// Unset the preferred node so that we fall back to random sampling
 				// (in subsequent loop iterations) if the preferred node probe fails.
 				preferredNode = nil
 			} else {
-				nodes = nodeBalancer.GetNodes(opts.scheduleOnConnectedExecutors)
-				if len(nodes) == 0 {
+				candidateNodes := nodeBalancer.GetNodes(opts.scheduleOnConnectedExecutors)
+				if len(candidateNodes) == 0 {
 					return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
 				}
-				nodes = nodesThatFit(nodes, enqueueRequest.GetTaskSize())
-				if len(nodes) == 0 {
+				candidateNodes = nodesThatFit(candidateNodes, enqueueRequest.GetTaskSize())
+				if len(candidateNodes) == 0 {
 					return status.UnavailableErrorf(
 						"No registered executors in pool %q with os %q with arch %q can fit a task with %d milli-cpu and %d bytes of memory.",
 						pool, os, arch,
 						enqueueRequest.GetTaskSize().GetEstimatedMilliCpu(),
 						enqueueRequest.GetTaskSize().GetEstimatedMemoryBytes())
 				}
-				rankedNodes := s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(nodes))
-				nodes, err = fromNodeInterfaces(rankedNodes)
+				rankedNodes, err = fromNodeInterfaces(s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(candidateNodes)))
 				if err != nil {
 					return err
 				}
 			}
 		}
-		if sampleIndex >= len(nodes) {
-			return status.FailedPreconditionErrorf("sampleIndex %d >= %d", sampleIndex, len(nodes))
+		if sampleIndex >= len(rankedNodes) {
+			return status.FailedPreconditionErrorf("sampleIndex %d >= %d", sampleIndex, len(rankedNodes))
 		}
-		node := nodes[sampleIndex]
-		sampleIndex = (sampleIndex + 1) % len(nodes)
+
+		rankedNode := rankedNodes[sampleIndex]
+		node := rankedNode.node
+		sampleIndex = (sampleIndex + 1) % len(rankedNodes)
 		// Set the executor ID in case the node is owned by another scheduler, so
 		// that the scheduler can prefer this node for the probe.
 		enqueueRequest.ExecutorId = node.GetExecutorID()
+		if !delaySpecified {
+			// This function is re-entrant, don't delete caller-set delays.
+			if scheduledOnPreferredNode && !rankedNode.preferred && nonPreferredDelay > 0*time.Second {
+				enqueueRequest.Delay = durationpb.New(nonPreferredDelay)
+			} else {
+				enqueueRequest.Delay = nil
+			}
+		}
 
 		enqueueStart := time.Now()
 		if opts.scheduleOnConnectedExecutors {
@@ -1724,6 +1746,8 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			_, err := node.handle.EnqueueTaskReservation(ctx, enqueueRequest)
 			if err != nil {
 				continue
+			} else if rankedNode.preferred {
+				scheduledOnPreferredNode = true
 			}
 		} else {
 			if node.schedulerHostPort == "" {
@@ -1743,12 +1767,37 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				log.CtxWarningf(ctx, "EnqueueTaskReservation via scheduler target %q failed: %s", node.schedulerHostPort, err)
 				time.Sleep(schedulerEnqueueTaskReservationFailureSleep)
 				continue
+			} else if rankedNode.preferred {
+				scheduledOnPreferredNode = true
 			}
 		}
 		successfulReservations = append(successfulReservations, fmt.Sprintf("%s [%s]", node.String(), time.Since(enqueueStart).String()))
 		probesSent++
 	}
 	return nil
+}
+
+// Returns the delay that should be applied to executions scheduled on
+// non-preferred execution nodes.
+func getNonPreferredSchedulingDelay(cmd *repb.Command) time.Duration {
+	delayProperty := platform.FindValue(cmd.GetPlatform(), platform.RunnerRecyclingMaxWaitPropertyName)
+	if delayProperty == "" {
+		return defaultSchedulingDelay
+	}
+	d, err := time.ParseDuration(delayProperty)
+	if err != nil {
+		log.Warningf("Could not parse platform property %q as duration: %s", platform.RunnerRecyclingMaxWaitPropertyName, err)
+		return defaultSchedulingDelay
+	}
+	if d < 0*time.Second {
+		// It would be a huge performance win if this worked. Unfortunately we
+		// haven't figured out how to implement it yet :-(
+		return defaultSchedulingDelay
+	}
+	if d > maxPermittedSchedulingDelay {
+		return maxPermittedSchedulingDelay
+	}
+	return d
 }
 
 func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
