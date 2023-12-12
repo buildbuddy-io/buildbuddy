@@ -56,6 +56,7 @@ var (
 	ipRulesUIEnabled                       = flag.Bool("app.ip_rules_ui_enabled", false, "If set, show the IP rules tab in settings page.")
 	traceViewerEnabled                     = flag.Bool("app.trace_viewer_enabled", false, "Whether the new trace viewer is enabled.")
 	popupAuthEnabled                       = flag.Bool("app.popup_auth_enabled", false, "Whether popup windows should be used for authentication.")
+	streamingHTTPEnabled                   = flag.Bool("app.streaming_http_enabled", false, "Whether to support server-streaming http requests between server and web UI.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -191,6 +192,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		Regions:                                region.Protos(),
 		TraceViewerEnabled:                     *traceViewerEnabled,
 		PopupAuthEnabled:                       *popupAuthEnabled,
+		StreamingHttpEnabled:                   *streamingHTTPEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

@@ -139,6 +139,9 @@ message FrontendConfig {
 
   // Whether popup windows should be used for authentication.
   bool popup_auth_enabled = 46;
+
+  // Whether the server supports streaming http requests from the web UI.
+  bool streaming_http_enabled = 47;
 }
 
 message Region {
