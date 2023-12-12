@@ -12,7 +12,6 @@ go_library(
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/events",
-        "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/leasekeeper",
         "//enterprise/server/raft/listener",
