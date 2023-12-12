@@ -26,6 +26,8 @@ export type FileEncoding = "gzip" | "zstd" | "";
 
 export type FetchResponseType = "arraybuffer" | "stream" | "text" | "";
 
+export type BytestreamFileOptions = { filename?: string; zip?: string };
+
 class RpcService {
   service: ExtendedBuildBuddyService;
   regionalServices = new Map<string, ExtendedBuildBuddyService>();
@@ -110,6 +112,20 @@ class RpcService {
   ): Promise<FetchPromiseType<T>> {
     return this.fetch(
       this.getBytestreamUrl(bytestreamURL, invocationId),
+      (responseType || "") as FetchResponseType,
+      init
+    ) as Promise<FetchPromiseType<T>>;
+  }
+
+  fetchBytestreamFileWithOptions<T extends FetchResponseType = "text">(
+    bytestreamURL: string,
+    invocationId: string,
+    options: BytestreamFileOptions,
+    responseType?: T,
+    init: RequestInit = {}
+  ): Promise<FetchPromiseType<T>> {
+    return this.fetch(
+      this.getBytestreamUrl(bytestreamURL, invocationId, options),
       (responseType || "") as FetchResponseType,
       init
     ) as Promise<FetchPromiseType<T>>;
