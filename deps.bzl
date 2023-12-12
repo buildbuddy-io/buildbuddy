@@ -4,6 +4,12 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies
 def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
+        name = "cat_dario_mergo",
+        importpath = "dario.cat/mergo",
+        sum = "h1:AGCNq9Evsj31mOgNPcLyXc+4PNABt905YmuqPYYpBWk=",
+        version = "v1.0.0",
+    )
+    go_repository(
         name = "cc_mvdan_gofumpt",
         importpath = "mvdan.cc/gofumpt",
         sum = "h1:avhhrOmv0IuvQVK7fvwV91oFSGAk5/6Po8GXTzICeu8=",
@@ -48,14 +54,26 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_adalogics_go_fuzz_headers",
         importpath = "github.com/AdaLogics/go-fuzz-headers",
-        sum = "h1:EKPd1INOIyr5hWOWhvpmQpY6tKjeG0hT1s3AMC/9fic=",
-        version = "v0.0.0-20230106234847-43070de90fa1",
+        sum = "h1:bvDV9vkmnHYOMsOr4WLk+Vo07yKIzd94sVoIqshQ4bU=",
+        version = "v0.0.0-20230811130428-ced1acdcaa24",
     )
     go_repository(
         name = "com_github_adamkorcz_go_118_fuzz_build",
         importpath = "github.com/AdamKorcz/go-118-fuzz-build",
         sum = "h1:59MxjQVfjXsBpLy+dbd2/ELV5ofnUkUZBvWSC85sheA=",
         version = "v0.0.0-20230306123547-8075edf89bb0",
+    )
+    go_repository(
+        name = "com_github_agext_levenshtein",
+        importpath = "github.com/agext/levenshtein",
+        sum = "h1:YB2fHEn0UJagG8T1rrWknE3ZQzWM06O8AMAatNn7lmo=",
+        version = "v1.2.3",
+    )
+    go_repository(
+        name = "com_github_agnivade_levenshtein",
+        importpath = "github.com/agnivade/levenshtein",
+        sum = "h1:3oJU7J3FGFmyhn8KHjmVaZCN5hxTr7GxgRue+sxIXdQ=",
+        version = "v1.0.1",
     )
     go_repository(
         name = "com_github_ajg_form",
@@ -80,6 +98,24 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/ajstarks/svgo",
         sum = "h1:slYM766cy2nI3BwyRiyQj/Ud48djTMtMebDqepE95rw=",
         version = "v0.0.0-20211024235047-1546f124cd8b",
+    )
+    go_repository(
+        name = "com_github_akavel_rsrc",
+        importpath = "github.com/akavel/rsrc",
+        sum = "h1:Zxm8V5eI1hW4gGaYsJQUhxpjkENuG91ki8B4zCrvEsw=",
+        version = "v0.10.2",
+    )
+    go_repository(
+        name = "com_github_akutz_gosync",
+        importpath = "github.com/akutz/gosync",
+        sum = "h1:naxPT/aDYDh79PMwM3XmencmNQeYmpNFSZy4ZE9zIW0=",
+        version = "v0.1.0",
+    )
+    go_repository(
+        name = "com_github_akutz_memconn",
+        importpath = "github.com/akutz/memconn",
+        sum = "h1:NawI0TORU4hcOMsMr11g7vwlCdkYeLKXBcxWu2W/P8A=",
+        version = "v0.1.0",
     )
     go_repository(
         name = "com_github_alecaivazis_survey_v2",
@@ -234,32 +270,32 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2",
         importpath = "github.com/aws/aws-sdk-go-v2",
-        sum = "h1:+tefE750oAb7ZQGzla6bLkOwfcQCEtC5y2RqoqCeqKo=",
-        version = "v1.18.1",
+        sum = "h1:UoTll1Y5b88x8h53OlsJGgOHwpggdMr7UVnLjMb3XYg=",
+        version = "v1.23.2",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_aws_protocol_eventstream",
         importpath = "github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream",
-        sum = "h1:dK82zF6kkPeCo8J1e+tGx4JdvDIQzj7ygIoLg8WMuGs=",
-        version = "v1.4.10",
+        sum = "h1:ZY3108YtBNq96jNZTICHxN1gSBSbnvIdYwwqnvCV4Mc=",
+        version = "v1.5.1",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_config",
         importpath = "github.com/aws/aws-sdk-go-v2/config",
-        sum = "h1:Az9uLwmssTE6OGTpsFqOnaGpLnKDqNYOJzWuC6UAYzA=",
-        version = "v1.18.27",
+        sum = "h1:CHr7PIzyfevjNiqL9rU6xoqHZKCO2ldY6LmvRDfpRuI=",
+        version = "v1.25.8",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_credentials",
         importpath = "github.com/aws/aws-sdk-go-v2/credentials",
-        sum = "h1:qmU+yhKmOCyujmuPY7tf5MxR/RKyZrOPO3V4DobiTUk=",
-        version = "v1.13.26",
+        sum = "h1:TimIpn1p4v44i0sJMKsnpby1P9sP1ByKLsdm7bvOmwM=",
+        version = "v1.16.6",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_feature_ec2_imds",
         importpath = "github.com/aws/aws-sdk-go-v2/feature/ec2/imds",
-        sum = "h1:LxK/bitrAr4lnh9LnIS6i7zWbCOdMsfzKFBI6LUCS0I=",
-        version = "v1.13.4",
+        sum = "h1:pPs23/JLSOlwnmSRNkdbt3upmBeF6QL/3MHEb6KzTyo=",
+        version = "v1.14.6",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_feature_rds_auth",
@@ -270,86 +306,104 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_feature_s3_manager",
         importpath = "github.com/aws/aws-sdk-go-v2/feature/s3/manager",
-        sum = "h1:4bh28MeeXoBFTjb0JjQ5sVatzlf5xA1DziV8mZed9v4=",
-        version = "v1.11.70",
+        sum = "h1:edTeIcLVO/gefaQ4VdKeFaI4ygdSZ7s/eCWYo0kBxAc=",
+        version = "v1.14.3",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_internal_configsources",
         importpath = "github.com/aws/aws-sdk-go-v2/internal/configsources",
-        sum = "h1:A5UqQEmPaCFpedKouS4v+dHCTUo2sKqhoKO9U5kxyWo=",
-        version = "v1.1.34",
+        sum = "h1:16Z1XuMUv63fcyW5bIUno6AFcX4drsrE0gof+xue6g4=",
+        version = "v1.2.5",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_internal_endpoints_v2",
         importpath = "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2",
-        sum = "h1:srIVS45eQuewqz6fKKu6ZGXaq6FuFg5NzgQBAM6g8Y4=",
-        version = "v2.4.28",
+        sum = "h1:RxpMuBgzP3Dj1n5CZY6droLFcsn5gc7QsrIcaGQoeCs=",
+        version = "v2.5.5",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_internal_ini",
         importpath = "github.com/aws/aws-sdk-go-v2/internal/ini",
-        sum = "h1:LWA+3kDM8ly001vJ1X1waCuLJdtTl48gwkPKWy9sosI=",
-        version = "v1.3.35",
+        sum = "h1:uR9lXYjdPX0xY+NhvaJ4dD8rpSRz5VY81ccIIoNG+lw=",
+        version = "v1.7.1",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_internal_v4a",
         importpath = "github.com/aws/aws-sdk-go-v2/internal/v4a",
-        sum = "h1:wscW+pnn3J1OYnanMnza5ZVYXLX4cKk5rAvUAl4Qu+c=",
-        version = "v1.0.26",
+        sum = "h1:40Q4X5ebZruRtknEZH/bg91sT5pR853F7/1X9QRbI54=",
+        version = "v1.2.4",
+    )
+    go_repository(
+        name = "com_github_aws_aws_sdk_go_v2_service_ecr",
+        importpath = "github.com/aws/aws-sdk-go-v2/service/ecr",
+        sum = "h1:3s6Jg0xx6U/wDVgZy8exuZoGlsL/6tYcItAaXg9vMSA=",
+        version = "v1.18.10",
+    )
+    go_repository(
+        name = "com_github_aws_aws_sdk_go_v2_service_ecrpublic",
+        importpath = "github.com/aws/aws-sdk-go-v2/service/ecrpublic",
+        sum = "h1:iqooVPD/xAM5SCTbrFsBeuiQ2o0D9wdqlHcUBTDxJPA=",
+        version = "v1.16.1",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_service_internal_accept_encoding",
         importpath = "github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding",
-        sum = "h1:y2+VQzC6Zh2ojtV2LoC0MNwHWc6qXv/j2vrQtlftkdA=",
-        version = "v1.9.11",
+        sum = "h1:rpkF4n0CyFcrJUG/rNNohoTmhtWlFTRI4BsZOh9PvLs=",
+        version = "v1.10.1",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_service_internal_checksum",
         importpath = "github.com/aws/aws-sdk-go-v2/service/internal/checksum",
-        sum = "h1:zZSLP3v3riMOP14H7b4XP0uyfREDQOYv2cqIrvTXDNQ=",
-        version = "v1.1.29",
+        sum = "h1:6DRKQc+9cChgzL5gplRGusI5dBGeiEod4m/pmGbcX48=",
+        version = "v1.2.4",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_service_internal_presigned_url",
         importpath = "github.com/aws/aws-sdk-go-v2/service/internal/presigned-url",
-        sum = "h1:bkRyG4a929RCnpVSTvLM2j/T4ls015ZhhYApbmYs15s=",
-        version = "v1.9.28",
+        sum = "h1:F+XafeiK7Uf4YwTZfe/JLt+3cB6je9sI7l0TY4f2CkY=",
+        version = "v1.10.5",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_service_internal_s3shared",
         importpath = "github.com/aws/aws-sdk-go-v2/service/internal/s3shared",
-        sum = "h1:dBL3StFxHtpBzJJ/mNEsjXVgfO+7jR0dAIEwLqMapEA=",
-        version = "v1.14.3",
+        sum = "h1:o3DcfCxGDIT20pTbVKVhp3vWXOj/VvgazNJvumWeYW0=",
+        version = "v1.16.4",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_service_s3",
         importpath = "github.com/aws/aws-sdk-go-v2/service/s3",
-        sum = "h1:ya7fmrN2fE7s1P2gaPbNg5MTkERVWfsH8ToP1YC4Z9o=",
-        version = "v1.35.0",
+        sum = "h1:qm5f24B6bg3BsVdbMd8ODEfKeadBmYlwUi9erqRfv6s=",
+        version = "v1.45.0",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_service_sso",
         importpath = "github.com/aws/aws-sdk-go-v2/service/sso",
-        sum = "h1:nneMBM2p79PGWBQovYO/6Xnc2ryRMw3InnDJq1FHkSY=",
-        version = "v1.12.12",
+        sum = "h1:kuK22ZsITfzaZEkxEl5H/lhy2k3G4clBtcQBI93RbIc=",
+        version = "v1.17.5",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_service_ssooidc",
         importpath = "github.com/aws/aws-sdk-go-v2/service/ssooidc",
-        sum = "h1:2qTR7IFk7/0IN/adSFhYu9Xthr0zVFTgBrmPldILn80=",
-        version = "v1.14.12",
+        sum = "h1:l5d5nrTFMhiUWNoLnV7QNI4m42/3WVSXqSyqVy+elGk=",
+        version = "v1.20.3",
     )
     go_repository(
         name = "com_github_aws_aws_sdk_go_v2_service_sts",
         importpath = "github.com/aws/aws-sdk-go-v2/service/sts",
-        sum = "h1:XFJ2Z6sNUUcAz9poj+245DMkrHE4h2j5I9/xD50RHfE=",
-        version = "v1.19.2",
+        sum = "h1:39dJNBt35p8dFSnQdoy+QbDaPenTxFqqDQFOb1GDYpE=",
+        version = "v1.25.6",
     )
     go_repository(
         name = "com_github_aws_smithy_go",
         importpath = "github.com/aws/smithy-go",
-        sum = "h1:hgz0X/DX0dGqTYpGALqXJoRKRj5oQ7150i5FdTePzO8=",
-        version = "v1.13.5",
+        sum = "h1:wWJD7LX6PBV6etBUwO0zElG0nWN9rUhp0WdYeHSHAaI=",
+        version = "v1.17.0",
+    )
+    go_repository(
+        name = "com_github_awslabs_amazon_ecr_credential_helper_ecr_login",
+        importpath = "github.com/awslabs/amazon-ecr-credential-helper/ecr-login",
+        sum = "h1:rW+dV12c0WD3+O4Zs8Qt4+oqnr8ecXeyg8g3yB73ZKA=",
+        version = "v0.0.0-20230522190001-adf1bafd791a",
     )
     go_repository(
         name = "com_github_awslabs_soci_snapshotter",
@@ -381,8 +435,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_azure_azure_sdk_for_go",
         importpath = "github.com/Azure/azure-sdk-for-go",
-        sum = "h1:KnPIugL51v3N3WwvaSmZbxukD1WuWXOiE9fRdu32f2I=",
-        version = "v16.2.1+incompatible",
+        sum = "h1:k7MKrYcGwX5qh+fC9xVhcEuaZajFfbDYMEgo8oemTLo=",
+        version = "v61.3.0+incompatible",
     )
     go_repository(
         name = "com_github_azure_azure_sdk_for_go_sdk_azcore",
@@ -401,6 +455,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/Azure/azure-sdk-for-go/sdk/internal",
         sum = "h1:sXr+ck84g/ZlZUOZiNELInmMgOsuGwdjjVkEIde0OtY=",
         version = "v1.3.0",
+    )
+    go_repository(
+        name = "com_github_azure_azure_sdk_for_go_sdk_storage_azblob",
+        importpath = "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob",
+        sum = "h1:QSdcrd/UFJv6Bp/CfoVf2SrENpFn9P6Yh8yb+xNhYMM=",
+        version = "v0.4.1",
     )
     go_repository(
         name = "com_github_azure_azure_storage_blob_go",
@@ -423,14 +483,26 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_azure_go_autorest_autorest",
         importpath = "github.com/Azure/go-autorest/autorest",
-        sum = "h1:90Y4srNYrwOtAgVo3ndrQkTYn6kf1Eg/AjTFJ8Is2aM=",
-        version = "v0.11.18",
+        sum = "h1:ndAExarwr5Y+GaHE6VCaY1kyS/HwwGGyuimVhWsHOEM=",
+        version = "v0.11.28",
     )
     go_repository(
         name = "com_github_azure_go_autorest_autorest_adal",
         importpath = "github.com/Azure/go-autorest/autorest/adal",
-        sum = "h1:Mp5hbtOePIzM8pJVRa3YLrWWmZtoxRXqUEzCfJt3+/Q=",
-        version = "v0.9.13",
+        sum = "h1:jjQnVFXPfekaqb8vIsv2G1lxshoW+oGv4MDlhRtnYZk=",
+        version = "v0.9.21",
+    )
+    go_repository(
+        name = "com_github_azure_go_autorest_autorest_azure_auth",
+        importpath = "github.com/Azure/go-autorest/autorest/azure/auth",
+        sum = "h1:P6bYXFoao05z5uhOQzbC3Qd8JqF3jUoocoTeIxkp2cA=",
+        version = "v0.5.11",
+    )
+    go_repository(
+        name = "com_github_azure_go_autorest_autorest_azure_cli",
+        importpath = "github.com/Azure/go-autorest/autorest/azure/cli",
+        sum = "h1:0W/yGmFdTIT77fvdlGZ0LMISoLHFJ7Tx4U0yeB+uFs4=",
+        version = "v0.4.5",
     )
     go_repository(
         name = "com_github_azure_go_autorest_autorest_date",
@@ -441,8 +513,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_azure_go_autorest_autorest_mocks",
         importpath = "github.com/Azure/go-autorest/autorest/mocks",
-        sum = "h1:K0laFcLE6VLTOwNgSxaGbUcLPuGXlNkbVvq4cW4nIHk=",
-        version = "v0.4.1",
+        sum = "h1:PGN4EDXnuQbojHbU0UWoNvmu9AGVwYHG9/fkDYhtAfw=",
+        version = "v0.4.2",
     )
     go_repository(
         name = "com_github_azure_go_autorest_logger",
@@ -789,6 +861,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v5.3.0",
     )
     go_repository(
+        name = "com_github_chrismellard_docker_credential_acr_env",
+        importpath = "github.com/chrismellard/docker-credential-acr-env",
+        sum = "h1:krfRl01rzPzxSxyLyrChD+U+MzsBXbm0OwYYB67uF+4=",
+        version = "v0.0.0-20230304212654-82a0ddb27589",
+    )
+    go_repository(
         name = "com_github_chzyer_logex",
         importpath = "github.com/chzyer/logex",
         sum = "h1:XHDu3E6q+gdHgsdTPH6ImJMIp436vR6MPtH8gP05QzM=",
@@ -847,6 +925,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/client9/misspell",
         sum = "h1:ta993UF76GwbvJcIo3Y68y/M3WxlpEHPWIGDkJYwzJI=",
         version = "v0.3.4",
+    )
+    go_repository(
+        name = "com_github_cloudflare_cfssl",
+        importpath = "github.com/cloudflare/cfssl",
+        sum = "h1:PqZ3bA4yzwywivzk7PBQWngJp2/PAS0bWRZerKteicY=",
+        version = "v0.0.0-20180323000720-5d63dbd981b5",
     )
     go_repository(
         name = "com_github_cloudflare_circl",
@@ -948,6 +1032,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.5.4",
     )
     go_repository(
+        name = "com_github_container_storage_interface_spec",
+        importpath = "github.com/container-storage-interface/spec",
+        sum = "h1:bD9KIVgaVKKkQ/UbVUY9kCaH/CJbhNxe0eeB4JeJV2s=",
+        version = "v1.2.0",
+    )
+    go_repository(
         name = "com_github_containerd_aufs",
         importpath = "github.com/containerd/aufs",
         sum = "h1:2oeJiwX5HstO7shSrPZjrohJZLzK36wvpdmzDRkL/LY=",
@@ -967,6 +1057,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_containerd_cgroups",
+        build_file_proto_mode = "disable_global",
         importpath = "github.com/containerd/cgroups",
         sum = "h1:v8rEWFl6EoqHB+swVNjVoCJE8o3jX7e8nqBGPLaDFBM=",
         version = "v1.1.0",
@@ -974,8 +1065,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_containerd_cgroups_v3",
         importpath = "github.com/containerd/cgroups/v3",
-        sum = "h1:4hfGvu8rfGIwVIDd+nLzn/B9ZXx4BcCjzt5ToenJRaE=",
-        version = "v3.0.1",
+        sum = "h1:f5WFqIVSgo5IZmtTT3qVBo6TzI1ON6sycSBKkymb9L0=",
+        version = "v3.0.2",
     )
     go_repository(
         name = "com_github_containerd_console",
@@ -987,20 +1078,26 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_containerd_containerd",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/containerd/containerd",
-        sum = "h1:UF2gdONnxO8I6byZXDi5sXWiWvlW3D/sci7dTQimEJo=",
-        version = "v1.7.2",
+        sum = "h1:KOhK01szQbM80YfW1H6RZKh85PHGqY/9OcEZ35Je8sc=",
+        version = "v1.7.9",
     )
     go_repository(
         name = "com_github_containerd_continuity",
         importpath = "github.com/containerd/continuity",
-        sum = "h1:wQnVrjIyQ8vhU2sgOiL5T07jo+ouqc2bnKsv5/EqGhU=",
-        version = "v0.4.1",
+        sum = "h1:v3y/4Yz5jwnvqPKJJ+7Wf93fyWoCB3F5EclWG023MDM=",
+        version = "v0.4.2",
     )
     go_repository(
         name = "com_github_containerd_fifo",
         importpath = "github.com/containerd/fifo",
         sum = "h1:4I2mbh5stb1u6ycIABlBw9zgtlK8viPI9QkQNRQEEmY=",
         version = "v1.1.0",
+    )
+    go_repository(
+        name = "com_github_containerd_fuse_overlayfs_snapshotter",
+        importpath = "github.com/containerd/fuse-overlayfs-snapshotter",
+        sum = "h1:Xy9Tkx0tk/SsMfLDFc69wzqSrxQHYEFELHBO/Z8XO3M=",
+        version = "v1.0.2",
     )
     go_repository(
         name = "com_github_containerd_go_cni",
@@ -1021,10 +1118,28 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.1.7",
     )
     go_repository(
+        name = "com_github_containerd_log",
+        importpath = "github.com/containerd/log",
+        sum = "h1:TCJt7ioM2cr/tfR8GPbGf9/VRAX8D2B4PjzCpfX540I=",
+        version = "v0.1.0",
+    )
+    go_repository(
         name = "com_github_containerd_nri",
         importpath = "github.com/containerd/nri",
-        sum = "h1:2ZM4WImye1ypSnE7COjOvPAiLv84kaPILBDvb1tbDK8=",
-        version = "v0.3.0",
+        sum = "h1:PjgIBm0RtUiFyEO6JqPBQZRQicbsIz41Fz/5VSC0zgw=",
+        version = "v0.4.0",
+    )
+    go_repository(
+        name = "com_github_containerd_nydus_snapshotter",
+        importpath = "github.com/containerd/nydus-snapshotter",
+        sum = "h1:b8WahTrPkt3XsabjG2o/leN4fw3HWZYr+qxo/Z8Mfzk=",
+        version = "v0.3.1",
+    )
+    go_repository(
+        name = "com_github_containerd_stargz_snapshotter",
+        importpath = "github.com/containerd/stargz-snapshotter",
+        sum = "h1:3zr1/IkW1aEo6cMYTQeZ4L2jSuCN+F4kgGfjnuowe4U=",
+        version = "v0.13.0",
     )
     go_repository(
         name = "com_github_containerd_stargz_snapshotter_estargz",
@@ -1053,8 +1168,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_containerd_zfs",
         importpath = "github.com/containerd/zfs",
-        sum = "h1:cXLJbx+4Jj7rNsTiqVfm6i+RNLx6FFA2fMmDlEf+Wm8=",
-        version = "v1.0.0",
+        sum = "h1:n7OZ7jZumLIqNJqXrEc/paBM840mORnmGdJDmAmJZHM=",
+        version = "v1.1.0",
     )
     go_repository(
         name = "com_github_containernetworking_cni",
@@ -1161,8 +1276,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_cyphar_filepath_securejoin",
         importpath = "github.com/cyphar/filepath-securejoin",
-        sum = "h1:YX6ebbZCZP7VkM3scTTokDgBL2TY741X51MTk3ycuNI=",
-        version = "v0.2.3",
+        sum = "h1:Ugdm7cg7i6ZK6x3xDF1oEu1nfkyfH53EtKeQYTC3kyg=",
+        version = "v0.2.4",
     )
     go_repository(
         name = "com_github_d2g_dhcp4",
@@ -1279,6 +1394,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20181026042036-e10d5fee7954",
     )
     go_repository(
+        name = "com_github_dimchansky_utfbom",
+        importpath = "github.com/dimchansky/utfbom",
+        sum = "h1:vV6w1AhK4VMnhBno/TPVCoK9U/LP0PkLCS9tbxHdi/U=",
+        version = "v1.1.1",
+    )
+    go_repository(
         name = "com_github_djarvur_go_err113",
         importpath = "github.com/Djarvur/go-err113",
         sum = "h1:sHglBQTwgx+rWPdisA5ynNEsoARbiCBOyGcJM4/OzsM=",
@@ -1324,10 +1445,11 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_docker_docker",
         importpath = "github.com/docker/docker",
         # TODO(sluongng): remove this patch once https://github.com/moby/moby/issues/45935 is fixed.
+        build_file_proto_mode = "disable",
         patch_args = ["-p1"],
         patches = ["@{}//buildpatches:docker-host.patch".format(workspace_name)],
-        sum = "h1:eATx+oLz9WdNVkQrr0qjQ8HvRJ4bOOxfzEo8R+dA3cg=",
-        version = "v24.0.2+incompatible",
+        sum = "h1:DaxtlTJjFSnLOXVNUBU1+6kXGz2lpDoEAH6QoxaSg8k=",
+        version = "v23.0.5+incompatible",
     )
     go_repository(
         name = "com_github_docker_docker_credential_helpers",
@@ -1358,6 +1480,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/docker/go-units",
         sum = "h1:69rxXcBk27SvSaaxTtLh/8llcHD8vYHT7WSdRZ/jvr4=",
         version = "v0.5.0",
+    )
+    go_repository(
+        name = "com_github_docker_libkv",
+        importpath = "github.com/docker/libkv",
+        sum = "h1:q6MhOaE4xsrl6cAiFYrazobNFSQN6ckhD6Et9zYbcrU=",
+        version = "v0.2.2-0.20211217103745-e480589147e3",
     )
     go_repository(
         name = "com_github_docker_libtrust",
@@ -1410,8 +1538,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_elazarl_goproxy",
         importpath = "github.com/elazarl/goproxy",
-        sum = "h1:RIB4cRk+lBqKK3Oy0r2gRX4ui7tuhiZq2SuTtTCi0/0=",
-        version = "v0.0.0-20221015165544-a0805db90819",
+        sum = "h1:mATvB/9r/3gvcejNsXKSkQ6lcIaNec2nyfOdlTBR2lU=",
+        version = "v0.0.0-20230808193330-2592e75ae04a",
     )
     go_repository(
         name = "com_github_emicklei_go_restful",
@@ -1442,6 +1570,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/envoyproxy/protoc-gen-validate",
         sum = "h1:QkIBuU5k+x7/QXPvPPnWXWlCdaBFApVqftFV6k087DA=",
         version = "v1.0.2",
+    )
+    go_repository(
+        name = "com_github_epirat_docker_credential_gitlabci",
+        importpath = "github.com/ePirat/docker-credential-gitlabci",
+        sum = "h1:YRkUSvkON6rT88vtscClAmPEYWhtltGEAuRVYtz1/+Y=",
+        version = "v1.0.0",
     )
     go_repository(
         name = "com_github_esimonov_ifshort",
@@ -1498,6 +1632,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.0.4",
     )
     go_repository(
+        name = "com_github_fernet_fernet_go",
+        importpath = "github.com/fernet/fernet-go",
+        sum = "h1:v6Eju/FhxsACGNipFEPBZZAzGr1F/jlRQr1qiBw2nEE=",
+        version = "v0.0.0-20211208181803-9f70042a33ee",
+    )
+    go_repository(
         name = "com_github_firecracker_microvm_firecracker_go_sdk",
         importpath = "github.com/firecracker-microvm/firecracker-go-sdk",
         patch_args = ["-p1"],
@@ -1551,6 +1691,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/fullsailor/pkcs7",
         sum = "h1:RDBNVkRviHZtvDvId8XSGPu3rmpmSe+wKRcEWNgsfWU=",
         version = "v0.0.0-20190404230743-d7302db945fa",
+    )
+    go_repository(
+        name = "com_github_fxamacker_cbor_v2",
+        importpath = "github.com/fxamacker/cbor/v2",
+        sum = "h1:ri0ArlOR+5XunOP8CRUowT0pSJOwhW098ZCUyskZD88=",
+        version = "v2.4.0",
     )
     go_repository(
         name = "com_github_fzipp_gocyclo",
@@ -1687,20 +1833,20 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_git_go_billy_v5",
         importpath = "github.com/go-git/go-billy/v5",
-        sum = "h1:Uwp5tDRkPr+l/TnbHOQzp+tmJfLceOlbVucgpTz8ix4=",
-        version = "v5.4.1",
+        sum = "h1:yEY4yhzCDuMGSv83oGxiBotRzhwhNr8VZyphhiu+mTU=",
+        version = "v5.5.0",
     )
     go_repository(
         name = "com_github_go_git_go_git_fixtures_v4",
         importpath = "github.com/go-git/go-git-fixtures/v4",
-        sum = "h1:Pz0DHeFij3XFhoBRGUDPzSJ+w2UcK5/0JvF8DRI58r8=",
-        version = "v4.3.2-0.20230305113008-0c11038e723f",
+        sum = "h1:eMje31YglSBqCdIqdhKBW8lokaMrL3uTkpGYlE2OOT4=",
+        version = "v4.3.2-0.20231010084843-55a94097c399",
     )
     go_repository(
         name = "com_github_go_git_go_git_v5",
         importpath = "github.com/go-git/go-git/v5",
-        sum = "h1:t9AudWVLmqzlo+4bqdf7GY+46SUuRsx59SboFxkq2aE=",
-        version = "v5.7.0",
+        sum = "h1:F0x3xXrAWmhwtzoCokU4IMPcBdncG+HAAqi9FcOOjbQ=",
+        version = "v5.10.0",
     )
     go_repository(
         name = "com_github_go_gl_glfw",
@@ -2243,6 +2389,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.1.2",
     )
     go_repository(
+        name = "com_github_google_certificate_transparency_go",
+        importpath = "github.com/google/certificate-transparency-go",
+        sum = "h1:hCyXHDbtqlr/lMXU0D4WgbalXL0Zk4dSWWMbPV8VrqY=",
+        version = "v1.1.4",
+    )
+    go_repository(
         name = "com_github_google_flatbuffers",
         importpath = "github.com/google/flatbuffers",
         sum = "h1:mTPHyMn3/qO7lvBcm5S9p0olWUQgtQhBf2QWiz1U3qA=",
@@ -2265,6 +2417,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/google/go-containerregistry",
         sum = "h1:MMkSh+tjSdnmJZO7ljvEqV1DjfekB6VUEAZgy3a+TQE=",
         version = "v0.15.2",
+    )
+    go_repository(
+        name = "com_github_google_go_github",
+        importpath = "github.com/google/go-github",
+        sum = "h1:N0LgJ1j65A7kfXrZnUDaYCs/Sf4rEjNlfyDHW9dolSY=",
+        version = "v17.0.0+incompatible",
     )
     go_repository(
         name = "com_github_google_go_github_v27",
@@ -2339,6 +2497,18 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20191202100458-e7afc7fbc510",
     )
     go_repository(
+        name = "com_github_google_slowjam",
+        importpath = "github.com/google/slowjam",
+        sum = "h1:mENjYWhA6/p7P4vRwfMA5mfLEjOk48fKScuzryYnFA0=",
+        version = "v1.1.0",
+    )
+    go_repository(
+        name = "com_github_google_subcommands",
+        importpath = "github.com/google/subcommands",
+        sum = "h1:vWQspBTo2nEqTUFita5/KeEWlUL8kQObDFbub/EN9oE=",
+        version = "v1.2.0",
+    )
+    go_repository(
         name = "com_github_google_tink_go",
         importpath = "github.com/google/tink/go",
         sum = "h1:6Eox8zONGebBFcCBqkVmt60LaWZa6xg1cl/DwAh/J1w=",
@@ -2391,10 +2561,22 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.33.8",
     )
     go_repository(
+        name = "com_github_googlecloudplatform_docker_credential_gcr",
+        importpath = "github.com/GoogleCloudPlatform/docker-credential-gcr",
+        sum = "h1:cauzkEqKnOXwl0L5futNq6BbWWtIRPfJtwDDulac6A8=",
+        version = "v1.5.1-0.20230328182921-62afb2723512",
+    )
+    go_repository(
         name = "com_github_googlecloudplatform_opentelemetry_operations_go_detectors_gcp",
         importpath = "github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp",
         sum = "h1:aNyyrkRcLMWFum5qgYbXl6Ut+MMOmfH/kLjZJ5YJP/I=",
         version = "v1.21.0",
+    )
+    go_repository(
+        name = "com_github_googlecontainertools_kaniko",
+        importpath = "github.com/GoogleContainerTools/kaniko",
+        sum = "h1:SVx+j5Z6XMppGNRYsd6a2qJ6tXf1VkArBUW+/2Zomuo=",
+        version = "v1.19.0",
     )
     go_repository(
         name = "com_github_gopherjs_gopherjs",
@@ -2423,8 +2605,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_gorilla_mux",
         importpath = "github.com/gorilla/mux",
-        sum = "h1:gnP5JzjVOuiZD07fKKToCAOjS0yOpj/qPETTXCCS6hw=",
-        version = "v1.7.3",
+        sum = "h1:i40aqfkR1h2SlN9hojwV5ZA91wcXFOvkdNIeFDP5koI=",
+        version = "v1.8.0",
     )
     go_repository(
         name = "com_github_gorilla_securecookie",
@@ -2501,8 +2683,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_grpc_ecosystem_grpc_gateway_v2",
         importpath = "github.com/grpc-ecosystem/grpc-gateway/v2",
-        sum = "h1:lLT7ZLSzGLI08vc9cpd+tYmNWjdKDqyr/2L+f6U12Fk=",
-        version = "v2.11.3",
+        sum = "h1:YBftPWNWd4WwGqtY2yeZL2ef8rHAxPBD8KFhJpmcqms=",
+        version = "v2.16.0",
     )
     go_repository(
         name = "com_github_hanwen_go_fuse_v2",
@@ -2548,6 +2730,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/hashicorp/go-immutable-radix",
         sum = "h1:DKHmCUm2hRBK510BaiZlwvpD40f8bJFeZnpfm2KLowc=",
         version = "v1.3.1",
+    )
+    go_repository(
+        name = "com_github_hashicorp_go_memdb",
+        importpath = "github.com/hashicorp/go-memdb",
+        sum = "h1:RBKHOsnSszpU6vxq80LzC2BaQjuuvoyaQbkLTf7V7g8=",
+        version = "v1.3.2",
     )
     go_repository(
         name = "com_github_hashicorp_go_msgpack",
@@ -2736,10 +2924,22 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.1.0",
     )
     go_repository(
+        name = "com_github_in_toto_in_toto_golang",
+        importpath = "github.com/in-toto/in-toto-golang",
+        sum = "h1:hb8bgwr0M2hGdDsLjkJ3ZqJ8JFLL/tgYdAxF/XEFBbY=",
+        version = "v0.5.0",
+    )
+    go_repository(
         name = "com_github_inconshreveable_mousetrap",
         importpath = "github.com/inconshreveable/mousetrap",
         sum = "h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=",
         version = "v1.1.0",
+    )
+    go_repository(
+        name = "com_github_insomniacslk_dhcp",
+        importpath = "github.com/insomniacslk/dhcp",
+        sum = "h1:efcJu2Vzz6DoSq245deWNzTz6l/gsqdphm3FjmI88/g=",
+        version = "v0.0.0-20220119180841-3c283ff8b7dd",
     )
     go_repository(
         name = "com_github_intel_goresctrl",
@@ -2770,6 +2970,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/iris-contrib/schema",
         sum = "h1:CPSBLyx2e91H2yJzPuhGuifVRnZBBJ3pCOMbOvPZaTw=",
         version = "v0.0.6",
+    )
+    go_repository(
+        name = "com_github_ishidawataru_sctp",
+        importpath = "github.com/ishidawataru/sctp",
+        sum = "h1:G1+wBT0dwjIrBdLy0MIG0i+E4CQxEnedHXdauJEIH6g=",
+        version = "v0.0.0-20210707070123-9a39160e9062",
     )
     go_repository(
         name = "com_github_j_keck_arping",
@@ -3034,6 +3240,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.4.0",
     )
     go_repository(
+        name = "com_github_josephspurrier_goversioninfo",
+        importpath = "github.com/josephspurrier/goversioninfo",
+        sum = "h1:Puhl12NSHUSALHSuzYwPYQkqa2E1+7SrtAPJorKK0C8=",
+        version = "v1.4.0",
+    )
+    go_repository(
         name = "com_github_josharian_intern",
         importpath = "github.com/josharian/intern",
         sum = "h1:vlS4z54oSdjm0bgjRigI+G1HpF+tI+9rE5LLzOg8HmY=",
@@ -3127,8 +3339,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_karrick_godirwalk",
         importpath = "github.com/karrick/godirwalk",
-        sum = "h1:lOpSw2vJP0y5eLBW906QwKsUK/fe/QDyoqM5rnnuPDY=",
-        version = "v1.10.3",
+        sum = "h1:DynhcF+bztK8gooS0+NDJFrdNZjJ3gzVzC545UNA9iw=",
+        version = "v1.16.1",
     )
     go_repository(
         name = "com_github_kataras_blocks",
@@ -3468,6 +3680,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.1.0",
     )
     go_repository(
+        name = "com_github_maruel_panicparse",
+        importpath = "github.com/maruel/panicparse",
+        sum = "h1:tZuGQTlbOY5jCprrWMJTikREqKPn+UAKdR4CHSpj834=",
+        version = "v1.6.2",
+    )
+    go_repository(
         name = "com_github_masterminds_goutils",
         importpath = "github.com/Masterminds/goutils",
         sum = "h1:5nUrii3FMTL5diU80unEVvNevw1nH4+ZV4DSLVJLSYI=",
@@ -3646,8 +3864,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_microsoft_hcsshim",
         importpath = "github.com/Microsoft/hcsshim",
-        sum = "h1:YSZVvlIIDD1UxQpJp0h+dnpLUw+TrY0cx8obKsp3bek=",
-        version = "v0.10.0-rc.8",
+        sum = "h1:68vKo2VN8DE9AdN4tnkWnmdhqdbpUFM8OF3Airm7fz8=",
+        version = "v0.11.4",
     )
     go_repository(
         name = "com_github_microsoft_hcsshim_test",
@@ -3680,6 +3898,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20190812172519-36a3d3bbc4f3",
     )
     go_repository(
+        name = "com_github_minio_highwayhash",
+        importpath = "github.com/minio/highwayhash",
+        sum = "h1:Aak5U0nElisjDCfPSG79Tgzkn2gl66NxOMspRrKnA/g=",
+        version = "v1.0.2",
+    )
+    go_repository(
         name = "com_github_minio_sha256_simd",
         importpath = "github.com/minio/sha256-simd",
         sum = "h1:v1ta+49hkWZyvaKwrQB8elexRqm6Y0aMLjCNsrYxo6g=",
@@ -3690,6 +3914,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/mistifyio/go-zfs",
         sum = "h1:aKW/4cBs+yK6gpqU3K/oIwk9Q/XICqd3zOX/UFuvqmk=",
         version = "v2.1.2-0.20190413222219-f784269be439+incompatible",
+    )
+    go_repository(
+        name = "com_github_mistifyio_go_zfs_v3",
+        importpath = "github.com/mistifyio/go-zfs/v3",
+        sum = "h1:YaoXgBePoMA12+S1u/ddkv+QqxcfiZK4prI6HPnkFiU=",
+        version = "v3.0.1",
     )
     go_repository(
         name = "com_github_mitchellh_cli",
@@ -3734,6 +3964,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.4.0",
     )
     go_repository(
+        name = "com_github_mitchellh_hashstructure_v2",
+        importpath = "github.com/mitchellh/hashstructure/v2",
+        sum = "h1:vGKWl0YJqUNxE8d+h8f6NJLcCJrgbhC4NcD46KavDd4=",
+        version = "v2.0.2",
+    )
+    go_repository(
         name = "com_github_mitchellh_iochan",
         importpath = "github.com/mitchellh/iochan",
         sum = "h1:C+X3KsSTLFVBr/tK1eYN/vs4rJcvsiLU338UhYPJWeY=",
@@ -3770,16 +4006,35 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.5.0",
     )
     go_repository(
+        name = "com_github_moby_buildkit",
+        importpath = "github.com/moby/buildkit",
+        sum = "h1:VYNdoKk5TVxN7k4RvZgdeM4GOyRvIi4Z8MXOY7xvyUs=",
+        version = "v0.11.6",
+    )
+    go_repository(
         name = "com_github_moby_locker",
         importpath = "github.com/moby/locker",
         sum = "h1:fOXqR41zeveg4fFODix+1Ch4mj/gT0NE1XJbp/epuBg=",
         version = "v1.0.1",
     )
     go_repository(
+        name = "com_github_moby_patternmatcher",
+        importpath = "github.com/moby/patternmatcher",
+        sum = "h1:YCZgJOeULcxLw1Q+sVR636pmS7sPEn1Qo2iAN6M7DBo=",
+        version = "v0.5.0",
+    )
+    go_repository(
         name = "com_github_moby_spdystream",
         importpath = "github.com/moby/spdystream",
         sum = "h1:cjW1zVyyoiM0T7b6UoySUFqzXMoqRckQtXwGPiBhOM8=",
         version = "v0.2.0",
+    )
+    go_repository(
+        name = "com_github_moby_swarmkit_v2",
+        build_file_proto_mode = "disable_global",
+        importpath = "github.com/moby/swarmkit/v2",
+        sum = "h1:jUbNDiRMDXd2rYoa4bcI+g3nIb4A1R8HNCe9wdCdh8I=",
+        version = "v2.0.0-20230315203717-e28e8ba9bc83",
     )
     go_repository(
         name = "com_github_moby_sys_mount",
@@ -3816,6 +4071,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/moby/term",
         sum = "h1:HfkjXDfhgVaN5rmueG8cL8KKeFNecRCXFhaJ2qZ5SKA=",
         version = "v0.0.0-20221205130635-1aeaba878587",
+    )
+    go_repository(
+        name = "com_github_moby_vpnkit",
+        importpath = "github.com/moby/vpnkit",
+        sum = "h1:VcDpS9y+PmT9itf+mH5Qdh9GME7ungLMt9yjf9o4REY=",
+        version = "v0.5.0",
     )
     go_repository(
         name = "com_github_modern_go_concurrent",
@@ -4000,8 +4261,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_oneofone_xxhash",
         importpath = "github.com/OneOfOne/xxhash",
-        sum = "h1:KMrpdQIwFcEqXDklaen+P1axHaj9BSKzvpUUfnHldSE=",
-        version = "v1.2.2",
+        sum = "h1:31czK/TI9sNkxIKfaUfGlU47BAxQ0ztGgd9vPyqimf8=",
+        version = "v1.2.8",
     )
     go_repository(
         name = "com_github_onsi_ginkgo",
@@ -4018,8 +4279,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_onsi_gomega",
         importpath = "github.com/onsi/gomega",
-        sum = "h1:ENqfyGeS5AX/rlXDd/ETokDz93u0YufY1Pgxuy/PvWE=",
-        version = "v1.27.6",
+        sum = "h1:naR28SdDFlqrG6kScpT8VWpu1xWY5nJRCF3XaYyBjhI=",
+        version = "v1.27.10",
+    )
+    go_repository(
+        name = "com_github_open_policy_agent_opa",
+        importpath = "github.com/open-policy-agent/opa",
+        sum = "h1:qocVAKyjrqMjCqsU02S/gHyLr4AQQ9xMtuV1kKnnyhM=",
+        version = "v0.42.2",
     )
     go_repository(
         name = "com_github_opencontainers_go_digest",
@@ -4070,6 +4337,24 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.2.0",
     )
     go_repository(
+        name = "com_github_otiai10_copy",
+        importpath = "github.com/otiai10/copy",
+        sum = "h1:dCI/t1iTdYGtkvCuBG2BgR6KZa83PTclw4U5n2wAllU=",
+        version = "v1.14.0",
+    )
+    go_repository(
+        name = "com_github_otiai10_mint",
+        importpath = "github.com/otiai10/mint",
+        sum = "h1:XaPLeE+9vGbuyEHem1JNk3bYc7KKqyI/na0/mLd/Kks=",
+        version = "v1.5.1",
+    )
+    go_repository(
+        name = "com_github_package_url_packageurl_go",
+        importpath = "github.com/package-url/packageurl-go",
+        sum = "h1:DiLBVp4DAcZlBVBEtJpNWZpZVq0AEeCY7Hqk8URVs4o=",
+        version = "v0.1.1-0.20220428063043-89078438f170",
+    )
+    go_repository(
         name = "com_github_pascaldekloe_goe",
         importpath = "github.com/pascaldekloe/goe",
         sum = "h1:cBOtyMzM9HTpWjXfbbunk26uA6nG3a8n06Wieeh0MwY=",
@@ -4116,6 +4401,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/phayes/checkstyle",
         sum = "h1:CdDQnGF8Nq9ocOS/xlSptM1N3BbrA6/kmaep5ggwaIA=",
         version = "v0.0.0-20170904204023-bfd46e6a821d",
+    )
+    go_repository(
+        name = "com_github_phayes_permbits",
+        importpath = "github.com/phayes/permbits",
+        sum = "h1:P6U24L02WMfj9ymZTxl7CxS73JC99x3ukk+DBkgQGQs=",
+        version = "v0.0.0-20190612203442-39d7c581d2ee",
     )
     go_repository(
         name = "com_github_phpdave11_gofpdf",
@@ -4170,6 +4461,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/pkg/errors",
         sum = "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=",
         version = "v0.9.1",
+    )
+    go_repository(
+        name = "com_github_pkg_profile",
+        importpath = "github.com/pkg/profile",
+        sum = "h1:042Buzk+NhDI+DeSAA62RwJL8VAuZUMQZUjCsRz1Mug=",
+        version = "v1.5.0",
     )
     go_repository(
         name = "com_github_pkg_sftp",
@@ -4248,8 +4545,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_protonmail_go_crypto",
         importpath = "github.com/ProtonMail/go-crypto",
-        sum = "h1:vV3RryLxt42+ZIVOFbYJCH1jsZNTNmj2NYru5zfx+4E=",
-        version = "v0.0.0-20230626094100-7e9e0395ebec",
+        sum = "h1:kkhsdkhsCvIsutKu5zLMgWtgh9YxGCNAw8Ad8hjwfYg=",
+        version = "v0.0.0-20230828082145-3c4c8a2d2371",
     )
     go_repository(
         name = "com_github_puerkitobio_purell",
@@ -4300,10 +4597,22 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.3",
     )
     go_repository(
+        name = "com_github_rcrowley_go_metrics",
+        importpath = "github.com/rcrowley/go-metrics",
+        sum = "h1:MkV+77GLUNo5oJ0jf870itWm3D0Sjh7+Za9gazKc5LQ=",
+        version = "v0.0.0-20200313005456-10cdbea86bc0",
+    )
+    go_repository(
         name = "com_github_remyoudompheng_bigfft",
         importpath = "github.com/remyoudompheng/bigfft",
         sum = "h1:OdAsTTz6OkFY5QxjkYwrChwuRruF69c169dPK26NUlk=",
         version = "v0.0.0-20200410134404-eec4a21b6bb0",
+    )
+    go_repository(
+        name = "com_github_rexray_gocsi",
+        importpath = "github.com/rexray/gocsi",
+        sum = "h1:h9F/eSizORihN+XT+mxhq7ClZ3cYo1L9RvasN6dKz8U=",
+        version = "v1.2.2",
     )
     go_repository(
         name = "com_github_rivo_uniseg",
@@ -4320,8 +4629,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_rogpeppe_go_internal",
         importpath = "github.com/rogpeppe/go-internal",
-        sum = "h1:TMyTOH3F/DB16zRVcYyreMH6GnZZrwQVAoYjRBZyWFQ=",
-        version = "v1.10.0",
+        sum = "h1:cWPaGQEPrBb5/AsnsZesgZZ9yb1OQ+GOISoDNXVBh4M=",
+        version = "v1.11.0",
+    )
+    go_repository(
+        name = "com_github_rootless_containers_rootlesskit",
+        importpath = "github.com/rootless-containers/rootlesskit",
+        sum = "h1:cRaRIYxY8oce4eE/zeAUZhgKu/4tU1p9YHN4+suwV7M=",
+        version = "v1.1.0",
     )
     go_repository(
         name = "com_github_rs_xid",
@@ -4432,6 +4747,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.9.2-0.20220502022130-f33da4d89646",
     )
     go_repository(
+        name = "com_github_secure_systems_lab_go_securesystemslib",
+        importpath = "github.com/secure-systems-lab/go-securesystemslib",
+        sum = "h1:b23VGrQhTA8cN2CbBw7/FulN9fTtqYUdS5+Oxzt+DUE=",
+        version = "v0.4.0",
+    )
+    go_repository(
         name = "com_github_securego_gosec_v2",
         importpath = "github.com/securego/gosec/v2",
         sum = "h1:+PDkpzR41OI2jrw1q6AdXZCbsNGNGT7pQjal0H0cArI=",
@@ -4450,10 +4771,22 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.3.1",
     )
     go_repository(
+        name = "com_github_serialx_hashring",
+        importpath = "github.com/serialx/hashring",
+        sum = "h1:ka9QPuQg2u4LGipiZGsgkg3rJCo4iIUCy75FddM0GRQ=",
+        version = "v0.0.0-20190422032157-8b2912629002",
+    )
+    go_repository(
         name = "com_github_shazow_go_diff",
         importpath = "github.com/shazow/go-diff",
         sum = "h1:W65qqJCIOVP4jpqPQ0YvHYKwcMEMVWIzWC5iNQQfBTU=",
         version = "v0.0.0-20160112020656-b6b7b6733b8c",
+    )
+    go_repository(
+        name = "com_github_shibumi_go_pathspec",
+        importpath = "github.com/shibumi/go-pathspec",
+        sum = "h1:QUyMZhFo0Md5B8zV8x2tesohbb5kfbpTi9rBnKh5dkI=",
+        version = "v1.3.0",
     )
     go_repository(
         name = "com_github_shirou_gopsutil",
@@ -4524,8 +4857,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_skeema_knownhosts",
         importpath = "github.com/skeema/knownhosts",
-        sum = "h1:MTk78x9FPgDFVFkDLTrsnnfCJl7g1C/nnKvePgrIngE=",
-        version = "v1.1.1",
+        sum = "h1:h9r9cf0+u7wSE+M183ZtMGgOJKiL96brpaz5ekfJCpM=",
+        version = "v1.2.0",
     )
     go_repository(
         name = "com_github_smacker_go_tree_sitter",
@@ -4558,6 +4891,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.1",
     )
     go_repository(
+        name = "com_github_songgao_water",
+        importpath = "github.com/songgao/water",
+        sum = "h1:TG/diQgUe0pntT/2D9tmUCz4VNwm9MfrtPr0SU2qSX8=",
+        version = "v0.0.0-20200317203138-2b4b6d7c09d8",
+    )
+    go_repository(
         name = "com_github_sourcegraph_go_diff",
         importpath = "github.com/sourcegraph/go-diff",
         sum = "h1:hmA1LzxW0n1c3Q4YbrFgg4P99GSnebYa3x8gr0HZqLQ=",
@@ -4570,10 +4909,16 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20180118202830-f09979ecbc72",
     )
     go_repository(
+        name = "com_github_spdx_tools_golang",
+        importpath = "github.com/spdx/tools-golang",
+        sum = "h1:9B623Cfs+mclYK6dsae7gLSwuIBHvlgmEup87qpqsAQ=",
+        version = "v0.3.1-0.20230104082527-d6f58551be3f",
+    )
+    go_repository(
         name = "com_github_spf13_afero",
         importpath = "github.com/spf13/afero",
-        sum = "h1:j49Hj62F0n+DaZ1dDCvhABaPNSGNkt32oRFxI33IEMw=",
-        version = "v1.9.2",
+        sum = "h1:EaGW2JJh15aKOejeuJ+wpFSHnbd7GE6Wvp3TsNhb6LY=",
+        version = "v1.10.0",
     )
     go_repository(
         name = "com_github_spf13_cast",
@@ -4696,6 +5041,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.9.9",
     )
     go_repository(
+        name = "com_github_tedsuo_ifrit",
+        importpath = "github.com/tedsuo/ifrit",
+        sum = "h1:PnxSSxsUvOqMh7nslHscii/GV/Y9ZflmkZ2oEEEIGj4=",
+        version = "v0.0.0-20220120221754-dd274de71113",
+    )
+    go_repository(
         name = "com_github_testcontainers_testcontainers_go",
         importpath = "github.com/testcontainers/testcontainers-go",
         sum = "h1:h0D5GaYG9mhOWr2qHdEKDXpkce/VlvaYOCzTRi6UBi8=",
@@ -4757,10 +5108,53 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v2.5.0",
     )
     go_repository(
+        name = "com_github_tonistiigi_fsutil",
+        build_file_proto_mode = "disable_global",
+        importpath = "github.com/tonistiigi/fsutil",
+        sum = "h1:XOFp/3aBXlqmOFAg3r6e0qQjPnK5I970LilqX+Is1W8=",
+        version = "v0.0.0-20230105215944-fb433841cbfa",
+    )
+    go_repository(
+        name = "com_github_tonistiigi_go_actions_cache",
+        importpath = "github.com/tonistiigi/go-actions-cache",
+        sum = "h1:8eY6m1mjgyB8XySUR7WvebTM8D/Vs86jLJzD/Tw7zkc=",
+        version = "v0.0.0-20220404170428-0bdeb6e1eac7",
+    )
+    go_repository(
+        name = "com_github_tonistiigi_go_archvariant",
+        importpath = "github.com/tonistiigi/go-archvariant",
+        sum = "h1:5LC1eDWiBNflnTF1prCiX09yfNHIxDC/aukdhCdTyb0=",
+        version = "v1.0.0",
+    )
+    go_repository(
+        name = "com_github_tonistiigi_units",
+        importpath = "github.com/tonistiigi/units",
+        sum = "h1:SXhTLE6pb6eld/v/cCndK0AMpt1wiVFb/YYmqB3/QG0=",
+        version = "v0.0.0-20180711220420-6950e57a87ea",
+    )
+    go_repository(
+        name = "com_github_tonistiigi_vt100",
+        importpath = "github.com/tonistiigi/vt100",
+        sum = "h1:DLpt6B5oaaS8jyXHa9VA4rrZloBVPVXeCtrOsrFauxc=",
+        version = "v0.0.0-20210615222946-8066bb97264f",
+    )
+    go_repository(
+        name = "com_github_toqueteos_webbrowser",
+        importpath = "github.com/toqueteos/webbrowser",
+        sum = "h1:tVP/gpK69Fx+qMJKsLE7TD8LuGWPnEV71wBN9rrstGQ=",
+        version = "v1.2.0",
+    )
+    go_repository(
         name = "com_github_tv42_httpunix",
         importpath = "github.com/tv42/httpunix",
         sum = "h1:u6SKchux2yDvFQnDHS3lPnIRmfVJ5Sxy3ao2SIdysLQ=",
         version = "v0.0.0-20191220191345-2ba4b9c3382c",
+    )
+    go_repository(
+        name = "com_github_u_root_uio",
+        importpath = "github.com/u-root/uio",
+        sum = "h1:BFvcl34IGnw8yvJi8hlqLFo9EshRInwWBs2M5fGWzQA=",
+        version = "v0.0.0-20210528114334-82958018845c",
     )
     go_repository(
         name = "com_github_ugorji_go",
@@ -4795,8 +5189,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_urfave_cli_v2",
         importpath = "github.com/urfave/cli/v2",
-        sum = "h1:JTTnM6wKzdA0Jqodd966MVj4vWbbquZykeX1sKbe2C4=",
-        version = "v2.2.0",
+        sum = "h1:xbrU7tAYviSpqeR3X4nEFWUdB/uDZ6DE+HxmRU7Xtyw=",
+        version = "v2.23.5",
     )
     go_repository(
         name = "com_github_urfave_negroni",
@@ -4853,6 +5247,18 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.11.3",
     )
     go_repository(
+        name = "com_github_vektah_gqlparser_v2",
+        importpath = "github.com/vektah/gqlparser/v2",
+        sum = "h1:C02NsyEsL4TXJB7ndonqTfuQOL4XPIu0aAWugdmTgmc=",
+        version = "v2.4.5",
+    )
+    go_repository(
+        name = "com_github_veraison_go_cose",
+        importpath = "github.com/veraison/go-cose",
+        sum = "h1:4qA7dbFJGvt7gcqv5MCIyCQvN+NpHFPkW7do3EeDLb8=",
+        version = "v1.0.0-rc.1",
+    )
+    go_repository(
         name = "com_github_victoriametrics_metrics",
         importpath = "github.com/VictoriaMetrics/metrics",
         sum = "h1:ILavebReOjYctAGY5QU2F9X0MYvkcrG3aEn2RKa1Zkw=",
@@ -4889,6 +5295,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.1.11",
     )
     go_repository(
+        name = "com_github_x448_float16",
+        importpath = "github.com/x448/float16",
+        sum = "h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=",
+        version = "v0.8.4",
+    )
+    go_repository(
         name = "com_github_xanzy_ssh_agent",
         importpath = "github.com/xanzy/ssh-agent",
         sum = "h1:+/15pJfg/RsTxqYcX6fHqOXZwwMP+2VyYWJeWM2qQFM=",
@@ -4915,8 +5327,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_xeipuuv_gojsonpointer",
         importpath = "github.com/xeipuuv/gojsonpointer",
-        sum = "h1:J9EGpcZtP0E/raorCMxlFGSTBrsSlaDGf3jU/qvAE2c=",
-        version = "v0.0.0-20180127040702-4e3ac2762d5f",
+        sum = "h1:zGWFAtiMcyryUHoUjUJX0/lt1H2+i2Ka2n+D3DImSNo=",
+        version = "v0.0.0-20190905194746-02993c407bfb",
     )
     go_repository(
         name = "com_github_xeipuuv_gojsonreference",
@@ -4949,10 +5361,22 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.3-0.20170626215501-b2862e3d0a77",
     )
     go_repository(
+        name = "com_github_xrash_smetrics",
+        importpath = "github.com/xrash/smetrics",
+        sum = "h1:bAn7/zixMGCfxrRTfdpNzjtPYqr8smhKouy9mxVdGPU=",
+        version = "v0.0.0-20201216005158-039620a65673",
+    )
+    go_repository(
         name = "com_github_yalp_jsonpath",
         importpath = "github.com/yalp/jsonpath",
         sum = "h1:6fRhSjgLCkTD3JnJxvaJ4Sj+TYblw757bqYgZaOq5ZY=",
         version = "v0.0.0-20180802001716-5cc68e5049a0",
+    )
+    go_repository(
+        name = "com_github_yashtewari_glob_intersection",
+        importpath = "github.com/yashtewari/glob-intersection",
+        sum = "h1:6gJvMYQlTDOL3dMsPF6J0+26vwX9MB8/1q3uAdhmTrg=",
+        version = "v0.1.0",
     )
     go_repository(
         name = "com_github_yeya24_promlinter",
@@ -5725,8 +6149,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_google_cloud_go_storage",
         importpath = "cloud.google.com/go/storage",
-        sum = "h1:+S3LjjEN2zZ+L5hOwj4+1OkGCsLVe0NzpXKQ1pSdTCI=",
-        version = "v1.31.0",
+        sum = "h1:PVrDOkIC8qQVa1P3SXGpQvfuJhN2LHOoyZvWs8D2X5M=",
+        version = "v1.33.0",
     )
     go_repository(
         name = "com_google_cloud_go_storagetransfer",
@@ -5991,8 +6415,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_etcd_go_etcd_client_pkg_v3",
         importpath = "go.etcd.io/etcd/client/pkg/v3",
-        sum = "h1:2aQv6F436YnN7I4VbI8PPYrBhu+SmrTaADcf8Mi/6PU=",
-        version = "v3.5.0",
+        sum = "h1:TXQWYceBKqLp4sa87rcPs11SXxUA/mHwH975v+BDvLU=",
+        version = "v3.5.6",
     )
     go_repository(
         name = "io_etcd_go_etcd_client_v2",
@@ -6009,20 +6433,21 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_etcd_go_etcd_pkg_v3",
         importpath = "go.etcd.io/etcd/pkg/v3",
-        sum = "h1:ntrg6vvKRW26JRmHTE0iNlDgYK6JX3hg/4cD62X0ixk=",
-        version = "v3.5.0",
+        sum = "h1:k1GZrGrfMHy5/cg2bxNGsmLTFisatyhDYCFLRuaavWg=",
+        version = "v3.5.6",
     )
     go_repository(
         name = "io_etcd_go_etcd_raft_v3",
+        build_file_proto_mode = "disable_global",
         importpath = "go.etcd.io/etcd/raft/v3",
-        sum = "h1:kw2TmO3yFTgE+F0mdKkG7xMxkit2duBDa2Hu6D/HMlw=",
-        version = "v3.5.0",
+        sum = "h1:tOmx6Ym6rn2GpZOrvTGJZciJHek6RnC3U/zNInzIN50=",
+        version = "v3.5.6",
     )
     go_repository(
         name = "io_etcd_go_etcd_server_v3",
         importpath = "go.etcd.io/etcd/server/v3",
-        sum = "h1:jk8D/lwGEDlQU9kZXUFMSANkE22Sg5+mW27ip8xcF9E=",
-        version = "v3.5.0",
+        sum = "h1:RXuwaB8AMiV62TqcqIt4O4bG8NWjsxOkDJVT3MZI5Ds=",
+        version = "v3.5.6",
     )
     go_repository(
         name = "io_etcd_go_gofail",
@@ -6193,6 +6618,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.46.1",
     )
     go_repository(
+        name = "io_opentelemetry_go_contrib_instrumentation_net_http_httptrace_otelhttptrace",
+        importpath = "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace",
+        sum = "h1:Wjp9vsVSIEyvdiaECfqxY9xBqQ7JaSCGtvHgR4doXZk=",
+        version = "v0.29.0",
+    )
+    go_repository(
         name = "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",
         importpath = "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
         sum = "h1:aFJWCqJMNjENlcleuuOkGAPH82y0yULBScfXcIEdS24=",
@@ -6219,26 +6650,32 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_otel_exporters_otlp_internal_retry",
         importpath = "go.opentelemetry.io/otel/exporters/otlp/internal/retry",
-        sum = "h1:/fXHZHGvro6MVqV34fJzDhi7sHGpX3Ej/Qjmfn003ho=",
-        version = "v1.14.0",
+        sum = "h1:imIM3vRDMyZK1ypQlQlO+brE22I9lRhJsBDXpDWjlz8=",
+        version = "v1.4.1",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_exporters_otlp_otlptrace",
         importpath = "go.opentelemetry.io/otel/exporters/otlp/otlptrace",
-        sum = "h1:TKf2uAs2ueguzLaxOCBXNpHxfO/aC7PAdDsSH0IbeRQ=",
-        version = "v1.14.0",
+        sum = "h1:Mne5On7VWdx7omSrSSZvM4Kw7cS7NQkOOmLcgscI51U=",
+        version = "v1.19.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracegrpc",
         importpath = "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc",
-        sum = "h1:ap+y8RXX3Mu9apKVtOkM6WSFESLM8K3wNQyOU8sWHcc=",
-        version = "v1.14.0",
+        sum = "h1:3d+S281UTjM+AbF31XSOYn1qXn3BgIdWl8HNEpx08Jk=",
+        version = "v1.19.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracehttp",
         importpath = "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp",
-        sum = "h1:3jAYbRHQAqzLjd9I4tzxwJ8Pk/N6AqBcF6m1ZHrxG94=",
-        version = "v1.14.0",
+        sum = "h1:IeMeyr1aBvBiPVYihXIaeIZba6b8E1bYp7lbdxK8CQg=",
+        version = "v1.19.0",
+    )
+    go_repository(
+        name = "io_opentelemetry_go_otel_internal_metric",
+        importpath = "go.opentelemetry.io/otel/internal/metric",
+        sum = "h1:9dAVGAfFiiEq5NVB9FUJ5et+btbDQAUIJehJ+ikyryk=",
+        version = "v0.27.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_metric",
@@ -6279,8 +6716,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_proto_otlp",
         importpath = "go.opentelemetry.io/proto/otlp",
-        sum = "h1:IVN6GR+mhC4s5yfcTbmzHYODqvWAp3ZedA2SJPI1Nnw=",
-        version = "v0.19.0",
+        sum = "h1:T0TX0tmXU8a3CbNXzEKGeU5mIVOdf0oykP+u2lIVU/I=",
+        version = "v1.0.0",
     )
     go_repository(
         name = "io_rsc_binaryregexp",
@@ -6325,6 +6762,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20200407214033-5883e5a4b512",
     )
     go_repository(
+        name = "org_cloudfoundry_code_clock",
+        importpath = "code.cloudfoundry.org/clock",
+        sum = "h1:kFXWQM4bxYvdBw2X8BbBeXwQNgfoWv1vqAk2ZZyBN2o=",
+        version = "v1.0.0",
+    )
+    go_repository(
         name = "org_gioui",
         importpath = "gioui.org",
         sum = "h1:K72hopUosKG3ntOPNG4OzzbuhxGuVf06fa2la1/H/Ho=",
@@ -6333,8 +6776,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_api",
         importpath = "google.golang.org/api",
-        sum = "h1:b2CqT6kG+zqJIVKRQ3ELJVLN1PwHZ6DJ3dW8yl82rgY=",
-        version = "v0.149.0",
+        sum = "h1:FhfXLO/NFdJIzQtCqjpysWwqKk8AzGWBUhMIx67cVDU=",
+        version = "v0.151.0",
     )
     go_repository(
         name = "org_golang_google_appengine",
@@ -6453,8 +6896,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_oauth2",
         importpath = "golang.org/x/oauth2",
-        sum = "h1:jDDenyj+WgFtmV3zYVoi8aE2BwtXFLWOA67ZfNWftiY=",
-        version = "v0.13.0",
+        sum = "h1:P0Vrf/2538nmC0H+pEQ3MNFRRnVR7RlqyVw+bvm26z0=",
+        version = "v0.14.0",
     )
     go_repository(
         name = "org_golang_x_sync",
@@ -6657,8 +7100,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "tools_gotest_v3",
         importpath = "gotest.tools/v3",
-        sum = "h1:MfDY1b1/0xN1CyMlQDac0ziEy9zJQd9CXBRRDHw2jJo=",
-        version = "v3.3.0",
+        sum = "h1:ZazjZUfuVeZGLAmlKKuyv3IKP5orXcwtOwDQH6YVr6o=",
+        version = "v3.4.0",
     )
 
 # Manually created
