@@ -167,12 +167,17 @@ func (c *keyCache) checkCacheEntry(ck cacheKey, ce *cacheEntry) {
 }
 
 func (c *keyCache) startRefresher(quitChan chan struct{}) {
+	// For the sake of testing, create the timer up front before returning
+	// from this func. That way tests are guaranteed that the timer will be
+	// fired when time is advanced using a fake clock.
+	t := c.clock.NewTimer(keyRefreshScanFrequency)
+
 	go func() {
 		for {
 			select {
 			case <-quitChan:
 				return
-			case <-c.clock.After(keyRefreshScanFrequency):
+			case <-t.Chan():
 				break
 			}
 
@@ -185,6 +190,7 @@ func (c *keyCache) startRefresher(quitChan chan struct{}) {
 
 			c.mu.Lock()
 			c.lastRefreshRun = c.clock.Now()
+			t.Reset(keyRefreshScanFrequency)
 			c.mu.Unlock()
 		}
 	}()
