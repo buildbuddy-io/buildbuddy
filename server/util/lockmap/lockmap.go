@@ -60,21 +60,32 @@ func newRefCountedMutex() *refCountedMutex {
 type Locker interface {
 	Lock(key string) func()
 	RLock(key string) func()
+	Close() error
 }
 
 type perKeyMutex struct {
 	mutexes sync.Map
 	bigLock sync.RWMutex
+	closed  chan struct{}
 }
 
+// New returns a new lock map.
+// The caller must call Close() when the map is no longer needed.
 func New() *perKeyMutex {
-	pkm := &perKeyMutex{}
+	pkm := &perKeyMutex{closed: make(chan struct{})}
 	go pkm.gc()
 	return pkm
 }
 
 func (p *perKeyMutex) gc() {
+	t := time.NewTicker(100 * time.Millisecond)
+	defer t.Stop()
 	for {
+		select {
+		case <-p.closed:
+			return
+		case <-t.C:
+		}
 		p.mutexes.Range(func(key, value any) bool {
 			p.bigLock.Lock()
 			rcm := value.(*refCountedMutex)
@@ -84,7 +95,6 @@ func (p *perKeyMutex) gc() {
 			p.bigLock.Unlock()
 			return true
 		})
-		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -114,4 +124,9 @@ func (p *perKeyMutex) RLock(key string) func() {
 		rcm.RUnlock()
 		rcm.count.Dec()
 	}
+}
+
+func (p *perKeyMutex) Close() error {
+	close(p.closed)
+	return nil
 }

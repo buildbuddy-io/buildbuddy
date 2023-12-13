@@ -419,6 +419,9 @@ func (s *COWStore) Close() error {
 			lastErr = err
 		}
 	}
+
+	_ = s.chunkLock.Close()
+
 	return lastErr
 }
 
