@@ -255,6 +255,7 @@ ts_library(
     name = "invocation_comparison_service",
     srcs = ["invocation_comparison_service.ts"],
     deps = [
+        "//app/alert:alert_service",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//proto:invocation_ts_proto",
