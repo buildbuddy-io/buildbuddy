@@ -2,6 +2,7 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import InvocationModel from "./invocation_model";
 import rpcService, { CancelablePromise } from "../service/rpc_service";
 import { PartialObserver, Subject, Subscription } from "rxjs";
+import alert_service from "../alert/alert_service";
 
 export const INVOCATION_ID_TO_COMPARE_LOCALSTORAGE_KEY = "invocation_id_to_compare";
 
@@ -35,9 +36,12 @@ export class InvocationComparisonService {
       this.invocationModel = undefined;
       return;
     }
+    // Don't re-fetch data if it's unlikely to update.
     if (this.invocationModel !== undefined && !this.invocationModel.isInProgress()) {
       return;
     }
+    // Don't re-fetch data: the pending request should be for this ID already,
+    // and we'll retry if it fails.
     if (this.pendingRequest) {
       return;
     }
@@ -58,24 +62,29 @@ export class InvocationComparisonService {
         }
         this.invocationModel = new InvocationModel(response.invocation[0]);
         this.publishState();
+
+        // Keep checking for updates to unfinished invocations.
         if (this.invocationModel.isInProgress()) {
           this.scheduleFetch();
         }
       })
       .catch((error: any) => {
-        // Don't unset the invocation ID, just try again in a bit.
-        this.scheduleFetch();
-        console.error(error);
+        // Something went wrong.  This is pretty non-critical.  Let's just
+        // clear the selection so the user doesn't get hosed.
+        alert_service.error("Failed to fetch comparison invocation.");
+        this.setComparisonInvocation(undefined);
       })
       .finally(() => (this.pendingRequest = undefined));
   }
 
   private scheduleFetch() {
     clearTimeout(this.timeoutRef);
-    // Refetch invocation data in 3 seconds to update status.
+    // Refetch data every 10 seconds for unfinished invocations.
+    // This doesn't need to be constant spam, just want to eventually
+    // show an update.
     this.timeoutRef = window.setTimeout(() => {
       this.fetch();
-    }, 3000);
+    }, 10000);
   }
 
   setComparisonInvocation(invocationId?: string) {
