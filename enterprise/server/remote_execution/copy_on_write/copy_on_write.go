@@ -1253,7 +1253,7 @@ func NewMmapLRU() (*MmapLRU, error) {
 		return nil, err
 	}
 	ml.lru = l
-	go ml.processEvictions()
+	ml.evictorGroup.Go(ml.processEvictions)
 	return ml, nil
 }
 
@@ -1295,10 +1295,11 @@ func (ml *MmapLRU) Close() error {
 	return ml.evictorGroup.Wait()
 }
 
-func (ml *MmapLRU) processEvictions() {
+func (ml *MmapLRU) processEvictions() error {
 	for m := range ml.evictions {
 		ml.processEviction(m)
 	}
+	return nil
 }
 
 func (ml *MmapLRU) processEviction(m *Mmap) {
