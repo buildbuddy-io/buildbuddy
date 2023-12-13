@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"io"
 	"net/http"
 	"os"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -296,7 +296,7 @@ func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.Get
 		ORDER BY owner ASC
 	`, u.GetGroupID())
 	res := &ghpb.GetAppInstallationsResponse{}
-	err = db.ScanRows(rq, func(ctx context.Context, row *tables.GitHubAppInstallation) error {
+	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitHubAppInstallation) error {
 		res.Installations = append(res.Installations, &ghpb.AppInstallation{
 			GroupId:        row.GroupID,
 			InstallationId: row.InstallationID,
@@ -448,7 +448,7 @@ func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetLinkedRe
 		return nil, status.InternalErrorf("failed to query repo rows: %s", err)
 	}
 	res := &ghpb.GetLinkedReposResponse{}
-	err = db.ScanRows(rq, func(ctx context.Context, row *tables.GitRepository) error {
+	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitRepository) error {
 		res.RepoUrls = append(res.RepoUrls, row.RepoURL)
 		return nil
 	})

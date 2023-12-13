@@ -1033,7 +1033,7 @@ func (r *rawQuery) Scan(dest interface{}) error {
 	return r.db.Raw(r.sql, r.values...).Scan(dest).Error
 }
 
-// TODO(vadim): check if there are any uses cases where ScanRows can't be used directly
+// TODO(vadim): check if there are any uses cases where ScanEach can't be used directly
 func (r *rawQuery) IterateRaw(fn func(ctx context.Context, row *sql.Rows) error) error {
 	rows, err := r.db.Raw(r.sql, r.values...).Rows()
 	if err != nil {
@@ -1119,16 +1119,16 @@ func TableSchema(db *DB, model any) (*schema.Schema, error) {
 	return stmt.Schema, nil
 }
 
-// ScanRows executes the given query and iterates over the result,
+// ScanEach executes the given query and iterates over the result,
 // automatically scanning each row into a struct of the specified type.
 //
 // Example:
 //
-//	err := db.ScanRows(rq, func(ctx context.Context, foo *tables.Foo) error {
+//	err := db.ScanEach(rq, func(ctx context.Context, foo *tables.Foo) error {
 //	  // handle foo
 //	  return nil
 //	})
-func ScanRows[T any](rq interfaces.DBRawQuery, fn func(ctx context.Context, val *T) error) error {
+func ScanEach[T any](rq interfaces.DBRawQuery, fn func(ctx context.Context, val *T) error) error {
 	return rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		var val T
 		if err := rq.(*rawQuery).db.ScanRows(row, &val); err != nil {
@@ -1150,7 +1150,7 @@ func ScanRows[T any](rq interfaces.DBRawQuery, fn func(ctx context.Context, val 
 //
 //	foos, err := db.All(rq, &tables.Foo{})
 //
-// TODO(vadim): check if there are any ScanRows calls that can be converted to ScanAll.
+// TODO(vadim): check if there are any ScanEach calls that can be converted to ScanAll.
 func ScanAll[T any](rq interfaces.DBRawQuery, t *T) ([]*T, error) {
 	var vals []*T
 	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {

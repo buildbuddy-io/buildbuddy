@@ -3,7 +3,6 @@ package usage_test
 import (
 	"context"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-sql-driver/mysql"
@@ -79,7 +79,7 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 		ORDER BY group_id, period_start_usec, region, client, origin ASC;
 	`)
 
-	err := db.ScanRows(rq, func(ctx context.Context, tu *tables.Usage) error {
+	err := db.ScanEach(rq, func(ctx context.Context, tu *tables.Usage) error {
 		// Throw out Model timestamps and PK to simplify assertions, since these
 		// are non-deterministic.
 		tu.Model = tables.Model{}

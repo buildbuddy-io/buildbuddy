@@ -111,7 +111,7 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 		}
 		queryStr, args := q.Build()
 		rq := tx.NewQuery(ctx, "quota_manager_get_quota_buckets").Raw(queryStr, args...)
-		err := db.ScanRows(rq, func(ctx context.Context, tb *tables.QuotaBucket) error {
+		err := db.ScanEach(rq, func(ctx context.Context, tb *tables.QuotaBucket) error {
 			if err := validateBucket(bucketToProto(tb)); err != nil {
 				return status.InternalErrorf("invalid bucket: %v", tb)
 			}
@@ -138,7 +138,7 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 		}
 		groupQueryStr, groupArgs := groupQuery.Build()
 		rq = tx.NewQuery(ctx, "quota_manager_get_quota_groups").Raw(groupQueryStr, groupArgs...)
-		err = db.ScanRows(rq, func(ctx context.Context, tg *tables.QuotaGroup) error {
+		err = db.ScanEach(rq, func(ctx context.Context, tg *tables.QuotaGroup) error {
 			ns := config[tg.Namespace]
 			if ns == nil {
 				alert.UnexpectedEvent("invalid_quota_config", "namespace %q doesn't exist", tg.Namespace)

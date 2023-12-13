@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"io"
 	"strings"
 	"sync"
@@ -21,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -760,7 +760,7 @@ func (c *Crypter) keyReencryptorIteration(cutoff time.Time) error {
 		for retrier.Next() {
 			ekvs = nil
 			rq := c.dbh.NewQuery(ctx, "crypter_get_keys_to_reencrypt").Raw(q, cutoff.UnixMicro())
-			err := db.ScanRows(rq, func(ctx context.Context, ekv *encryptionKeyVersionWithGroupID) error {
+			err := db.ScanEach(rq, func(ctx context.Context, ekv *encryptionKeyVersionWithGroupID) error {
 				ekvs = append(ekvs, ekv)
 				return nil
 			})

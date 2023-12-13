@@ -450,7 +450,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context) (*wfpb.GetWorkflows
 	err = ws.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		rq := tx.NewQuery(ctx, "workflow_get_workflows").Raw(qStr, qArgs...)
 		rsp.Workflow = make([]*wfpb.GetWorkflowsResponse_Workflow, 0)
-		return db.ScanRows(rq, func(ctx context.Context, tw *tables.Workflow) error {
+		return db.ScanEach(rq, func(ctx context.Context, tw *tables.Workflow) error {
 			u, err := ws.getWebhookURL(tw.WebhookID)
 			if err != nil {
 				return err
@@ -958,7 +958,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		Success          bool
 	}
 
-	err = db.ScanRows(rq, func(ctx context.Context, row *historyQueryOut) error {
+	err = db.ScanEach(rq, func(ctx context.Context, row *historyQueryOut) error {
 		entry := &wfpb.ActionHistory_Entry{
 			Status:        inspb.InvocationStatus(row.InvocationStatus),
 			Success:       row.Success,

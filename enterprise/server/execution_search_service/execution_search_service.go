@@ -75,7 +75,7 @@ func (s *ExecutionSearchService) fetchExecutionData(ctx context.Context, groupId
 
 	rq := s.h.NewQuery(ctx, "fetch_executions").Raw(qString, qArgs...)
 	executions := make(map[string]*ExecutionWithInvocationId, 0)
-	err := db.ScanRows(rq, func(ctx context.Context, r *tables.Execution) error {
+	err := db.ScanEach(rq, func(ctx context.Context, r *tables.Execution) error {
 		exec, err := execution.TableExecToClientProto(r)
 		if err != nil {
 			return err

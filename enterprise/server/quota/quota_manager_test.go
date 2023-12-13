@@ -58,7 +58,7 @@ func fetchQuotaBuckets(t *testing.T, env *testenv.TestEnv, ctx context.Context, 
 	}
 	qStr, qArgs := q.Build()
 	rq := dbh.NewQuery(ctx, "get_buckets").Raw(qStr, qArgs...)
-	err := db.ScanRows(rq, func(ctx context.Context, tb *tables.QuotaBucket) error {
+	err := db.ScanEach(rq, func(ctx context.Context, tb *tables.QuotaBucket) error {
 		// Throw out Model timestamps to simplify assertions.
 		tb.Model = tables.Model{}
 		res = append(res, tb)
@@ -72,7 +72,7 @@ func fetchAllQuotaGroups(t *testing.T, env *testenv.TestEnv, ctx context.Context
 	res := []*tables.QuotaGroup{}
 	dbh := env.GetDBHandle()
 	rq := dbh.NewQuery(ctx, "get_groups").Raw(`SELECT * FROM "QuotaGroups"`)
-	err := db.ScanRows(rq, func(ctx context.Context, tg *tables.QuotaGroup) error {
+	err := db.ScanEach(rq, func(ctx context.Context, tg *tables.QuotaGroup) error {
 		// Throw out Model timestamps to simplify assertions.
 		tg.Model = tables.Model{}
 		res = append(res, tg)

@@ -3,7 +3,6 @@ package iprules
 import (
 	"context"
 	"flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"net"
 	"net/http"
 	"net/netip"
@@ -19,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"

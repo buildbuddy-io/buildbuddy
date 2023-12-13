@@ -84,7 +84,7 @@ func (s *SecretService) listSecretsIncludingValues(ctx context.Context) (*skpb.L
 	queryStr, args := q.Build()
 	rq := dbHandle.NewQuery(ctx, "secrets_list").Raw(queryStr, args...)
 	rsp := &skpb.ListSecretsResponse{}
-	err = db.ScanRows(rq, func(ctx context.Context, k *tables.Secret) error {
+	err = db.ScanEach(rq, func(ctx context.Context, k *tables.Secret) error {
 		rsp.Secret = append(rsp.Secret, &skpb.Secret{
 			Name:  k.Name,
 			Value: k.Value,

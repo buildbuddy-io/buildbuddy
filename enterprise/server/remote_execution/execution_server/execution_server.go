@@ -1143,7 +1143,7 @@ func (s *ExecutionServer) executionIDs(ctx context.Context, invocationID string)
 		invocationID,
 		repb.ExecutionStage_COMPLETED)
 	ids := make([]string, 0)
-	err := db.ScanRows(rq, func(ctx context.Context, e *tables.Execution) error {
+	err := db.ScanEach(rq, func(ctx context.Context, e *tables.Execution) error {
 		ids = append(ids, e.ExecutionID)
 		return nil
 	})
