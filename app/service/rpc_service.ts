@@ -26,6 +26,16 @@ export type FileEncoding = "gzip" | "zstd" | "";
 
 export type FetchResponseType = "arraybuffer" | "stream" | "text" | "";
 
+/**
+ * Optional parameters for bytestream downloads.
+ * 
+ * filename:
+ *     the file will be downloaded with this filename rather than the digest.
+ * zip:
+ *     a serialized, base64-encoded zip.ManifestEntry that instructs which
+ *     sub-file in a zip file should be extracted and downloaded (the file
+ *     referenced by the digest must be a valid zip file).
+ */
 export type BytestreamFileOptions = { filename?: string; zip?: string };
 
 class RpcService {
@@ -108,21 +118,8 @@ class RpcService {
     bytestreamURL: string,
     invocationId: string,
     responseType?: T,
-    init: RequestInit = {}
-  ): Promise<FetchPromiseType<T>> {
-    return this.fetch(
-      this.getBytestreamUrl(bytestreamURL, invocationId),
-      (responseType || "") as FetchResponseType,
-      init
-    ) as Promise<FetchPromiseType<T>>;
-  }
-
-  fetchBytestreamFileWithOptions<T extends FetchResponseType = "text">(
-    bytestreamURL: string,
-    invocationId: string,
-    options: BytestreamFileOptions,
-    responseType?: T,
-    init: RequestInit = {}
+    init: RequestInit = {},
+    options: BytestreamFileOptions = {}
   ): Promise<FetchPromiseType<T>> {
     return this.fetch(
       this.getBytestreamUrl(bytestreamURL, invocationId, options),

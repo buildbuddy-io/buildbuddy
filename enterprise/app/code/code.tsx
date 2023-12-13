@@ -148,7 +148,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     const zip = this.props.search.get("z") || undefined;
     let filename = this.props.search.get("filename");
     if (this.isSingleFile() && bytestreamURL) {
-      rpcService.fetchBytestreamFileWithOptions(bytestreamURL, invocationID, { zip }, "text").then((result) => {
+      rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text", {}, { zip }).then((result) => {
         this.editor.setModel(monaco.editor.createModel(result, undefined, monaco.Uri.file(filename || "file")));
       });
       return;
