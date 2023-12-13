@@ -1,7 +1,7 @@
 import { invocation } from "../../proto/invocation_ts_proto";
 import InvocationModel from "./invocation_model";
 import rpcService, { CancelablePromise } from "../service/rpc_service";
-import { PartialObserver, Subject, Subscription } from "rxjs";
+import { Subject, Subscription } from "rxjs";
 import alert_service from "../alert/alert_service";
 
 export const INVOCATION_ID_TO_COMPARE_LOCALSTORAGE_KEY = "invocation_id_to_compare";
