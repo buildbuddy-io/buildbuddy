@@ -23,6 +23,7 @@ def _remote_kaniko_build_impl(ctx):
         outputs = [archive],
         executable = build_script,
         mnemonic = "RemoteKanikoBuild",
+        progress_message = "Kaniko: building image with %{input}...",
     )
     return [DefaultInfo(files = depset([archive]))]
 
