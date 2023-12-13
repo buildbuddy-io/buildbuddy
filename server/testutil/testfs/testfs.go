@@ -21,6 +21,21 @@ func RunfilePath(t testing.TB, path string) string {
 	return path
 }
 
+// CreateTemp creates a temp file which is automatically cleaned up after the
+// test.
+func CreateTemp(t testing.TB) *os.File {
+	f, err := os.CreateTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-file-*")
+	require.NoError(t, err)
+	path := f.Name()
+	t.Cleanup(func() {
+		_ = f.Close()
+		if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
+			assert.NoError(t, err, "failed to remove temp file")
+		}
+	})
+	return f
+}
+
 // MakeTempDir creates and returns an empty directory that exists for the scope
 // of a test.
 func MakeTempDir(t testing.TB) string {
