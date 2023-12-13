@@ -80,7 +80,6 @@
                 }
               },
               "mappings": [],
-              "max": 1,
               "min": 0,
               "thresholds": {
                 "mode": "absolute",
@@ -107,8 +106,10 @@
           "id": 2370,
           "options": {
             "legend": {
-              "calcs": [],
-              "displayMode": "list",
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "table",
               "placement": "bottom",
               "showLegend": true
             },
@@ -406,7 +407,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 4
+        "y": 1
       },
       "id": 3104,
       "panels": [
@@ -820,7 +821,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 2
       },
       "id": 5799,
       "panels": [
