@@ -145,9 +145,10 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     const bytestreamURL = this.props.search.get("bytestream_url") || "";
     const invocationID = this.props.search.get("invocation_id") || "";
+    const zip = this.props.search.get("z") || undefined;
     let filename = this.props.search.get("filename");
     if (this.isSingleFile() && bytestreamURL) {
-      rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text").then((result) => {
+      rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text", {}, { zip }).then((result) => {
         this.editor.setModel(monaco.editor.createModel(result, undefined, monaco.Uri.file(filename || "file")));
       });
       return;
@@ -836,7 +837,17 @@ export default class CodeComponent extends React.Component<Props, State> {
                   if (!bsUrl || !invocationId) {
                     return;
                   }
-                  rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
+                  const zip = this.props.search.get("z");
+                  if (zip) {
+                    rpcService.downloadBytestreamZipFile(
+                      this.props.search.get("filename") || "",
+                      bsUrl,
+                      zip,
+                      invocationId
+                    );
+                  } else {
+                    rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
+                  }
                 }}>
                 <Download /> Download File
               </OutlinedButton>

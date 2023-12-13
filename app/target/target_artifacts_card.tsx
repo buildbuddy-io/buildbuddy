@@ -78,12 +78,15 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     });
   }
 
-  makeArtifactViewUri(baseUri: string, outputFilename: string): string {
+  makeArtifactViewUri(baseUri: string, outputFilename: string, encodedZipData?: string): string {
     let params: Record<string, string> = {
       bytestream_url: baseUri,
       invocation_id: this.props.invocationId,
       filename: outputFilename,
     };
+    if (encodedZipData) {
+      params.z = encodedZipData;
+    }
     return `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}`;
   }
 
@@ -156,6 +159,13 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
                         onClick={this.handleZipArtifactClicked.bind(this, output.uri, entry.name, entry)}>
                         {entry.name}
                       </a>
+                      {output.uri?.startsWith("bytestream://") && (
+                        <a
+                          className="artifact-view"
+                          href={this.makeArtifactViewUri(output.uri, entry.name, this.encodeManifestEntry(entry))}>
+                          <FileCode /> View
+                        </a>
+                      )}
                     </div>
                   ))}
               </>
