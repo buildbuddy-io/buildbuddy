@@ -1,6 +1,7 @@
 def _remote_kaniko_build_impl(ctx):
-    archive = ctx.actions.declare_file("image.tar")
     build_script = ctx.actions.declare_file("kaniko_build.sh")
+    archive = ctx.actions.declare_file("image.tar")
+    digest_file = ctx.actions.declare_file("digest.txt")
     ctx.actions.expand_template(
         template = ctx.file._build_script_template,
         output = build_script,
@@ -10,6 +11,7 @@ def _remote_kaniko_build_impl(ctx):
             "{image_name}": ctx.label.package + ":" + ctx.label.name,
             "{dockerfile}": ctx.file.dockerfile.path,
             "{archive}": archive.path,
+            "{digest_file}": digest_file.path,
         },
         is_executable = True,
     )
@@ -20,12 +22,19 @@ def _remote_kaniko_build_impl(ctx):
 
     ctx.actions.run(
         inputs = inputs,
-        outputs = [archive],
+        outputs = [archive, digest_file],
         executable = build_script,
         mnemonic = "RemoteKanikoBuild",
         progress_message = "Kaniko: building image with %{input}...",
     )
-    return [DefaultInfo(files = depset([archive]))]
+    return [
+        DefaultInfo(
+            files = depset([archive]),
+        ),
+        OutputGroupInfo(
+            image_digest = depset([digest_file]),
+        ),
+    ]
 
 _remote_kaniko_build = rule(
     implementation = _remote_kaniko_build_impl,
@@ -58,6 +67,8 @@ def remote_kaniko_build(name, recycling_key = "", exec_properties = {}, **kwargs
         name = name + "_context_directory",
         srcs = native.glob(["**"]),
     )
+
+    # TODO(sluongng): making this compatibnle with remote execution only.
     _remote_kaniko_build(
         name = name,
         context_directory = [":" + name + "_context_directory"],
@@ -68,6 +79,6 @@ def remote_kaniko_build(name, recycling_key = "", exec_properties = {}, **kwargs
             "recycle-runner": "true",
             "runner-recycling-key": "remote_docker_build_" + recycling_key,
         } | exec_properties,
-        tags = ["manual", "docker"],
+        tags = ["manual", "docker", "requires-network"],
         **kwargs
     )
