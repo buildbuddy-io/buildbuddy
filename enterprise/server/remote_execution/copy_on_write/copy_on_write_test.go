@@ -17,13 +17,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -327,6 +330,62 @@ func TestCOW_Resize(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
+	// Set a relatively small LRU size limit to increase LRU contention.
+	flags.Set(t, "executor.mmap_memory_bytes", 64*1024*1024)
+	err := resources.Configure(true /*=enableSnapshotSharing*/)
+	require.NoError(t, err)
+	copy_on_write.ResetSharedLRUForTest()
+	copy_on_write.ResetMmmapedBytesMetricForTest()
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	const fileSize = 200 * 1024 * 1024
+	const chunkSize = 4000 * 1024
+
+	f := testfs.CreateTemp(t)
+	err = f.Truncate(fileSize)
+	require.NoError(t, err)
+	path := f.Name()
+	err = f.Close()
+	require.NoError(t, err)
+
+	chunkDir := testfs.MakeTempDir(t)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSize, chunkDir, "", false)
+	require.NoError(t, err)
+
+	var eg errgroup.Group
+	eg.SetLimit(100)
+	for i := 0; i < 10_000; i++ {
+		eg.Go(func() error {
+			p := make([]byte, 1)
+			offset := rand.Int63n(fileSize - 1)
+			r := rand.Float64()
+			if r < 0.02 {
+				return cow.UnmapChunk(offset)
+			} else if r < 0.04 {
+				_, err := cow.WriteAt(p, offset)
+				return err
+			} else {
+				_, err := cow.ReadAt(p, offset)
+				return err
+			}
+		})
+	}
+	err = eg.Wait()
+	require.NoError(t, err)
+
+	// Unmap everything again and assert that the LRU accounting is correct.
+	err = cow.Close()
+	require.NoError(t, err)
+
+	n := testmetrics.GaugeValueForLabels(
+		t, metrics.COWSnapshotMemoryMappedBytes,
+		prometheus.Labels{metrics.FileName: filepath.Base(chunkDir)})
+	require.Equal(t, float64(0), n)
 }
 
 func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
