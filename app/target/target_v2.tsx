@@ -212,6 +212,24 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return `Run ${testResult.run} (Attempt ${testResult.attempt}, Shard ${testResult.shard})`;
   }
 
+  getTab() {
+    // If the user explicitly clicked on a tab, show that
+    if (this.props.tab) {
+      return this.props.tab;
+    }
+
+    // If any of the attempts didn't pass, let's default ot that one.
+    let events = this.state.target?.testResultEvents?.sort(this.resultSort) || [];
+    for (let [i, event] of events.entries()) {
+      if (event.testResult?.status != build_event_stream.TestStatus.PASSED) {
+        return `#${i + 1}`;
+      }
+    }
+
+    // If all attempts passed, let's fall back to the first one.
+    return "#1";
+  }
+
   render() {
     const historyURL = this.getTargetHistoryURL();
     const target = this.state.target;
@@ -296,7 +314,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                   title={this.generateRunName(event?.id?.testResult ?? {})}
                   className={`run ${this.getTestResultStatusClass(
                     event.testResult?.status ?? build_event_stream.TestStatus.NO_STATUS
-                  )} ${(this.props.tab || "#1") == `#${index + 1}` ? "selected" : ""}`}>
+                  )} ${this.getTab() == `#${index + 1}` ? "selected" : ""}`}>
                   Run {event.id?.testResult?.run ?? 0} (Attempt {event.id?.testResult?.attempt ?? 0}, Shard{" "}
                   {event.id?.testResult?.shard ?? 0})
                 </a>
@@ -304,7 +322,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
             </div>
           )}
           {resultEvents
-            .filter((value, index) => `#${index + 1}` == (this.props.tab || "#1"))
+            .filter((value, index) => `#${index + 1}` == this.getTab())
             .map((buildEvent) => (
               <span>
                 <TargetTestDocumentCardComponent
@@ -336,9 +354,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
             />
           )}
           {resultEvents
-            .filter(
-              (event, index) => `#${index + 1}` == (this.props.tab || "#1") && event?.testResult?.testActionOutput
-            )
+            .filter((event, index) => `#${index + 1}` == this.getTab() && event?.testResult?.testActionOutput)
             .map((event) => (
               <div>
                 <TargetArtifactsCardComponent
