@@ -242,11 +242,23 @@ ts_library(
         "//app/components/button",
         "//app/components/menu",
         "//app/components/popup",
+        "//app/invocation:invocation_comparison_service",
         "//app/router",
         "@npm//@types/react",
         "@npm//react",
         "@npm//rxjs",
         "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "invocation_comparison_service",
+    srcs = ["invocation_comparison_service.ts"],
+    deps = [
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//proto:invocation_ts_proto",
+        "@npm//rxjs",
     ],
 )
 
