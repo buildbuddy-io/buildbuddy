@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"

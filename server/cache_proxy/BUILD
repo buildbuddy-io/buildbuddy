@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "cache_proxy",
     srcs = ["cache_proxy.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/cache_proxy",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/cache_proxy",
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

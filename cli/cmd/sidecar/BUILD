@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar",
     deps = [
         "//cli/arg",
-        "//cli/cache_proxy",
         "//cli/devnull",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
@@ -14,6 +13,7 @@ go_library(
         "//server/backends/disk_cache",
         "//server/build_event_protocol/build_event_proxy",
         "//server/build_event_protocol/build_event_server",
+        "//server/cache_proxy",
         "//server/nullauth",
         "//server/real_environment",
         "//server/rpc/interceptors",
