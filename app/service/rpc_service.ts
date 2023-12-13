@@ -28,7 +28,7 @@ export type FetchResponseType = "arraybuffer" | "stream" | "text" | "";
 
 /**
  * Optional parameters for bytestream downloads.
- * 
+ *
  * filename:
  *     the file will be downloaded with this filename rather than the digest.
  * zip:
