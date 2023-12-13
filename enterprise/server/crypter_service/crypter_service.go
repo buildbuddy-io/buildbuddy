@@ -762,14 +762,9 @@ func (c *Crypter) keyReencryptorIteration(cutoff time.Time) error {
 
 		retrier := retry.DefaultWithContext(ctx)
 		var lastErr error
-		var ekvs []*encryptionKeyVersionWithGroupID
 		for retrier.Next() {
-			ekvs = nil
 			rq := c.dbh.NewQuery(ctx, "crypter_get_keys_to_reencrypt").Raw(q, cutoff.UnixMicro())
-			err := db.ScanEach(rq, func(ctx context.Context, ekv *encryptionKeyVersionWithGroupID) error {
-				ekvs = append(ekvs, ekv)
-				return nil
-			})
+			ekvs, err := db.ScanAll(rq, &encryptionKeyVersionWithGroupID{})
 			if err != nil {
 				lastErr = err
 				continue

@@ -475,11 +475,7 @@ func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL str
 	}
 	queryStr, args := q.Build()
 	rq := tx.NewQuery(ctx, "target_tracker_get_targets_by_url").Raw(queryStr, args...)
-	rsp := make([]*tables.Target, 0)
-	err := db.ScanEach(rq, func(ctx context.Context, t *tables.Target) error {
-		rsp = append(rsp, t)
-		return nil
-	})
+	rsp, err := db.ScanAll(rq, &tables.Target{})
 	if err != nil {
 		return nil, err
 	}
