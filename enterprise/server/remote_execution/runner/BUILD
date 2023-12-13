@@ -15,7 +15,6 @@ go_library(
         "//enterprise/server/auth",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/containers/firecracker",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/vfs",
@@ -41,7 +40,6 @@ go_library(
         "//server/util/flag",
         "//server/util/lockingbuffer",
         "//server/util/log",
-        "//server/util/perms",
         "//server/util/random",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
@@ -57,8 +55,10 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/containers/bare",
             "//enterprise/server/remote_execution/containers/docker",
+            "//enterprise/server/remote_execution/containers/firecracker",
             "//enterprise/server/remote_execution/containers/podman",
             "//proto:vfs_go_proto",
+            "//server/util/perms",
             "@org_golang_google_grpc//:go_default_library",
         ],
         "@io_bazel_rules_go//go/platform:windows": [
