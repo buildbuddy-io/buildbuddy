@@ -1071,7 +1071,12 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 		return nil, status.InvalidArgumentError("A webhook ID is required.")
 	}
 	tw := &tables.Workflow{}
-	if err := ws.env.GetDBHandle().ReadRow(ctx, tw, `webhook_id = ?`, webhookID); err != nil {
+	rq := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_workflow_for_webhook").Raw(`
+		SELECT * FROM "Workflows" WHERE webhook_id = ?`, webhookID)
+	if err := rq.Take(tw); err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundErrorf("workflow not found for id %q", webhookID)
+		}
 		return nil, err
 	}
 	return tw, nil

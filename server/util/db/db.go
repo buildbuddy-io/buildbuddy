@@ -388,18 +388,6 @@ func IsRecordNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
-func (dbh *DBHandle) ReadRow(ctx context.Context, out interface{}, where ...interface{}) error {
-	whereArgs := make([]interface{}, 0)
-	if len(where) > 1 {
-		whereArgs = where[1:]
-	}
-	err := dbh.DB(ctx).Where(where[0], whereArgs).First(out).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return status.NotFoundError("Record not found")
-	}
-	return err
-}
-
 func runMigrations(dialect string, gdb *gorm.DB) error {
 	log.Info("Auto-migrating DB")
 	postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
