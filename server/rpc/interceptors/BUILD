@@ -11,6 +11,7 @@ go_library(
         "//server/role_filter",
         "//server/util/alert",
         "//server/util/bazel_request",
+        "//server/util/claims",
         "//server/util/clientip",
         "//server/util/log",
         "//server/util/quota",
