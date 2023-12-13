@@ -172,14 +172,16 @@ func GetMyPort() (int32, error) {
 	return int32(i), nil
 }
 
-func GetZone() (string, error) {
+func GetZone() string {
 	if *zoneOverride != "" {
-		return *zoneOverride, nil
+		return *zoneOverride
 	}
-	if !metadata.OnGCE() {
-		return "", status.UnavailableError("not running on GCE")
+	if metadata.OnGCE() {
+		if z, err := metadata.Zone(); err == nil {
+			return z
+		}
 	}
-	return metadata.Zone()
+	return ""
 }
 
 func GetK8sPodUID() (string, error) {

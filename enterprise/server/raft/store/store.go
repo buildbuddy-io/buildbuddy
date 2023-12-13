@@ -1019,8 +1019,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 func (s *Store) updateTags() error {
 	storeTags := make(map[string]string, 0)
 
-	zone, err := resources.GetZone()
-	if err == nil {
+	if zone := resources.GetZone(); zone != "" {
 		storeTags[constants.ZoneTag] = zone
 	} else {
 		storeTags[constants.ZoneTag] = "local"

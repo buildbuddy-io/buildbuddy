@@ -67,10 +67,7 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 		// server goes here
 		clients: make(map[string]*grpc_client.ClientConnPool),
 	}
-	zone, err := resources.GetZone()
-	if err != nil {
-		log.Warningf("Error detecting zone: %s", err)
-	} else {
+	if zone := resources.GetZone(); zone != "" {
 		proxy.zone = zone
 	}
 	return proxy

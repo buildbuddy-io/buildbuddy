@@ -167,10 +167,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		hintedHandoffsMu:     &sync.RWMutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
 	}
-	zone, err := resources.GetZone()
-	if err != nil {
-		log.Warningf("Error detecting zone: %s", err)
-	} else {
+	if zone := resources.GetZone(); zone != "" {
 		dc.zone = zone
 	}
 	dc.cacheProxy.SetHeartbeatCallbackFunc(dc.recvHeartbeatCallback)
