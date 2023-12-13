@@ -156,11 +156,7 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 	for {
 		query := fmt.Sprintf(`SELECT * FROM "APIKeys" WHERE encrypted_value = '' LIMIT %d`, apiKeyEncryptionBackfillBatchSize)
 		rq := dbh.NewQuery(ctx, "authdb_select_keys_to_backfill").Raw(query)
-		var keysToUpdate []*tables.APIKey
-		err := db.ScanEach(rq, func(ctx context.Context, key *tables.APIKey) error {
-			keysToUpdate = append(keysToUpdate, key)
-			return nil
-		})
+		keysToUpdate, err := db.ScanAll(rq, &tables.APIKey{})
 		if err != nil {
 			return err
 		}
