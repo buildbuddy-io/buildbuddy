@@ -437,13 +437,13 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
-		log.CtxErrorf(ctx, "Error fetching action: %s", err.Error())
+		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
 		return "", err
 	}
 	cmdInstanceDigest := digest.NewResourceName(action.GetCommandDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
 	command := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceDigest, command); err != nil {
-		log.CtxErrorf(ctx, "Error fetching command: %s", err.Error())
+		log.CtxWarningf(ctx, "Error fetching command: %s", err.Error())
 		return "", err
 	}
 
@@ -698,7 +698,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", downloadString, invocationID)
 		newExecutionID, err := s.Dispatch(ctx, req)
 		if err != nil {
-			log.CtxErrorf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
+			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
 			return err
 		}
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, newExecutionID)
