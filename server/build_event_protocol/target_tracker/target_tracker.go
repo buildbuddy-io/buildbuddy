@@ -476,7 +476,7 @@ func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL str
 	queryStr, args := q.Build()
 	rq := tx.NewQuery(ctx, "target_tracker_get_targets_by_url").Raw(queryStr, args...)
 	rsp := make([]*tables.Target, 0)
-	err := db.ScanRows(rq, func(ctx context.Context, t *tables.Target) error {
+	err := db.ScanEach(rq, func(ctx context.Context, t *tables.Target) error {
 		rsp = append(rsp, t)
 		return nil
 	})
@@ -516,11 +516,11 @@ func updateTargets(ctx context.Context, env environment.Env, targets []*tables.T
 	for _, t := range targets {
 		err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 			var existing tables.Target
-			if err := tx.GORM("target_tracker_get_target").Where(
+			if err := tx.GORM(ctx, "target_tracker_get_target").Where(
 				"target_id = ?", t.TargetID).First(&existing).Error; err != nil {
 				return err
 			}
-			return tx.GORM("target_tracker_update_target").Model(&existing).Where(
+			return tx.GORM(ctx, "target_tracker_update_target").Model(&existing).Where(
 				"target_id = ?", t.TargetID).Updates(t).Error
 		})
 		if err != nil {

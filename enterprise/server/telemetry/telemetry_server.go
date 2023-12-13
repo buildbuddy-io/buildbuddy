@@ -87,7 +87,7 @@ func (t *TelemetryServer) LogTelemetry(ctx context.Context, req *telpb.LogTeleme
 func (t *TelemetryServer) insertLogIfNotExists(ctx context.Context, telemetryLog *tables.TelemetryLog) error {
 	return t.h.Transaction(ctx, func(tx interfaces.DB) error {
 		var existing tables.TelemetryLog
-		err := tx.GORM("telemetry_server_get_existing_log").Where(
+		err := tx.GORM(ctx, "telemetry_server_get_existing_log").Where(
 			"installation_uuid = ? AND instance_uuid = ? AND telemetry_log_uuid = ?",
 			telemetryLog.InstallationUUID, telemetryLog.InstanceUUID, telemetryLog.TelemetryLogUUID).First(&existing).Error
 		if err == nil {

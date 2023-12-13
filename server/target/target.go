@@ -546,7 +546,7 @@ func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *quer
 
 	err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		rq := tx.NewQuery(ctx, "target_get_target_history").Raw(queryStr, args...)
-		return db.ScanRows(rq, func(ctx context.Context, row *target) error {
+		return db.ScanEach(rq, func(ctx context.Context, row *target) error {
 			targetID := fmt.Sprintf("%d", row.TargetID)
 			if _, ok := seenTargets[targetID]; !ok {
 				seenTargets[targetID] = struct{}{}

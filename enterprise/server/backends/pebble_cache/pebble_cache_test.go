@@ -2473,9 +2473,9 @@ func TestEncryption(t *testing.T) {
 				if isKeyAvailable {
 					group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
 					key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
-					err = te.GetDBHandle().DB(ctx).Create(key).Error
+					err = te.GetDBHandle().NewQuery(ctx, "create_key").Create(key)
 					require.NoError(t, err)
-					err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+					err = te.GetDBHandle().NewQuery(ctx, "create_key_version").Create(keyVersion)
 					require.NoError(t, err)
 				}
 
@@ -2526,9 +2526,9 @@ func TestReadEncryptedWrongDigestSize(t *testing.T) {
 
 	group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
 	key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
-	err = te.GetDBHandle().DB(ctx).Create(key).Error
+	err = te.GetDBHandle().NewQuery(ctx, "create_key").Create(key)
 	require.NoError(t, err)
-	err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+	err = te.GetDBHandle().NewQuery(ctx, "create_key_version").Create(keyVersion)
 	require.NoError(t, err)
 
 	opts := &pebble_cache.Options{
@@ -2608,9 +2608,9 @@ func TestEncryptedUnencryptedSameDigest(t *testing.T) {
 			groupKeyID := "EK456"
 			group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
 			key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
-			err := te.GetDBHandle().DB(ctx).Create(key).Error
+			err := te.GetDBHandle().NewQuery(ctx, "create_key").Create(key)
 			require.NoError(t, err)
-			err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+			err = te.GetDBHandle().NewQuery(ctx, "create_key_version").Create(keyVersion)
 			require.NoError(t, err)
 
 			opts := &pebble_cache.Options{
@@ -2675,9 +2675,9 @@ func TestEncryptionAndCompression(t *testing.T) {
 
 	group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
 	key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
-	err = te.GetDBHandle().DB(ctx).Create(key).Error
+	err = te.GetDBHandle().NewQuery(ctx, "create_key").Create(key)
 	require.NoError(t, err)
-	err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+	err = te.GetDBHandle().NewQuery(ctx, "create_key_version").Create(keyVersion)
 	require.NoError(t, err)
 
 	testParams := []struct {
@@ -3115,9 +3115,9 @@ func TestSampling(t *testing.T) {
 
 	group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
 	key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
-	err = te.GetDBHandle().DB(ctx).Create(key).Error
+	err = te.GetDBHandle().NewQuery(ctx, "create_key").Create(key)
 	require.NoError(t, err)
-	err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+	err = te.GetDBHandle().NewQuery(ctx, "create_key_version").Create(keyVersion)
 	require.NoError(t, err)
 
 	testCases := []struct {

@@ -243,7 +243,7 @@ func TestCreate_SuccessfullyRegisterWebhook(t *testing.T) {
 	assert.True(t, rsp.GetWebhookRegistered())
 
 	var row tables.Workflow
-	err = te.GetDBHandle().DB(ctx).First(&row).Error
+	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
 	require.NoError(t, err)
 	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
 	assert.Equal(t, gid, row.UserID, "inserted table workflow user should match auth")
@@ -280,7 +280,7 @@ func TestCreate_NoWebhookPermissions(t *testing.T) {
 	assert.False(t, rsp.GetWebhookRegistered(), "webhook should have failed to register")
 
 	var row tables.Workflow
-	err = te.GetDBHandle().DB(ctx).First(&row).Error
+	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
 	require.NoError(t, err)
 	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
 	assert.Equal(t, repoURL, row.RepoURL)
@@ -316,7 +316,7 @@ func TestCreate_NonNormalizedRepoURL(t *testing.T) {
 	require.NoError(t, err)
 
 	var row tables.Workflow
-	err = te.GetDBHandle().DB(ctx).First(&row).Error
+	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
 	assert.NoError(t, err)
 	assert.Equal(t, "https://github.com/foo/bar", row.RepoURL, "repo URL stored in DB should be normalized")
 }
@@ -339,7 +339,7 @@ func TestDelete(t *testing.T) {
 		RepoURL:              "file:///ANY",
 		GitProviderWebhookID: testgit.FakeWebhookID,
 	}
-	err := te.GetDBHandle().DB(ctx).Create(&row).Error
+	err := te.GetDBHandle().NewQuery(ctx, "create_workflow").Create(&row)
 	assert.NoError(t, err)
 
 	req := &wfpb.DeleteWorkflowRequest{Id: "WF1"}
@@ -348,7 +348,7 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, testgit.FakeWebhookID, provider.UnregisteredWebhookID, "should unregister webhook upon deletion")
 
-	err = te.GetDBHandle().DB(ctx).First(&row).Error
+	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
 	assert.True(t, db.IsRecordNotFound(err))
 }
 
@@ -370,7 +370,7 @@ func TestList(t *testing.T) {
 		RepoURL:    "file:///ANY",
 		WebhookID:  "WHID1",
 	}
-	err := te.GetDBHandle().DB(ctx).Create(&row).Error
+	err := te.GetDBHandle().NewQuery(ctx, "create_workflow").Create(&row)
 	require.NoError(t, err)
 
 	row2 := &tables.Workflow{
@@ -381,7 +381,7 @@ func TestList(t *testing.T) {
 		RepoURL:    "file:///ANY",
 		WebhookID:  "WHID2",
 	}
-	err = te.GetDBHandle().DB(ctx).Create(&row2).Error
+	err = te.GetDBHandle().NewQuery(ctx, "create_workflow").Create(&row2)
 	require.NoError(t, err)
 
 	ctx2, _, gid2 := authenticateAsUser(t, ctx, te, "US2")
@@ -395,7 +395,7 @@ func TestList(t *testing.T) {
 		RepoURL:    "file:///ANY",
 		WebhookID:  "WHID3",
 	}
-	err = te.GetDBHandle().DB(ctx).Create(&row3).Error
+	err = te.GetDBHandle().NewQuery(ctx, "create_workflow").Create(&row3)
 	require.NoError(t, err)
 
 	user1Req := &wfpb.GetWorkflowsRequest{

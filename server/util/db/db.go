@@ -1009,8 +1009,8 @@ func (h *DBHandle) IsDeadlockError(err error) bool {
 	return false
 }
 
-func (dbh *DBHandle) GORM(name string) *gorm.DB {
-	return dbh.db.Set(gormQueryNameKey, name)
+func (dbh *DBHandle) GORM(ctx context.Context, name string) *gorm.DB {
+	return dbh.db.WithContext(ctx).Set(gormQueryNameKey, name)
 }
 
 type rawQuery struct {
@@ -1033,6 +1033,7 @@ func (r *rawQuery) Scan(dest interface{}) error {
 	return r.db.Raw(r.sql, r.values...).Scan(dest).Error
 }
 
+// TODO(vadim): check if there are any uses cases where ScanEach can't be used directly
 func (r *rawQuery) IterateRaw(fn func(ctx context.Context, row *sql.Rows) error) error {
 	rows, err := r.db.Raw(r.sql, r.values...).Rows()
 	if err != nil {
@@ -1063,7 +1064,11 @@ func (q *query) Create(val interface{}) error {
 
 func (q *query) Update(val interface{}) error {
 	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
-	return db.Updates(val).Error
+	res := db.Updates(val)
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (q *query) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
@@ -1080,7 +1085,7 @@ func (t *transaction) NewQuery(ctx context.Context, name string) interfaces.DBQu
 	return &query{ctx: ctx, name: name, db: t.tx}
 }
 
-func (t *transaction) GORM(name string) *gorm.DB {
+func (t *transaction) GORM(ctx context.Context, name string) *gorm.DB {
 	return t.tx.Set(gormQueryNameKey, name)
 }
 
@@ -1114,16 +1119,16 @@ func TableSchema(db *DB, model any) (*schema.Schema, error) {
 	return stmt.Schema, nil
 }
 
-// ScanRows executes the given query and iterates over the result,
+// ScanEach executes the given query and iterates over the result,
 // automatically scanning each row into a struct of the specified type.
 //
 // Example:
 //
-//	err := db.ScanRows(rq, func(ctx context.Context, foo *tables.Foo) error {
+//	err := db.ScanEach(rq, func(ctx context.Context, foo *tables.Foo) error {
 //	  // handle foo
 //	  return nil
 //	})
-func ScanRows[T any](rq interfaces.DBRawQuery, fn func(ctx context.Context, val *T) error) error {
+func ScanEach[T any](rq interfaces.DBRawQuery, fn func(ctx context.Context, val *T) error) error {
 	return rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		var val T
 		if err := rq.(*rawQuery).db.ScanRows(row, &val); err != nil {
@@ -1134,4 +1139,30 @@ func ScanRows[T any](rq interfaces.DBRawQuery, fn func(ctx context.Context, val 
 		}
 		return nil
 	})
+}
+
+// ScanAll executes the given query and scans all the resulting rows into a
+// slice of the specified type.
+//
+// This should not be used if you expect the result set size to be large.
+//
+// Example:
+//
+//	foos, err := db.All(rq, &tables.Foo{})
+//
+// TODO(vadim): check if there are any ScanEach calls that can be converted to ScanAll.
+func ScanAll[T any](rq interfaces.DBRawQuery, t *T) ([]*T, error) {
+	var vals []*T
+	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
+		var val T
+		if err := rq.(*rawQuery).db.ScanRows(row, &val); err != nil {
+			return err
+		}
+		vals = append(vals, &val)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return vals, nil
 }

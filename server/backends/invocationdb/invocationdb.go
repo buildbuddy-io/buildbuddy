@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -45,7 +46,7 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 	created := false
 	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		// First, try inserting the invocation. This will work for first attempts.
-		result := tx.GORM("invocationdb_insert_invocation").Clauses(clause.OnConflict{DoNothing: true}).Create(ti)
+		result := tx.GORM(ctx, "invocationdb_insert_invocation").Clauses(clause.OnConflict{DoNothing: true}).Create(ti)
 		if result.Error != nil {
 			return result.Error
 		} else if created = result.RowsAffected > 0; created {
@@ -78,7 +79,7 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 		} else {
 			ti.Attempt += 1
 		}
-		result = tx.GORM("invocationdb_update_invocation_attempt").Updates(ti)
+		result = tx.GORM(ctx, "invocationdb_update_invocation_attempt").Updates(ti)
 		created = result.RowsAffected > 0
 		return result.Error
 	})
@@ -111,7 +112,7 @@ func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocati
 	var err error
 	for r := retry.DefaultWithContext(ctx); r.Next(); {
 		err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-			result := tx.GORM("invocationdb_update_invocation").Where(
+			result := tx.GORM(ctx, "invocationdb_update_invocation").Where(
 				"invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
 			updated = result.RowsAffected > 0
 			return result.Error
@@ -162,7 +163,8 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 
 func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
 	ti := &tables.Invocation{}
-	if err := d.h.DB(ctx).Raw(`SELECT * FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(ti).Error; err != nil {
+	if err := d.h.NewQuery(ctx, "invocationdb_get_invocation").Raw(
+		`SELECT * FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(ti); err != nil {
 		return nil, err
 	}
 	if ti.Perms&perms.OTHERS_READ == 0 {
@@ -185,8 +187,8 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 		return nil, err
 	}
 	queryStr, args := q.Build()
-	existingRow := d.h.DB(ctx).Raw(queryStr, args...)
-	if err := existingRow.Take(ti).Error; err != nil {
+	existingRow := d.h.NewQuery(ctx, "invocationdb_group_for_invocation").Raw(queryStr, args...)
+	if err := existingRow.Take(ti); err != nil {
 		return nil, err
 	}
 	return ti, nil
@@ -194,9 +196,9 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 
 func (d *InvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocationID string) (string, error) {
 	in := &tables.Invocation{}
-	err := d.h.DB(ctx).Raw(
+	err := d.h.NewQuery(ctx, "invocationdb_groupd_for_invocation").Raw(
 		`SELECT group_id FROM "Invocations" WHERE invocation_id = ?`, invocationID,
-	).Take(in).Error
+	).Take(in)
 	if err != nil {
 		return "", err
 	}
@@ -205,28 +207,15 @@ func (d *InvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocati
 
 func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error) {
 	cutoffUsec := cutoffTime.UnixMicro()
-	rows, err := d.h.DB(ctx).Raw(`SELECT * FROM "Invocations" as i
-                                      WHERE i.created_at_usec < ?
-                                      LIMIT ?`, cutoffUsec, limit).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	invocations := make([]*tables.Invocation, 0)
-	var ti tables.Invocation
-	for rows.Next() {
-		if err := d.h.DB(ctx).ScanRows(rows, &ti); err != nil {
-			return nil, err
-		}
-		i := ti
-		invocations = append(invocations, &i)
-	}
-	return invocations, nil
+	rq := d.h.NewQuery(ctx, "invocationdb_get_expired_invocations").Raw(
+		`SELECT * FROM "Invocations" as i
+             WHERE i.created_at_usec < ?
+             LIMIT ?`, cutoffUsec, limit)
+	return db.ScanAll(rq, &tables.Invocation{})
 }
 
 func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error {
-	counts := d.h.DB(ctx).Raw(`
+	counts := d.h.NewQuery(ctx, "invocationdb_get_counts").Raw(`
 		SELECT 
 			COUNT(DISTINCT invocation_id) as invocation_count,
 			COUNT(DISTINCT host) as bazel_host_count,
@@ -238,7 +227,7 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 		time.Now().Truncate(24*time.Hour).Add(-24*time.Hour).UnixMicro(),
 		time.Now().Truncate(24*time.Hour).UnixMicro())
 
-	if err := counts.Take(stat).Error; err != nil {
+	if err := counts.Take(stat); err != nil {
 		return err
 	}
 	return nil

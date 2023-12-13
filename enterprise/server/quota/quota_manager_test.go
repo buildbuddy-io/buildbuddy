@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -56,34 +57,28 @@ func fetchQuotaBuckets(t *testing.T, env *testenv.TestEnv, ctx context.Context, 
 		q.AddWhereClause("namespace = ?", namespace)
 	}
 	qStr, qArgs := q.Build()
-	rows, err := dbh.DB(ctx).Raw(qStr, qArgs...).Rows()
-	require.NoError(t, err)
-
-	for rows.Next() {
-		tb := &tables.QuotaBucket{}
-		err := dbh.DB(ctx).ScanRows(rows, tb)
-		require.NoError(t, err)
+	rq := dbh.NewQuery(ctx, "get_buckets").Raw(qStr, qArgs...)
+	err := db.ScanEach(rq, func(ctx context.Context, tb *tables.QuotaBucket) error {
 		// Throw out Model timestamps to simplify assertions.
 		tb.Model = tables.Model{}
 		res = append(res, tb)
-	}
+		return nil
+	})
+	require.NoError(t, err)
 	return res
 }
 
 func fetchAllQuotaGroups(t *testing.T, env *testenv.TestEnv, ctx context.Context) []*tables.QuotaGroup {
 	res := []*tables.QuotaGroup{}
 	dbh := env.GetDBHandle()
-	rows, err := dbh.DB(ctx).Raw(`SELECT * FROM "QuotaGroups"`).Rows()
-	require.NoError(t, err)
-
-	for rows.Next() {
-		tg := &tables.QuotaGroup{}
-		err := dbh.DB(ctx).ScanRows(rows, tg)
-		require.NoError(t, err)
+	rq := dbh.NewQuery(ctx, "get_groups").Raw(`SELECT * FROM "QuotaGroups"`)
+	err := db.ScanEach(rq, func(ctx context.Context, tg *tables.QuotaGroup) error {
 		// Throw out Model timestamps to simplify assertions.
 		tg.Model = tables.Model{}
 		res = append(res, tg)
-	}
+		return nil
+	})
+	require.NoError(t, err)
 	return res
 }
 
@@ -91,7 +86,6 @@ func TestQuotaManagerFindBucket(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
 
-	db := env.GetDBHandle().DB(ctx)
 	buckets := []*tables.QuotaBucket{
 		{
 			Namespace:          "remote_execution",
@@ -114,10 +108,10 @@ func TestQuotaManagerFindBucket(t *testing.T) {
 		QuotaKey:   "GR123456",
 		BucketName: "restricted",
 	}
-	result := db.Create(&buckets)
-	require.NoError(t, result.Error)
-	result = db.Create(quotaGroup)
-	require.NoError(t, result.Error)
+	err := env.GetDBHandle().NewQuery(ctx, "create_bucket").Create(&buckets)
+	require.NoError(t, err)
+	err = env.GetDBHandle().NewQuery(ctx, "create_quota_group").Create(quotaGroup)
+	require.NoError(t, err)
 
 	qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 	require.NoError(t, err)
@@ -155,7 +149,6 @@ func TestGetNamespace(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
 
-	db := env.GetDBHandle().DB(ctx)
 	buckets := []*tables.QuotaBucket{
 		{
 			Namespace:          "remote_execution",
@@ -178,10 +171,10 @@ func TestGetNamespace(t *testing.T) {
 		QuotaKey:   "GR123456",
 		BucketName: "restricted",
 	}
-	result := db.Create(&buckets)
-	require.NoError(t, result.Error)
-	result = db.Create(quotaGroup)
-	require.NoError(t, result.Error)
+	err := env.GetDBHandle().NewQuery(ctx, "create_bucket").Create(&buckets)
+	require.NoError(t, err)
+	err = env.GetDBHandle().NewQuery(ctx, "create_quota_group").Create(quotaGroup)
+	require.NoError(t, err)
 
 	qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 	require.NoError(t, err)
@@ -252,9 +245,9 @@ func TestModifyNamespace_AddBucket(t *testing.T) {
 		PeriodDurationUsec: int64(time.Second / time.Microsecond),
 		MaxBurst:           105,
 	}
-	db := env.GetDBHandle().DB(ctx)
-	result := db.Create(&bucket)
-	require.NoError(t, result.Error)
+	db := env.GetDBHandle()
+	err := db.NewQuery(ctx, "new_bucket").Create(&bucket)
+	require.NoError(t, err)
 	testCases := []struct {
 		name        string
 		req         *qpb.ModifyNamespaceRequest
@@ -341,7 +334,6 @@ func TestModifyNamespace_AddBucket(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				got := fetchQuotaBuckets(t, env, ctx, tc.req.GetNamespace())
-				require.NoError(t, result.Error)
 				// use sortProtos to ignore orders
 				sortProtos := cmpopts.SortSlices(func(m1, m2 protocmp.Message) bool { return m1.String() < m2.String() })
 				assert.Empty(t, cmp.Diff(tc.wantBuckets, got, protocmp.Transform(), sortProtos))
@@ -361,9 +353,9 @@ func TestModifyNamespace_UpdateBucket(t *testing.T) {
 		PeriodDurationUsec: int64(time.Second / time.Microsecond),
 		MaxBurst:           105,
 	}
-	db := env.GetDBHandle().DB(ctx)
-	result := db.Create(&bucket)
-	require.NoError(t, result.Error)
+	db := env.GetDBHandle()
+	err := db.NewQuery(ctx, "create_bucket").Create(&bucket)
+	require.NoError(t, err)
 	testCases := []struct {
 		name       string
 		req        *qpb.ModifyNamespaceRequest
@@ -442,7 +434,6 @@ func TestModifyNamespace_RemoveBucket(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
 
-	db := env.GetDBHandle().DB(ctx)
 	buckets := []*tables.QuotaBucket{
 		{
 			Namespace:          "remote_execution",
@@ -472,10 +463,10 @@ func TestModifyNamespace_RemoveBucket(t *testing.T) {
 			BucketName: "restricted",
 		},
 	}
-	result := db.Create(&buckets)
-	require.NoError(t, result.Error)
-	result = db.Create(&quotaGroups)
-	require.NoError(t, result.Error)
+	err := env.GetDBHandle().NewQuery(ctx, "create_bucket").Create(&buckets)
+	require.NoError(t, err)
+	err = env.GetDBHandle().NewQuery(ctx, "create_quota_group").Create(&quotaGroups)
+	require.NoError(t, err)
 
 	testCases := []struct {
 		name        string
@@ -531,16 +522,15 @@ func TestModifyNamespace_RemoveBucket(t *testing.T) {
 			_, err := qm.ModifyNamespace(ctx, tc.req)
 			assert.NoError(t, err)
 			got := fetchQuotaBuckets(t, env, ctx, tc.req.GetNamespace())
-			require.NoError(t, result.Error)
 			// use sortProtos to ignore orders
 			sortProtos := cmpopts.SortSlices(func(m1, m2 protocmp.Message) bool { return m1.String() < m2.String() })
 			assert.Empty(t, cmp.Diff(tc.wantBuckets, got, protocmp.Transform(), sortProtos))
 			row := &struct{ Count int }{}
-			result := db.Raw(
+			err = env.GetDBHandle().NewQuery(ctx, "get_quota_group").Raw(
 				`SELECT COUNT(*) as count FROM "QuotaGroups" WHERE namespace = ? AND bucket_name = ?`,
 				tc.req.GetNamespace(), tc.req.GetRemoveBucket(),
-			).Scan(row)
-			require.NoError(t, result.Error)
+			).Take(row)
+			require.NoError(t, err)
 			assert.Equal(t, 0, row.Count)
 		})
 	}
@@ -550,7 +540,6 @@ func TestRemoveNamespace(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
 
-	db := env.GetDBHandle().DB(ctx)
 	buckets := []*tables.QuotaBucket{
 		{
 			Namespace:          "remote_execution",
@@ -599,10 +588,10 @@ func TestRemoveNamespace(t *testing.T) {
 			BucketName: "restricted",
 		},
 	}
-	result := db.Create(&buckets)
-	require.NoError(t, result.Error)
-	result = db.Create(&quotaGroups)
-	require.NoError(t, result.Error)
+	err := env.GetDBHandle().NewQuery(ctx, "create_buckets").Create(&buckets)
+	require.NoError(t, err)
+	err = env.GetDBHandle().NewQuery(ctx, "create_quota_groups").Create(&quotaGroups)
+	require.NoError(t, err)
 
 	qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 	require.NoError(t, err)
@@ -650,7 +639,6 @@ func TestQuotaManagerApplyBucket(t *testing.T) {
 	env.SetUserDB(udb)
 	ctx := context.Background()
 
-	db := env.GetDBHandle().DB(ctx)
 	buckets := []*tables.QuotaBucket{
 		{
 			Namespace:          "remote_execution",
@@ -694,12 +682,12 @@ func TestQuotaManagerApplyBucket(t *testing.T) {
 			GroupID: "GR123458",
 		},
 	}
-	result := db.Create(&buckets)
-	require.NoError(t, result.Error)
-	result = db.Create(&quotaGroups)
-	require.NoError(t, result.Error)
-	result = db.Create(&groups)
-	require.NoError(t, result.Error)
+	err = env.GetDBHandle().NewQuery(ctx, "create_bucket").Create(&buckets)
+	require.NoError(t, err)
+	err = env.GetDBHandle().NewQuery(ctx, "create_quota_group").Create(&quotaGroups)
+	require.NoError(t, err)
+	err = env.GetDBHandle().NewQuery(ctx, "create_group").Create(&groups)
+	require.NoError(t, err)
 
 	testCases := []struct {
 		name           string
@@ -804,14 +792,14 @@ func TestQuotaManagerApplyBucket(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				row := &struct{ BucketName string }{}
-				result := db.Raw(
+				err := env.GetDBHandle().NewQuery(ctx, "get_quota_group").Raw(
 					`SELECT bucket_name FROM "QuotaGroups" WHERE namespace = ? AND quota_key = ?`,
 					tc.req.GetNamespace(), tc.wantQuotaKey,
-				).Scan(row)
-				require.NoError(t, result.Error)
+				).Take(row)
 				if tc.wantBucketName == nil {
-					assert.Equal(t, result.RowsAffected, int64(0))
+					require.True(t, db.IsRecordNotFound(err))
 				} else {
+					require.NoError(t, err)
 					assert.Equal(t, row.BucketName, *tc.wantBucketName)
 				}
 			}

@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -281,7 +282,7 @@ func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]
 	}
 
 	ekv := &tables.EncryptionKeyVersion{}
-	if err := c.dbh.DB(ctx).Raw(query, args...).Take(ekv).Error; err != nil {
+	if err := c.dbh.NewQuery(ctx, "crypter_refresh_key").Raw(query, args...).Take(ekv); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil, status.NotFoundError("no key available")
 		}
@@ -734,7 +735,7 @@ func (c *Crypter) reencryptKey(ctx context.Context, ekv *encryptionKeyVersionWit
 	`
 	now := c.clock.Now()
 	args := []interface{}{encMasterKeyPortion, encGroupKeyPortion, now.UnixMicro(), now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
-	if err := c.dbh.DB(ctx).Exec(q, args...).Error; err != nil {
+	if err := c.dbh.NewQuery(ctx, "crypter_update_key_version").Raw(q, args...).Exec().Error; err != nil {
 		return err
 	}
 
@@ -764,18 +765,14 @@ func (c *Crypter) keyReencryptorIteration(cutoff time.Time) error {
 		var ekvs []*encryptionKeyVersionWithGroupID
 		for retrier.Next() {
 			ekvs = nil
-			rows, err := c.dbh.DB(ctx).Raw(q, cutoff.UnixMicro()).Rows()
+			rq := c.dbh.NewQuery(ctx, "crypter_get_keys_to_reencrypt").Raw(q, cutoff.UnixMicro())
+			err := db.ScanEach(rq, func(ctx context.Context, ekv *encryptionKeyVersionWithGroupID) error {
+				ekvs = append(ekvs, ekv)
+				return nil
+			})
 			if err != nil {
 				lastErr = err
 				continue
-			}
-
-			for rows.Next() {
-				var ekv encryptionKeyVersionWithGroupID
-				if err := c.dbh.DB(ctx).ScanRows(rows, &ekv); err != nil {
-					return nil, err
-				}
-				ekvs = append(ekvs, &ekv)
 			}
 			return ekvs, nil
 		}
@@ -808,7 +805,7 @@ func (c *Crypter) keyReencryptorIteration(cutoff time.Time) error {
 			`
 		now := c.clock.Now()
 		args := []interface{}{now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
-		if err := c.dbh.DB(uCtx).Exec(q, args...).Error; err != nil {
+		if err := c.dbh.NewQuery(uCtx, "crypter_update_encryption_timestamp").Raw(q, args...).Exec().Error; err != nil {
 			log.Warningf("could not update attempt timestamp: %s", err)
 		}
 	}

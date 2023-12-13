@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -149,22 +150,11 @@ func Register(env environment.Env) error {
 }
 
 func (s *Service) loadRulesFromDB(ctx context.Context, groupID string) ([]*tables.IPRule, error) {
-	rows, err := s.env.GetDBHandle().DB(ctx).Raw(
-		`SELECT * FROM "IPRules" WHERE group_id = ? ORDER BY created_at_usec`, groupID).Rows()
+	rq := s.env.GetDBHandle().NewQuery(ctx, "iprules_load_rules").Raw(
+		`SELECT * FROM "IPRules" WHERE group_id = ? ORDER BY created_at_usec`, groupID)
+	rules, err := db.ScanAll(rq, &tables.IPRule{})
 	if err != nil {
 		return nil, err
-	}
-
-	var rules []*tables.IPRule
-	for rows.Next() {
-		r := &tables.IPRule{}
-		if err := s.env.GetDBHandle().DB(ctx).ScanRows(rows, r); err != nil {
-			return nil, err
-		}
-		rules = append(rules, r)
-	}
-	if rows.Err() != nil {
-		return nil, rows.Err()
 	}
 	return rules, nil
 }
@@ -331,21 +321,15 @@ func (s *Service) GetRule(ctx context.Context, groupID string, ruleID string) (*
 		return nil, err
 	}
 
-	rows, err := s.env.GetDBHandle().DB(ctx).Raw(
-		`SELECT * FROM "IPRules" WHERE group_id = ? AND ip_rule_id = ?`, groupID, ruleID).Rows()
-	if err != nil {
-		return nil, err
-	}
-
-	if !rows.Next() {
-		return nil, status.NotFoundErrorf("rule %q not found", ruleID)
-	}
-
 	r := &tables.IPRule{}
-	if err := s.env.GetDBHandle().DB(ctx).ScanRows(rows, r); err != nil {
+	err := s.env.GetDBHandle().NewQuery(ctx, "iprules_get").Raw(
+		`SELECT * FROM "IPRules" WHERE group_id = ? AND ip_rule_id = ?`, groupID, ruleID).Take(r)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundErrorf("rule %q not found", ruleID)
+		}
 		return nil, err
 	}
-
 	return r, nil
 }
 
@@ -450,7 +434,8 @@ func (s *Service) AddRule(ctx context.Context, req *irpb.AddRuleRequest) (*irpb.
 	groupID := req.GetRequestContext().GetGroupId()
 	r := req.GetRule()
 	q := `INSERT INTO "IPRules" (created_at_usec, ip_rule_id, group_id, cidr, description) VALUES (?, ?, ?, ?, ?)`
-	if err := s.env.GetDBHandle().DB(ctx).Exec(q, time.Now().UnixMicro(), id, groupID, cidr, r.GetDescription()).Error; err != nil {
+	if err := s.env.GetDBHandle().NewQuery(ctx, "iprules_add").Raw(
+		q, time.Now().UnixMicro(), id, groupID, cidr, r.GetDescription()).Exec().Error; err != nil {
 		return nil, err
 	}
 	r.IpRuleId = id
@@ -473,7 +458,8 @@ func (s *Service) UpdateRule(ctx context.Context, req *irpb.UpdateRuleRequest) (
 	groupID := req.GetRequestContext().GetGroupId()
 	r := req.GetRule()
 	q := `UPDATE "IPRules" SET cidr = ?, description = ? WHERE group_id = ? AND ip_rule_id = ?`
-	if err := s.env.GetDBHandle().DB(ctx).Exec(q, cidr, r.GetDescription(), groupID, r.GetIpRuleId()).Error; err != nil {
+	if err := s.env.GetDBHandle().NewQuery(ctx, "iprules_update").Raw(
+		q, cidr, r.GetDescription(), groupID, r.GetIpRuleId()).Exec().Error; err != nil {
 		return nil, err
 	}
 
@@ -505,7 +491,8 @@ func (s *Service) DeleteRule(ctx context.Context, req *irpb.DeleteRuleRequest) (
 
 	groupID := req.GetRequestContext().GetGroupId()
 	q := `DELETE FROM "IPRules" WHERE group_id = ? AND ip_rule_id = ?`
-	if err := s.env.GetDBHandle().DB(ctx).Exec(q, groupID, req.GetIpRuleId()).Error; err != nil {
+	if err := s.env.GetDBHandle().NewQuery(ctx, "iprules_delete").Raw(
+		q, groupID, req.GetIpRuleId()).Exec().Error; err != nil {
 		return nil, err
 	}
 

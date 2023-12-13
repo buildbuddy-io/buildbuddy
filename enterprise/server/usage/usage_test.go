@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-sql-driver/mysql"
@@ -73,22 +74,20 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	usages := []*tables.Usage{}
 	ctx := context.Background()
 	dbh := te.GetDBHandle()
-	rows, err := dbh.DB(ctx).Raw(`
+	rq := dbh.NewQuery(ctx, "get_usages").Raw(`
 		SELECT * From "Usages"
 		ORDER BY group_id, period_start_usec, region, client, origin ASC;
-	`).Rows()
-	require.NoError(t, err)
+	`)
 
-	for rows.Next() {
-		tu := &tables.Usage{}
-		err := dbh.DB(ctx).ScanRows(rows, tu)
-		require.NoError(t, err)
+	err := db.ScanEach(rq, func(ctx context.Context, tu *tables.Usage) error {
 		// Throw out Model timestamps and PK to simplify assertions, since these
 		// are non-deterministic.
 		tu.Model = tables.Model{}
 		tu.UsageID = ""
 		usages = append(usages, tu)
-	}
+		return nil
+	})
+	require.NoError(t, err)
 	return usages
 }
 
@@ -98,14 +97,13 @@ func requireNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
 	fail := func(db *gorm.DB) {
 		require.FailNowf(t, "unexpected query", "SQL: %s", db.Statement.SQL.String())
 	}
-	ctx := context.Background()
-	dbh := te.GetDBHandle()
-	dbh.DB(ctx).Callback().Create().Register("fail", fail)
-	dbh.DB(ctx).Callback().Query().Register("fail", fail)
-	dbh.DB(ctx).Callback().Update().Register("fail", fail)
-	dbh.DB(ctx).Callback().Delete().Register("fail", fail)
-	dbh.DB(ctx).Callback().Row().Register("fail", fail)
-	dbh.DB(ctx).Callback().Raw().Register("fail", fail)
+	dbh := te.GetDBHandle().GORM(context.Background(), "set_callbacks")
+	dbh.Callback().Create().Register("fail", fail)
+	dbh.Callback().Query().Register("fail", fail)
+	dbh.Callback().Update().Register("fail", fail)
+	dbh.Callback().Delete().Register("fail", fail)
+	dbh.Callback().Row().Register("fail", fail)
+	dbh.Callback().Raw().Register("fail", fail)
 }
 
 type nopDistributedLock struct{}

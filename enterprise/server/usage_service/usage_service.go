@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 
@@ -95,7 +96,7 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 
 func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
 	dbh := s.env.GetDBHandle()
-	rows, err := dbh.DB(ctx).Raw(`
+	rq := dbh.NewQuery(ctx, "usage_service_scan").Raw(`
 		SELECT `+dbh.UTCMonthFromUsecTimestamp("period_start_usec")+` AS period,
 		SUM(invocations) AS invocations,
 		SUM(action_cache_hits) AS action_cache_hits,
@@ -109,22 +110,8 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 		AND group_id = ?
 		GROUP BY period
 		ORDER BY period ASC
-	`, start.UnixMicro(), end.UnixMicro(), groupID).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	usages := []*usagepb.Usage{}
-	for rows.Next() {
-		usage := &usagepb.Usage{}
-		if err := dbh.DB(ctx).ScanRows(rows, usage); err != nil {
-			return nil, err
-		}
-		usages = append(usages, usage)
-	}
-
-	return usages, nil
+	`, start.UnixMicro(), end.UnixMicro(), groupID)
+	return db.ScanAll(rq, &usagepb.Usage{})
 }
 
 func startOfMonth(t time.Time) time.Time {

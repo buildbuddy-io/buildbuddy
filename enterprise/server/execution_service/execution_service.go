@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -31,7 +32,7 @@ func checkPreconditions(req *espb.GetExecutionRequest) error {
 	return status.FailedPreconditionError("An execution lookup with invocation_id must be provided")
 }
 
-func (es *ExecutionService) queryExecutions(ctx context.Context, baseQuery *query_builder.Query) ([]tables.Execution, error) {
+func (es *ExecutionService) queryExecutions(ctx context.Context, baseQuery *query_builder.Query) ([]*tables.Execution, error) {
 	dbh := es.env.GetDBHandle()
 	q := baseQuery
 
@@ -49,23 +50,11 @@ func (es *ExecutionService) queryExecutions(ctx context.Context, baseQuery *quer
 	q.AddWhereClause("("+permQuery+")", permArgs...)
 
 	queryStr, args := q.Build()
-	rows, err := dbh.DB(ctx).Raw(queryStr, args...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	executions := make([]tables.Execution, 0)
-	for rows.Next() {
-		var exec tables.Execution
-		if err := dbh.DB(ctx).ScanRows(rows, &exec); err != nil {
-			return nil, err
-		}
-		executions = append(executions, exec)
-	}
-	return executions, nil
+	rq := dbh.NewQuery(ctx, "execution_server_get_executions").Raw(queryStr, args...)
+	return db.ScanAll(rq, &tables.Execution{})
 }
 
-func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID string) ([]tables.Execution, error) {
+func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID string) ([]*tables.Execution, error) {
 	q := query_builder.NewQuery(`
 		SELECT e.* FROM "InvocationExecutions" ie
 		JOIN "Executions" e ON e.execution_id = ie.execution_id
@@ -92,7 +81,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	})
 	rsp := &espb.GetExecutionResponse{}
 	for _, ex := range executions {
-		protoExec, err := execution.TableExecToClientProto(&ex)
+		protoExec, err := execution.TableExecToClientProto(ex)
 		if err != nil {
 			return nil, err
 		}

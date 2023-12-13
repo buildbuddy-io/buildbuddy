@@ -73,22 +73,18 @@ func (s *ExecutionSearchService) fetchExecutionData(ctx context.Context, groupId
 	}
 	qString, qArgs := q.Build()
 
-	rows, err := s.h.RawWithOptions(ctx, db.Opts().WithQueryName("fetch_executions"), qString, qArgs...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	rq := s.h.NewQuery(ctx, "fetch_executions").Raw(qString, qArgs...)
 	executions := make(map[string]*ExecutionWithInvocationId, 0)
-	for rows.Next() {
-		var r tables.Execution
-		if err := s.h.DB(ctx).ScanRows(rows, &r); err != nil {
-			return nil, err
-		}
-		exec, err := execution.TableExecToClientProto(&r)
+	err := db.ScanEach(rq, func(ctx context.Context, r *tables.Execution) error {
+		exec, err := execution.TableExecToClientProto(r)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		executions[r.ExecutionID] = &ExecutionWithInvocationId{execution: exec, invocationID: r.InvocationID}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return executions, nil
 }

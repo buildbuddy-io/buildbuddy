@@ -500,7 +500,7 @@ func assertTestTargetStatusesMatchPrimaryDB(t *testing.T, ctx context.Context, t
 	  FROM "Targets" as t 
 	  JOIN "TargetStatuses" as ts ON ts.target_id = t.target_id 
 	  JOIN Invocations as i ON i.invocation_uuid = ts.invocation_uuid`
-	err = te.GetDBHandle().DB(ctx).Raw(query).Scan(&got).Error
+	err = te.GetDBHandle().NewQuery(ctx, "get_target_statuses").Raw(query).Take(&got)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, got, expected)
 }
