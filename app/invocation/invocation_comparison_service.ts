@@ -30,10 +30,15 @@ export class InvocationComparisonService {
     }
   }
 
-  private fetch() {
-    this.pendingRequest?.cancel();
+  fetch() {
     if (this.invocationId === undefined) {
       this.invocationModel = undefined;
+      return;
+    }
+    if (this.invocationModel !== undefined && !this.invocationModel.isInProgress()) {
+      return;
+    }
+    if (this.pendingRequest) {
       return;
     }
 
@@ -85,10 +90,11 @@ export class InvocationComparisonService {
       this.invocationId = invocationId;
       localStorage[INVOCATION_ID_TO_COMPARE_LOCALSTORAGE_KEY] = invocationId;
     }
+    this.pendingRequest?.cancel();
+    this.pendingRequest = undefined;
     this.invocationModel = undefined;
 
     this.publishState();
-    this.fetch();
   }
 
   private publishState() {
