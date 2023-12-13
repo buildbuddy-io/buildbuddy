@@ -29,6 +29,8 @@ export type FetchResponseType = "arraybuffer" | "stream" | "text" | "";
 /**
  * Optional parameters for bytestream downloads.
  *
+ * init:
+ *     RequestInit for the fetch call that powers this download.
  * filename:
  *     the file will be downloaded with this filename rather than the digest.
  * zip:
@@ -36,7 +38,11 @@ export type FetchResponseType = "arraybuffer" | "stream" | "text" | "";
  *     sub-file in a zip file should be extracted and downloaded (the file
  *     referenced by the digest must be a valid zip file).
  */
-export type BytestreamFileOptions = { filename?: string; zip?: string };
+export type BytestreamFileOptions = {
+  init?: RequestInit;
+  filename?: string;
+  zip?: string;
+};
 
 class RpcService {
   service: ExtendedBuildBuddyService;
@@ -118,13 +124,12 @@ class RpcService {
     bytestreamURL: string,
     invocationId: string,
     responseType?: T,
-    init: RequestInit = {},
     options: BytestreamFileOptions = {}
   ): Promise<FetchPromiseType<T>> {
     return this.fetch(
       this.getBytestreamUrl(bytestreamURL, invocationId, options),
       (responseType || "") as FetchResponseType,
-      init
+      options.init ?? {}
     ) as Promise<FetchPromiseType<T>>;
   }
 

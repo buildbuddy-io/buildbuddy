@@ -127,11 +127,12 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     const digestSize = Number(profileFile.uri.split("/").pop());
 
     this.setState({ loading: true });
+    const init = {
+      // Set the stored encoding header to prevent the server from double-gzipping.
+      headers: { "X-Stored-Encoding-Hint": storedEncoding },
+    };
     rpcService
-      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "stream", {
-        // Set the stored encoding header to prevent the server from double-gzipping.
-        headers: { "X-Stored-Encoding-Hint": storedEncoding },
-      })
+      .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "stream", { init })
       .then((body) => {
         if (body === null) throw new Error("response body is null");
         return readProfile(body, (n) => this.setProgress(n, digestSize, storedEncoding));
