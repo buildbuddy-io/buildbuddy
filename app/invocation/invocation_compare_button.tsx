@@ -1,5 +1,5 @@
 import React from "react";
-import { fromEvent, Subscription } from "rxjs";
+import { Subscription } from "rxjs";
 import { OutlinedButton } from "../components/button/button";
 import Menu, { MenuItem } from "../components/menu/menu";
 import Popup from "../components/popup/popup";
