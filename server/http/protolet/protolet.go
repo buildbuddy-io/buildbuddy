@@ -200,6 +200,7 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{},
 			r.URL.Path = fmt.Sprintf("/%s/%s", serviceName, strings.TrimPrefix(r.URL.Path, servicePrefix))
 			r.ProtoMajor = 2
 			r.ProtoMinor = 0
+			r.Header.Del("content-length")
 			wrapped := &wrappedResponse{w: w}
 			grpcServer.ServeHTTP(wrapped, r)
 			wrapped.sendErrorIfNeeded(r)
