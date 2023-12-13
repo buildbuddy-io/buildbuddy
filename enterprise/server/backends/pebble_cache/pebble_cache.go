@@ -3368,7 +3368,15 @@ func (p *PebbleCache) Stop() error {
 	}
 	log.Infof("Pebble Cache [%s]: db flushed again", p.name)
 
-	return p.db.Close()
+	if err := p.db.Close(); err != nil {
+		return err
+	}
+
+	if err := p.locker.Close(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (p *PebbleCache) SupportsEncryption(ctx context.Context) bool {
