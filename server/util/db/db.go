@@ -1148,7 +1148,7 @@ func ScanEach[T any](rq interfaces.DBRawQuery, fn func(ctx context.Context, val 
 //
 // Example:
 //
-//	foos, err := db.All(rq, &tables.Foo{})
+//	foos, err := db.ScanAll(rq, &tables.Foo{})
 func ScanAll[T any](rq interfaces.DBRawQuery, t *T) ([]*T, error) {
 	var vals []*T
 	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
