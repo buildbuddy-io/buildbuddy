@@ -1,4 +1,5 @@
 build --noenable_bzlmod
+query --noenable_bzlmod
 
 build --enable_platform_specific_config=true
 query --enable_platform_specific_config=true
