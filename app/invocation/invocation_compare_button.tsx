@@ -1,21 +1,20 @@
 import React from "react";
-import { fromEvent, Subscription } from "rxjs";
+import { Subscription } from "rxjs";
 import { OutlinedButton } from "../components/button/button";
 import Menu, { MenuItem } from "../components/menu/menu";
 import Popup from "../components/popup/popup";
 import router from "../router/router";
 import capabilities from "../capabilities/capabilities";
+import service, { IdAndModel } from "./invocation_comparison_service";
 
 export interface InvocationCompareButtonComponentProps {
   invocationId: string;
 }
 
 interface State {
-  invocationIdToCompare: string;
+  invocationIdToCompare?: string;
   isDropdownOpen: boolean;
 }
-
-const INVOCATION_ID_TO_COMPARE_LOCALSTORAGE_KEY = "invocation_id_to_compare";
 
 export default class InvocationCompareButtonComponent extends React.Component<
   InvocationCompareButtonComponentProps,
@@ -23,21 +22,21 @@ export default class InvocationCompareButtonComponent extends React.Component<
 > {
   state: State = {
     isDropdownOpen: false,
-    invocationIdToCompare: localStorage[INVOCATION_ID_TO_COMPARE_LOCALSTORAGE_KEY] || "",
+    invocationIdToCompare: service.getComparisonInvocationId(),
   };
 
   private subscription = new Subscription();
 
   componentDidMount() {
-    this.subscription.add(fromEvent(window, "storage").subscribe(this.onStorage.bind(this)));
+    this.subscription.add(service.subscribe(this.onInvocationUpdate.bind(this)));
   }
 
   componentWillUnmount() {
     this.subscription.unsubscribe();
   }
 
-  private onStorage() {
-    this.setState({ invocationIdToCompare: localStorage[INVOCATION_ID_TO_COMPARE_LOCALSTORAGE_KEY] || "" });
+  private onInvocationUpdate(data: IdAndModel) {
+    this.setState({ invocationIdToCompare: data.id });
   }
 
   private onClick() {
@@ -45,13 +44,12 @@ export default class InvocationCompareButtonComponent extends React.Component<
   }
 
   private onClickSelectForComparison() {
-    localStorage[INVOCATION_ID_TO_COMPARE_LOCALSTORAGE_KEY] = this.props.invocationId;
+    service.setComparisonInvocation(this.props.invocationId);
     this.setState({ isDropdownOpen: false, invocationIdToCompare: this.props.invocationId });
   }
 
   private onClickCompareWithSelected() {
     const invocationIdToCompare = this.state.invocationIdToCompare;
-    delete localStorage[INVOCATION_ID_TO_COMPARE_LOCALSTORAGE_KEY];
     this.setState({ isDropdownOpen: false, invocationIdToCompare: "" });
     router.navigateTo(`/compare/${invocationIdToCompare}...${this.props.invocationId}`);
   }
