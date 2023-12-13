@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
@@ -91,7 +92,13 @@ func contextReplacingUnaryClientInterceptor(ctxFn func(ctx context.Context) cont
 
 func addAuthToContext(env environment.Env, ctx context.Context) context.Context {
 	if auth := env.GetAuthenticator(); auth != nil {
-		return auth.AuthenticatedGRPCContext(ctx)
+		ctx = auth.AuthenticatedGRPCContext(ctx)
+		if c, err := claims.ClaimsFromContext(ctx); err == nil {
+			ctx = log.EnrichContext(ctx, "group_id", c.GetGroupID())
+			if c.GetUserID() != "" {
+				ctx = log.EnrichContext(ctx, "user_id", c.GetGroupID())
+			}
+		}
 	}
 	return ctx
 }
