@@ -157,7 +157,7 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 		query := fmt.Sprintf(`SELECT * FROM "APIKeys" WHERE encrypted_value = '' LIMIT %d`, apiKeyEncryptionBackfillBatchSize)
 		rq := dbh.NewQuery(ctx, "authdb_select_keys_to_backfill").Raw(query)
 		var keysToUpdate []*tables.APIKey
-		err := db.ScanRows(rq, func(ctx context.Context, key *tables.APIKey) error {
+		err := db.ScanEach(rq, func(ctx context.Context, key *tables.APIKey) error {
 			keysToUpdate = append(keysToUpdate, key)
 			return nil
 		})
@@ -856,7 +856,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	rq := d.h.NewQuery(ctx, "authdb_get_api_keys").Raw(queryStr, args...)
 
 	keys := make([]*tables.APIKey, 0)
-	err = db.ScanRows(rq, func(ctx context.Context, k *tables.APIKey) error {
+	err = db.ScanEach(rq, func(ctx context.Context, k *tables.APIKey) error {
 		if err := d.fillDecryptedAPIKey(k); err != nil {
 			return err
 		}
@@ -972,7 +972,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.
 
 	rq := d.h.NewQuery(ctx, "authdb_get_user_api_keys").Raw(queryStr, args...)
 	var keys []*tables.APIKey
-	err = db.ScanRows(rq, func(ctx context.Context, k *tables.APIKey) error {
+	err = db.ScanEach(rq, func(ctx context.Context, k *tables.APIKey) error {
 		if err := d.fillDecryptedAPIKey(k); err != nil {
 			return err
 		}
