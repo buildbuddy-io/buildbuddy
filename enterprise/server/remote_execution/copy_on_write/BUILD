@@ -13,6 +13,7 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/digest",
         "//server/resources",
+        "//server/util/alert",
         "//server/util/lockmap",
         "//server/util/log",
         "//server/util/lru",

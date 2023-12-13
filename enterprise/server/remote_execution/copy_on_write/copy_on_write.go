@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -46,7 +47,11 @@ const (
 	// also be accessed
 	numChunksToEagerFetch = 4
 
+	// Number of goroutines to run concurrently to convert a file to a COWStore.
 	fileConversionConcurrency = 8
+
+	// Number of goroutines to run to handle LRU evictions.
+	lruEvictionHandlerConcurrency = 2
 )
 
 var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
@@ -1195,6 +1200,11 @@ func (m *Mmap) Digest() (*repb.Digest, error) {
 // MmapLRU limits the number of Mmap instances that can be mapped in memory at
 // once.
 type MmapLRU struct {
+	// Evictions that happened during Add() which need to be processed.
+	evictions chan *Mmap
+	// Goroutines processing evictions.
+	evictorGroup errgroup.Group
+
 	mu  sync.Mutex
 	lru *lru.LRU[*Mmap]
 }
@@ -1207,6 +1217,7 @@ func NewMmapLRU() (*MmapLRU, error) {
 	if maxSize < threshold {
 		return nil, status.InvalidArgumentErrorf("configured mmapped bytes limit is too small (%d bytes)", maxSize)
 	}
+	ml := &MmapLRU{evictions: make(chan *Mmap, 1024)}
 	l, err := lru.NewLRU(&lru.Config[*Mmap]{
 		SizeFn: func(m *Mmap) int64 { return m.sizeBytes },
 		OnEvict: func(m *Mmap, reason lru.EvictionReason) {
@@ -1216,8 +1227,19 @@ func NewMmapLRU() (*MmapLRU, error) {
 			if reason == lru.ManualEviction {
 				return
 			}
-			if err := m.unmap(true /*=isLRUEviction*/); err != nil {
-				log.Errorf("Failed to unmap chunk: %s", err)
+			// Unmap in the background to prevent a deadlock here in the case
+			// where the mmap we're evicting is already locked by another
+			// goroutine, and will make a call to lru.Add or lru.Remove before
+			// releasing its lock (the deadlock happens because we're already
+			// holding the LRU lock here).
+			//
+			// If the evictors are not keeping up, start our own goroutine to
+			// ensure the eviction still happens.
+			select {
+			case ml.evictions <- m:
+			default:
+				alert.UnexpectedEvent("mmap_lru_eviction_channel_full", "MmapLRU eviction channel is full. This can lead to degraded performance.")
+				go ml.processEviction(m)
 			}
 		},
 		MaxSize: maxSize,
@@ -1228,12 +1250,22 @@ func NewMmapLRU() (*MmapLRU, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &MmapLRU{lru: l}, nil
+	ml.lru = l
+	ml.startEvictionHandlers()
+	return ml, nil
 }
 
 // getSharedLRU returns the shared LRU instance to be used for mmapped disk
 // chunks.
 var getSharedLRU = sync.OnceValues(NewMmapLRU)
+
+func ResetSharedLRUForTest() {
+	ml, err := getSharedLRU()
+	if err == nil {
+		ml.Close()
+	}
+	getSharedLRU = sync.OnceValues(NewMmapLRU)
+}
 
 func (ml *MmapLRU) key(m *Mmap) string {
 	// There will be multiple Mmaps with the same offset across different COW
@@ -1254,6 +1286,28 @@ func (ml *MmapLRU) Remove(m *Mmap) {
 	ml.mu.Lock()
 	defer ml.mu.Unlock()
 	ml.lru.Remove(ml.key(m))
+}
+
+func (ml *MmapLRU) Close() error {
+	close(ml.evictions)
+	return ml.evictorGroup.Wait()
+}
+
+func (ml *MmapLRU) startEvictionHandlers() {
+	for i := 0; i < lruEvictionHandlerConcurrency; i++ {
+		ml.evictorGroup.Go(func() error {
+			for m := range ml.evictions {
+				ml.processEviction(m)
+			}
+			return nil
+		})
+	}
+}
+
+func (ml *MmapLRU) processEviction(m *Mmap) {
+	if err := m.unmap(true /*=isLRUEviction*/); err != nil {
+		log.Errorf("Failed to unmap chunk: %s", err)
+	}
 }
 
 func IsEmptyOrAllZero(data []byte) bool {
