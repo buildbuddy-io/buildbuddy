@@ -1,5 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+# gazelle:resolve go github.com/planetscale/vtprotobuf/vtproto @com_github_planetscale_vtprotobuf//vtproto:vtproto_go_proto
 go_library(
     name = "libmain",
     srcs = ["libmain.go"],
@@ -56,8 +57,7 @@ go_library(
         "//server/util/tracing",
         "//server/util/usageutil",
         "//static:bundle",
-        "@com_github_planetscale_vtprotobuf//vtproto",
-        "@com_github_planetscale_vtprotobuf//vtproto:vtproto_go_proto",  #keep
+        "@com_github_planetscale_vtprotobuf//vtproto:vtproto_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
