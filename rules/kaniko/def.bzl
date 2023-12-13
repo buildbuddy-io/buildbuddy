@@ -22,6 +22,7 @@ def _remote_kaniko_build_impl(ctx):
         inputs = inputs,
         outputs = [archive],
         executable = build_script,
+        mnemonic = "RemoteKanikoBuild",
     )
     return [DefaultInfo(files = depset([archive]))]
 
@@ -63,7 +64,6 @@ def remote_kaniko_build(name, recycling_key = "", exec_properties = {}, **kwargs
             "dockerNetwork": "bridge",
             "EstimatedCPU": "16",
             "EstimatedMemory": "32G",
-            "container-image": "docker://ghcr.io/sluongng/rbe-ubuntu16-04@sha256:5464e3e83dc656fc6e4eae6a01f5c2645f1f7e95854b3802b85e86484132d90e",
             "recycle-runner": "true",
             "runner-recycling-key": "remote_docker_build_" + recycling_key,
         } | exec_properties,
