@@ -92,7 +92,7 @@ func contextReplacingUnaryClientInterceptor(ctxFn func(ctx context.Context) cont
 
 func addAuthToContext(env environment.Env, ctx context.Context) context.Context {
 	if auth := env.GetAuthenticator(); auth != nil {
-		ctx := auth.AuthenticatedGRPCContext(ctx)
+		ctx = auth.AuthenticatedGRPCContext(ctx)
 		if c, err := claims.ClaimsFromContext(ctx); err == nil {
 			ctx = log.EnrichContext(ctx, "group_id", c.GetGroupID())
 			if c.GetUserID() != "" {
