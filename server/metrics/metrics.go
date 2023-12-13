@@ -1110,6 +1110,17 @@ var (
 		FileName,
 	})
 
+	MaxRecyclableResourceUsageEvent = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "max_recyclable_resource_usage_event",
+		Help:      "Counter for firecracker runners that reach max disk/memory usage and won't get recycled.",
+	}, []string{
+		GroupID,
+		EventName,
+		RecycledRunnerStatus,
+	})
+
 	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
