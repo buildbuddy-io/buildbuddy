@@ -70,6 +70,7 @@ import (
 	// `go mod tidy` doesn't work differently when generated protos are linked
 	// or copied into the source tree
 	// (the generated protos depend on this package)
+	_ "github.com/planetscale/vtprotobuf/vtproto"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 )
 
