@@ -17,13 +17,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -335,6 +338,7 @@ func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
 	err := resources.Configure(true /*=enableSnapshotSharing*/)
 	require.NoError(t, err)
 	copy_on_write.ResetSharedLRUForTest()
+	copy_on_write.ResetMmmapedBytesMetricForTest()
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -373,6 +377,15 @@ func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
 	}
 	err = eg.Wait()
 	require.NoError(t, err)
+
+	// Unmap everything again and assert that the LRU accounting is correct.
+	err = cow.Close()
+	require.NoError(t, err)
+
+	n := testmetrics.GaugeValueForLabels(
+		t, metrics.COWSnapshotMemoryMappedBytes,
+		prometheus.Labels{metrics.FileName: filepath.Base(chunkDir)})
+	require.Equal(t, float64(0), n)
 }
 
 func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
