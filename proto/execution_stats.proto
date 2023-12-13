@@ -87,6 +87,15 @@ message Execution {
   // doesn't.
   build.bazel.remote.execution.v2.Digest action_result_digest = 9;
 
+  // A digest used to retrieve the
+  // [build.bazel.remote.execution.v2.ExecuteResponse] produced by the executor
+  // for the latest attempt of this execution.
+  //
+  // This digest can be used to fetch a specially formatted ActionResult from
+  // the Action Cache. In particular, the ActionResult's stdout_raw field is set
+  // to the marshaled ExecuteResponse bytes.
+  build.bazel.remote.execution.v2.Digest execute_response_digest = 12;
+
   // The stage this execution is currently in.
   build.bazel.remote.execution.v2.ExecutionStage.Value stage = 2;
 
