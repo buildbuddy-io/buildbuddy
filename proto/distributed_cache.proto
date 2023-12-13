@@ -1,7 +1,6 @@
 syntax = "proto3";
 
 import "proto/resource.proto";
-import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package distributed_cache;
 
@@ -27,7 +26,6 @@ message ReadRequest {
 }
 
 message ReadResponse {
-  option (vtproto.mempool) = true;
   bytes data = 1;
 }
 
@@ -52,7 +50,6 @@ message WriteRequest {
 }
 
 message WriteResponse {
-  option (vtproto.mempool) = true;
   int64 committed_size = 1;
 }
 

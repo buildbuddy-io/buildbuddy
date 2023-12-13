@@ -32,7 +32,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/protoutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -846,7 +845,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 		return nil
 	}
 	md.LastAccessUsec = p.clock.Now().UnixMicro()
-	protoBytes, err := protoutil.Marshal(md)
+	protoBytes, err := proto.Marshal(md)
 	if err != nil {
 		return err
 	}
@@ -1068,7 +1067,7 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 		}
 		fileMetadata.StorageMetadata = newStorageMD
 
-		buf, err := protoutil.Marshal(fileMetadata)
+		buf, err := proto.Marshal(fileMetadata)
 		if err != nil {
 			return status.UnknownErrorf("could not marshal destination metadata: %s", err)
 		}
@@ -2267,7 +2266,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
-	protoBytes, err := protoutil.Marshal(md)
+	protoBytes, err := proto.Marshal(md)
 	if err != nil {
 		return err
 	}

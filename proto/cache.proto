@@ -9,7 +9,6 @@ import "google/rpc/status.proto";
 import "proto/context.proto";
 import "proto/remote_execution.proto";
 import "proto/resource.proto";
-import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 // Next Tag: 17
 message CacheStats {
@@ -164,7 +163,6 @@ enum ResponseType {
 }
 
 message ScoreCard {
-  option (vtproto.mempool) = true;
   // Result holds details about the result of a single cache request.
   message Result {
     // The short action name of the action relevant to the transfer,
@@ -256,7 +254,6 @@ message DirectoryWithDigest {
 }
 
 message TreeCache {
-  option (vtproto.mempool) = true;
   repeated DirectoryWithDigest children = 1;
 }
 

@@ -25,32 +25,20 @@ var (
 			providerFn: func() protoMessage {
 				return &rfpb.FileMetadata{}
 			},
-			providerFnWithPool: func() protoMessageWithPoolEnabled {
-				return rfpb.FileMetadataFromVTPool()
-			},
 		},
 		"ScoreCard": testProtoType{
 			providerFn: func() protoMessage {
 				return &capb.ScoreCard{}
-			},
-			providerFnWithPool: func() protoMessageWithPoolEnabled {
-				return capb.ScoreCardFromVTPool()
 			},
 		},
 		"TreeCache": testProtoType{
 			providerFn: func() protoMessage {
 				return &capb.TreeCache{}
 			},
-			providerFnWithPool: func() protoMessageWithPoolEnabled {
-				return capb.TreeCacheFromVTPool()
-			},
 		},
 		"ReadResponse": testProtoType{
 			providerFn: func() protoMessage {
 				return &dspb.ReadResponse{}
-			},
-			providerFnWithPool: func() protoMessageWithPoolEnabled {
-				return dspb.ReadResponseFromVTPool()
 			},
 		},
 	}
