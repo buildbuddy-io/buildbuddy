@@ -191,7 +191,7 @@ func Register(env *real_environment.RealEnv) error {
 		return nil
 	}
 	if len(*join) == 0 {
-		return status.FailedPreconditionError("Gossip listen address specifiedd but no join target set")
+		return status.FailedPreconditionError("Gossip listen address specified but no join target set")
 	}
 	name := os.Getenv("MY_POD_NAME")
 	if name == "" {
