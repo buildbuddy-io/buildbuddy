@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/protoutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -750,7 +751,7 @@ func (p *PebbleCache) DatabaseVersionMetadata() (*rfpb.VersionMetadata, error) {
 	}
 
 	versionMetadata := &rfpb.VersionMetadata{}
-	if err := proto.Unmarshal(buf, versionMetadata); err != nil {
+	if err := protoutil.Unmarshal(buf, versionMetadata); err != nil {
 		return nil, err
 	}
 	return versionMetadata, nil
@@ -797,7 +798,7 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 	newVersionMetadata.MaxVersion = int64(maxVersion)
 	newVersionMetadata.LastModifyUsec = p.clock.Now().UnixMicro()
 
-	buf, err := proto.Marshal(newVersionMetadata)
+	buf, err := protoutil.Marshal(newVersionMetadata)
 	if err != nil {
 		return err
 	}
@@ -836,6 +837,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if err != nil {
 		return err
 	}
+	defer md.ReturnToVTPool()
 	keyBytes, err := key.Bytes(version)
 	if err != nil {
 		return err
@@ -846,7 +848,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 		return nil
 	}
 	md.LastAccessUsec = p.clock.Now().UnixMicro()
-	protoBytes, err := proto.Marshal(md)
+	protoBytes, err := protoutil.Marshal(md)
 	if err != nil {
 		return err
 	}
@@ -1049,14 +1051,15 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 	ctx := context.Background()
 	numKeysCopied := 0
 	lastUpdate := time.Now()
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
 	for iter.First(); iter.Valid(); iter.Next() {
 		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
 			continue
 		}
 		dstKey := append(dstKeyPrefix, bytes.TrimPrefix(iter.Key(), srcKeyPrefix)...)
 
-		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		if err := protoutil.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return status.UnknownErrorf("Error unmarshalling metadata: %s", err)
 		}
 
@@ -1068,7 +1071,7 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 		}
 		fileMetadata.StorageMetadata = newStorageMD
 
-		buf, err := proto.Marshal(fileMetadata)
+		buf, err := protoutil.Marshal(fileMetadata)
 		if err != nil {
 			return status.UnknownErrorf("could not marshal destination metadata: %s", err)
 		}
@@ -1080,6 +1083,7 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 			log.Infof("[%s] Partition copy in progress, copied %d keys, last key: %s", p.name, numKeysCopied, string(iter.Key()))
 			lastUpdate = time.Now()
 		}
+		fileMetadata.ResetVT()
 	}
 
 	srcMetadataKey := partitionMetadataKey(srcPartitionID)
@@ -1147,7 +1151,8 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 		}
 
 		unlockFn := p.locker.RLock(key.LockID())
-		_, err = p.lookupFileMetadata(p.env.GetServerContext(), iter, key)
+		md, err := p.lookupFileMetadata(p.env.GetServerContext(), iter, key)
+		md.ReturnToVTPool()
 		unlockFn()
 
 		if status.IsNotFoundError(err) {
@@ -1235,7 +1240,8 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 	}()
 
 	pr := message.NewPrinter(language.English)
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
 	blobDir := ""
 
 	modLim := rate.NewLimiter(rate.Limit(*backgroundRepairQPSLimit), 1)
@@ -1290,7 +1296,7 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 			continue
 		}
 
-		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		if err := protoutil.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			log.Errorf("[%s] Error unmarshaling metadata when scanning for broken files: %s", p.name, err)
 			continue
 		}
@@ -1317,6 +1323,8 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 			uncompressedCount++
 			uncompressedBytes += fileMetadata.GetStoredSizeBytes()
 		}
+
+		fileMetadata.ResetVT()
 	}
 	log.Infof("Pebble Cache [%s]: backgroundRepair for %q scanned %s records (%s uncompressed entries remaining using %s bytes [%s])", p.name, partitionID, pr.Sprint(totalCount), pr.Sprint(uncompressedCount), pr.Sprint(uncompressedBytes), units.BytesSize(float64(uncompressedBytes)))
 	if opts.deleteEntriesWithMissingFiles {
@@ -1474,7 +1482,7 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter peb
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := rfpb.FileMetadataFromVTPool()
 	var lastErr error
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
 		keyBytes, err := key.Bytes(version)
@@ -1485,6 +1493,7 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter peb
 		if lastErr == nil {
 			return fileMetadata, version, nil
 		}
+		fileMetadata.ResetVT()
 	}
 	return nil, -1, lastErr
 }
@@ -1513,12 +1522,12 @@ func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := rfpb.FileMetadataFromVTPool()
 	buf, err := pebble.GetCopy(reader, keyBytes)
 	if err != nil {
 		return nil, err
 	}
-	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
+	if err := protoutil.Unmarshal(buf, fileMetadata); err != nil {
 		return nil, err
 	}
 
@@ -1578,6 +1587,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	if err != nil {
 		return nil, err
 	}
+	defer md.ReturnToVTPool()
 
 	return &interfaces.CacheMetadata{
 		StoredSizeBytes:    md.GetStoredSizeBytes(),
@@ -1623,6 +1633,8 @@ func (p *PebbleCache) findMissing(ctx context.Context, iter pebble.Iterator, r *
 	if err != nil {
 		return err
 	}
+	defer md.ReturnToVTPool()
+
 	chunkedMD := md.GetStorageMetadata().GetChunkedMetadata()
 	for _, chunked := range chunkedMD.GetResource() {
 		err = p.findMissing(ctx, iter, chunked)
@@ -1756,6 +1768,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	if err != nil {
 		return err
 	}
+	defer fileMetadata.ReturnToVTPool()
 
 	fileMetadataKey, err := key.Bytes(version)
 	if err != nil {
@@ -1849,6 +1862,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	if err != nil {
 		return err
 	}
+	defer md.ReturnToVTPool()
 
 	// TODO(tylerw): Make version aware.
 	if err := p.deleteFileAndMetadata(ctx, key, filestore.UndefinedKeyVersion, md); err != nil {
@@ -2267,7 +2281,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
-	protoBytes, err := proto.Marshal(md)
+	protoBytes, err := protoutil.Marshal(md)
 	if err != nil {
 		return err
 	}
@@ -2287,6 +2301,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 			return err
 		}
 		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, oldMD, len(oldKeyBytes))
+		oldMD.ReturnToVTPool()
 	}
 
 	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
@@ -2535,7 +2550,8 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 
 	totalCount := 0
 	shouldCreateNewIter := true
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
@@ -2594,7 +2610,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			continue
 		}
 
-		err = proto.Unmarshal(iter.Value(), fileMetadata)
+		err = protoutil.Unmarshal(iter.Value(), fileMetadata)
 		if err != nil {
 			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read proto: %s", e.cacheName, err)
 			continue
@@ -2626,6 +2642,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 		}
 		iter.Next()
+		fileMetadata.ResetVT()
 	}
 }
 
@@ -2685,10 +2702,11 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 	acCount := int64(0)
 	blobSizeBytes := int64(0)
 	metadataSizeBytes := int64(0)
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
 
 	for iter.Next() {
-		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		if err := protoutil.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return 0, 0, 0, err
 		}
 		blobSizeBytes += fileMetadata.GetStoredSizeBytes()
@@ -2702,6 +2720,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		} else {
 			log.Warningf("[%s] Unidentified file (not CAS or AC): %q", e.cacheName, iter.Key())
 		}
+		fileMetadata.ResetVT()
 	}
 
 	return blobSizeBytes + metadataSizeBytes, casCount, acCount, nil
@@ -2728,14 +2747,14 @@ func (e *partitionEvictor) lookupPartitionMetadata() (*rfpb.PartitionMetadata, e
 	}
 
 	partitionMD := &rfpb.PartitionMetadata{}
-	if err := proto.Unmarshal(partitionMDBuf, partitionMD); err != nil {
+	if err := protoutil.Unmarshal(partitionMDBuf, partitionMD); err != nil {
 		return nil, err
 	}
 	return partitionMD, nil
 }
 
 func (e *partitionEvictor) writePartitionMetadata(db pebble.IPebbleDB, md *rfpb.PartitionMetadata) error {
-	bs, err := proto.Marshal(md)
+	bs, err := protoutil.Marshal(md)
 	if err != nil {
 		return err
 	}
@@ -2881,6 +2900,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 		log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
 		return
 	}
+	defer md.ReturnToVTPool()
 	atime := time.UnixMicro(md.GetLastAccessUsec())
 	age := time.Since(atime)
 	if !sample.Timestamp.Equal(atime) {
@@ -3178,6 +3198,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	if err != nil {
 		return nil, err
 	}
+	defer fileMetadata.ReturnToVTPool()
 
 	blobDir := p.blobDir()
 	requestedCompression := r.GetCompressor()
