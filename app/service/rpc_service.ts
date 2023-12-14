@@ -186,18 +186,46 @@ class RpcService {
         init.body = lengthPrefixMessage(requestData);
 
         const reader = (await this.fetch(url, "stream", init))?.getReader();
+        let buffer = new Uint8Array();
+        let bufferedLength = 0;
+        let totalLength = 0;
         while (true) {
           let result = await reader?.read();
           if (result?.done) {
             return;
           }
 
-          // Ignore the first 5 byte length-prefix, see the comment for lengthPrefixMessage for more info.
-          // TODO(siggisim): Support messages that come across flushes, though I'm not sure if this will
-          // happen much (if at all) in practice.
-          let value = result?.value.slice(5) || new Uint8Array();
-          callback(null, value);
+          // Skip empty results so we don't have to deal with undefined values below.
+          if (!result?.value) {
+            continue;
+          }
+
+          // If we haven't seen a message yet, create a new buffer sized based on the length prefix.
+          if (totalLength == 0) {
+            totalLength = new DataView(result.value.buffer, 1, 4).getUint32(0, false /* big endian */);
+            let message = result.value.slice(5);
+            buffer = new Uint8Array(totalLength);
+            buffer.set(message);
+            bufferedLength = message.length;
+          } else if (bufferedLength < totalLength) {
+            // If we already have a buffer, just tack onto it.
+            buffer.set(result.value, bufferedLength);
+            bufferedLength += result.value.length;
+          }
+
+          // If we still haven't receieve the full message, loop again and read more until we do.
+          if (bufferedLength < totalLength) {
+            continue;
+          }
+
+          // We've got the full message, flush it to the callback so the full proto can be parsed.
+          callback(null, buffer);
           this.events.next(method.name);
+
+          // Now that we've flushed the buffer, reset it.
+          buffer = new Uint8Array();
+          bufferedLength = 0;
+          totalLength = 0;
         }
       }
 
