@@ -334,7 +334,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	router, err := task_router.New(env)
 	require.NoError(t, err, "could not set up TaskRouter")
 	env.SetTaskRouter(router)
-	err = tasksize.Register(env)
+	err = tasksize.Register(env.TestEnv)
 	require.NoError(t, err, "could not set up TaskSizer")
 	executionServer, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err, "could not set up ExecutionServer")
@@ -361,7 +361,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		/*zstd=*/ true,
 	)
 
-	err = redis_execution_collector.Register(env)
+	err = redis_execution_collector.Register(env.TestEnv)
 	require.NoError(t, err, "could not set up ExecutionCollector")
 
 	server := &BuildBuddyServer{
@@ -391,7 +391,7 @@ func (s *BuildBuddyServer) start() {
 	if err != nil {
 		assert.FailNow(s.t, fmt.Sprintf("could not listen on port %d", s.port), err.Error())
 	}
-	grpcServer, grpcServerRunFunc := s.env.GRPCServer(lis)
+	grpcServer, grpcServerRunFunc := testenv.GRPCServer(s.env.TestEnv, lis)
 	s.grpcServer = grpcServer
 
 	// Configure services needed by remote execution.

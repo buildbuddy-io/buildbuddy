@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
@@ -343,7 +344,7 @@ func (m *v4ToV5Migrator) Migrate(val []byte) []byte             { return val }
 
 // Register creates a new PebbleCache from the configured flags and sets it in
 // the provided env.
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	if *rootDirectoryFlag == "" {
 		return nil
 	}

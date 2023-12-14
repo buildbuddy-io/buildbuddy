@@ -14,8 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -45,7 +45,7 @@ type Cache struct {
 	cutoffSizeBytes int64
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	opts := redis_client.CacheRedisClientOpts()
 	if opts == nil {
 		return nil

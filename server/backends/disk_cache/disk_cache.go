@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -171,7 +172,7 @@ type DiskCache struct {
 
 // Register registers the disk cache for use in a real environment.
 // For testing, use NewDiskCache directly.
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	if *rootDirectoryFlag == "" {
 		return nil
 	}

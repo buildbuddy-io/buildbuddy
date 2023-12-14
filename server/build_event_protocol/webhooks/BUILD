@@ -9,6 +9,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/util/db",
         "//server/util/flag",
         "//server/util/log",

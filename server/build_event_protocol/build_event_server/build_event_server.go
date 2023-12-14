@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -24,7 +25,7 @@ type BuildEventProtocolServer struct {
 	synchronous bool
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	// Register to handle build event protocol messages.
 	buildEventServer, err := NewBuildEventProtocolServer(env, false)
 	if err != nil {

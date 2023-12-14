@@ -7,8 +7,8 @@ go_library(
     srcs = ["clientidentity.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity",
     deps = [
-        "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/util/flag",
         "//server/util/status",
         "@com_github_golang_jwt_jwt//:jwt",

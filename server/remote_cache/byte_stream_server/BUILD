@@ -11,6 +11,7 @@ go_library(
         "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/remote_cache/config",
         "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",

@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:remote_asset_go_proto",
         "//server/environment",
+        "//server/real_environment",
         "//server/util/status",
     ],
 )

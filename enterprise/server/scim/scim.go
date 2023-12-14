@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 )
 
 var (
@@ -15,7 +16,7 @@ type SCIMServer struct {
 	env environment.Env
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	if *enableSCIM {
 		env.SetSCIMService(NewSCIMServer(env))
 	}

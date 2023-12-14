@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -43,7 +44,7 @@ func (c *BuildEventProxyClient) reconnectIfNecessary() {
 	c.client = pepb.NewPublishBuildEventClient(conn)
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, len(*hosts))
 	for i, target := range *hosts {
 		// NB: This can block for up to a second on connecting. This would be a

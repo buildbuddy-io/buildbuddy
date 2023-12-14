@@ -11,6 +11,7 @@ go_library(
         "//server/backends/invocationdb",
         "//server/backends/memory_cache",
         "//server/buildbuddy_server",
+        "//server/environment",
         "//server/nullauth",
         "//server/real_environment",
         "//server/remote_cache/byte_stream_client",

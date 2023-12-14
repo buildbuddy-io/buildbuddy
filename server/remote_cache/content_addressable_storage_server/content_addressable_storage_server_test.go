@@ -47,12 +47,12 @@ func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc
 		t.Error(err)
 	}
 
-	grpcServer, runFunc := env.LocalGRPCServer()
+	grpcServer, runFunc := testenv.LocalGRPCServer(env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	clientConn, err := env.LocalGRPCConn(ctx)
+	clientConn, err := testenv.LocalGRPCConn(ctx, env)
 	if err != nil {
 		t.Error(err)
 	}

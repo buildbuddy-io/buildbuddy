@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
@@ -217,7 +217,7 @@ func (c *Coordinator) DoProto(ctx context.Context, key string, work func() (prot
 	return proto.Unmarshal(bs, out)
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	redisClient := env.GetDefaultRedisClient()
 	if redisClient != nil {
 		env.SetSingleFlightDeduper(New(redisClient))

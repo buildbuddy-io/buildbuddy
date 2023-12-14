@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -150,7 +151,7 @@ func newUUID(t *testing.T) string {
 	return id.String()
 }
 
-func newTestEnv(t *testing.T) *testenv.TestEnv {
+func newTestEnv(t *testing.T) *real_environment.RealEnv {
 	env := testenv.GetTestEnv(t)
 	var userGroups []string
 	for i := 0; i < 10; i++ {

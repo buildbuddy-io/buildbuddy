@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/backends/pubsub",
         "//proto:server_notification_go_proto",
-        "//server/environment",
+        "//server/real_environment",
         "//server/util/alert",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",

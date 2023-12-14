@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -20,7 +20,7 @@ type collector struct {
 	rbuf *redisutil.CommandBuffer
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	rdb := env.GetDefaultRedisClient()
 	if rdb == nil {
 		return nil

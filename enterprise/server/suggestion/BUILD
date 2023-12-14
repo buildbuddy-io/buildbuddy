@@ -13,6 +13,7 @@ go_library(
         "//proto:suggestion_go_proto",
         "//server/environment",
         "//server/eventlog",
+        "//server/real_environment",
         "//server/util/log",
         "//server/util/status",
     ],

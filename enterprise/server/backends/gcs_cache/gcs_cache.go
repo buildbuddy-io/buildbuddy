@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -49,7 +49,7 @@ type GCSCache struct {
 	ttlInDays    int64
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	if *bucket == "" {
 		return nil
 	}

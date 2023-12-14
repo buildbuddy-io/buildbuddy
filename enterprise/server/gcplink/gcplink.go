@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -58,7 +59,7 @@ type GCPService struct {
 	options  []oauth2.AuthCodeOption
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	provider, err := oidc.NewProvider(context.TODO(), Issuer)
 	if err != nil {
 		return err

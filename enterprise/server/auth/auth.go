@@ -10,9 +10,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -26,7 +26,7 @@ var (
 	adminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
 )
 
-func Register(ctx context.Context, env environment.Env) error {
+func Register(ctx context.Context, env *real_environment.RealEnv) error {
 	httpAuthenticators := []interfaces.HTTPAuthenticator{}
 	userAuthenticators := []interfaces.UserAuthenticator{}
 
@@ -66,7 +66,7 @@ func Register(ctx context.Context, env environment.Env) error {
 	return nil
 }
 
-func RegisterNullAuth(env environment.Env) error {
+func RegisterNullAuth(env *real_environment.RealEnv) error {
 	env.SetAuthenticator(
 		nullauth.NewNullAuthenticator(
 			oidc.AnonymousUsageEnabled(),

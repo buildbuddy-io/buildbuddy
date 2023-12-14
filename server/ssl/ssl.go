@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/acme"
@@ -78,7 +79,7 @@ type SSLService struct {
 	AuthorityKey    *rsa.PrivateKey
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	sslService, err := NewSSLService(env)
 	if err != nil {
 		return status.InternalErrorf("Error configuring SSL: %s", err)

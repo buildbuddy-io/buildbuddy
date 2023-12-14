@@ -13,11 +13,10 @@ import (
 	"sync"
 	"time"
 
-	mrand "math/rand"
-
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -35,6 +34,7 @@ import (
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	mrand "math/rand"
 )
 
 var (
@@ -405,7 +405,7 @@ type Crypter struct {
 	quitChan chan struct{}
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	if env.GetKMS() == nil {
 		return nil
 	}

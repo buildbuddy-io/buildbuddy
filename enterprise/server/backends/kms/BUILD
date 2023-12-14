@@ -7,8 +7,8 @@ go_library(
     srcs = ["kms.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms",
     deps = [
-        "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",

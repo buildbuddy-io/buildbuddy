@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -96,7 +96,7 @@ func RemoteExecutionRedisClientOpts() *redisutil.Opts {
 	return CacheRedisClientOpts()
 }
 
-func RegisterRemoteExecutionRedisClient(env environment.Env) error {
+func RegisterRemoteExecutionRedisClient(env *real_environment.RealEnv) error {
 	opts := RemoteExecutionRedisClientOpts()
 	if opts == nil {
 		return nil
@@ -109,7 +109,7 @@ func RegisterRemoteExecutionRedisClient(env environment.Env) error {
 	return nil
 }
 
-func RegisterDefault(env environment.Env) error {
+func RegisterDefault(env *real_environment.RealEnv) error {
 	opts := DefaultRedisClientOpts()
 	if opts == nil {
 		return nil

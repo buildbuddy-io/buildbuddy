@@ -9,6 +9,7 @@ go_library(
         "//proto:health_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/rpc/interceptors",
         "//server/util/bazel_request",
         "//server/util/log",

@@ -103,14 +103,14 @@ func runBBServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.
 	bsServer, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
 
-	grpcServer, runFunc := env.LocalGRPCServer()
+	grpcServer, runFunc := testenv.LocalGRPCServer(env)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 	bspb.RegisterByteStreamServer(grpcServer, bsServer)
 
 	go runFunc()
 	t.Cleanup(func() { grpcServer.GracefulStop() })
 
-	clientConn, err := env.LocalGRPCConn(ctx)
+	clientConn, err := testenv.LocalGRPCConn(ctx, env)
 	if err != nil {
 		t.Error(err)
 	}

@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -108,7 +107,7 @@ func getExecutorHostID() string {
 	return hostID
 }
 
-func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) environment.Env {
+func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
 	snapshotSharingEnabled := *snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing

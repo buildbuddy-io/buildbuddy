@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -18,7 +18,7 @@ import (
 
 var redisPubSubPoolSize = flag.Int("remote_execution.redis_pubsub_pool_size", 10_000, "Maximum number of connections used for waiting for execution updates.")
 
-func RegisterRemoteExecutionClient(env environment.Env) error {
+func RegisterRemoteExecutionClient(env *real_environment.RealEnv) error {
 	if !remote_execution_config.RemoteExecutionEnabled() {
 		return nil
 	}
@@ -36,7 +36,7 @@ func RegisterRemoteExecutionClient(env environment.Env) error {
 	return nil
 }
 
-func RegisterRemoteExecutionRedisPubSubClient(env environment.Env) error {
+func RegisterRemoteExecutionRedisPubSubClient(env *real_environment.RealEnv) error {
 	opts := redis_client.RemoteExecutionRedisClientOpts()
 	if opts == nil {
 		if !remote_execution_config.RemoteExecutionEnabled() {

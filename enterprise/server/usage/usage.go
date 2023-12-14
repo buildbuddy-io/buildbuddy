@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -121,7 +122,7 @@ type tracker struct {
 	stopFlush chan struct{}
 }
 
-func RegisterTracker(env environment.Env) error {
+func RegisterTracker(env *real_environment.RealEnv) error {
 	if !usage_config.UsageTrackingEnabled() {
 		return nil
 	}

@@ -13,6 +13,7 @@ go_library(
         "//proto:secrets_go_proto",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
+        "//server/real_environment",
         "//server/util/cookie",
         "//server/util/perms",
         "//server/util/random",

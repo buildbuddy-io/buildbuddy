@@ -10,8 +10,8 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -42,7 +42,7 @@ type Cache struct {
 	mc *memcache.Client
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	if len(*memcacheTargets) == 0 {
 		return nil
 	}
