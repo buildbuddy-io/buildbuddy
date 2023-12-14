@@ -16,6 +16,8 @@ const (
 
 var verbose bool
 
+// Configure reads the verbose flag from the args in order to configure the logs.
+// Removes the verbose flag from the output args.
 func Configure(args []string) []string {
 	verboseFlagVal, args := arg.Pop(args, "verbose")
 	if verboseFlagVal == "" {

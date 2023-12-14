@@ -35,6 +35,7 @@ import (
 	sidecarmain "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar"
 )
 
+// See the top of arg.go for how arguments should be formatted
 func main() {
 	// If we're the sidecar (CLI server) process, run the sidecar instead of the
 	// CLI.
@@ -52,8 +53,7 @@ func run() (exitCode int, err error) {
 	// Record original arguments so we can show them in the UI.
 	originalArgs := append([]string{}, os.Args...)
 
-	// Handle global args that don't apply to any specific subcommand
-	// (--verbose, etc.)
+	// Configure verbose flag
 	args := log.Configure(os.Args[1:])
 
 	log.Debugf("CLI started at %s", start)
@@ -78,6 +78,10 @@ func run() (exitCode int, err error) {
 
 	// Expand command shortcuts like b=>build, t=>test, etc.
 	args = shortcuts.HandleShortcuts(args)
+
+	// Extract bb cli flags. These are flags that affect how the cli works, not those
+	// that are passed through to the command.
+	cliArgs, args := arg.SplitCLIArgs(args)
 
 	// Show help if applicable.
 	exitCode, err = help.HandleHelp(args)
@@ -219,7 +223,7 @@ func run() (exitCode int, err error) {
 
 	// Handle remote bazel. Note, pre-bazel hooks apply to remote bazel, but not
 	// output handlers or post-bazel hooks.
-	args = remotebazel.HandleRemoteBazel(args, execArgs)
+	args = remotebazel.HandleRemoteBazel(cliArgs, args, execArgs)
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
