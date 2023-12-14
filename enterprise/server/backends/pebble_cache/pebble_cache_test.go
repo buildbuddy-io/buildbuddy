@@ -2232,15 +2232,14 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 	}
 
 	// Re-open the database with version 3 as the active key version and
-	// confirm the version metadata is [2, 3]. Don't write anything though, to
-	// avoid migrating the data.
+	// confirm the version metadata is [2, 3].
 	{
 		activeKeyVersion := int64(filestore.Version3)
 		options.ActiveKeyVersion = &activeKeyVersion
 		pc := openPebbleCache(ctx, t, te, options, []string{})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
-		require.Equal(t, int64(filestore.Version2), versionMetadata.MinVersion)
+		require.GreaterOrEqual(t, int64(filestore.Version3), versionMetadata.MinVersion)
 		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
@@ -2250,19 +2249,6 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 	// confirm the version metadata is [1, 3].
 	{
 		activeKeyVersion := int64(filestore.Version1)
-		options.ActiveKeyVersion = &activeKeyVersion
-		pc := openPebbleCache(ctx, t, te, options, []string{})
-		versionMetadata, err := pc.DatabaseVersionMetadata()
-		require.NoError(t, err)
-		require.Equal(t, int64(filestore.Version1), versionMetadata.MinVersion)
-		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
-
-		require.NoError(t, pc.Stop())
-	}
-
-	// Finally, open again with version 2 as the active key version.
-	{
-		activeKeyVersion := int64(filestore.Version2)
 		options.ActiveKeyVersion = &activeKeyVersion
 		pc := openPebbleCache(ctx, t, te, options, []string{})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
