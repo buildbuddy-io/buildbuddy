@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -26,15 +27,11 @@ var (
 	userMap = testauth.TestUsers("user1", "group1", "user2", "group2")
 )
 
-func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
+func getTestEnv(t *testing.T) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(userMap)
 	te.SetAuthenticator(ta)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-	return te, ta, ctx
+	return te
 }
 
 func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *rspb.ResourceName) {
@@ -66,13 +63,11 @@ func localAddr(t *testing.T) string {
 	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
 }
 
-func getCacheConfig(t *testing.T, listenAddr string, join []string) *raft_cache.Config {
+func getCacheConfig(t *testing.T) *raft_cache.Config {
 	return &raft_cache.Config{
-		RootDir:       testfs.MakeTempDir(t),
-		ListenAddress: listenAddr,
-		Join:          join,
-		HTTPAddr:      localAddr(t),
-		GRPCAddr:      localAddr(t),
+		RootDir:  testfs.MakeTempDir(t),
+		HTTPAddr: localAddr(t),
+		GRPCAddr: localAddr(t),
 	}
 }
 
@@ -138,9 +133,10 @@ func waitForShutdown(t *testing.T, caches ...*raft_cache.RaftCache) {
 	}
 }
 
-func startNNodes(t *testing.T, ctx context.Context, env *testenv.TestEnv, n int) []*raft_cache.RaftCache {
+func startNNodes(t *testing.T, n int) ([]*raft_cache.RaftCache, []*testenv.TestEnv) {
 	eg := errgroup.Group{}
 	caches := make([]*raft_cache.RaftCache, n)
+	envs := make([]*testenv.TestEnv, n)
 
 	joinList := make([]string, 0, n)
 	for i := 0; i < n; i++ {
@@ -151,8 +147,13 @@ func startNNodes(t *testing.T, ctx context.Context, env *testenv.TestEnv, n int)
 		i := i
 		lN := joinList[i]
 		joinList := joinList
+		env := getTestEnv(t)
+		gs, err := gossip.New("name-"+lN, lN, joinList)
+		require.NoError(t, err)
+		env.SetGossipService(gs)
+		envs[i] = env
 		eg.Go(func() error {
-			n, err := raft_cache.NewRaftCache(env, getCacheConfig(t, lN, joinList))
+			n, err := raft_cache.NewRaftCache(env, getCacheConfig(t))
 			if err != nil {
 				return err
 			}
@@ -164,19 +165,20 @@ func startNNodes(t *testing.T, ctx context.Context, env *testenv.TestEnv, n int)
 
 	// wait for them all to become healthy
 	waitForHealthy(t, caches...)
-	return caches
+	return caches, envs
 }
 
 func TestAutoBringup(t *testing.T) {
-	env, _, ctx := getEnvAuthAndCtx(t)
-	caches := startNNodes(t, ctx, env, 3)
+	caches, _ := startNNodes(t, 3)
 	waitForShutdown(t, caches...)
 }
 
 func TestReaderAndWriter(t *testing.T) {
-	env, _, ctx := getEnvAuthAndCtx(t)
-	caches := startNNodes(t, ctx, env, 3)
+	caches, envs := startNNodes(t, 3)
 	rc1 := caches[0]
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
+	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -190,10 +192,13 @@ func TestReaderAndWriter(t *testing.T) {
 
 func TestCacheShutdown(t *testing.T) {
 	t.Skip()
-	env, _, ctx := getEnvAuthAndCtx(t)
-	caches := startNNodes(t, ctx, env, 3)
+
+	caches, envs := startNNodes(t, 3)
 	rc1 := caches[0]
 	rc2 := caches[1]
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
+	require.NoError(t, err)
 
 	cacheRPCTimeout := 5 * time.Second
 	digestsWritten := make([]*rspb.ResourceName, 0)
@@ -226,8 +231,10 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
-	env, _, ctx := getEnvAuthAndCtx(t)
-	caches := startNNodes(t, ctx, env, 5)
+	caches, envs := startNNodes(t, 5)
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
+	require.NoError(t, err)
 
 	digests := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 10; i++ {
@@ -254,8 +261,11 @@ func TestDistributedRanges(t *testing.T) {
 }
 
 func TestFindMissingBlobs(t *testing.T) {
-	env, _, ctx := getEnvAuthAndCtx(t)
-	caches := startNNodes(t, ctx, env, 3)
+	caches, envs := startNNodes(t, 3)
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
+	require.NoError(t, err)
+
 	rc1 := caches[0]
 
 	digestsWritten := make([]*rspb.ResourceName, 0)

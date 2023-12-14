@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
@@ -199,7 +199,7 @@ func (n *StaticRegistry) String() string {
 // DynamicNodeRegistry is a node registry backed by gossip. It is capable of
 // supporting NodeHosts with dynamic RaftAddress values.
 type DynamicNodeRegistry struct {
-	gossipManager *gossip.GossipManager
+	gossipManager interfaces.GossipService
 	sReg          *StaticRegistry
 }
 
@@ -207,7 +207,7 @@ type DynamicNodeRegistry struct {
 // hand this to the raft library when we set things up. It will create a single
 // DynamicNodeRegistry and use it to resolve all other raft nodes until the
 // process shuts down.
-func NewDynamicNodeRegistry(gossipManager *gossip.GossipManager, streamConnections uint64, v dbConfig.TargetValidator) *DynamicNodeRegistry {
+func NewDynamicNodeRegistry(gossipManager interfaces.GossipService, streamConnections uint64, v dbConfig.TargetValidator) *DynamicNodeRegistry {
 	dnr := &DynamicNodeRegistry{
 		gossipManager: gossipManager,
 		sReg:          NewStaticNodeRegistry(streamConnections, v),

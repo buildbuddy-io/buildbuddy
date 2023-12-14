@@ -15,7 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -66,7 +66,7 @@ type IStore interface {
 
 type Tracker struct {
 	store         IStore
-	gossipManager *gossip.GossipManager
+	gossipManager interfaces.GossipService
 	node          *rfpb.NodeDescriptor
 	partitions    []disk.Partition
 
@@ -223,7 +223,7 @@ func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sampl
 	return samples, nil
 }
 
-func New(store IStore, gossipManager *gossip.GossipManager, node *rfpb.NodeDescriptor, partitions []disk.Partition, events <-chan events.Event) (*Tracker, error) {
+func New(store IStore, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, events <-chan events.Event) (*Tracker, error) {
 	ut := &Tracker{
 		store:         store,
 		gossipManager: gossipManager,
