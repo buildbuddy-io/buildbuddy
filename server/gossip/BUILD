@@ -26,6 +26,7 @@ go_test(
     srcs = ["gossip_test.go"],
     deps = [
         ":gossip",
+        "//server/interfaces",
         "//server/testutil/testport",
         "@com_github_hashicorp_serf//serf",
         "@com_github_stretchr_testify//require",
