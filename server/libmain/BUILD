@@ -57,7 +57,7 @@ go_library(
         "//server/util/tracing",
         "//server/util/usageutil",
         "//static:bundle",
-        "@com_github_planetscale_vtprotobuf//vtproto:vtproto_go_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
