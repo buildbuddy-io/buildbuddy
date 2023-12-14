@@ -119,4 +119,5 @@ type Env interface {
 	GetServerNotificationService() interfaces.ServerNotificationService
 	GetGCPService() interfaces.GCPService
 	GetSCIMService() interfaces.SCIMService
+	GetGossipService() interfaces.GossipService
 }

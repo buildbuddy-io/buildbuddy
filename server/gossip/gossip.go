@@ -3,24 +3,30 @@ package gossip
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/hostid"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/serf/serf"
 )
 
-// A Broker listens for serf events.
-type Listener interface {
-	OnEvent(eventType serf.EventType, event serf.Event)
-}
+var (
+	listenAddr = flag.String("gossip.listen_addr", "", "The address to listen for gossip traffic on. Ex. 'localhost:1991'")
+	join       = flag.Slice("gossip.join", []string{}, "The nodes to join/gossip with. Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
+)
 
 // A GossipManager will listen (on `advertiseAddress`), connect to `seeds`,
 // and gossip any information provided via the broker interface. To leave
@@ -35,7 +41,7 @@ type GossipManager struct {
 	Join       []string
 
 	mu        sync.Mutex
-	listeners []Listener
+	listeners []interfaces.GossipListener
 	tags      map[string]string
 }
 
@@ -52,7 +58,7 @@ func (gm *GossipManager) processEvents() {
 	}
 }
 
-func (gm *GossipManager) AddListener(listener Listener) {
+func (gm *GossipManager) AddListener(listener interfaces.GossipListener) {
 	if listener == nil {
 		log.Error("listener cannot be nil")
 		return
@@ -180,8 +186,30 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	return len(d), nil
 }
 
-func NewGossipManager(name, listenAddress string, join []string) (*GossipManager, error) {
-	log.Printf("Starting GossipManager on %q", listenAddress)
+func Register(env *real_environment.RealEnv) error {
+	if *listenAddr == "" {
+		return nil
+	}
+	if len(*join) == 0 {
+		return status.FailedPreconditionError("Gossip listen address specifiedd but no join target set")
+	}
+	name := os.Getenv("MY_POD_NAME")
+	if name == "" {
+		name = hostid.GetFailsafeHostID("")
+	}
+
+	// Initialize a gossip manager, which will contact other nodes
+	// and exchange information.
+	gossipManager, err := New(name, *listenAddr, *join)
+	if err != nil {
+		return err
+	}
+	env.SetGossipService(gossipManager)
+	return nil
+}
+
+func New(name, listenAddress string, join []string) (*GossipManager, error) {
+	log.Infof("Starting GossipManager on %q", listenAddress)
 
 	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", name))
 
@@ -217,7 +245,7 @@ func NewGossipManager(name, listenAddress string, join []string) (*GossipManager
 		Join:          join,
 		serfEventChan: make(chan serf.Event, 16),
 		mu:            sync.Mutex{},
-		listeners:     make([]Listener, 0),
+		listeners:     make([]interfaces.GossipListener, 0),
 		tags:          make(map[string]string, 0),
 	}
 	serfConfig.EventCh = gossipMan.serfEventChan
