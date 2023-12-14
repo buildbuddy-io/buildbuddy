@@ -4,6 +4,17 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: "Git branch to checkout."
+        required: true
+        default: "master"
+        type: string
+      version_tag:
+        description: "Version to tag release artifacts."
+        required: true
+        type: string
 
 jobs:
   create-release:
@@ -20,8 +31,25 @@ jobs:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'release skip')"
     steps:
+      - name: Configure variables
+        id: vars
+        run: |
+          # Configure repo based on pushed tag if set
+          if [ -z "${GITHUB_REF}" ]; then
+            ref="${GITHUB_REF}"
+            tag=${GITHUB_REF/refs\/tags\//}
+          else
+            # Otherwise the workflow must have been manually triggered with inputs
+            ref="${{ inputs.release_branch }}"
+            tag="${{ inputs.version_tag }}"
+          fi
+          echo "ref=$ref" >> $GITHUB_OUTPUT
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          ref: ${{ steps.vars.outputs.ref }}
 
       - name: Install bazelisk
         run: |
@@ -29,10 +57,6 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/bin/"
           mv bazelisk-linux-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
           chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
-
-      - name: Get Tag
-        id: tag
-        run: echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
 
       - name: Build and Upload Artifacts
         env:
@@ -42,4 +66,4 @@ jobs:
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-linux-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64
-          gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-linux-amd64 buildbuddy-enterprise-linux-amd64 executor-enterprise-linux-amd64 --clobber
+          gh release upload ${{ steps.vars.outputs.tag }} buildbuddy-linux-amd64 buildbuddy-enterprise-linux-amd64 executor-enterprise-linux-amd64 --clobber
