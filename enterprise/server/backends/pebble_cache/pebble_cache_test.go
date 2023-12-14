@@ -2232,14 +2232,16 @@ func TestSpecifiedActiveKeyVersion_ExistingDatabase(t *testing.T) {
 	}
 
 	// Re-open the database with version 3 as the active key version and
-	// confirm the version metadata is [2, 3].
+	// confirm the version metadata's max version is bumped to 3.
 	{
 		activeKeyVersion := int64(filestore.Version3)
 		options.ActiveKeyVersion = &activeKeyVersion
 		pc := openPebbleCache(ctx, t, te, options, []string{})
 		versionMetadata, err := pc.DatabaseVersionMetadata()
 		require.NoError(t, err)
+		// The migrator may run, so the minimum version may be 2 or 3.
 		require.GreaterOrEqual(t, int64(filestore.Version3), versionMetadata.MinVersion)
+		require.LessOrEqual(t, int64(filestore.Version2), versionMetadata.MinVersion)
 		require.Equal(t, int64(filestore.Version3), versionMetadata.MaxVersion)
 
 		require.NoError(t, pc.Stop())
