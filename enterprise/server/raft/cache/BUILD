@@ -25,7 +25,6 @@ go_library(
         "//proto:resource_go_proto",
         "//server/cache/config",
         "//server/environment",
-        "//server/gossip",
         "//server/interfaces",
         "//server/real_environment",
         "//server/remote_cache/digest",
@@ -35,7 +34,6 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
-        "@com_github_google_uuid//:uuid",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//config",
         "@com_github_lni_dragonboat_v4//raftio",
@@ -49,6 +47,7 @@ go_test(
     deps = [
         ":cache",
         "//proto:resource_go_proto",
+        "//server/gossip",
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",

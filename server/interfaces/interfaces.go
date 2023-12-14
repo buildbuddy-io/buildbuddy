@@ -1438,6 +1438,8 @@ type GossipListener interface {
 }
 
 type GossipService interface {
+	ListenAddr() string
+	JoinList() []string
 	AddListener(listener GossipListener)
 	LocalMember() serf.Member
 	Members() []serf.Member

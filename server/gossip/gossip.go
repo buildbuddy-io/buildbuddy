@@ -3,7 +3,6 @@ package gossip
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -26,6 +25,7 @@ import (
 var (
 	listenAddr = flag.String("gossip.listen_addr", "", "The address to listen for gossip traffic on. Ex. 'localhost:1991'")
 	join       = flag.Slice("gossip.join", []string{}, "The nodes to join/gossip with. Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
+	nodeName   = flag.String("gossip.node_name", "", "The gossip node's name. If empty will default to host_id.'")
 )
 
 // A GossipManager will listen (on `advertiseAddress`), connect to `seeds`,
@@ -37,8 +37,8 @@ type GossipManager struct {
 	serfInstance  *serf.Serf
 	serfEventChan chan serf.Event
 
-	ListenAddr string
-	Join       []string
+	listenAddr string
+	join       []string
 
 	mu        sync.Mutex
 	listeners []interfaces.GossipListener
@@ -56,6 +56,16 @@ func (gm *GossipManager) processEvents() {
 			listener.OnEvent(event.EventType(), event)
 		}
 	}
+}
+
+func (gm *GossipManager) ListenAddr() string {
+	return gm.listenAddr
+}
+
+func (gm *GossipManager) JoinList() []string {
+	joinList := make([]string, len(gm.join))
+	copy(joinList, gm.join)
+	return joinList
 }
 
 func (gm *GossipManager) AddListener(listener interfaces.GossipListener) {
@@ -193,7 +203,7 @@ func Register(env *real_environment.RealEnv) error {
 	if len(*join) == 0 {
 		return status.FailedPreconditionError("Gossip listen address specified but no join target set")
 	}
-	name := os.Getenv("MY_POD_NAME")
+	name := *nodeName
 	if name == "" {
 		name = hostid.GetFailsafeHostID("")
 	}
@@ -208,10 +218,10 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func New(name, listenAddress string, join []string) (*GossipManager, error) {
+func New(nodeName, listenAddress string, join []string) (*GossipManager, error) {
 	log.Infof("Starting GossipManager on %q", listenAddress)
 
-	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", name))
+	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", nodeName))
 
 	bindAddr, bindPort, err := network.ParseAddress(listenAddress)
 	if err != nil {
@@ -223,7 +233,7 @@ func New(name, listenAddress string, join []string) (*GossipManager, error) {
 	memberlistConfig.LogOutput = &logWriter{subLog}
 
 	serfConfig := serf.DefaultConfig()
-	serfConfig.NodeName = name
+	serfConfig.NodeName = nodeName
 	serfConfig.MemberlistConfig = memberlistConfig
 	serfConfig.LogOutput = &logWriter{subLog}
 	// this is the maximum value that serf supports.
@@ -241,8 +251,8 @@ func New(name, listenAddress string, join []string) (*GossipManager, error) {
 	// spoiler: gossip girl was actually a:
 	gossipMan := &GossipManager{
 		cancelFunc:    cancel,
-		ListenAddr:    listenAddress,
-		Join:          join,
+		listenAddr:    listenAddress,
+		join:          join,
 		serfEventChan: make(chan serf.Event, 16),
 		mu:            sync.Mutex{},
 		listeners:     make([]interfaces.GossipListener, 0),

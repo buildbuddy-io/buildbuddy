@@ -13,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -219,7 +219,7 @@ func (cm *ClusterMap) MeanProposeQPS() float64 {
 
 type Driver struct {
 	store         rfspb.ApiServer
-	gossipManager *gossip.GossipManager
+	gossipManager interfaces.GossipService
 	updates       <-chan events.Event
 
 	mu         *sync.Mutex
@@ -230,7 +230,7 @@ type Driver struct {
 	egCancel context.CancelFunc
 }
 
-func New(store *store.Store, gossipManager *gossip.GossipManager, updates <-chan events.Event) *Driver {
+func New(store *store.Store, gossipManager interfaces.GossipService, updates <-chan events.Event) *Driver {
 	d := &Driver{
 		store:         store,
 		gossipManager: gossipManager,

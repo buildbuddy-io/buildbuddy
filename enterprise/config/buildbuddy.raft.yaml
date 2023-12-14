@@ -11,13 +11,8 @@ storage:
   ttl_seconds: 86400 # One day in seconds.
   disk:
     root_directory: /tmp/buildbuddy_enterprise
-cache:
-  in_memory: true
-  raft:
-    listen_addr: "127.0.0.1:9201" # gossip
-    http_addr: "127.0.0.1:9301" # raft HTTP
-    grpc_addr: "127.0.0.1:9401" # filecache backhaul
-    join: ["127.0.0.1:9201", "127.0.0.1:9202", "127.0.0.1:9203"]
+gossip:
+  join: ["127.0.0.1:9201", "127.0.0.1:9202", "127.0.0.1:9203"]
 auth:
   enable_anonymous_usage: true
   oauth_providers:

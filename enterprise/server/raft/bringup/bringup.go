@@ -12,7 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
@@ -36,7 +36,7 @@ type ClusterStarter struct {
 	// the set of hosts passed to the Join arg
 	listenAddr    string
 	join          []string
-	gossipManager *gossip.GossipManager
+	gossipManager interfaces.GossipService
 	apiClient     *client.APIClient
 
 	bootstrapped bool
@@ -50,14 +50,13 @@ type ClusterStarter struct {
 	log log.Logger
 }
 
-func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan *gossip.GossipManager, apiClient *client.APIClient) *ClusterStarter {
-	joinList := make([]string, len(gossipMan.Join))
-	copy(joinList, gossipMan.Join)
+func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan interfaces.GossipService, apiClient *client.APIClient) *ClusterStarter {
+	joinList := gossipMan.JoinList()
 	cs := &ClusterStarter{
 		nodeHost:             nodeHost,
 		createStateMachineFn: createStateMachineFn,
 		grpcAddr:             grpcAddr,
-		listenAddr:           gossipMan.ListenAddr,
+		listenAddr:           gossipMan.ListenAddr(),
 		join:                 joinList,
 		gossipManager:        gossipMan,
 		apiClient:            apiClient,

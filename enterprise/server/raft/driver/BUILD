@@ -12,7 +12,7 @@ go_library(
         "//enterprise/server/raft/store",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
-        "//server/gossip",
+        "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",

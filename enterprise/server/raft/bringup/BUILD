@@ -13,7 +13,7 @@ go_library(
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
         "//proto:raft_go_proto",
-        "//server/gossip",
+        "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
         "@com_github_hashicorp_serf//serf",

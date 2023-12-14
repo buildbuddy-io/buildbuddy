@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",
-        "//server/gossip",
+        "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
         "@com_github_hashicorp_serf//serf",

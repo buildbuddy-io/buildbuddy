@@ -12,7 +12,7 @@ go_library(
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
-        "//server/gossip",
+        "//server/interfaces",
         "//server/metrics",
         "//server/util/approxlru",
         "//server/util/disk",
