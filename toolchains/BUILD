@@ -75,7 +75,7 @@ cc_toolchain_config(
     abi_version = "unknown",
     builtin_sysroot = "",
     compile_flags = [
-        # "--strace",
+        "--strace",
         "-isystem",
         "external/cosmocc/include",
         "-include",
@@ -123,7 +123,7 @@ cc_toolchain_config(
     link_flags = [
         "-L external/cosmocc/x86_64-linux-cosmo/lib",
         "-static",
-        "-no-stdlib",
+        "-nostdlib",
         "-no-pie",
         "-fuse-ld=bfd",
         "-Wl,--gc-sections",
