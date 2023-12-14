@@ -278,10 +278,14 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 
 func (l *Lease) keepLeaseAlive(ctx context.Context) {
 	for {
+		l.mu.Lock()
+		timeUntilRenewal := l.timeUntilLeaseRenewal
+		l.mu.Unlock()
+
 		select {
 		case <-l.quitLease:
 			return
-		case <-time.After(l.timeUntilLeaseRenewal):
+		case <-time.After(timeUntilRenewal):
 			l.ensureValidLease(ctx, true /*forceRenewal*/)
 		}
 	}
