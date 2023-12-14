@@ -46,7 +46,7 @@ func localAddr(t *testing.T) string {
 }
 
 func newGossipManager(t testing.TB, nodeAddr string, seeds []string) *gossip.GossipManager {
-	node, err := gossip.NewGossipManager("name-"+nodeAddr, nodeAddr, seeds)
+	node, err := gossip.New("name-"+nodeAddr, nodeAddr, seeds)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		node.Shutdown()

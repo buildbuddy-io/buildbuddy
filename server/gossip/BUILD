@@ -6,9 +6,14 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/gossip",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/hostid",
+        "//server/interfaces",
+        "//server/real_environment",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/network",
         "//server/util/retry",
+        "//server/util/status",
         "//server/util/statusz",
         "@com_github_hashicorp_memberlist//:memberlist",
         "@com_github_hashicorp_serf//serf",
@@ -21,6 +26,7 @@ go_test(
     srcs = ["gossip_test.go"],
     deps = [
         ":gossip",
+        "//server/interfaces",
         "//server/testutil/testport",
         "@com_github_hashicorp_serf//serf",
         "@com_github_stretchr_testify//require",

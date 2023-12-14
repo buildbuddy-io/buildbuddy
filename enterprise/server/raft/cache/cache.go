@@ -193,7 +193,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	}
 	// Initialize a gossip manager, which will contact other nodes
 	// and exchange information.
-	gossipManager, err := gossip.NewGossipManager(myName, conf.ListenAddress, conf.Join)
+	gossipManager, err := gossip.New(myName, conf.ListenAddress, conf.Join)
 	if err != nil {
 		return nil, err
 	}

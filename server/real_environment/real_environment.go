@@ -119,6 +119,7 @@ type RealEnv struct {
 	gcpService                       interfaces.GCPService
 	scimService                      interfaces.SCIMService
 	localBufconnListener             *bufconn.Listener
+	gossipService                    interfaces.GossipService
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -701,4 +702,12 @@ func (r *RealEnv) GetSCIMService() interfaces.SCIMService {
 
 func (r *RealEnv) SetSCIMService(val interfaces.SCIMService) {
 	r.scimService = val
+}
+
+func (r *RealEnv) GetGossipService() interfaces.GossipService {
+	return r.gossipService
+}
+
+func (r *RealEnv) SetGossipService(g interfaces.GossipService) {
+	r.gossipService = g
 }

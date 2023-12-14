@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
+	"github.com/hashicorp/serf/serf"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
@@ -1430,4 +1431,20 @@ type ServerNotificationService interface {
 type SCIMService interface {
 	Users() http.Handler
 	Groups() http.Handler
+}
+
+type GossipListener interface {
+	OnEvent(eventType serf.EventType, event serf.Event)
+}
+
+type GossipService interface {
+	AddListener(listener GossipListener)
+	LocalMember() serf.Member
+	Members() []serf.Member
+	SetTags(tags map[string]string) error
+	SendUserEvent(name string, payload []byte, coalesce bool) error
+	Query(name string, payload []byte, params *serf.QueryParam) (*serf.QueryResponse, error)
+	Statusz(ctx context.Context) string
+	Leave() error
+	Shutdown() error
 }
