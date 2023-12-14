@@ -93,7 +93,7 @@ func ReadRequestToProto(r *http.Request, req proto.Message) error {
 		return proto.Unmarshal(body, req)
 	case "application/protobuf-text":
 		return prototext.Unmarshal(body, req)
-	case "application/grpc+proto":
+	case "application/grpc-web":
 		r.Body = ioutil.NopCloser(bytes.NewReader(body))
 		return proto.Unmarshal(body[messageByteOffset:], req)
 	default:
@@ -196,10 +196,12 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{},
 		// If we're getting a grpc+proto request over http, we rewrite the path to point at
 		// the grpc server's http handler endpoints and make the request look like an http2 request.
 		// We also wrap the ResponseWriter so we can return proper errors to the web front-end.
-		if r.Header.Get("content-type") == "application/grpc+proto" {
+		if r.Header.Get("content-type") == "application/grpc-web" {
 			r.URL.Path = fmt.Sprintf("/%s/%s", serviceName, strings.TrimPrefix(r.URL.Path, servicePrefix))
 			r.ProtoMajor = 2
 			r.ProtoMinor = 0
+			r.Header.Del("content-length")
+			r.Header.Set("content-type", "application/grpc")
 			wrapped := &wrappedResponse{w: w}
 			grpcServer.ServeHTTP(wrapped, r)
 			wrapped.sendErrorIfNeeded(r)
@@ -256,13 +258,21 @@ func (w *wrappedResponse) Header() http.Header {
 }
 
 func (w *wrappedResponse) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.updateHeaders()
+	}
 	w.wroteBody, w.wroteHeader = true, true
 	return w.w.Write(b)
 }
 
 func (w *wrappedResponse) WriteHeader(code int) {
+	w.updateHeaders()
 	w.wroteHeader = true
 	w.w.WriteHeader(code)
+}
+
+func (w *wrappedResponse) updateHeaders() {
+	w.Header().Set("content-type", "application/grpc-web")
 }
 
 func (w *wrappedResponse) Flush() {
