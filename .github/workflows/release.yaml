@@ -50,6 +50,9 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: ${{ steps.vars.outputs.ref }}
+          # We need to fetch git tags to obtain the latest version tag to report
+          # the version of the running binary.
+          fetch-depth: 0
 
       - name: Install bazelisk
         run: |
