@@ -27,9 +27,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	crand "crypto/rand"
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )
 
 func TestSessionInsertUpdateDeleteRead(t *testing.T) {
