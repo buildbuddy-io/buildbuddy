@@ -182,7 +182,7 @@ class RpcService {
     init.headers = { "Content-Type": "application/proto" };
     try {
       if (capabilities.config.streamingHttpEnabled) {
-        init.headers["Content-Type"] = "application/grpc+proto";
+        init.headers["Content-Type"] = "application/proto+prefixed";
         init.body = lengthPrefixMessage(requestData);
 
         const reader = (await this.fetch(url, "stream", init))?.getReader();

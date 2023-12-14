@@ -34,6 +34,9 @@ const (
 	// us the length of the message.
 	// For more info, see: https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md
 	messageByteOffset = 5
+
+	// The http content type that describes requests / responses sent with the `Length-Prefixed-Message` format above.
+	prefixedProtoContentType = "application/proto+prefixed"
 )
 
 func isRPCMethod(m reflect.Method) bool {
@@ -93,7 +96,7 @@ func ReadRequestToProto(r *http.Request, req proto.Message) error {
 		return proto.Unmarshal(body, req)
 	case "application/protobuf-text":
 		return prototext.Unmarshal(body, req)
-	case "application/grpc+proto":
+	case prefixedProtoContentType:
 		r.Body = ioutil.NopCloser(bytes.NewReader(body))
 		return proto.Unmarshal(body[messageByteOffset:], req)
 	default:
@@ -193,13 +196,14 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{},
 			return
 		}
 
-		// If we're getting a grpc+proto request over http, we rewrite the path to point at
+		// If we're getting a proto+prefixed request over http, we rewrite the path to point at
 		// the grpc server's http handler endpoints and make the request look like an http2 request.
 		// We also wrap the ResponseWriter so we can return proper errors to the web front-end.
-		if r.Header.Get("content-type") == "application/grpc+proto" {
+		if r.Header.Get("content-type") == prefixedProtoContentType {
 			r.URL.Path = fmt.Sprintf("/%s/%s", serviceName, strings.TrimPrefix(r.URL.Path, servicePrefix))
 			r.ProtoMajor = 2
 			r.ProtoMinor = 0
+			r.Header.Set("content-type", "application/grpc")
 			wrapped := &wrappedResponse{w: w}
 			grpcServer.ServeHTTP(wrapped, r)
 			wrapped.sendErrorIfNeeded(r)
@@ -252,6 +256,7 @@ type wrappedResponse struct {
 }
 
 func (w *wrappedResponse) Header() http.Header {
+	w.w.Header().Set("content-type", prefixedProtoContentType)
 	return w.w.Header()
 }
 
