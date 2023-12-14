@@ -663,6 +663,8 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
+			tracing.AddStringAttributeToCurrentSpan(ctx, "execute_result", "cached")
+
 			r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
 			executionID, err := r.UploadString()
 			if err != nil {
@@ -686,6 +688,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			if ee != "" {
 				ctx = log.EnrichContext(ctx, log.ExecutionIDKey, ee)
 				log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, downloadString, invocationID)
+				tracing.AddStringAttributeToCurrentSpan(ctx, "execute_result", "merged")
 				executionID = ee
 				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
 				if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
@@ -699,6 +702,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// can wait on.
 	if executionID == "" {
 		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", downloadString, invocationID)
+		tracing.AddStringAttributeToCurrentSpan(ctx, "execute_result", "executed")
 		newExecutionID, err := s.Dispatch(ctx, req)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
