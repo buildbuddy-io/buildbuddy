@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
@@ -84,7 +85,7 @@ type BuildBuddyServer struct {
 	sslService interfaces.SSLService
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	buildBuddyServer, err := NewBuildBuddyServer(env, env.GetSSLService())
 	if err != nil {
 		return status.InternalErrorf("Error initializing BuildBuddyServer: %s", err)

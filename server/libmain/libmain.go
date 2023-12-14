@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -215,14 +214,14 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 	return realEnv
 }
 
-func registerInternalGRPCServices(grpcServer *grpc.Server, env environment.Env) {
+func registerInternalGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) {
 	if sociArtifactStoreServer := env.GetSociArtifactStoreServer(); sociArtifactStoreServer != nil {
 		socipb.RegisterSociArtifactStoreServer(grpcServer, sociArtifactStoreServer)
 	}
 	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 }
 
-func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
+func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) {
 	// Start Build-Event-Protocol and Remote-Cache services.
 	pepb.RegisterPublishBuildEventServer(grpcServer, env.GetBuildEventServer())
 
@@ -260,7 +259,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
 	}
 }
 
-func registerLocalGRPCClients(env environment.Env) error {
+func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	// Identify ourselves as an app client in gRPC requests to other apps.
 	usageutil.SetClientType("app")
 	byte_stream_client.RegisterPooledBytestreamClient(env)
@@ -276,7 +275,7 @@ func registerLocalGRPCClients(env environment.Env) error {
 	return nil
 }
 
-func StartAndRunServices(env environment.Env) {
+func StartAndRunServices(env *real_environment.RealEnv) {
 	env.SetListenAddr(*listen)
 
 	if err := rlimit.MaxRLimit(); err != nil {

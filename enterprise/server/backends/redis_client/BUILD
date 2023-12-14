@@ -8,7 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client",
     deps = [
         "//enterprise/server/util/redisutil",
-        "//server/environment",
+        "//server/real_environment",
         "//server/remote_execution/config",
         "//server/util/flag",
         "//server/util/status",

@@ -12,6 +12,7 @@ go_library(
         "//proto:secrets_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/tables",
         "//server/util/db",
         "//server/util/hash",

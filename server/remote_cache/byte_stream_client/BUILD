@@ -10,6 +10,7 @@ go_library(
         "//proto:zip_go_proto",
         "//server/endpoint_urls/cache_api_url",
         "//server/environment",
+        "//server/real_environment",
         "//server/remote_cache/digest",
         "//server/util/flag",
         "//server/util/flagutil",

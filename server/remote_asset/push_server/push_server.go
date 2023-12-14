@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -13,7 +14,7 @@ type PushServer struct {
 	env environment.Env
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	// OPTIONAL CACHE API -- only enable if configured.
 	if env.GetCache() == nil {
 		return nil

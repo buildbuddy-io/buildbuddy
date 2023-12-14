@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
@@ -42,6 +43,8 @@ func init() {
 	log.Configure()
 }
 
+type TestEnv = real_environment.RealEnv
+
 type ConfigTemplateParams struct {
 	TestRootDir string
 }
@@ -72,34 +75,33 @@ remote_execution:
    enable_remote_exec: true
 `
 
-type TestEnv struct {
-	*real_environment.RealEnv
-	lis *bufconn.Listener
-}
-
-func (te *TestEnv) bufDialer(context.Context, string) (net.Conn, error) {
-	return te.lis.Dial()
-}
+var lis *bufconn.Listener
 
 // LocalGRPCServer starts a gRPC server with standard BuildBudy filters that uses an in-memory
 // buffer for communication.
 // Call LocalGRPCConn to get a connection to the returned server.
-func (te *TestEnv) LocalGRPCServer() (*grpc.Server, func()) {
-	te.lis = bufconn.Listen(1024 * 1024)
-	return te.GRPCServer(te.lis)
+func LocalGRPCServer(te *real_environment.RealEnv) (*grpc.Server, func()) {
+	if te.GetLocalBufconnListener() == nil {
+		te.SetLocalBufconnListener(bufconn.Listen(1024 * 1024))
+	}
+	return GRPCServer(te, te.GetLocalBufconnListener())
 }
 
-func (te *TestEnv) LocalGRPCConn(ctx context.Context, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+func LocalGRPCConn(ctx context.Context, te *real_environment.RealEnv, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	bufDialer := func(context.Context, string) (net.Conn, error) {
+		return te.GetLocalBufconnListener().Dial()
+	}
+
 	dialOptions := grpc_client.CommonGRPCClientOptions()
-	dialOptions = append(dialOptions, grpc.WithContextDialer(te.bufDialer))
+	dialOptions = append(dialOptions, grpc.WithContextDialer(bufDialer))
 	dialOptions = append(dialOptions, grpc.WithInsecure())
 	dialOptions = append(dialOptions, opts...)
 	return grpc.DialContext(ctx, "bufnet", dialOptions...)
 }
 
-// GRPCServer starts a gRPC server with standard BuildBuddy filters that uses the given listener.
-func (te *TestEnv) GRPCServer(lis net.Listener) (*grpc.Server, func()) {
-	srv := grpc.NewServer(grpc_server.CommonGRPCServerOptions(te)...)
+// gRPCServer starts a gRPC server with standard BuildBuddy filters that uses the given listener.
+func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
+	srv := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
 	runFunc := func() {
 		if err := srv.Serve(lis); err != nil {
 			log.Fatal(err.Error())
@@ -108,7 +110,7 @@ func (te *TestEnv) GRPCServer(lis net.Listener) (*grpc.Server, func()) {
 	return srv, runFunc
 }
 
-func GetTestEnv(t testing.TB) *TestEnv {
+func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	flags.PopulateFlagsFromData(t, testConfigData)
 	testRootDir := testfs.MakeTempDir(t)
 	if flag.Lookup("storage.disk.root_directory") != nil {
@@ -125,9 +127,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	}
 
 	healthChecker := healthcheck.NewHealthChecker("test")
-	te := &TestEnv{
-		RealEnv: real_environment.NewRealEnv(healthChecker),
-	}
+	te := real_environment.NewRealEnv(healthChecker)
 	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 		t.Fatal(err)
 	}
 	te.SetDBHandle(dbHandle)
-	te.RealEnv.SetInvocationDB(invocationdb.NewInvocationDB(te, dbHandle))
+	te.SetInvocationDB(invocationdb.NewInvocationDB(te, dbHandle))
 
 	if *useClickHouse {
 		flags.Set(t, "olap_database.data_source", testclickhouse.GetOrStart(t, *reuseServer))
@@ -163,8 +163,8 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
-	te.RealEnv.SetBlobstore(bs)
-	te.RealEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
+	te.SetBlobstore(bs)
+	te.SetAuthenticator(&nullauth.NullAuthenticator{})
 	require.NoError(t, buildbuddy_server.Register(te))
 
 	return te

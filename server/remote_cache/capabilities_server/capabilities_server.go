@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -27,7 +28,7 @@ type CapabilitiesServer struct {
 	supportZstd       bool
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	// Register to handle GetCapabilities messages, which tell the client
 	// that this server supports CAS functionality.
 	env.SetCapabilitiesServer(NewCapabilitiesServer(

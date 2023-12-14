@@ -10,7 +10,7 @@ go_library(
         "//enterprise/server/backends/redis_client",
         "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
-        "//server/environment",
+        "//server/real_environment",
         "//server/remote_execution/config",
         "//server/util/flagutil",
         "//server/util/grpc_client",

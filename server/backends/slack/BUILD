@@ -8,6 +8,6 @@ go_library(
     deps = [
         "//proto:invocation_go_proto",
         "//server/endpoint_urls/build_buddy_url",
-        "//server/environment",
+        "//server/real_environment",
     ],
 )

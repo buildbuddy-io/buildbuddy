@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
@@ -82,7 +82,7 @@ type SlackWebhook struct {
 	buildBuddyURL string
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	if *webhookURL != "" {
 		env.SetWebhooks(
 			append(env.GetWebhooks(), NewSlackWebhook(*webhookURL, build_buddy_url.String())),

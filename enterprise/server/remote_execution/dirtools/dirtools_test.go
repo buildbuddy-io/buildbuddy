@@ -867,12 +867,12 @@ func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	if err != nil {
 		t.Error(err)
 	}
-	grpcServer, runFunc := env.LocalGRPCServer()
+	grpcServer, runFunc := testenv.LocalGRPCServer(env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	conn, err := env.LocalGRPCConn(ctx)
+	conn, err := testenv.LocalGRPCConn(ctx, env)
 	if err != nil {
 		t.Error(err)
 	}

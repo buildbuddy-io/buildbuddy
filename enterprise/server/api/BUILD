@@ -20,6 +20,7 @@ go_library(
         "//server/eventlog",
         "//server/http/protolet",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/capabilities",

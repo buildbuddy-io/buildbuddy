@@ -42,13 +42,13 @@ func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T
 		t.Error(err)
 	}
 
-	grpcServer, runFunc := env.LocalGRPCServer()
+	grpcServer, runFunc := testenv.LocalGRPCServer(env)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 
 	go runFunc()
 
 	// TODO(vadim): can we remove the MsgSize override from the default options?
-	clientConn, err := env.LocalGRPCConn(ctx, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)))
+	clientConn, err := testenv.LocalGRPCConn(ctx, env, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)))
 	if err != nil {
 		t.Error(err)
 	}

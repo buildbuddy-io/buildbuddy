@@ -11,6 +11,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/util/hash",
         "//server/util/log",
         "//server/util/perms",

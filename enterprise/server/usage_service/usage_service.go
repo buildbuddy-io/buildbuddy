@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -32,7 +33,7 @@ type usageService struct {
 }
 
 // Registers the usage service if usage tracking is enabled
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	if usage_config.UsageTrackingEnabled() {
 		env.SetUsageService(New(env))
 	}

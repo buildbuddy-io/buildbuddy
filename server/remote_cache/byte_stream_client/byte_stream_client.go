@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -38,7 +39,7 @@ type pooledByteStreamClient struct {
 	connPoolMap map[string]grpc.ClientConnInterface
 }
 
-func RegisterPooledBytestreamClient(env environment.Env) {
+func RegisterPooledBytestreamClient(env *real_environment.RealEnv) {
 	p := NewPooledByteStreamClient(env)
 	env.SetPooledByteStreamClient(p)
 }

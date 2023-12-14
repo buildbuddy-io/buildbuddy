@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
@@ -35,7 +35,7 @@ type Service struct {
 	subs map[protoreflect.MessageDescriptor][]chan<- proto.Message
 }
 
-func Register(env environment.Env, serviceName string) error {
+func Register(env *real_environment.RealEnv, serviceName string) error {
 	rdb := env.GetDefaultRedisClient()
 	if rdb == nil {
 		return nil

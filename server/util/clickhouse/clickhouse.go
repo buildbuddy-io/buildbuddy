@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -258,7 +258,7 @@ func recordMetricsBeforeFn(db *gorm.DB) {
 	db.Statement.Settings.Store(gormStmtStartTimeKey, time.Now())
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	if *dataSource == "" {
 		return nil
 	}

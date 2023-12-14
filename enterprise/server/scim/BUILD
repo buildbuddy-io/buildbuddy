@@ -6,7 +6,10 @@ go_library(
     name = "scim",
     srcs = ["scim.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scim",
-    deps = ["//server/environment"],
+    deps = [
+        "//server/environment",
+        "//server/real_environment",
+    ],
 )
 
 go_test(

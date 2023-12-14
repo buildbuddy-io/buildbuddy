@@ -11,6 +11,7 @@ go_library(
         "//proto:quota_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/tables",
         "//server/util/alert",
         "//server/util/db",

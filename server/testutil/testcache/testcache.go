@@ -23,14 +23,14 @@ func Setup(t *testing.T, env *testenv.TestEnv) {
 	cas, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	require.NoError(t, err)
 
-	srv, runFunc := env.LocalGRPCServer()
+	srv, runFunc := testenv.LocalGRPCServer(env)
 	repb.RegisterActionCacheServer(srv, ac)
 	bspb.RegisterByteStreamServer(srv, bs)
 	repb.RegisterContentAddressableStorageServer(srv, cas)
 
 	go runFunc()
 
-	conn, err := env.LocalGRPCConn(env.GetServerContext())
+	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), env)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 

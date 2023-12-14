@@ -53,7 +53,7 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
-		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
+		env.SetXcodeLocator(&xcodeLocator{})
 		err = ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
@@ -78,7 +78,7 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
-		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
+		env.SetXcodeLocator(&xcodeLocator{})
 		err = ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		assert.Error(t, err)
 	}
@@ -437,7 +437,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		execProps.DefaultXcodeVersion = testCase.defaultXcodeVersion
 		command := &repb.Command{EnvironmentVariables: testCase.startingEnvVars}
 		env := testenv.GetTestEnv(t)
-		env.RealEnv.SetXcodeLocator(&xcodeLocator{
+		env.SetXcodeLocator(&xcodeLocator{
 			sdks12_2: map[string]string{
 				"iPhone":     "Platforms/iPhone.platform/Developer/SDKs/iPhone.sdk",
 				"iPhone14.2": "Platforms/iPhone.platform/Developer/SDKs/iPhone14.2.sdk",
@@ -555,7 +555,7 @@ func TestForceNetworkIsolationType(t *testing.T) {
 		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
-		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
+		env.SetXcodeLocator(&xcodeLocator{})
 		err = ApplyOverrides(env, podmanAndFirecracker, platformProps, &repb.Command{})
 		assert.NoError(t, err)
 		assert.Equal(t, testCase.expectedIsolationType, platformProps.WorkloadIsolationType, testCase)

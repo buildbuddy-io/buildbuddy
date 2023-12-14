@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -54,9 +55,9 @@ func InternalGRPCSPort() int {
 	return *internalGRPCSPort
 }
 
-type RegisterServices func(server *grpc.Server, env environment.Env)
+type RegisterServices func(server *grpc.Server, env *real_environment.RealEnv)
 
-func RegisterGRPCServer(env environment.Env, regServices RegisterServices) error {
+func RegisterGRPCServer(env *real_environment.RealEnv, regServices RegisterServices) error {
 	grpcServer, err := NewGRPCServer(env, *gRPCPort, nil, regServices)
 	if err != nil {
 		return err
@@ -71,7 +72,7 @@ func RegisterGRPCServer(env environment.Env, regServices RegisterServices) error
 	return nil
 }
 
-func RegisterGRPCSServer(env environment.Env, regServices RegisterServices) error {
+func RegisterGRPCSServer(env *real_environment.RealEnv, regServices RegisterServices) error {
 	if !env.GetSSLService().IsEnabled() {
 		return nil
 	}
@@ -87,7 +88,7 @@ func RegisterGRPCSServer(env environment.Env, regServices RegisterServices) erro
 	return nil
 }
 
-func RegisterInternalGRPCServer(env environment.Env, regServices RegisterServices) error {
+func RegisterInternalGRPCServer(env *real_environment.RealEnv, regServices RegisterServices) error {
 	if *internalGRPCPort == 0 {
 		return nil
 	}
@@ -100,7 +101,7 @@ func RegisterInternalGRPCServer(env environment.Env, regServices RegisterService
 	return nil
 }
 
-func RegisterInternalGRPCSServer(env environment.Env, regServices RegisterServices) error {
+func RegisterInternalGRPCSServer(env *real_environment.RealEnv, regServices RegisterServices) error {
 	if *internalGRPCSPort == 0 {
 		return nil
 	}
@@ -120,7 +121,7 @@ func RegisterInternalGRPCSServer(env environment.Env, regServices RegisterServic
 	return nil
 }
 
-func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOption, regServices RegisterServices) (*grpc.Server, error) {
+func NewGRPCServer(env *real_environment.RealEnv, port int, credentialOption grpc.ServerOption, regServices RegisterServices) (*grpc.Server, error) {
 	// Initialize our gRPC server (and fail early if that doesn't happen).
 	hostAndPort := fmt.Sprintf("%s:%d", env.GetListenAddr(), port)
 

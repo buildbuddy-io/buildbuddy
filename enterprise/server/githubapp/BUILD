@@ -15,6 +15,7 @@ go_library(
         "//server/backends/github",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/tables",
         "//server/util/authutil",
         "//server/util/db",

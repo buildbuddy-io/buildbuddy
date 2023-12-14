@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 )
@@ -17,7 +17,7 @@ type store struct {
 	rdb redis.UniversalClient
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	rdb := env.GetDefaultRedisClient()
 	if rdb == nil {
 		return nil

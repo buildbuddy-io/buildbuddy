@@ -9,6 +9,7 @@ go_library(
         "//proto:auditlog_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/util/authutil",
         "//server/util/clickhouse/schema",
         "//server/util/clientip",

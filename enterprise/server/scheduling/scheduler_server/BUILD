@@ -19,6 +19,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
+        "//server/real_environment",
         "//server/remote_execution/config",
         "//server/resources",
         "//server/scheduling/scheduler_server/config",

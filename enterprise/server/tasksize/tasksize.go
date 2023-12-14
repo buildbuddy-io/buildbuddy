@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize_model"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -84,7 +85,7 @@ const (
 )
 
 // Register registers the task sizer with the env.
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	sizer, err := NewSizer(env)
 	if err != nil {
 		return err

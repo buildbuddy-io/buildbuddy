@@ -11,6 +11,7 @@ go_library(
         "//server/endpoint_urls/events_api_url",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/util/flag",
         "//server/util/status",
         "@org_golang_google_grpc//credentials",
