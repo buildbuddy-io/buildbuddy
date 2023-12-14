@@ -120,7 +120,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   componentDidMount() {
-    if (this.state.repoResponse) {
+    if (this.state.repoResponse || this.isSingleFile()) {
       this.fetchInitialContent();
     }
   }
