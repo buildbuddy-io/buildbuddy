@@ -92,7 +92,7 @@ proto_library(
         ":context_proto",
         ":remote_execution_proto",
         ":resource_proto",
-        "@com_github_planetscale_vtprotobuf//vtproto:vtproto_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:field_mask_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -121,7 +121,7 @@ proto_library(
     ],
     deps = [
         ":resource_proto",
-        "@com_github_planetscale_vtprotobuf//vtproto:vtproto_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     ],
 )
 
@@ -234,7 +234,7 @@ proto_library(
     deps = [
         ":remote_execution_proto",
         ":resource_proto",
-        "@com_github_planetscale_vtprotobuf//vtproto:vtproto_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
         "@googleapis//google/rpc:status_proto",
     ],
 )
@@ -1928,7 +1928,7 @@ ts_proto_library(
 
 ts_proto_library(
     name = "vtproto_ts_proto",
-    proto = "@com_github_planetscale_vtprotobuf//vtproto:vtproto_proto",
+    proto = "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     deps = ["descriptor_ts_proto"],
 )
 

@@ -1,0 +1,12 @@
+diff --git a/include/github.com/planetscale/vtprotobuf/vtproto/BUILD.bazel b/include/github.com/planetscale/vtprotobuf/vtproto/BUILD.bazel
+index 418af2e..7805915 100644
+--- a/include/github.com/planetscale/vtprotobuf/vtproto/BUILD.bazel
++++ b/include/github.com/planetscale/vtprotobuf/vtproto/BUILD.bazel
+@@ -7,6 +7,7 @@ proto_library(
+     srcs = ["ext.proto"],
+     visibility = ["//visibility:public"],
+     deps = ["@com_google_protobuf//:descriptor_proto"],
++	import_prefix = "github.com/planetscale/vtprotobuf/vtproto"
+ )
+ 
+ go_proto_library(
