@@ -33,7 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/protoutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -45,7 +45,6 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"golang.org/x/time/rate"
-	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -751,7 +750,7 @@ func (p *PebbleCache) DatabaseVersionMetadata() (*rfpb.VersionMetadata, error) {
 	}
 
 	versionMetadata := &rfpb.VersionMetadata{}
-	if err := protoutil.Unmarshal(buf, versionMetadata); err != nil {
+	if err := proto.Unmarshal(buf, versionMetadata); err != nil {
 		return nil, err
 	}
 	return versionMetadata, nil
@@ -798,7 +797,7 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 	newVersionMetadata.MaxVersion = int64(maxVersion)
 	newVersionMetadata.LastModifyUsec = p.clock.Now().UnixMicro()
 
-	buf, err := protoutil.Marshal(newVersionMetadata)
+	buf, err := proto.Marshal(newVersionMetadata)
 	if err != nil {
 		return err
 	}
@@ -848,7 +847,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 		return nil
 	}
 	md.LastAccessUsec = p.clock.Now().UnixMicro()
-	protoBytes, err := protoutil.Marshal(md)
+	protoBytes, err := proto.Marshal(md)
 	if err != nil {
 		return err
 	}
@@ -1059,7 +1058,7 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 		}
 		dstKey := append(dstKeyPrefix, bytes.TrimPrefix(iter.Key(), srcKeyPrefix)...)
 
-		if err := protoutil.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return status.UnknownErrorf("Error unmarshalling metadata: %s", err)
 		}
 
@@ -1071,7 +1070,7 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 		}
 		fileMetadata.StorageMetadata = newStorageMD
 
-		buf, err := protoutil.Marshal(fileMetadata)
+		buf, err := proto.Marshal(fileMetadata)
 		if err != nil {
 			return status.UnknownErrorf("could not marshal destination metadata: %s", err)
 		}
@@ -1296,7 +1295,7 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 			continue
 		}
 
-		if err := protoutil.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			log.Errorf("[%s] Error unmarshaling metadata when scanning for broken files: %s", p.name, err)
 			continue
 		}
@@ -1527,7 +1526,7 @@ func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte
 	if err != nil {
 		return nil, err
 	}
-	if err := protoutil.Unmarshal(buf, fileMetadata); err != nil {
+	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
 		return nil, err
 	}
 
@@ -2281,7 +2280,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
-	protoBytes, err := protoutil.Marshal(md)
+	protoBytes, err := proto.Marshal(md)
 	if err != nil {
 		return err
 	}
@@ -2610,7 +2609,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			continue
 		}
 
-		err = protoutil.Unmarshal(iter.Value(), fileMetadata)
+		err = proto.Unmarshal(iter.Value(), fileMetadata)
 		if err != nil {
 			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read proto: %s", e.cacheName, err)
 			continue
@@ -2706,7 +2705,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 	defer fileMetadata.ReturnToVTPool()
 
 	for iter.Next() {
-		if err := protoutil.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return 0, 0, 0, err
 		}
 		blobSizeBytes += fileMetadata.GetStoredSizeBytes()
@@ -2747,14 +2746,14 @@ func (e *partitionEvictor) lookupPartitionMetadata() (*rfpb.PartitionMetadata, e
 	}
 
 	partitionMD := &rfpb.PartitionMetadata{}
-	if err := protoutil.Unmarshal(partitionMDBuf, partitionMD); err != nil {
+	if err := proto.Unmarshal(partitionMDBuf, partitionMD); err != nil {
 		return nil, err
 	}
 	return partitionMD, nil
 }
 
 func (e *partitionEvictor) writePartitionMetadata(db pebble.IPebbleDB, md *rfpb.PartitionMetadata) error {
-	bs, err := protoutil.Marshal(md)
+	bs, err := proto.Marshal(md)
 	if err != nil {
 		return err
 	}
