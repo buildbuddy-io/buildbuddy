@@ -268,7 +268,7 @@ async function transformLengthPrefixedReaderStreamToProtoMessageBytes(
     // Read the rest of the bytes into the buffer until it's full, saving any leftovers.
     consumeMessageChunk(streamState, value);
 
-    // If we still haven't receieve the full message, loop again and read more until we do.
+    // If we still haven't receive the full message, loop again and read more until we do.
     if (streamState.bufferedLength < streamState.messageExpectedLength) {
       continue;
     }
