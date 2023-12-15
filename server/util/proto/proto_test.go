@@ -1,4 +1,4 @@
-package protoutil_test
+package proto_test
 
 import (
 	"fmt"
@@ -7,12 +7,11 @@ import (
 
 	"github.com/go-faker/faker/v4"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	dspb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	"github.com/buildbuddy-io/buildbuddy/server/util/protoutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 )
 
 const (
@@ -78,7 +77,7 @@ func generateProtos(t testing.TB, providerFn providerFunc) []protoMessage {
 func generateBytes(t testing.TB, protos []protoMessage) [][]byte {
 	res := make([][]byte, 0, len(protos))
 	for _, pb := range protos {
-		buf, err := proto.Marshal(pb)
+		buf, err := proto.MarshalOld(pb)
 		require.NoError(t, err, "unable to marshal")
 		res = append(res, buf)
 	}
@@ -121,11 +120,11 @@ func benchmarkUnmarshal(b *testing.B, unmarshalFn unmarshalFunc, providerFn prov
 
 func BenchmarkMarshal(b *testing.B) {
 	marshalFns := map[string]marshalFunc{
-		"proto": func(v protoMessage) ([]byte, error) {
-			return proto.Marshal(v)
+		"MarshalOld": func(v protoMessage) ([]byte, error) {
+			return proto.MarshalOld(v)
 		},
-		"protoutil": func(v protoMessage) ([]byte, error) {
-			return v.MarshalVT()
+		"Marshal": func(v protoMessage) ([]byte, error) {
+			return proto.Marshal(v)
 		},
 	}
 
@@ -141,11 +140,11 @@ func BenchmarkMarshal(b *testing.B) {
 
 func BenchmarkUnmarshal(b *testing.B) {
 	unmarshalFns := map[string]unmarshalFunc{
-		"protoutil": func(buf []byte, v protoMessage) error {
-			return protoutil.Unmarshal(buf, v)
-		},
-		"proto": func(buf []byte, v protoMessage) error {
+		"Unmarshal": func(buf []byte, v protoMessage) error {
 			return proto.Unmarshal(buf, v)
+		},
+		"UnmarshalOld": func(buf []byte, v protoMessage) error {
+			return proto.UnmarshalOld(buf, v)
 		},
 	}
 
@@ -160,7 +159,7 @@ func BenchmarkUnmarshal(b *testing.B) {
 		}
 
 		if pbType.providerFnWithPool != nil {
-			b.Run(fmt.Sprintf("name=protoutilWithPool/pbName=%s", pbName), func(b *testing.B) {
+			b.Run(fmt.Sprintf("name=WithPool/pbName=%s", pbName), func(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 
@@ -168,7 +167,7 @@ func BenchmarkUnmarshal(b *testing.B) {
 					buf := data[rand.Intn(len(data))]
 					b.SetBytes(int64(len(buf)))
 					v := pbType.providerFnWithPool()
-					err := protoutil.Unmarshal(buf, v)
+					err := proto.Unmarshal(buf, v)
 					if err != nil {
 						b.Fatal(err)
 					}
