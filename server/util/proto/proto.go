@@ -24,11 +24,11 @@ func Marshal(v interface{}) ([]byte, error) {
 		return vt.MarshalVT()
 	}
 
-	msg, ok := v.(gproto.Message)
+	msg, ok := v.(Message)
 	if !ok {
 		return nil, fmt.Errorf("failed to marshal, message is %T, want proto.Message", v)
 	}
-	return gproto.Marshal(msg)
+	return MarshalOld(msg)
 }
 
 func Unmarshal(b []byte, v interface{}) error {
@@ -37,9 +37,9 @@ func Unmarshal(b []byte, v interface{}) error {
 		return vt.UnmarshalVT(b)
 	}
 
-	msg, ok := v.(gproto.Message)
+	msg, ok := v.(Message)
 	if !ok {
 		return fmt.Errorf("failed to unmarshal, message is %T, want proto.Message", v)
 	}
-	return gproto.Unmarshal(b, msg)
+	return UnmarshalOld(b, msg)
 }
