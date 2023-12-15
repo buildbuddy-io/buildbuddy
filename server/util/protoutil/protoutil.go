@@ -6,6 +6,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var Clone = proto.Clone
+var Size = proto.Size
+
 type vtprotoMessage interface {
 	MarshalVT() ([]byte, error)
 	UnmarshalVT([]byte) error
