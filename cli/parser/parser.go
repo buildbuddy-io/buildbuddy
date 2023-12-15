@@ -32,6 +32,25 @@ const (
 )
 
 var (
+	cliCommands = map[string]struct{}{
+		"add":      {},
+		"analyze":  {},
+		"ask":      {},
+		"wtf":      {},
+		"huh":      {},
+		"download": {},
+		"execute":  {},
+		"fix":      {},
+		"install":  {},
+		"login":    {},
+		"logout":   {},
+		"print":    {},
+		"remote":   {},
+		"update":   {},
+		"upload":   {},
+		"version":  {},
+	}
+
 	// Inheritance hierarchy: https://bazel.build/run/bazelrc#option-defaults
 	// All commands inherit from "common".
 	parentCommand = map[string]string{
@@ -289,6 +308,10 @@ func parseHelpLine(line, topic string) *Option {
 func BazelCommands() (map[string]struct{}, error) {
 	// TODO: Run `bazel help` to get the list of bazel commands.
 	return bazelCommands, nil
+}
+
+func CliCommands() map[string]struct{} {
+	return cliCommands
 }
 
 // CommandLineSchema specifies the flag parsing schema for a bazel command line

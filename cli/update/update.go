@@ -49,11 +49,7 @@ respectively.
 )
 
 func HandleUpdate(args []string) (exitCode int, err error) {
-	cmd, idx := arg.GetCommandAndIndex(args)
-	if cmd != flags.Name() {
-		return -1, nil
-	}
-	if err := arg.ParseFlagSet(flags, args[idx+1:]); err != nil {
+	if err := arg.ParseFlagSet(flags, args); err != nil {
 		log.Print(err.Error())
 		log.Print(usage)
 		return -1, nil

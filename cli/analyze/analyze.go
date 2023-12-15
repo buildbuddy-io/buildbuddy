@@ -77,11 +77,7 @@ The lookback duration defaults to 4 weeks but can be controlled using the
 )
 
 func HandleAnalyze(args []string) (int, error) {
-	cmd, idx := arg.GetCommandAndIndex(args)
-	if cmd != flags.Name() {
-		return -1, nil
-	}
-	if err := arg.ParseFlagSet(flags, args[idx+1:]); err != nil {
+	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
 			return 1, nil

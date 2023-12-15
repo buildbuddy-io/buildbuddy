@@ -21,10 +21,6 @@ const (
 )
 
 func HandleLogin(args []string) (exitCode int, err error) {
-	if arg.GetCommand(args) != "login" {
-		return -1, nil
-	}
-
 	if err := openInBrowser(loginURL); err != nil {
 		log.Printf("Failed to open browser: %s", err)
 		log.Printf("Copy and paste the URL below into a browser window:")
@@ -54,10 +50,6 @@ func HandleLogin(args []string) (exitCode int, err error) {
 }
 
 func HandleLogout(args []string) (exitCode int, err error) {
-	if arg.GetCommand(args) != "logout" {
-		return -1, nil
-	}
-
 	if err := storage.WriteRepoConfig(apiKeyRepoSetting, ""); err != nil {
 		return -1, fmt.Errorf("failed to clear api key from local .git/config: %s", err)
 	}

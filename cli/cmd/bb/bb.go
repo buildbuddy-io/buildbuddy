@@ -52,8 +52,7 @@ func run() (exitCode int, err error) {
 	// Record original arguments so we can show them in the UI.
 	originalArgs := append([]string{}, os.Args...)
 
-	// Handle global args that don't apply to any specific subcommand
-	// (--verbose, etc.)
+	// Configure verbose flag
 	args := log.Configure(os.Args[1:])
 
 	log.Debugf("CLI started at %s", start)
@@ -70,73 +69,62 @@ func run() (exitCode int, err error) {
 		log.Printf("Failed to bump open file limits: %s", err)
 	}
 
+	// Expand command shortcuts like b=>build, t=>test, etc.
+	args = shortcuts.HandleShortcuts(args)
+
+	// Extract bb cli command if set. It's expected to be directly after `bb`.
+	cliCommand := args[0]
+	for c := range parser.CliCommands() {
+		// If the first argument is a cli command, trim it from `args`
+		if cliCommand == c {
+			args = args[1:]
+			break
+		}
+	}
+
 	// Make sure startup args are always in the format --foo=bar.
 	args, err = parser.CanonicalizeStartupArgs(args)
 	if err != nil {
 		return -1, err
 	}
 
-	// Expand command shortcuts like b=>build, t=>test, etc.
-	args = shortcuts.HandleShortcuts(args)
-
-	// Show help if applicable.
-	exitCode, err = help.HandleHelp(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-
-	// Handle CLI-specific subcommands.
-	exitCode, err = plugin.HandleInstall(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = printlog.HandlePrint(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = update.HandleUpdate(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = version.HandleVersion(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = analyze.HandleAnalyze(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = login.HandleLogin(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = login.HandleLogout(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = fix.HandleFix(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = ask.HandleAsk(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = add.HandleAdd(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = download.HandleDownload(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = upload.HandleUpload(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = execute.HandleExecute(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
+	// Handle CLI-specific subcommands
+	switch cliCommand {
+	case "add":
+		return add.HandleAdd(args)
+	case "analyze":
+		return analyze.HandleAnalyze(args)
+	case "wtf":
+		return ask.HandleAsk(args)
+	case "huh":
+		return ask.HandleAsk(args)
+	case "ask":
+		return ask.HandleAsk(args)
+	case "download":
+		return download.HandleDownload(args)
+	case "execute":
+		return execute.HandleExecute(args)
+	case "fix":
+		return fix.HandleFix(args)
+	case "help":
+		return help.HandleHelp(args)
+	case "install":
+		return plugin.HandleInstall(args)
+	case "login":
+		return login.HandleLogin(args)
+	case "logout":
+		return login.HandleLogout(args)
+	case "print":
+		return printlog.HandlePrint(args)
+	case "remote":
+		// Because `remote` shares some setup with running a regular bazel command
+		// straight up (i.e. bb build), handle both together below
+	case "update":
+		return update.HandleUpdate(args)
+	case "upload":
+		return upload.HandleUpload(args)
+	case "version":
+		return version.HandleVersion(args)
 	}
 
 	// If none of the CLI subcommand handlers were triggered, assume we have a
@@ -219,7 +207,9 @@ func run() (exitCode int, err error) {
 
 	// Handle remote bazel. Note, pre-bazel hooks apply to remote bazel, but not
 	// output handlers or post-bazel hooks.
-	args = remotebazel.HandleRemoteBazel(args, execArgs)
+	if cliCommand == "remote" {
+		return remotebazel.HandleRemoteBazel(args, execArgs)
+	}
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.

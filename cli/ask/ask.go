@@ -40,17 +40,8 @@ Asks for suggestions about the previous invocation.
 )
 
 func HandleAsk(args []string) (int, error) {
-	command, idx := arg.GetCommandAndIndex(args)
-	if command != "ask" && command != "wtf" && command != "huh" {
-		return -1, nil
-	}
-
-	if idx != 0 {
-		log.Debugf("Unexpected flag: %s", args[0])
-		return 1, nil
-	}
 	flags.BoolVar(openai, "o", *openai, "alias for --openai")
-	if err := arg.ParseFlagSet(flags, args[idx+1:]); err != nil {
+	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
 			return 1, nil

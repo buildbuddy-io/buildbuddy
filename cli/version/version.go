@@ -11,9 +11,6 @@ import (
 var cliVersionFlag string
 
 func HandleVersion(args []string) (exitCode int, err error) {
-	if arg.GetCommand(args) != "version" {
-		return -1, nil
-	}
 	if arg.ContainsExact(args, "--cli") {
 		fmt.Println(cliVersionFlag)
 		return 0, nil
