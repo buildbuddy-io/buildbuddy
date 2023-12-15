@@ -1049,13 +1049,13 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 	ctx := context.Background()
 	numKeysCopied := 0
 	lastUpdate := time.Now()
+	fileMetadata := &rfpb.FileMetadata{}
 	for iter.First(); iter.Valid(); iter.Next() {
 		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
 			continue
 		}
 		dstKey := append(dstKeyPrefix, bytes.TrimPrefix(iter.Key(), srcKeyPrefix)...)
 
-		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return status.UnknownErrorf("Error unmarshalling metadata: %s", err)
 		}
@@ -2535,6 +2535,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 
 	totalCount := 0
 	shouldCreateNewIter := true
+	fileMetadata := &rfpb.FileMetadata{}
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
@@ -2593,7 +2594,6 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			continue
 		}
 
-		fileMetadata := &rfpb.FileMetadata{}
 		err = proto.Unmarshal(iter.Value(), fileMetadata)
 		if err != nil {
 			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read proto: %s", e.cacheName, err)
