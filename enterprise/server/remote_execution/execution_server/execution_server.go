@@ -663,13 +663,13 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
-			tracing.AddStringAttributeToCurrentSpan(ctx, "execute_result", "cached")
-
 			r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
 			executionID, err := r.UploadString()
 			if err != nil {
 				return err
 			}
+			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "cached")
+			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
 			stateChangeFn := operation.GetStateChangeFunc(stream, executionID, adInstanceDigest)
 			if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithCachedResult(actionResult)); err != nil {
 				return err // CHECK (these errors should not happen).
@@ -688,8 +688,9 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			if ee != "" {
 				ctx = log.EnrichContext(ctx, log.ExecutionIDKey, ee)
 				log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, downloadString, invocationID)
-				tracing.AddStringAttributeToCurrentSpan(ctx, "execute_result", "merged")
 				executionID = ee
+				tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
+				tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
 				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
 				if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
 					return err
@@ -702,7 +703,6 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// can wait on.
 	if executionID == "" {
 		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", downloadString, invocationID)
-		tracing.AddStringAttributeToCurrentSpan(ctx, "execute_result", "executed")
 		newExecutionID, err := s.Dispatch(ctx, req)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
@@ -711,6 +711,8 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, newExecutionID)
 		executionID = newExecutionID
 		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
+		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
+		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
 	}
 
 	waitReq := repb.WaitExecutionRequest{
