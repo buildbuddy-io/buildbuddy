@@ -1,13 +1,17 @@
-package protoutil
+package proto
 
 import (
 	"fmt"
 
-	"google.golang.org/protobuf/proto"
+	gproto "google.golang.org/protobuf/proto"
 )
 
-var Clone = proto.Clone
-var Size = proto.Size
+var Clone = gproto.Clone
+var Size = gproto.Size
+var MarshalOld = gproto.Marshal
+var UnmarshalOld = gproto.Unmarshal
+
+type Message = gproto.Message
 
 type vtprotoMessage interface {
 	MarshalVT() ([]byte, error)
@@ -20,11 +24,11 @@ func Marshal(v interface{}) ([]byte, error) {
 		return vt.MarshalVT()
 	}
 
-	msg, ok := v.(proto.Message)
+	msg, ok := v.(gproto.Message)
 	if !ok {
 		return nil, fmt.Errorf("failed to marshal, message is %T, want proto.Message", v)
 	}
-	return proto.Marshal(msg)
+	return gproto.Marshal(msg)
 }
 
 func Unmarshal(b []byte, v interface{}) error {
@@ -33,9 +37,9 @@ func Unmarshal(b []byte, v interface{}) error {
 		return vt.UnmarshalVT(b)
 	}
 
-	msg, ok := v.(proto.Message)
+	msg, ok := v.(gproto.Message)
 	if !ok {
 		return fmt.Errorf("failed to unmarshal, message is %T, want proto.Message", v)
 	}
-	return proto.Unmarshal(b, msg)
+	return gproto.Unmarshal(b, msg)
 }
