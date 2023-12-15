@@ -186,47 +186,10 @@ class RpcService {
         init.body = lengthPrefixMessage(requestData);
 
         const reader = (await this.fetch(url, "stream", init))?.getReader();
-        let buffer = new Uint8Array();
-        let bufferedLength = 0;
-        let totalLength = 0;
-        while (true) {
-          let result = await reader?.read();
-          if (result?.done) {
-            return;
-          }
-
-          // Skip empty results so we don't have to deal with undefined values below.
-          if (!result?.value) {
-            continue;
-          }
-
-          // If we haven't seen a message yet, create a new buffer sized based on the length prefix.
-          if (totalLength == 0) {
-            totalLength = new DataView(result.value.buffer, 1, 4).getUint32(0, false /* big endian */);
-            let message = result.value.slice(5);
-            buffer = new Uint8Array(totalLength);
-            buffer.set(message);
-            bufferedLength = message.length;
-          } else if (bufferedLength < totalLength) {
-            // If we already have a buffer, just tack onto it.
-            buffer.set(result.value, bufferedLength);
-            bufferedLength += result.value.length;
-          }
-
-          // If we still haven't receieve the full message, loop again and read more until we do.
-          if (bufferedLength < totalLength) {
-            continue;
-          }
-
-          // We've got the full message, flush it to the callback so the full proto can be parsed.
-          callback(null, buffer);
+        transformLengthPrefixedReaderStreamToProtoMessageBytes(reader, (error, bytes) => {
           this.events.next(method.name);
-
-          // Now that we've flushed the buffer, reset it.
-          buffer = new Uint8Array();
-          bufferedLength = 0;
-          totalLength = 0;
-        }
+          callback(error, bytes);
+        });
       }
 
       const arrayBuffer = await this.fetch(url, "arraybuffer", init);
@@ -264,6 +227,102 @@ function lengthPrefixMessage(requestData: Uint8Array) {
   new DataView(frame, 1, 4).setUint32(0, requestData.length, false /* big endian */);
   new Uint8Array(frame, 5).set(requestData);
   return new Uint8Array(frame);
+}
+
+interface StreamState {
+  buffer: Uint8Array;
+  bufferedLength: number;
+  messageExpectedLength: number;
+  leftovers: Uint8Array;
+}
+
+async function transformLengthPrefixedReaderStreamToProtoMessageBytes(
+  reader: ReadableStreamDefaultReader | undefined,
+  callback: (e: Error | null, b: Uint8Array) => void
+) {
+  let streamState: StreamState = {
+    buffer: new Uint8Array(),
+    bufferedLength: 0,
+    messageExpectedLength: 0,
+    leftovers: new Uint8Array(),
+  };
+  while (true) {
+    // Start with any leftovers from the last turn.
+    let value: Uint8Array | undefined = streamState.leftovers;
+
+    // If we don't have any leftovers, read at least 5 bytes from the stream so we have at least a length prefix.
+    if (streamState.leftovers.length == 0) {
+      value = await readAtLeastNBytes(value, reader, 5);
+    }
+
+    // If we don't have any bytes, the stream is done.
+    if (!value) {
+      return;
+    }
+
+    // If we don't have an expected message length, we can consume the length prefix to get it.
+    if (streamState.messageExpectedLength == 0) {
+      value = consumeLengthPrefix(streamState, value);
+    }
+
+    // Read the rest of the bytes into the buffer until it's full, saving any leftovers.
+    consumeMessageChunk(streamState, value);
+
+    // If we still haven't receieve the full message, loop again and read more until we do.
+    if (streamState.bufferedLength < streamState.messageExpectedLength) {
+      continue;
+    }
+
+    // We've got the full message, flush it to the callback so the full proto can be parsed.
+    callback(null, streamState.buffer);
+
+    // Now that we've flushed the buffer, reset it.
+    streamState.buffer = new Uint8Array();
+    streamState.bufferedLength = 0;
+    streamState.messageExpectedLength = 0;
+  }
+}
+
+function consumeLengthPrefix(streamState: StreamState, value: Uint8Array) {
+  streamState.messageExpectedLength = new DataView(value.buffer, 1, 4).getUint32(0, false /* big endian */);
+  streamState.buffer = new Uint8Array(streamState.messageExpectedLength);
+  return value.slice(5);
+}
+
+function consumeMessageChunk(streamState: StreamState, value: Uint8Array) {
+  // If we got more bytes than we need to fill the rest of the buffer, we've got leftovers.
+  streamState.leftovers =
+    value.length > streamState.messageExpectedLength - streamState.bufferedLength
+      ? value.slice(streamState.messageExpectedLength - streamState.bufferedLength)
+      : new Uint8Array();
+
+  // Fill up the buffer as much as we can with the bytes we were given.
+  streamState.buffer.set(
+    value.slice(0, streamState.messageExpectedLength - streamState.bufferedLength),
+    streamState.bufferedLength
+  );
+  streamState.bufferedLength += value.length;
+}
+
+async function readAtLeastNBytes(value: Uint8Array, reader: ReadableStreamDefaultReader | undefined, n: number) {
+  while (value.length < n) {
+    let r = await reader?.read();
+    if (r?.done) {
+      return;
+    }
+    if (!r?.value) {
+      continue;
+    }
+    value = mergeBuffers(value, r.value);
+  }
+  return value;
+}
+
+function mergeBuffers(a: Uint8Array, b: Uint8Array) {
+  let merged = new Uint8Array(a.length + b.length);
+  merged.set(a, 0);
+  merged.set(b, a.length);
+  return merged;
 }
 
 function uint8ArrayToBase64(array: Uint8Array): string {
