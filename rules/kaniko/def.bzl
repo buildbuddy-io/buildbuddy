@@ -6,12 +6,13 @@ def _remote_kaniko_build_impl(ctx):
         template = ctx.file._build_script_template,
         output = build_script,
         substitutions = {
-            "{kaniko}": ctx.executable._kaniko.path,
-            "{context_directory_path}": ctx.label.package,
-            "{image_name}": ctx.label.package + ":" + ctx.label.name,
-            "{dockerfile}": ctx.file.dockerfile.path,
             "{archive}": archive.path,
+            "{context_directory_path}": ctx.label.package,
             "{digest_file}": digest_file.path,
+            "{dockerfile}": ctx.file.dockerfile.path,
+            "{image_name}": ctx.label.package + ":" + ctx.label.name,
+            "{kaniko}": ctx.executable._kaniko.path,
+            "{registry_mirror}": ctx.attr.registry_mirror,
         },
         is_executable = True,
     )
@@ -54,6 +55,9 @@ _remote_kaniko_build = rule(
         ),
         "dockerfile": attr.label(
             allow_single_file = ["Dockerfile"],
+        ),
+        "registry_mirror": attr.string(
+            default = "mirror.gcr.io",
         ),
     },
 )
