@@ -528,7 +528,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(rate(jaeger_collector_spans_dropped_total[1m]))",
+          "expr": "sum(rate(jaeger_spans_dropped_total[1m]))",
           "format": "time_series",
           "intervalFactor": 2,
           "legendFormat": "error",
@@ -539,7 +539,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(rate(jaeger_collector_spans_received_total[1m])) - sum(rate(jaeger_collector_spans_dropped_total[1m]))",
+          "expr": "sum(rate(jaeger_spans_received_total[1m])) - sum(rate(jaeger_spans_dropped_total[1m]))",
           "format": "time_series",
           "intervalFactor": 2,
           "legendFormat": "success",
@@ -626,7 +626,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(rate(jaeger_collector_spans_dropped_total[1m])) by (instance) / sum(rate(jaeger_collector_spans_received_total[1m])) by (instance)",
+          "expr": "sum(rate(jaeger_spans_dropped_total[1m])) by (instance) / sum(rate(jaeger_spans_received_total[1m])) by (instance)",
           "format": "time_series",
           "intervalFactor": 2,
           "legendFormat": "{{instance}}",
@@ -740,7 +740,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "jaeger_collector_queue_length",
+          "expr": "jaeger_queue_length",
           "format": "time_series",
           "intervalFactor": 2,
           "legendFormat": "{{instance}}",
@@ -827,7 +827,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(jaeger_collector_in_queue_latency_bucket[1m])) by (le, instance))",
+          "expr": "histogram_quantile(0.95, sum(rate(jaeger_in_queue_latency_bucket[1m])) by (le, instance))",
           "format": "time_series",
           "intervalFactor": 2,
           "legendFormat": "{{instance}}",
