@@ -186,19 +186,10 @@ class RpcService {
         init.body = lengthPrefixMessage(requestData);
 
         const reader = (await this.fetch(url, "stream", init))?.getReader();
-        while (true) {
-          let result = await reader?.read();
-          if (result?.done) {
-            return;
-          }
-
-          // Ignore the first 5 byte length-prefix, see the comment for lengthPrefixMessage for more info.
-          // TODO(siggisim): Support messages that come across flushes, though I'm not sure if this will
-          // happen much (if at all) in practice.
-          let value = result?.value.slice(5) || new Uint8Array();
-          callback(null, value);
+        transformLengthPrefixedReaderStreamToProtoMessageBytes(reader, (error, bytes) => {
           this.events.next(method.name);
-        }
+          callback(error, bytes);
+        });
       }
 
       const arrayBuffer = await this.fetch(url, "arraybuffer", init);
@@ -236,6 +227,135 @@ function lengthPrefixMessage(requestData: Uint8Array) {
   new DataView(frame, 1, 4).setUint32(0, requestData.length, false /* big endian */);
   new Uint8Array(frame, 5).set(requestData);
   return new Uint8Array(frame);
+}
+
+interface StreamState {
+  buffer: Uint8Array;
+  bufferedLength: number;
+  messageExpectedLength: number;
+  leftovers: Value;
+}
+
+interface Value {
+  value: Uint8Array;
+  done: boolean;
+}
+
+async function transformLengthPrefixedReaderStreamToProtoMessageBytes(
+  reader: ReadableStreamDefaultReader | undefined,
+  callback: (e: Error | null, b: Uint8Array) => void
+) {
+  let streamState: StreamState = {
+    buffer: new Uint8Array(),
+    bufferedLength: 0,
+    messageExpectedLength: 0,
+    leftovers: { value: new Uint8Array(), done: false },
+  };
+  while (true) {
+    // Start with any leftovers from the last turn.
+    let value: Value = streamState.leftovers;
+
+    // If we don't have an expected message length, we can consume the length prefix to get it.
+    if (streamState.messageExpectedLength == 0) {
+      value = consumeLengthPrefix(streamState, await readAtLeastNBytes(value, reader, 5));
+    }
+
+    // If the stream closed with no more data, we're done.
+    if (streamDone(value)) {
+      break;
+    }
+
+    // Read the rest of the bytes into the buffer until it's full, saving any leftovers.
+    value = consumeMessageChunk(
+      streamState,
+      await readAtLeastNBytes(value, reader, streamState.messageExpectedLength - streamState.bufferedLength)
+    );
+
+    // We've got a full message, flush it to the callback so the full proto can be parsed.
+    if (streamState.bufferedLength >= streamState.messageExpectedLength) {
+      callback(null, streamState.buffer);
+    }
+
+    // If the stream closed with no more data, we're done.
+    if (streamDone(value)) {
+      break;
+    }
+
+    // Now that we've flushed the buffer, reset it.
+    streamState.buffer = new Uint8Array();
+    streamState.bufferedLength = 0;
+    streamState.messageExpectedLength = 0;
+  }
+}
+
+function consumeLengthPrefix(streamState: StreamState, value: Value) {
+  if (streamDone(value)) {
+    return value;
+  }
+
+  streamState.messageExpectedLength = new DataView(value.value.buffer, 1, 4).getUint32(0, false /* big endian */);
+  streamState.buffer = new Uint8Array(streamState.messageExpectedLength);
+  value.value = value.value.slice(5);
+  return value;
+}
+
+function consumeMessageChunk(streamState: StreamState, value: Value) {
+  if (streamDone(value)) {
+    return value;
+  }
+
+  // If we got more bytes than we need to fill the rest of the buffer, we've got leftovers.
+  streamState.leftovers = {
+    value:
+      value.value.length > streamState.messageExpectedLength - streamState.bufferedLength
+        ? value.value.slice(streamState.messageExpectedLength - streamState.bufferedLength)
+        : new Uint8Array(),
+    done: value.done,
+  };
+
+  // Fill up the buffer as much as we can with the bytes we were given.
+  streamState.buffer.set(
+    value.value.slice(0, streamState.messageExpectedLength - streamState.bufferedLength),
+    streamState.bufferedLength
+  );
+  streamState.bufferedLength += value.value.length;
+
+  return { value: value.value.slice(streamState.messageExpectedLength - streamState.bufferedLength), done: value.done };
+}
+
+async function readAtLeastNBytes(value: Value, reader: ReadableStreamDefaultReader | undefined, n: number) {
+  let done = false;
+  while (value.value.length < n) {
+    let r = await reader?.read();
+    if (r?.value?.length) {
+      value.value = mergeBuffers(value.value, r.value);
+    }
+
+    if (r?.done) {
+      done = true;
+      if (value.value.length < n && value.value.length > 0) {
+        throw new Error(
+          `Tried to read ${n} bytes from stream, but stream finished early with only ${value.value.length} bytes.`
+        );
+      }
+      break;
+    }
+    if (!r?.value) {
+      continue;
+    }
+  }
+  return { value: value.value, done };
+}
+
+function mergeBuffers(a: Uint8Array, b: Uint8Array) {
+  let merged = new Uint8Array(a.length + b.length);
+  merged.set(a, 0);
+  merged.set(b, a.length);
+  return merged;
+}
+
+function streamDone(value: Value) {
+  return value.done && value.value.length == 0;
 }
 
 function uint8ArrayToBase64(array: Uint8Array): string {
