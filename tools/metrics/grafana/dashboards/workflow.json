@@ -309,7 +309,7 @@
             "uid": "prom"
           },
           "editorMode": "code",
-          "expr": "sum(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{file_name=\"memory\", job=\"executor-workflows\"}) by (le)",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{file_name=\"memory\", job=\"executor-workflows\"}[5m])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -391,7 +391,7 @@
             "uid": "prom"
           },
           "editorMode": "code",
-          "expr": "sum(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{file_name=\"rootfs\", job=\"executor-workflows\"}) by (le)",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{file_name=\"rootfs\", job=\"executor-workflows\"}[5m])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -567,7 +567,7 @@
             "uid": "prom"
           },
           "editorMode": "code",
-          "expr": "sum(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"remote_cache\"}) by (le)",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"remote_cache\"}[5m])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -648,7 +648,7 @@
             "uid": "prom"
           },
           "editorMode": "code",
-          "expr": "sum(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"local_filecache\"}) by (le) ",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"local_filecache\"}[5m])) by (le) ",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
@@ -729,7 +729,7 @@
             "uid": "prom"
           },
           "editorMode": "code",
-          "expr": "sum(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"unmapped\"}) by (le) ",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"unmapped\"}[5m])) by (le) ",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,

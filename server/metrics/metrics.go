@@ -1074,7 +1074,7 @@ var (
 	// # Visualize with the Bar Gauge type
 	// # Legend: {{le}}
 	// # Format: Heatmap
-	// sum(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket) by(le)
+	// sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket[5m])) by(le)
 	// ```
 
 	COWSnapshotDirtyBytes = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1882,7 +1882,7 @@ var (
 	// # Visualize with the Bar Gauge type
 	// # Legend: {{le}}
 	// # Format: Heatmap
-	// sum(buildbuddy_pebble_compression_ratio_bucket) by(le)
+	// sum(increase(buildbuddy_pebble_compression_ratio_bucket[5m])) by(le)
 	//
 	// # Percentage of elements that increased in size when compressed (compression ratio > 1)
 	// # Visualize with the Stat type
