@@ -250,8 +250,8 @@ async function transformLengthPrefixedReaderStreamToProtoMessageBytes(
     // Start with any leftovers from the last turn.
     let value: Uint8Array | undefined = streamState.leftovers;
 
-    // If we don't have any leftovers, read at least 5 bytes from the stream so we have at least a length prefix.
-    if (streamState.leftovers.length == 0) {
+    // If we don't have any (or enough) leftovers, read at least 5 bytes from the stream so we have at least a length prefix.
+    if (streamState.leftovers.length < 5) {
       value = await readAtLeastNBytes(value, reader, 5);
     }
 
