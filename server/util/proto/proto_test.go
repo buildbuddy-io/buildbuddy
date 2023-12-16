@@ -120,10 +120,10 @@ func benchmarkUnmarshal(b *testing.B, unmarshalFn unmarshalFunc, providerFn prov
 
 func BenchmarkMarshal(b *testing.B) {
 	marshalFns := map[string]marshalFunc{
-		"MarshalOld": func(v protoMessage) ([]byte, error) {
+		"Old": func(v protoMessage) ([]byte, error) {
 			return proto.MarshalOld(v)
 		},
-		"Marshal": func(v protoMessage) ([]byte, error) {
+		"New": func(v protoMessage) ([]byte, error) {
 			return proto.Marshal(v)
 		},
 	}
@@ -140,10 +140,10 @@ func BenchmarkMarshal(b *testing.B) {
 
 func BenchmarkUnmarshal(b *testing.B) {
 	unmarshalFns := map[string]unmarshalFunc{
-		"Unmarshal": func(buf []byte, v protoMessage) error {
+		"New": func(buf []byte, v protoMessage) error {
 			return proto.Unmarshal(buf, v)
 		},
-		"UnmarshalOld": func(buf []byte, v protoMessage) error {
+		"Old": func(buf []byte, v protoMessage) error {
 			return proto.UnmarshalOld(buf, v)
 		},
 	}
