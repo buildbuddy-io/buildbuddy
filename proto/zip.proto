@@ -1,10 +1,12 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package zip;
 
 message ManifestEntry {
+  option (vtproto.mempool) = true;
   // The full path of the file as specified in the archive.
   string name = 1;
 
