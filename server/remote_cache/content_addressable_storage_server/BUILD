@@ -23,12 +23,12 @@ go_library(
         "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/prefix",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
 )
