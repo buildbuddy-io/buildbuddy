@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
 
@@ -128,6 +129,9 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 
 	xl := xcode.NewXcodeLocator()
 	realEnv.SetXcodeLocator(xl)
+
+	// Register the codec for all RPC servers and clients.
+	vtprotocodec.Register()
 
 	if err := gcs_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())

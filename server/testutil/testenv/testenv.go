@@ -78,6 +78,10 @@ remote_execution:
 
 var lis *bufconn.Listener
 
+func init() {
+	vtprotocodec.Register()
+}
+
 // LocalGRPCServer starts a gRPC server with standard BuildBudy filters that uses an in-memory
 // buffer for communication.
 // Call LocalGRPCConn to get a connection to the returned server.
@@ -112,7 +116,6 @@ func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
 }
 
 func GetTestEnv(t testing.TB) *real_environment.RealEnv {
-	vtprotocodec.Register()
 	flags.PopulateFlagsFromData(t, testConfigData)
 	testRootDir := testfs.MakeTempDir(t)
 	if flag.Lookup("storage.disk.root_directory") != nil {

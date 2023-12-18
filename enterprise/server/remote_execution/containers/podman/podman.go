@@ -823,10 +823,10 @@ func ConfigureSecondaryNetwork(ctx context.Context) error {
 	// "10.88.0.0/16 dev cni-podman0 proto kernel scope link src 10.88.0.1 linkdown"
 	result := runPodman(ctx, "run", &commandutil.Stdio{}, "--rm", "busybox", "sh")
 	if result.Error != nil {
-		return result.Error
+		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
 	}
 	if result.ExitCode != 0 {
-		return status.UnknownError("failed to setup podman default network")
+		return status.UnknownErrorf("failed to setup podman default network: podman run exited with code %d: %q", result.ExitCode, string(result.Stderr))
 	}
 
 	// Add ip rule to lookup rt1
