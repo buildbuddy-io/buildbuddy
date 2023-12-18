@@ -545,8 +545,10 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *rspb.Reso
 	firstError := make(chan error)
 	go func() {
 		readOnce := false
+		rsp := dcpb.ReadResponseFromVTPool()
+		defer rsp.ReturnToVTPool()
 		for {
-			rsp, err := stream.Recv()
+			err := stream.RecvMsg(rsp)
 			if !readOnce {
 				firstError <- err
 				readOnce = true
@@ -560,6 +562,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *rspb.Reso
 				break
 			}
 			writer.Write(rsp.Data)
+			rsp.ResetVT()
 		}
 	}()
 	err = <-firstError
