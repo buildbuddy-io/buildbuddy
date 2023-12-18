@@ -3,8 +3,8 @@ package paging
 import (
 	"encoding/base64"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/protobuf/proto"
 
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 )

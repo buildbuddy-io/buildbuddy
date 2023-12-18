@@ -7,8 +7,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:pagination_go_proto",
+        "//server/util/proto",
         "//server/util/status",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 
