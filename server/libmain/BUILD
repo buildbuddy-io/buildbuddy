@@ -56,6 +56,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/usageutil",
+        "//server/util/vtprotocodec",
         "//static:bundle",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",

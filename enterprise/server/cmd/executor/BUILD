@@ -49,6 +49,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/usageutil",
+        "//server/util/vtprotocodec",
         "//server/xcode",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

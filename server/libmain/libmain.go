@@ -51,6 +51,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 
 	"google.golang.org/grpc"
 
@@ -341,6 +342,9 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if err := capabilities_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+
+	// Register the codec for all RPC servers and clients.
+	vtprotocodec.Register()
 
 	if err := grpc_server.RegisterInternalGRPCServer(env, registerInternalGRPCServices); err != nil {
 		log.Fatalf("%v", err)

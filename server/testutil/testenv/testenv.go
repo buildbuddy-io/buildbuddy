@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
@@ -76,6 +77,10 @@ remote_execution:
 `
 
 var lis *bufconn.Listener
+
+func init() {
+	vtprotocodec.Register()
+}
 
 // LocalGRPCServer starts a gRPC server with standard BuildBudy filters that uses an in-memory
 // buffer for communication.
