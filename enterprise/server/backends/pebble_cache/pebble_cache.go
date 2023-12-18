@@ -832,11 +832,12 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	md, version, err := p.lookupFileMetadataAndVersion(p.env.GetServerContext(), iter, key)
+	md := rfpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+	version, err := p.lookupFileMetadataAndVersion(p.env.GetServerContext(), iter, key, md)
 	if err != nil {
 		return err
 	}
-	defer md.ReturnToVTPool()
 	keyBytes, err := key.Bytes(version)
 	if err != nil {
 		return err
@@ -1150,7 +1151,8 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 		}
 
 		unlockFn := p.locker.RLock(key.LockID())
-		md, err := p.lookupFileMetadata(p.env.GetServerContext(), iter, key)
+		md := rfpb.FileMetadataFromVTPool()
+		err = p.lookupFileMetadata(p.env.GetServerContext(), iter, key, md)
 		md.ReturnToVTPool()
 		unlockFn()
 
@@ -1477,29 +1479,28 @@ func (p *PebbleCache) blobDir() string {
 	return filePath
 }
 
-func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
+func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
-	fileMetadata := rfpb.FileMetadataFromVTPool()
 	var lastErr error
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
-			return nil, -1, err
+			return -1, err
 		}
 		lastErr = pebble.LookupProto(iter, keyBytes, fileMetadata)
 		if lastErr == nil {
-			return fileMetadata, version, nil
+			return version, nil
 		}
 		fileMetadata.ResetVT()
 	}
-	return nil, -1, lastErr
+	return -1, lastErr
 }
 
-func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
-	md, _, err := p.lookupFileMetadataAndVersion(ctx, iter, key)
-	return md, err
+func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata) error {
+	_, err := p.lookupFileMetadataAndVersion(ctx, iter, key, fileMetadata)
+	return err
 }
 
 // iterHasKey returns a bool indicating if the provided iterator has the
@@ -1582,11 +1583,12 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	md, err := p.lookupFileMetadata(ctx, iter, key)
+	md := rfpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+	err = p.lookupFileMetadata(ctx, iter, key, md)
 	if err != nil {
 		return nil, err
 	}
-	defer md.ReturnToVTPool()
 
 	return &interfaces.CacheMetadata{
 		StoredSizeBytes:    md.GetStoredSizeBytes(),
@@ -1628,11 +1630,12 @@ func (p *PebbleCache) findMissing(ctx context.Context, iter pebble.Iterator, r *
 
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
-	md, err := p.lookupFileMetadata(ctx, iter, key)
+	md := rfpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+	err = p.lookupFileMetadata(ctx, iter, key, md)
 	if err != nil {
 		return err
 	}
-	defer md.ReturnToVTPool()
 
 	chunkedMD := md.GetStorageMetadata().GetChunkedMetadata()
 	for _, chunked := range chunkedMD.GetResource() {
@@ -1763,11 +1766,12 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	defer iter.Close()
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	fileMetadata, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key)
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
+	version, err := p.lookupFileMetadataAndVersion(ctx, iter, key, fileMetadata)
 	if err != nil {
 		return err
 	}
-	defer fileMetadata.ReturnToVTPool()
 
 	fileMetadataKey, err := key.Bytes(version)
 	if err != nil {
@@ -1857,11 +1861,12 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	md, err := p.lookupFileMetadata(ctx, iter, key)
+	md := rfpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+	err = p.lookupFileMetadata(ctx, iter, key, md)
 	if err != nil {
 		return err
 	}
-	defer md.ReturnToVTPool()
 
 	// TODO(tylerw): Make version aware.
 	if err := p.deleteFileAndMetadata(ctx, key, filestore.UndefinedKeyVersion, md); err != nil {
@@ -2291,7 +2296,9 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	if oldMD, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key); err == nil {
+	oldMD := rfpb.FileMetadataFromVTPool()
+	defer oldMD.ReturnToVTPool()
+	if version, err := p.lookupFileMetadataAndVersion(ctx, iter, key, oldMD); err == nil {
 		oldKeyBytes, err := key.Bytes(version)
 		if err != nil {
 			return err
@@ -2300,7 +2307,6 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 			return err
 		}
 		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, oldMD, len(oldKeyBytes))
-		oldMD.ReturnToVTPool()
 	}
 
 	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
@@ -3192,12 +3198,13 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	unlockFn := p.locker.RLock(key.LockID())
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
-	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
+	err = p.lookupFileMetadata(ctx, iter, key, fileMetadata)
 	unlockFn()
 	if err != nil {
 		return nil, err
 	}
-	defer fileMetadata.ReturnToVTPool()
 
 	blobDir := p.blobDir()
 	requestedCompression := r.GetCompressor()
