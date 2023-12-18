@@ -3,8 +3,6 @@ package log
 import (
 	"log"
 	"os"
-
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 )
 
 const (
@@ -18,8 +16,7 @@ var verbose bool
 
 // Configure reads the verbose flag from the args in order to configure the logs.
 // Removes the verbose flag from the output args.
-func Configure(args []string) []string {
-	verboseFlagVal, args := arg.Pop(args, "verbose")
+func Configure(verboseFlagVal string) {
 	if verboseFlagVal == "" {
 		verboseFlagVal = os.Getenv(verboseEnvVarName)
 	}
@@ -29,7 +26,6 @@ func Configure(args []string) []string {
 		os.Setenv(verboseEnvVarName, "1")
 	}
 	log.SetFlags(0)
-	return args
 }
 
 func Debug(v ...any) {

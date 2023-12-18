@@ -53,7 +53,7 @@ func run() (exitCode int, err error) {
 	originalArgs := append([]string{}, os.Args...)
 
 	// Configure verbose flag
-	args := log.Configure(os.Args[1:])
+	args := handleGlobalCliFlags(os.Args[1:])
 
 	log.Debugf("CLI started at %s", start)
 	log.Debugf("args[0]: %s", os.Args[0])
@@ -256,4 +256,22 @@ func run() (exitCode int, err error) {
 	// e.g. show a desktop notification once a k8s deploy has finished
 
 	return exitCode, nil
+}
+
+// handleGlobalCliFlags processes global cli args that don't apply to any specific subcommand
+// (--verbose, etc.).
+// Returns args with all global cli flags removed
+func handleGlobalCliFlags(args []string) []string {
+	for flag := range parser.GlobalCliFlags() {
+		var flagVal string
+		flagVal, args = arg.Pop(args, flag)
+
+		// Even if flag is not set and flagVal is "", pass to handlers in case
+		// they need to configure a default value
+		switch flag {
+		case "verbose":
+			log.Configure(flagVal)
+		}
+	}
+	return args
 }

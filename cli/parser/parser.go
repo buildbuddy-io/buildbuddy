@@ -51,6 +51,13 @@ var (
 		"version":  {},
 	}
 
+	// These flags configure the cli at large, and don't apply to any specific
+	// cli command
+	globalCliFlags = map[string]struct{}{
+		// Set to print verbose cli logs
+		"verbose": {},
+	}
+
 	// Inheritance hierarchy: https://bazel.build/run/bazelrc#option-defaults
 	// All commands inherit from "common".
 	parentCommand = map[string]string{
@@ -312,6 +319,10 @@ func BazelCommands() (map[string]struct{}, error) {
 
 func CliCommands() map[string]struct{} {
 	return cliCommands
+}
+
+func GlobalCliFlags() map[string]struct{} {
+	return globalCliFlags
 }
 
 // CommandLineSchema specifies the flag parsing schema for a bazel command line
