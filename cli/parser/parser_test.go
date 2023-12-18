@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	log.Configure([]string{"--verbose=1"})
+	log.Configure("--verbose=1")
 }
 
 func TestParseBazelrc_Basic(t *testing.T) {

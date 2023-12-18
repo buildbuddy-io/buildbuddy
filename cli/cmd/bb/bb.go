@@ -5,14 +5,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/add"
-	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/cli/download"
-	"github.com/buildbuddy-io/buildbuddy/cli/execute"
-	"github.com/buildbuddy-io/buildbuddy/cli/fix"
+	"github.com/buildbuddy-io/buildbuddy/cli/commands"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -20,14 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/picker"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
-	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
-	"github.com/buildbuddy-io/buildbuddy/cli/update"
-	"github.com/buildbuddy-io/buildbuddy/cli/upload"
-	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -52,7 +44,6 @@ func run() (exitCode int, err error) {
 	// Record original arguments so we can show them in the UI.
 	originalArgs := append([]string{}, os.Args...)
 
-	// Configure verbose flag
 	args := handleGlobalCliFlags(os.Args[1:])
 
 	log.Debugf("CLI started at %s", start)
@@ -72,59 +63,42 @@ func run() (exitCode int, err error) {
 	// Expand command shortcuts like b=>build, t=>test, etc.
 	args = shortcuts.HandleShortcuts(args)
 
-	// Extract bb cli command if set. It's expected to be directly after `bb`.
-	cliCommand := args[0]
-	for c := range parser.CliCommands() {
-		// If the first argument is a cli command, trim it from `args`
-		if cliCommand == c {
-			args = args[1:]
-			break
-		}
-	}
-
 	// Make sure startup args are always in the format --foo=bar.
 	args, err = parser.CanonicalizeStartupArgs(args)
 	if err != nil {
 		return -1, err
 	}
 
-	// Handle CLI-specific subcommands
-	switch cliCommand {
-	case "add":
-		return add.HandleAdd(args)
-	case "analyze":
-		return analyze.HandleAnalyze(args)
-	case "wtf":
-		return ask.HandleAsk(args)
-	case "huh":
-		return ask.HandleAsk(args)
-	case "ask":
-		return ask.HandleAsk(args)
-	case "download":
-		return download.HandleDownload(args)
-	case "execute":
-		return execute.HandleExecute(args)
-	case "fix":
-		return fix.HandleFix(args)
-	case "help":
+	// Handle CLI-specific subcommands if set. It's expected to be directly after `bb`.
+	if len(args) == 0 {
 		return help.HandleHelp(args)
-	case "install":
-		return plugin.HandleInstall(args)
-	case "login":
-		return login.HandleLogin(args)
-	case "logout":
-		return login.HandleLogout(args)
-	case "print":
-		return printlog.HandlePrint(args)
-	case "remote":
-		// Because `remote` shares some setup with running a regular bazel command
-		// straight up (i.e. bb build), handle both together below
-	case "update":
-		return update.HandleUpdate(args)
-	case "upload":
-		return upload.HandleUpload(args)
-	case "version":
-		return version.HandleVersion(args)
+	}
+	cliCmd := args[0]
+
+	// Handle 'help' command separately to avoid circular dependency with `commands`
+	// package
+	if cliCmd == "help" {
+		return help.HandleHelp(args)
+	}
+
+	for _, c := range commands.CliCommands {
+		isAlias := false
+		for _, alias := range c.Aliases {
+			if cliCmd == alias {
+				isAlias = true
+			}
+		}
+
+		if isAlias || cliCmd == c.Name {
+			// If the first argument is a cli command, trim it from `args`
+			args = args[1:]
+			if c.Handler != nil {
+				return c.Handler(args)
+			}
+
+			// If a cli command handler is not set, handle it below
+			break
+		}
 	}
 
 	// If none of the CLI subcommand handlers were triggered, assume we have a
@@ -207,7 +181,7 @@ func run() (exitCode int, err error) {
 
 	// Handle remote bazel. Note, pre-bazel hooks apply to remote bazel, but not
 	// output handlers or post-bazel hooks.
-	if cliCommand == "remote" {
+	if cliCmd == "remote" {
 		return remotebazel.HandleRemoteBazel(args, execArgs)
 	}
 

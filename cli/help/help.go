@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/commands"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
@@ -29,6 +30,7 @@ var (
 func HandleHelp(args []string) (exitCode int, err error) {
 	args, _ = arg.SplitExecutableArgs(args)
 
+	// Returns first non-flag
 	cmd, idx := arg.GetCommandAndIndex(args)
 	// If no command is specified, show general help.
 	// TODO: Allow configuring a "default command" that is run when
@@ -109,25 +111,9 @@ func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
 }
 
 func printBBCommands() {
-	// TODO: Have commands add themselves to a registry and get the command
-	// names / descriptions from there.
-	columns := [][]string{
-		{"add", "Adds a dependency to your WORKSPACE file."},
-		{"analyze", "Analyzes the dependency graph."},
-		{"ask|wtf|huh", "Asks for suggestions about your last invocation."},
-		{"download", "Downloads artifacts from a remote cache."},
-		{"execute", "Executes arbitrary commands using remote execution."},
-		{"install", "Installs a bb plugin (https://buildbuddy.io/plugins)."},
-		{"login", "Configures bb commands to use your BuildBuddy API key."},
-		{"logout", "Configures bb commands to no longer use your saved API key."},
-		{"print", "Displays various log file types written by bazel."},
-		{"remote", "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service."},
-		{"update", "Updates the bb CLI to the latest version."},
-		{"upload", "Uploads files to the remote cache."},
-	}
 	fmt.Println("bb commands:")
-	for _, row := range columns {
-		fmt.Printf("  %s  %s\n", padEnd(row[0], 18), row[1])
+	for _, c := range commands.CliCommands {
+		fmt.Printf("  %s  %s\n", padEnd(c.Name, 18), c.Help)
 	}
 	fmt.Println()
 }

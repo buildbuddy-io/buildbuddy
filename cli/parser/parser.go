@@ -32,25 +32,6 @@ const (
 )
 
 var (
-	cliCommands = map[string]struct{}{
-		"add":      {},
-		"analyze":  {},
-		"ask":      {},
-		"wtf":      {},
-		"huh":      {},
-		"download": {},
-		"execute":  {},
-		"fix":      {},
-		"install":  {},
-		"login":    {},
-		"logout":   {},
-		"print":    {},
-		"remote":   {},
-		"update":   {},
-		"upload":   {},
-		"version":  {},
-	}
-
 	// These flags configure the cli at large, and don't apply to any specific
 	// cli command
 	globalCliFlags = map[string]struct{}{
@@ -315,10 +296,6 @@ func parseHelpLine(line, topic string) *Option {
 func BazelCommands() (map[string]struct{}, error) {
 	// TODO: Run `bazel help` to get the list of bazel commands.
 	return bazelCommands, nil
-}
-
-func CliCommands() map[string]struct{} {
-	return cliCommands
 }
 
 func GlobalCliFlags() map[string]struct{} {

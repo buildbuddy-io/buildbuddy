@@ -13,7 +13,7 @@ import (
 )
 
 func init() {
-	log.Configure([]string{"--verbose=1"})
+	log.Configure("--verbose=1")
 }
 
 func TestGetConfiguredPlugins_CombinesUserAndWorkspaceConfigs(t *testing.T) {
@@ -74,7 +74,7 @@ func TestInstall_ToWorkspaceConfig_LocalAbsolutePath_CreateNewConfig(t *testing.
 	ws, _ := setup(t)
 	pluginDir := testfs.MakeDirAll(t, ws, "test-plugin")
 
-	exitCode, err := HandleInstall([]string{"install", "--path=" + pluginDir})
+	exitCode, err := HandleInstall([]string{"--path=" + pluginDir})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
@@ -90,7 +90,7 @@ func TestInstall_ToWorkspaceConfig_LocalRelativePath_CreateNewConfig(t *testing.
 	ws, _ := setup(t)
 	testfs.MakeDirAll(t, ws, "test-plugin")
 
-	exitCode, err := HandleInstall([]string{"install", "--path=./test-plugin"})
+	exitCode, err := HandleInstall([]string{"--path=./test-plugin"})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
@@ -112,7 +112,7 @@ func TestInstall_ToWorkspaceConfig_OverwriteExistingConfig(t *testing.T) {
 `,
 	})
 
-	exitCode, err := HandleInstall([]string{"install", "--path=./test-plugin-2"})
+	exitCode, err := HandleInstall([]string{"--path=./test-plugin-2"})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
@@ -129,7 +129,7 @@ func TestInstall_ToUserConfig_CreateNewConfig(t *testing.T) {
 	_, home := setup(t)
 	testfs.MakeDirAll(t, home, "test-plugin")
 
-	exitCode, err := HandleInstall([]string{"install", "--path=./test-plugin", "--user"})
+	exitCode, err := HandleInstall([]string{"--path=./test-plugin", "--user"})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
