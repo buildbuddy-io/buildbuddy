@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
@@ -90,24 +89,19 @@ func (s *InvocationSearchService) rawQueryInvocationsFromClickhouse(ctx context.
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("clickhouse_search_invocations"), sql, args...).Rows()
+	rq := s.olapdbh.NewQuery(ctx, "invocation_search_service_search").Raw(sql, args...)
+	tis := make([]string, 0)
+	err = db.ScanEach(rq, func(ctx context.Context, ti *schema.Invocation) error {
+		fixedUUID, err := uuid.Base64StringToString(ti.InvocationUUID)
+		if err != nil {
+			return err
+		}
+		tis = append(tis, fixedUUID)
+		return nil
+	})
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
-	tis := make([]string, 0)
-	for rows.Next() {
-		var ti schema.Invocation
-		if err := s.olapdbh.DB(ctx).ScanRows(rows, &ti); err != nil {
-			return nil, 0, err
-		}
-		fixedUUID, err := uuid.Base64StringToString(ti.InvocationUUID)
-		if err != nil {
-			return nil, 0, err
-		}
-		tis = append(tis, fixedUUID)
-	}
-
 	invocations, err := s.hydrateInvocationsFromDB(ctx, tis, req.GetSort())
 	// It's possible but unlikely that some of the invocations we find in
 	// Clickhouse can't be found in the main database.  In this case, we

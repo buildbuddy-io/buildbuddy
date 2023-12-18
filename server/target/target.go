@@ -433,32 +433,22 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
 	var nextPageToken *tppb.PaginationToken
 
-	db := env.GetOLAPDBHandle().DB(ctx)
-
-	rows, err := db.Raw(qStr, qArgs...).Rows()
-	if err != nil {
-		return nil, err
+	type row struct {
+		Label                   string
+		RuleType                string
+		TargetType              int32
+		TestSize                int32
+		Status                  int32
+		StartTimeUsec           int64
+		DurationUsec            int64
+		InvocationUUID          string
+		CommitSHA               string
+		BranchName              string
+		RepoURL                 string
+		InvocationStartTimeUsec int64
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		row := struct {
-			Label                   string
-			RuleType                string
-			TargetType              int32
-			TestSize                int32
-			Status                  int32
-			StartTimeUsec           int64
-			DurationUsec            int64
-			InvocationUUID          string
-			CommitSHA               string
-			BranchName              string
-			RepoURL                 string
-			InvocationStartTimeUsec int64
-		}{}
-		if err := db.ScanRows(rows, &row); err != nil {
-			return nil, err
-		}
+	rq := env.GetOLAPDBHandle().NewQuery(ctx, "target_get_history").Raw(qStr, qArgs...)
+	err := db.ScanEach(rq, func(ctx context.Context, row *row) error {
 		if _, ok := seenTargets[row.Label]; !ok {
 			seenTargets[row.Label] = struct{}{}
 			targets = append(targets, &trpb.TargetMetadata{
@@ -472,7 +462,7 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 		invocationID, err := uuid.Base64StringToString(row.InvocationUUID)
 		if err != nil {
 			log.Errorf("cannot parse invocation_id for row (group_id, %q, repo_url: %q, label: %q, invocation_uuid: %q", groupID, repoURL, row.Label, row.InvocationUUID)
-			continue
+			return nil
 		}
 
 		statuses[row.Label] = append(statuses[row.Label], &trpb.TargetStatus{
@@ -490,11 +480,12 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 				InvocationEndTimeUsec: row.InvocationStartTimeUsec,
 			}
 			if nextPageToken.GetInvocationEndTimeUsec() == row.InvocationStartTimeUsec && nextPageToken.GetCommitSha() > row.CommitSHA {
-				continue
+				return nil
 			}
 			nextPageToken.CommitSha = row.CommitSHA
 		}
-	}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}

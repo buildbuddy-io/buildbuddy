@@ -38,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -903,23 +902,16 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	}
 
 	qStr, qArgs := q.Build()
-	rows, err := ws.env.GetOLAPDBHandle().RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_find_workflow_actions"), qStr, qArgs...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	rq := ws.env.GetOLAPDBHandle().NewQuery(ctx, "workflow_service_get_actions").Raw(qStr, qArgs...)
 
 	actionHistoryQArgs := make([]interface{}, 0)
 	actionHistoryQStrs := make([]string, 0)
 	workflows := make(map[string]map[string]*wfpb.ActionHistory)
-	for rows.Next() {
-		row := &actionQueryOut{}
-		if err := ws.env.GetOLAPDBHandle().DB(ctx).ScanRows(rows, &row); err != nil {
-			return nil, err
-		}
+
+	err = db.ScanEach(rq, func(ctx context.Context, row *actionQueryOut) error {
 		q, err := ws.buildActionHistoryQuery(ctx, row.RepoUrl, row.Pattern, timeLimitMicros)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		actionQStr, actionQArgs := q.Build()
 		actionHistoryQArgs = append(actionHistoryQArgs, actionQArgs...)
@@ -933,17 +925,19 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 			workflows[row.RepoUrl] = make(map[string]*wfpb.ActionHistory)
 		}
 		workflows[row.RepoUrl][row.Pattern] = &wfpb.ActionHistory{ActionName: row.Pattern, Summary: summary}
-	}
-	if err := rows.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
+
 	// No workflows configured for any repos yet.
 	if len(actionHistoryQStrs) == 0 {
 		return &wfpb.GetWorkflowHistoryResponse{}, nil
 	}
 	finalActionHistoryQStr := strings.Join(actionHistoryQStrs, " UNION ALL ")
 
-	rq := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_query_history").Raw(
+	rq = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_query_history").Raw(
 		finalActionHistoryQStr, actionHistoryQArgs...)
 
 	type historyQueryOut struct {

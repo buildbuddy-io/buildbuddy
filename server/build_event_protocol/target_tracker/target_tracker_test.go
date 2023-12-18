@@ -478,7 +478,7 @@ func TestTrackTargetsForEventsAborted(t *testing.T) {
 func assertTestTargetStatusesMatchOLAPDB(t *testing.T, te *testenv.TestEnv, expected []Row) {
 	var got []Row
 	query := `SELECT group_id, commit_sha, rule_type, label, repo_url, role, command, test_size, status, target_type FROM "TestTargetStatuses"`
-	err := te.GetOLAPDBHandle().DB(context.Background()).Raw(query).Scan(&got).Error
+	err := te.GetOLAPDBHandle().NewQuery(context.Background(), "get_target_status").Raw(query).Take(&got)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, got, expected)
 }

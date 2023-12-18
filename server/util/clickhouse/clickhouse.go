@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -51,6 +52,14 @@ type DBHandle struct {
 	db *gorm.DB
 }
 
+func (dbh *DBHandle) GORM(ctx context.Context, name string) *gorm.DB {
+	return dbh.db.WithContext(ctx).Set(gormQueryNameKey, name)
+}
+
+func (dbh *DBHandle) NowFunc() time.Time {
+	return dbh.db.NowFunc()
+}
+
 type Options struct {
 	queryName string
 }
@@ -83,6 +92,66 @@ func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts interfaces.OLAPDBO
 
 func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
 	return dbh.db.WithContext(ctx)
+}
+
+type query struct {
+	db   *gorm.DB
+	ctx  context.Context
+	name string
+}
+
+func (q *query) Create(val interface{}) error {
+	return status.UnimplementedError("not supported for clickhouse")
+}
+
+func (q *query) Update(val interface{}) error {
+	return status.UnimplementedError("not supported for clickhouse")
+}
+
+type rawQuery struct {
+	db     *gorm.DB
+	ctx    context.Context
+	sql    string
+	values []interface{}
+}
+
+func (r *rawQuery) Exec() interfaces.DBResult {
+	rb := r.db.Exec(r.sql, r.values...)
+	return interfaces.DBResult{Error: rb.Error, RowsAffected: rb.RowsAffected}
+}
+
+func (r *rawQuery) Take(dest interface{}) error {
+	return r.db.Raw(r.sql, r.values...).Take(dest).Error
+}
+
+func (r *rawQuery) Scan(dest interface{}) error {
+	return r.db.Raw(r.sql, r.values...).Scan(dest).Error
+}
+
+func (r *rawQuery) IterateRaw(fn func(ctx context.Context, row *sql.Rows) error) error {
+	rows, err := r.db.Raw(r.sql, r.values...).Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := fn(r.ctx, rows); err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (q *query) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
+	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
+	return &rawQuery{db: db, ctx: q.ctx, sql: sql, values: values}
+}
+
+func (dbh *DBHandle) NewQuery(ctx context.Context, name string) interfaces.DBQuery {
+	return &query{ctx: ctx, name: name, db: dbh.db}
 }
 
 // BucketFromUsecTimestamp returns a SQL expression compatible with clickhouse

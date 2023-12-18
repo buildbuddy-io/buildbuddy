@@ -22,6 +22,18 @@ type Handle struct {
 	invIDs              sync.Map // map of invocationID => struct{}
 }
 
+func (h *Handle) NewQuery(ctx context.Context, name string) interfaces.DBQuery {
+	return nil
+}
+
+func (h *Handle) GORM(ctx context.Context, name string) *gorm.DB {
+	return nil
+}
+
+func (h *Handle) NowFunc() time.Time {
+	return time.Time{}
+}
+
 func NewHandle() *Handle {
 	return &Handle{
 		executionIDsByInvID: sync.Map{},
