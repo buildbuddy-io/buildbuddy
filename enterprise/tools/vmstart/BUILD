@@ -27,6 +27,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/resources",
         "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
