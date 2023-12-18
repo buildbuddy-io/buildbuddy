@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -130,6 +131,11 @@ func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 
 func main() {
 	flag.Parse()
+
+	// Configure COW memory limit.
+	if err := resources.Configure(true /*=snapshotSharingEnabled*/); err != nil {
+		log.Fatalf("Failed to configure resources: %s", err)
+	}
 
 	flagutil.SetValueForFlagName("executor.firecracker_debug_stream_vm_logs", true, nil, false)
 	if *tty {
