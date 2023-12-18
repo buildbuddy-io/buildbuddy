@@ -186,7 +186,7 @@ class RpcService {
         init.body = lengthPrefixMessage(requestData);
 
         const reader = (await this.fetch(url, "stream", init))?.getReader();
-        transformLengthPrefixedReaderStreamToProtoMessageBytes(reader, (error, bytes) => {
+        return transformLengthPrefixedReaderStreamToProtoMessageBytes(reader, (error, bytes) => {
           this.events.next(method.name);
           callback(error, bytes);
         });
