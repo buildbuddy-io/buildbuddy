@@ -45,14 +45,14 @@ const (
 	// If we access a chunk, we will queue this number of contiguous chunks
 	// to be eagerly fetched in the background, anticipating that they will
 	// also be accessed
-	numChunksToEagerFetch = 4
+	numChunksToEagerFetch = 32
 
 	// Number of goroutines to run concurrently to convert a file to a COWStore.
 	fileConversionConcurrency = 8
 )
 
 var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
-var eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 8, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
+var eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 32, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
 
 // Total number of mmapped bytes by file name. The map value is an int64 pointer
 // which should be atomically updated. This backs the mapped bytes gauge vector
