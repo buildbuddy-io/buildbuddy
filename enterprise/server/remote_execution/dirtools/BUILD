@@ -20,9 +20,9 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/fastcopy",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
 )
