@@ -30,13 +30,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/containerd/containerd/images"
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/v1/match"
-	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -111,118 +109,20 @@ func newSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 	}
 }
 
-// targetImageFromDescriptor returns the image instance described by the remote
-// descriptor. If the remote descriptor is a manifest, then the manifest is
-// returned directly. If the remote descriptor is an image index, a single
-// manifest is selected from the index using the provided platform options.
-func targetImageFromDescriptor(remoteDesc *remote.Descriptor, platform *rgpb.Platform) (v1.Image, error) {
-	switch remoteDesc.MediaType {
-	// This is an "image index", a meta-manifest that contains a list of
-	// {platform props, manifest hash} properties to allow client to decide
-	// which manifest they want to use based on platform.
-	case types.OCIImageIndex, types.DockerManifestList:
-		imgIdx, err := remoteDesc.ImageIndex()
-		if err != nil {
-			return nil, status.UnknownErrorf("could not get image index from descriptor: %s", err)
-		}
-		imgs, err := partial.FindImages(imgIdx, match.Platforms(v1.Platform{
-			Architecture: platform.GetArch(),
-			OS:           platform.GetOs(),
-			Variant:      platform.GetVariant(),
-		}))
-		if err != nil {
-			return nil, status.UnavailableErrorf("could not search image index: %s", err)
-		}
-		if len(imgs) == 0 {
-			return nil, status.NotFoundErrorf("could not find suitable image in image index")
-		}
-		if len(imgs) > 1 {
-			return nil, status.NotFoundErrorf("found multiple matching images in image index")
-		}
-		return imgs[0], nil
-	case types.OCIManifestSchema1, types.DockerManifestSchema2:
-		img, err := remoteDesc.Image()
-		if err != nil {
-			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
-		}
-		return img, nil
-	default:
-		return nil, status.UnknownErrorf("descriptor has unknown media type %q", remoteDesc.MediaType)
-	}
-}
-
-// checkAccess whether the supplied credentials are sufficient to retrieve
-// the provided img.
-func checkAccess(ctx context.Context, imgRepo ctrname.Repository, img v1.Image, authenticator authn.Authenticator) error {
-	// Check if we have access to all the layers.
-	layers, err := img.Layers()
-	if err != nil {
-		return status.UnknownErrorf("could not get layers for image: %s", err)
-	}
-	eg, egCtx := errgroup.WithContext(ctx)
-	remoteOpts := []remote.Option{remote.WithContext(egCtx)}
-	if authenticator != nil {
-		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
-	}
-	for _, layerInfo := range layers {
-		layerInfo := layerInfo
-		eg.Go(func() error {
-			d, err := layerInfo.Digest()
-			if err != nil {
-				return err
-			}
-			layerRef := imgRepo.Digest(d.String())
-			l, err := remote.Layer(layerRef, remoteOpts...)
-			if err != nil {
-				return err
-			}
-			// This issues a HEAD request for the layer.
-			_, err = l.Size()
-			return err
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return status.PermissionDeniedErrorf("could not retrieve image layer from remote: %s", err)
-		}
-		return status.UnavailableErrorf("could not retrieve image layer from remote: %s", err)
-	}
-
-	return nil
-}
-
 func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platform, creds oci.Credentials) (targetImage ctrname.Digest, manifestConfig v1.Hash, err error) {
 	imageRef, err := ctrname.ParseReference(image)
 	if err != nil {
 		return ctrname.Digest{}, v1.Hash{}, status.InvalidArgumentErrorf("invalid image %q", image)
 	}
 
-	var authenticator authn.Authenticator
-	remoteOpts := []remote.Option{remote.WithContext(ctx)}
-	if !creds.IsEmpty() {
-		authenticator = &authn.Basic{
-			Username: creds.Username,
-			Password: creds.Password,
-		}
-		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
-	}
-
-	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return ctrname.Digest{}, v1.Hash{}, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
-		}
-		return ctrname.Digest{}, v1.Hash{}, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
-
-	targetImg, err := targetImageFromDescriptor(remoteDesc, platform)
+	targetImg, err := oci.Resolve(ctx, image, platform, creds)
 	if err != nil {
 		return ctrname.Digest{}, v1.Hash{}, err
 	}
 
 	// Check whether the supplied credentials are sufficient to access the
 	// remote image.
-	if err := checkAccess(ctx, imageRef.Context(), targetImg, authenticator); err != nil {
+	if err := oci.Authorized(ctx, targetImg, image, creds); err != nil {
 		return ctrname.Digest{}, v1.Hash{}, err
 	}
 
