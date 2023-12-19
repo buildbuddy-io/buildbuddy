@@ -50,9 +50,8 @@ respectively.
 
 func HandleUpdate(args []string) (exitCode int, err error) {
 	if err := arg.ParseFlagSet(flags, args); err != nil {
-		log.Print(err.Error())
-		log.Print(usage)
-		return -1, nil
+		log.Printf("%s\n", usage)
+		return 1, err
 	}
 	if !*workspaceFlag && !*systemFlag {
 		if bazelisk.IsInvokedByBazelisk() {

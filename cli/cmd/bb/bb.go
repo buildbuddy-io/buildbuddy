@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/commands"
+	"github.com/buildbuddy-io/buildbuddy/cli/common"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -69,18 +70,13 @@ func run() (exitCode int, err error) {
 		return -1, err
 	}
 
-	// Handle CLI-specific subcommands if set. It's expected to be directly after `bb`.
-	if len(args) == 0 {
-		return help.HandleHelp(args)
+	// Handle help command.
+	exitCode, err = help.HandleHelp(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
 	}
+
 	cliCmd := args[0]
-
-	// Handle 'help' command separately to avoid circular dependency with `commands`
-	// package
-	if cliCmd == "help" {
-		return help.HandleHelp(args)
-	}
-
 	for _, c := range commands.CliCommands {
 		isAlias := false
 		for _, alias := range c.Aliases {
@@ -93,16 +89,21 @@ func run() (exitCode int, err error) {
 			// If the first argument is a cli command, trim it from `args`
 			args = args[1:]
 			if c.Handler != nil {
-				return c.Handler(args)
+				exitCode, err := c.Handler(args)
+				if exitCode == common.ForwardCommandToBazelExitCode {
+					// Add the cli command back to args before forwarding
+					// the command to bazel
+					args = append([]string{cliCmd}, args...)
+					break
+				}
+				return exitCode, err
 			}
-
-			// If a cli command handler is not set, handle it below
-			break
 		}
 	}
 
-	// If none of the CLI subcommand handlers were triggered, assume we have a
-	// bazel invocation.
+	// Forward the command to bazel.
+	// If none of the CLI subcommand handlers were triggered, assume we should
+	// handle it as a bazel command.
 
 	// Maybe run interactively (watching for changes to files).
 	if exitCode, err := watcher.Watch(); exitCode >= 0 || err != nil {

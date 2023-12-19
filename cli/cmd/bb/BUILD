@@ -14,6 +14,7 @@ go_library(
         "//cli/bazelisk",
         "//cli/cmd/sidecar",
         "//cli/commands",
+        "//cli/common",
         "//cli/help",
         "//cli/log",
         "//cli/login",

@@ -27,6 +27,14 @@ var (
 	}
 )
 
+// HandleHelp Valid cases to trigger help:
+// * bb (no additional command passed)
+// * bb help
+// * bb help `command name`
+// * bb -h `command name`
+// * bb `command name` -h
+// * bb --help `command name`
+// * bb `command name` --help
 func HandleHelp(args []string) (exitCode int, err error) {
 	args, _ = arg.SplitExecutableArgs(args)
 

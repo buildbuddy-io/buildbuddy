@@ -9,6 +9,7 @@ go_library(
         "//cli/add",
         "//cli/analyze",
         "//cli/ask",
+        "//cli/common",
         "//cli/download",
         "//cli/execute",
         "//cli/fix",

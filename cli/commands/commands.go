@@ -4,6 +4,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
+	"github.com/buildbuddy-io/buildbuddy/cli/common"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
@@ -82,7 +83,9 @@ var CliCommands = []CliCommand{
 		// Because `remote` shares some setup with running a regular bazel command
 		// straight up (i.e. bb build), handle both together outside of the typical
 		// cli command handlers.
-		Handler: nil,
+		Handler: func(args []string) (exitCode int, err error) {
+			return common.ForwardCommandToBazelExitCode, nil
+		},
 	},
 	{
 		Name:    "update",
