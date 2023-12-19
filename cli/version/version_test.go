@@ -9,10 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEmbeddedVersion(t *testing.T) {
-	require.Contains(t, version.String(), "unknown")
-}
-
 func TestHandleVersion(t *testing.T) {
 	rescueStdout := os.Stdout
 	r, w, err := os.Pipe()

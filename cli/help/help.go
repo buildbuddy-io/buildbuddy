@@ -10,8 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
+	"github.com/buildbuddy-io/buildbuddy/cli/common"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
-	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 )
 
@@ -100,7 +100,7 @@ func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
 		// Bazel shows its release version at the top of the help output;
 		// show ours too.
 		if strings.Contains(line, "[bazel release") {
-			releaseTag := fmt.Sprintf("[%s release %v]", cliName, version.String())
+			releaseTag := fmt.Sprintf("[%s release %v]", cliName, common.Version())
 			fmt.Println(padStart(releaseTag, len(line)))
 			fmt.Println(line)
 			continue
