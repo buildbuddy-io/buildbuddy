@@ -2,7 +2,6 @@ package invocation_stat_service
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"math"
@@ -14,11 +13,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/invocation_stat_service/config"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -435,7 +432,7 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
 	}
 	qStr, qArgs := q.Build()
 	row := &stpb.Summary{}
-	err := i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_summary"), qStr, qArgs...).Take(row).Error
+	err := i.olapdbh.NewQuery(ctx, "invocation_stat_service_summary").Raw(qStr, qArgs...).Take(row)
 	if err != nil {
 		return nil, err
 	}
@@ -460,35 +457,17 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 		qStr = i.flattenTrendsQuery(qStr)
 	}
 
-	var rows *sql.Rows
 	var err error
+	var dbh interfaces.DB
 	if i.isOLAPDBEnabled() {
-		rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+		dbh = i.olapdbh
 	} else {
-		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+		dbh = i.dbh
 	}
+	rq := dbh.NewQuery(ctx, "invocation_stat_service_trends").Raw(qStr, qArgs...)
+	res, err := db.ScanAll(rq, &stpb.TrendStat{})
 	if err != nil {
 		return nil, err
-	}
-	defer rows.Close()
-
-	res := make([]*stpb.TrendStat, 0)
-
-	for rows.Next() {
-		stat := &stpb.TrendStat{}
-		if i.isOLAPDBEnabled() {
-			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
-				return nil, err
-			}
-		} else {
-			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
-				return nil, err
-			}
-		}
-		res = append(res, stat)
-	}
-	if err := rows.Err(); err != nil {
-		log.Errorf("Encountered error when scan rows: %s", err)
 	}
 	sort.Slice(res, func(i, j int) bool {
 		// Name is a date of the form "YYYY-MM-DD" so lexicographic
@@ -556,23 +535,10 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 
 	qStr, qArgs := q.Build()
 	qStr = getQueryWithFlattenedArray(qStr)
-	rows, err := i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_execution_trends"), qStr, qArgs...).Rows()
+	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_trends").Raw(qStr, qArgs...)
+	res, err := db.ScanAll(rq, &stpb.ExecutionStat{})
 	if err != nil {
 		return nil, err
-	}
-	defer rows.Close()
-
-	res := make([]*stpb.ExecutionStat, 0)
-
-	for rows.Next() {
-		stat := &stpb.ExecutionStat{}
-		if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
-			return nil, err
-		}
-		res = append(res, stat)
-	}
-	if err := rows.Err(); err != nil {
-		log.Errorf("Encountered error when scan rows: %s", err)
 	}
 	sort.Slice(res, func(i, j int) bool {
 		// Name is a date of the form "YYYY-MM-DD" so lexicographic
@@ -695,22 +661,17 @@ type MetricRange = struct {
 
 func (i *InvocationStatService) getMetricRange(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (*MetricRange, error) {
 	rangeQuery := fmt.Sprintf(`SELECT min(%s) as low, max(%s) as high FROM "%s" %s`, metric, metric, table, whereClauseStr)
-	var rows *sql.Rows
-	rows, err := i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_metric_range"), rangeQuery, whereClauseArgs...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	if !rows.Next() {
-		return nil, nil
-	}
+	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_metric_range").Raw(rangeQuery, whereClauseArgs...)
 	valueRange := struct {
 		Low  int64
 		High int64
 	}{}
-	if err := i.olapdbh.DB(ctx).ScanRows(rows, &valueRange); err != nil {
+	if err := rq.Take(&valueRange); err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
-
 	// A fun hack: make "High" value 1 higher so that we can put an exclusive
 	// limit on the upper bound of requested ranges. Each bucket is [min, max).
 	width := valueRange.High + 1 - valueRange.Low
@@ -967,12 +928,7 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 		return &stpb.GetStatHeatmapResponse{}, nil
 	}
 
-	var rows *sql.Rows
-	rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_stat_heatmap"), qAndBuckets.Query, qAndBuckets.QueryArgs...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_heatmap").Raw(qAndBuckets.Query, qAndBuckets.QueryArgs...)
 
 	rsp := &stpb.GetStatHeatmapResponse{
 		TimestampBracket: qAndBuckets.TimestampBuckets,
@@ -980,19 +936,20 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 		Column:           make([]*stpb.HeatmapColumn, 0),
 	}
 
-	for rows.Next() {
-		stat := struct {
-			Timestamp int64
-			Value     []int64 `gorm:"type:int64[]"`
-		}{}
-		if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
-			return nil, err
-		}
+	type stat struct {
+		Timestamp int64
+		Value     []int64 `gorm:"type:int64[]"`
+	}
+	err = db.ScanEach(rq, func(ctx context.Context, stat *stat) error {
 		column := &stpb.HeatmapColumn{
 			TimestampUsec: stat.Timestamp,
 			Value:         stat.Value,
 		}
 		rsp.Column = append(rsp.Column, column)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return rsp, nil
 }
@@ -1098,34 +1055,21 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	q.SetLimit(int64(limit))
 
 	qStr, qArgs := q.Build()
-	var rows *sql.Rows
+	var dbh interfaces.DB
 	if i.isOLAPDBEnabled() {
-		rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
+		dbh = i.olapdbh
 	} else {
-		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
+		dbh = i.dbh
 	}
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	rq := dbh.NewQuery(ctx, "invocation_stat_service_get_stats").Raw(qStr, qArgs...)
 
 	rsp := &inpb.GetInvocationStatResponse{}
 	rsp.InvocationStat = make([]*inpb.InvocationStat, 0)
-
-	for rows.Next() {
-		stat := &inpb.InvocationStat{}
-		if i.isOLAPDBEnabled() {
-			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
-				return nil, err
-			}
-		} else {
-			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
-				return nil, err
-			}
-		}
+	err = db.ScanEach(rq, func(ctx context.Context, stat *inpb.InvocationStat) error {
 		rsp.InvocationStat = append(rsp.InvocationStat, stat)
-	}
-	return rsp, nil
+		return nil
+	})
+	return rsp, err
 }
 
 func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilldownFields []string, req *stpb.GetStatDrilldownRequest, where string, whereArgs []interface{}, drilldown string, drilldownArgs []interface{}, col string) (string, []interface{}) {
@@ -1273,12 +1217,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		return nil, err
 	}
 
-	var rows *sql.Rows
-	rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_stat_drilldown"), qStr, qArgs...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_stat_drilldown").Raw(qStr, qArgs...)
 
 	rsp := &stpb.GetStatDrilldownResponse{}
 
@@ -1297,23 +1236,17 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		Selection      int64
 		Inverse        int64
 	}
-	if !rows.Next() {
-		return rsp, nil
-	}
-	totals := queryOut{}
-	if err := i.olapdbh.DB(ctx).ScanRows(rows, &totals); err != nil {
-		return nil, err
-	}
-	if totals.GormUser != nil || totals.GormHost != nil || totals.GormRepoURL != nil || totals.GormBranchName != nil || totals.GormCommitSHA != nil {
-		return nil, status.InternalError("Failed to fetch drilldown data")
-	}
-	rsp.TotalInBase = totals.Inverse
-	rsp.TotalInSelection = totals.Selection
 
-	for rows.Next() {
-		stat := queryOut{}
-		if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
-			return nil, err
+	firstRow := true
+	err = db.ScanEach(rq, func(ctx context.Context, stat *queryOut) error {
+		if firstRow {
+			firstRow = false
+			if stat.GormUser != nil || stat.GormHost != nil || stat.GormRepoURL != nil || stat.GormBranchName != nil || stat.GormCommitSHA != nil {
+				return status.InternalError("Failed to fetch drilldown data")
+			}
+			rsp.TotalInBase = stat.Inverse
+			rsp.TotalInSelection = stat.Selection
+			return nil
 		}
 
 		if stat.GormBranchName != nil {
@@ -1336,8 +1269,15 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			// The above clauses represent all of the GROUP BY options we have in our
 			// query, and we deliberately constructed the query so that the total row
 			// would come first--this is an unexpected state.
-			return nil, status.InternalError("Failed to fetch drilldown data")
+			return status.InternalError("Failed to fetch drilldown data")
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if firstRow {
+		return rsp, nil
 	}
 
 	order := sortDrilldownChartKeys(dm)

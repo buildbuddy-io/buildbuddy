@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -267,26 +268,17 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 	qb.SetOrderBy("event_time_usec", true)
 	q, args := qb.Build()
 
-	rows, err := l.dbh.DB(ctx).Raw(q, args...).Rows()
-	if err != nil {
-		return nil, err
-	}
-
+	rq := l.dbh.NewQuery(ctx, "audit_logs_get_logs").Raw(q, args...)
 	resp := &alpb.GetAuditLogsResponse{}
-	for rows.Next() {
-		var e schema.AuditLog
-		if err := l.env.GetOLAPDBHandle().DB(ctx).ScanRows(rows, &e); err != nil {
-			return nil, err
-		}
-
+	err = db.ScanEach(rq, func(ctx context.Context, e *schema.AuditLog) error {
 		request := &alpb.Entry_Request{}
 		if err := proto.Unmarshal([]byte(e.Request), request); err != nil {
-			return nil, err
+			return err
 		}
 
 		if len(resp.Entries) == pageSize {
 			resp.NextPageToken = strconv.FormatInt(e.EventTimeUsec, 10)
-			continue
+			return nil
 		}
 
 		resourceType := alpb.ResourceType(e.ResourceType)
@@ -323,6 +315,10 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 		}
 
 		resp.Entries = append(resp.Entries, entry)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return resp, nil

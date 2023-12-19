@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
@@ -43,20 +42,8 @@ func NewExecutionSearchService(env environment.Env, h interfaces.DBHandle, oh in
 }
 
 func (s *ExecutionSearchService) rawQueryExecutions(ctx context.Context, query string, queryArgs ...interface{}) ([]*schema.Execution, error) {
-	rows, err := s.oh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("search_executions"), query, queryArgs...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	executions := make([]*schema.Execution, 0)
-	for rows.Next() {
-		var te schema.Execution
-		if err := s.oh.DB(ctx).ScanRows(rows, &te); err != nil {
-			return nil, err
-		}
-		executions = append(executions, &te)
-	}
-	return executions, nil
+	rq := s.oh.NewQuery(ctx, "execution_search_service_search").Raw(query, queryArgs...)
+	return db.ScanAll(rq, &schema.Execution{})
 }
 
 type ExecutionWithInvocationId struct {

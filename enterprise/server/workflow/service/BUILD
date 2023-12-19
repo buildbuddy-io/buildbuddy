@@ -32,7 +32,6 @@ go_library(
         "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
-        "//server/util/clickhouse",
         "//server/util/db",
         "//server/util/git",
         "//server/util/log",

@@ -395,8 +395,8 @@ type OLAPDBOptions interface {
 
 // OLAPDBHandle is a DB Handle for Online Analytical Processing(OLAP) DB
 type OLAPDBHandle interface {
-	DB(ctx context.Context) *gorm.DB
-	RawWithOptions(ctx context.Context, opts OLAPDBOptions, sql string, values ...interface{}) *gorm.DB
+	DB
+
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error
 	FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error
