@@ -8,7 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/cli/commands"
+	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/common"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -26,6 +26,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	sidecarmain "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar"
+)
+
+var (
+	// These flags configure the cli at large, and don't apply to any specific
+	// cli command
+	globalCliFlags = map[string]struct{}{
+		// Set to print verbose cli logs
+		"verbose": {},
+	}
 )
 
 func main() {
@@ -77,7 +86,7 @@ func run() (exitCode int, err error) {
 	}
 
 	cliCmd := args[0]
-	for _, c := range commands.CliCommands {
+	for _, c := range cli_command.Commands {
 		isAlias := false
 		for _, alias := range c.Aliases {
 			if cliCmd == alias {
@@ -237,7 +246,7 @@ func run() (exitCode int, err error) {
 // (--verbose, etc.).
 // Returns args with all global cli flags removed
 func handleGlobalCliFlags(args []string) []string {
-	for flag := range parser.GlobalCliFlags() {
+	for flag := range globalCliFlags {
 		var flagVal string
 		flagVal, args = arg.Pop(args, flag)
 

@@ -1,4 +1,4 @@
-package commands
+package cli_command
 
 import (
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
@@ -16,14 +16,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 )
 
-type CliCommand struct {
+type Command struct {
 	Name    string
 	Help    string
 	Handler func(args []string) (exitCode int, err error)
 	Aliases []string
 }
 
-var CliCommands = []CliCommand{
+var Commands = []Command{
 	{
 		Name:    "add",
 		Help:    "Adds a dependency to your WORKSPACE file.",
@@ -55,7 +55,7 @@ var CliCommands = []CliCommand{
 		Help:    "Applies fixes to WORKSPACE and BUILD files.",
 		Handler: fix.HandleFix,
 	},
-	// Handle 'help' command separately to avoid circular dependency with `commands`
+	// Handle 'help' command separately to avoid circular dependency with `cli_command`
 	// package
 	{
 		Name:    "install",

@@ -9,7 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/cli/commands"
+	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
@@ -120,7 +120,7 @@ func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
 
 func printBBCommands() {
 	fmt.Println("bb commands:")
-	for _, c := range commands.CliCommands {
+	for _, c := range cli_command.Commands {
 		fmt.Printf("  %s  %s\n", padEnd(c.Name, 18), c.Help)
 	}
 	fmt.Println()
