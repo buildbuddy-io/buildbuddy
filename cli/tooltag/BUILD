@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/tooltag",
     deps = [
         "//cli/arg",
+        "//cli/common",
         "//cli/log",
-        "//cli/version",
     ],
 )
 

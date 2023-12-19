@@ -10,7 +10,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//cli/arg",
-        "//cli/ask",
+        "//cli/bazel_command",
         "//cli/bazelisk",
         "//cli/cli_command",
         "//cli/cmd/sidecar",

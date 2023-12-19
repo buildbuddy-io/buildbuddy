@@ -8,8 +8,8 @@ go_library(
         "//cli/arg",
         "//cli/bazelisk",
         "//cli/cli_command",
+        "//cli/common",
         "//cli/parser",
-        "//cli/version",
         "//server/util/lockingbuffer",
     ],
 )
