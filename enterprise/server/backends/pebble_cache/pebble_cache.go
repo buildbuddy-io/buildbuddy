@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -44,7 +45,6 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"golang.org/x/time/rate"
-	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -832,7 +832,9 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	md, version, err := p.lookupFileMetadataAndVersion(p.env.GetServerContext(), iter, key)
+	md := rfpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+	version, err := p.lookupFileMetadataAndVersion(p.env.GetServerContext(), iter, key, md)
 	if err != nil {
 		return err
 	}
@@ -1049,7 +1051,8 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 	ctx := context.Background()
 	numKeysCopied := 0
 	lastUpdate := time.Now()
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
 	for iter.First(); iter.Valid(); iter.Next() {
 		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
 			continue
@@ -1080,6 +1083,7 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 			log.Infof("[%s] Partition copy in progress, copied %d keys, last key: %s", p.name, numKeysCopied, string(iter.Key()))
 			lastUpdate = time.Now()
 		}
+		fileMetadata.ResetVT()
 	}
 
 	srcMetadataKey := partitionMetadataKey(srcPartitionID)
@@ -1147,7 +1151,9 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 		}
 
 		unlockFn := p.locker.RLock(key.LockID())
-		_, err = p.lookupFileMetadata(p.env.GetServerContext(), iter, key)
+		md := rfpb.FileMetadataFromVTPool()
+		err = p.lookupFileMetadata(p.env.GetServerContext(), iter, key, md)
+		md.ReturnToVTPool()
 		unlockFn()
 
 		if status.IsNotFoundError(err) {
@@ -1235,7 +1241,8 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 	}()
 
 	pr := message.NewPrinter(language.English)
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
 	blobDir := ""
 
 	modLim := rate.NewLimiter(rate.Limit(*backgroundRepairQPSLimit), 1)
@@ -1317,6 +1324,8 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 			uncompressedCount++
 			uncompressedBytes += fileMetadata.GetStoredSizeBytes()
 		}
+
+		fileMetadata.ResetVT()
 	}
 	log.Infof("Pebble Cache [%s]: backgroundRepair for %q scanned %s records (%s uncompressed entries remaining using %s bytes [%s])", p.name, partitionID, pr.Sprint(totalCount), pr.Sprint(uncompressedCount), pr.Sprint(uncompressedBytes), units.BytesSize(float64(uncompressedBytes)))
 	if opts.deleteEntriesWithMissingFiles {
@@ -1470,28 +1479,28 @@ func (p *PebbleCache) blobDir() string {
 	return filePath
 }
 
-func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
+func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
-	fileMetadata := &rfpb.FileMetadata{}
 	var lastErr error
 	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
-			return nil, -1, err
+			return -1, err
 		}
 		lastErr = pebble.LookupProto(iter, keyBytes, fileMetadata)
 		if lastErr == nil {
-			return fileMetadata, version, nil
+			return version, nil
 		}
+		fileMetadata.ResetVT()
 	}
-	return nil, -1, lastErr
+	return -1, lastErr
 }
 
-func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
-	md, _, err := p.lookupFileMetadataAndVersion(ctx, iter, key)
-	return md, err
+func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter pebble.Iterator, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata) error {
+	_, err := p.lookupFileMetadataAndVersion(ctx, iter, key, fileMetadata)
+	return err
 }
 
 // iterHasKey returns a bool indicating if the provided iterator has the
@@ -1509,20 +1518,19 @@ func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) 
 	return false, nil
 }
 
-func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
+func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte, fileMetadata *rfpb.FileMetadata) error {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
-	fileMetadata := &rfpb.FileMetadata{}
 	buf, err := pebble.GetCopy(reader, keyBytes)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
-		return nil, err
+		return err
 	}
 
-	return fileMetadata, nil
+	return nil
 }
 
 func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata) bool {
@@ -1574,7 +1582,9 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	md, err := p.lookupFileMetadata(ctx, iter, key)
+	md := rfpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+	err = p.lookupFileMetadata(ctx, iter, key, md)
 	if err != nil {
 		return nil, err
 	}
@@ -1619,10 +1629,13 @@ func (p *PebbleCache) findMissing(ctx context.Context, iter pebble.Iterator, r *
 
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
-	md, err := p.lookupFileMetadata(ctx, iter, key)
+	md := rfpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+	err = p.lookupFileMetadata(ctx, iter, key, md)
 	if err != nil {
 		return err
 	}
+
 	chunkedMD := md.GetStorageMetadata().GetChunkedMetadata()
 	for _, chunked := range chunkedMD.GetResource() {
 		err = p.findMissing(ctx, iter, chunked)
@@ -1752,7 +1765,9 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	defer iter.Close()
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	fileMetadata, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key)
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
+	version, err := p.lookupFileMetadataAndVersion(ctx, iter, key, fileMetadata)
 	if err != nil {
 		return err
 	}
@@ -1845,7 +1860,9 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	md, err := p.lookupFileMetadata(ctx, iter, key)
+	md := rfpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+	err = p.lookupFileMetadata(ctx, iter, key, md)
 	if err != nil {
 		return err
 	}
@@ -2278,7 +2295,9 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	if oldMD, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key); err == nil {
+	oldMD := rfpb.FileMetadataFromVTPool()
+	defer oldMD.ReturnToVTPool()
+	if version, err := p.lookupFileMetadataAndVersion(ctx, iter, key, oldMD); err == nil {
 		oldKeyBytes, err := key.Bytes(version)
 		if err != nil {
 			return err
@@ -2535,7 +2554,8 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 
 	totalCount := 0
 	shouldCreateNewIter := true
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
@@ -2626,6 +2646,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 		}
 		iter.Next()
+		fileMetadata.ResetVT()
 	}
 }
 
@@ -2685,7 +2706,8 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 	acCount := int64(0)
 	blobSizeBytes := int64(0)
 	metadataSizeBytes := int64(0)
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := rfpb.FileMetadataFromVTPool()
+	defer fileMetadata.ReturnToVTPool()
 
 	for iter.Next() {
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
@@ -2702,6 +2724,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		} else {
 			log.Warningf("[%s] Unidentified file (not CAS or AC): %q", e.cacheName, iter.Key())
 		}
+		fileMetadata.ResetVT()
 	}
 
 	return blobSizeBytes + metadataSizeBytes, casCount, acCount, nil
@@ -2876,7 +2899,9 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	unlockFn := e.locker.Lock(key.LockID())
 	defer unlockFn()
 
-	md, err := readFileMetadata(e.ctx, db, sample.Key.bytes)
+	md := rfpb.FileMetadataFromVTPool()
+	err = readFileMetadata(e.ctx, db, sample.Key.bytes, md)
+	defer md.ReturnToVTPool()
 	if err != nil {
 		log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
 		return
@@ -3173,7 +3198,10 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	unlockFn := p.locker.RLock(key.LockID())
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
-	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
+	// Fields in fileMetadata might be used after the function returns, so we are
+	// not use mem pooling here.
+	fileMetadata := &rfpb.FileMetadata{}
+	err = p.lookupFileMetadata(ctx, iter, key, fileMetadata)
 	unlockFn()
 	if err != nil {
 		return nil, err

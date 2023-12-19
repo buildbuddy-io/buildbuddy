@@ -9,11 +9,11 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/util/alert",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_cockroachdb_pebble//vfs",
         "@com_github_prometheus_client_golang//prometheus",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 
