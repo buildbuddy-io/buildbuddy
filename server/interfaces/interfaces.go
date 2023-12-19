@@ -378,7 +378,6 @@ type DBHandle interface {
 	Transaction(ctx context.Context, txn NewTxRunner) error
 	TransactionWithOptions(ctx context.Context, opts DBOptions, txn NewTxRunner) error
 
-	DB(ctx context.Context) *gorm.DB
 	RawWithOptions(ctx context.Context, opts DBOptions, sql string, values ...interface{}) *gorm.DB
 	UTCMonthFromUsecTimestamp(fieldName string) string
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string

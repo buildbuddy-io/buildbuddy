@@ -165,7 +165,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 	if err != nil {
 		log.Fatalf("Error configuring database: %s", err)
 	}
-	log.Infof("Successfully configured %s database.", dbHandle.DB(context.Background()).Dialector.Name())
+	log.Infof("Successfully configured %s database.", dbHandle.GORM(context.Background(), "dialector").Dialector.Name())
 	realEnv.SetDBHandle(dbHandle)
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
 
