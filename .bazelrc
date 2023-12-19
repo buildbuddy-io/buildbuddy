@@ -173,6 +173,18 @@ build:macos --enable_runfiles
 # Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
 build --experimental_inprocess_symlink_creation
 
+# Workaround for Bazel 7:
+# rules_docker (archived) defines a transition that helps ensure building containers with binary would use the same platform for both.
+# Reference: https://github.com/bazelbuild/rules_docker/pull/1963
+#
+# However, the platform and transition made use of `label_setting` instead of `constraint_value`.
+# This used to work in Bazel 6, but Bazel 7 introduced a new mandatory provider `ConstraintValueInfo` for all constraints_value targets.
+# Since `label_setting` does not return this provider, it is no longer possible to use `label_setting` in Bazel 7.
+#
+# Disabling this is safe because today, we are building these constainers on Linux host, executing Linux actions and targeting Linux machines.
+# This assumption might not hold in the future, but we can revisit this when that happens.
+build --@io_bazel_rules_docker//transitions:enable=false
+
 # Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
 # Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
 # on Docker for development
