@@ -12,12 +12,12 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/grpc_client",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_mattn_go_isatty//:go-isatty",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 
