@@ -291,10 +291,8 @@ type PooledByteStreamClient interface {
 
 type DBOptions interface {
 	WithStaleReads() DBOptions
-	WithQueryName(queryName string) DBOptions
 	ReadOnly() bool
 	AllowStaleReads() bool
-	QueryName() string
 }
 
 type DBResult struct {
@@ -378,18 +376,13 @@ type DBHandle interface {
 	Transaction(ctx context.Context, txn NewTxRunner) error
 	TransactionWithOptions(ctx context.Context, opts DBOptions, txn NewTxRunner) error
 
-	RawWithOptions(ctx context.Context, opts DBOptions, sql string, values ...interface{}) *gorm.DB
+	NewQueryWithOpts(ctx context.Context, name string, opts DBOptions) DBQuery
 	UTCMonthFromUsecTimestamp(fieldName string) string
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	SelectForUpdateModifier() string
 	SetNowFunc(now func() time.Time)
 	IsDuplicateKeyError(err error) bool
 	IsDeadlockError(err error) bool
-}
-
-type OLAPDBOptions interface {
-	WithQueryName(queryName string) OLAPDBOptions
-	QueryName() string
 }
 
 // OLAPDBHandle is a DB Handle for Online Analytical Processing(OLAP) DB

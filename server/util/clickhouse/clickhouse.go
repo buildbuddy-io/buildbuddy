@@ -60,36 +60,6 @@ func (dbh *DBHandle) NowFunc() time.Time {
 	return dbh.db.NowFunc()
 }
 
-type Options struct {
-	queryName string
-}
-
-func Opts() interfaces.OLAPDBOptions {
-	return &Options{}
-}
-
-// WithQueryName specifies the query label to use in exported metrics.
-func (o *Options) WithQueryName(queryName string) interfaces.OLAPDBOptions {
-	o.queryName = queryName
-	return o
-}
-
-func (o *Options) QueryName() string {
-	return o.queryName
-}
-
-func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.OLAPDBOptions) *gorm.DB {
-	db := dbh.DB(ctx)
-	if opts.QueryName() != "" {
-		db = db.Set(gormQueryNameKey, opts.QueryName())
-	}
-	return db
-}
-
-func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts interfaces.OLAPDBOptions, sql string, values ...interface{}) *gorm.DB {
-	return dbh.gormHandleForOpts(ctx, opts).Raw(sql, values...)
-}
-
 func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
 	return dbh.db.WithContext(ctx)
 }
