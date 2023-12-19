@@ -6,10 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix/golang",
     visibility = ["//visibility:public"],
     deps = [
+        "//bazel-gazelle/language",
+        "//bazel-gazelle/language/go",
         "//cli/log",
         "//cli/workspace",
-        "@bazel_gazelle//language:go_default_library",
-        "@bazel_gazelle//language/go:go_default_library",
         "@org_golang_x_mod//modfile",
     ],
 )
