@@ -2,8 +2,9 @@ package execution_server_test
 
 import (
 	"context"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"testing"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
