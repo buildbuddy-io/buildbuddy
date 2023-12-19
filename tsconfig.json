@@ -23,6 +23,8 @@
       "bazel-out/linux_x86_64-opt/bin",
       "bazel-out/darwin-opt/bin",
       "bazel-out/darwin-fastbuild/bin",
+      "bazel-out/darwin_x86_64-opt/bin",
+      "bazel-out/darwin_x86_64-fastbuild/bin",
       "bazel-out/darwin_arm64-opt/bin",
       "bazel-out/darwin_arm64-fastbuild/bin",
       "bazel-out/macos_x86_64-opt/bin",

@@ -29,7 +29,7 @@ def release(name, run, after, enable_actions = True, **kwargs):
     for action in actions:
         native.genrule(
             name = name + action,
-            exec_tools = [run + action, after + action],
+            tools = [run + action, after + action],
             outs = [name + action + ".out"],
             cmd = "echo \"bash $(location %s) && bash $(location %s);\" > $@" % (after + action, run + action),
             local = 1,
