@@ -463,6 +463,7 @@ func (q *promQuerier) setMetrics(ctx context.Context, groupID string, metricFami
 		return nil
 	}
 	key := getExportedMetricsKey(groupID)
+	// MarshalVT() is slower than regular Marshal for proto mpb.Metrics.
 	b, err := proto.MarshalOld(metricFamilies)
 	if err != nil {
 		return status.InternalErrorf("failed to marshal json: %s", err)
