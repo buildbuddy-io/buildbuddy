@@ -7,6 +7,7 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/bazelisk",
+        "//cli/cli_command",
         "//cli/parser",
         "//cli/version",
         "//server/util/lockingbuffer",

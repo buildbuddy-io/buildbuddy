@@ -18,7 +18,10 @@ go_library(
     srcs = ["version.go"],
     embedsrcs = [":version_flag"],  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/version",
-    deps = ["//cli/arg"],
+    deps = [
+        "//cli/arg",
+        "//cli/common",
+    ],
 )
 
 go_test(

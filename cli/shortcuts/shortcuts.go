@@ -12,6 +12,7 @@ var (
 	}
 )
 
+// HandleShorcuts finds the first non-flag command and tries to expand it
 func HandleShortcuts(args []string) []string {
 	command, idx := arg.GetCommandAndIndex(args)
 	if expanded, ok := shortcuts[command]; ok {

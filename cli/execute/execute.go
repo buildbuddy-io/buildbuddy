@@ -64,12 +64,8 @@ Example of running a bash command with runner recycling:
 )
 
 func HandleExecute(args []string) (int, error) {
-	cmd, idx := arg.GetCommandAndIndex(args)
-	if cmd != "execute" {
-		return -1, nil
-	}
 	args, cmdArgs := arg.SplitExecutableArgs(args)
-	if err := arg.ParseFlagSet(flags, args[idx+1:]); err != nil {
+	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
 			log.Print("\nAll options:")

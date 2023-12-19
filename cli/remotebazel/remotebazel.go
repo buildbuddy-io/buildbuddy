@@ -621,10 +621,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	return exitCode, nil
 }
 
-func handleRemoteBazel(args, execArgs []string) []string {
+func HandleRemoteBazel(args, execArgs []string) (int, error) {
 	args = arg.Remove(args, "bes_backend")
 	args = arg.Remove(args, "remote_cache")
 
+	// Ensure all bazel remote runs use the remote cache
 	args = append(args, "--bes_backend="+defaultRemoteExecutionURL)
 	args = append(args, "--remote_cache="+defaultRemoteExecutionURL)
 
@@ -648,16 +649,5 @@ func handleRemoteBazel(args, execArgs []string) []string {
 		log.Fatalf("error running remote bazel: %s", err)
 	}
 
-	os.Exit(exitCode)
-	return args
-}
-
-func HandleRemoteBazel(args, passthroughArgs []string) []string {
-	if c, i := arg.GetCommandAndIndex(args); c == "remote" {
-		return handleRemoteBazel(args[i+1:], passthroughArgs)
-	}
-	if arg, rest := arg.Pop(args, "remote"); arg == "true" {
-		return handleRemoteBazel(rest, passthroughArgs)
-	}
-	return args
+	return exitCode, nil
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
@@ -26,9 +27,18 @@ var (
 	}
 )
 
+// HandleHelp Valid cases to trigger help:
+// * bb (no additional command passed)
+// * bb help
+// * bb help `command name`
+// * bb -h `command name`
+// * bb `command name` -h
+// * bb --help `command name`
+// * bb `command name` --help
 func HandleHelp(args []string) (exitCode int, err error) {
 	args, _ = arg.SplitExecutableArgs(args)
 
+	// Returns first non-flag
 	cmd, idx := arg.GetCommandAndIndex(args)
 	// If no command is specified, show general help.
 	// TODO: Allow configuring a "default command" that is run when
@@ -109,25 +119,9 @@ func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
 }
 
 func printBBCommands() {
-	// TODO: Have commands add themselves to a registry and get the command
-	// names / descriptions from there.
-	columns := [][]string{
-		{"add", "Adds a dependency to your WORKSPACE file."},
-		{"analyze", "Analyzes the dependency graph."},
-		{"ask|wtf|huh", "Asks for suggestions about your last invocation."},
-		{"download", "Downloads artifacts from a remote cache."},
-		{"execute", "Executes arbitrary commands using remote execution."},
-		{"install", "Installs a bb plugin (https://buildbuddy.io/plugins)."},
-		{"login", "Configures bb commands to use your BuildBuddy API key."},
-		{"logout", "Configures bb commands to no longer use your saved API key."},
-		{"print", "Displays various log file types written by bazel."},
-		{"remote", "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service."},
-		{"update", "Updates the bb CLI to the latest version."},
-		{"upload", "Uploads files to the remote cache."},
-	}
 	fmt.Println("bb commands:")
-	for _, row := range columns {
-		fmt.Printf("  %s  %s\n", padEnd(row[0], 18), row[1])
+	for _, c := range cli_command.Commands {
+		fmt.Printf("  %s  %s\n", padEnd(c.Name, 18), c.Help)
 	}
 	fmt.Println()
 }

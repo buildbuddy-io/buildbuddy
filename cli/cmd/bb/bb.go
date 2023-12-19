@@ -5,14 +5,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/add"
-	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/cli/download"
-	"github.com/buildbuddy-io/buildbuddy/cli/execute"
-	"github.com/buildbuddy-io/buildbuddy/cli/fix"
+	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
+	"github.com/buildbuddy-io/buildbuddy/cli/common"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -20,19 +17,24 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/picker"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
-	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
-	"github.com/buildbuddy-io/buildbuddy/cli/update"
-	"github.com/buildbuddy-io/buildbuddy/cli/upload"
-	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	sidecarmain "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar"
+)
+
+var (
+	// These flags configure the cli at large, and don't apply to any specific
+	// cli command
+	globalCliFlags = map[string]struct{}{
+		// Set to print verbose cli logs
+		"verbose": {},
+	}
 )
 
 func main() {
@@ -52,9 +54,7 @@ func run() (exitCode int, err error) {
 	// Record original arguments so we can show them in the UI.
 	originalArgs := append([]string{}, os.Args...)
 
-	// Handle global args that don't apply to any specific subcommand
-	// (--verbose, etc.)
-	args := log.Configure(os.Args[1:])
+	args := handleGlobalCliFlags(os.Args[1:])
 
 	log.Debugf("CLI started at %s", start)
 	log.Debugf("args[0]: %s", os.Args[0])
@@ -70,77 +70,49 @@ func run() (exitCode int, err error) {
 		log.Printf("Failed to bump open file limits: %s", err)
 	}
 
+	// Expand command shortcuts like b=>build, t=>test, etc.
+	args = shortcuts.HandleShortcuts(args)
+
 	// Make sure startup args are always in the format --foo=bar.
 	args, err = parser.CanonicalizeStartupArgs(args)
 	if err != nil {
 		return -1, err
 	}
 
-	// Expand command shortcuts like b=>build, t=>test, etc.
-	args = shortcuts.HandleShortcuts(args)
-
-	// Show help if applicable.
+	// Handle help command.
 	exitCode, err = help.HandleHelp(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
 
-	// Handle CLI-specific subcommands.
-	exitCode, err = plugin.HandleInstall(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = printlog.HandlePrint(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = update.HandleUpdate(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = version.HandleVersion(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = analyze.HandleAnalyze(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = login.HandleLogin(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = login.HandleLogout(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = fix.HandleFix(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = ask.HandleAsk(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = add.HandleAdd(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = download.HandleDownload(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = upload.HandleUpload(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
-	exitCode, err = execute.HandleExecute(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
+	cliCmd := args[0]
+	for _, c := range cli_command.Commands {
+		isAlias := false
+		for _, alias := range c.Aliases {
+			if cliCmd == alias {
+				isAlias = true
+			}
+		}
+
+		if isAlias || cliCmd == c.Name {
+			// If the first argument is a cli command, trim it from `args`
+			args = args[1:]
+			if c.Handler != nil {
+				exitCode, err := c.Handler(args)
+				if exitCode == common.ForwardCommandToBazelExitCode {
+					// Add the cli command back to args before forwarding
+					// the command to bazel
+					args = append([]string{cliCmd}, args...)
+					break
+				}
+				return exitCode, err
+			}
+		}
 	}
 
-	// If none of the CLI subcommand handlers were triggered, assume we have a
-	// bazel invocation.
+	// Forward the command to bazel.
+	// If none of the CLI subcommand handlers were triggered, assume we should
+	// handle it as a bazel command.
 
 	// Maybe run interactively (watching for changes to files).
 	if exitCode, err := watcher.Watch(); exitCode >= 0 || err != nil {
@@ -219,7 +191,9 @@ func run() (exitCode int, err error) {
 
 	// Handle remote bazel. Note, pre-bazel hooks apply to remote bazel, but not
 	// output handlers or post-bazel hooks.
-	args = remotebazel.HandleRemoteBazel(args, execArgs)
+	if cliCmd == "remote" {
+		return remotebazel.HandleRemoteBazel(args, execArgs)
+	}
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
@@ -266,4 +240,22 @@ func run() (exitCode int, err error) {
 	// e.g. show a desktop notification once a k8s deploy has finished
 
 	return exitCode, nil
+}
+
+// handleGlobalCliFlags processes global cli args that don't apply to any specific subcommand
+// (--verbose, etc.).
+// Returns args with all global cli flags removed
+func handleGlobalCliFlags(args []string) []string {
+	for flag := range globalCliFlags {
+		var flagVal string
+		flagVal, args = arg.Pop(args, flag)
+
+		// Even if flag is not set and flagVal is "", pass to handlers in case
+		// they need to configure a default value
+		switch flag {
+		case "verbose":
+			log.Configure(flagVal)
+		}
+	}
+	return args
 }

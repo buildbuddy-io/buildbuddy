@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "log",
-    srcs = ["log.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/log",
+    name = "common",
+    srcs = ["common.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/cli/common",
 )
 
 package(default_visibility = ["//cli:__subpackages__"])

@@ -25,7 +25,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
-	"gopkg.in/yaml.v2"
+
+	yaml "gopkg.in/yaml.v2"
 )
 
 const (
@@ -91,16 +92,7 @@ var (
 // HandleInstall handles the "bb install" subcommand, which allows adding
 // plugins to buildbuddy.yaml.
 func HandleInstall(args []string) (exitCode int, err error) {
-	command, idx := arg.GetCommandAndIndex(args)
-	if command != "install" {
-		return -1, nil
-	}
-	if idx != 0 {
-		log.Debugf("Unexpected flag: %s", args[0])
-		log.Print(installCommandUsage)
-		return 1, nil
-	}
-	if err := arg.ParseFlagSet(installCmd, args[1:]); err != nil {
+	if err := arg.ParseFlagSet(installCmd, args); err != nil {
 		if err != flag.ErrHelp {
 			log.Printf("Failed to parse flags: %s", err)
 		}
