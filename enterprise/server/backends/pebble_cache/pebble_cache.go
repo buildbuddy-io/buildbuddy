@@ -1518,20 +1518,19 @@ func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) 
 	return false, nil
 }
 
-func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
+func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte, fileMetadata *rfpb.FileMetadata) error {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
-	fileMetadata := rfpb.FileMetadataFromVTPool()
 	buf, err := pebble.GetCopy(reader, keyBytes)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
-		return nil, err
+		return err
 	}
 
-	return fileMetadata, nil
+	return nil
 }
 
 func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata) bool {
@@ -2900,12 +2899,13 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	unlockFn := e.locker.Lock(key.LockID())
 	defer unlockFn()
 
-	md, err := readFileMetadata(e.ctx, db, sample.Key.bytes)
+	md := rfpb.FileMetadataFromVTPool()
+	err = readFileMetadata(e.ctx, db, sample.Key.bytes, md)
+	defer md.ReturnToVTPool()
 	if err != nil {
 		log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
 		return
 	}
-	defer md.ReturnToVTPool()
 	atime := time.UnixMicro(md.GetLastAccessUsec())
 	age := time.Since(atime)
 	if !sample.Timestamp.Equal(atime) {
@@ -3198,8 +3198,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	unlockFn := p.locker.RLock(key.LockID())
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
-	fileMetadata := rfpb.FileMetadataFromVTPool()
-	defer fileMetadata.ReturnToVTPool()
+	fileMetadata := &rfpb.FileMetadata{}
 	err = p.lookupFileMetadata(ctx, iter, key, fileMetadata)
 	unlockFn()
 	if err != nil {
