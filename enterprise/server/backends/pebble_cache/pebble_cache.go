@@ -3198,6 +3198,8 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	unlockFn := p.locker.RLock(key.LockID())
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
+	// Fields in fileMetadata might be used after the function returns, so we are
+	// not use mem pooling here.
 	fileMetadata := &rfpb.FileMetadata{}
 	err = p.lookupFileMetadata(ctx, iter, key, fileMetadata)
 	unlockFn()
