@@ -1,7 +1,6 @@
 package snaputil
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -76,7 +75,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	}
 
 	if !*EnableRemoteSnapshotSharing || !remoteEnabled {
-		return ChunkSourceUnmapped, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+		return 0, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
 	}
 
 	if *VerboseLogging {
@@ -86,22 +85,23 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	}
 
 	// Fetch from remote cache
-	buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
+	f, err := os.Create(outputPath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
 	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
-	if err := cachetools.GetBlob(ctx, bsClient, r, buf); err != nil {
-		return ChunkSourceUnmapped, status.WrapError(err, "remote fetch snapshot artifact")
+	if err := cachetools.GetBlob(ctx, bsClient, r, f); err != nil {
+		return 0, status.WrapError(err, "remote fetch snapshot artifact")
 	}
-
-	// Write file to outputDir so it can be used by the VM
-	writeErr := os.WriteFile(outputPath, buf.Bytes(), 0777)
 
 	// Save to local cache so next time fetching won't require a remote get
 	if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
 		log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
 	}
 
-	return ChunkSourceRemoteCache, writeErr
+	return ChunkSourceRemoteCache, nil
 }
 
 func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
