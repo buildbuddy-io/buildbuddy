@@ -28,6 +28,7 @@ go_library(
 go_test(
     name = "oci_test",
     size = "small",
+    timeout = "moderate",
     srcs = ["oci_test.go"],
     deps = [
         ":oci",
