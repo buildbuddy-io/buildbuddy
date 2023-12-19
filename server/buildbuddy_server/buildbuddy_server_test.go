@@ -132,7 +132,7 @@ func TestUpdateInvocation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
 	te.SetAuthenticator(auth)
-	te.GetDBHandle().DB(context.Background()).Create(&tables.Group{GroupID: group1, SharingEnabled: true})
+	te.GetDBHandle().NewQuery(context.Background(), "create_invocation").Create(&tables.Group{GroupID: group1, SharingEnabled: true})
 
 	iid, err := createInvocationForTesting(te, user1)
 	require.NoError(t, err)

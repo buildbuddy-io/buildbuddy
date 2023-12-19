@@ -268,7 +268,7 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 		if s.shouldQueryClickhouse(req) {
 			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("i.tags", tags)
 			q.AddWhereClause(clause, args...)
-		} else if s.dbh.DB(ctx).Dialector.Name() == "mysql" {
+		} else if s.dbh.GORM(ctx, "dialector").Dialector.Name() == "mysql" {
 			for _, tag := range tags {
 				q.AddWhereClause("FIND_IN_SET(?, i.tags)", tag)
 			}
