@@ -331,7 +331,6 @@ type DBHandle struct {
 type Options struct {
 	readOnly        bool
 	allowStaleReads bool
-	queryName       string
 }
 
 func Opts() interfaces.DBOptions {
@@ -344,22 +343,12 @@ func (o *Options) WithStaleReads() interfaces.DBOptions {
 	return o
 }
 
-// WithQueryName specifies the query label to use in exported metrics.
-func (o *Options) WithQueryName(queryName string) interfaces.DBOptions {
-	o.queryName = queryName
-	return o
-}
-
 func (o *Options) ReadOnly() bool {
 	return o.readOnly
 }
 
 func (o *Options) AllowStaleReads() bool {
 	return o.allowStaleReads
-}
-
-func (o *Options) QueryName() string {
-	return o.queryName
 }
 
 type DB = gorm.DB
@@ -373,15 +362,7 @@ func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOp
 	if opts.ReadOnly() && opts.AllowStaleReads() && dbh.readReplicaDB != nil {
 		db = dbh.readReplicaDB
 	}
-
-	if opts.QueryName() != "" {
-		db = db.Set(gormQueryNameKey, opts.QueryName())
-	}
 	return db
-}
-
-func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts interfaces.DBOptions, sql string, values ...interface{}) *gorm.DB {
-	return dbh.gormHandleForOpts(ctx, opts).Raw(sql, values...)
 }
 
 func IsRecordNotFound(err error) bool {
@@ -1083,6 +1064,10 @@ func (t *transaction) NowFunc() time.Time {
 
 func (dbh *DBHandle) NewQuery(ctx context.Context, name string) interfaces.DBQuery {
 	return &query{ctx: ctx, name: name, db: dbh.db}
+}
+
+func (dbh *DBHandle) NewQueryWithOpts(ctx context.Context, name string, opts interfaces.DBOptions) interfaces.DBQuery {
+	return &query{ctx: ctx, name: name, db: dbh.gormHandleForOpts(ctx, opts)}
 }
 
 func (dbh *DBHandle) Transaction(ctx context.Context, txn interfaces.NewTxRunner) error {

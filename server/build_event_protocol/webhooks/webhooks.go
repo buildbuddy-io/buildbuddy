@@ -58,11 +58,10 @@ func (h *invocationUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invo
 	}
 	dbh := h.env.GetDBHandle()
 	row := &struct{ InvocationWebhookURL string }{}
-	err := dbh.RawWithOptions(
-		ctx, db.Opts().WithStaleReads(),
+	err := dbh.NewQueryWithOpts(ctx, "webhooks_get_url", db.Opts().WithStaleReads()).Raw(
 		`SELECT invocation_webhook_url FROM "Groups" WHERE group_id = ?`,
 		groupID,
-	).Take(row).Error
+	).Take(row)
 	if err != nil {
 		return err
 	}
