@@ -82,10 +82,14 @@
   flex-shrink: 0;
 }
 
-.reviews .pr-status-pending:before {
+.reviews .pr-status:before {
   background-color: #ffc107;
 }
 
 .reviews .pr-status-approved:before {
   background-color: #4caf50;
+}
+
+.reviews .empty-state {
+    padding-left: 16px;
 }

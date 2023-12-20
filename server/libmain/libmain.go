@@ -107,6 +107,7 @@ var (
 		"/code/",
 		"/audit-logs/",
 		"/repo/",
+		"/reviews/",
 	}
 )
 
