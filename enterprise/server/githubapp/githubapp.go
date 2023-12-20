@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -1376,9 +1377,9 @@ func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, client *githu
 	var incoming *github.IssuesSearchResult
 	var outgoing *github.IssuesSearchResult
 	var user *github.User
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, gCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		r, _, err := client.Search.Issues(ctx, "is:open is:pr user-review-requested:@me archived:false draft:false", &github.SearchOptions{ListOptions: github.ListOptions{PerPage: 100}})
+		r, err := a.cachedSearch(gCtx, client, "is:open is:pr user-review-requested:@me archived:false draft:false")
 		if err != nil {
 			return err
 		}
@@ -1386,7 +1387,7 @@ func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, client *githu
 		return nil
 	})
 	eg.Go(func() error {
-		r, _, err := client.Search.Issues(ctx, "is:open is:pr author:@me -review:none archived:false draft:false", &github.SearchOptions{ListOptions: github.ListOptions{PerPage: 100}})
+		r, err := a.cachedSearch(gCtx, client, "is:open is:pr author:@me -review:none archived:false draft:false")
 		if err != nil {
 			return err
 		}
@@ -1394,7 +1395,7 @@ func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, client *githu
 		return nil
 	})
 	eg.Go(func() error {
-		u, _, err := client.Users.Get(ctx, "")
+		u, err := a.cachedUser(ctx, client)
 		if err != nil {
 			return err
 		}
@@ -1410,7 +1411,7 @@ func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, client *githu
 func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Client, prIssues []*github.Issue, currentUser *github.User) (map[string]*ghpb.PullRequest, error) {
 	prsMu := &sync.Mutex{}
 	prs := make(map[string]*ghpb.PullRequest, len(prIssues))
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, gCtx := errgroup.WithContext(ctx)
 	for _, i := range prIssues {
 		i := i
 		prsMu.Lock()
@@ -1421,7 +1422,7 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 			return nil, status.FailedPreconditionErrorf("invalid github url: %q", *i.URL)
 		}
 		eg.Go(func() error {
-			pr, _, err := client.PullRequests.Get(ctx, urlParts[4], urlParts[5], i.GetNumber())
+			pr, err := a.cachedPullRequests(gCtx, client, urlParts[4], urlParts[5], i.GetNumber(), i.GetUpdatedAt())
 			if err != nil {
 				return err
 			}
@@ -1445,11 +1446,11 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 			return nil
 		})
 		eg.Go(func() error {
-			reviews, _, err := client.PullRequests.ListReviews(ctx, urlParts[4], urlParts[5], i.GetNumber(), &github.ListOptions{PerPage: 100})
+			reviews, err := a.cachedReviews(gCtx, client, urlParts[4], urlParts[5], i.GetNumber(), i.GetUpdatedAt())
 			if err != nil {
 				return err
 			}
-			for _, r := range reviews {
+			for _, r := range *reviews {
 				prsMu.Lock()
 				review, ok := prs[i.GetNodeID()].Reviews[r.GetUser().GetLogin()]
 				if !ok {
@@ -1470,6 +1471,69 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 		return nil, err
 	}
 	return prs, nil
+}
+
+func (a *GitHubApp) cachedUser(ctx context.Context, client *github.Client) (*github.User, error) {
+	key := "user"
+	pr, err := a.cached(ctx, key, &github.User{}, time.Hour*24, func() (any, any, error) {
+		return client.Users.Get(ctx, "")
+	})
+	return pr.(*github.User), err
+}
+
+func (a *GitHubApp) cachedSearch(ctx context.Context, client *github.Client, query string) (*github.IssuesSearchResult, error) {
+	key := fmt.Sprintf("search/%s", query)
+	pr, err := a.cached(ctx, key, &github.IssuesSearchResult{}, time.Second*5, func() (any, any, error) {
+		return client.Search.Issues(ctx, query, &github.SearchOptions{ListOptions: github.ListOptions{PerPage: 100}})
+	})
+	return pr.(*github.IssuesSearchResult), err
+}
+
+func (a *GitHubApp) cachedPullRequests(ctx context.Context, client *github.Client, owner, repo string, number int, updatedAt time.Time) (*github.PullRequest, error) {
+	key := fmt.Sprintf("pr/%s/%s/%d/%d", owner, repo, number, updatedAt.Unix())
+
+	pr, err := a.cached(ctx, key, &github.PullRequest{}, time.Hour*24, func() (any, any, error) {
+		return client.PullRequests.Get(ctx, owner, repo, number)
+	})
+	return pr.(*github.PullRequest), err
+}
+
+func (a *GitHubApp) cachedReviews(ctx context.Context, client *github.Client, owner, repo string, number int, updatedAt time.Time) (*[]*github.PullRequestReview, error) {
+	key := fmt.Sprintf("pr-reviews/%s/%s/%d/%d", owner, repo, number, updatedAt.Unix())
+	pr, err := a.cached(ctx, key, &[]*github.PullRequestReview{}, time.Hour*24, func() (any, any, error) {
+		rev, res, err := client.PullRequests.ListReviews(ctx, owner, repo, number, &github.ListOptions{PerPage: 100})
+		return &rev, res, err
+	})
+	return pr.(*[]*github.PullRequestReview), err
+}
+
+func (a *GitHubApp) cached(ctx context.Context, key string, v any, exp time.Duration, fn func() (any, any, error)) (any, error) {
+	tu, err := a.env.GetUserDB().GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	key = fmt.Sprintf("githubapp/v0/%s/%s", tu.UserID, key)
+	val, err := a.env.GetDefaultRedisClient().Get(ctx, key).Result()
+	if err == nil {
+		err := json.Unmarshal([]byte(val), &v)
+		if err == nil {
+			log.Debugf("got cached github result for key: %s", key)
+			return v, nil
+		} else {
+			log.Errorf("error unmarshalling cached github redis result for key %s: %s", key, err)
+		}
+	}
+	log.Debugf("making github request for key: %s", key)
+	pr, _, err := fn()
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(pr)
+	if err != nil {
+		return nil, err
+	}
+	a.env.GetDefaultRedisClient().Set(ctx, key, string(b), exp)
+	return pr, nil
 }
 
 func issueToPullRequestProto(i *github.Issue) *ghpb.PullRequest {
