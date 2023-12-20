@@ -8,8 +8,13 @@ import (
 
 var Clone = gproto.Clone
 var Size = gproto.Size
+var Merge = gproto.Merge
 var MarshalOld = gproto.Marshal
 var UnmarshalOld = gproto.Unmarshal
+
+var String = gproto.String
+var Float64 = gproto.Float64
+var Uint64 = gproto.Uint64
 
 type Message = gproto.Message
 type MarshalOptions = gproto.MarshalOptions
