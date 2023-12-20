@@ -34,6 +34,7 @@ go_library(
         "//server/util/log",
         "//server/util/perms",
         "//server/util/prefix",
+        "//server/util/proto",
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/usageutil",
@@ -41,7 +42,6 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

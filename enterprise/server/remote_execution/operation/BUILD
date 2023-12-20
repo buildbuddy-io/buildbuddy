@@ -11,11 +11,11 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/flagutil",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/retry",
         "//server/util/status",
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/anypb",
     ],
 )

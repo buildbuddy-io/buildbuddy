@@ -40,12 +40,12 @@ go_library(
         "//server/util/flag",
         "//server/util/lockingbuffer",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/random",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//encoding/protowire",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
@@ -89,12 +89,12 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/disk",
+        "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//proto",
     ],
 )
