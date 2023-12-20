@@ -636,29 +636,31 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 	eg.SetLimit(*eagerFetchConcurrency)
 	defer eg.Wait()
 
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+	go func() {
+		<-s.quitChan
+		cancel()
+	}()
+
 	for {
-		select {
-		case <-s.quitChan:
-			return
-		case <-s.eagerFetchStack.C:
-			offset, ok := s.eagerFetchStack.Pop()
-			if !ok {
-				continue
-			}
-			if err := rateLimiter.Wait(s.ctx); err != nil {
-				if err != s.ctx.Err() {
-					log.CtxErrorf(s.ctx, "COWStore eager fetch rate limiter failed, stopping eager fetches: %s", err)
-				}
-				return
-			}
-			eg.Go(func() error {
-				err := s.fetchChunk(offset)
-				if err != nil {
-					log.CtxWarningf(s.ctx, "COWStore eager fetch chunk failed with: %s", err)
-				}
-				return nil
-			})
+		offset, err := s.eagerFetchStack.Recv(ctx)
+		if err != nil {
+			break // context canceled
 		}
+		if err := rateLimiter.Wait(ctx); err != nil {
+			if err != s.ctx.Err() {
+				log.CtxErrorf(s.ctx, "COWStore eager fetch rate limiter failed, stopping eager fetches: %s", err)
+			}
+			return
+		}
+		eg.Go(func() error {
+			err := s.fetchChunk(offset)
+			if err != nil {
+				log.CtxWarningf(s.ctx, "COWStore eager fetch chunk failed with: %s", err)
+			}
+			return nil
+		})
 	}
 }
 

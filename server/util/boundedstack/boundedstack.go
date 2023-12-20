@@ -1,6 +1,7 @@
 package boundedstack
 
 import (
+	"context"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -10,35 +11,24 @@ import (
 // of the stack is exceeded, the least recently added item ("bottom") of the
 // stack is removed.
 //
-// Its intended usage is to prioritize the most recently added items for eager
-// chunk fetching.
-//
-// It exposes a channel C which streams a value whenever a value is pushed on
-// the stack.
-//
-// IMPORTANT: after receiving a message from C, make sure to always call Pop.
-// Otherwise, the stack item corresponding to the notification on C may be
-// dropped unnecessarily.
+// An example use case for a BoundedStack is eager data fetching, where data
+// is fetched purely as an optimization, and more recent fetches should replace
+// older ones when there is a high request volume but limited worker capacity.
 //
 // Example code for a goroutine that processes the latest items pushed to the
 // stack:
 //
-//	for range stack.C {
-//		val, ok := stack.Pop()
-//		if !ok {
-//			// A receive from C normally guarantees that a value is ready,
-//			// but it's best to always check `ok` when popping from the stack.
-//			continue
+//	for {
+//		val, err := stack.Recv(ctx)
+//		if err != nil {
+//			break // ctx was canceled
 //		}
 //		// Do something with val...
 //	}
 type BoundedStack[T any] struct {
-	// C is a notification channel which allows goroutines to listen for values
-	// being pushed to the stack.
-	//
-	// After a goroutine receives from C, it must call Pop - otherwise the stack
-	// item corresponding to the notification on C may be dropped unnecessarily.
-	C chan struct{}
+	// recvNotify is a channel used to wake up any goroutines in Recv whenever a
+	// value is pushed to the stack.
+	recvNotify chan struct{}
 
 	mu     sync.Mutex
 	buffer []T
@@ -51,8 +41,8 @@ func New[T any](capacity int) (*BoundedStack[T], error) {
 		return nil, status.InvalidArgumentError("bounded stack capacity must be > 0")
 	}
 	return &BoundedStack[T]{
-		C:      make(chan struct{}, capacity),
-		buffer: make([]T, capacity),
+		recvNotify: make(chan struct{}, capacity),
+		buffer:     make([]T, capacity),
 	}, nil
 }
 
@@ -62,10 +52,33 @@ func (s *BoundedStack[T]) Push(item T) {
 	s.push(item)
 	// Notify the channel that a new item was pushed.
 	select {
-	case s.C <- struct{}{}:
+	case s.recvNotify <- struct{}{}:
 	default:
 		// If the channel buffer is full then it just means that the goroutines
 		// processing values from this stack aren't keeping up; this is fine.
+	}
+}
+
+// Recv blocks until an item is available, then pops from the top of the stack.
+// If the returned error is non-nil then it will be equal to ctx.Err().
+func (s *BoundedStack[T]) Recv(ctx context.Context) (item T, err error) {
+	for {
+		select {
+		case <-ctx.Done():
+			var zero T
+			return zero, ctx.Err()
+		case <-s.recvNotify:
+			item, ok := s.pop()
+			if !ok {
+				// This can potentially happen if more pushes happened after the
+				// recv call and then other goroutines woke up and consumed the
+				// items that were pushed before we got a chance to call pop().
+				// This is fine (and is probably rare in practice), so for now
+				// just retry.
+				continue
+			}
+			return item, nil
+		}
 	}
 }
 
@@ -77,10 +90,10 @@ func (s *BoundedStack[T]) push(item T) {
 	s.size = min(s.size+1, len(s.buffer))
 }
 
-// Pop returns the top element of the stack. The second return value indicates
+// pop returns the top element of the stack. The second return value indicates
 // whether the returned item is valid; it will be false if and only if the stack
 // was empty.
-func (c *BoundedStack[T]) Pop() (item T, ok bool) {
+func (c *BoundedStack[T]) pop() (item T, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.size == 0 {
