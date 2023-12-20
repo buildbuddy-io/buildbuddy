@@ -1395,7 +1395,7 @@ func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, client *githu
 		return nil
 	})
 	eg.Go(func() error {
-		u, err := a.cachedUser(ctx, client)
+		u, err := a.cachedUser(gCtx, client)
 		if err != nil {
 			return err
 		}
@@ -1507,16 +1507,20 @@ func (a *GitHubApp) cachedReviews(ctx context.Context, client *github.Client, ow
 	return pr.(*[]*github.PullRequestReview), err
 }
 
-func (a *GitHubApp) cached(ctx context.Context, key string, v any, exp time.Duration, fn func() (any, any, error)) (any, error) {
-	tu, err := a.env.GetUserDB().GetUser(ctx)
+type fetchFunction func() (any, any, error)
+
+func (a *GitHubApp) cached(ctx context.Context, key string, v any, exp time.Duration, fetch fetchFunction) (any, error) {
+	if a.env.GetDefaultRedisClient() == nil {
+		pr, _, err := fetch()
+		return pr, err
+	}
+	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	key = fmt.Sprintf("githubapp/v0/%s/%s", tu.UserID, key)
-	val, err := a.env.GetDefaultRedisClient().Get(ctx, key).Result()
-	if err == nil {
-		err := json.Unmarshal([]byte(val), &v)
-		if err == nil {
+	key = fmt.Sprintf("githubapp/v0/%s/%s", u.GetUserID(), key)
+	if cachedVal, err := a.env.GetDefaultRedisClient().Get(ctx, key).Result(); err == nil {
+		if err := json.Unmarshal([]byte(cachedVal), &v); err == nil {
 			log.Debugf("got cached github result for key: %s", key)
 			return v, nil
 		} else {
@@ -1524,7 +1528,7 @@ func (a *GitHubApp) cached(ctx context.Context, key string, v any, exp time.Dura
 		}
 	}
 	log.Debugf("making github request for key: %s", key)
-	pr, _, err := fn()
+	pr, _, err := fetch()
 	if err != nil {
 		return nil, err
 	}
