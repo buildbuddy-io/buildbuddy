@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
@@ -34,6 +35,7 @@ import (
 	"github.com/golang-jwt/jwt"
 	"github.com/google/go-github/v43/github"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/errgroup"
 
 	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
@@ -1341,4 +1343,143 @@ func (a *GitHubApp) CreateGithubRef(ctx context.Context, req *ghpb.CreateGithubR
 	}
 
 	return &ghpb.CreateGithubRefResponse{}, nil
+}
+
+func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithubPullRequestRequest) (*ghpb.GetGithubPullRequestResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	incoming, outgoing, user, err := a.getIncomingAndOutgoingPRs(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	allIssues := append(outgoing.Issues, incoming.Issues...)
+	prs, err := a.populatePRMetadata(ctx, client, allIssues, user)
+	if err != nil {
+		return nil, err
+	}
+	resp := &ghpb.GetGithubPullRequestResponse{
+		Outgoing: []*ghpb.PullRequest{},
+		Incoming: []*ghpb.PullRequest{},
+	}
+	for _, i := range outgoing.Issues {
+		resp.Outgoing = append(resp.Outgoing, prs[i.GetNumber()])
+	}
+	for _, i := range incoming.Issues {
+		resp.Incoming = append(resp.Incoming, prs[i.GetNumber()])
+	}
+	return resp, nil
+}
+
+func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, client *github.Client) (*github.IssuesSearchResult, *github.IssuesSearchResult, *github.User, error) {
+	var incoming *github.IssuesSearchResult
+	var outgoing *github.IssuesSearchResult
+	var user *github.User
+	searchGroup, searchContext := errgroup.WithContext(ctx)
+	searchGroup.Go(func() error {
+		r, _, err := client.Search.Issues(searchContext, "is:open is:pr user-review-requested:@me archived:false draft:false", &github.SearchOptions{ListOptions: github.ListOptions{PerPage: 100}})
+		if err != nil {
+			return err
+		}
+		incoming = r
+		return nil
+	})
+	searchGroup.Go(func() error {
+		r, _, err := client.Search.Issues(searchContext, "is:open is:pr author:@me -review:none archived:false draft:false", &github.SearchOptions{ListOptions: github.ListOptions{PerPage: 100}})
+		if err != nil {
+			return err
+		}
+		outgoing = r
+		return nil
+	})
+	searchGroup.Go(func() error {
+		u, _, err := client.Users.Get(ctx, "")
+		if err != nil {
+			return err
+		}
+		user = u
+		return nil
+	})
+	err := searchGroup.Wait()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return incoming, outgoing, user, nil
+}
+
+func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Client, prIssues []*github.Issue, currentUser *github.User) (map[int]*ghpb.PullRequest, error) {
+	prsMu := &sync.Mutex{}
+	prs := make(map[int]*ghpb.PullRequest, len(prIssues))
+	metadataGroup, metadataContext := errgroup.WithContext(ctx)
+	for _, i := range prIssues {
+		i := i
+		prsMu.Lock()
+		prs[i.GetNumber()] = issueToPullRequestProto(i)
+		prsMu.Unlock()
+		urlParts := strings.Split(*i.URL, "/")
+
+		metadataGroup.Go(func() error {
+			pr, _, err := client.PullRequests.Get(metadataContext, urlParts[4], urlParts[5], i.GetNumber())
+			if err != nil {
+				return err
+			}
+			prsMu.Lock()
+			p := prs[i.GetNumber()]
+			p.Additions = int64(pr.GetAdditions())
+			p.Deletions = int64(pr.GetDeletions())
+			p.ChangedFiles = int64(pr.GetChangedFiles())
+			for _, r := range pr.RequestedReviewers {
+				review, ok := prs[i.GetNumber()].Reviews[r.GetLogin()]
+				if !ok {
+					review = &ghpb.Review{}
+					prs[i.GetNumber()].Reviews[r.GetLogin()] = review
+				}
+				review.Requested = true
+				if r.GetLogin() == currentUser.GetLogin() {
+					review.IsCurrentUser = true
+				}
+			}
+			prsMu.Unlock()
+			return nil
+		})
+		metadataGroup.Go(func() error {
+			reviews, _, err := client.PullRequests.ListReviews(metadataContext, urlParts[4], urlParts[5], i.GetNumber(), &github.ListOptions{PerPage: 100})
+			if err != nil {
+				return err
+			}
+			for _, r := range reviews {
+				prsMu.Lock()
+				review, ok := prs[i.GetNumber()].Reviews[r.GetUser().GetLogin()]
+				if !ok {
+					review = &ghpb.Review{}
+					prs[i.GetNumber()].Reviews[r.GetUser().GetLogin()] = review
+				}
+				review.Status = strings.ToLower(r.GetState())
+				review.SubmittedAtUsec = r.GetSubmittedAt().UnixMicro()
+				if r.GetUser().GetLogin() == currentUser.GetLogin() {
+					review.IsCurrentUser = true
+				}
+				prsMu.Unlock()
+			}
+			return nil
+		})
+	}
+	err := metadataGroup.Wait()
+	if err != nil {
+		return nil, err
+	}
+	return prs, nil
+}
+
+func issueToPullRequestProto(i *github.Issue) *ghpb.PullRequest {
+	return &ghpb.PullRequest{
+		Number:        uint64(i.GetNumber()),
+		Title:         i.GetTitle(),
+		Body:          i.GetBody(),
+		Author:        i.GetUser().GetLogin(),
+		Url:           i.GetHTMLURL(),
+		UpdatedAtUsec: i.GetUpdatedAt().UnixMicro(),
+		Reviews:       map[string]*ghpb.Review{},
+	}
 }
