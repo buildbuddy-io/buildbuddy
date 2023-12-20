@@ -37,7 +37,7 @@ go_test(
     embed = [":byte_stream_client"],
     deps = [
         "//proto:zip_go_proto",
+        "//server/util/proto",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
-        "@org_golang_google_protobuf//proto",
     ],
 )

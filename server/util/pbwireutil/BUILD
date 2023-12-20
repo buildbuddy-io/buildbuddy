@@ -16,8 +16,8 @@ go_test(
     deps = [
         ":pbwireutil",
         "//proto:remote_execution_go_proto",
+        "//server/util/proto",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

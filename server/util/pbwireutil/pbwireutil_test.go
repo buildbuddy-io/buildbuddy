@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
@@ -16,7 +16,7 @@ func TestWireUtils(t *testing.T) {
 		Worker:          "foo",
 		QueuedTimestamp: &tspb.Timestamp{Seconds: 7},
 	}
-	b, err := proto.Marshal(msg)
+	b, err := proto.MarshalOld(msg)
 	require.NoError(t, err)
 
 	const (

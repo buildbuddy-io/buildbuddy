@@ -69,6 +69,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testport",
         "//server/util/prefix",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_google_go_containerregistry//pkg/crane",
         "@com_github_google_go_containerregistry//pkg/name",
@@ -80,7 +81,6 @@ go_test(
         "@com_github_google_go_containerregistry//pkg/v1/stream",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 

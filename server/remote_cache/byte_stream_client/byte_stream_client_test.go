@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
-	"google.golang.org/protobuf/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 )

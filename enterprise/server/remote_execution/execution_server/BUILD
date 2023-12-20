@@ -68,11 +68,11 @@ go_test(
         "//server/util/bazel_request",
         "//server/util/db",
         "//server/util/prefix",
+        "//server/util/proto",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
-        "@org_golang_google_protobuf//proto",
     ],
 )
