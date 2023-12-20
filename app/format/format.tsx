@@ -221,6 +221,10 @@ export function formatDate(date: Date): string {
   return formatTimestampMillis(date.getTime());
 }
 
+export function formatDateFromUsec(timestamp: number | Long) {
+  return `${moment(+timestamp / 1000).format("MMMM Do")}`;
+}
+
 const DATE_RANGE_SEPARATOR = "\u2013";
 
 function usingSubDayTimeRange(startDate: Date, endDate?: Date): boolean {
@@ -375,4 +379,5 @@ export default {
   formatDateRange,
   colorHash,
   enumLabel,
+  formatDateFromUsec,
 };

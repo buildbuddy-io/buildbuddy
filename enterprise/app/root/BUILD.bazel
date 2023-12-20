@@ -39,6 +39,7 @@ ts_library(
         "//enterprise/app/org:join_org",
         "//enterprise/app/org:org_access_denied",
         "//enterprise/app/repo",
+        "//enterprise/app/review",
         "//enterprise/app/settings",
         "//enterprise/app/shortcuts",
         "//enterprise/app/sidebar",

@@ -54,6 +54,7 @@ genrule(
         "//enterprise/app/repo:repo.css",
         "//enterprise/app/secrets:secrets.css",
         "//enterprise/app/workflows:workflows.css",
+        "//enterprise/app/review:review.css",
         "//enterprise/app/sidebar:sidebar.css",
         "//enterprise/app/tap:tap.css",
         "//enterprise/app/trends:trends.css",

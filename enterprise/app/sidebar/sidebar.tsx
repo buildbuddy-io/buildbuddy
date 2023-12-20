@@ -17,6 +17,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Fingerprint,
+  MessageCircle,
 } from "lucide-react";
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
@@ -93,6 +94,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
 
   isCodeSelected() {
     return this.props.path === "/code/";
+  }
+
+  isReviewsSelected() {
+    return this.props.path === "/reviews/";
   }
 
   isSetupSelected() {
@@ -178,6 +183,12 @@ export default class SidebarComponent extends React.Component<Props, State> {
             <SidebarLink selected={this.isCodeSelected()} href={Path.codePath} title="Code">
               <Code className="icon" />
               <span className="sidebar-item-text">Code</span>
+            </SidebarLink>
+          )}
+          {capabilities.config.codeReviewEnabled && (
+            <SidebarLink selected={this.isReviewsSelected()} href={Path.reviewsPath} title="Review">
+              <MessageCircle className="icon" />
+              <span className="sidebar-item-text">Reviews</span>
             </SidebarLink>
           )}
           <SidebarLink selected={this.isSetupSelected()} href={Path.setupPath} title="Quickstart">

@@ -551,6 +551,7 @@ export class Path {
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";
   static codePath = "/code/";
+  static reviewsPath = "/reviews/";
 }
 
 /** Returns the longest path value in `Path` matching the given URL path. */

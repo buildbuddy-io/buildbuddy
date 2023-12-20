@@ -48,6 +48,7 @@ import { copyToClipboard } from "../../../app/util/clipboard";
 import alert_service from "../../../app/alert/alert_service";
 import InvocationModel from "../../../app/invocation/invocation_model";
 import PickerComponent from "../../../app/picker/picker";
+import CodeReviewComponent from "../review/review";
 
 interface State {
   user?: User;
@@ -224,6 +225,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let workflows = this.state.user && this.state.path.startsWith("/workflows");
     let code = this.state.user && this.state.path.startsWith("/code");
     let repo = this.state.path.startsWith("/repo");
+    let review = this.state.user && this.state.path.startsWith("/reviews");
     let fallback =
       !code &&
       !workflows &&
@@ -243,7 +245,8 @@ export default class EnterpriseRootComponent extends React.Component {
       !historyBranch &&
       !historyCommit &&
       !auditLogs &&
-      !repo;
+      !repo &&
+      !review;
 
     let setup =
       (this.state.path.startsWith("/docs/setup") && (this.state.user || capabilities.anonymous)) ||
@@ -378,6 +381,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                   {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}
+                  {review && <CodeReviewComponent user={this.state.user} />}
                   {code && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeComponent
