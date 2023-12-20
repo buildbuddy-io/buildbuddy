@@ -54,6 +54,7 @@ jobs:
       - name: Build and Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USE_BAZEL_VERSION: 6.4.0
         run: |
           export DEVELOPER_DIR=/Applications/Xcode_12.4.app/Contents/Developer
           "${GITHUB_WORKSPACE}/bin/bazel" build --config=release-mac --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
