@@ -388,6 +388,45 @@ func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
 	require.Equal(t, float64(0), n)
 }
 
+func TestBoundedStack_FillAndDrain(t *testing.T) {
+	s, err := copy_on_write.NewBoundedStack[int](2 /*=capacity*/)
+	require.NoError(t, err)
+
+	s.Push(1)
+	s.Push(2)
+	<-s.C
+	n, ok := s.Pop()
+	require.True(t, ok)
+	require.Equal(t, 2, n)
+	<-s.C
+	n, ok = s.Pop()
+	require.True(t, ok)
+	require.Equal(t, 1, n)
+
+	_, ok = s.Pop()
+	require.False(t, ok)
+}
+
+func TestBoundedStack_OverfillAndDrain(t *testing.T) {
+	s, err := copy_on_write.NewBoundedStack[int](2 /*=capacity*/)
+	require.NoError(t, err)
+
+	s.Push(1)
+	s.Push(2)
+	s.Push(3) // should evict 1
+	<-s.C
+	n, ok := s.Pop()
+	require.True(t, ok)
+	require.Equal(t, 3, n)
+	<-s.C
+	n, ok = s.Pop()
+	require.True(t, ok)
+	require.Equal(t, 2, n)
+
+	_, ok = s.Pop()
+	require.False(t, ok)
+}
+
 func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 	flags.Set(b, "app.log_level", "error")
 	log.Configure()
