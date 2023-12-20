@@ -1,0 +1,91 @@
+.reviews {
+  padding: 0 32px 32px 32px;
+}
+
+.reviews .reviews-title {
+  font-weight: 700;
+  padding: 32px 0 8px 0;
+  font-size: 1.2em;
+  white-space: nowrap;
+  width: 0px;
+}
+
+.reviews .change-count {
+  margin-left: 8px;
+  font-weight: 500;
+  font-size: 0.8em;
+}
+
+.reviews .reviews-section {
+  margin-bottom: 16px;
+}
+
+.reviews .pr-list {
+  display: table;
+}
+
+.reviews .pr {
+  display: table-row;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.reviews .pr:nth-child(odd) > div {
+  background-color: #f0f0f0;
+}
+.reviews .pr > div:first-child {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+  padding-left: 16px;
+}
+
+.reviews .pr > div:last-child {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+  padding-right: 16px;
+}
+
+.reviews .pr-header {
+  color: #666;
+}
+
+.reviews .pr > div {
+  display: table-cell;
+  padding: 6px 8px;
+  vertical-align: middle;
+}
+
+.reviews .pr-status {
+  text-transform: capitalize;
+}
+
+.reviews .pr-review-approved {
+  color: #4caf50;
+}
+
+.reviews .pr-review-requested {
+  font-weight: 600;
+}
+
+.reviews .pr-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reviews .pr-status:before {
+  display: block;
+  content: " ";
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.reviews .pr-status-pending:before {
+  background-color: #ffc107;
+}
+
+.reviews .pr-status-approved:before {
+  background-color: #4caf50;
+}

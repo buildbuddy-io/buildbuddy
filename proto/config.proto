@@ -142,6 +142,9 @@ message FrontendConfig {
 
   // Whether the server supports streaming http requests from the web UI.
   bool streaming_http_enabled = 47;
+
+  // Whether the code review UI is enabled.
+  bool code_review_enabled = 48;
 }
 
 message Region {
