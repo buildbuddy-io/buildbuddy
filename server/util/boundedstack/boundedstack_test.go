@@ -22,6 +22,9 @@ func TestBoundedStack_FillAndDrain(t *testing.T) {
 	n, err = s.Recv(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
+
+	_, ok := s.Pop()
+	require.False(t, ok, "stack should be empty")
 }
 
 func TestBoundedStack_OverfillAndDrain(t *testing.T) {
@@ -39,4 +42,7 @@ func TestBoundedStack_OverfillAndDrain(t *testing.T) {
 	n, err = s.Recv(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 2, n)
+
+	_, ok := s.Pop()
+	require.False(t, ok, "stack should be empty")
 }

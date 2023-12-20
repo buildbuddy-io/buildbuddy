@@ -59,6 +59,30 @@ func (s *BoundedStack[T]) Push(item T) {
 	}
 }
 
+// Pop returns the top element of the stack. The second return value indicates
+// whether the returned item is valid; it will be false if and only if the stack
+// was empty.
+//
+// Pop does not block. Recv can be used to block until an item is available.
+func (c *BoundedStack[T]) Pop() (item T, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.size == 0 {
+		var zero T
+		return zero, false
+	}
+	item = c.buffer[c.top]
+	// Zero out the item from the buffer to avoid keeping unnecessary references
+	// to any values transitively referenced by T (so that they can be
+	// garbage-collected).
+	var zero T
+	c.buffer[c.top] = zero
+
+	c.top = (c.top - 1 + len(c.buffer)) % len(c.buffer)
+	c.size--
+	return item, true
+}
+
 // Recv blocks until an item is available, then pops from the top of the stack.
 // If the returned error is non-nil then it will be equal to ctx.Err().
 func (s *BoundedStack[T]) Recv(ctx context.Context) (item T, err error) {
@@ -68,7 +92,7 @@ func (s *BoundedStack[T]) Recv(ctx context.Context) (item T, err error) {
 			var zero T
 			return zero, ctx.Err()
 		case <-s.recvNotify:
-			item, ok := s.pop()
+			item, ok := s.Pop()
 			if !ok {
 				// This can potentially happen if more pushes happened after the
 				// recv call and then other goroutines woke up and consumed the
@@ -88,26 +112,4 @@ func (s *BoundedStack[T]) push(item T) {
 	s.top = (s.top + 1) % len(s.buffer)
 	s.buffer[s.top] = item
 	s.size = min(s.size+1, len(s.buffer))
-}
-
-// pop returns the top element of the stack. The second return value indicates
-// whether the returned item is valid; it will be false if and only if the stack
-// was empty.
-func (c *BoundedStack[T]) pop() (item T, ok bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.size == 0 {
-		var zero T
-		return zero, false
-	}
-	item = c.buffer[c.top]
-	// Zero out the item from the buffer to avoid keeping unnecessary references
-	// to any values transitively referenced by T (so that they can be
-	// garbage-collected).
-	var zero T
-	c.buffer[c.top] = zero
-
-	c.top = (c.top - 1 + len(c.buffer)) % len(c.buffer)
-	c.size--
-	return item, true
 }
