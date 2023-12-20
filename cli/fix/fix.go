@@ -130,7 +130,7 @@ func walk() error {
 	for l := range foundLanguages {
 		for _, d := range l.Deps() {
 			log.Debugf("Adding %s", d)
-			_, err := add.HandleAdd([]string{"add", d})
+			_, err := add.HandleAdd([]string{d})
 			if err != nil {
 				log.Debugf("Failed adding %s: %s", d, err)
 			}

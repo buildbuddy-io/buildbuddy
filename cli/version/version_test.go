@@ -19,7 +19,7 @@ func TestHandleVersion(t *testing.T) {
 	require.NoError(t, err)
 	os.Stdout = w
 
-	exitCode, err := version.HandleVersion([]string{"version", "--cli"})
+	exitCode, err := version.HandleVersion([]string{"--cli"})
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 
