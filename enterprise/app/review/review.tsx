@@ -1,7 +1,6 @@
 import Long from "long";
 import React, { ReactNode } from "react";
 import { User } from "../../../app/auth/user";
-import Spinner from "../../../app/components/spinner/spinner";
 import format from "../../../app/format/format";
 import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
