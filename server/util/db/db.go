@@ -1002,6 +1002,10 @@ func (r *rawQuery) Scan(dest interface{}) error {
 	return r.db.Raw(r.sql, r.values...).Scan(dest).Error
 }
 
+func (r *rawQuery) DB() *gorm.DB {
+	return r.db
+}
+
 // TODO(vadim): check if there are any uses cases where ScanEach can't be used directly
 func (r *rawQuery) IterateRaw(fn func(ctx context.Context, row *sql.Rows) error) error {
 	rows, err := r.db.Raw(r.sql, r.values...).Rows()
@@ -1092,6 +1096,10 @@ func TableSchema(db *DB, model any) (*schema.Schema, error) {
 	return stmt.Schema, nil
 }
 
+type gormGetter interface {
+	DB() *gorm.DB
+}
+
 // ScanEach executes the given query and iterates over the result,
 // automatically scanning each row into a struct of the specified type.
 //
@@ -1104,7 +1112,7 @@ func TableSchema(db *DB, model any) (*schema.Schema, error) {
 func ScanEach[T any](rq interfaces.DBRawQuery, fn func(ctx context.Context, val *T) error) error {
 	return rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		var val T
-		if err := rq.(*rawQuery).db.ScanRows(row, &val); err != nil {
+		if err := rq.(gormGetter).DB().ScanRows(row, &val); err != nil {
 			return err
 		}
 		if err := fn(ctx, &val); err != nil {
@@ -1126,7 +1134,7 @@ func ScanAll[T any](rq interfaces.DBRawQuery, t *T) ([]*T, error) {
 	var vals []*T
 	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		var val T
-		if err := rq.(*rawQuery).db.ScanRows(row, &val); err != nil {
+		if err := rq.(gormGetter).DB().ScanRows(row, &val); err != nil {
 			return err
 		}
 		vals = append(vals, &val)

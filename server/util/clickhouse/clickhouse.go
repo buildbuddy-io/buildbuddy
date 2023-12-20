@@ -115,6 +115,10 @@ func (r *rawQuery) IterateRaw(fn func(ctx context.Context, row *sql.Rows) error)
 	return nil
 }
 
+func (r *rawQuery) DB() *gorm.DB {
+	return r.db
+}
+
 func (q *query) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
 	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
 	return &rawQuery{db: db, ctx: q.ctx, sql: sql, values: values}
