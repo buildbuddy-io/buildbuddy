@@ -1126,7 +1126,6 @@ svg.invocation-query-graph .nodes rect {
   padding: 16px;
 
   border-radius: 4px;
-  border: 1px solid #eee;
   border-left: 4px solid var(--status-color);
 
   display: flex;
