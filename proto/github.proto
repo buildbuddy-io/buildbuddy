@@ -451,3 +451,33 @@ message CreateGithubRefRequest {
 message CreateGithubRefResponse {
   context.ResponseContext response_context = 1;
 }
+
+message PullRequest {
+  uint64 number = 1;
+  string title = 2;
+  string body = 3;
+  string author = 4;
+  string url = 5;
+  map<string, Review> reviews = 6;
+  int64 updated_at_usec = 7;
+  int64 additions = 8;
+  int64 deletions = 9;
+  int64 changed_files = 10;
+}
+
+message Review {
+  string status = 1;
+  int64 submitted_at_usec = 2;
+  bool requested = 3;
+  bool isCurrentUser = 4;
+}
+
+message GetGithubPullRequestRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetGithubPullRequestResponse {
+  context.ResponseContext response_context = 1;
+  repeated PullRequest outgoing = 3;
+  repeated PullRequest incoming = 4;
+}
