@@ -41,36 +41,44 @@ export default class CodeReviewComponent extends React.Component<CodeReviewCompo
                 {needsAttention.length == 1 ? "1 Change" : `${needsAttention.length} Changes`}
               </span>
             </div>
-            {this.prHeader()}
+            {this.state.response && Boolean(needsAttention.length) && this.prHeader()}
             {needsAttention.map((pr) => (
               <PR pr={pr} />
             ))}
+            {!this.state.response && <div className="empty-state">Loading...</div>}
+            {this.state.response?.outgoing.length === 0 && (
+              <div className="empty-state">No changes need your attention, relax!</div>
+            )}
             {needsAttention.length % 2 != 0 && <div className="pr-spacer"></div>}
             <div className="reviews-title">
               Incoming reviews{" "}
               <span className="change-count">
                 {this.state.response?.incoming.length == 1
                   ? "1 Change"
-                  : `${this.state.response?.incoming.length} Changes`}
+                  : `${this.state.response?.incoming.length || 0} Changes`}
               </span>
             </div>
-            {this.prHeader()}
+            {Boolean(this.state.response?.incoming.length) && this.prHeader()}
             {this.state.response?.incoming.map((pr) => (
               <PR pr={pr} />
             ))}
+            {!this.state.response && <div className="empty-state">Loading...</div>}
+            {this.state.response?.incoming.length === 0 && <div className="empty-state">No incoming changes!</div>}
             {this.state.response && this.state.response.incoming.length % 2 != 0 && <div className="pr-spacer"></div>}
             <div className="reviews-title">
               Outgoing reviews{" "}
               <span className="change-count">
                 {this.state.response?.outgoing.length == 1
                   ? "1 Change"
-                  : `${this.state.response?.outgoing.length} Changes`}
+                  : `${this.state.response?.outgoing.length || 0} Changes`}
               </span>
             </div>
-            {this.prHeader()}
+            {Boolean(this.state.response?.outgoing.length) && this.prHeader()}
             {this.state.response?.outgoing.map((pr) => (
               <PR pr={pr} />
             ))}
+            {!this.state.response && <div className="empty-state">Loading...</div>}
+            {this.state.response?.outgoing.length === 0 && <div className="empty-state">No outgoing changes!</div>}
           </div>
         </div>
       </div>
@@ -146,7 +154,8 @@ interface PRProps {
 class PR extends React.Component<PRProps> {
   render() {
     let reviewers: React.ReactNode[] = [];
-    let status = "pending";
+    let unresolved = false;
+    let approved = false;
     for (let [author, review] of Object.entries(this.props.pr.reviews).sort((a, b) => a[0].localeCompare(b[0]))) {
       if (author == this.props.pr.author) continue;
       reviewers.push(
@@ -155,8 +164,18 @@ class PR extends React.Component<PRProps> {
         </span>
       );
       if (review.status == "approved") {
-        status = review.status;
+        approved = true;
       }
+      if (review.status == "changes_requested") {
+        unresolved = true;
+      }
+    }
+
+    let status = "pending";
+    if (unresolved) {
+      status = "unresolved";
+    } else if (approved) {
+      status = "approved";
     }
 
     return (

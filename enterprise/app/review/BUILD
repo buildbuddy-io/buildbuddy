@@ -14,6 +14,7 @@ ts_library(
         "@npm//@types/react",
         "@npm//long",
         "@npm//react",
+        "@npm//tslib",
     ],
 )
 
