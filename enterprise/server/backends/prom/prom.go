@@ -14,13 +14,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/proto"
 
 	mpb "github.com/buildbuddy-io/buildbuddy/proto/metrics"
 	promapi "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -463,7 +463,8 @@ func (q *promQuerier) setMetrics(ctx context.Context, groupID string, metricFami
 		return nil
 	}
 	key := getExportedMetricsKey(groupID)
-	b, err := proto.Marshal(metricFamilies)
+	// MarshalVT() is slower than regular Marshal for proto mpb.Metrics.
+	b, err := proto.MarshalOld(metricFamilies)
 	if err != nil {
 		return status.InternalErrorf("failed to marshal json: %s", err)
 	}
