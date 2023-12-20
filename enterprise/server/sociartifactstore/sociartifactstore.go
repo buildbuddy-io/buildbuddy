@@ -120,12 +120,6 @@ func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platfo
 		return ctrname.Digest{}, v1.Hash{}, err
 	}
 
-	// Check whether the supplied credentials are sufficient to access the
-	// remote image.
-	if err := oci.Authorized(ctx, targetImg, image, creds); err != nil {
-		return ctrname.Digest{}, v1.Hash{}, err
-	}
-
 	manifest, err := targetImg.Manifest()
 	if err != nil {
 		return ctrname.Digest{}, v1.Hash{}, err

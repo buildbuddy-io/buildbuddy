@@ -2,7 +2,6 @@ package oci_test
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"regexp"
 	"runtime"
@@ -179,6 +178,38 @@ func TestResolve_Unauthorized(t *testing.T) {
 	require.True(t, status.IsPermissionDeniedError(err))
 }
 
+func TestResolve_LayersUnauthorized(t *testing.T) {
+	// Allow HEAD layer requests during image upload.
+	authorized := true
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == "HEAD" {
+				matches, err := regexp.MatchString("/v2/.*/blobs/.*", r.URL.Path)
+				require.NoError(t, err)
+				if matches && !authorized {
+					w.WriteHeader(401)
+					return false
+				}
+			}
+			return true
+		},
+	})
+	imageName := registry.PushRandomImage(t)
+
+	// Error-out HEAD layer requests and verify that Resolve() fails even when
+	// the manifest is accessible.
+	authorized = false
+	_, err := oci.Resolve(
+		context.Background(),
+		imageName,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{})
+	require.True(t, status.IsPermissionDeniedError(err))
+}
+
 func TestResolve_Image(t *testing.T) {
 	registry := testregistry.Run(t, testregistry.Opts{})
 	imageName := registry.PushRandomImage(t)
@@ -191,51 +222,4 @@ func TestResolve_Image(t *testing.T) {
 		},
 		oci.Credentials{})
 	require.NoError(t, err)
-}
-
-func TestAuthorized(t *testing.T) {
-	registry := testregistry.Run(t, testregistry.Opts{})
-	imageName := registry.PushRandomImage(t)
-	ctx := context.Background()
-	image, err := oci.Resolve(
-		ctx,
-		imageName,
-		&rgpb.Platform{
-			Arch: runtime.GOARCH,
-			Os:   runtime.GOOS,
-		},
-		oci.Credentials{})
-	require.NoError(t, err)
-	require.NoError(t, oci.Authorized(ctx, image, imageName, oci.Credentials{}))
-}
-
-func TestAuthorized_Unauthorized(t *testing.T) {
-	authorized := true
-	registry := testregistry.Run(t, testregistry.Opts{HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-		if r.Method == "HEAD" {
-			matches, err := regexp.MatchString("/v2/.*/blobs/sha256:.*", r.URL.Path)
-			require.NoError(t, err)
-			if matches && !authorized {
-				fmt.Println("returning 401")
-				w.WriteHeader(401)
-				return false
-			}
-		}
-		return true
-	}})
-
-	imageName := registry.PushRandomImage(t)
-	authorized = false
-	ctx := context.Background()
-	image, err := oci.Resolve(
-		ctx,
-		imageName,
-		&rgpb.Platform{
-			Arch: runtime.GOARCH,
-			Os:   runtime.GOOS,
-		},
-		oci.Credentials{})
-	require.NoError(t, err)
-	err = oci.Authorized(ctx, image, imageName, oci.Credentials{})
-	require.True(t, status.IsPermissionDeniedError(err))
 }

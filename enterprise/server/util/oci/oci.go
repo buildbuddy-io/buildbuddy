@@ -144,6 +144,7 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
+	var image v1.Image
 	switch remoteDesc.MediaType {
 	// This is an "image index", a meta-manifest that contains a list of
 	// {platform props, manifest hash} properties to allow client to decide
@@ -167,19 +168,24 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 		if len(imgs) > 1 {
 			return nil, status.NotFoundErrorf("found multiple matching images in image index")
 		}
-		return imgs[0], nil
+		image = imgs[0]
 	case types.OCIManifestSchema1, types.DockerManifestSchema2:
 		img, err := remoteDesc.Image()
 		if err != nil {
 			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
 		}
-		return img, nil
+		image = img
 	default:
 		return nil, status.UnknownErrorf("descriptor has unknown media type %q", remoteDesc.MediaType)
 	}
+
+	if err := authorize(ctx, image, imageName, credentials); err != nil {
+		return nil, err
+	}
+	return image, nil
 }
 
-func Authorized(ctx context.Context, image v1.Image, imageName string, credentials Credentials) error {
+func authorize(ctx context.Context, image v1.Image, imageName string, credentials Credentials) error {
 	imageRef, err := ctrname.ParseReference(imageName)
 	if err != nil {
 		return err
