@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/boundedstack"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -125,7 +126,7 @@ type COWStore struct {
 	// Chunk offsets to be eagerly fetched. This is using a bounded stack data
 	// structure so that if the buffer is full, a new item can still be appended,
 	// evicting the least recently added chunk.
-	eagerFetchStack *BoundedStack[int64]
+	eagerFetchStack *boundedstack.BoundedStack[int64]
 	eagerFetchEg    *errgroup.Group
 	quitChan        chan struct{}
 }
@@ -142,7 +143,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 	for _, c := range chunks {
 		chunkMap[c.Offset] = c
 	}
-	eagerFetchStack, err := NewBoundedStack[int64](eagerFetchBufferCapacity)
+	eagerFetchStack, err := boundedstack.New[int64](eagerFetchBufferCapacity)
 	if err != nil {
 		return nil, err
 	}
@@ -1352,94 +1353,4 @@ func checkBounds(opName string, storeSize int64, p []byte, off int64) error {
 		return status.InvalidArgumentErrorf("invalid %s at offset 0x%x, length 0x%x", opName, off, len(p))
 	}
 	return nil
-}
-
-// BoundedStack is a concurrency-safe stack with bounded size: when the
-// capacity of the stack is exceeded, the least recently added item ("bottom")
-// of the stack is removed.
-//
-// Its intended usage is to prioritize the most recently added items for eager
-// chunk fetching.
-//
-// It exposes a channel C which streams a value whenever a value is pushed on
-// the stack. Example:
-//
-//	for range stack.C {
-//		val, ok := stack.Pop()
-//		if !ok {
-//			// A receive from C normally guarantees that a value is ready,
-//			// but it's best to always check `ok` when popping from the stack.
-//			continue
-//		}
-//		// Do something with val...
-//	}
-type BoundedStack[T any] struct {
-	C chan struct{}
-
-	mu     sync.Mutex
-	buffer []T
-	top    int
-	size   int
-}
-
-func NewBoundedStack[T any](capacity int) (*BoundedStack[T], error) {
-	if capacity <= 0 {
-		return nil, status.InvalidArgumentError("bounded stack capacity must be > 0")
-	}
-	return &BoundedStack[T]{
-		C:      make(chan struct{}, 1),
-		buffer: make([]T, capacity),
-	}, nil
-}
-
-// Push adds an item to the top of the stack, evicting the bottom item of the
-// stack if the stack is full.
-func (s *BoundedStack[T]) Push(item T) {
-	s.push(item)
-	// Notify the channel that a new item was pushed.
-	select {
-	case s.C <- struct{}{}:
-	default:
-	}
-}
-
-func (s *BoundedStack[T]) push(item T) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.top = (s.top + 1) % len(s.buffer)
-	s.buffer[s.top] = item
-	s.size = min(s.size+1, len(s.buffer))
-}
-
-// Pop returns the top element of the stack. The second return value indicates
-// whether the returned item is valid; it will be false if and only if the stack
-// was empty.
-func (s *BoundedStack[T]) Pop() (item T, ok bool) {
-	val, newSize, ok := s.pop()
-	if newSize > 0 {
-		// Re-saturate the channel if the stack still has items after popping,
-		// so that another goroutine can pop the next element.
-		select {
-		case s.C <- struct{}{}:
-		default:
-		}
-	}
-	return val, ok
-}
-
-func (c *BoundedStack[T]) pop() (item T, newSize int, ok bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.size == 0 {
-		var zero T
-		return zero, 0, false
-	}
-	item = c.buffer[c.top]
-	// Zero out the item to avoid holding a reference unnecessarily.
-	var zero T
-	c.buffer[c.top] = zero
-
-	c.top = (c.top - 1 + len(c.buffer)) % len(c.buffer)
-	c.size--
-	return item, c.size, true
 }

@@ -14,6 +14,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/resources",
         "//server/util/alert",
+        "//server/util/boundedstack",
         "//server/util/lockmap",
         "//server/util/log",
         "//server/util/lru",
