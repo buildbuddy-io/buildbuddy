@@ -9,6 +9,7 @@ import (
 var Clone = gproto.Clone
 var Size = gproto.Size
 var Merge = gproto.Merge
+var Equal = gproto.Equal
 var MarshalOld = gproto.Marshal
 var UnmarshalOld = gproto.Unmarshal
 
