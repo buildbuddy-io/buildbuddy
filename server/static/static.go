@@ -194,7 +194,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		TraceViewerEnabled:                     *traceViewerEnabled,
 		PopupAuthEnabled:                       *popupAuthEnabled,
 		StreamingHttpEnabled:                   *streamingHTTPEnabled,
-		CodeReviewEnabled: 						*codeReviewEnabled,
+		CodeReviewEnabled:                      *codeReviewEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)
