@@ -12,6 +12,7 @@ var MarshalOld = gproto.Marshal
 var UnmarshalOld = gproto.Unmarshal
 
 type Message = gproto.Message
+type MarshalOptions = gproto.MarshalOptions
 
 type vtprotoMessage interface {
 	MarshalVT() ([]byte, error)
