@@ -1478,7 +1478,10 @@ func (a *GitHubApp) cachedUser(ctx context.Context, client *github.Client) (*git
 	pr, err := a.cached(ctx, key, &github.User{}, time.Hour*24, func() (any, any, error) {
 		return client.Users.Get(ctx, "")
 	})
-	return pr.(*github.User), err
+	if err != nil {
+		return nil, err
+	}
+	return pr.(*github.User), nil
 }
 
 func (a *GitHubApp) cachedSearch(ctx context.Context, client *github.Client, query string) (*github.IssuesSearchResult, error) {
@@ -1486,7 +1489,10 @@ func (a *GitHubApp) cachedSearch(ctx context.Context, client *github.Client, que
 	pr, err := a.cached(ctx, key, &github.IssuesSearchResult{}, time.Second*5, func() (any, any, error) {
 		return client.Search.Issues(ctx, query, &github.SearchOptions{ListOptions: github.ListOptions{PerPage: 100}})
 	})
-	return pr.(*github.IssuesSearchResult), err
+	if err != nil {
+		return nil, err
+	}
+	return pr.(*github.IssuesSearchResult), nil
 }
 
 func (a *GitHubApp) cachedPullRequests(ctx context.Context, client *github.Client, owner, repo string, number int, updatedAt time.Time) (*github.PullRequest, error) {
@@ -1495,7 +1501,10 @@ func (a *GitHubApp) cachedPullRequests(ctx context.Context, client *github.Clien
 	pr, err := a.cached(ctx, key, &github.PullRequest{}, time.Hour*24, func() (any, any, error) {
 		return client.PullRequests.Get(ctx, owner, repo, number)
 	})
-	return pr.(*github.PullRequest), err
+	if err != nil {
+		return nil, err
+	}
+	return pr.(*github.PullRequest), nil
 }
 
 func (a *GitHubApp) cachedReviews(ctx context.Context, client *github.Client, owner, repo string, number int, updatedAt time.Time) (*[]*github.PullRequestReview, error) {
@@ -1504,7 +1513,10 @@ func (a *GitHubApp) cachedReviews(ctx context.Context, client *github.Client, ow
 		rev, res, err := client.PullRequests.ListReviews(ctx, owner, repo, number, &github.ListOptions{PerPage: 100})
 		return &rev, res, err
 	})
-	return pr.(*[]*github.PullRequestReview), err
+	if err != nil {
+		return nil, err
+	}
+	return pr.(*[]*github.PullRequestReview), nil
 }
 
 type fetchFunction func() (any, any, error)
@@ -1518,7 +1530,7 @@ func (a *GitHubApp) cached(ctx context.Context, key string, v any, exp time.Dura
 	if err != nil {
 		return nil, err
 	}
-	key = fmt.Sprintf("githubapp/v0/%s/%s", u.GetUserID(), key)
+	key = fmt.Sprintf("githubapp/0/%s/%s", u.GetUserID(), key)
 	if cachedVal, err := a.env.GetDefaultRedisClient().Get(ctx, key).Result(); err == nil {
 		if err := json.Unmarshal([]byte(cachedVal), &v); err == nil {
 			log.Debugf("got cached github result for key: %s", key)
