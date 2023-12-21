@@ -27,13 +27,13 @@ const (
 )
 
 // Execute executes the command using the ExecStreamed API.
-func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir, user string, statsListener procstats.Listener, stdio *commandutil.Stdio) *interfaces.CommandResult {
+func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir, user string, statsListener procstats.Listener, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	var stderr, stdout bytes.Buffer
 	if stdio == nil {
-		stdio = &commandutil.Stdio{}
+		stdio = &interfaces.Stdio{}
 	}
 	stdoutw := io.Writer(&stdout)
 	if stdio.Stdout != nil {

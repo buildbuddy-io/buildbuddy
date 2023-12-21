@@ -35,6 +35,7 @@ go_test(
         "//enterprise/server/remote_execution/vmexec_client",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
+        "//server/interfaces",
         "//server/testutil/testfs",
         "//server/util/disk",
         "//server/util/status",

@@ -383,7 +383,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	}
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
-	result = runPodman(ctx, "run", &commandutil.Stdio{}, podmanRunArgs...)
+	result = runPodman(ctx, c.env.GetCommandRunner(), "run", &interfaces.Stdio{}, podmanRunArgs...)
 
 	if result.ExitCode == podmanCommandNotRunnableExitCode {
 		log.CtxInfof(ctx, "podman failed to run command")
@@ -417,7 +417,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	podmanRunArgs := c.getPodmanRunArgs(workDir)
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
-	createResult := runPodman(ctx, "create", &commandutil.Stdio{}, podmanRunArgs...)
+	createResult := runPodman(ctx, c.env.GetCommandRunner(), "create", &interfaces.Stdio{}, podmanRunArgs...)
 	if err := c.maybeCleanupCorruptedImages(ctx, createResult); err != nil {
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
@@ -430,7 +430,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 		return status.UnknownErrorf("podman create failed: exit code %d, stderr: %s", createResult.ExitCode, createResult.Stderr)
 	}
 
-	startResult := runPodman(ctx, "start", &commandutil.Stdio{}, c.name)
+	startResult := runPodman(ctx, c.env.GetCommandRunner(), "start", &interfaces.Stdio{}, c.name)
 	if startResult.Error != nil {
 		return startResult.Error
 	}
@@ -440,7 +440,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	return nil
 }
 
-func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *commandutil.Stdio) *interfaces.CommandResult {
+func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	// Reset usage stats since we're running a new task. Note: This throws away
 	// any resource usage between the initial "Create" call and now, but that's
 	// probably fine for our needs right now.
@@ -463,7 +463,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	// during a normal execution, so we are overly cautious here and only
 	// interpret this code specially when the container was removed and we are
 	// expecting a SIGKILL as a result.
-	res := runPodman(ctx, "exec", stdio, podmanRunArgs...)
+	res := runPodman(ctx, c.env.GetCommandRunner(), "exec", stdio, podmanRunArgs...)
 	stopMonitoring()
 	res.UsageStats = <-statsCh
 	c.mu.Lock()
@@ -481,7 +481,7 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 		return true, nil
 	}
 
-	res := runPodman(ctx, "image", &commandutil.Stdio{}, "exists", c.image)
+	res := runPodman(ctx, c.env.GetCommandRunner(), "image", &interfaces.Stdio{}, "exists", c.image)
 	if res.Error != nil {
 		return false, res.Error
 	}
@@ -653,12 +653,12 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 	pullCtx, cancel := context.WithTimeout(c.env.GetServerContext(), *pullTimeout)
 	defer cancel()
 	output := lockingbuffer.New()
-	stdio := &commandutil.Stdio{Stderr: output, Stdout: output}
+	stdio := &interfaces.Stdio{Stderr: output, Stdout: output}
 	if *podmanPullLogLevel != "" {
 		stdio.Stderr = io.MultiWriter(stdio.Stderr, log.CtxWriter(ctx, "[podman pull] "))
 		stdio.Stdout = io.MultiWriter(stdio.Stdout, log.CtxWriter(ctx, "[podman pull] "))
 	}
-	pullResult := runPodman(pullCtx, "pull", stdio, podmanArgs...)
+	pullResult := runPodman(pullCtx, c.env.GetCommandRunner(), "pull", stdio, podmanArgs...)
 	if pullResult.Error != nil {
 		return pullResult.Error
 	}
@@ -677,7 +677,7 @@ func (c *podmanCommandContainer) Remove(ctx context.Context) error {
 	c.removed = true
 	c.mu.Unlock()
 	os.RemoveAll(c.cidFilePath()) // intentionally ignoring error.
-	res := runPodman(ctx, "kill", &commandutil.Stdio{}, "--signal=KILL", c.name)
+	res := runPodman(ctx, c.env.GetCommandRunner(), "kill", &interfaces.Stdio{}, "--signal=KILL", c.name)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -688,7 +688,7 @@ func (c *podmanCommandContainer) Remove(ctx context.Context) error {
 }
 
 func (c *podmanCommandContainer) Pause(ctx context.Context) error {
-	res := runPodman(ctx, "pause", &commandutil.Stdio{}, c.name)
+	res := runPodman(ctx, c.env.GetCommandRunner(), "pause", &interfaces.Stdio{}, c.name)
 	if res.ExitCode != 0 {
 		return status.UnknownErrorf("podman pause failed: exit code %d, stderr: %s", res.ExitCode, string(res.Stderr))
 	}
@@ -696,7 +696,7 @@ func (c *podmanCommandContainer) Pause(ctx context.Context) error {
 }
 
 func (c *podmanCommandContainer) Unpause(ctx context.Context) error {
-	res := runPodman(ctx, "unpause", &commandutil.Stdio{}, c.name)
+	res := runPodman(ctx, c.env.GetCommandRunner(), "unpause", &interfaces.Stdio{}, c.name)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -738,7 +738,7 @@ func (c *podmanCommandContainer) State(ctx context.Context) (*rnpb.ContainerStat
 	return nil, status.UnimplementedError("not implemented")
 }
 
-func runPodman(ctx context.Context, subCommand string, stdio *commandutil.Stdio, args ...string) *interfaces.CommandResult {
+func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, subCommand string, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	tracing.AddStringAttributeToCurrentSpan(ctx, "podman.subcommand", subCommand)
 	defer span.End()
@@ -757,7 +757,7 @@ func runPodman(ctx context.Context, subCommand string, stdio *commandutil.Stdio,
 	command = append(command, args...)
 	// Note: we don't collect stats on the podman process, and instead use
 	// cgroups for stats accounting.
-	result := commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
+	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
 	return result
 }
 
@@ -802,7 +802,7 @@ func (c *podmanCommandContainer) removeImage(ctx context.Context, imageName stri
 
 	defer c.imageExistsCache.Remove(imageName)
 
-	result := runPodman(ctx, "rmi", &commandutil.Stdio{}, imageName)
+	result := runPodman(ctx, c.env.GetCommandRunner(), "rmi", &interfaces.Stdio{}, imageName)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -822,7 +822,7 @@ func ConfigureSecondaryNetwork(ctx context.Context) error {
 	// Hack: run a dummy podman container to setup default podman bridge network in ip route.
 	// "podman run --rm busybox sh". This should setup the following in ip route:
 	// "10.88.0.0/16 dev cni-podman0 proto kernel scope link src 10.88.0.1 linkdown"
-	result := runPodman(ctx, "run", &commandutil.Stdio{}, "--rm", "busybox", "sh")
+	result := runPodman(ctx, commandutil.RealCommandRunner{}, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
 	if result.Error != nil {
 		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
 	}

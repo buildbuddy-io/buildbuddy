@@ -103,7 +103,6 @@ go_test(
     ],
     deps = [
         ":firecracker",
-        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",

@@ -12,7 +12,6 @@ go_library(
     srcs = ["vmstart.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/vmstart",
     deps = [
-        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/firecracker",
         "//enterprise/server/remote_execution/filecache",
@@ -24,6 +23,7 @@ go_library(
         "//proto:runner_go_proto",
         "//proto:vmvfs_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",

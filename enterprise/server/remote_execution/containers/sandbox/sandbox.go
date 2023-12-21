@@ -85,7 +85,7 @@ func NewRegexPath(expr string) sbxPath {
 }
 
 func runSimpleCommand(ctx context.Context, command []string) *interfaces.CommandResult {
-	return commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, &commandutil.Stdio{})
+	return commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, &interfaces.Stdio{})
 }
 
 func computeSandboxingSupported(ctx context.Context) bool {
@@ -285,7 +285,7 @@ func New(options *Options) container.CommandContainer {
 	}
 }
 
-func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, workDir string, stdio *commandutil.Stdio) *interfaces.CommandResult {
+func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, workDir string, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(sandbox) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -315,7 +315,7 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 }
 
 func (c *sandbox) Run(ctx context.Context, command *repb.Command, workDir string, _ oci.Credentials) *interfaces.CommandResult {
-	return c.runCmdInSandbox(ctx, command, workDir, &commandutil.Stdio{})
+	return c.runCmdInSandbox(ctx, command, workDir, &interfaces.Stdio{})
 }
 
 func (c *sandbox) Create(ctx context.Context, workDir string) error {
@@ -323,7 +323,7 @@ func (c *sandbox) Create(ctx context.Context, workDir string) error {
 	return nil
 }
 
-func (c *sandbox) Exec(ctx context.Context, cmd *repb.Command, stdio *commandutil.Stdio) *interfaces.CommandResult {
+func (c *sandbox) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	return c.runCmdInSandbox(ctx, cmd, c.WorkDir, stdio)
 }
 

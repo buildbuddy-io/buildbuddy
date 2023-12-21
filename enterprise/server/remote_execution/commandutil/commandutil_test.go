@@ -34,7 +34,7 @@ time.sleep(%f)
 
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", script}}
-	return commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &commandutil.Stdio{})
+	return commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &interfaces.Stdio{})
 }
 
 func nopStatsListener(*repb.UsageStats) {}

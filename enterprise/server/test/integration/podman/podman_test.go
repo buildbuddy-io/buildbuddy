@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -106,7 +106,7 @@ func TestHelloWorldExec(t *testing.T) {
 	err = c.Create(ctx, "/work")
 	require.NoError(t, err)
 
-	result := c.Exec(ctx, cmd, &commandutil.Stdio{})
+	result := c.Exec(ctx, cmd, &interfaces.Stdio{})
 	assert.NoError(t, result.Error)
 
 	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
@@ -155,7 +155,7 @@ func TestExecStdio(t *testing.T) {
 	require.NoError(t, err)
 
 	var stdout, stderr bytes.Buffer
-	res := c.Exec(ctx, cmd, &commandutil.Stdio{
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{
 		Stdin:  strings.NewReader("TestInput\n"),
 		Stdout: &stdout,
 		Stderr: &stderr,

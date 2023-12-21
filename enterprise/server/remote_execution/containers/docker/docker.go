@@ -414,7 +414,7 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	}
 }
 
-func copyOutputs(reader io.Reader, result *interfaces.CommandResult, stdio *commandutil.Stdio) error {
+func copyOutputs(reader io.Reader, result *interfaces.CommandResult, stdio *interfaces.Stdio) error {
 	var stdoutBuf, stderrBuf bytes.Buffer
 	stdout, stderr := io.Writer(&stdoutBuf), io.Writer(&stderrBuf)
 	// Note: stdout and stderr aren't buffered in the command result when
@@ -569,7 +569,7 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 	return nil
 }
 
-func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, stdio *commandutil.Stdio) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	var res *interfaces.CommandResult
 	// Ignore error from this function; it is returned as part of res.
 	commandutil.RetryIfTextFileBusy(func() error {
@@ -579,7 +579,7 @@ func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command
 	return res
 }
 
-func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command, stdio *commandutil.Stdio) *interfaces.CommandResult {
+func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,

@@ -42,7 +42,6 @@ go_test(
     tags = ["docker"],
     deps = [
         ":docker",
-        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -59,7 +60,7 @@ func TestExecStreamed_Stdio(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 	stdin := strings.NewReader("baz-stdin")
-	stdio := &commandutil.Stdio{
+	stdio := &interfaces.Stdio{
 		Stdin:  stdin,
 		Stdout: &stdout,
 		Stderr: &stderr,

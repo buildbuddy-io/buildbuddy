@@ -1816,7 +1816,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		}
 	}()
 
-	cmdResult := c.Exec(ctx, command, &commandutil.Stdio{})
+	cmdResult := c.Exec(ctx, command, &interfaces.Stdio{})
 	return cmdResult
 }
 
@@ -1933,7 +1933,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *repb.Command, workDir string, stdio *commandutil.Stdio) *interfaces.CommandResult {
+func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -2079,7 +2079,7 @@ func (c *FirecrackerContainer) monitorVMContext(ctx context.Context) (context.Co
 // the executed process.
 // If stdout is non-nil, the stdout of the executed process will be written to the
 // stdout writer.
-func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *commandutil.Stdio) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	log.CtxInfof(ctx, "Executing command.")
 
 	ctx, span := tracing.StartSpan(ctx)
