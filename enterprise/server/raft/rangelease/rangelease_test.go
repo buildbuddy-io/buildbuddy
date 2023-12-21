@@ -13,11 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v4"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	dbcl "github.com/lni/dragonboat/v4/client"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"

@@ -35,6 +35,7 @@ go_test(
         "//proto:raft_go_proto",
         "//server/testutil/testfs",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/random",
         "//server/util/status",
         "@com_github_lni_dragonboat_v4//:dragonboat",
@@ -42,6 +43,5 @@ go_test(
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_lni_goutils//random",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_protobuf//proto",
     ],
 )

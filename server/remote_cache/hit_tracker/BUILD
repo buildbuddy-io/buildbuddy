@@ -41,10 +41,10 @@ go_test(
         "//server/tables",
         "//server/testutil/testenv",
         "//server/util/bazel_request",
+        "//server/util/proto",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
-        "@org_golang_google_protobuf//proto",
     ],
 )

@@ -12,11 +12,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -284,7 +284,7 @@ type fakeBlobStore struct {
 func (bs *fakeBlobStore) ReadBlob(ctx context.Context, name string) ([]byte, error) {
 	tokens := strings.Split(name, "/")
 	if attempt := tokens[1]; attempt == "1" {
-		return proto.Marshal(bs.ScoreCard)
+		return proto.MarshalOld(bs.ScoreCard)
 	}
 	return nil, status.NotFoundError("")
 }

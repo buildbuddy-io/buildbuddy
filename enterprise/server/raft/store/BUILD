@@ -75,12 +75,12 @@ go_test(
         "//server/testutil/testport",
         "//server/util/disk",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/random",
         "//server/util/status",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//config",
         "@com_github_lni_dragonboat_v4//raftio",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_protobuf//proto",
     ],
 )
