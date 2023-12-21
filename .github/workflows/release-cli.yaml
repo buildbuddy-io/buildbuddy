@@ -160,6 +160,8 @@ jobs:
 
       - name: Build Artifacts
         id: build
+        env:
+          XCODE_VERSION: 12.4
         run: |
           set -x  # print executed commands
           if [[ "$OSTYPE" == darwin* ]]; then
@@ -170,7 +172,6 @@ jobs:
           ARCH=$(uname -m)  # note: bazel naming convention is "x86_64", not "amd64"
           VERSION=${{ needs.create-release.outputs.VERSION }}
 
-          export DEVELOPER_DIR=/Applications/Xcode_12.4.app/Contents/Developer
           cd "${GITHUB_WORKSPACE}/buildbuddy"
           "${GITHUB_WORKSPACE}/bin/bazel" build //cli/cmd/bb \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
