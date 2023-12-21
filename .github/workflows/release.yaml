@@ -17,19 +17,11 @@ on:
         type: string
 
 jobs:
-  create-release:
+  setup:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'release skip')"
-    steps:
-      - uses: "marvinpinto/action-automatic-releases@latest"
-        with:
-          repo_token: "${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}"
-          prerelease: false
-          draft: true
-
-  build:
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'release skip')"
+    outputs:
+      ref: ${{ steps.vars.outputs.ref }}
+      tag: ${{ steps.vars.outputs.tag }}
     steps:
       - name: Configure variables
         id: vars
@@ -46,10 +38,27 @@ jobs:
           echo "ref=$ref" >> $GITHUB_OUTPUT
           echo "tag=$tag" >> $GITHUB_OUTPUT
 
+  create-release:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    needs: setup
+    steps:
+      - uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}"
+          automatic_release_tag: ${{ needs.setup.outputs.tag }}
+          prerelease: false
+          draft: true
+
+  build:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    needs: setup
+    steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          ref: ${{ steps.vars.outputs.ref }}
+          ref: ${{ needs.setup.outputs.ref }}
           # We need to fetch git tags to obtain the latest version tag to report
           # the version of the running binary.
           fetch-depth: 0
@@ -69,4 +78,4 @@ jobs:
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-linux-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64
-          gh release upload ${{ steps.vars.outputs.tag }} buildbuddy-linux-amd64 buildbuddy-enterprise-linux-amd64 executor-enterprise-linux-amd64 --clobber
+          gh release upload ${{ needs.setup.outputs.tag }} buildbuddy-linux-amd64 buildbuddy-enterprise-linux-amd64 executor-enterprise-linux-amd64 --clobber
