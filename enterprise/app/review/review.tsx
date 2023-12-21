@@ -46,8 +46,8 @@ export default class CodeReviewComponent extends React.Component<CodeReviewCompo
               <PR pr={pr} />
             ))}
             {!this.state.response && <div className="empty-state">Loading...</div>}
-            {this.state.response?.outgoing.length === 0 && (
-              <div className="empty-state">No changes need your attention, relax!</div>
+            {this.state.response && needsAttention.length === 0 && (
+              <div className="empty-state">No changes need your attention, you can relax!</div>
             )}
             {needsAttention.length % 2 != 0 && <div className="pr-spacer"></div>}
             <div className="reviews-title">

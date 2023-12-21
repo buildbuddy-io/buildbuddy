@@ -92,4 +92,6 @@
 
 .reviews .empty-state {
   padding-left: 16px;
+  white-space: nowrap;
+  color: #666;
 }
