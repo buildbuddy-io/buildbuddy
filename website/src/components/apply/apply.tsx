@@ -35,6 +35,16 @@ function Component() {
 }
 
 function sendMessage() {
+  if (
+    form.firstName.current.value.trim() == "" &&
+    form.lastName.current.value.trim() == "" &&
+    form.email.current.value.trim() == "" &&
+    form.phone.current.value.trim() == ""
+  ) {
+    // TODO(siggi): let the user know
+    return;
+  }
+
   message(
     `New Job Application!\nURL: ${window.location.href}\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nPhone: ${form.phone.current.value}\nLinkedIn: ${form.linkedin.current.value}\nGithub: ${form.github.current.value}\nBlurb: ${form.blurb.current.value}`
   );
