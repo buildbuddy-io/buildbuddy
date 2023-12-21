@@ -3,6 +3,7 @@ import React, { ReactNode } from "react";
 import { User } from "../../../app/auth/user";
 import format from "../../../app/format/format";
 import rpc_service from "../../../app/service/rpc_service";
+import { joinReactNodes } from "../../../app/util/react";
 import { github } from "../../../proto/github_ts_proto";
 
 interface CodeReviewComponentProps {
@@ -186,7 +187,7 @@ class PR extends React.Component<PRProps> {
           <div className={`pr-status pr-status-${status}`}>{status}</div>
         </div>
         <div>{format.formatDateFromUsec(this.props.pr.updatedAtUsec)}</div>
-        <div>{reviewers.reduce((prev, curr) => [prev, ", ", curr])}</div>
+        <div>{joinReactNodes(reviewers, ", ")}</div>
         <div>{size(this.props.pr)}</div>
         <div>{this.props.pr.title}</div>
       </a>
