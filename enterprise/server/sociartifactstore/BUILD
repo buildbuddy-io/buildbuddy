@@ -46,8 +46,6 @@ go_library(
             "@com_github_opencontainers_go_digest//:go-digest",
             "@com_github_opencontainers_image_spec//specs-go/v1:specs-go",
             "@com_github_prometheus_client_golang//prometheus",
-            "@org_golang_google_protobuf//proto",
-            "@org_golang_x_sync//errgroup",
         ],
         "//conditions:default": [],
     }),
