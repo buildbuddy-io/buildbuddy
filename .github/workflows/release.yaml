@@ -27,7 +27,7 @@ jobs:
         id: vars
         run: |
           # Configure repo based on pushed tag if set
-          if [ -z "${GITHUB_REF}" ]; then
+          if [ ${{ github.event_name }} = 'push' ]; then
             ref="${GITHUB_REF}"
             tag=${GITHUB_REF/refs\/tags\//}
           else
