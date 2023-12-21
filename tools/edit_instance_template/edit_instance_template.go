@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"google.golang.org/api/iterator"
-	"google.golang.org/protobuf/proto"
 
 	compute "cloud.google.com/go/compute/apiv1"
 	computepb "google.golang.org/genproto/googleapis/cloud/compute/v1"
