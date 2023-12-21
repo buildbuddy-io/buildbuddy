@@ -1,10 +1,15 @@
 package oci_test
 
 import (
+	"context"
+	"net/http"
+	"regexp"
+	"runtime"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -132,4 +137,57 @@ func TestToProto(t *testing.T) {
 		proto.Equal(
 			&rgpb.Credentials{Username: "foo", Password: "bar"},
 			oci.Credentials{Username: "foo", Password: "bar"}.ToProto()))
+}
+
+func TestResolve(t *testing.T) {
+	registry := testregistry.Run(t, testregistry.Opts{})
+	imageName := registry.PushRandomImage(t)
+	_, err := oci.Resolve(
+		context.Background(),
+		imageName,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{})
+	require.NoError(t, err)
+}
+
+func TestResolve_InvalidImage(t *testing.T) {
+	_, err := oci.Resolve(
+		context.Background(),
+		":invalid",
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{})
+	assert.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestResolve_Unauthorized(t *testing.T) {
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == "GET" {
+				matches, err := regexp.MatchString("/v2/.*/manifests/.*", r.URL.Path)
+				require.NoError(t, err)
+				if matches {
+					w.WriteHeader(401)
+					return false
+				}
+			}
+			return true
+		},
+	})
+
+	imageName := registry.PushRandomImage(t)
+	_, err := oci.Resolve(
+		context.Background(),
+		imageName,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{})
+	require.True(t, status.IsPermissionDeniedError(err))
 }
