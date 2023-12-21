@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/common"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/google/shlex"
 
@@ -60,7 +60,7 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	// Note: During development, the version string will be "unknown".
 	// To get the sidecar to restart, you can shut it down manually with
 	// `kill -INT <sidecar_pid>`, then re-run the CLI.
-	sidecarID := hashStrings(append([]string{common.Version()}, args...))
+	sidecarID := hashStrings(append([]string{version.String()}, args...))
 	sockName := sockPrefix + sidecarID + ".sock"
 	sockPath := filepath.Join(os.TempDir(), sockName)
 
