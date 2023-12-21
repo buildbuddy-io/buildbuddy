@@ -26,11 +26,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -1568,7 +1568,9 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 			}
 		}
 	}
-	rspBuf, err := proto.Marshal(batchRsp)
+	// BatchCMDResponse.MarshalVT() is slower than standard marshal(). See
+	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
+	rspBuf, err := proto.MarshalOld(batchRsp)
 	if err != nil {
 		return entry, err
 	}
@@ -1661,7 +1663,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	rspBuf, err := proto.Marshal(batchRsp)
+	rspBuf, err := proto.MarshalOld(batchRsp)
 	if err != nil {
 		return nil, err
 	}

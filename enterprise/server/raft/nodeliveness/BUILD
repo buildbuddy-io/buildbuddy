@@ -13,9 +13,9 @@ go_library(
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_hashicorp_serf//serf",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 

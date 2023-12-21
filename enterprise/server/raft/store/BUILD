@@ -35,6 +35,7 @@ go_library(
         "//server/util/disk",
         "//server/util/grpc_server",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/status",
         "//server/util/statusz",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
@@ -44,7 +45,6 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//reflection",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
 )
