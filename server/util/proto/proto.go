@@ -16,6 +16,8 @@ var UnmarshalOld = gproto.Unmarshal
 var String = gproto.String
 var Float64 = gproto.Float64
 var Uint64 = gproto.Uint64
+var Int32 = gproto.Int32
+var Bool = gproto.Bool
 
 type Message = gproto.Message
 type MarshalOptions = gproto.MarshalOptions
