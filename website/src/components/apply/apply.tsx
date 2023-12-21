@@ -35,6 +35,19 @@ function Component() {
 }
 
 function sendMessage() {
+  if (
+    form.firstName.current.value.trim() == "" &&
+    form.lastName.current.value.trim() == "" &&
+    form.email.current.value.trim() == "" &&
+    form.phone.current.value.trim() == "" &&
+    form.linkedin.current.value.trim() == "" &&
+    form.github.current.value.trim() == "" &&
+    form.blurb.current.value.trim() == ""
+  ) {
+    alert("Please fill out the form before submitting");
+    return;
+  }
+
   message(
     `New Job Application!\nURL: ${window.location.href}\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nPhone: ${form.phone.current.value}\nLinkedIn: ${form.linkedin.current.value}\nGithub: ${form.github.current.value}\nBlurb: ${form.blurb.current.value}`
   );
