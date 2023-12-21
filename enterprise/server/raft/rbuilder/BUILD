@@ -8,10 +8,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder",
     deps = [
         "//proto:raft_go_proto",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/prototext",
-        "@org_golang_google_protobuf//proto",
     ],
 )

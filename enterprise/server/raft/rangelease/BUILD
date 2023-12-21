@@ -15,9 +15,9 @@ go_library(
         "//enterprise/server/raft/replica",
         "//proto:raft_go_proto",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/rangemap",
         "//server/util/status",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 

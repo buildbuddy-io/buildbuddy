@@ -14,10 +14,10 @@ go_library(
         "//proto:raft_service_go_proto",
         "//server/interfaces",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/status",
         "//server/util/statusz",
         "@com_github_hashicorp_serf//serf",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
 )

@@ -15,11 +15,11 @@ go_library(
         "//proto:raft_go_proto",
         "//server/interfaces",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//statemachine",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
 )
