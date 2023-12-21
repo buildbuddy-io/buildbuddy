@@ -17,7 +17,7 @@ go_library(
         "//cli/remotebazel",
         "//cli/update",
         "//cli/upload",
-        "//cli/version",
+        "//cli/versioncmd",
     ],
 )
 

@@ -2,16 +2,22 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/bazel_command"
+	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/metadata"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/picker"
+	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
+	"github.com/buildbuddy-io/buildbuddy/cli/setup"
 	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
+	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -93,7 +99,7 @@ func run() (exitCode int, err error) {
 
 	// If none of the CLI subcommand handlers were triggered, assume we should
 	// handle it as a bazel command.
-	return bazel_command.Run(args, originalArgs)
+	return handleBazelCommand(start, args, originalArgs)
 }
 
 // handleGlobalCliFlags processes global cli args that don't apply to any specific subcommand
@@ -112,4 +118,93 @@ func handleGlobalCliFlags(args []string) []string {
 		}
 	}
 	return args
+}
+
+// handleBazelCommand handles a native bazel command (i.e. commands that are
+// directly forwarded to bazel, as opposed to bb cli-specific commands)
+//
+// originalArgs contains the command as originally typed. We pass it as
+// EXPLICIT_COMMAND_LINE metadata to the bazel invocation.
+func handleBazelCommand(start time.Time, args []string, originalArgs []string) (int, error) {
+	// Maybe run interactively (watching for changes to files).
+	if exitCode, err := watcher.Watch(); exitCode >= 0 || err != nil {
+		return exitCode, err
+	}
+
+	// Show a picker if target argument is omitted.
+	args = picker.HandlePicker(args)
+
+	//Prepare a dir for temporary files created by this CLI run
+	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
+	if err != nil {
+		return 1, err
+	}
+
+	var scriptPath string
+	var exitCode int
+	defer func() {
+		// Remove tempdir. Need to do this before invoking the run script
+		// (if applicable), since the run script will replace this process.
+		os.RemoveAll(tempDir)
+
+		// Invoke the run script only if the build succeeded.
+		if exitCode == 0 && scriptPath != "" {
+			exitCode, err = bazelisk.InvokeRunScript(scriptPath)
+		}
+	}()
+
+	plugins, bazelArgs, execArgs, err := setup.Setup(args, tempDir)
+	if err != nil {
+		return 1, err
+	}
+
+	// Save some flags from the current invocation, in case the `ask` command
+	// is invoked in the future.
+	bazelArgs = ask.SaveFlags(bazelArgs)
+
+	// If this is a `bazel run` command, add a --run_script arg so that
+	// we can execute post-bazel plugins between the build and the run step.
+	bazelArgs, scriptPath, err = bazelisk.ConfigureRunScript(bazelArgs)
+	if err != nil {
+		return 1, err
+	}
+	// Append metadata just before running bazelisk.
+	// Note, this means plugins cannot modify this metadata.
+	bazelArgs, err = metadata.AppendBuildMetadata(bazelArgs, originalArgs)
+	if err != nil {
+		return 1, err
+	}
+
+	// Run bazelisk, capturing the original output in a file and allowing
+	// plugins to control how the output is rendered to the terminal.
+	log.Debugf("bb initialized in %s", time.Since(start))
+	outputPath := filepath.Join(tempDir, "bazel.log")
+	exitCode, err = plugin.RunBazeliskWithPlugins(
+		arg.JoinExecutableArgs(bazelArgs, execArgs),
+		outputPath, plugins)
+	if err != nil {
+		return 1, err
+	}
+
+	// If the build was interrupted (Ctrl+C), don't run post-bazel plugins.
+	if exitCode == 8 /*interrupted*/ {
+		return exitCode, nil
+	}
+
+	// Run plugin post-bazel hooks.
+	// Pause the file watcher while these are in progress, so that plugins can
+	// apply fixes to files in the workspace without the watcher immediately
+	// restarting.
+	watcher.Pause()
+	defer watcher.Unpause()
+	for _, p := range plugins {
+		if err := p.PostBazel(outputPath); err != nil {
+			return 1, err
+		}
+	}
+
+	// TODO: Support post-run hooks?
+	// e.g. show a desktop notification once a k8s deploy has finished
+
+	return exitCode, nil
 }

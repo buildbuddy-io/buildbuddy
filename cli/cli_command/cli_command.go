@@ -13,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
-	"github.com/buildbuddy-io/buildbuddy/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
 )
 
 type Command struct {
@@ -95,6 +95,6 @@ var Commands = []Command{
 	{
 		Name:    "version",
 		Help:    "Prints bb cli version info.",
-		Handler: version.HandleVersion,
+		Handler: versioncmd.HandleVersion,
 	},
 }

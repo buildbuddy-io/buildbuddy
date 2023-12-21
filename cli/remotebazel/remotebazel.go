@@ -17,8 +17,8 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/setup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -631,7 +631,7 @@ func HandleRemoteBazel(args []string) (int, error) {
 		os.RemoveAll(tempDir)
 	}()
 
-	_, bazelArgs, execArgs, err := bazel_command.Setup(args, tempDir)
+	_, bazelArgs, execArgs, err := setup.Setup(args, tempDir)
 	if err != nil {
 		return 1, status.WrapError(err, "bazel setup")
 	}
