@@ -655,8 +655,7 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 			return
 		}
 		eg.Go(func() error {
-			err := s.fetchChunk(offset)
-			if err != nil {
+			if err := s.fetchChunk(offset); err != nil {
 				log.CtxWarningf(s.ctx, "COWStore eager fetch chunk failed with: %s", err)
 			}
 			return nil

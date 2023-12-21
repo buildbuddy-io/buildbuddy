@@ -59,12 +59,12 @@ func (s *BoundedStack[T]) Push(item T) {
 	}
 }
 
-// Pop returns the top element of the stack. The second return value indicates
+// pop returns the top element of the stack. The second return value indicates
 // whether the returned item is valid; it will be false if and only if the stack
 // was empty.
 //
 // Pop does not block. Recv can be used to block until an item is available.
-func (c *BoundedStack[T]) Pop() (item T, ok bool) {
+func (c *BoundedStack[T]) pop() (item T, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.size == 0 {
@@ -92,7 +92,7 @@ func (s *BoundedStack[T]) Recv(ctx context.Context) (item T, err error) {
 			var zero T
 			return zero, ctx.Err()
 		case <-s.recvNotify:
-			item, ok := s.Pop()
+			item, ok := s.pop()
 			if !ok {
 				// This can potentially happen if more pushes happened after the
 				// recv call and then other goroutines woke up and consumed the

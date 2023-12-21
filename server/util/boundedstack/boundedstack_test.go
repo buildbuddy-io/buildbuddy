@@ -1,16 +1,15 @@
-package boundedstack_test
+package boundedstack
 
 import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/boundedstack"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBoundedStack_FillAndDrain(t *testing.T) {
 	ctx := context.Background()
-	s, err := boundedstack.New[int](2 /*=capacity*/)
+	s, err := New[int](2 /*=capacity*/)
 	require.NoError(t, err)
 
 	s.Push(1)
@@ -23,13 +22,13 @@ func TestBoundedStack_FillAndDrain(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
 
-	_, ok := s.Pop()
+	_, ok := s.pop()
 	require.False(t, ok, "stack should be empty")
 }
 
 func TestBoundedStack_OverfillAndDrain(t *testing.T) {
 	ctx := context.Background()
-	s, err := boundedstack.New[int](2 /*=capacity*/)
+	s, err := New[int](2 /*=capacity*/)
 	require.NoError(t, err)
 
 	s.Push(1)
@@ -43,6 +42,6 @@ func TestBoundedStack_OverfillAndDrain(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, n)
 
-	_, ok := s.Pop()
+	_, ok := s.pop()
 	require.False(t, ok, "stack should be empty")
 }

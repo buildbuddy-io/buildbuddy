@@ -13,8 +13,8 @@ go_library(
 go_test(
     name = "boundedstack_test",
     srcs = ["boundedstack_test.go"],
+    embed = [":boundedstack"],
     deps = [
-        ":boundedstack",
         "@com_github_stretchr_testify//require",
     ],
 )
