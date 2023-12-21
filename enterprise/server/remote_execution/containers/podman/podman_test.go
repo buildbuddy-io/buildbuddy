@@ -23,7 +23,10 @@ type SlowCommandRunner struct {
 	commandsRun *atomic.Int32
 }
 
-func (r SlowCommandRunner) Run(_ context.Context, _ *repb.Command, _ string, _ func(*repb.UsageStats), _ *interfaces.Stdio) *interfaces.CommandResult {
+func (r SlowCommandRunner) Run(_ context.Context, command *repb.Command, _ string, _ func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
+	if len(command.Arguments) >= 2 && command.Arguments[0] == "podman" && command.Arguments[1] == "version" {
+		stdio.Stdout.Write([]byte("1.0.0"))
+	}
 	r.commandsRun.Add(1)
 	time.Sleep(100 * time.Millisecond)
 	return &interfaces.CommandResult{}
@@ -49,14 +52,19 @@ func TestPullsNotDeduped(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		go require.NoError(t, container.PullImage(ctx, oci.Credentials{}))
 	}
-	require.Equal(t, int32(5), commandsRun.Load())
+
+	// One extra command for `podman version`
+	require.Equal(t, int32(6), commandsRun.Load())
 }
 
 type ControllableCommandRunner struct {
 	nextExitCode *int
 }
 
-func (c ControllableCommandRunner) Run(_ context.Context, _ *repb.Command, _ string, _ func(*repb.UsageStats), _ *interfaces.Stdio) *interfaces.CommandResult {
+func (c ControllableCommandRunner) Run(_ context.Context, command *repb.Command, _ string, _ func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
+	if len(command.Arguments) >= 2 && command.Arguments[0] == "podman" && command.Arguments[1] == "version" {
+		stdio.Stdout.Write([]byte("1.0.0"))
+	}
 	return &interfaces.CommandResult{ExitCode: *c.nextExitCode}
 }
 
