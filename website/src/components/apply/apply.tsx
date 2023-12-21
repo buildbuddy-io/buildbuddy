@@ -39,12 +39,9 @@ function sendMessage() {
     form.firstName.current.value.trim() == "" &&
     form.lastName.current.value.trim() == "" &&
     form.email.current.value.trim() == "" &&
-    form.phone.current.value.trim() == "" &&
-    form.linkedin.current.value.trim() == "" &&
-    form.github.current.value.trim() == "" &&
-    form.blurb.current.value.trim() == ""
+    form.phone.current.value.trim() == ""
   ) {
-    alert("Please fill out the form before submitting");
+    // TODO(siggi): let the user know
     return;
   }
 
