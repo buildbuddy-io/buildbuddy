@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"google.golang.org/protobuf/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 )
 
 type StreamMsg[T proto.Message] struct {

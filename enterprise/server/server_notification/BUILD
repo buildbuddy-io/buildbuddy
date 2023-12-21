@@ -10,9 +10,9 @@ go_library(
         "//proto:server_notification_go_proto",
         "//server/real_environment",
         "//server/util/alert",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//reflect/protoreflect",
     ],
 )

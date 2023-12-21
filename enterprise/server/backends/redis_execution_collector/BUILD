@@ -10,7 +10,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
         "//server/real_environment",
+        "//server/util/proto",
         "@com_github_go_redis_redis_v8//:redis",
-        "@org_golang_google_protobuf//proto",
     ],
 )

@@ -11,11 +11,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
 	"github.com/hashicorp/serf/serf"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"

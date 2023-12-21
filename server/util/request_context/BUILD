@@ -7,6 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:context_go_proto",
-        "@org_golang_google_protobuf//proto",
+        "//server/util/proto",
     ],
 )

@@ -15,8 +15,8 @@ go_library(
         "//server/util/hash",
         "//server/util/log",
         "//server/util/perms",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
-        "@org_golang_google_protobuf//proto",
     ],
 )

@@ -4,8 +4,7 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-
-	"google.golang.org/protobuf/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 )
 
 func GetProto(ctx context.Context, store interfaces.KeyValStore, key string, msg proto.Message) error {

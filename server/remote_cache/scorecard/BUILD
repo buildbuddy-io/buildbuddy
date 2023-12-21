@@ -12,9 +12,9 @@ go_library(
         "//proto:pagination_go_proto",
         "//server/environment",
         "//server/util/paging",
+        "//server/util/proto",
         "//server/util/status",
         "@org_golang_google_grpc//codes",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 

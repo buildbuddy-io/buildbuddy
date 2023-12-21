@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 

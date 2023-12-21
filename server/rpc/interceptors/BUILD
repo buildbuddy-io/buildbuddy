@@ -14,6 +14,7 @@ go_library(
         "//server/util/claims",
         "//server/util/clientip",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/quota",
         "//server/util/request_context",
         "//server/util/status",
@@ -25,7 +26,6 @@ go_library(
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 

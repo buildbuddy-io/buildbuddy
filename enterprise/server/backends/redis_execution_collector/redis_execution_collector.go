@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/go-redis/redis/v8"
-	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
