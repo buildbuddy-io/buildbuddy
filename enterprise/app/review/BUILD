@@ -9,6 +9,7 @@ ts_library(
         "//app/auth:user",
         "//app/format",
         "//app/service:rpc_service",
+        "//app/util:react",
         "//proto:github_ts_proto",
         "@npm//@types/long",
         "@npm//@types/react",

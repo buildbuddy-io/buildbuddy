@@ -121,3 +121,12 @@ ts_library(
     name = "exit_codes",
     srcs = ["exit_codes.ts"],
 )
+
+ts_library(
+    name = "react",
+    srcs = ["react.tsx"],
+    deps = [
+        "@npm//@types/react",
+        "@npm//react",
+    ],
+)
