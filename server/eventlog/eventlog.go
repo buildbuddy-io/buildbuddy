@@ -13,9 +13,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/keyval"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
-	"google.golang.org/protobuf/proto"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"

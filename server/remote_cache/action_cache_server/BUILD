@@ -17,8 +17,8 @@ go_library(
         "//server/remote_cache/hit_tracker",
         "//server/util/capabilities",
         "//server/util/prefix",
+        "//server/util/proto",
         "//server/util/status",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
 )

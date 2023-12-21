@@ -15,11 +15,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -317,7 +317,9 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		result.ExecutionStartTimestamp = md.GetExecutionStartTimestamp()
 		result.ExecutionCompletedTimestamp = md.GetExecutionCompletedTimestamp()
 	}
-	b, err := proto.Marshal(result)
+	// ScoreCard_Result.MarshalVT is slower, so we use MarshalOld for now.
+	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
+	b, err := proto.MarshalOld(result)
 	if err != nil {
 		return err
 	}

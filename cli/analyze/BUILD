@@ -10,7 +10,7 @@ go_library(
         "//cli/log",
         "//cli/workspace",
         "//proto:bazel_query_go_proto",
-        "@org_golang_google_protobuf//proto",
+        "//server/util/proto",
         "@org_golang_x_sync//errgroup",
     ],
 )

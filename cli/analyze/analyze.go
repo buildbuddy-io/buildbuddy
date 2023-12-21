@@ -13,8 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/proto"
 
 	bqpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_query"
 )

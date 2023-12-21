@@ -3,7 +3,7 @@ package requestcontext
 import (
 	"context"
 
-	"google.golang.org/protobuf/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )

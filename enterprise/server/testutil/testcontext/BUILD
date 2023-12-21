@@ -9,8 +9,8 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/util/bazel_request",
+        "//server/util/proto",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
-        "@org_golang_google_protobuf//proto",
     ],
 )

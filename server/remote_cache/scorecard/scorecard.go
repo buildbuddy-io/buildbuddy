@@ -10,9 +10,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/proto"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -389,7 +389,9 @@ func Read(ctx context.Context, env environment.Env, invocationID string, invocat
 
 // Write writes the invocation cache scorecard to the configured blobstore.
 func Write(ctx context.Context, env environment.Env, invocationID string, invocationAttempt uint64, scoreCard *capb.ScoreCard) error {
-	scoreCardBuf, err := proto.Marshal(scoreCard)
+	// Use MarshalOld b/c ScoreCard.MarshalVT is 50% slower than standard Marshal()
+	// See https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
+	scoreCardBuf, err := proto.MarshalOld(scoreCard)
 	if err != nil {
 		return err
 	}

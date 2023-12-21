@@ -28,11 +28,11 @@ go_library(
         "//server/util/log",
         "//server/util/perms",
         "//server/util/prefix",
+        "//server/util/proto",
         "//server/util/query_builder",
         "//server/util/request_context",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 

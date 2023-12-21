@@ -17,7 +17,7 @@ go_library(
         "//proto:user_go_proto",
         "//server/testutil/app",
         "//server/testutil/testport",
+        "//server/util/proto",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_protobuf//proto",
     ],
 )
