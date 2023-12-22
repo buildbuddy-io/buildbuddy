@@ -33,6 +33,7 @@ go_test(
     srcs = ["copy_on_write_test.go"],
     deps = [
         ":copy_on_write",
+        "//enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil",
         "//enterprise/server/remote_execution/snaputil",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
@@ -64,6 +65,7 @@ go_test(
     tags = ["performance"],
     deps = [
         ":copy_on_write",
+        "//enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil",
         "//enterprise/server/remote_execution/snaputil",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",

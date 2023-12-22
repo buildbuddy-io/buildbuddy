@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -139,39 +141,41 @@ func TestCOW_Basic(t *testing.T) {
 }
 
 func TestCOW_Concurrency(t *testing.T) {
+	const chunkSizeBytes = 1024 * 512
+	const fileSizeBytes = chunkSizeBytes * 20
+
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
-	chunkSizeBytes := backingFileSizeBytes / 2
 	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false)
 	require.NoError(t, err)
 
+	tester := NewStoreTester(t, s)
+
 	eg := &errgroup.Group{}
-	for i := 0; i < 20; i++ {
+	eg.SetLimit(1000)
+	for i := 0; i < 10_000; i++ {
 		eg.Go(func() error {
-			buf := make([]byte, 100)
-			_, err := rand.Read(buf)
-			if err != nil {
-				return err
-			}
-			_, err = s.WriteAt(buf, 0)
-			if err != nil {
-				return err
-			}
-			return nil
-		})
-		eg.Go(func() error {
-			buf := make([]byte, 100)
-			_, err := s.ReadAt(buf, 0)
-			if err != nil {
-				return err
+			if rand.Float64() < 0.2 {
+				tester.WriteRandomRange()
+			} else {
+				tester.ReadRandomRange()
 			}
 			return nil
 		})
 	}
-	err = eg.Wait()
+
+	// Note: Sync will likely be called while the above operations are
+	// still in progress, which should be OK.
+
+	err = s.Sync()
 	require.NoError(t, err)
+
+	eg.Wait()
+
+	tester.ReadAll()
+
 	err = s.Close()
 	require.NoError(t, err)
 }
@@ -573,6 +577,147 @@ func testStore(t *testing.T, s interfaces.Store, path string) {
 
 	err = s.Close()
 	require.NoError(t, err, "Close failed")
+}
+
+// StoreTester allows testing IO operations on a store.
+//
+// It keeps an internal buffer that tracks the store's currently expected
+// contents. If a Read ever returns different results than our expected buffer,
+// the test fails.
+//
+// It ensures that any IO operations done on the store match what we would see
+// in practice. For example, we may see concurrent writes to individual chunks,
+// but not concurrent writes to overlapping byte ranges. VBD (for example)
+// supports concurrent reads and writes, but the guest will not concurrently
+// issue reads and writes for overlapping byte ranges, because unix
+// read()/write() operations are not atomic. UFFD faults are handled in a single
+// goroutine so those don't support concurrent reads/writes at all.
+type StoreTester struct {
+	t         *testing.T
+	chunkSize int64
+
+	rangeLock *RangeLock
+	Store     interfaces.Store
+
+	mu  sync.RWMutex
+	buf []byte
+}
+
+// NewStoreTester returns a tester for the given store. The store is expected to
+// be initially empty (i.e. all zeroes).
+func NewStoreTester(t *testing.T, store interfaces.Store) *StoreTester {
+	size, err := store.SizeBytes()
+	require.NoError(t, err)
+	chunkSize := size
+	if cow, ok := store.(*copy_on_write.COWStore); ok {
+		chunkSize = cow.ChunkSizeBytes()
+	}
+	return &StoreTester{
+		t:         t,
+		Store:     store,
+		rangeLock: NewRangeLock(t, size),
+		buf:       make([]byte, size),
+		chunkSize: chunkSize,
+	}
+}
+
+func (st *StoreTester) randSubslice() (p []byte, off int64) {
+	offset, length := randSubslice(len(st.buf))
+	// Limit the slice length to 10 chunks to reduce contention and exercise
+	// non-overlapping concurrency more. Also, in practice we won't see read() /
+	// write() calls spanning several chunks.
+	length = min(length, 10*int(st.chunkSize))
+	return make([]byte, length), int64(offset)
+}
+
+// ReadRandomRange reads a random byte range within the store and fails the test
+// if it fails or if the returned bytes do not match the current expected buffer
+// contents.
+func (st *StoreTester) ReadRandomRange() {
+	p, off := st.randSubslice()
+	st.read(p, off)
+}
+
+// ReadAll reads all bytes and fails the test if the read fails or if the
+// returned bytes do not match the current expected buffer contents.
+func (st *StoreTester) ReadAll() {
+	st.read(make([]byte, len(st.buf)), 0)
+}
+
+func (st *StoreTester) read(p []byte, off int64) {
+	unlock := st.rangeLock.RLock(off, int64(len(p)))
+	defer unlock()
+	_, err := st.Store.ReadAt(p, off)
+	require.NoError(st.t, err)
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	if !bytes.Equal(p, st.buf[off:off+int64(len(p))]) {
+		require.FailNowf(st.t, "read unexpected bytes", "offset 0x%x, length 0x%x", off, len(p))
+	}
+}
+
+// WriteRandomRange writes a random byte range within the store and fails the
+// test if it fails.
+func (st *StoreTester) WriteRandomRange() {
+	p, off := st.randSubslice()
+	_, err := rand.Read(p)
+	require.NoError(st.t, err)
+	unlock := st.rangeLock.Lock(off, int64(len(p)))
+	defer unlock()
+	_, err = st.Store.WriteAt(p, off)
+	require.NoError(st.t, err)
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	copy(st.buf[off:], p)
+}
+
+// RangeLock implements byte-range locking.
+type RangeLock struct {
+	t    *testing.T
+	path string
+}
+
+func NewRangeLock(t *testing.T, size int64) *RangeLock {
+	// fcntl flock implements byte range locking when using "open file
+	// description" OFD locking, which are a Linux-specific feature. So we just
+	// use that for now rather than implement byte-range locking ourselves in
+	// Go. (There doesn't appear to be a library available at the time of
+	// writing).
+	if runtime.GOOS != "linux" {
+		t.Skipf("RangeLock is not implemented on %q", runtime.GOOS)
+	}
+	require.NotEqual(t, 0, cow_cgo_testutil.F_OFD_SETLKW, "sanity check: F_OFD_SETLKW should be defined")
+	path := testfs.MakeTempFile(t, testfs.MakeTempDir(t), "")
+	err := os.Truncate(path, size)
+	require.NoError(t, err)
+	return &RangeLock{t: t, path: path}
+}
+
+func (rl *RangeLock) RLock(offset, length int64) (unlock func()) {
+	return rl.flock(offset, length, syscall.F_RDLCK)
+}
+
+func (rl *RangeLock) Lock(offset, length int64) (unlock func()) {
+	return rl.flock(offset, length, syscall.F_WRLCK)
+}
+
+func (rl *RangeLock) flock(offset, length int64, typ int16) (unlock func()) {
+	f, err := os.OpenFile(rl.path, os.O_RDWR, 0)
+	require.NoError(rl.t, err)
+	const SEEK_SET = 0
+	params := &syscall.Flock_t{
+		Type:   typ,
+		Start:  offset,
+		Len:    length,
+		Whence: SEEK_SET,
+	}
+	err = syscall.FcntlFlock(f.Fd(), cow_cgo_testutil.F_OFD_SETLKW, params)
+	require.NoError(rl.t, err)
+	return func() {
+		err := f.Close()
+		require.NoError(rl.t, err)
+	}
 }
 
 func randBytes(t *testing.T, n int) []byte {
