@@ -625,6 +625,8 @@ func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
 }
 
 func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Credentials) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	podmanArgs := make([]string, 0, 2)
 
 	if c.imageIsStreamable {
