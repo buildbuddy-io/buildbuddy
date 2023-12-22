@@ -6,13 +6,70 @@ import (
 	"net"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/mwitkow/grpc-proxy/proxy"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/test/bufconn"
 )
+
+// Server is a gRPC server used for testing.
+//
+// Example usage:
+//
+//	testServer := testgrpc.NewServer(t, env)
+//	foopb.RegisterFooServer(testServer.Server, env.GetFooServer())
+//	testServer.Start()
+//	conn := ts.Dial(ctx)
+//	foo := foopb.NewFooClient(conn)
+type Server struct {
+	*grpc.Server
+	t   testing.TB
+	lis *bufconn.Listener
+}
+
+// NewServer returns a gRPC server for testing, configured with the common
+// BuildBuddy gRPC options. It gracefully stops the server as part of test
+// cleanup.
+func NewServer(t testing.TB, env environment.Env) *Server {
+	server := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+	return &Server{
+		Server: server,
+		t:      t,
+		lis:    bufconn.Listen(1024 * 1024),
+	}
+}
+
+// Start starts the test server.
+// This should be called after registering services.
+func (s *Server) Start() {
+	go func() {
+		s.t.Cleanup(func() {
+			s.Server.GracefulStop()
+		})
+		err := s.Server.Serve(s.lis)
+		require.NoError(s.t, err)
+	}()
+}
+
+// Dial connects to the server. It returns a connection that can be used to
+// create gRPC clients.
+func (s *Server) Dial(ctx context.Context, opts ...grpc.DialOption) *grpc.ClientConn {
+	bufDialer := func(ctx context.Context, _ string) (net.Conn, error) {
+		return s.lis.DialContext(ctx)
+	}
+	dialOptions := grpc_client.CommonGRPCClientOptions()
+	dialOptions = append(dialOptions, grpc.WithContextDialer(bufDialer))
+	dialOptions = append(dialOptions, grpc.WithInsecure())
+	dialOptions = append(dialOptions, opts...)
+	conn, err := grpc.DialContext(ctx, "bufnet", dialOptions...)
+	require.NoError(s.t, err)
+	return conn
+}
 
 // Proxy is a basic in-process gRPC L7 proxy for use in tests.
 //
