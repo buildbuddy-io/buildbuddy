@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "remotebazel",
@@ -7,6 +7,7 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
+        "//cli/parser",
         "//cli/setup",
         "//enterprise/server/remote_execution/dirtools",
         "//proto:build_event_stream_go_proto",
@@ -34,3 +35,10 @@ go_library(
 )
 
 package(default_visibility = ["//cli:__subpackages__"])
+
+go_test(
+    name = "remotebazel_test",
+    srcs = ["remotebazel_test.go"],
+    embed = [":remotebazel"],
+    deps = ["@com_github_stretchr_testify//require"],
+)
