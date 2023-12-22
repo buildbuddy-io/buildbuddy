@@ -22,13 +22,20 @@ def main():
     for line in lines:
         if ".go" not in line and "import of" not in line:
             continue
-        m = re.search('^.*/execroot/.*?/(.*?\.go): import of "(.*?)"', line)
+        workspace_basename = os.path.basename(
+            os.environ.get("BUILD_WORKSPACE_DIRECTORY", "")
+        )
+        m = re.search(
+            f'^\s*(?P<prefix>.*/execroot/|/tmp/bazel-working-directory/{workspace_basename}/)(?P<src_path>.*?\.go): import of "(?P<import_url>.*?)"',
+            line,
+        )
         if not m:
             continue
+        groups = m.groupdict()
         problems.append(
             {
-                "src_path": m.group(1),
-                "import_url": m.group(2),
+                "src_path": groups["src_path"],
+                "import_url": groups["import_url"],
             }
         )
 
@@ -57,10 +64,12 @@ def main():
 
     with tempfile.NamedTemporaryFile() as run_script:
         print(
-            "\x1b[90m> " + bb_executable + " run //:gazelle -- "
+            "\x1b[90m> "
+            + bb_executable
+            + " run //:gazelle -- "
             + "".join(packages)
             + "\x1b[m  🛠️  fixing...",
-            end=""
+            end="",
         )
         sys.stdout.flush()
         p = subprocess.run(
@@ -79,7 +88,9 @@ def main():
         if p.returncode != 0:
             erase_current_line()
             print(
-                "\x1b[32m> " + bb_executable + " run //:gazelle -- "
+                "\x1b[32m> "
+                + bb_executable
+                + " run //:gazelle -- "
                 + "".join(packages)
                 + "\x1b[m  ❌ fix failed"
             )
@@ -92,7 +103,9 @@ def main():
         # TODO(bduffany): Retry the build up to one time once the fix succeeds.
         erase_current_line()
         print(
-            "\x1b[32m> "+ bb_executable + " run //:gazelle -- "
+            "\x1b[32m> "
+            + bb_executable
+            + " run //:gazelle -- "
             + "".join(packages)
             + "\x1b[m  ✅ fix applied"
         )
@@ -119,7 +132,8 @@ def prompt(msg):
 
 
 def erase_current_line():
-    print('\x1b[2K\r', end="")
+    print("\x1b[2K\r", end="")
+
 
 # TODO: Have the CLI provide a more standard preference system
 def preferences_path():
