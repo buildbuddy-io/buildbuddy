@@ -956,7 +956,7 @@ type RunnerPool interface {
 	GetBuildRoot() string
 }
 
-// TODO(iain)
+// CommandRunner is an interface for running command-line commands.
 type CommandRunner interface {
 	Run(ctx context.Context, command *repb.Command, workDir string, statsListener func(*repb.UsageStats), stdio *Stdio) *CommandResult
 }
