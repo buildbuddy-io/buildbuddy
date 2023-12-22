@@ -3,6 +3,7 @@ package execution_server_test
 import (
 	"context"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -309,8 +310,18 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 	}
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, executeResponse, protocmp.Transform()))
 
-	// Should also be able to fetch the execute response from cache now that the
-	// execution is complete.
+	// Should also be able to fetch the ExecuteResponse from cache. See field
+	// comment on Execution.exeute_response_digest for notes on serialization
+	// format.
+	ed, err := digest.Compute(strings.NewReader(taskID), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	ern := digest.NewResourceName(ed, instanceName, rspb.CacheType_AC, repb.DigestFunction_SHA256)
+	result, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), ern)
+	require.NoError(t, err)
+	cachedExecuteResponse := &repb.ExecuteResponse{}
+	err = proto.Unmarshal(result.StdoutRaw, cachedExecuteResponse)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 }
 
 func uploadEmptyAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value) *digest.ResourceName {
