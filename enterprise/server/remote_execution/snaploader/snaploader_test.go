@@ -31,6 +31,8 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
+const maxFilecacheSizeBytes = 20_000_000
+
 func init() {
 	// Ensure that we allocate enough memory for the mmap LRU.
 	if err := resources.Configure(true /*=snapshotSharingEnabled*/); err != nil {
@@ -38,19 +40,25 @@ func init() {
 	}
 }
 
+func setupEnv(t *testing.T) *testenv.TestEnv {
+	env := testenv.GetTestEnv(t)
+	filecacheDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+	_, run := testenv.RegisterLocalGRPCServer(env)
+	testcache.Setup(t, env)
+	go run()
+	return env
+}
+
 func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	for _, enableRemote := range []bool{true, false} {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
-		const maxFilecacheSizeBytes = 20_000_000 // 20 MB
 		ctx := context.Background()
-		env := testenv.GetTestEnv(t)
-		filecacheDir := testfs.MakeTempDir(t)
-		fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
-		require.NoError(t, err)
-		fc.WaitForDirectoryScanToComplete()
-		env.SetFileCache(fc)
-		testcache.Setup(t, env)
+		env := setupEnv(t)
 		loader, err := snaploader.New(env)
 		require.NoError(t, err)
 		workDir := testfs.MakeTempDir(t)
@@ -104,15 +112,8 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 func TestUnpackFallbackKey(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
-	const maxFilecacheSizeBytes = 20_000_000 // 20 MB
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	filecacheDir := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
-	require.NoError(t, err)
-	fc.WaitForDirectoryScanToComplete()
-	env.SetFileCache(fc)
-	testcache.Setup(t, env)
+	env := setupEnv(t)
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
 	workDir := testfs.MakeTempDir(t)
@@ -169,15 +170,8 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 	for _, enableRemote := range []bool{true, false} {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
-		const maxFilecacheSizeBytes = 20_000_000 // 20 MB
 		ctx := context.Background()
-		env := testenv.GetTestEnv(t)
-		filecacheDir := testfs.MakeTempDir(t)
-		fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
-		require.NoError(t, err)
-		fc.WaitForDirectoryScanToComplete()
-		env.SetFileCache(fc)
-		testcache.Setup(t, env)
+		env := setupEnv(t)
 		loader, err := snaploader.New(env)
 		require.NoError(t, err)
 		workDir := testfs.MakeTempDir(t)
@@ -236,15 +230,9 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 func TestRemoteSnapshotFetching(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
-	const maxFilecacheSizeBytes = 20_000_000 // 20 MB
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	filecacheDir := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
-	require.NoError(t, err)
-	fc.WaitForDirectoryScanToComplete()
-	env.SetFileCache(fc)
-	testcache.Setup(t, env)
+	env := setupEnv(t)
+	fc := env.GetFileCache()
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
 	workDir := testfs.MakeTempDir(t)
@@ -307,16 +295,9 @@ func TestRemoteSnapshotFetching(t *testing.T) {
 func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
-	const maxFilecacheSizeBytes = 20_000_000 // 20 MB
-	env := testenv.GetTestEnv(t)
+	env := setupEnv(t)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
 	require.NoError(t, err)
-	filecacheDir := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
-	require.NoError(t, err)
-	fc.WaitForDirectoryScanToComplete()
-	env.SetFileCache(fc)
-	testcache.Setup(t, env)
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
 	workDir := testfs.MakeTempDir(t)
@@ -368,19 +349,11 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 	for _, enableRemote := range []bool{true, false} {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)
 
-		const maxFilecacheSizeBytes = 20_000_000 // 20 MB
-
-		env := testenv.GetTestEnv(t)
+		env := setupEnv(t)
 		auth := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 		env.SetAuthenticator(auth)
 		ctx, err := auth.WithAuthenticatedUser(context.Background(), "US1")
 		require.NoError(t, err)
-		filecacheDir := testfs.MakeTempDir(t)
-		fc, err := filecache.NewFileCache(filecacheDir, maxFilecacheSizeBytes, false)
-		require.NoError(t, err)
-		fc.WaitForDirectoryScanToComplete()
-		env.SetFileCache(fc)
-		testcache.Setup(t, env)
 		loader, err := snaploader.New(env)
 		require.NoError(t, err)
 		workDir := testfs.MakeTempDir(t)
