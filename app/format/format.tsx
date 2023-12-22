@@ -221,8 +221,9 @@ export function formatDate(date: Date): string {
   return formatTimestampMillis(date.getTime());
 }
 
-export function formatDateFromUsec(timestamp: number | Long) {
-  return `${moment(+timestamp / 1000).format("MMMM Do")}`;
+export function formatDateFromUsec(timestamp: number | Long, { compact = false } = {}) {
+  const format = compact ? "MMM D" : "MMMM Do";
+  return `${moment(+timestamp / 1000).format(format)}`;
 }
 
 const DATE_RANGE_SEPARATOR = "\u2013";

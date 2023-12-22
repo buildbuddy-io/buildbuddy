@@ -92,7 +92,7 @@ export default class CodeReviewComponent extends React.Component<CodeReviewCompo
         <div>Change</div>
         <div>Author</div>
         <div>Status</div>
-        <div>Last action</div>
+        <div>Updated</div>
         <div>Reviewers</div>
         <div>Size</div>
         <div>Description</div>
@@ -186,7 +186,7 @@ class PR extends React.Component<PRProps> {
         <div>
           <div className={`pr-status pr-status-${status}`}>{status}</div>
         </div>
-        <div>{format.formatDateFromUsec(this.props.pr.updatedAtUsec)}</div>
+        <div>{format.formatDateFromUsec(this.props.pr.updatedAtUsec, { compact: true })}</div>
         <div>{joinReactNodes(reviewers, ", ")}</div>
         <div>{size(this.props.pr)}</div>
         <div>{this.props.pr.title}</div>
