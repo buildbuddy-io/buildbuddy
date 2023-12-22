@@ -1,3 +1,69 @@
+const fs = require("fs");
+
+// Keep these in sync with /tsconfig.json
+const configDirs = [
+  "bazel-out/k8-opt/bin",
+  "bazel-out/k8-fastbuild/bin",
+  "bazel-out/linux_x86_64-fastbuild/bin",
+  "bazel-out/linux_x86_64-opt/bin",
+  "bazel-out/darwin-opt/bin",
+  "bazel-out/darwin-fastbuild/bin",
+  "bazel-out/darwin_x86_64-opt/bin",
+  "bazel-out/darwin_x86_64-fastbuild/bin",
+  "bazel-out/darwin_arm64-opt/bin",
+  "bazel-out/darwin_arm64-fastbuild/bin",
+  "bazel-out/macos_x86_64-opt/bin",
+  "bazel-out/macos_x86_64-fastbuild/bin",
+  "bazel-out/macos_arm64-opt/bin",
+  "bazel-out/macos_arm64-fastbuild/bin",
+  "bazel-out/local_config_platform-opt/bin",
+  "bazel-out/local_config_platform-fastbuild/bin",
+];
+
+/**
+ * Webpack plugin that resolves "bazel-bin" references to the bazel
+ * config-specific "bazel-out/.../bin" directory.
+ */
+class BazelBinResolverPlugin {
+  apply(resolver) {
+    const target = resolver.ensureHook("resolve");
+
+    resolver.getHook("resolve").tapAsync("BazelBinResolverPlugin", (request, resolveContext, callback) => {
+      if (request?.request?.includes("/bazel-bin/")) {
+        // For now just try all supported config dirs and see if the file exists there.
+        for (const configDir of configDirs) {
+          // Note: ROOTDIR (execution root dir) is set by the yarn() rule in
+          // //rules/yarn:index.bzl
+          const binPath = request.request.replace(/.*?\/bazel-bin\//, process.env["ROOTDIR"] + "/" + configDir + "/");
+          let exists = false;
+          try {
+            fs.statSync(binPath);
+            exists = true;
+          } catch (e) {}
+          if (!exists) {
+            continue;
+          }
+          resolver.doResolve(target, { ...request, request: binPath }, null, resolveContext, callback);
+          return;
+        }
+      }
+      callback();
+    });
+  }
+}
+
+const bazelBinPlugin = function (context, options) {
+  return {
+    name: "docusaurus-bazel-bin-resolver-plugin",
+
+    configureWebpack() {
+      return {
+        resolve: { plugins: [new BazelBinResolverPlugin()] },
+      };
+    },
+  };
+};
+
 module.exports = {
   title: "BuildBuddy",
   tagline:
@@ -299,5 +365,6 @@ module.exports = {
         ],
       },
     ],
+    bazelBinPlugin,
   ],
 };
