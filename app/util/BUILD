@@ -130,3 +130,14 @@ ts_library(
         "@npm//react",
     ],
 )
+
+ts_library(
+    name = "cache",
+    srcs = ["cache.tsx"],
+    deps = [
+        "//proto:remote_execution_ts_proto",
+        "//proto:resource_ts_proto",
+        "@npm//@types/long",
+        "@npm//long",
+    ],
+)
