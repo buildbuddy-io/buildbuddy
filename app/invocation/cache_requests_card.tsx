@@ -3,7 +3,6 @@ import router from "../router/router";
 import InvocationModel from "./invocation_model";
 import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, SortDesc } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
-import { google as google_ts } from "../../proto/timestamp_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
 import rpc_service from "../service/rpc_service";
@@ -367,13 +366,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     if (result.digest?.hash && result.cacheType == resource.CacheType.CAS) {
       rpc_service.downloadBytestreamFile(
         result.digest.hash,
-        "bytestream://" +
-          this.props.model.getCacheAddress() +
-          "/blobs/" +
-          this.props.model.getDigestFunctionDir() +
-          result.digest?.hash +
-          "/" +
-          result.digest?.sizeBytes,
+        this.props.model.getBytestreamURL(result.digest),
         this.props.model.getInvocationId()
       );
     }
