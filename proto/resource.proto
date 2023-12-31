@@ -33,6 +33,12 @@ message ResourceName {
   // that this is only correct for the following digest types:
   // MD5, MURMUR3, SHA1, SHA256, SHA384, SHA512, VSO.
   build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 5;
+
+  // The hostname or hostname:port of the cache service. If not present, the
+  // rest of the values in the resource name refer to the local service address,
+  // similar to how a URL consisting only of a path is relative to the current
+  // domain.
+  string address = 6;
 }
 
 // CacheType represents the type of cache being written to.
