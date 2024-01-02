@@ -3,6 +3,7 @@ import format from "../format/format";
 import InvocationModel from "./invocation_model";
 import { Download, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
+import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
@@ -11,6 +12,9 @@ import TerminalComponent from "../terminal/terminal";
 import { parseDigest, parseActionDigest } from "../util/cache";
 import UserPreferences from "../preferences/preferences";
 import alert_service from "../alert/alert_service";
+
+type Timestamp = google_timestamp.protobuf.Timestamp;
+type ITimestamp = google_timestamp.protobuf.ITimestamp;
 
 interface Props {
   model: InvocationModel;
@@ -59,7 +63,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const actionUrl = this.props.model.getBytestreamURL(digest);
     rpcService
       .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer: any) => {
+      .then((buffer) => {
         let action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer));
         this.setState({
           action: action,
@@ -96,7 +100,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     let inputRootURL = this.props.model.getBytestreamURL(rootDigest);
     rpcService
       .fetchBytestreamFile(inputRootURL, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer: any) => {
+      .then((buffer) => {
         let inputRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         let inputDirs: InputNode[] = inputRoot.directories.map((node) => ({
           obj: node,
@@ -117,7 +121,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const actionResultUrl = this.props.model.getActionCacheURL(digest);
     rpcService
       .fetchBytestreamFile(actionResultUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer: any) => {
+      .then((buffer) => {
         const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer));
         this.setState({ actionResult });
         this.fetchStdout(actionResult);
@@ -152,7 +156,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     let commandURL = this.props.model.getBytestreamURL(action.commandDigest);
     rpcService
       .fetchBytestreamFile(commandURL, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer: any) => {
+      .then((buffer) => {
         this.setState({
           command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
         });
@@ -184,7 +188,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
   private renderTimelines() {
     const metadata = this.state.actionResult?.executionMetadata;
 
-    type TimelineEvent = { name: string; color: string; timestamp: any };
+    type TimelineEvent = {
+      name: string;
+      color: string;
+      timestamp?: Timestamp | null;
+    };
     const events: TimelineEvent[] = [
       {
         name: "Queued",
@@ -235,8 +243,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
 
     const totalDuration = durationSeconds(
-      filteredEvents[0].timestamp,
-      filteredEvents[filteredEvents.length - 1].timestamp
+      filteredEvents[0].timestamp!,
+      filteredEvents[filteredEvents.length - 1].timestamp!
     );
 
     return (
@@ -246,13 +254,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
           if (i == filteredEvents.length - 1) return null;
 
           const next = filteredEvents[i + 1];
-          const duration = durationSeconds(event.timestamp, next.timestamp);
+          const duration = durationSeconds(event.timestamp!, next.timestamp!);
           const weight = duration / totalDuration;
           return (
             <div>
               <div className="metadata-detail">
                 <span className="label">
-                  {event.name} @ {format.formatTimestamp(event.timestamp)}
+                  {event.name}
+                  {event.timestamp && <>@ {format.formatTimestamp(event.timestamp)}</>}
                 </span>
                 <span className="bar-description">
                   {format.compactDurationSec(duration)} ({(weight * 100).toFixed(1)}%)
@@ -596,15 +605,15 @@ function computeMilliCpu(result: build.bazel.remote.execution.v2.ActionResult): 
   const usage = metadata.usageStats;
   if (!usage) return 0;
 
-  const execDurationSeconds = durationSeconds(metadata.executionStartTimestamp, metadata.executionCompletedTimestamp);
+  const execDurationSeconds = durationSeconds(metadata.executionStartTimestamp!, metadata.executionCompletedTimestamp!);
   const cpuMillis = Number(usage.cpuNanos) / 1e6;
   return Math.floor(cpuMillis / execDurationSeconds);
 }
 
-function durationSeconds(t1: any, t2: any): number {
+function durationSeconds(t1: ITimestamp, t2: ITimestamp): number {
   return timestampToUnixSeconds(t2) - timestampToUnixSeconds(t1);
 }
 
-function timestampToUnixSeconds(timestamp: any): number {
-  return timestamp.seconds + timestamp.nanos / 1e9;
+function timestampToUnixSeconds(timestamp: ITimestamp): number {
+  return Number(timestamp.seconds) + Number(timestamp.nanos) / 1e9;
 }
