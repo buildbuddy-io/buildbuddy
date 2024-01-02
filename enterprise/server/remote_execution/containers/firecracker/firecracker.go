@@ -103,7 +103,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "5"
+	GuestAPIVersion = "6"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -994,6 +994,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	c.snapshot = snap
 
+	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
+		return err
+	}
+
 	// Use vmCtx for COWs since IO may be done outside of the task ctx.
 	unpacked, err := c.loader.UnpackSnapshot(vmCtx, snap, c.getChroot())
 	if err != nil {
@@ -1335,6 +1339,9 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	}
 	if *EnableRootfs {
 		bootArgs = "-enable_rootfs " + bootArgs
+	}
+	if c.fsLayout != nil {
+		bootArgs = "-enable_vfs " + bootArgs
 	}
 	cgroupVersion, err := getCgroupVersion()
 	if err != nil {
@@ -1699,6 +1706,9 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
+	if c.fsLayout == nil {
+		return nil
+	}
 	if c.vfsServer != nil {
 		return nil
 	}

@@ -52,6 +52,7 @@ var (
 	path                    = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	vmExecPort              = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
 	enableRootfs            = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
+	enableVFS               = flag.Bool("enable_vfs", false, "Whether to run the VFS client.")
 	debugMode               = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 	logLevel                = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute         = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
@@ -446,6 +447,9 @@ func main() {
 		return cmd.Run()
 	})
 	eg.Go(func() error {
+		if !*enableVFS {
+			return nil
+		}
 		cmd := exec.CommandContext(ctx, os.Args[0], append(os.Args[1:], "--vmvfs")...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
