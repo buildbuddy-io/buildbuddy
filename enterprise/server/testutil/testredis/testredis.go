@@ -83,25 +83,33 @@ func (h *Handle) start() {
 	if err != nil {
 		assert.FailNowf(h.t, "redis binary could not be started", err.Error())
 	}
+	h.t.Cleanup(func() {
+		h.Shutdown()
+	})
 	go func() {
-		if err := cmd.Wait(); err != nil {
-			close(h.done)
-			select {
-			case <-ctx.Done():
-			default:
-				log.Warningf("redis server did not exit cleanly: %v", err)
-			}
+		status := cmd.Wait()
+		if ctx.Err() == nil {
+			// Context was *not* cancelled, meaning the Redis process terminated
+			// due to something other than calling Shutdown(). This is
+			// unexpected; fail the test proactively.
+			h.t.Fatalf("redis process terminated unexpectedly: %s", status)
 		}
+		close(h.done)
 	}()
 }
 
 // Restart restarts Redis.
 // Blocks until Redis is reachable.
 func (h *Handle) Restart() {
-	h.cancel()
-	<-h.done
+	h.Shutdown()
 	h.start()
 	waitUntilHealthy(h.t, h.Target)
+}
+
+// Shutdown kills the Redis process and waits for the process to terminate.
+func (h *Handle) Shutdown() {
+	h.cancel()
+	<-h.done
 }
 
 func (h *Handle) Client() redis.UniversalClient {
