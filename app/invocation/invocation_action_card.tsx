@@ -56,7 +56,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return;
     }
     const digest = parseActionDigest(digestParam);
-    const actionUrl = this.props.model.getActionCacheURL(digest);
+    const actionUrl = this.props.model.getBytestreamURL(digest);
     rpcService
       .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: any) => {
