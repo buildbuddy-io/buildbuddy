@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/boundedstack"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -37,10 +38,10 @@ const (
 	// Suffix used for dirtied chunks.
 	dirtySuffix = ".dirty"
 
-	// We don't want this to be too big, because we want to prioritize fetching
-	// more recently accessed data. If the chan is too big, we may waste time
-	// churning through stale data
-	eagerFetchChanSize = 100
+	// The capacity of the buffer of chunks that are waiting to be eagerly
+	// fetched. We don't want this to be too big, because otherwise we'd waste
+	// resources fetching chunks that are unlikely to be used.
+	eagerFetchBufferCapacity = 100
 
 	// If we access a chunk, we will queue this number of contiguous chunks
 	// to be eagerly fetched in the background, anticipating that they will
@@ -122,9 +123,12 @@ type COWStore struct {
 	// Concurrency-safe pool of buffers that can be used for copying chunks
 	copyBufPool sync.Pool
 
-	eagerFetchChan chan *eagerFetchData
-	eagerFetchEg   *errgroup.Group
-	quitChan       chan struct{}
+	// Chunk offsets to be eagerly fetched. This is using a bounded stack data
+	// structure so that if the buffer is full, a new item can still be appended,
+	// evicting the least recently added chunk.
+	eagerFetchStack *boundedstack.BoundedStack[int64]
+	eagerFetchEg    *errgroup.Group
+	quitChan        chan struct{}
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -139,7 +143,10 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 	for _, c := range chunks {
 		chunkMap[c.Offset] = c
 	}
-
+	eagerFetchStack, err := boundedstack.New[int64](eagerFetchBufferCapacity)
+	if err != nil {
+		return nil, err
+	}
 	s := &COWStore{
 		ctx:                ctx,
 		env:                env,
@@ -155,13 +162,13 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 				return &b
 			},
 		},
-		zeroBuf:        make([]byte, chunkSizeBytes),
-		chunkSizeBytes: chunkSizeBytes,
-		totalSizeBytes: totalSizeBytes,
-		ioBlockSize:    int64(stat.Sys().(*syscall.Stat_t).Blksize),
-		eagerFetchChan: make(chan *eagerFetchData, eagerFetchChanSize),
-		eagerFetchEg:   &errgroup.Group{},
-		quitChan:       make(chan struct{}),
+		zeroBuf:         make([]byte, chunkSizeBytes),
+		chunkSizeBytes:  chunkSizeBytes,
+		totalSizeBytes:  totalSizeBytes,
+		ioBlockSize:     int64(stat.Sys().(*syscall.Stat_t).Blksize),
+		eagerFetchStack: eagerFetchStack,
+		eagerFetchEg:    &errgroup.Group{},
+		quitChan:        make(chan struct{}),
 	}
 
 	s.eagerFetchEg.Go(func() error {
@@ -615,23 +622,11 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 	return ogChunk, newChunk, nil
 }
 
-type eagerFetchData struct {
-	// Chunk offset to eagerly fetch
-	offset int64
-}
-
 func (s *COWStore) eagerFetchNextChunks(offset int64) {
 	currentOffset := offset + s.chunkSizeBytes
 	for i := 0; i < numChunksToEagerFetch; i++ {
-		s.sendNonBlockingEagerFetch(currentOffset)
+		s.eagerFetchStack.Push(currentOffset)
 		currentOffset += s.chunkSizeBytes
-	}
-}
-
-func (s *COWStore) sendNonBlockingEagerFetch(offset int64) {
-	select {
-	case s.eagerFetchChan <- &eagerFetchData{offset: offset}:
-	default:
 	}
 }
 
@@ -641,25 +636,30 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 	eg.SetLimit(*eagerFetchConcurrency)
 	defer eg.Wait()
 
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+	go func() {
+		<-s.quitChan
+		cancel()
+	}()
+
 	for {
-		select {
-		case <-s.quitChan:
-			return
-		case d := <-s.eagerFetchChan:
-			if err := rateLimiter.Wait(s.ctx); err != nil {
-				if err != s.ctx.Err() {
-					log.CtxErrorf(s.ctx, "COWStore eager fetch rate limiter failed, stopping eager fetches: %s", err)
-				}
-				return
-			}
-			eg.Go(func() error {
-				err := s.fetchChunk(d.offset)
-				if err != nil {
-					log.CtxWarningf(s.ctx, "COWStore eager fetch chunk failed with: %s", err)
-				}
-				return nil
-			})
+		offset, err := s.eagerFetchStack.Recv(ctx)
+		if err != nil {
+			break // context canceled
 		}
+		if err := rateLimiter.Wait(ctx); err != nil {
+			if err != s.ctx.Err() {
+				log.CtxErrorf(s.ctx, "COWStore eager fetch rate limiter failed, stopping eager fetches: %s", err)
+			}
+			return
+		}
+		eg.Go(func() error {
+			if err := s.fetchChunk(offset); err != nil {
+				log.CtxWarningf(s.ctx, "COWStore eager fetch chunk failed with: %s", err)
+			}
+			return nil
+		})
 	}
 }
 
