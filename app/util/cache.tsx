@@ -77,9 +77,8 @@ export function parseDigestFunction(name: string): DigestFunction {
  */
 export function resourceNameToString(name: resource.IResourceName): string {
   return [
-    name.cacheType === resource.CacheType.AC ? "actioncache://" : "bytestream://",
-    name.address,
-    name.instanceName,
+    (name.cacheType === resource.CacheType.AC ? "actioncache://" : "bytestream://") + name.address,
+    name.instanceName ?? "",
     blobsURLPart(name),
     name.cacheType === resource.CacheType.AC ? "ac" : "",
     digestFunctionURLPart(name),
