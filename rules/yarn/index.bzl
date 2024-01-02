@@ -1,4 +1,6 @@
 DEFAULT_CMD_TPL = """
+# NOTE: BazelBinResolverPlugin in docusaurus.config.js depends on ROOTDIR being set
+# to the original execution working directory.
 export ROOTDIR=$$(pwd) &&
 export PACKAGEDIR=$$(dirname $(location {package})) &&
 export PATH=$$ROOTDIR/$$(dirname $(location {yarn})):$$ROOTDIR/$$(dirname $(location {node})):$$PATH &&

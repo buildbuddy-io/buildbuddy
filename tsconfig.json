@@ -17,6 +17,7 @@
     "rootDirs": [
       ".",
       "bazel-bin",
+      // Keep the following in sync with website/docusaurus.config.js
       "bazel-out/k8-opt/bin",
       "bazel-out/k8-fastbuild/bin",
       "bazel-out/linux_x86_64-fastbuild/bin",
