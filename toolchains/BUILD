@@ -75,7 +75,7 @@ cc_toolchain_config(
     abi_version = "unknown",
     builtin_sysroot = "",
     compile_flags = [
-        "--strace",
+        # "--strace",
         "-isystem",
         "external/cosmocc/include",
         "-include",
@@ -125,7 +125,7 @@ cc_toolchain_config(
         "-static",
         "-nostdlib",
         "-no-pie",
-        "-fuse-ld=bfd",
+        # "-fuse-ld=bfd",
         "-Wl,--gc-sections",
         "-Wl,-T,external/cosmocc/x86_64-linux-cosmo/lib/ape.lds",
         "-Wl,-z,common-page-size=4096",

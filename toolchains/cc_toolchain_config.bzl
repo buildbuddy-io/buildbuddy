@@ -73,10 +73,6 @@ def _impl(ctx):
 
     # BEGIN CODE FROM rules_cc/cc/private/toolchain/unix_cc_toolchain_config.bzl
 
-    supports_pic_feature = feature(
-        name = "supports_pic",
-        enabled = True,
-    )
     supports_start_end_lib_feature = feature(
         name = "supports_start_end_lib",
         enabled = True,
@@ -196,8 +192,6 @@ def _impl(ctx):
         provides = ["profile"],
     )
 
-    supports_dynamic_linker_feature = feature(name = "supports_dynamic_linker", enabled = True)
-
     user_compile_flags_feature = feature(
         name = "user_compile_flags",
         enabled = True,
@@ -260,27 +254,6 @@ def _impl(ctx):
                 flag_groups = [flag_group(flags = ["-static-libgcc"])],
                 with_features = [
                     with_feature_set(features = ["static_link_cpp_runtimes"]),
-                ],
-            ),
-        ],
-    )
-
-    pic_feature = feature(
-        name = "pic",
-        enabled = True,
-        flag_sets = [
-            flag_set(
-                actions = [
-                    ACTION_NAMES.assemble,
-                    ACTION_NAMES.preprocess_assemble,
-                    ACTION_NAMES.linkstamp_compile,
-                    ACTION_NAMES.c_compile,
-                    ACTION_NAMES.cpp_compile,
-                    ACTION_NAMES.cpp_module_codegen,
-                    ACTION_NAMES.cpp_module_compile,
-                ],
-                flag_groups = [
-                    flag_group(flags = ["-fPIC"], expand_if_available = "pic"),
                 ],
             ),
         ],
@@ -371,61 +344,6 @@ def _impl(ctx):
         provides = ["profile"],
     )
 
-    runtime_library_search_directories_feature = feature(
-        name = "runtime_library_search_directories",
-        flag_sets = [
-            flag_set(
-                actions = ACTION_NAME_GROUPS.all_cc_link_actions,
-                flag_groups = [
-                    flag_group(
-                        iterate_over = "runtime_library_search_directories",
-                        flag_groups = [
-                            flag_group(
-                                flags = [
-                                    "-Wl,-rpath,$EXEC_ORIGIN/%{runtime_library_search_directories}",
-                                ],
-                                expand_if_true = "is_cc_test",
-                            ),
-                            flag_group(
-                                flags = [
-                                    "-Wl,-rpath,$ORIGIN/%{runtime_library_search_directories}",
-                                ],
-                                expand_if_false = "is_cc_test",
-                            ),
-                        ],
-                        expand_if_available =
-                            "runtime_library_search_directories",
-                    ),
-                ],
-                with_features = [
-                    with_feature_set(features = ["static_link_cpp_runtimes"]),
-                ],
-            ),
-            flag_set(
-                actions = ACTION_NAME_GROUPS.all_cc_link_actions,
-                flag_groups = [
-                    flag_group(
-                        iterate_over = "runtime_library_search_directories",
-                        flag_groups = [
-                            flag_group(
-                                flags = [
-                                    "-Wl,-rpath,$ORIGIN/%{runtime_library_search_directories}",
-                                ],
-                            ),
-                        ],
-                        expand_if_available =
-                            "runtime_library_search_directories",
-                    ),
-                ],
-                with_features = [
-                    with_feature_set(
-                        not_features = ["static_link_cpp_runtimes"],
-                    ),
-                ],
-            ),
-        ],
-    )
-
     fission_support_feature = feature(
         name = "fission_support",
         flag_sets = [
@@ -437,21 +355,6 @@ def _impl(ctx):
                         expand_if_available = "is_using_fission",
                     ),
                 ],
-            ),
-        ],
-    )
-
-    shared_flag_feature = feature(
-        name = "shared_flag",
-        flag_sets = [
-            flag_set(
-                actions = [
-                    ACTION_NAMES.cpp_link_dynamic_library,
-                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
-                    ACTION_NAMES.lto_index_for_dynamic_library,
-                    ACTION_NAMES.lto_index_for_nodeps_dynamic_library,
-                ],
-                flag_groups = [flag_group(flags = ["-shared"])],
             ),
         ],
     )
@@ -643,36 +546,6 @@ def _impl(ctx):
                     flag_group(
                         flags = ["-Wl,-S"],
                         expand_if_available = "strip_debug_symbols",
-                    ),
-                ],
-            ),
-        ],
-    )
-
-    build_interface_libraries_feature = feature(
-        name = "build_interface_libraries",
-        flag_sets = [
-            flag_set(
-                actions = [
-                    ACTION_NAMES.cpp_link_dynamic_library,
-                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
-                    ACTION_NAMES.lto_index_for_dynamic_library,
-                    ACTION_NAMES.lto_index_for_nodeps_dynamic_library,
-                ],
-                flag_groups = [
-                    flag_group(
-                        flags = [
-                            "%{generate_interface_library}",
-                            "%{interface_library_builder_path}",
-                            "%{interface_library_input_path}",
-                            "%{interface_library_output_path}",
-                        ],
-                        expand_if_available = "generate_interface_library",
-                    ),
-                ],
-                with_features = [
-                    with_feature_set(
-                        features = ["supports_interface_shared_libraries"],
                     ),
                 ],
             ),
@@ -892,24 +765,6 @@ def _impl(ctx):
         ],
     )
 
-    force_pic_flags_feature = feature(
-        name = "force_pic_flags",
-        flag_sets = [
-            flag_set(
-                actions = [
-                    ACTION_NAMES.cpp_link_executable,
-                    ACTION_NAMES.lto_index_for_executable,
-                ],
-                flag_groups = [
-                    flag_group(
-                        flags = ["-pie"],
-                        expand_if_available = "force_pic",
-                    ),
-                ],
-            ),
-        ],
-    )
-
     dependency_file_feature = feature(
         name = "dependency_file",
         enabled = True,
@@ -930,31 +785,6 @@ def _impl(ctx):
                     flag_group(
                         flags = ["-MD", "-MF", "%{dependency_file}"],
                         expand_if_available = "dependency_file",
-                    ),
-                ],
-            ),
-        ],
-    )
-
-    dynamic_library_linker_tool_feature = feature(
-        name = "dynamic_library_linker_tool",
-        flag_sets = [
-            flag_set(
-                actions = [
-                    ACTION_NAMES.cpp_link_dynamic_library,
-                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
-                    ACTION_NAMES.lto_index_for_dynamic_library,
-                    ACTION_NAMES.lto_index_for_nodeps_dynamic_library,
-                ],
-                flag_groups = [
-                    flag_group(
-                        flags = [" + cppLinkDynamicLibraryToolPath + "],
-                        expand_if_available = "generate_interface_library",
-                    ),
-                ],
-                with_features = [
-                    with_feature_set(
-                        features = ["supports_interface_shared_libraries"],
                     ),
                 ],
             ),
@@ -1074,7 +904,6 @@ def _impl(ctx):
     features = [
         dependency_file_feature,
         random_seed_feature,
-        pic_feature,
         per_object_debug_info_feature,
         preprocessor_defines_feature,
         includes_feature,
@@ -1085,20 +914,14 @@ def _impl(ctx):
         thinlto_feature,
         fdo_prefetch_hints_feature,
         autofdo_feature,
-        build_interface_libraries_feature,
-        dynamic_library_linker_tool_feature,
         symbol_counts_feature,
-        shared_flag_feature,
         linkstamps_feature,
         output_execpath_flags_feature,
-        runtime_library_search_directories_feature,
         library_search_directories_feature,
         archiver_flags_feature,
-        force_pic_flags_feature,
         fission_support_feature,
         strip_debug_symbols_feature,
         coverage_feature,
-        supports_pic_feature,
         gcc_coverage_map_format_feature,
         llvm_coverage_map_format_feature,
     ] + (
@@ -1112,7 +935,6 @@ def _impl(ctx):
         user_link_flags_feature,
         static_libgcc_feature,
         fdo_optimize_feature,
-        supports_dynamic_linker_feature,
         dbg_feature,
         opt_feature,
         user_compile_flags_feature,
@@ -1142,6 +964,7 @@ cc_toolchain_config = rule(
     attrs = {
         "ar": attr.label(default = "@cosmocc//:x86_64-ar", allow_single_file = True),
         "ld": attr.label(default = "@cosmocc//:x86_64-ld", allow_single_file = True),
+        # "ld": attr.label(default = "@cosmocc//:x86_64-g++", allow_single_file = True),
         "c_compile": attr.label(default = "@cosmocc//:x86_64-gcc", allow_single_file = True),
         "cpp_compile": attr.label(default = "@cosmocc//:x86_64-g++", allow_single_file = True),
         "strip": attr.label(default = "@cosmocc//:x86_64-strip", allow_single_file = True),
