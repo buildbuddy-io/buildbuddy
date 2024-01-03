@@ -28,6 +28,16 @@ jobs:
         run: |
           # Configure repo based on pushed tag if set
           if [ ${{ github.event_name }} = 'push' ]; then
+
+            if ! [[ "$GITHUB_REF" ]]; then
+              echo >&2 "Missing GITHUB_REF env var"
+              exit 1
+            fi
+            if ! [[ "$GITHUB_REF" =~ ^refs/tags/v ]] && ! [[ "$GITHUB_REF" =~ ^v ]]; then
+              echo >&2 "Unexpected GITHUB_REF '$GITHUB_REF': expected vX.Y.Z or refs/tags/vX.Y.Z"
+              exit 1
+            fi
+
             ref="${GITHUB_REF}"
             tag=${GITHUB_REF/refs\/tags\//}
           else
