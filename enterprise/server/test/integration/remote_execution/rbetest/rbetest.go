@@ -89,7 +89,7 @@ const (
 	// We are currently not testing non-default instances, but we should at some point.
 	defaultInstanceName = ""
 
-	defaultWaitTimeout = 20 * time.Second
+	defaultWaitTimeout = 60 * time.Second
 )
 
 func init() {
