@@ -25,6 +25,10 @@ tramp
 # Bazel directories
 /bazel-*
 
+# MODULE.bazel stuff, for now
+MODULE.bazel
+MODULE.bazel.lock
+
 # Generated protos
 **/proto/**/*.pb.go
 **/proto/**/*_ts_proto.d.ts
