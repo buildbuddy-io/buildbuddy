@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -455,6 +456,34 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props 
 	return taskID
 }
 
+func enqueueTaskReservation(ctx context.Context, t *testing.T, env environment.Env, delay time.Duration) string {
+	id, err := uuid.NewRandom()
+	require.NoError(t, err)
+	taskID := id.String()
+
+	require.NoError(t, err)
+	_, err = env.GetSchedulerService().EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId: taskID,
+		TaskSize: &scpb.TaskSize{
+			EstimatedMemoryBytes:   100,
+			EstimatedMilliCpu:      100,
+			EstimatedFreeDiskBytes: 100,
+		},
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			Os:   defaultOS,
+			Arch: defaultArch,
+			TaskSize: &scpb.TaskSize{
+				EstimatedMemoryBytes:   100,
+				EstimatedMilliCpu:      100,
+				EstimatedFreeDiskBytes: 100,
+			},
+		},
+		Delay: durationpb.New(delay),
+	})
+	require.NoError(t, err)
+	return taskID
+}
+
 func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
@@ -634,4 +663,15 @@ func TestSchedulingDelay_PreferredExecutorUnhealthy(t *testing.T) {
 
 	fe2.EnsureTaskNotReceived(taskID)
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
+}
+
+func TestEnqueueTaskReservation_DoesntOverwriteDelay(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
+	fe1.Register()
+
+	taskID := enqueueTaskReservation(ctx, t, env, 3*time.Second)
+
+	fe1.WaitForTaskWithDelay(taskID, 3*time.Second)
 }
