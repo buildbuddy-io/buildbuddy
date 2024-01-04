@@ -45,12 +45,4 @@ export const DigestComponent = React.forwardRef((props: DigestProps, ref: React.
   );
 });
 
-export function parseDigest(value: string): Digest {
-  const parts = value.split("/");
-  return {
-    hash: parts[0],
-    sizeBytes: parts.length > 1 ? Number(parts[1]) : null,
-  };
-}
-
 export default DigestComponent;

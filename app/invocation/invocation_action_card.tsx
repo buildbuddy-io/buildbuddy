@@ -1,15 +1,20 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { Download, Info, HelpCircle } from "lucide-react";
+import { Download, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
-import { resource } from "../../proto/resource_ts_proto";
+import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
-import DigestComponent, { parseDigest } from "../components/digest/digest";
+import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
 import TerminalComponent from "../terminal/terminal";
+import { parseDigest, parseActionDigest } from "../util/cache";
 import UserPreferences from "../preferences/preferences";
+import alert_service from "../alert/alert_service";
+
+type Timestamp = google_timestamp.protobuf.Timestamp;
+type ITimestamp = google_timestamp.protobuf.ITimestamp;
 
 interface Props {
   model: InvocationModel;
@@ -49,14 +54,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   fetchAction() {
     this.setState({ loadingAction: true });
-    const digest = parseDigest(this.props.search.get("actionDigest") ?? "");
-    const digestType = this.props.model.getDigestFunctionDir();
-    const actionUrl = `bytestream://${this.props.model.getCacheAddress()}/blobs/${digestType}${digest.hash}/${
-      digest.sizeBytes ?? 1
-    }`;
+    const digestParam = this.props.search.get("actionDigest");
+    if (!digestParam) {
+      alert_service.error("Missing action digest URL param");
+      return;
+    }
+    const digest = parseActionDigest(digestParam);
+    const actionUrl = this.props.model.getBytestreamURL(digest);
     rpcService
       .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer: any) => {
+      .then((buffer) => {
         let action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer));
         this.setState({
           action: action,
@@ -90,104 +97,66 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
-    let inputRootFile =
-      "bytestream://" +
-      this.props.model.getCacheAddress() +
-      "/blobs/" +
-      this.props.model.getDigestFunctionDir() +
-      rootDigest.hash +
-      "/" +
-      rootDigest.sizeBytes;
+    let inputRootURL = this.props.model.getBytestreamURL(rootDigest);
     rpcService
-      .fetchBytestreamFile(inputRootFile, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer: any) => {
-        let tempRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
-        let inputDirs: InputNode[] = tempRoot.directories.map(
-          (node) =>
-            ({
-              obj: node,
-              type: "dir",
-            } as InputNode)
-        );
-        this.setState({
-          inputRoot: tempRoot,
-          inputDirs: inputDirs,
-        });
+      .fetchBytestreamFile(inputRootURL, this.props.model.getInvocationId(), "arraybuffer")
+      .then((buffer) => {
+        let inputRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
+        let inputDirs: InputNode[] = inputRoot.directories.map((node) => ({
+          obj: node,
+          type: "dir",
+        }));
+        this.setState({ inputRoot, inputDirs });
       })
       .catch((e) => console.error("Failed to fetch input root:", e));
   }
 
   fetchActionResult() {
-    let digestParam = this.props.search.get("actionResultDigest");
-    if (digestParam == null) {
-      digestParam = this.props.search.get("actionDigest");
+    let digestParam = this.props.search.get("actionResultDigest") ?? this.props.search.get("actionDigest");
+    if (!digestParam) {
+      alert_service.error("Missing action digest in URL");
+      return;
     }
-    const digestType = this.props.model.getDigestFunctionDir();
-    const digest = parseDigest(digestParam ?? "");
-    const actionResultUrl = `actioncache://${this.props.model.getCacheAddress()}/blobs/ac/${digestType}${digest.hash}/${
-      digest.sizeBytes ?? 1
-    }`;
+    const digest = parseActionDigest(digestParam);
+    const actionResultUrl = this.props.model.getActionCacheURL(digest);
     rpcService
       .fetchBytestreamFile(actionResultUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer: any) => {
+      .then((buffer) => {
         const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer));
-        this.setState({
-          actionResult: actionResult,
-        });
-        this.fetchStdoutAndStderr(actionResult);
+        this.setState({ actionResult });
+        this.fetchStdout(actionResult);
+        this.fetchStderr(actionResult);
       })
       .catch((e) => console.error("Failed to fetch action result:", e));
   }
 
-  fetchStdoutAndStderr(actionResult: build.bazel.remote.execution.v2.ActionResult) {
-    let stdoutUrl =
-      "bytestream://" +
-      this.props.model.getCacheAddress() +
-      "/blobs/" +
-      this.props.model.getDigestFunctionDir() +
-      actionResult.stdoutDigest?.hash +
-      "/" +
-      actionResult.stdoutDigest?.sizeBytes;
+  fetchStdout(actionResult: build.bazel.remote.execution.v2.ActionResult) {
+    if (!actionResult.stdoutDigest) return;
 
+    let stdoutUrl = this.props.model.getBytestreamURL(actionResult.stdoutDigest);
     rpcService
       .fetchBytestreamFile(stdoutUrl, this.props.model.getInvocationId())
-      .then((content: string) => {
-        this.setState({
-          stdout: content,
-        });
-      })
+      .then((stdout) => this.setState({ stdout }))
       .catch((e) => console.error("Failed to fetch stdout:", e));
+  }
 
-    let stderrUrl =
-      "bytestream://" +
-      this.props.model.getCacheAddress() +
-      "/blobs/" +
-      this.props.model.getDigestFunctionDir() +
-      actionResult.stderrDigest?.hash +
-      "/" +
-      actionResult.stderrDigest?.sizeBytes;
+  fetchStderr(actionResult: build.bazel.remote.execution.v2.ActionResult) {
+    if (!actionResult.stderrDigest) return;
+
+    let stderrUrl = this.props.model.getBytestreamURL(actionResult.stderrDigest);
     rpcService
       .fetchBytestreamFile(stderrUrl, this.props.model.getInvocationId())
-      .then((content: string) => {
-        this.setState({
-          stderr: content,
-        });
-      })
+      .then((stderr) => this.setState({ stderr }))
       .catch((e) => console.error("Failed to fetch stderr:", e));
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
-    let commandFile =
-      "bytestream://" +
-      this.props.model.getCacheAddress() +
-      "/blobs/" +
-      this.props.model.getDigestFunctionDir() +
-      action.commandDigest?.hash +
-      "/" +
-      action.commandDigest?.sizeBytes;
+    if (!action.commandDigest) return;
+
+    let commandURL = this.props.model.getBytestreamURL(action.commandDigest);
     rpcService
-      .fetchBytestreamFile(commandFile, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer: any) => {
+      .fetchBytestreamFile(commandURL, this.props.model.getInvocationId(), "arraybuffer")
+      .then((buffer) => {
         this.setState({
           command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
         });
@@ -207,15 +176,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   handleOutputFileClicked(file: build.bazel.remote.execution.v2.OutputFile) {
+    if (!file.digest) return;
+
     rpcService.downloadBytestreamFile(
       file.path,
-      "bytestream://" +
-        this.props.model.getCacheAddress() +
-        "/blobs/" +
-        this.props.model.getDigestFunctionDir() +
-        file.digest?.hash +
-        "/" +
-        file.digest?.sizeBytes,
+      this.props.model.getBytestreamURL(file.digest),
       this.props.model.getInvocationId()
     );
   }
@@ -223,7 +188,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
   private renderTimelines() {
     const metadata = this.state.actionResult?.executionMetadata;
 
-    type TimelineEvent = { name: string; color: string; timestamp: any };
+    type TimelineEvent = {
+      name: string;
+      color: string;
+      timestamp?: Timestamp | null;
+    };
     const events: TimelineEvent[] = [
       {
         name: "Queued",
@@ -274,8 +243,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
 
     const totalDuration = durationSeconds(
-      filteredEvents[0].timestamp,
-      filteredEvents[filteredEvents.length - 1].timestamp
+      filteredEvents[0].timestamp!,
+      filteredEvents[filteredEvents.length - 1].timestamp!
     );
 
     return (
@@ -285,13 +254,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
           if (i == filteredEvents.length - 1) return null;
 
           const next = filteredEvents[i + 1];
-          const duration = durationSeconds(event.timestamp, next.timestamp);
+          const duration = durationSeconds(event.timestamp!, next.timestamp!);
           const weight = duration / totalDuration;
           return (
             <div>
               <div className="metadata-detail">
                 <span className="label">
-                  {event.name} @ {format.formatTimestamp(event.timestamp)}
+                  {event.name}
+                  {event.timestamp && <>@ {format.formatTimestamp(event.timestamp)}</>}
                 </span>
                 <span className="bar-description">
                   {format.compactDurationSec(duration)} ({(weight * 100).toFixed(1)}%)
@@ -315,14 +285,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   handleFileClicked(node: InputNode) {
-    let digestString = node.obj.digest?.hash + "/" + node.obj.digest?.sizeBytes;
-    let dirUrl =
-      "bytestream://" +
-      this.props.model.getCacheAddress() +
-      "/blobs/" +
-      this.props.model.getDigestFunctionDir() +
-      digestString;
+    if (!node.obj?.digest) return;
 
+    let dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
+    let digestString = node.obj.digest.hash ?? "";
     if (this.state.treeShaToExpanded.get(digestString)) {
       this.state.treeShaToExpanded.set(digestString, false);
       this.forceUpdate();
@@ -334,28 +300,21 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
     rpcService
       .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer: any) => {
+      .then((buffer) => {
         let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         this.state.treeShaToExpanded.set(digestString, true);
-        let dirs: InputNode[] = dir.directories.map(
-          (child) =>
-            ({
-              obj: child,
-              type: "dir",
-            } as InputNode)
-        );
-        let files: InputNode[] = dir.files.map(
-          (child) =>
-            ({
-              obj: child,
-              type: "file",
-            } as InputNode)
-        );
+        let dirs: InputNode[] = dir.directories.map((child) => ({
+          obj: child,
+          type: "dir",
+        }));
+        let files: InputNode[] = dir.files.map((child) => ({
+          obj: child,
+          type: "file",
+        }));
         this.state.treeShaToChildrenMap.set(digestString, dirs.concat(files));
         this.forceUpdate();
       })
-      .catch((e) => console.log(e));
-    return;
+      .catch((e) => console.error(e));
   }
 
   private renderNotFoundDetails({ result = false }) {
@@ -646,15 +605,15 @@ function computeMilliCpu(result: build.bazel.remote.execution.v2.ActionResult): 
   const usage = metadata.usageStats;
   if (!usage) return 0;
 
-  const execDurationSeconds = durationSeconds(metadata.executionStartTimestamp, metadata.executionCompletedTimestamp);
+  const execDurationSeconds = durationSeconds(metadata.executionStartTimestamp!, metadata.executionCompletedTimestamp!);
   const cpuMillis = Number(usage.cpuNanos) / 1e6;
   return Math.floor(cpuMillis / execDurationSeconds);
 }
 
-function durationSeconds(t1: any, t2: any): number {
+function durationSeconds(t1: ITimestamp, t2: ITimestamp): number {
   return timestampToUnixSeconds(t2) - timestampToUnixSeconds(t1);
 }
 
-function timestampToUnixSeconds(timestamp: any): number {
-  return timestamp.seconds + timestamp.nanos / 1e9;
+function timestampToUnixSeconds(timestamp: ITimestamp): number {
+  return Number(timestamp.seconds) + Number(timestamp.nanos) / 1e9;
 }
