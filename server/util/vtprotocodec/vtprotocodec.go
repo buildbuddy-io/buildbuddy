@@ -1,6 +1,8 @@
 package vtprotocodec
 
 import (
+	"fmt"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 
 	"google.golang.org/grpc/encoding"
@@ -13,12 +15,25 @@ const Name = "proto"
 // proto messages.
 type vtprotoCodec struct{}
 
+type vtprotoMessage interface {
+	MarshalVT() ([]byte, error)
+	UnmarshalVT([]byte) error
+}
+
 func (vtprotoCodec) Marshal(v any) ([]byte, error) {
-	return proto.Marshal(v)
+	vv, ok := v.(proto.Message)
+	if !ok {
+		return nil, fmt.Errorf("failed to marshal, message is %T, want proto.Message", v)
+	}
+	return proto.Marshal(vv)
 }
 
 func (vtprotoCodec) Unmarshal(data []byte, v any) error {
-	return proto.Unmarshal(data, v)
+	vv, ok := v.(proto.Message)
+	if !ok {
+		return fmt.Errorf("failed to unmarshal, message is %T, want proto.Message", v)
+	}
+	return proto.Unmarshal(data, vv)
 }
 
 func (vtprotoCodec) Name() string {
