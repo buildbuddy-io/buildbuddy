@@ -75,9 +75,9 @@ export function parseDigestFunction(name: string): DigestFunction {
  * file streaming API and is not part of the official Bazel remote API
  * specification.
  */
-export function resourceNameToString(name: resource.IResourceName): string {
+export function resourceNameToString(address: string, name: resource.IResourceName): string {
   return [
-    (name.cacheType === resource.CacheType.AC ? "actioncache://" : "bytestream://") + name.address,
+    (name.cacheType === resource.CacheType.AC ? "actioncache://" : "bytestream://") + address,
     name.instanceName ?? "",
     blobsURLPart(name),
     name.cacheType === resource.CacheType.AC ? "ac" : "",
