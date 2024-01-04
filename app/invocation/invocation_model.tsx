@@ -415,7 +415,6 @@ export default class InvocationModel {
    */
   private getCacheBaseResourceName(): resource.IResourceName {
     return {
-      address: this.getCacheAddress(),
       instanceName: this.getRemoteInstanceName(),
       compressor: this.getCompressor(),
       digestFunction: this.getDigestFunction(),
@@ -427,7 +426,7 @@ export default class InvocationModel {
    * The returned URL can be used with RpcService to fetch the blob.
    */
   getBytestreamURL(digest: build.bazel.remote.execution.v2.IDigest): string {
-    return resourceNameToString({
+    return resourceNameToString(this.getCacheAddress(), {
       ...this.getCacheBaseResourceName(),
       cacheType: resource.CacheType.CAS,
       digest: new build.bazel.remote.execution.v2.Digest(digest),
@@ -439,7 +438,7 @@ export default class InvocationModel {
    * The returned URL can be used with RpcService to fetch the ActionResult.
    */
   getActionCacheURL(digest: build.bazel.remote.execution.v2.IDigest): string {
-    return resourceNameToString({
+    return resourceNameToString(this.getCacheAddress(), {
       ...this.getCacheBaseResourceName(),
       cacheType: resource.CacheType.AC,
       digest: new build.bazel.remote.execution.v2.Digest(digest),
