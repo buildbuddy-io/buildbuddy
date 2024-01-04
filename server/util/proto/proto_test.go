@@ -5,13 +5,14 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/go-faker/faker/v4"
 	"github.com/stretchr/testify/require"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	dspb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	gproto "google.golang.org/protobuf/proto"
 )
 
 const (
@@ -44,8 +45,6 @@ var (
 )
 
 type protoMessage interface {
-	MarshalVT() ([]byte, error)
-	UnmarshalVT([]byte) error
 	SizeVT() int
 	proto.Message
 }
@@ -86,6 +85,7 @@ func generateBytes(t testing.TB, protos []protoMessage) [][]byte {
 
 type marshalFunc func(v protoMessage) ([]byte, error)
 type unmarshalFunc func([]byte, protoMessage) error
+type cloneFunc func(v proto.Message) proto.Message
 
 func TestMarshal(t *testing.T) {
 	md := &rfpb.FileMetadata{}
@@ -111,6 +111,16 @@ func TestUnmarshal(t *testing.T) {
 	err = proto.Unmarshal(data, actual)
 	require.NoError(t, err)
 
+	require.True(t, proto.Equal(md, actual))
+}
+
+func TestClone(t *testing.T) {
+	md := &rfpb.FileMetadata{}
+	err := faker.FakeData(md)
+	require.NoError(t, err, "unable to fake data")
+
+	actual := proto.Clone(md)
+	require.NoError(t, err)
 	require.True(t, proto.Equal(md, actual))
 }
 
@@ -200,6 +210,38 @@ func BenchmarkUnmarshal(b *testing.B) {
 					}
 					v.ReturnToVTPool()
 				}
+			})
+		}
+	}
+}
+
+func benchmarkClone(b *testing.B, cloneFn cloneFunc, data []protoMessage) {
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		pb := data[rand.Intn(len(data))]
+		b.SetBytes(int64(pb.SizeVT()))
+		_ = cloneFn(pb)
+	}
+
+}
+
+func BenchmarkClone(b *testing.B) {
+	cloneFns := map[string]cloneFunc{
+		"New": func(v proto.Message) proto.Message {
+			return proto.Clone(v)
+		},
+		"Old": func(v proto.Message) proto.Message {
+			return gproto.Clone(v)
+		},
+	}
+
+	for pbName, pbType := range testProtoTypes {
+		protos := generateProtos(b, pbType.providerFn)
+		for name, fn := range cloneFns {
+			b.Run(fmt.Sprintf("name=%s/pbName=%s", name, pbName), func(b *testing.B) {
+				benchmarkClone(b, fn, protos)
 			})
 		}
 	}

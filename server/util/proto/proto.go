@@ -4,7 +4,6 @@ import (
 	gproto "google.golang.org/protobuf/proto"
 )
 
-var Clone = gproto.Clone
 var Size = gproto.Size
 var Merge = gproto.Merge
 var Equal = gproto.Equal
@@ -23,6 +22,7 @@ type MarshalOptions = gproto.MarshalOptions
 type vtprotoMessage interface {
 	MarshalVT() ([]byte, error)
 	UnmarshalVT([]byte) error
+	CloneMessageVT() Message
 }
 
 func Marshal(v Message) ([]byte, error) {
@@ -40,4 +40,12 @@ func Unmarshal(b []byte, v Message) error {
 	}
 
 	return UnmarshalOld(b, v)
+}
+
+func Clone(v Message) Message {
+	vt, ok := v.(vtprotoMessage)
+	if ok {
+		return vt.CloneMessageVT()
+	}
+	return gproto.Clone(v)
 }

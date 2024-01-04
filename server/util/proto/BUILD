@@ -18,5 +18,6 @@ go_test(
         "//proto:raft_go_proto",
         "@com_github_go_faker_faker_v4//:faker",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
     ],
 )
