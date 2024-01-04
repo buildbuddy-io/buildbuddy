@@ -2,17 +2,19 @@ package execution_server_test
 
 import (
 	"context"
+	"io"
+	"strings"
 	"testing"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -20,15 +22,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/go-redis/redis/v8"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type schedulerServerMock struct {
@@ -65,14 +73,16 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	scheduler := &schedulerServerMock{}
 	env.SetSchedulerService(scheduler)
 
-	_, run := testenv.RegisterLocalGRPCServer(env)
-	testcache.Setup(t, env)
-	go run()
 	tasksize.Register(env)
 
 	s, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err)
 	env.SetRemoteExecutionService(s)
+
+	_, run := testenv.RegisterLocalGRPCServer(env)
+	testcache.Setup(t, env)
+	repb.RegisterExecutionServer(env.GetGRPCServer(), env.GetRemoteExecutionService())
+	go run()
 
 	return env
 }
@@ -102,12 +112,8 @@ func TestDispatch(t *testing.T) {
 	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
 
-	cmd := &repb.Command{Arguments: []string{"test"}}
-	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), "", repb.DigestFunction_SHA256, cmd)
-	require.NoError(t, err)
-	action := &repb.Action{CommandDigest: cd}
-	ad, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), "", repb.DigestFunction_SHA256, action)
-	require.NoError(t, err)
+	arn := uploadEmptyAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256)
+	ad := arn.GetDigest()
 
 	// note: AttachUserPrefix is normally done by Execute(), which wraps
 	// Dispatch().
@@ -229,6 +235,103 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 
 	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
 	require.Equal(t, 2, schedulerMock.canceledCount)
+}
+
+func TestExecuteAndPublishOperation(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	conn, err := testenv.LocalGRPCConn(ctx, env)
+	require.NoError(t, err)
+	client := repb.NewExecutionClient(conn)
+
+	const instanceName = "test-instance"
+	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
+	const digestFunction = repb.DigestFunction_SHA256
+
+	// Schedule execution
+	arn := uploadEmptyAction(ctx, t, env, instanceName, digestFunction)
+	executionClient, err := client.Execute(ctx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	err = executionClient.CloseSend()
+	require.NoError(t, err)
+	// Wait for execution to be accepted by the server. This also gives us
+	// the task ID.
+	op, err := executionClient.Recv()
+	require.NoError(t, err)
+	taskID := op.GetName()
+
+	// Simulate execution: set up a PublishOperation stream and publish an
+	// ExecuteResponse to it.
+	ctx, err = bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+	})
+	require.NoError(t, err)
+	stream, err := client.PublishOperation(ctx)
+	require.NoError(t, err)
+	queuedTime := time.Unix(100, 0)
+	actionResult := &repb.ActionResult{
+		ExitCode:  42,
+		StderrRaw: []byte("test-stderr"),
+		ExecutionMetadata: &repb.ExecutedActionMetadata{
+			QueuedTimestamp: tspb.New(queuedTime),
+		},
+	}
+	op, err = operation.Assemble(
+		repb.ExecutionStage_COMPLETED, taskID, arn,
+		operation.ExecuteResponseWithResult(actionResult, nil),
+	)
+	require.NoError(t, err)
+	err = stream.Send(op)
+	require.NoError(t, err)
+	_, err = stream.CloseAndRecv()
+	require.NoError(t, err)
+
+	// Wait for the execute response to be streamed back on our initial
+	// /Execute stream.
+	expectedExecuteResponse := &repb.ExecuteResponse{
+		Result: actionResult,
+	}
+	var executeResponse *repb.ExecuteResponse
+	for {
+		op, err = executionClient.Recv()
+		if err == io.EOF {
+			require.NotNil(t, executeResponse, "expected execute response, got EOF")
+			break
+		}
+		require.NoError(t, err)
+		if stage := operation.ExtractStage(op); stage != repb.ExecutionStage_COMPLETED {
+			continue
+		}
+		executeResponse = operation.ExtractExecuteResponse(op)
+	}
+	assert.Empty(t, cmp.Diff(expectedExecuteResponse, executeResponse, protocmp.Transform()))
+
+	// Should also be able to fetch the ExecuteResponse from cache. See field
+	// comment on Execution.exeute_response_digest for notes on serialization
+	// format.
+	ed, err := digest.Compute(strings.NewReader(taskID), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	ern := digest.NewResourceName(ed, instanceName, rspb.CacheType_AC, repb.DigestFunction_SHA256)
+	result, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), ern)
+	require.NoError(t, err)
+	cachedExecuteResponse := &repb.ExecuteResponse{}
+	err = proto.Unmarshal(result.StdoutRaw, cachedExecuteResponse)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
+}
+
+func uploadEmptyAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value) *digest.ResourceName {
+	cmd := &repb.Command{Arguments: []string{"test"}}
+	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
+	require.NoError(t, err)
+	action := &repb.Action{CommandDigest: cd}
+	ad, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, action)
+	require.NoError(t, err)
+	return digest.NewResourceName(ad, instanceName, rspb.CacheType_CAS, df)
 }
 
 func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMetadata) context.Context {

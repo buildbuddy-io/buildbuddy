@@ -280,6 +280,9 @@ func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	if env.GetByteStreamServer() != nil {
 		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	}
+	if env.GetActionCacheServer() != nil {
+		env.SetActionCacheClient(repb.NewActionCacheClient(conn))
+	}
 	return nil
 }
 
