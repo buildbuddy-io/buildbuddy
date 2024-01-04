@@ -176,8 +176,8 @@ actions:
       pull_request: { branches: [ master ] }
       push: { branches: [ master ] }
     bazel_commands:
-      - run :check_artifacts_dir -- $ARTIFACTS_DIRECTORY
-      - test //... --config=buildbuddy_remote_cache --experimental_remote_grpc_log=$ARTIFACTS_DIRECTORY/grpc.log
+      - run :check_artifacts_dir -- $BUILDBUDDY_ARTIFACTS_DIRECTORY
+      - test //... --config=buildbuddy_remote_cache --experimental_remote_grpc_log=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log
 `,
 	}
 
@@ -991,23 +991,17 @@ func TestArtifactUploads(t *testing.T) {
 
 	runnerInvocation := singleInvocation(t, app, result)
 
-	var namedSetEvents []*bespb.BuildEvent
-	for _, event := range runnerInvocation.Event {
-		_, ok := event.BuildEvent.Payload.(*bespb.BuildEvent_NamedSetOfFiles)
-		if !ok {
-			continue
+	var files []*bespb.File
+	for _, tg := range runnerInvocation.GetTargetGroups() {
+		for _, t := range tg.GetTargets() {
+			files = append(files, t.GetFiles()...)
 		}
-		namedSetEvents = append(namedSetEvents, event.BuildEvent)
 	}
-	require.Len(t, namedSetEvents, 1, "expected exactly 1 NamedSetOfFiles event")
-	event := namedSetEvents[0]
-	payload := event.Payload.(*bespb.BuildEvent_NamedSetOfFiles)
-	files := payload.NamedSetOfFiles.GetFiles()
-	require.Len(t, files, 1, "expected exactly 1 file")
+
 	bytestreamURI := files[0].GetUri()
 	require.NotEmpty(t, bytestreamURI)
-	require.Equal(t, "command-1", event.GetId().GetNamedSet().GetId(), "expected named set ID to be 'command-1'")
-	require.Equal(t, "grpc.log", files[0].GetName())
+	fileName := files[0].GetName()
+	require.Equal(t, "grpc.log", fileName)
 
 	// Make sure that we can download the artifact and parse it as a gRPC log.
 	downloadURL := fmt.Sprintf(

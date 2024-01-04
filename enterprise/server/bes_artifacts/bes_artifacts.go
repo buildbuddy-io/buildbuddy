@@ -18,9 +18,12 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
+// Result contains info about a completed attempt at uploading a file to the
+// cache and publishing it to the BES as a NamedSet.
 type Result struct {
 	Duration   time.Duration
 	Digest     *repb.Digest
@@ -33,8 +36,9 @@ type Result struct {
 // Uploader can be used to asynchronously upload artifacts associated with a
 // build event stream.
 type Uploader struct {
-	ctx context.Context
-	eg  *errgroup.Group
+	ctx  context.Context
+	eg   *errgroup.Group
+	conn *grpc_client.ClientConnPool
 	// ByteStream client used to upload artifacts.
 	bsClient bspb.ByteStreamClient
 	// Publisher used to publish NamedSetOfFiles events when background uploads
@@ -50,6 +54,8 @@ type Uploader struct {
 	results []*Result
 }
 
+// NewUploader returns a new Uploader instance. The caller must call Wait to
+// close the connection that is opened by this function.
 func NewUploader(ctx context.Context, bep *build_event_publisher.Publisher, cacheTarget, instanceName string) (*Uploader, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -61,16 +67,12 @@ func NewUploader(ctx context.Context, bep *build_event_publisher.Publisher, cach
 
 	conn, err := grpc_client.DialSimple(cacheTarget)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapErrorf(err, "dial %q", cacheTarget)
 	}
-	go func() {
-		<-ctx.Done()
-		conn.Close()
-	}()
-
 	return &Uploader{
 		ctx:                 ctx,
 		eg:                  eg,
+		conn:                conn,
 		bsClient:            bspb.NewByteStreamClient(conn),
 		bep:                 bep,
 		bytestreamURIPrefix: bytestreamURIPrefix,
@@ -159,5 +161,6 @@ func (u *Uploader) uploadFile(setID, path, name string) chan *Result {
 // No new uploads should be enqueued after this is called.
 func (u *Uploader) Wait() ([]*Result, error) {
 	err := u.eg.Wait()
+	_ = u.conn.Close()
 	return u.results, err
 }
