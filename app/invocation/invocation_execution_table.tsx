@@ -9,9 +9,9 @@ import {
   uploadDuration,
 } from "./invocation_execution_util";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
-import { build } from "../../proto/remote_execution_ts_proto";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
+import { digestToString } from "../util/cache";
 
 interface Props {
   executions: execution_stats.Execution[];
@@ -19,15 +19,20 @@ interface Props {
 }
 
 export default class InvocationExecutionTable extends React.Component<Props> {
-  getActionPageLink(
-    execution: execution_stats.Execution,
-    digest: build.bazel.remote.execution.v2.Digest,
-    resultDigest: build.bazel.remote.execution.v2.Digest
-  ) {
-    const search = new URLSearchParams({
-      actionDigest: `${digest.hash}/${digest.sizeBytes}`,
-      actionResultDigest: `${resultDigest.hash}/${resultDigest.sizeBytes}`,
-    });
+  getActionPageLink(execution: execution_stats.Execution) {
+    const search = new URLSearchParams();
+    if (execution.actionDigest) {
+      search.set("actionDigest", digestToString(execution.actionDigest));
+    }
+    // Prefer executeResponseDigest if present, since it represents the action
+    // response that was returned for this specific invocation, and also
+    // contains additional useful info such as gRPC status. Otherwise, try the
+    // (deprecated) actionResultDigest.
+    if (execution.executeResponseDigest) {
+      search.set("executeResponseDigest", digestToString(execution.executeResponseDigest));
+    } else if (execution.actionResultDigest) {
+      search.set("actionResultDigest", digestToString(execution.actionResultDigest));
+    }
     return `/invocation/${this.props.invocationIdProvider(execution)}?${search}#action`;
   }
 
@@ -40,14 +45,7 @@ export default class InvocationExecutionTable extends React.Component<Props> {
             return;
           }
           return (
-            <Link
-              key={index}
-              className="invocation-execution-row"
-              href={this.getActionPageLink(
-                execution,
-                execution.actionDigest,
-                execution.actionResultDigest ?? execution.actionDigest
-              )}>
+            <Link key={index} className="invocation-execution-row" href={this.getActionPageLink(execution)}>
               <div className="invocation-execution-row-image">{status.icon}</div>
               <div>
                 <div className="invocation-execution-row-header">

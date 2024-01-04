@@ -6,8 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"google.golang.org/grpc/codes"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -57,22 +56,14 @@ func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
 		return nil, err
 	}
 
-	var actionResultDigest *repb.Digest
-	if in.StatusCode == int32(codes.OK) && in.ExitCode == 0 && !in.DoNotCache {
-		// Action Result with unmodified action digest is only uploaded when
-		// there is no error from the CommandResult(i.e. status code is OK) and
-		// the exit code is zero and the action was not marked with DoNotCache.
-		actionResultDigest = proto.Clone(r.GetDigest()).(*repb.Digest)
-	} else {
-		actionResultDigest, err = digest.AddInvocationIDToDigest(r.GetDigest(), r.GetDigestFunction(), in.InvocationID)
-		if err != nil {
-			return nil, err
-		}
+	executeResponseDigest, err := digest.Compute(strings.NewReader(in.ExecutionID), r.GetDigestFunction())
+	if err != nil {
+		return nil, status.WrapError(err, "compute execute response digest")
 	}
 
 	out := &espb.Execution{
-		ActionDigest:       r.GetDigest(),
-		ActionResultDigest: actionResultDigest,
+		ActionDigest:          r.GetDigest(),
+		ExecuteResponseDigest: executeResponseDigest,
 		Status: &statuspb.Status{
 			Code:    in.StatusCode,
 			Message: in.StatusMessage,

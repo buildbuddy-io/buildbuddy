@@ -4,6 +4,7 @@ import Long from "long";
 
 const Digest = build.bazel.remote.execution.v2.Digest;
 type Digest = build.bazel.remote.execution.v2.Digest;
+type IDigest = build.bazel.remote.execution.v2.IDigest;
 const Compressor = build.bazel.remote.execution.v2.Compressor.Value;
 type Compressor = build.bazel.remote.execution.v2.Compressor.Value;
 const DigestFunction = build.bazel.remote.execution.v2.DigestFunction.Value;
@@ -37,6 +38,13 @@ export function parseActionDigest(raw: string): Digest {
     hash,
     sizeBytes: Long.fromString(rawSize),
   });
+}
+
+/**
+ * Converts a digest to its string representation (HASH/SIZE).
+ */
+export function digestToString(digest: IDigest): string {
+  return `${digest.hash}/${digest.sizeBytes}`;
 }
 
 /**

@@ -25,6 +25,7 @@ interface Props {
 interface State {
   action?: build.bazel.remote.execution.v2.Action;
   loadingAction: boolean;
+  executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   // The first entry in the tuple is the size, the second is the number of files.
   treeShaToTotalSizeMap: Map<string, [Number, Number]>;
@@ -49,7 +50,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   componentDidMount() {
     this.fetchAction();
-    this.fetchActionResult();
+    // Prefer executeResponseDigest since it is always specific to the current
+    // invocation (later executions of the same action digest don't overwrite
+    // it) and also has additional useful info such as gRPC status.
+    if (this.props.search.has("executeResponseDigest")) {
+      this.fetchExecuteResponse();
+    } else {
+      this.fetchActionResult();
+    }
   }
 
   fetchAction() {
@@ -128,6 +136,36 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.fetchStderr(actionResult);
       })
       .catch((e) => console.error("Failed to fetch action result:", e));
+  }
+
+  fetchExecuteResponse() {
+    const digestParam = this.props.search.get("executeResponseDigest");
+    if (!digestParam) {
+      alert_service.error("Missing execute response digest in URL");
+      return;
+    }
+    const digest = parseActionDigest(digestParam);
+    rpcService
+      .fetchBytestreamFile(
+        this.props.model.getActionCacheURL(digest),
+        this.props.model.getInvocationId(),
+        "arraybuffer"
+      )
+      .then((buffer) => {
+        const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer));
+        // ExecuteResponse is encoded in ActionResult.stdout_raw field. See
+        // proto field docs on `Execution.execute_response_digest`.
+        const executeResponseBytes = actionResult.stdoutRaw;
+        const executeResponse = build.bazel.remote.execution.v2.ExecuteResponse.decode(executeResponseBytes);
+        this.setState({ executeResponse });
+        if (executeResponse.result) {
+          const actionResult = executeResponse.result;
+          this.setState({ actionResult });
+          this.fetchStdout(actionResult);
+          this.fetchStderr(actionResult);
+        }
+      })
+      .catch((e) => console.error("Failed to fetch execute response:", e));
   }
 
   fetchStdout(actionResult: build.bazel.remote.execution.v2.ActionResult) {
