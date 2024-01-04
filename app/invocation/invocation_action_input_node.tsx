@@ -30,7 +30,7 @@ function getChildCountText(childCount: Number) {
 
 export default class InputNodeComponent extends React.Component<Props, State> {
   render() {
-    const digestString = this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes;
+    const digestString = this.props.node.obj.digest?.hash ?? "";
     const sizeInfo = this.props.treeShaToTotalSizeMap.get(digestString);
     const expanded = this.props.treeShaToExpanded.get(digestString);
     return (
