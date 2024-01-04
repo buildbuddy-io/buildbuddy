@@ -1808,7 +1808,6 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 
 	app1 := rbe.AddBuildBuddyServer()
 	app2 := rbe.AddBuildBuddyServer()
-	rbe.AddExecutor(t)
 
 	// Set up a custom proxy director that makes sure we choose app1 for the
 	// initial LeaseTask request, so that we can test stopping app1 while
@@ -1837,6 +1836,9 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 		return ctx, conn, nil
 	}
 	rbe.AppProxy.Director = director
+
+	// Add the executor after the proxy so the executor registers with app 1.
+	rbe.AddExecutor(t)
 
 	var cmds []*rbetest.ControlledCommand
 	for i := 0; i < 10; i++ {
