@@ -46,6 +46,11 @@
 
 .terminal .terminal-titles {
   display: flex;
+  color: white;
+}
+
+.terminal.light-terminal .terminal-titles {
+  color: black;
 }
 
 .terminal .terminal-actions {

@@ -38,6 +38,12 @@ interface State {
   treeShaToChildrenMap: Map<string, InputNode[]>;
   stderr?: string;
   stdout?: string;
+  serverLogs?: ServerLog[];
+}
+
+interface ServerLog {
+  name: string;
+  text: string;
 }
 
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
@@ -45,6 +51,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, InputNode[]>(),
     treeShaToTotalSizeMap: new Map<string, [Number, Number]>(),
+    serverLogs: [],
     inputDirs: [],
     loadingAction: true,
   };
@@ -164,6 +171,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           this.setState({ actionResult });
           this.fetchStdout(actionResult);
           this.fetchStderr(actionResult);
+          this.fetchServerLogs(executeResponse);
         }
       })
       .catch((e) => console.error("Failed to fetch execute response:", e));
@@ -187,6 +195,22 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(stderrUrl, this.props.model.getInvocationId())
       .then((stderr) => this.setState({ stderr }))
       .catch((e) => console.error("Failed to fetch stderr:", e));
+  }
+
+  fetchServerLogs(executeResponse: build.bazel.remote.execution.v2.ExecuteResponse) {
+    for (const [name, file] of Object.entries(executeResponse.serverLogs)) {
+      if (!file.digest) continue;
+      const logsURL = this.props.model.getBytestreamURL(file.digest);
+      rpcService
+        .fetchBytestreamFile(logsURL, this.props.model.getInvocationId())
+        .then((text) => {
+          const log: ServerLog = { name, text };
+          const serverLogs = [...(this.state.serverLogs ?? []), log];
+          serverLogs.sort((a, b) => a.name.localeCompare(b.name));
+          this.setState({ serverLogs: serverLogs });
+        })
+        .catch((e) => console.error(`Failed to fetch server log ${name}: ${e}`));
+    }
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
@@ -623,6 +647,22 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             <div>None</div>
                           )}
                         </div>
+                      </div>
+                      <div className="action-section">
+                        <div className="action-property-title">Server logs</div>
+                        {this.state.serverLogs ? (
+                          this.state.serverLogs.map((log) => (
+                            <div key={log.name}>
+                              <TerminalComponent
+                                title={<b className="server-log-title">{log.name}</b>}
+                                value={log.text}
+                                lightTheme={this.props.preferences.lightTerminalEnabled}
+                              />
+                            </div>
+                          ))
+                        ) : (
+                          <div>None</div>
+                        )}
                       </div>
                     </div>
                   ) : (
