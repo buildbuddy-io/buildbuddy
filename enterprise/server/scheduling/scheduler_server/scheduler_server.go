@@ -1550,7 +1550,8 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 					return err
 				}
 				reconnectToken = t
-				rsp.ReconnectToken = t
+				rsp.ReconnectToken = leaseID
+				rsp.SupportsReconnect = true
 			}
 		} else {
 			if _, err := s.readTask(ctx, req.GetTaskId()); status.IsNotFoundError(err) {

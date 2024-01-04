@@ -29,17 +29,17 @@ const (
 )
 
 type TaskLeaser struct {
-	env            environment.Env
-	executorID     string
-	taskID         string
-	leaseID        string
-	reconnectToken string
-	quit           chan struct{}
-	mu             sync.Mutex // protects stream
-	stream         scpb.Scheduler_LeaseTaskClient
-	ttl            time.Duration
-	closed         bool
-	cancelFunc     context.CancelFunc
+	env               environment.Env
+	executorID        string
+	taskID            string
+	leaseID           string
+	supportsReconnect bool
+	quit              chan struct{}
+	mu                sync.Mutex // protects stream
+	stream            scpb.Scheduler_LeaseTaskClient
+	ttl               time.Duration
+	closed            bool
+	cancelFunc        context.CancelFunc
 }
 
 func NewTaskLeaser(env environment.Env, executorID string, taskID string) *TaskLeaser {
@@ -67,7 +67,9 @@ func (t *TaskLeaser) pingServer(ctx context.Context) (b []byte, err error) {
 		ExecutorId:        t.executorID,
 		TaskId:            t.taskID,
 		SupportsReconnect: *enableReconnect,
-		ReconnectToken:    t.reconnectToken,
+	}
+	if t.supportsReconnect {
+		req.ReconnectToken = t.leaseID
 	}
 	var rsp *scpb.LeaseTaskResponse
 	var r *retry.Retry
@@ -98,9 +100,7 @@ func (t *TaskLeaser) pingServer(ctx context.Context) (b []byte, err error) {
 			return nil, originalErr
 		}
 	}
-	if rsp.GetReconnectToken() != "" {
-		t.reconnectToken = rsp.GetReconnectToken()
-	}
+	t.supportsReconnect = rsp.GetSupportsReconnect() || rsp.GetReconnectToken() != ""
 	if rsp.GetLeaseId() != "" {
 		t.leaseID = rsp.GetLeaseId()
 	}

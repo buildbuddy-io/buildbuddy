@@ -74,11 +74,16 @@ message LeaseTaskResponse {
   bool closed_cleanly = 3;
 
   // A token that may be used to retry the lease if it disconnects.
+  // DEPRECATED: updated executors will use the lease_id as the reconnect token.
   string reconnect_token = 4;
 
   // ID for this lease. The scheduler will ignore any mutation requests if the
   // provided lease ID doesn't match the current lease ID.
   string lease_id = 5;
+
+  // If true, indicates that the client may reclaim an existing lease by
+  // resending a LeaseTaskRequest with the same lease_id.
+  bool supports_reconnect = 6;
 }
 
 message TaskSize {
