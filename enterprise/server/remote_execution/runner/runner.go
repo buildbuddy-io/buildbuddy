@@ -387,8 +387,8 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	return execResult
 }
 
-func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
-	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, actionResult, cmdResult)
+func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
+	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult)
 	if err != nil {
 		return err
 	}

@@ -890,11 +890,11 @@ type Runner interface {
 	// Run runs the task that is currently assigned to the runner.
 	Run(ctx context.Context) *CommandResult
 
-	// UploadOutputs uploads any output files associated with the task assigned to
-	// the runner, as well as the result of the run.
+	// UploadOutputs uploads any output files and auxiliary logs associated with
+	// the task assigned to the runner, as well as the result of the run.
 	//
 	// It populates the upload stat fields in the given IOStats.
-	UploadOutputs(ctx context.Context, ioStats *repb.IOStats, ar *repb.ActionResult, cr *CommandResult) error
+	UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cr *CommandResult) error
 
 	// GetIsolationType returns the runner's effective isolation type as a
 	// string, such as "none" or "podman".
@@ -975,6 +975,9 @@ type CommandResult struct {
 	Stdout []byte
 	// Stderr from the command. This may contain data even if there was an Error.
 	Stderr []byte
+	// AuxiliaryLogs contain extra logs associated with the task that may be
+	// useful to present to the user.
+	AuxiliaryLogs map[string][]byte
 
 	// ExitCode is one of the following:
 	// * The exit code returned by the executed command

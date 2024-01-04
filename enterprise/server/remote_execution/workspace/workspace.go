@@ -233,7 +233,7 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) erro
 
 // UploadOutputs uploads any outputs created by the last executed command
 // as well as the command's stdout and stderr.
-func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
+func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -271,14 +271,34 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, actio
 	})
 	eg.Go(func() error {
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.Path(), cmd, actionResult)
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.Path(), cmd, executeResponse.Result)
 		return err
 	})
+	var logsMu sync.Mutex
+	serverLogs := make(map[string]*repb.LogFile, len(cmdResult.AuxiliaryLogs))
+	for name, b := range cmdResult.AuxiliaryLogs {
+		name, b := name, b
+		eg.Go(func() error {
+			d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to upload auxiliary log %q: %s", name, err)
+				return nil
+			}
+			logsMu.Lock()
+			defer logsMu.Unlock()
+			serverLogs[name] = &repb.LogFile{
+				Digest:        d,
+				HumanReadable: true,
+			}
+			return nil
+		})
+	}
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	actionResult.StdoutDigest = stdoutDigest
-	actionResult.StderrDigest = stderrDigest
+	executeResponse.Result.StdoutDigest = stdoutDigest
+	executeResponse.Result.StderrDigest = stderrDigest
+	executeResponse.ServerLogs = serverLogs
 	span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
 	span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
 	return txInfo, nil

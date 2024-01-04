@@ -302,10 +302,11 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
 	actionMetrics.Result = actionResult
+	executeResponse := operation.ExecuteResponseWithResult(actionResult, cmdResult.Error)
 
 	log.CtxInfof(ctx, "Uploading outputs.")
 	stage.Set("output_upload")
-	if err := r.UploadOutputs(ctx, md.IoStats, actionResult, cmdResult); err != nil {
+	if err := r.UploadOutputs(ctx, md.IoStats, executeResponse, cmdResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.Now()
@@ -333,7 +334,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	// Otherwise, send the error back to the client via the ExecuteResponse
 	// status.
-	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, cmdResult.Error)); err != nil {
+	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, executeResponse); err != nil {
 		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
 		return finishWithErrFn(err)
 	}
