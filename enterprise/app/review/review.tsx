@@ -9,6 +9,7 @@ import { github } from "../../../proto/github_ts_proto";
 interface CodeReviewComponentProps {
   user?: User;
 }
+
 interface State {
   response?: github.GetGithubPullRequestResponse;
 }
@@ -34,71 +35,69 @@ export default class CodeReviewComponent extends React.Component<CodeReviewCompo
     console.log(this.state.response);
     return (
       <div className="reviews">
-        <div className="reviews-section">
-          <div className="pr-list">
-            <div className="reviews-title">
-              Needs attention{" "}
-              <span className="change-count">
-                {needsAttention.length == 1 ? "1 Change" : `${needsAttention.length} Changes`}
-              </span>
-            </div>
-            {this.state.response && Boolean(needsAttention.length) && this.prHeader()}
-            {needsAttention.map((pr) => (
-              <PR pr={pr} />
-            ))}
-            {!this.state.response && <div className="empty-state">Loading...</div>}
-            {this.state.response && needsAttention.length === 0 && (
-              <div className="empty-state">No changes need your attention, you can relax!</div>
-            )}
-            {needsAttention.length % 2 != 0 && <div className="pr-spacer"></div>}
-            <div className="reviews-title">
-              Incoming reviews{" "}
-              <span className="change-count">
-                {this.state.response?.incoming.length == 1
-                  ? "1 Change"
-                  : `${this.state.response?.incoming.length || 0} Changes`}
-              </span>
-            </div>
-            {Boolean(this.state.response?.incoming.length) && this.prHeader()}
-            {this.state.response?.incoming.map((pr) => (
-              <PR pr={pr} />
-            ))}
-            {!this.state.response && <div className="empty-state">Loading...</div>}
-            {this.state.response?.incoming.length === 0 && <div className="empty-state">No incoming changes!</div>}
-            {this.state.response && this.state.response.incoming.length % 2 != 0 && <div className="pr-spacer"></div>}
-            <div className="reviews-title">
-              Outgoing reviews{" "}
-              <span className="change-count">
-                {this.state.response?.outgoing.length == 1
-                  ? "1 Change"
-                  : `${this.state.response?.outgoing.length || 0} Changes`}
-              </span>
-            </div>
-            {Boolean(this.state.response?.outgoing.length) && this.prHeader()}
-            {this.state.response?.outgoing.map((pr) => (
-              <PR pr={pr} />
-            ))}
-            {!this.state.response && <div className="empty-state">Loading...</div>}
-            {this.state.response?.outgoing.length === 0 && <div className="empty-state">No outgoing changes!</div>}
-          </div>
-        </div>
+        <PRSection
+          title="Needs attention"
+          emptyMessage="No changes need your attention, you can relax!"
+          loading={!this.state.response}
+          prs={needsAttention}
+        />
+        <PRSection
+          title="Incoming reviews"
+          emptyMessage="No incoming changes!"
+          loading={!this.state.response}
+          prs={this.state.response?.incoming ?? []}
+        />
+        <PRSection
+          title="Outgoing reviews"
+          emptyMessage="No outgoing changes!"
+          loading={!this.state.response}
+          prs={this.state.response?.outgoing ?? []}
+        />
       </div>
     );
   }
+}
 
-  prHeader() {
-    return (
-      <div className="pr pr-header">
-        <div>Change</div>
-        <div>Author</div>
-        <div>Status</div>
-        <div>Updated</div>
-        <div>Reviewers</div>
-        <div>Size</div>
-        <div>Description</div>
+interface PRSectionProps {
+  title: string;
+  emptyMessage: string;
+  loading: boolean;
+  prs: github.PullRequest[];
+}
+
+function PRSection({ title, emptyMessage, loading, prs }: PRSectionProps) {
+  return (
+    <>
+      <div className="reviews-title">
+        {title}
+        {!loading && <span className="change-count">{prs.length === 1 ? "1 Change" : `${prs.length} Changes`}</span>}
       </div>
-    );
-  }
+      {loading && (
+        <div className="empty-state">
+          <div className="spinner" />
+        </div>
+      )}
+      {!loading && prs.length === 0 && <div className="empty-state">{emptyMessage}</div>}
+      {prs.length > 0 && (
+        <>
+          <div className="pr pr-header">
+            <div>PR</div>
+            <div>Author</div>
+            <div>Status</div>
+            <div>Updated</div>
+            <div>Reviewers</div>
+            <div>Size</div>
+            <div>Description</div>
+          </div>
+          <div className="pr-rows">
+            {prs.map((pr) => (
+              <PR pr={pr} />
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
 }
 
 function incomingNeedsAttention(pr: github.PullRequest) {
