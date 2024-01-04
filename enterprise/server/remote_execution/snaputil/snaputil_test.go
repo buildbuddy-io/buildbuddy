@@ -24,17 +24,25 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
+func setupEnv(t *testing.T) *testenv.TestEnv {
+	env := testenv.GetTestEnv(t)
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 100_000, false)
+	require.NoError(t, err)
+	env.SetFileCache(fc)
+	_, run := testenv.RegisterLocalGRPCServer(env)
+	testcache.Setup(t, env)
+	go run()
+	return env
+}
+
 func TestCacheAndFetchArtifact(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
-	env := testenv.GetTestEnv(t)
+	env := setupEnv(t)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
 	require.NoError(t, err)
 	tmpDir := testfs.MakeTempDir(t)
-
-	fc, err := filecache.NewFileCache(tmpDir, 100000, false)
-	require.NoError(t, err)
-	testcache.Setup(t, env)
+	fc := env.GetFileCache()
 
 	length := rand.Intn(1000)
 	randomStr, err := random.RandomString(length)
@@ -91,14 +99,11 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 func TestCacheAndFetchArtifact_LocalOnly(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
-	env := testenv.GetTestEnv(t)
+	env := setupEnv(t)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
 	require.NoError(t, err)
 	tmpDir := testfs.MakeTempDir(t)
-
-	fc, err := filecache.NewFileCache(tmpDir, 10000, false)
-	require.NoError(t, err)
-	testcache.Setup(t, env)
+	fc := env.GetFileCache()
 
 	length := rand.Intn(1000)
 	randomStr, err := random.RandomString(length)
@@ -129,14 +134,11 @@ func TestCacheAndFetchArtifact_LocalOnly(t *testing.T) {
 func TestCacheAndFetchBytes(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
-	env := testenv.GetTestEnv(t)
+	env := setupEnv(t)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
 	require.NoError(t, err)
 	tmpDir := testfs.MakeTempDir(t)
-
-	fc, err := filecache.NewFileCache(tmpDir, 100000, false)
-	require.NoError(t, err)
-	testcache.Setup(t, env)
+	fc := env.GetFileCache()
 
 	length := rand.Intn(1000)
 	randomStr, err := random.RandomString(length)

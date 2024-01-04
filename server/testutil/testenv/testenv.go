@@ -82,14 +82,20 @@ func init() {
 	vtprotocodec.Register()
 }
 
-// LocalGRPCServer starts a gRPC server with standard BuildBudy filters that uses an in-memory
-// buffer for communication.
-// Call LocalGRPCConn to get a connection to the returned server.
-func LocalGRPCServer(te *real_environment.RealEnv) (*grpc.Server, func()) {
-	if te.GetLocalBufconnListener() == nil {
-		te.SetLocalBufconnListener(bufconn.Listen(1024 * 1024))
+// RegisterLocalGRPCServer registers a local gRPC server to the environment and
+// returns the server.
+//
+// Register services to the server, then call LocalGRPCConn to get a connection
+// to the returned server.
+func RegisterLocalGRPCServer(te *real_environment.RealEnv) (*grpc.Server, func()) {
+	if te.GetGRPCServer() != nil {
+		log.Fatal("GRPCServer is already registered")
 	}
-	return GRPCServer(te, te.GetLocalBufconnListener())
+	lis := bufconn.Listen(1024 * 1024)
+	srv, run := GRPCServer(te, lis)
+	te.SetLocalBufconnListener(lis)
+	te.SetGRPCServer(srv)
+	return srv, run
 }
 
 func LocalGRPCConn(ctx context.Context, te *real_environment.RealEnv, opts ...grpc.DialOption) (*grpc.ClientConn, error) {

@@ -16,7 +16,7 @@ func TestPublishBuildToolEventStream_NoEvents(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	server, err := build_event_server.NewBuildEventProtocolServer(env, false /*=synchronous*/)
 	require.NoError(t, err)
-	grpcServer, runServer := testenv.LocalGRPCServer(env)
+	grpcServer, runServer := testenv.RegisterLocalGRPCServer(env)
 	pepb.RegisterPublishBuildEventServer(grpcServer, server)
 	go runServer()
 	t.Cleanup(func() {

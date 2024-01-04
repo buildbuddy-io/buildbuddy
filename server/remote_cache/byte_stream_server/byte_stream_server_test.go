@@ -42,7 +42,7 @@ func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T
 		t.Error(err)
 	}
 
-	grpcServer, runFunc := testenv.LocalGRPCServer(env)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 
 	go runFunc()

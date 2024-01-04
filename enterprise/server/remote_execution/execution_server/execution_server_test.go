@@ -65,7 +65,9 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	scheduler := &schedulerServerMock{}
 	env.SetSchedulerService(scheduler)
 
+	_, run := testenv.RegisterLocalGRPCServer(env)
 	testcache.Setup(t, env)
+	go run()
 	tasksize.Register(env)
 
 	s, err := execution_server.NewExecutionServer(env)
