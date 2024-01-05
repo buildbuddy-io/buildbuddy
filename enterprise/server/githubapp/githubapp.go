@@ -1491,7 +1491,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		summary.Additions = int64(f.GetAdditions())
 		summary.Deletions = int64(f.GetDeletions())
 		summary.Patch = f.GetPatch()
-		// XXX: Compute comment count.
+		// TODO(jdhollen): compute comment count.
 		fileSummaries = append(fileSummaries, summary)
 	}
 
