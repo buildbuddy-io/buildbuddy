@@ -18,6 +18,7 @@ export default class ReviewListComponent extends React.Component<ReviewListCompo
   state: State = {};
 
   componentWillMount() {
+    document.title = "Reviews | Buildbuddy";
     rpc_service.service.getGithubPullRequest({}).then((r) => {
       console.log(r);
       this.setState({ response: r });

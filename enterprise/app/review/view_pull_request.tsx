@@ -43,7 +43,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
   };
 
   componentWillMount() {
-    document.title = `Change #${this.props.pull} in ${this.props.owner}/${this.props.repo}`;
+    document.title = `Change #${this.props.pull} in ${this.props.owner}/${this.props.repo} | BuildBuddy`;
     rpc_service.service
       .getGithubPullRequestDetails({
         owner: this.props.owner,
