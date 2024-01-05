@@ -34,7 +34,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -725,7 +724,7 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	c.stats.mu.Lock()
 	defer c.stats.mu.Unlock()
 
-	stats := proto.Clone(current).(*repb.UsageStats)
+	stats := current.CloneVT()
 	stats.CpuNanos = stats.CpuNanos - c.stats.baselineCPUNanos
 	if current.MemoryBytes > c.stats.peakMemoryUsageBytes {
 		c.stats.peakMemoryUsageBytes = current.MemoryBytes

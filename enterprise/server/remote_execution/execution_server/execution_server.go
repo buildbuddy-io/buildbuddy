@@ -467,7 +467,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	// metadata in all app requests, but the ToolDetails identify the request as
 	// being from bazel, which is not desired.
 	if rmd != nil {
-		rmd = proto.Clone(rmd).(*repb.RequestMetadata)
+		rmd = rmd.CloneVT()
 		rmd.ToolDetails = nil
 	}
 

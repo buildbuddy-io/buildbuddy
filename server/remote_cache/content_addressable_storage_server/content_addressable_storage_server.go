@@ -541,7 +541,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			Children: make([]*capb.DirectoryWithDigest, len(descendents)),
 		}
 		copy(treeCache.Children, descendents)
-		treeCacheDigest := proto.Clone(d).(*repb.Digest)
+		treeCacheDigest := d.CloneVT()
 
 		eg.Go(func() error {
 			if !isComplete(treeCache.GetChildren()) {

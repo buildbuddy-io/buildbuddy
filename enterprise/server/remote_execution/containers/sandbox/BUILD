@@ -18,7 +18,6 @@ go_library(
         "//proto:runner_go_proto",
         "//server/interfaces",
         "//server/util/log",
-        "//server/util/proto",
         "//server/util/status",
     ],
 )

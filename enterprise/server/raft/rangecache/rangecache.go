@@ -5,7 +5,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -61,7 +60,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 
 	start := rangeDescriptor.GetStart()
 	end := rangeDescriptor.GetEnd()
-	newDescriptor := proto.Clone(rangeDescriptor).(*rfpb.RangeDescriptor)
+	newDescriptor := rangeDescriptor.CloneVT()
 
 	r := rc.rangeMap.Get(start, end)
 	if r == nil {
@@ -122,7 +121,7 @@ func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb
 		return
 	}
 	rd := lr.Get()
-	newDescriptor := proto.Clone(rd).(*rfpb.RangeDescriptor)
+	newDescriptor := rd.CloneVT()
 
 	leadReplicaIndex := -1
 	for i, replica := range newDescriptor.GetReplicas() {

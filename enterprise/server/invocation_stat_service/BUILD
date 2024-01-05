@@ -20,7 +20,6 @@ go_library(
         "//server/util/filter",
         "//server/util/git",
         "//server/util/perms",
-        "//server/util/proto",
         "//server/util/query_builder",
         "//server/util/status",
         "@org_golang_google_protobuf//types/known/timestamppb",

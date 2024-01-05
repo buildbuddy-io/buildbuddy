@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -557,7 +556,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrend
 	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
 		repoURL, err := git.NormalizeRepoURL(repoURL)
 		if err == nil {
-			req = proto.Clone(req).(*stpb.GetTrendRequest)
+			req = req.CloneVT()
 			req.Query.RepoUrl = repoURL.String()
 		}
 	}
@@ -590,7 +589,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrend
 		duration := endTime.Sub(startTime)
 		endTime = startTime
 		startTime = endTime.Add(-duration)
-		newReq := proto.Clone(req).(*stpb.GetTrendRequest)
+		newReq := req.CloneVT()
 		if newReq.Query == nil {
 			newReq.Query = &stpb.TrendQuery{}
 		}

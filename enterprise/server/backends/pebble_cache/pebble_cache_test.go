@@ -240,7 +240,7 @@ func TestIsolation(t *testing.T) {
 				err = pc.Set(ctx, r1, buf)
 				require.NoError(t, err)
 
-				r2 := proto.Clone(r1).(*rspb.ResourceName)
+				r2 := r1.CloneVT()
 				r2.InstanceName = test.instanceName2
 				r2.CacheType = test.cacheType2
 
@@ -798,7 +798,7 @@ func TestMetadata(t *testing.T) {
 					require.NoError(t, err, tc.name)
 
 					// Metadata should return correct size, regardless of queried size.
-					rWrongSize := proto.Clone(r).(*rspb.ResourceName)
+					rWrongSize := r.CloneVT()
 					rWrongSize.Digest.SizeBytes = 1
 
 					md, err := pc.Metadata(ctx, rWrongSize)

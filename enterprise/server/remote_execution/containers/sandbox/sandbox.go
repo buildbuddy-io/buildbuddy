@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -309,7 +308,7 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 		return result
 	}
 
-	sandboxCmd := proto.Clone(command).(*repb.Command)
+	sandboxCmd := command.CloneVT()
 	sandboxCmd.Arguments = append([]string{sandboxExecBinary, "-f", sandboxConfigPath}, command.Arguments...)
 	result = commandutil.Run(ctx, sandboxCmd, workDir, nil /*=statsListener*/, stdio)
 	return result

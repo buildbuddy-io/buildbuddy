@@ -493,7 +493,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	// --shutdown_and_exit argument. We use this approach because we want to
 	// preserve the configuration from the last run command, which may include the
 	// configured Bazel path.
-	cleanupCmd := proto.Clone(r.task.GetCommand()).(*repb.Command)
+	cleanupCmd := r.task.GetCommand().CloneVT()
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
 	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=statsListener*/, &commandutil.Stdio{})
@@ -1537,7 +1537,7 @@ func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs,
 	r.stdoutReader = bufio.NewReader(stdoutReader)
 	r.jsonDecoder = json.NewDecoder(r.stdoutReader)
 
-	command = proto.Clone(command).(*repb.Command)
+	command = command.CloneVT()
 	command.Arguments = append(workerArgs, "--persistent_worker")
 
 	go func() {

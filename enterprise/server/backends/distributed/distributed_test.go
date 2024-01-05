@@ -217,7 +217,7 @@ func TestReadWrite_Compression(t *testing.T) {
 			for i := 0; i < 10; i++ {
 				// Do a write, and ensure it was written to all nodes.
 				rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-				writeRN := proto.Clone(rn).(*rspb.ResourceName)
+				writeRN := rn.CloneVT()
 				writeRN.Compressor = tc.writeCompression
 				compressedBuf := compression.CompressZstd(nil, buf)
 
@@ -228,7 +228,7 @@ func TestReadWrite_Compression(t *testing.T) {
 				err := distributedCaches[i%3].Set(ctx, writeRN, bufToWrite)
 				require.NoError(t, err)
 
-				readRN := proto.Clone(rn).(*rspb.ResourceName)
+				readRN := rn.CloneVT()
 				readRN.Compressor = tc.readCompression
 				bufToRead := buf
 				if tc.readCompression == repb.Compressor_ZSTD {

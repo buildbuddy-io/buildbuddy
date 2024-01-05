@@ -314,7 +314,7 @@ func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx contex
 	if rmd == nil {
 		rmd = &repb.RequestMetadata{ToolInvocationId: execTask.GetInvocationId()}
 	}
-	rmd = proto.Clone(rmd).(*repb.RequestMetadata)
+	rmd = rmd.CloneVT()
 	rmd.ExecutorDetails = &repb.ExecutorDetails{ExecutorHostId: q.exec.HostID()}
 	if data, err := proto.Marshal(rmd); err == nil {
 		ctx = context.WithValue(ctx, bazel_request.RequestMetadataKey, string(data))

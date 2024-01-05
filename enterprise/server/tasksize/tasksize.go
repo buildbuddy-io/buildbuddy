@@ -401,7 +401,7 @@ func applyMinimums(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize
 	if size == nil {
 		return nil
 	}
-	clone := proto.Clone(size).(*scpb.TaskSize)
+	clone := size.CloneVT()
 
 	minMemoryBytes := MinimumMemoryBytes
 	minMilliCPU := MinimumMilliCPU

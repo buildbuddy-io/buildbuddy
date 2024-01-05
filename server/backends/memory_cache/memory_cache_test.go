@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -95,11 +94,11 @@ func TestIsolation(t *testing.T) {
 
 	for _, test := range tests {
 		r, buf := testdigest.RandomCASResourceBuf(t, 100)
-		r1 := proto.Clone(r).(*rspb.ResourceName)
+		r1 := r.CloneVT()
 		r1.InstanceName = test.instanceName1
 		r1.CacheType = test.cacheType1
 
-		r2 := proto.Clone(r).(*rspb.ResourceName)
+		r2 := r.CloneVT()
 		r2.InstanceName = test.instanceName2
 		r2.CacheType = test.cacheType2
 

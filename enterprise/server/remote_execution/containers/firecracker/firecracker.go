@@ -48,7 +48,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
@@ -557,7 +556,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	}
 
 	c := &FirecrackerContainer{
-		vmConfig:           proto.Clone(opts.VMConfiguration).(*fcpb.VMConfiguration),
+		vmConfig:           opts.VMConfiguration.CloneVT(),
 		executorConfig:     opts.ExecutorConfig,
 		jailerRoot:         opts.ExecutorConfig.JailerRoot,
 		dockerClient:       opts.DockerClient,
@@ -775,7 +774,7 @@ func alignToMultiple(n int64, multiple int64) int64 {
 }
 
 func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
-	return proto.Clone(c.snapshotKeySet).(*fcpb.SnapshotKeySet)
+	return c.snapshotKeySet.CloneVT()
 }
 
 // State returns the container state to be persisted to disk so that this

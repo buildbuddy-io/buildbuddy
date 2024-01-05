@@ -192,7 +192,7 @@ func (l *Logger) LogForSecret(ctx context.Context, secretName string, action alp
 //  2. resource IDs -- audit logs include a resource identifier for every entry
 //     so the ID under the request is redundant.
 func cleanRequest(e *alpb.Entry_Request) *alpb.Entry_Request {
-	e = proto.Clone(e).(*alpb.Entry_Request)
+	e = e.CloneVT()
 	if r := e.ApiRequest.CreateApiKey; r != nil {
 		r.GroupId = ""
 	}
