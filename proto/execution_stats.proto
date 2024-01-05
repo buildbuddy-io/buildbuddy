@@ -85,7 +85,7 @@ message Execution {
   // When an action succeeds, this field is the same as the action_digest; when
   // an action fails, this field contains the result details and action_digest
   // doesn't.
-  build.bazel.remote.execution.v2.Digest action_result_digest = 9 [ deprecated = true ];
+  build.bazel.remote.execution.v2.Digest action_result_digest = 9;
 
   // A digest used to retrieve the
   // [build.bazel.remote.execution.v2.ExecuteResponse] produced by the executor
