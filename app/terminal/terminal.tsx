@@ -25,7 +25,7 @@ export interface TerminalProps {
   value?: string;
   loading?: boolean;
 
-  title?: JSX.Element;
+  title?: React.ReactNode;
 
   lightTheme?: boolean;
   fullLogsFetcher?: () => void;

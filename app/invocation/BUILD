@@ -130,6 +130,7 @@ ts_library(
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
+        "@npm//tslib",
     ],
 )
 
