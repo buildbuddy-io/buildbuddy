@@ -6,7 +6,7 @@
 ################
 # Windows only #
 ################
-# startup --output_user_root=D:/tmp
+# common --output_user_root=D:/tmp
 
 ########################
 ## API key based auth ##
@@ -15,27 +15,24 @@
 ## 1) Logging in or creating an account here: https://app.buildbuddy.io/
 ## 2) Following the Quickstart guide here: https://app.buildbuddy.io/docs/setup/
 ## 3) Update and uncomment the line below accordingly
-#build --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
+#common --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
 
 #################################
 ## Local toolchain development ##
 #################################
 ## Use when developing the toolchain repo
 ## Uncomment the line below and update the path to point to your local toolchain directory
-#build --override_repository=io_buildbuddy_buildbuddy_toolchain=/ABSOLUTE_PATH_TO_YOUR_TOOLCHAIN_DIRECTORY/buildbuddy-toolchain/
+#common --override_repository=io_buildbuddy_buildbuddy_toolchain=/ABSOLUTE_PATH_TO_YOUR_TOOLCHAIN_DIRECTORY/buildbuddy-toolchain/
 
 ##########
 ## Misc ##
 ##########
 # Cache your external dependencies downloads
-#build --repository_cache=~/.bazel/repository_cache/
+#common --repository_cache=~/.bazel/repository_cache/
 #
 # Print out test logs if there is any error
-#test --test_output=errors
-#
-# Enable Skymeld to speed up build
-#build --config=skymeld
+#common--test_output=errors
 #
 # Show more actions in the terminal output.
 # When execute build remotely, up-to 100 actions could be running in parallel.
-#build --ui_actions_shown=32
+#common --ui_actions_shown=32
