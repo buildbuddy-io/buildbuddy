@@ -87,6 +87,33 @@ func generateBytes(t testing.TB, protos []protoMessage) [][]byte {
 type marshalFunc func(v protoMessage) ([]byte, error)
 type unmarshalFunc func([]byte, protoMessage) error
 
+func TestMarshal(t *testing.T) {
+	md := &rfpb.FileMetadata{}
+	err := faker.FakeData(md)
+	require.NoError(t, err, "unable to fake data")
+
+	actual, err := proto.Marshal(md)
+	require.NoError(t, err)
+	expected, err := proto.MarshalOld(md)
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
+}
+
+func TestUnmarshal(t *testing.T) {
+	md := &rfpb.FileMetadata{}
+	err := faker.FakeData(md)
+	require.NoError(t, err, "unable to fake data")
+
+	data, err := proto.MarshalOld(md)
+	require.NoError(t, err)
+
+	actual := &rfpb.FileMetadata{}
+	err = proto.Unmarshal(data, actual)
+	require.NoError(t, err)
+
+	require.True(t, proto.Equal(md, actual))
+}
+
 func benchmarkMarshal(b *testing.B, marshalFn marshalFunc, data []protoMessage) {
 	b.ReportAllocs()
 	b.ResetTimer()

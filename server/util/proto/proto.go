@@ -1,8 +1,6 @@
 package proto
 
 import (
-	"fmt"
-
 	gproto "google.golang.org/protobuf/proto"
 )
 
@@ -27,28 +25,19 @@ type vtprotoMessage interface {
 	UnmarshalVT([]byte) error
 }
 
-func Marshal(v interface{}) ([]byte, error) {
+func Marshal(v Message) ([]byte, error) {
 	vt, ok := v.(vtprotoMessage)
 	if ok {
 		return vt.MarshalVT()
 	}
-
-	msg, ok := v.(Message)
-	if !ok {
-		return nil, fmt.Errorf("failed to marshal, message is %T, want proto.Message", v)
-	}
-	return MarshalOld(msg)
+	return MarshalOld(v)
 }
 
-func Unmarshal(b []byte, v interface{}) error {
+func Unmarshal(b []byte, v Message) error {
 	vt, ok := v.(vtprotoMessage)
 	if ok {
 		return vt.UnmarshalVT(b)
 	}
 
-	msg, ok := v.(Message)
-	if !ok {
-		return fmt.Errorf("failed to unmarshal, message is %T, want proto.Message", v)
-	}
-	return UnmarshalOld(b, msg)
+	return UnmarshalOld(b, v)
 }
