@@ -1,7 +1,6 @@
 common --noenable_bzlmod
 
 common --enable_platform_specific_config=true
-query --enable_platform_specific_config=true
 
 # Skymeld merges the analysis phase and execution phase.
 # This allows build and test executions to start before the analysis phase finishes,
@@ -200,18 +199,18 @@ common:windows --cxxopt=/std:c++17
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
-test:webdriver-debug --test_arg=-webdriver_debug
+common:webdriver-debug --test_arg=-webdriver_debug
 # Forward X server display for local webdriver tests.
-test:webdriver-debug --test_env=DISPLAY
+common:webdriver-debug --test_env=DISPLAY
 # When debugging, only run one webdriver test at a time (it's overwhelming
 # otherwise), and display verbose webdriver output in the terminal.
-test:webdriver-debug --test_output=streamed
+common:webdriver-debug --test_output=streamed
 
 # Currently only works for go tests
 # Coverage outputs could be viewed with `genhtml`:
 #   $ genhtml -o cover bazel-out/_coverage/_coverage_report.dat
 #   $ open cover/index.html
-coverage --combined_report=lcov
+common --combined_report=lcov
 
 # Use BLAKE3 digest function.
 startup --digest_function=BLAKE3
