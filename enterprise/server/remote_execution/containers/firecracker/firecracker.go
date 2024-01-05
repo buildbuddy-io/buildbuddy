@@ -137,6 +137,8 @@ const (
 	// Size of machine log tail to retain in memory so that we can parse logs for
 	// errors.
 	vmLogTailBufSize = 1024 * 12 // 12 KB
+	// File name of the VM logs in CommandResult.AuxiliaryLogs
+	vmLogTailFileName = "vm_log_tail.txt"
 	// Log prefix used by goinit when logging fatal errors.
 	fatalInitLogPrefix = "die: "
 
@@ -2092,6 +2094,12 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 	defer func() {
+		// Attach VM logs to the result
+		if result.AuxiliaryLogs == nil {
+			result.AuxiliaryLogs = map[string][]byte{}
+		}
+		result.AuxiliaryLogs[vmLogTailFileName] = c.vmLog.Tail()
+
 		execDuration := time.Since(start)
 		log.CtxDebugf(ctx, "Exec took %s", execDuration)
 
