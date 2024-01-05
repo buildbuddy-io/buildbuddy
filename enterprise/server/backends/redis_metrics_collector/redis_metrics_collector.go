@@ -12,7 +12,7 @@ import (
 
 const (
 	// How long until counts expire from Redis.
-	countExpiration = 3 * 24 * time.Hour
+	countExpiration = 1 * 24 * time.Hour
 )
 
 type collector struct {

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	ttl = 3 * 24 * time.Hour
+	ttl = 1 * 24 * time.Hour
 )
 
 type store struct {
