@@ -552,6 +552,10 @@
   font-size: 14px;
 }
 
+.action-section .grpc-status-error {
+  color: #d32f2f;
+}
+
 .cache-sections {
   display: flex;
   flex-wrap: wrap;

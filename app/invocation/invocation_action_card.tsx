@@ -4,6 +4,7 @@ import InvocationModel from "./invocation_model";
 import { Download, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
+import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
@@ -625,7 +626,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       </div>
                     </div>
                   ) : (
-                    <div>{this.renderNotFoundDetails({ result: true })}</div>
+                    !this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>
+                  )}
+                  {this.state.executeResponse?.status && (
+                    <div className="action-section">
+                      <div className="action-property-title">Status</div>
+                      <div className={this.state.executeResponse.status.code !== 0 ? "grpc-status-error" : ""}>
+                        <b>{grpcStatusCodeToString(this.state.executeResponse.status.code)}</b>
+                        {this.state.executeResponse.status.message && (
+                          <>: {this.state.executeResponse.status.message}</>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -635,6 +647,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       </div>
     );
   }
+}
+
+function grpcStatusCodeToString(code: number): string {
+  return google_grpc_code.rpc.Code[code] ?? "";
 }
 
 function computeMilliCpu(result: build.bazel.remote.execution.v2.ActionResult): number {
