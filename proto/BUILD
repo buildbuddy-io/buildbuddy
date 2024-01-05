@@ -9,7 +9,7 @@ go_proto_compiler(
     name = "vtprotobuf_compiler",
     # marshal depends on size. Pool only generates code for messages with the
     # vtprotobuf mempool annotation.
-    options = ["features=marshal+unmarshal+size+pool"],
+    options = ["features=marshal+unmarshal+size+pool+clone"],
     plugin = "@com_github_planetscale_vtprotobuf//cmd/protoc-gen-go-vtproto",
     suffix = "_vtproto.pb.go",
     valid_archive = False,
