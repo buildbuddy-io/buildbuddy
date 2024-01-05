@@ -1693,7 +1693,6 @@ func (a *GitHubApp) cachedFiles(ctx context.Context, client *github.Client, owne
 	return pr.(*[]*github.CommitFile), nil
 }
 
-
 func (a *GitHubApp) cachedPullRequests(ctx context.Context, client *github.Client, owner, repo string, number int, updatedAt time.Time) (*github.PullRequest, error) {
 	key := fmt.Sprintf("pr/%s/%s/%d/%d", owner, repo, number, updatedAt.Unix())
 
