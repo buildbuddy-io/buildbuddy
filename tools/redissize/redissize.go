@@ -23,6 +23,7 @@ func main() {
 	c := redis.NewClient(&redis.Options{Addr: *target})
 
 	sizes := make(map[string]int64)
+	counts := make(map[string]int64)
 
 	type prefixSize struct {
 		prefix string
@@ -34,7 +35,7 @@ func main() {
 	count := 0
 	totalSize := int64(0)
 	for {
-		keys, newCursor, err := c.Scan(ctx, cursor, "*", 1000).Result()
+		keys, newCursor, err := c.Scan(ctx, cursor, "*", 2048).Result()
 		if err != nil {
 			log.Fatalf("scan err: %s", err)
 		}
@@ -43,24 +44,44 @@ func main() {
 		}
 		cursor = newCursor
 
-		for _, k := range keys {
+		cmds, err := c.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+			for _, k := range keys {
+				pipe.MemoryUsage(ctx, k)
+			}
+			return nil
+		})
+		if err != nil && err != redis.Nil {
+			log.Fatalf("Pipeline error: %s", err)
+		}
+
+		for i, k := range keys {
 			p := strings.Split(k, "/")[0]
-			v, err := c.MemoryUsage(ctx, k).Result()
+			v, err := cmds[i].(*redis.IntCmd).Result()
 			if err != nil && err != redis.Nil {
 				log.Warningf("memusage err: %s", err)
 			}
 			if _, err := uuid.Parse(p); err == nil {
-				p = "logs"
+				p = "(invocation logs)"
+			}
+			if strings.HasPrefix(p, "warning-") {
+				p = "warning-*"
+			}
+			if p == "hit_tracker" && strings.HasSuffix(k, "/results") {
+				p = "hit_tracker/*/results"
+			} else if p == "hit_tracker" {
+				p = "hit_tracker/* (counts)"
 			}
 			//if v > 3500 {
 			//	log.Infof("key %q v %d", k, v)
 			//}
 			totalSize += v
 			sizes[p] += v
+			counts[p] += 1
 			count++
 			if count%1000 == 0 {
-				log.Infof("keys scanned: %d", count)
-				log.Infof("average size: %f", float64(totalSize)/float64(count))
+				fmt.Println("===")
+				fmt.Printf("Keys scanned: %d\n", count)
+				fmt.Printf("Average size: %.2f bytes\n", float64(totalSize)/float64(count))
 				var s []prefixSize
 				for k, v := range sizes {
 					s = append(s, prefixSize{k, v})
@@ -75,10 +96,16 @@ func main() {
 					}
 				})
 				for _, v := range s {
-					log.Infof("Prefix %q size %s", v.prefix, units.BytesSize(float64(v.size)))
+					fmt.Printf("%s  %s\tavg=%s\tn=%d\n", padRight(v.prefix, 24), padRight(units.BytesSize(float64(v.size)), 10), units.BytesSize(float64(v.size/counts[v.prefix])), counts[v.prefix])
 				}
-				fmt.Println()
 			}
 		}
 	}
+}
+
+func padRight(s string, length int) string {
+	if len(s) >= length {
+		return s
+	}
+	return s + strings.Repeat(" ", length-len(s))
 }
