@@ -66,7 +66,7 @@ common:ci --repository_cache=/home/runner/repo-cache/
 common:ci --flaky_test_attempts=2
 common:ci --color=yes
 common:ci --disk_cache=
-# build:ci --@io_bazel_rules_go//go/config:race
+# common:ci --@io_bazel_rules_go//go/config:race
 
 # Configuration used for untrusted GitHub actions-based CI
 common:untrusted-ci --config=remote
@@ -93,7 +93,7 @@ common:workflows --config=buildbuddy_bes_backend
 common:workflows --config=buildbuddy_bes_results_url
 common:workflows --config=buildbuddy_remote_cache
 # Temporarily disabled while testing blake3.
-#build:workflows --config=buildbuddy_experimental_remote_downloader
+#common:workflows --config=buildbuddy_experimental_remote_downloader
 
 common:race --@io_bazel_rules_go//go/config:race
 
@@ -141,7 +141,7 @@ common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/
 common:static --repo_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 common:static --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl
 # arm64 is not yet tested, so we leave this toolchain commented out for now.
-# build:static --extra_toolchains=@zig_sdk//toolchain:linux_arm64_musl
+# common:static --extra_toolchains=@zig_sdk//toolchain:linux_arm64_musl
 common:static --@io_bazel_rules_go//go/config:static=true
 common:static --copt=-fPIC
 
