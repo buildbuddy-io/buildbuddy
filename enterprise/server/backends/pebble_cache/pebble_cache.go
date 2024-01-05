@@ -792,7 +792,7 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 		return nil
 	}
 
-	newVersionMetadata := proto.Clone(oldVersionMetadata).(*rfpb.VersionMetadata)
+	newVersionMetadata := oldVersionMetadata.CloneVT()
 	newVersionMetadata.MinVersion = int64(minVersion)
 	newVersionMetadata.MaxVersion = int64(maxVersion)
 	newVersionMetadata.LastModifyUsec = p.clock.Now().UnixMicro()
@@ -1063,7 +1063,7 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 			return status.UnknownErrorf("Error unmarshalling metadata: %s", err)
 		}
 
-		dstFileRecord := proto.Clone(fileMetadata.GetFileRecord()).(*rfpb.FileRecord)
+		dstFileRecord := fileMetadata.GetFileRecord().CloneVT()
 		dstFileRecord.GetIsolation().PartitionId = dstPartitionID
 		newStorageMD, err := p.fileStorer.LinkOrCopyFile(ctx, fileMetadata.GetStorageMetadata(), dstFileRecord, blobDir, blobDir)
 		if err != nil {

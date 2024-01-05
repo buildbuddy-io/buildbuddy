@@ -27,7 +27,6 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/networking",
-        "//server/util/proto",
         "//server/util/random",
         "//server/util/retry",
         "//server/util/status",

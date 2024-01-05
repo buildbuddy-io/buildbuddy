@@ -939,7 +939,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
 				if rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed() <= *maxRangeSizeBytes {
 					continue
 				}
-				rd := proto.Clone(rangeUsageEvent.RangeDescriptor).(*rfpb.RangeDescriptor)
+				rd := rangeUsageEvent.RangeDescriptor.CloneVT()
 				s.log.Infof("Requesting split for range: %+v", rd)
 				select {
 				case s.splitRequests <- rd:
@@ -1095,7 +1095,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 
 	// Copy left range, because it's a pointer and will change when we
 	// propose the split.
-	leftRange = proto.Clone(leftRange).(*rfpb.RangeDescriptor)
+	leftRange = leftRange.CloneVT()
 	shardID := leftRange.GetReplicas()[0].GetShardId()
 
 	// Reserve new IDs for this cluster.

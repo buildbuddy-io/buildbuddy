@@ -385,11 +385,7 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	// EnqueueTaskReservation may be called multiple times and OpenTelemetry doesn't have clear documentation as to
 	// whether it's safe to call Inject using a carrier that already has metadata so we clone the proto to be defensive.
 	// We also clone to avoid mutating the proto in adjustTaskSize below.
-	req, ok := proto.Clone(req).(*scpb.EnqueueTaskReservationRequest)
-	if !ok {
-		log.CtxErrorf(ctx, "could not clone reservation request")
-		return nil, status.InternalError("could not clone reservation request")
-	}
+	req = req.CloneVT()
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
 
 	// Just before enqueueing, resize the task to match the measured or

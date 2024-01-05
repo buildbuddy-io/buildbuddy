@@ -68,7 +68,7 @@ func SnapshotKeySet(task *repb.ExecutionTask, configurationHash, runnerID string
 		},
 	}
 	for _, ref := range fallbackRefs {
-		fallbackKey := proto.Clone(keys.BranchKey).(*fcpb.SnapshotKey)
+		fallbackKey := keys.BranchKey.CloneVT()
 		fallbackKey.Ref = ref
 		keys.FallbackKeys = append(keys.FallbackKeys, fallbackKey)
 	}
@@ -189,7 +189,7 @@ type Snapshot struct {
 }
 
 func (s *Snapshot) GetKey() *fcpb.SnapshotKey {
-	return proto.Clone(s.key).(*fcpb.SnapshotKey)
+	return s.key.CloneVT()
 }
 
 func (s *Snapshot) GetVMConfiguration() *fcpb.VMConfiguration {

@@ -216,7 +216,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	var numFileRecords, sizeBytes int64
 	sm.partitionMetadataMu.Lock()
 	for _, pm := range sm.partitionMetadata {
-		ru.Partitions = append(ru.Partitions, proto.Clone(pm).(*rfpb.PartitionMetadata))
+		ru.Partitions = append(ru.Partitions, pm.CloneVT())
 		numFileRecords += pm.GetTotalCount()
 		sizeBytes += pm.GetSizeBytes()
 	}

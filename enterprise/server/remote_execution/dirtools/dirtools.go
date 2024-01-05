@@ -760,7 +760,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
 	ff.statsMu.Lock()
 	defer ff.statsMu.Unlock()
-	return proto.Clone(&ff.stats).(*repb.IOStats)
+	return ff.stats.CloneVT()
 }
 
 // bytestreamReadFiles reads the given digest from the bytestream and creates

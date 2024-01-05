@@ -10,7 +10,6 @@ go_library(
         "//proto:raft_go_proto",
         "//server/metrics",
         "//server/util/log",
-        "//server/util/proto",
         "//server/util/rangemap",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",

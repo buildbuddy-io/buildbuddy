@@ -49,7 +49,6 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/disk",
         "//server/util/prefix",
-        "//server/util/proto",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",

@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -107,7 +106,7 @@ func TestMetadata(t *testing.T) {
 		require.NoError(t, err)
 
 		// Metadata should return true size of the blob, regardless of queried size.
-		rn := proto.Clone(r).(*rspb.ResourceName)
+		rn := r.CloneVT()
 		rn.Digest.SizeBytes = 1 // mess up the digest size
 
 		md, err := dc.Metadata(ctx, rn)

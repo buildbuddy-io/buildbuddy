@@ -152,7 +152,7 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 		if target == nil {
 			return nil, status.NotFoundErrorf("target %q not found for invocation %s", req.GetTargetLabel(), inv.GetInvocationId())
 		}
-		req = proto.Clone(req).(*trpb.GetTargetRequest)
+		req = req.CloneVT()
 		req.Status = &target.Status
 	}
 
@@ -234,7 +234,7 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 				return nil, status.InternalErrorf("missing required events for target label = %q, status = %d", label, s)
 			}
 			// Clone to avoid messing with the indexed target.
-			target = proto.Clone(target).(*trpb.Target)
+			target = target.CloneVT()
 
 			// Expand files only if requesting a single target label in the
 			// request, or when fetching the TargetGroup with status unset (i.e.
