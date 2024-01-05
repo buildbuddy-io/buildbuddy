@@ -116,7 +116,12 @@ func (u *Uploader) uploadDirectory(namedSetID, root string) error {
 			return err
 		}
 		uri := fmt.Sprintf("%s/%s", u.bytestreamURIPrefix, rnString)
-		f := &bespb.File{Name: r.Name, File: &bespb.File_Uri{Uri: uri}}
+		f := &bespb.File{
+			Name:   r.Name,
+			File:   &bespb.File_Uri{Uri: uri},
+			Digest: rn.GetDigest().GetHash(),
+			Length: rn.GetDigest().GetSizeBytes(),
+		}
 		files = append(files, f)
 	}
 	if len(files) == 0 {
