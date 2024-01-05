@@ -329,8 +329,8 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
-	res.UsageStats = nil
-	assert.Equal(t, expectedResult, res)
+
+	assertCommandResult(t, expectedResult, res)
 }
 
 func TestFirecrackerLifecycle(t *testing.T) {
@@ -393,8 +393,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
-	res.UsageStats = nil
-	assert.Equal(t, expectedResult, res)
+	assertCommandResult(t, expectedResult, res)
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
@@ -1016,9 +1015,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 			"total scratch disk size")
 	}
 
-	res.UsageStats = nil
-
-	assert.Equal(t, expectedResult, res)
+	assertCommandResult(t, expectedResult, res)
 
 	for _, fullPath := range files {
 		if exists, err := disk.FileExists(ctx, fullPath); err != nil || !exists {
@@ -2317,4 +2314,17 @@ func appendToLog(message string) *repb.Command {
 				cat ./log
 			`},
 	}
+}
+
+// Compares a CommandResult against an expected one, ignoring non-deterministic
+// fields.
+func assertCommandResult(t testing.TB, expected *interfaces.CommandResult, actual *interfaces.CommandResult) {
+	{
+		// Shallow copy
+		a := *actual
+		actual = &a
+	}
+	actual.UsageStats = nil
+	actual.AuxiliaryLogs = nil
+	assert.Equal(t, expected, actual)
 }
