@@ -29,6 +29,8 @@ message ApiKey {
     REGISTER_EXECUTOR_CAPABILITY = 2;  // 2^1
     // Allows writing to the content-addressable store only.
     CAS_WRITE_CAPABILITY = 4;  // 2^2
+    // Allows managing users using the SCIM API.
+    SCIM_CAPABILITY = 8;  // 2^3
   }
 
   // Capabilities associated with this API key.

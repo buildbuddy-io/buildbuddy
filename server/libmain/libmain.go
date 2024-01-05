@@ -406,8 +406,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	}
 
 	if scim := env.GetSCIMService(); scim != nil {
-		mux.Handle("/scim/Users", interceptors.WrapAuthenticatedExternalHandler(env, scim.Users()))
-		mux.Handle("/scim/Groups", interceptors.WrapAuthenticatedExternalHandler(env, scim.Groups()))
+		scim.RegisterHandlers(mux)
 	}
 
 	if wfs := env.GetWorkflowService(); wfs != nil {

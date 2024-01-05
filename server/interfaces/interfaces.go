@@ -1433,8 +1433,7 @@ type ServerNotificationService interface {
 }
 
 type SCIMService interface {
-	Users() http.Handler
-	Groups() http.Handler
+	RegisterHandlers(mux HttpServeMux)
 }
 
 type GossipListener interface {

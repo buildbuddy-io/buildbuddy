@@ -784,7 +784,15 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 		user = u
 		return err
 	})
-	return user, err
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range user.Groups {
+		if err := perms.AuthorizeGroupAccess(ctx, d.env, g.Group.GroupID); err == nil {
+			return user, nil
+		}
+	}
+	return nil, status.NotFoundError("user not found")
 }
 
 func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User, error) {
@@ -901,6 +909,9 @@ func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (
 	rq := tx.NewQuery(ctx, "userdb_get_user").Raw(
 		`SELECT * FROM "Users" WHERE user_id = ?`, userID)
 	if err := rq.Take(user); err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundError("user not found")
+		}
 		return nil, err
 	}
 	if err := fillUserGroups(ctx, tx, user); err != nil {
