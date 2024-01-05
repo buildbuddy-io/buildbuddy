@@ -1517,7 +1517,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		Reviewers:      reviewers,
 		Files:          fileSummaries,
 		ActionStatuses: actionStatuses,
-		Mergeable:      pr.GetMergeable(),
+		Mergeable:      pr.GetMergeableState() == "clean",
 		Submitted:      pr.GetMerged(),
 		GithubUrl:      pr.GetHTMLURL(),
 	}
