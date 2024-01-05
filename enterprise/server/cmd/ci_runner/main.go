@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -35,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
+	"github.com/docker/go-units"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
@@ -66,6 +68,23 @@ const (
 	// Name of the bazel output base dir. This is written under the workspace
 	// so that it can be cleaned up when the workspace is cleaned up.
 	outputBaseDirName = "output-base"
+
+	// Name of the dir where artifacts can be written.
+	// The CI runner provisions subdirectories under this directory, one per
+	// bazel command, e.g. artifacts/command-0/, artifacts/command-1/, etc.
+	// The absolute path to the numbered directory is exposed to each Bazel
+	// command as BUILDBUDDY_ARTIFACTS_DIRECTORY.
+	// Bazel commands can reference this like:
+	//     bazel build --experimental_remote_grpc_log_file=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log
+	// After each Bazel command, the CI runner will scan for artifacts under
+	// this directory and upload all artifacts to cache, and report all uploads
+	// as NamedSetOfFiles in the workflow build event stream.
+	artifactsDirName = "artifacts"
+
+	// Name of the env var exposed to bazel commands containing the path where
+	// files can be written to have them associated with the workflow BES
+	// stream.
+	artifactsDirEnvVarName = "BUILDBUDDY_ARTIFACTS_DIRECTORY"
 
 	defaultGitRemoteName = "origin"
 	forkGitRemoteName    = "fork"
@@ -156,6 +175,10 @@ type workspace struct {
 	//     {rootDir}/
 	//         bazelisk             (copy of embedded bazelisk binary)
 	//         buildbuddy.bazelrc   (BuildBuddy-controlled bazelrc that applies to all bazel commands)
+	//         artifacts/
+	//             command-0/       (artifacts for bazel_commands[0])
+	//             command-1/       (artifacts for bazel_commands[1])
+	//             ...
 	//         output-base/         (bazel output base)
 	//         repo-root/           (cloned git repo)
 	//             .git/
@@ -197,10 +220,30 @@ type workspace struct {
 	log io.Writer
 }
 
+func artifactsRootPath(ws *workspace) string {
+	return filepath.Join(ws.rootDir, artifactsDirName)
+}
+
+func artifactsPathForCommand(ws *workspace, bazelCommandIndex int) string {
+	return filepath.Join(artifactsRootPath(ws), fmt.Sprintf("command-%d", bazelCommandIndex))
+}
+
+func provisionArtifactsDir(ws *workspace, bazelCommandIndex int) error {
+	path := artifactsPathForCommand(ws, bazelCommandIndex)
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return err
+	}
+	if err := os.Setenv(artifactsDirEnvVarName, path); err != nil {
+		return err
+	}
+	return nil
+}
+
 type buildEventReporter struct {
 	isWorkflow bool
 	apiKey     string
 	bep        *build_event_publisher.Publisher
+	uploader   *bes_artifacts.Uploader
 	log        *invocationLog
 
 	invocationID          string
@@ -226,7 +269,17 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		return nil, status.UnavailableErrorf("failed to initialize build event publisher: %s", err)
 	}
 	bep.Start(ctx)
-	return &buildEventReporter{apiKey: apiKey, bep: bep, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
+
+	var uploader *bes_artifacts.Uploader
+	if *cacheBackend != "" {
+		ul, err := bes_artifacts.NewUploader(ctx, bep, *cacheBackend, *remoteInstanceName)
+		if err != nil {
+			return nil, status.UnavailableErrorf("failed to initialize BES artifact uploader: %s", err)
+		}
+		uploader = ul
+	}
+
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -348,7 +401,6 @@ func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 		r.cancelBackgroundFlush()
 		r.cancelBackgroundFlush = nil
 	}
-
 	r.FlushProgress()
 	now := time.Now()
 
@@ -811,12 +863,51 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return ws.setupError
 	}
 
+	uploader := ar.reporter.uploader
+	// Log upload results at the end of all Bazel commands.
+	defer func() {
+		if uploader == nil {
+			return
+		}
+		uploads, err := uploader.Wait()
+		if err != nil {
+			ar.reporter.Printf("WARNING: failed to upload some artifacts written to $%s: %s", artifactsDirEnvVarName, err)
+		}
+		for _, u := range uploads {
+			if u.Err != nil {
+				ar.reporter.Printf("WARNING: failed to upload artifact %s/%s", u.NamedSetID, u.Name)
+				continue
+			}
+			ar.reporter.Printf(
+				"Uploaded artifact %s/%s (%s) in %s",
+				u.NamedSetID, u.Name,
+				units.HumanSize(float64(u.Digest.SizeBytes)), u.Duration)
+		}
+	}()
+
 	for i, bazelCmd := range action.BazelCommands {
 		cmdStartTime := time.Now()
+
+		// Publish a TargetConfigured event associated with the bazel command so
+		// that we can render artifacts associated with the "target".
+		targetLabel := fmt.Sprintf("bazel_commands[%d]", i)
+		ar.reporter.Publish(&bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetConfigured{
+				TargetConfigured: &bespb.BuildEventId_TargetConfiguredId{
+					Label: targetLabel,
+				},
+			}},
+			Payload: &bespb.BuildEvent_Configured{Configured: &bespb.TargetConfigured{}},
+		})
 
 		if i >= len(wfc.GetInvocation()) {
 			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
 		}
+
+		if err := provisionArtifactsDir(ws, i); err != nil {
+			return err
+		}
+
 		iid := wfc.GetInvocation()[i].GetInvocationId()
 		args, err := bazelArgs(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
 		if err != nil {
@@ -841,8 +932,28 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
+		artifactsDir := artifactsPathForCommand(ws, i)
+		namedSetID := filepath.Base(artifactsDir)
+
 		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), action.Env, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
+		ar.reporter.Publish(&bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetCompleted{
+				TargetCompleted: &bespb.BuildEventId_TargetCompletedId{
+					Label: targetLabel,
+				},
+			}},
+			Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				Success: runErr == nil,
+				OutputGroup: []*bespb.OutputGroup{
+					{
+						FileSets: []*bespb.BuildEventId_NamedSetOfFilesId{
+							{Id: namedSetID},
+						},
+					},
+				},
+			}},
+		})
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
 		}
@@ -925,6 +1036,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
 		if err := ar.reporter.FlushProgress(); err != nil {
 			break
+		}
+
+		// Kick off background uploads for the action that just completed
+		if uploader != nil {
+			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
 	}
 	return nil
@@ -1327,6 +1443,10 @@ func findAction(actions []*config.Action, name string) (*config.Action, error) {
 }
 
 func (ws *workspace) setup(ctx context.Context) error {
+	// Remove any existing artifacts from previous workflow invocations
+	if err := disk.ForceRemove(ctx, artifactsRootPath(ws)); err != nil {
+		return err
+	}
 	repoDirInfo, err := os.Stat(repoDirName)
 	if err != nil && !os.IsNotExist(err) {
 		return status.WrapErrorf(err, "stat %q", repoDirName)

@@ -20,12 +20,14 @@ go_test(
         # TODO: remove network dependency.
         "test.dockerNetwork": "bridge",
     },
-    shard_count = 12,
+    shard_count = 13,
     deps = [
+        "//proto:build_event_stream_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:remote_execution_log_go_proto",
         "//server/remote_cache/cachetools",
         "//server/testutil/app",
         "//server/testutil/buildbuddy",
@@ -37,5 +39,6 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@org_golang_google_protobuf//encoding/protodelim",
     ],
 )

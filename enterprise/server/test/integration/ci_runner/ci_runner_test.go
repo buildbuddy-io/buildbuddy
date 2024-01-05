@@ -1,10 +1,14 @@
 package ci_runner_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,12 +27,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protodelim"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rlpb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log"
 )
 
 var (
@@ -143,6 +150,34 @@ actions:
         merge_with_base: false
     bazel_commands:
       - run :exit -- 0
+`,
+	}
+
+	workspaceContentsWithArtifactUploads = map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD": `
+sh_test(name = "pass", srcs = ["pass.sh"])
+sh_binary(name = "check_artifacts_dir", srcs = ["check_artifacts_dir.sh"])
+`,
+		"pass.sh": `exit 0`,
+		"check_artifacts_dir.sh": `
+			# Make sure artifacts dir exists
+			artifacts_root="$1/.."
+			if ! [[ -e "$artifacts_root/command-0" ]]; then exit 1; fi
+			# Make sure there are no files from previous invocations anywhere
+			# under the arrtifacts root dir
+			if [[ "$(find "$artifacts_root" -type f)" ]]; then exit 1; fi
+			exit 0
+		`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      pull_request: { branches: [ master ] }
+      push: { branches: [ master ] }
+    bazel_commands:
+      - run :check_artifacts_dir -- $BUILDBUDDY_ARTIFACTS_DIRECTORY
+      - test //... --config=buildbuddy_remote_cache --experimental_remote_grpc_log=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log
 `,
 	}
 
@@ -928,5 +963,78 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
 	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	checkRunnerResult(t, result)
+}
+
+func TestArtifactUploads(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithArtifactUploads)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	// Start the app so the runner can use it as the BES+cache backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+	runnerFlags = append(runnerFlags, "--cache_backend="+app.GRPCAddress())
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+
+	runnerInvocation := singleInvocation(t, app, result)
+
+	var files []*bespb.File
+	for _, tg := range runnerInvocation.GetTargetGroups() {
+		for _, t := range tg.GetTargets() {
+			files = append(files, t.GetFiles()...)
+		}
+	}
+
+	bytestreamURI := files[0].GetUri()
+	require.NotEmpty(t, bytestreamURI)
+	fileName := files[0].GetName()
+	require.Equal(t, "grpc.log", fileName)
+
+	// Make sure that we can download the artifact and parse it as a gRPC log.
+	downloadURL := fmt.Sprintf(
+		"%s/file/download?invocation_id=%s&bytestream_url=%s",
+		app.HTTPURL(),
+		url.QueryEscape(runnerInvocation.GetInvocationId()),
+		url.QueryEscape(bytestreamURI))
+	res, err := http.Get(downloadURL)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		b, _ := io.ReadAll(res.Body)
+		require.FailNowf(t, res.Status, "response body: %s", string(b))
+	}
+
+	br := bufio.NewReader(res.Body)
+	m := &rlpb.LogEntry{}
+	nParsed := 0
+	for {
+		err = protodelim.UnmarshalFrom(br, m)
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		nParsed++
+	}
+	require.Greater(t, nParsed, 0, "expected to parse at least one grpc log message")
+
+	// Run the action again. Note, the workflow bazel command runs a script
+	// which asserts that there are no artifacts sticking around in the artifact
+	// directory from the previous run.
+	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
+
 	checkRunnerResult(t, result)
 }

@@ -38,9 +38,9 @@ const (
 )
 
 var (
-	enableUploadCompresssion = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
-	casRPCTimeout            = flag.Duration("cache.client.cas_rpc_timeout", 1*time.Minute, "Maximum time a single batch RPC or a single ByteStream chunk read can take.")
-	acRPCTimeout             = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
+	enableUploadCompression = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
+	casRPCTimeout           = flag.Duration("cache.client.cas_rpc_timeout", 1*time.Minute, "Maximum time a single batch RPC or a single ByteStream chunk read can take.")
+	acRPCTimeout            = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
 )
 
 func retryOptions(name string) *retry.Options {
@@ -415,6 +415,9 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
+	if *enableUploadCompression {
+		resourceName.SetCompressor(repb.Compressor_ZSTD)
+	}
 	return UploadFromReader(ctx, bsClient, resourceName, f)
 }
 
@@ -553,7 +556,7 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 
 func (ul *BatchCASUploader) supportsCompression() bool {
 	ul.once.Do(func() {
-		if !*enableUploadCompresssion {
+		if !*enableUploadCompression {
 			return
 		}
 		capabilitiesClient := ul.env.GetCapabilitiesClient()
