@@ -138,9 +138,6 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
     this.fetchWorkflowHistoryRPC = undefined;
     this.setState({ workflowHistoryLoading: false, workflowHistoryResponse: null });
 
-    if (!capabilities.config.workflowHistoryEnabled) {
-      return;
-    }
     this.setState({ workflowHistoryLoading: true });
     this.fetchWorkflowHistoryRPC = rpcService.service
       .getWorkflowHistory(new workflow.GetWorkflowHistoryRequest())
