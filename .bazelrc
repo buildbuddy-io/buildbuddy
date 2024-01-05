@@ -1,6 +1,6 @@
 common --noenable_bzlmod
 
-build --enable_platform_specific_config=true
+common --enable_platform_specific_config=true
 query --enable_platform_specific_config=true
 
 # Skymeld merges the analysis phase and execution phase.
@@ -41,7 +41,7 @@ common:remote-shared --verbose_failures
 common:remote-shared --platforms=//platforms:linux_x86_64
 common:remote-shared --extra_execution_platforms=//platforms:linux_x86_64
 
-build --incompatible_enable_cc_toolchain_resolution
+common --incompatible_enable_cc_toolchain_resolution
 
 # Build with --config=remote to use BuildBuddy RBE.
 common:remote --config=remote-shared
@@ -55,7 +55,7 @@ common:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
 
 # Write build outputs in a platform-specific directory,
 # avoid outputs being wiped and rewritten when switching between platforms.
-build --experimental_platform_in_output_dir
+common --experimental_platform_in_output_dir
 
 # Configuration used for GitHub actions-based CI
 common:ci --config=remote
@@ -146,11 +146,11 @@ common:static --@io_bazel_rules_go//go/config:static=true
 common:static --copt=-fPIC
 
 # By default, build logs get sent to the production server
-build --bes_results_url=https://app.buildbuddy.io/invocation/
-build --bes_backend=grpcs://remote.buildbuddy.io
+common --bes_results_url=https://app.buildbuddy.io/invocation/
+common --bes_backend=grpcs://remote.buildbuddy.io
 
 # Recommended if connecting to a remote (upload speed constrained) BuildBuddy instance
-build --noremote_upload_local_results # Uploads logs & artifacts without writing to cache
+common --noremote_upload_local_results # Uploads logs & artifacts without writing to cache
 
 # Populate workspace info like commit sha and repo name to your invocation.
 common:linux --workspace_status_command=$(pwd)/workspace_status.sh
@@ -158,12 +158,12 @@ common:macos --workspace_status_command=$(pwd)/workspace_status.sh
 common:windows --workspace_status_command="bash workspace_status.sh"
 
 # Misc remote cache/BES optimizations
-build --experimental_remote_cache_async
-build --experimental_remote_build_event_upload=minimal
-build --nolegacy_important_outputs
+common --experimental_remote_cache_async
+common --experimental_remote_build_event_upload=minimal
+common --nolegacy_important_outputs
 
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
-build --incompatible_strict_action_env
+common --incompatible_strict_action_env
 
 # rules_nodejs needs runfiles to be explicitly enabled.
 common:linux --enable_runfiles
@@ -171,7 +171,7 @@ common:macos --enable_runfiles
 
 # Use syscall to create symlink in-process.
 # Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
-build --experimental_inprocess_symlink_creation
+common --experimental_inprocess_symlink_creation
 
 # Workaround for Bazel 7:
 # rules_docker (archived) defines a transition that helps ensure building containers with binary would use the same platform for both.
@@ -183,7 +183,7 @@ build --experimental_inprocess_symlink_creation
 #
 # Disabling this is safe because today, we are building these constainers on Linux host, executing Linux actions and targeting Linux machines.
 # This assumption might not hold in the future, but we can revisit this when that happens.
-build --@io_bazel_rules_docker//transitions:enable=false
+common --@io_bazel_rules_docker//transitions:enable=false
 
 # Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
 # Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
@@ -217,11 +217,11 @@ coverage --combined_report=lcov
 startup --digest_function=BLAKE3
 
 # Include target names in timing profile so it's clickable.
-build --experimental_profile_include_target_label
+common --experimental_profile_include_target_label
 # Include primary output name in timing profile.
-build --experimental_profile_include_primary_output
+common --experimental_profile_include_primary_output
 # Don't merge timing profile actions.
-build --noslim_profile
+common --noslim_profile
 
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:
