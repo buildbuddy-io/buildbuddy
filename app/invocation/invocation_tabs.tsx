@@ -59,7 +59,7 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
         {isBazelInvocation && this.renderTab("targets", { label: "Targets" })}
         {this.renderTab("log", { label: "Logs" })}
         {this.renderTab("details", { label: "Details" })}
-        {isBazelInvocation && this.renderTab("artifacts", { label: "Artifacts" })}
+        {this.renderTab("artifacts", { label: "Artifacts" })}
         {isBazelInvocation && this.renderTab("timing", { label: "Timing" })}
         {isBazelInvocation && this.renderTab("cache", { label: "Cache" })}
         {this.props.executionsEnabled && this.renderTab("execution", { label: "Executions" })}

@@ -401,7 +401,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
               <CacheRequestsCardComponent model={this.state.model} search={this.props.search} />
             )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab === "artifacts") && (
+          {(activeTab === "all" || activeTab === "artifacts") && (
             <ArtifactsCardComponent
               model={this.state.model}
               filter={this.props.search.get("artifactFilter") ?? ""}
