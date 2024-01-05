@@ -114,6 +114,7 @@
   line-height: 36px;
   font-size: 24px;
   background-color: #ffecb3;
+  grid-column: span 2;
 }
 
 .pr-view .header-separator {

@@ -2,6 +2,7 @@ import React from "react";
 import { User } from "../../../app/auth/user";
 import ReviewListComponent from "./review_list";
 import ViewPullRequestComponent from "./view_pull_request";
+import { Path } from "../../../app/router/router";
 
 interface CodeReviewComponentProps {
   user?: User;
@@ -10,7 +11,8 @@ interface CodeReviewComponentProps {
 
 export default class CodeReviewComponent extends React.Component<CodeReviewComponentProps> {
   render() {
-    const route = this.props.path.substring(9).split("/");
+    const route = this.props.path.substring(Path.reviewsPath.length).split("/");
+    // Checking route.length here because a code review path is "org/repo/pull" (3 parts)
     if (route.length === 3) {
       return (
         <ViewPullRequestComponent

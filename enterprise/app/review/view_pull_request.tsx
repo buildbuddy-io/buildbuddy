@@ -5,6 +5,7 @@ import format from "../../../app/format/format";
 import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
 import { Github, MessageCircle } from "lucide-react";
+import error_service from "../../../app/errors/error_service";
 
 interface ViewPullRequestComponentProps {
   user?: User;
@@ -13,6 +14,7 @@ interface ViewPullRequestComponentProps {
   pull: number;
   path: string;
 }
+
 interface State {
   response?: github.GetGithubPullRequestDetailsResponse;
   displayedDiffs: string[];
@@ -24,6 +26,7 @@ interface DiffLineInfo {
 }
 
 type SourceLine = string | undefined;
+
 interface DiffLinePair {
   left: SourceLine;
   right: SourceLine;
@@ -40,6 +43,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
   };
 
   componentWillMount() {
+    document.title = `Change #${this.props.pull} in ${this.props.owner}/${this.props.repo}`;
     rpc_service.service
       .getGithubPullRequestDetails({
         owner: this.props.owner,
@@ -49,7 +53,8 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       .then((r) => {
         console.log(r);
         this.setState({ response: r });
-      });
+      })
+      .catch((e) => error_service.handleError(e));
   }
 
   renderSingleReviewer(reviewer: github.Reviewer) {
@@ -102,96 +107,6 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     return "";
   }
 
-  getDiffLineInfo(input: string): DiffLineInfo {
-    const breakdown = input.slice(1).split(",");
-    return { startLine: Number(breakdown[0]) || 0, lineCount: Number(breakdown[1]) || 0 };
-  }
-
-  readNextHunk(patchLines: string[], startIndex: number): [Hunk, number] {
-    // Parse the hunk start line.
-    const hunkSummary = patchLines[startIndex].split("@@");
-    if (hunkSummary.length < 3) {
-      return [{ header: "", lines: [] }, startIndex];
-    }
-    const diffLineInfo = hunkSummary[1].trim().split(" ");
-    let leftInfo: DiffLineInfo | undefined, rightInfo: DiffLineInfo | undefined;
-    for (let i = 0; i < diffLineInfo.length; i++) {
-      const value = diffLineInfo[i];
-      if (value.length < 4) {
-        continue;
-      }
-      if (value[0] === "+") {
-        rightInfo = this.getDiffLineInfo(value);
-      } else if (value[0] === "-") {
-        leftInfo = this.getDiffLineInfo(value);
-      }
-    }
-
-    let leftLinesRead = 0;
-    let rightLinesRead = 0;
-    let currentLineOffset = 0;
-    let currentIndex = startIndex + 1;
-
-    let leftLines: SourceLine[] = [];
-    let rightLines: SourceLine[] = [];
-    while (
-      leftLinesRead < (leftInfo?.lineCount ?? 0) &&
-      rightLinesRead < (rightInfo?.lineCount ?? 0) &&
-      currentIndex < patchLines.length
-    ) {
-      let line = patchLines[currentIndex];
-      if (line[0] === "+") {
-        rightLinesRead += 1;
-        currentLineOffset += 1;
-        rightLines.push(line.slice(1));
-      } else if (line[0] === "-") {
-        leftLinesRead += 1;
-        currentLineOffset -= 1;
-        leftLines.push(line.slice(1));
-      } else {
-        leftLinesRead += 1;
-        rightLinesRead += 1;
-        rightLines.push(line.slice(1));
-        leftLines.push(line.slice(1));
-        const arrayToGrow = currentLineOffset < 0 ? rightLines : leftLines;
-        for (let i = 0; i < Math.abs(currentLineOffset); i++) {
-          arrayToGrow.push(undefined);
-        }
-        currentLineOffset = 0;
-      }
-      currentIndex++;
-    }
-    const finalOffset = rightLines.length - leftLines.length;
-    if (finalOffset !== 0) {
-      const arrayToGrow = finalOffset < 0 ? rightLines : leftLines;
-      for (let i = 0; i < Math.abs(finalOffset); i++) {
-        arrayToGrow.push(undefined);
-      }
-    }
-
-    let output: DiffLinePair[] = [];
-    for (let i = rightLines.length - 1; i >= 0; i--) {
-      if (leftLines[i] === undefined) {
-        let j = i - 1;
-        while (j >= 0) {
-          if (leftLines[j] !== undefined) {
-            if (leftLines[j] === rightLines[i]) {
-              leftLines[i] = leftLines[j];
-              leftLines[j] = undefined;
-            }
-            break;
-          }
-          j--;
-        }
-      }
-    }
-    for (let i = 0; i < rightLines.length; i++) {
-      output.push({ left: leftLines[i], right: rightLines[i] });
-    }
-
-    return [{ header: patchLines[startIndex], lines: output }, currentIndex];
-  }
-
   renderDiffHunk(hunk: Hunk) {
     return (
       <>
@@ -224,7 +139,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     while (currentIndex < patchLines.length) {
       let hunk: Hunk;
       if (patchLines[currentIndex].startsWith("@@")) {
-        [hunk, currentIndex] = this.readNextHunk(patchLines, currentIndex);
+        [hunk, currentIndex] = readNextHunk(patchLines, currentIndex);
         out.push(this.renderDiffHunk(hunk));
       }
     }
@@ -328,14 +243,15 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
               <div className="review-header">
                 <MessageCircle size="36" className="icon" />
                 <span className="review-title">
-                  <span className="review-number">Change {this.state.response.pull}&nbsp;</span>
-                  <span className="review-author">by {this.state.response.author}</span>
+                  <span className="review-number">Change #{this.state.response.pull}&nbsp;</span>
+                  <span className="review-author">
+                    by {this.state.response.author} in {this.state.response.owner}/{this.state.response.repo}
+                  </span>
                   <a href={this.state.response.githubUrl} className="review-gh-link">
                     <Github size="16" className="icon" />
                   </a>
                 </span>
               </div>
-              <div className="review-header"></div>
               <div className="header-separator"></div>
               <div className="review-cell">
                 <div className="attr-grid">
@@ -387,4 +303,94 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       </div>
     );
   }
+}
+
+function getDiffLineInfo(input: string): DiffLineInfo {
+  const breakdown = input.slice(1).split(",");
+  return { startLine: Number(breakdown[0]) || 0, lineCount: Number(breakdown[1]) || 0 };
+}
+
+function readNextHunk(patchLines: string[], startIndex: number): [Hunk, number] {
+  // Parse the hunk start line.
+  const hunkSummary = patchLines[startIndex].split("@@");
+  if (hunkSummary.length < 3) {
+    return [{ header: "", lines: [] }, startIndex];
+  }
+  const diffLineInfo = hunkSummary[1].trim().split(" ");
+  let leftInfo: DiffLineInfo | undefined, rightInfo: DiffLineInfo | undefined;
+  for (let i = 0; i < diffLineInfo.length; i++) {
+    const value = diffLineInfo[i];
+    if (value.length < 4) {
+      continue;
+    }
+    if (value[0] === "+") {
+      rightInfo = getDiffLineInfo(value);
+    } else if (value[0] === "-") {
+      leftInfo = getDiffLineInfo(value);
+    }
+  }
+
+  let leftLinesRead = 0;
+  let rightLinesRead = 0;
+  let currentLineOffset = 0;
+  let currentIndex = startIndex + 1;
+
+  let leftLines: SourceLine[] = [];
+  let rightLines: SourceLine[] = [];
+  while (
+    leftLinesRead < (leftInfo?.lineCount ?? 0) &&
+    rightLinesRead < (rightInfo?.lineCount ?? 0) &&
+    currentIndex < patchLines.length
+  ) {
+    let line = patchLines[currentIndex];
+    if (line[0] === "+") {
+      rightLinesRead += 1;
+      currentLineOffset += 1;
+      rightLines.push(line.slice(1));
+    } else if (line[0] === "-") {
+      leftLinesRead += 1;
+      currentLineOffset -= 1;
+      leftLines.push(line.slice(1));
+    } else {
+      leftLinesRead += 1;
+      rightLinesRead += 1;
+      rightLines.push(line.slice(1));
+      leftLines.push(line.slice(1));
+      const arrayToGrow = currentLineOffset < 0 ? rightLines : leftLines;
+      for (let i = 0; i < Math.abs(currentLineOffset); i++) {
+        arrayToGrow.push(undefined);
+      }
+      currentLineOffset = 0;
+    }
+    currentIndex++;
+  }
+  const finalOffset = rightLines.length - leftLines.length;
+  if (finalOffset !== 0) {
+    const arrayToGrow = finalOffset < 0 ? rightLines : leftLines;
+    for (let i = 0; i < Math.abs(finalOffset); i++) {
+      arrayToGrow.push(undefined);
+    }
+  }
+
+  let output: DiffLinePair[] = [];
+  for (let i = rightLines.length - 1; i >= 0; i--) {
+    if (leftLines[i] === undefined) {
+      let j = i - 1;
+      while (j >= 0) {
+        if (leftLines[j] !== undefined) {
+          if (leftLines[j] === rightLines[i]) {
+            leftLines[i] = leftLines[j];
+            leftLines[j] = undefined;
+          }
+          break;
+        }
+        j--;
+      }
+    }
+  }
+  for (let i = 0; i < rightLines.length; i++) {
+    output.push({ left: leftLines[i], right: rightLines[i] });
+  }
+
+  return [{ header: patchLines[startIndex], lines: output }, currentIndex];
 }
