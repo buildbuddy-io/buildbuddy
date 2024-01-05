@@ -481,3 +481,52 @@ message GetGithubPullRequestResponse {
   repeated PullRequest outgoing = 3;
   repeated PullRequest incoming = 4;
 }
+
+message GetGithubPullRequestDetailsRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  int64 pull = 4;
+}
+
+message Reviewer {
+  string login = 1;
+  bool attention = 2;
+  bool approved = 3;
+}
+
+message ActionStatus {
+  string name = 1;
+  string status = 2;
+  string url = 3;
+}
+
+message FileSummary {
+  string name = 1;
+  int64 additions = 2;
+  int64 deletions = 3;
+  int64 comments = 4;
+  string patch = 5;
+}
+
+message GetGithubPullRequestDetailsResponse {
+  context.ResponseContext response_context = 1;
+  string owner = 2;
+  string repo = 3;
+  int64 pull = 4;
+  string author = 5;
+  bool mergeable = 6;
+  bool submitted = 7;
+  repeated Reviewer reviewers = 8;
+  repeated ActionStatus action_statuses = 9;
+  repeated FileSummary files = 10;
+
+  string title = 11;
+  string body = 12;
+  string github_url = 13;
+
+  int64 created_at_usec = 14;
+  int64 updated_at_usec = 15;
+
+  string branch = 16;
+}

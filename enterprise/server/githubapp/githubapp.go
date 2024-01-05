@@ -1373,6 +1373,158 @@ func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithu
 	return resp, nil
 }
 
+func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	eg, gCtx := errgroup.WithContext(ctx)
+
+	var issue *github.Issue
+
+	eg.Go(func() error {
+		r, err := a.cachedIssue(gCtx, client, req.Owner, req.Repo, int(req.Pull))
+		if err != nil {
+			return err
+		}
+		issue = r
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	eg, gCtx = errgroup.WithContext(ctx)
+
+	var pr *github.PullRequest
+	var events []*github.Timeline
+	var files []*github.CommitFile
+
+	eg.Go(func() error {
+		p, err := a.cachedPullRequests(gCtx, client, req.Owner, req.Repo, int(req.Pull), issue.GetUpdatedAt())
+		if err != nil {
+			return err
+		}
+		pr = p
+		return nil
+	})
+
+	eg.Go(func() error {
+		ev, err := a.cachedTimeline(gCtx, client, req.Owner, req.Repo, int(req.Pull))
+		if err != nil {
+			return err
+		}
+		events = *ev
+		return nil
+	})
+
+	eg.Go(func() error {
+		f, err := a.cachedFiles(gCtx, client, req.Owner, req.Repo, int(req.Pull))
+		if err != nil {
+			return err
+		}
+		files = *f
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	eg, gCtx = errgroup.WithContext(ctx)
+
+	var statuses *github.CombinedStatus
+	eg.Go(func() error {
+		s, err := a.cachedStatuses(gCtx, client, req.Owner, req.Repo, pr.Head.GetSHA())
+		if err != nil {
+			return err
+		}
+		statuses = s
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	notExplicitlyRemoved := map[string]struct{}{}
+	approved := map[string]struct{}{}
+
+	for _, e := range events {
+		switch eventType := e.GetEvent(); eventType {
+		case "review_requested":
+			notExplicitlyRemoved[e.GetReviewer().GetLogin()] = struct{}{}
+		case "review_request_removed":
+			delete(notExplicitlyRemoved, e.GetReviewer().GetLogin())
+		case "reviewed":
+			if e.GetState() == "approved" {
+				approved[e.GetUser().GetLogin()] = struct{}{}
+			} else if e.GetState() == "changes_requested" {
+				delete(approved, e.GetUser().GetLogin())
+			}
+		}
+	}
+
+	activeReviewers := map[string]struct{}{}
+
+	reviewers := make([]*ghpb.Reviewer, 0)
+	for _, r := range pr.RequestedReviewers {
+		activeReviewers[r.GetLogin()] = struct{}{}
+	}
+
+	for r := range notExplicitlyRemoved {
+		reviewer := &ghpb.Reviewer{}
+		reviewer.Login = r
+		if _, ok := activeReviewers[r]; ok {
+			reviewer.Attention = true
+		}
+		if _, ok := approved[r]; ok {
+			reviewer.Approved = true
+		}
+		reviewers = append(reviewers, reviewer)
+	}
+
+	fileSummaries := make([]*ghpb.FileSummary, 0)
+	for _, f := range files {
+		summary := &ghpb.FileSummary{}
+		summary.Name = f.GetFilename()
+		summary.Additions = int64(f.GetAdditions())
+		summary.Deletions = int64(f.GetDeletions())
+		summary.Patch = f.GetPatch()
+		// TODO(jdhollen): compute comment count.
+		fileSummaries = append(fileSummaries, summary)
+	}
+
+	actionStatuses := make([]*ghpb.ActionStatus, 0)
+	for _, s := range statuses.Statuses {
+		status := &ghpb.ActionStatus{}
+		status.Name = s.GetContext()
+		status.Status = s.GetState()
+		status.Url = s.GetTargetURL()
+		actionStatuses = append(actionStatuses, status)
+	}
+
+	resp := &ghpb.GetGithubPullRequestDetailsResponse{
+		Owner:          req.Owner,
+		Repo:           req.Repo,
+		Pull:           req.Pull,
+		Title:          pr.GetTitle(),
+		Body:           pr.GetBody(),
+		Author:         pr.GetUser().GetLogin(),
+		CreatedAtUsec:  pr.GetCreatedAt().UnixMicro(),
+		UpdatedAtUsec:  pr.GetUpdatedAt().UnixMicro(),
+		Branch:         pr.GetHead().GetLabel(),
+		Reviewers:      reviewers,
+		Files:          fileSummaries,
+		ActionStatuses: actionStatuses,
+		Mergeable:      pr.GetMergeableState() == "clean",
+		Submitted:      pr.GetMerged(),
+		GithubUrl:      pr.GetHTMLURL(),
+	}
+
+	return resp, nil
+}
+
 func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, client *github.Client) (*github.IssuesSearchResult, *github.IssuesSearchResult, *github.User, error) {
 	var incoming *github.IssuesSearchResult
 	var outgoing *github.IssuesSearchResult
@@ -1493,6 +1645,52 @@ func (a *GitHubApp) cachedSearch(ctx context.Context, client *github.Client, que
 		return nil, err
 	}
 	return pr.(*github.IssuesSearchResult), nil
+}
+
+func (a *GitHubApp) cachedIssue(ctx context.Context, client *github.Client, owner string, repo string, issue int) (*github.Issue, error) {
+	key := fmt.Sprintf("issue/%s/%s/%d", owner, repo, issue)
+	value, err := a.cached(ctx, key, &github.Issue{}, time.Second*30, func() (any, any, error) {
+		return client.Issues.Get(ctx, owner, repo, issue)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return value.(*github.Issue), nil
+}
+
+func (a *GitHubApp) cachedStatuses(ctx context.Context, client *github.Client, owner string, repo string, ref string) (*github.CombinedStatus, error) {
+	key := fmt.Sprintf("statuses/%s/%s/%s", owner, repo, ref)
+	value, err := a.cached(ctx, key, &github.CombinedStatus{}, time.Second*30, func() (any, any, error) {
+		return client.Repositories.GetCombinedStatus(ctx, owner, repo, ref, &github.ListOptions{PerPage: 100})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return value.(*github.CombinedStatus), nil
+}
+
+func (a *GitHubApp) cachedTimeline(ctx context.Context, client *github.Client, owner, repo string, number int) (*[]*github.Timeline, error) {
+	key := fmt.Sprintf("timeline/%s/%s/%d", owner, repo, number)
+	pr, err := a.cached(ctx, key, &[]*github.Timeline{}, time.Second*30, func() (any, any, error) {
+		rev, res, err := client.Issues.ListIssueTimeline(ctx, owner, repo, number, &github.ListOptions{PerPage: 100})
+		return &rev, res, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return pr.(*[]*github.Timeline), nil
+}
+
+func (a *GitHubApp) cachedFiles(ctx context.Context, client *github.Client, owner, repo string, number int) (*[]*github.CommitFile, error) {
+	key := fmt.Sprintf("files/%s/%s/%d", owner, repo, number)
+	pr, err := a.cached(ctx, key, &[]*github.CommitFile{}, time.Second*30, func() (any, any, error) {
+		rev, res, err := client.PullRequests.ListFiles(ctx, owner, repo, number, &github.ListOptions{PerPage: 100})
+		return &rev, res, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return pr.(*[]*github.CommitFile), nil
 }
 
 func (a *GitHubApp) cachedPullRequests(ctx context.Context, client *github.Client, owner, repo string, number int, updatedAt time.Time) (*github.PullRequest, error) {

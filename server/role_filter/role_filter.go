@@ -72,6 +72,7 @@ var (
 		"UpdateGithubRef",
 		"CreateGithubRef",
 		"GetGithubPullRequest",
+		"GetGithubPullRequestDetails",
 	}
 
 	// DeveloperRPCs can be called only by developers or admins of the selected
