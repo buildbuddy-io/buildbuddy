@@ -197,6 +197,46 @@ func TestInsertUser(t *testing.T) {
 	}
 }
 
+func TestGetUserByEmail(t *testing.T) {
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US1",
+		SubID:  "SubID1",
+		Email:  "user1@org1.io",
+	})
+	require.NoError(t, err)
+
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID: "US2",
+		SubID:  "SubID2",
+		Email:  "user2@org2.io",
+	})
+	require.NoError(t, err, "inserting multiple users should succeed")
+
+	userCtx := authUserCtx(ctx, env, t, "US1")
+	takeOwnershipOfDomain(t, userCtx, env, "US1")
+	u, err := udb.GetUserByEmail(userCtx, "user1@org1.io")
+	require.NoError(t, err)
+	require.Equal(t, "US1", u.UserID)
+
+	// Should not be able to look up user in a different group.
+	_, err = udb.GetUserByEmail(userCtx, "user2@org2.io")
+	require.True(t, status.IsNotFoundError(err))
+
+	// Insert another user with the same e-mail as the first user.
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID: "US3",
+		SubID:  "SubID3",
+		Email:  "user1@org1.io",
+	})
+	require.NoError(t, err)
+	_, err = udb.GetUserByEmail(userCtx, "user1@org1.io")
+	require.True(t, status.IsFailedPreconditionError(err))
+}
+
 func TestDeleteUserGitHubToken(t *testing.T) {
 	env := newTestEnv(t)
 	udb := env.GetUserDB()

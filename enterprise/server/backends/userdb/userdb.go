@@ -787,6 +787,39 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 	return user, err
 }
 
+func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User, error) {
+	auth := d.env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.InternalError("No auth configured on this BuildBuddy instance")
+	}
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rq := d.h.NewQuery(ctx, "userdb_get_user_by_email").Raw(`
+		SELECT * 
+		FROM "Users" u 
+		JOIN "UserGroups" ug on u.user_id = ug.user_user_id
+		WHERE u.email = ? AND ug.group_group_id = ?
+	`, email, u.GetGroupID())
+	users, err := db.ScanAll(rq, &tables.User{})
+	if err != nil {
+		return nil, err
+	}
+	switch len(users) {
+	case 0:
+		return nil, status.NotFoundErrorf("no users found with email %q", email)
+	case 1:
+		user := users[0]
+		if err := fillUserGroups(ctx, d.h, user); err != nil {
+			return nil, err
+		}
+		return user, nil
+	default:
+		return nil, status.FailedPreconditionErrorf("multiple users found for email %q", email)
+	}
+}
+
 func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	auth := d.env.GetAuthenticator()
 	if auth == nil {
@@ -807,13 +840,7 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	return user, err
 }
 
-func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (*tables.User, error) {
-	user := &tables.User{}
-	rq := tx.NewQuery(ctx, "userdb_get_user").Raw(
-		`SELECT * FROM "Users" WHERE user_id = ?`, userID)
-	if err := rq.Take(user); err != nil {
-		return nil, err
-	}
+func fillUserGroups(ctx context.Context, tx interfaces.DB, user *tables.User) error {
 	q := `
 		SELECT
 			g.user_id,
@@ -837,9 +864,9 @@ func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (
 		ON g.group_id = ug.group_group_id
 		WHERE ug.user_user_id = ? AND ug.membership_status = ?
 	`
-	rq = tx.NewQuery(ctx, "userdb_get_user_groups").Raw(
-		q, userID, int32(grpb.GroupMembershipStatus_MEMBER))
-	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
+	rq := tx.NewQuery(ctx, "userdb_get_user_groups").Raw(
+		q, user.UserID, int32(grpb.GroupMembershipStatus_MEMBER))
+	return rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		gr := &tables.GroupRole{}
 		err := row.Scan(
 			// NOTE: When updating the group fields here, update GetImpersonatedUser
@@ -867,7 +894,16 @@ func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (
 		user.Groups = append(user.Groups, gr)
 		return nil
 	})
-	if err != nil {
+}
+
+func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (*tables.User, error) {
+	user := &tables.User{}
+	rq := tx.NewQuery(ctx, "userdb_get_user").Raw(
+		`SELECT * FROM "Users" WHERE user_id = ?`, userID)
+	if err := rq.Take(user); err != nil {
+		return nil, err
+	}
+	if err := fillUserGroups(ctx, tx, user); err != nil {
 		return nil, err
 	}
 	return user, nil

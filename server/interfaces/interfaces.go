@@ -493,6 +493,13 @@ type UserDB interface {
 	// a UserToken given the provided context.
 	GetUser(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string) (*tables.User, error)
+	// GetUserByEmail lookups a user with the given e-mail address within the
+	// currently authenticated group.
+	//
+	// An error will be returned if there are multiple users with the same
+	// e-mail address. Normally this should not be the case, but it can occur
+	// if a user transitions between auth providers (e.g. oidc to saml).
+	GetUserByEmail(ctx context.Context, email string) (*tables.User, error)
 	// GetImpersonatedUser will return the authenticated user's information
 	// with a single group membership corresponding to the group they are trying
 	// to impersonate. It requires that the authenticated user has impersonation
