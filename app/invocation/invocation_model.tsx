@@ -215,8 +215,12 @@ export default class InvocationModel {
     for (let log of this.buildToolLogs?.log || []) {
       this.toolLogMap.set(log.name, new TextDecoder().decode(log.contents || new Uint8Array()));
     }
+    // Treat "canonical" command line as the source of truth if present,
+    // otherwise just use any command line (e.g. at the time of writing, for
+    // workflows we only send "original")
     let commandLine =
-      this.commandLineWithLabel("canonical") ?? this.commandLineWithLabel("original") ?? this.structuredCommandLine[0];
+      this.structuredCommandLine.find((commandLine) => commandLine.commandLineLabel === "canonical") ??
+      this.structuredCommandLine[0];
     if (commandLine) {
       for (let section of commandLine.sections || []) {
         for (let option of section.optionList?.option || []) {
@@ -237,10 +241,6 @@ export default class InvocationModel {
         }
       }
     }
-  }
-
-  private commandLineWithLabel(label: string): command_line.CommandLine | undefined {
-    return this.structuredCommandLine.find((commandLine) => commandLine.commandLineLabel === label);
   }
 
   getUser(possessive: boolean) {
