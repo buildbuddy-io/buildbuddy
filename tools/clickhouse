@@ -1,0 +1,60 @@
+#!/bin/bash
+set -euo pipefail
+
+usage='
+tools/clickhouse: start a clickhouse local server and print the app flags needed to connect to it
+
+Example:
+  $ bazel run enterprise/server -- $(tools/clickhouse)
+'
+
+# Env vars:
+
+# Optionally set to "podman" to use podman instead
+: "${BB_CLICKHOUSE_CONTAINER_RUNNER:=docker}"
+# Host network port that clickhouse server will listen on
+: "${BB_CLICKHOUSE_PORT:=9000}"
+# Clickhouse image to use
+: "${BB_CLICKHOUSE_IMAGE:=mirror.gcr.io/clickhouse/clickhouse-server:22.3}"
+
+# Start clickhouse server if not already running.
+docker="$BB_CLICKHOUSE_CONTAINER_RUNNER"
+
+if ! command -v "$docker" &>/dev/null; then
+  echo >&2 "$0: $docker: command not found"
+  exit 1
+fi
+
+start_clickhouse() {
+  "$docker" run --rm --detach --name=bb-clickhouse-local --publish="$BB_CLICKHOUSE_PORT:9000" "$BB_CLICKHOUSE_IMAGE"
+}
+
+if ! "$docker" inspect bb-clickhouse-local &>/dev/null; then
+  start_clickhouse
+fi
+
+clickhouse_client() {
+  "$docker" run --rm --entrypoint=clickhouse-client --net=host "$BB_CLICKHOUSE_IMAGE" "$@"
+}
+
+init_db() {
+  for _ in {1..10}; do
+    if clickhouse_client --query 'CREATE DATABASE IF NOT EXISTS buildbuddy_local;' &>/dev/null; then
+      return 0
+    fi
+    echo >&2 "$0: waiting for clickhouse to initialize..."
+    sleep 1
+  done
+}
+
+if ! init_db; then
+  echo >&2 "$0: timed out waiting to initialize database"
+  exit 1
+fi
+
+# Print the app flag needed to use the DB.
+# If running like "bazel run enterprise/server -- $(tools/clickhouse)" then suppress extra output.
+if [[ -t 1 ]]; then
+  echo >&2 "$0: clickhouse started successfully! Add the following flag to your local bb server:"
+fi
+echo "--olap_database.data_source=clickhouse://default:@127.0.0.1:$BB_CLICKHOUSE_PORT/buildbuddy_local"
