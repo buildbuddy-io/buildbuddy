@@ -19,7 +19,7 @@ so it can be hard to determine which ones are impactful to you and why.
 Don't worry, we've got your back.
 In this post we highlight the changes that help BuildBuddy users build even faster!
 
-[bazel_7_0]: whats-new-in-bazel-7-0
+[bazel_7_0]: whats-new-in-bazel-7-0.mdx
 
 <!-- truncate -->
 
