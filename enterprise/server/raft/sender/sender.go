@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -144,6 +145,10 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 		}
 		s.rangeCache.UpdateRange(rd)
 		rangeDescriptor = rd
+	}
+	r := rangemap.Range{Start: rangeDescriptor.GetStart(), End: rangeDescriptor.GetEnd()}
+	if !r.Contains(key) {
+		log.Fatalf("Found range %+v that doesn't contain key: %q", rangeDescriptor, string(key))
 	}
 	return rangeDescriptor, nil
 }

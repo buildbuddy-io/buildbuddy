@@ -109,12 +109,12 @@ func (em *entryMaker) makeEntry(batch *rbuilder.BatchBuilder) dbsm.Entry {
 	return dbsm.Entry{Cmd: buf, Index: em.index}
 }
 
-func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, rd *rfpb.RangeDescriptor) {
+func writeRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, key []byte, rd *rfpb.RangeDescriptor) {
 	rdBuf, err := proto.Marshal(rd)
 	require.NoError(t, err)
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
+			Key:   key,
 			Value: rdBuf,
 		},
 	}))
@@ -122,6 +122,14 @@ func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica,
 	writeRsp, err := r.Update(entries)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
+}
+
+func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, rd *rfpb.RangeDescriptor) {
+	writeRangeDescriptor(t, em, r, constants.LocalRangeKey, rd)
+}
+
+func writeMetaRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, rd *rfpb.RangeDescriptor) {
+	writeRangeDescriptor(t, em, r, keys.RangeMetaKey(rd.GetEnd()), rd)
 }
 
 func reader(t *testing.T, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
@@ -1009,5 +1017,78 @@ func TestBatchTransaction(t *testing.T) {
 		rsp, err := repl.Update(entries)
 		require.NoError(t, err)
 		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+}
+
+func TestScanSharedDB(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	store := &fakeStore{}
+
+	{
+		repl1 := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		require.NotNil(t, repl1)
+
+		repl2 := replica.New(leaser, 2, 1, store, nil /*=usageUpdates=*/)
+		require.NotNil(t, repl1)
+
+		stopc := make(chan struct{})
+		_, err = repl1.Open(stopc)
+		require.NoError(t, err)
+
+		_, err = repl2.Open(stopc)
+		require.NoError(t, err)
+
+		em := newEntryMaker(t)
+
+		metarangeDescriptor := &rfpb.RangeDescriptor{
+			Start:      keys.MinByte,
+			End:        keys.Key{constants.UnsplittableMaxByte},
+			RangeId:    1,
+			Generation: 1,
+		}
+		writeLocalRangeDescriptor(t, em, repl1, metarangeDescriptor)
+		writeMetaRangeDescriptor(t, em, repl1, metarangeDescriptor)
+
+		secondRangeDescriptor := &rfpb.RangeDescriptor{
+			Start:      keys.Key{constants.UnsplittableMaxByte},
+			End:        keys.Key("z"),
+			RangeId:    2,
+			Generation: 1,
+		}
+		writeLocalRangeDescriptor(t, em, repl2, secondRangeDescriptor)
+		writeMetaRangeDescriptor(t, em, repl1, secondRangeDescriptor)
+
+		buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
+			Start:    keys.RangeMetaKey(keys.Key("a")),
+			End:      constants.SystemPrefix,
+			ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
+		}).ToBuf()
+		require.NoError(t, err)
+		readRsp, err := repl1.Lookup(buf)
+		require.NoError(t, err)
+
+		readBatch := rbuilder.NewBatchResponse(readRsp)
+		scanRsp, err := readBatch.ScanResponse(0)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(scanRsp.GetKvs()))
+
+		gotRD := &rfpb.RangeDescriptor{}
+		require.NoError(t, proto.Unmarshal(scanRsp.GetKvs()[0].GetValue(), gotRD))
+		require.Equal(t, keys.Key("z"), keys.Key(gotRD.GetEnd()))
+
+		err = repl1.Close()
+		require.NoError(t, err)
+
+		err = repl2.Close()
+		require.NoError(t, err)
 	}
 }

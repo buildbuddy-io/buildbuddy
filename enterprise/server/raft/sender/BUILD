@@ -17,6 +17,7 @@ go_library(
         "//proto:raft_service_go_proto",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/rangemap",
         "//server/util/retry",
         "//server/util/status",
         "@org_golang_google_grpc//status",
