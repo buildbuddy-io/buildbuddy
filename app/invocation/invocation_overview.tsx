@@ -188,12 +188,10 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               {format.formatWithCommas(this.props.model.getFetchURLs().length)} fetches
             </div>
           )}
-          {isBazelInvocation && (
-            <div className="detail">
-              <Cpu className="icon" />
-              {this.props.model.getCPU()}
-            </div>
-          )}
+          <div className="detail">
+            <Cpu className="icon" />
+            {this.props.model.getCPU()}
+          </div>
           {isBazelInvocation && (
             <div className="detail">
               <Zap className="icon" />
