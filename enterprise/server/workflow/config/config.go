@@ -169,6 +169,17 @@ func MatchesAnyTrigger(action *Action, event, branch string) bool {
 	return false
 }
 
+// MatchesAnyActionName returns whether the given action matches any of the
+// given action names.
+func MatchesAnyActionName(action *Action, names []string) bool {
+	for _, name := range names {
+		if action.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func matchesAnyBranch(branches []string, branch string) bool {
 	for _, b := range branches {
 		if b == "*" {
