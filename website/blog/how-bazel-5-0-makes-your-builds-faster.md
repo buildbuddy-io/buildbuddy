@@ -1,7 +1,7 @@
 ---
 slug: how-bazel-5-0-makes-your-builds-faster
 title: How Bazel 5.0 Makes Your Builds Faster
-description: Highlighting changes in Bazel 5.0 that help BuildBuddy users build even faster!
+description: "Highlighting changes in Bazel 5.0 that help BuildBuddy users build even faster!"
 author: Brentley Jones
 author_title: "Developer Evangelist @ BuildBuddy"
 date: 2022-01-25:12:00:00
@@ -130,6 +130,6 @@ this flag could make those builds significantly faster.
 
 ## And more...
 
-Bazel 5.0 includes many additional changes that improve it's reliability and performance.
+Bazel 5.0 includes many additional changes that improve its reliability and performance.
 To dig a little deeper,
 be sure to check out our [What's New in Bazel 5.0][bazel_5_0] post.
