@@ -362,7 +362,10 @@ func SendStartShardRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, 
 			Generation: 1,
 		},
 	}
+	return SendStartShardRequestsWithRanges(ctx, nodeHost, apiClient, nodeGrpcAddrs, startingRanges)
+}
 
+func SendStartShardRequestsWithRanges(ctx context.Context, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string, startingRanges []*rfpb.RangeDescriptor) error {
 	shardID := uint64(constants.InitialShardID)
 	replicaID := uint64(constants.InitialReplicaID)
 	rangeID := uint64(constants.InitialRangeID)

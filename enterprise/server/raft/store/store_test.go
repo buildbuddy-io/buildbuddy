@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
@@ -743,5 +744,128 @@ func TestManySplits(t *testing.T) {
 		for _, fr := range written {
 			readRecord(ctx, t, s1, fr)
 		}
+	}
+}
+
+func TestSplitAcrossClusters(t *testing.T) {
+	sf := newStoreFactory(t)
+	s1, nh1 := sf.NewStore(t)
+	s2, nh2 := sf.NewStore(t)
+	s3, nh3 := sf.NewStore(t)
+
+	s4, nh4 := sf.NewStore(t)
+	s5, nh5 := sf.NewStore(t)
+	s6, nh6 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*TestingStore{s1, s2, s3, s4, s5, s6}
+
+	poolA := map[string]string{
+		nh1.ID(): s1.GRPCAddress,
+		nh2.ID(): s2.GRPCAddress,
+		nh3.ID(): s3.GRPCAddress,
+	}
+
+	startingRanges := []*rfpb.RangeDescriptor{
+		&rfpb.RangeDescriptor{
+			Start:      keys.MinByte,
+			End:        keys.Key{constants.UnsplittableMaxByte},
+			Generation: 1,
+		},
+	}
+	err := bringup.SendStartShardRequestsWithRanges(ctx, s1.NodeHost, s1.APIClient, poolA, startingRanges)
+	require.NoError(t, err)
+
+	waitForRangeLease(t, stores, 1)
+
+	// Bringup new peers.
+	poolB := map[string]string{
+		nh4.ID(): s4.GRPCAddress,
+		nh5.ID(): s5.GRPCAddress,
+		nh6.ID(): s6.GRPCAddress,
+	}
+	initialRD := &rfpb.RangeDescriptor{
+		Start:      keys.Key{constants.UnsplittableMaxByte},
+		End:        keys.MaxByte,
+		RangeId:    3,
+		Generation: 1,
+		Replicas: []*rfpb.ReplicaDescriptor{
+			{ShardId: 3, ReplicaId: 1},
+			{ShardId: 3, ReplicaId: 2},
+			{ShardId: 3, ReplicaId: 3},
+		},
+	}
+	protoBytes, err := proto.Marshal(initialRD)
+	require.NoError(t, err)
+	initalRDBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: protoBytes,
+		},
+	})
+
+	bootstrapInfo := bringup.MakeBootstrapInfo(3, 1, poolB)
+	err = bringup.StartShard(ctx, s4.APIClient, bootstrapInfo, initalRDBatch)
+	require.NoError(t, err)
+
+	metaRDBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(initialRD.GetEnd()),
+			Value: protoBytes,
+		},
+	}).ToProto()
+	require.NoError(t, err)
+
+	writeRsp, err := s1.Sender.SyncPropose(ctx, constants.MetaRangePrefix, metaRDBatch)
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	require.NoError(t, err)
+
+	s := getStoreWithRangeLease(t, stores, 3)
+	rd := s.GetRange(3)
+	header := headerFromRangeDescriptor(rd)
+
+	// Attempting to Split an empty range will always fail. So write a
+	// a small number of records before trying to Split.
+	written := writeNRecords(ctx, t, s1, 50)
+	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+		Header: header,
+		Range:  rd,
+	})
+	require.NoError(t, err)
+
+	s = getStoreWithRangeLease(t, stores, 4)
+	rd = s.GetRange(4)
+	header = headerFromRangeDescriptor(rd)
+
+	// Expect that a new cluster was added with shardID = 4
+	// having 3 replicas.
+	replicas, err := s1.GetMembership(ctx, 4)
+	require.NoError(t, err)
+	require.Equal(t, 3, len(replicas))
+
+	// Check that all files are still found.
+	for _, fr := range written {
+		readRecord(ctx, t, s3, fr)
+	}
+	// Write some more records to the new end range.
+	written = append(written, writeNRecords(ctx, t, s1, 50)...)
+	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+		Header: header,
+		Range:  rd,
+	})
+	require.NoError(t, err)
+
+	waitForRangeLease(t, stores, 5)
+
+	// Expect that a new cluster was added with shardID = 5
+	// having 3 replicas.
+	replicas, err = s1.GetMembership(ctx, 5)
+	require.NoError(t, err)
+	require.Equal(t, 3, len(replicas))
+
+	// Check that all files are found.
+	for _, fr := range written {
+		readRecord(ctx, t, s3, fr)
 	}
 }
