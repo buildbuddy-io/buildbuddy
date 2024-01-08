@@ -158,7 +158,7 @@ common:windows --workspace_status_command="bash workspace_status.sh"
 
 # Misc remote cache/BES optimizations
 common --experimental_remote_cache_async
-common --remote_build_event_upload=minimal
+common --experimental_remote_build_event_upload=minimal
 common --nolegacy_important_outputs
 
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
@@ -196,12 +196,6 @@ common:macos --host_cxxopt=-std=c++17
 common:macos --cxxopt=-std=c++17
 common:windows --host_cxxopt=/std:c++17
 common:windows --cxxopt=/std:c++17
-
-# Starting from Xcode 15, the linker will warn about duplicate flags.
-# This is currently not avoidable with the current way the local cc toolchain is configured
-# as well as how linkopts are propagated through the dependency graph between libraries.
-# This flag is a workaround to silence the linker warnings.
-common:macos --linkopt="-Wl,-no_warn_duplicate_libraries"
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
