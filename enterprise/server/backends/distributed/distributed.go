@@ -987,6 +987,7 @@ func (mc *multiWriteCloser) Close() error {
 func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	// Don't bother doing any work if the context is already done.
 	if err := ctx.Err(); err != nil {
+		c.log.CtxInfof(ctx, "multiWriter called when context was already done: %s", err)
 		return nil, err
 	}
 
@@ -1005,6 +1006,11 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		if err != nil {
 			ps.MarkPeerAsFailed(peer)
 			c.log.CtxInfof(ctx, "Error opening remote writer for %q to peer %q after %s: %s", r.GetDigest().GetHash(), peer, time.Since(start), err)
+			// If the context is done, there's no point trying more peers.
+			if err := ctx.Err(); err != nil {
+				c.log.CtxInfof(ctx, "Not trying more peers since the context is done: %s", err)
+				break
+			}
 			continue
 		}
 		mwc.peerClosers[peer] = rwc
