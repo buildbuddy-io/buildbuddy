@@ -284,6 +284,32 @@ That's it! Whenever any of the configured triggers are matched, one of
 the Mac executors in the `workflows` pool should execute the
 workflow, and BuildBuddy will publish the results to your branch.
 
+## Attaching Bazel artifacts to workflows
+
+Bazel supports several flags such as `--remote_grpc_log` that allow
+writing additional debug logs and metadata files associated with an
+invocation.
+
+To provide easy access to these files, BuildBuddy supports a special
+directory called the **workflow artifacts directory**. If you write files
+to this directory, BuildBuddy will automatically upload those files and
+show them in the UI for the workflow. You can get the path to the workflow
+artifacts directory using the environment variable
+`$BUILDBUDDY_ARTIFACTS_DIRECTORY`.
+
+Example `buildbuddy.yaml` configuration:
+
+```yaml
+actions:
+  - name: "Test"
+    # ...
+    bazel_commands:
+      - "test //... --remote_grpc_log=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log"
+```
+
+BuildBuddy creates a new artifacts directory for each Bazel command, and
+recursively uploads all files in the directory after the command exits.
+
 ## buildbuddy.yaml schema
 
 ### `BuildBuddyConfig`
