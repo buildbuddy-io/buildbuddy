@@ -215,10 +215,9 @@ export default class InvocationModel {
     for (let log of this.buildToolLogs?.log || []) {
       this.toolLogMap.set(log.name, new TextDecoder().decode(log.contents || new Uint8Array()));
     }
-    for (let commandLine of this.structuredCommandLine) {
-      if (commandLine.commandLineLabel != "canonical") {
-        continue;
-      }
+    let commandLine =
+      this.commandLineWithLabel("canonical") ?? this.commandLineWithLabel("original") ?? this.structuredCommandLine[0];
+    if (commandLine) {
       for (let section of commandLine.sections || []) {
         for (let option of section.optionList?.option || []) {
           this.optionsMap.set(option.optionName, option.optionValue);
@@ -238,6 +237,10 @@ export default class InvocationModel {
         }
       }
     }
+  }
+
+  private commandLineWithLabel(label: string): command_line.CommandLine | undefined {
+    return this.structuredCommandLine.find((commandLine) => commandLine.commandLineLabel === label);
   }
 
   getUser(possessive: boolean) {
@@ -370,20 +373,20 @@ export default class InvocationModel {
     return "Cache on";
   }
 
-  private getCacheAddress() {
+  /**
+   * Returns the hostname or hostname:port of the cache address used as the
+   * remote cache target for this invocation.
+   */
+  private getCacheAddress(): string | undefined {
     const orderedOptions = ["remote_cache", "remote_executor", "cache_backend", "rbe_backend"];
-    let address = "";
+
     for (const optionName of orderedOptions) {
       const option = this.optionsMap.get(optionName);
       if (!option) continue;
+      return option.replace("grpc://", "").replace("grpcs://", "");
+    }
 
-      address = option.replace("grpc://", "").replace("grpcs://", "");
-      break;
-    }
-    if (this.optionsMap.get("remote_instance_name")) {
-      address = address + "/" + this.optionsMap.get("remote_instance_name");
-    }
-    return address;
+    return undefined;
   }
 
   getRemoteInstanceName() {
@@ -426,7 +429,7 @@ export default class InvocationModel {
    * The returned URL can be used with RpcService to fetch the blob.
    */
   getBytestreamURL(digest: build.bazel.remote.execution.v2.IDigest): string {
-    return resourceNameToString(this.getCacheAddress(), {
+    return resourceNameToString(this.getCacheAddress() ?? "", {
       ...this.getCacheBaseResourceName(),
       cacheType: resource.CacheType.CAS,
       digest: new build.bazel.remote.execution.v2.Digest(digest),
@@ -438,7 +441,7 @@ export default class InvocationModel {
    * The returned URL can be used with RpcService to fetch the ActionResult.
    */
   getActionCacheURL(digest: build.bazel.remote.execution.v2.IDigest): string {
-    return resourceNameToString(this.getCacheAddress(), {
+    return resourceNameToString(this.getCacheAddress() ?? "", {
       ...this.getCacheBaseResourceName(),
       cacheType: resource.CacheType.AC,
       digest: new build.bazel.remote.execution.v2.Digest(digest),
