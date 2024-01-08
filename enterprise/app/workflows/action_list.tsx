@@ -157,11 +157,9 @@ function renderHistoryChart(actionHistory: workflow.ActionHistory): JSX.Element 
 }
 
 export default class ActionListComponent extends React.Component<ActionListComponentProps> {
-  componentDidMount() {}
-
   render() {
     return (
-      <div className="container">
+      <>
         {this.props.history.map((h) => {
           const latestCompletedRun = findLatestCompletedRun(h);
           const latestRunStatus = entryToStatus(latestCompletedRun);
@@ -204,7 +202,7 @@ export default class ActionListComponent extends React.Component<ActionListCompo
             </Link>
           );
         })}
-      </div>
+      </>
     );
   }
 }

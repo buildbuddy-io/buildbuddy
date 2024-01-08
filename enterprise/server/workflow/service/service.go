@@ -913,7 +913,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "failed to fetch workflow action summary")
 	}
 
 	// No workflows configured for any repos yet.
@@ -954,7 +954,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "failed to fetch workflow action history")
 	}
 
 	// OKAY! We have everything, now we'll just sort and build the response.

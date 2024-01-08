@@ -12,15 +12,13 @@ import CreateWorkflowComponent from "./create_workflow";
 import GitHubImport from "./github_import";
 import GitHubAppImport from "./github_app_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
-import { AlertCircle, CheckCircle, GitMerge, MoreVertical, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, GitBranch, GitMerge, MoreVertical, Wrench, XCircle } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
 import { github } from "../../../proto/github_ts_proto";
 import error_service from "../../../app/errors/error_service";
 import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 import { normalizeRepoURL } from "../../../app/util/git";
-import Banner from "../../../app/components/banner/banner";
-import { Link, TextLink } from "../../../app/components/link/link";
-import { Tooltip } from "../../../app/components/tooltip/tooltip";
+import { Link } from "../../../app/components/link/link";
 import TextInput from "../../../app/components/input/input";
 import alert_service from "../../../app/alert/alert_service";
 import errorService from "../../../app/errors/error_service";
@@ -272,8 +270,8 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     repoUrl={repoUrl}
                     onClickUnlinkItem={() => this.setState({ repoToUnlink: repoUrl })}
                     showCleanWorkflowWarning={() => this.setState({ showCleanWorkflowWarning: true })}
+                    history={this.renderActionList(repoUrl)}
                   />
-                  {this.renderActionList(repoUrl)}
                 </>
               ))}
               {/* Render legacy workflows */}
@@ -284,6 +282,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     repoUrl={workflow.repoUrl}
                     webhookUrl={workflow.webhookUrl}
                     onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
+                    history={null}
                   />
                   {workflow.repoUrl && this.renderActionList(workflow.repoUrl)}
                 </>
@@ -341,6 +340,7 @@ type RepoItemProps = {
   webhookUrl?: string;
   onClickUnlinkItem: (url: string) => void;
   showCleanWorkflowWarning?: () => void;
+  history: React.ReactNode;
 };
 
 type RepoItemState = {
@@ -352,6 +352,7 @@ type RepoItemState = {
   runClean: boolean;
   isWorkflowRunning: boolean;
   runWorkflowActionStatuses: workflow.ExecuteWorkflowResponse.ActionStatus[] | null;
+  startTime: Date | null;
 };
 
 class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
@@ -363,6 +364,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     runClean: false,
     isWorkflowRunning: false,
     runWorkflowActionStatuses: null,
+    startTime: null,
   };
 
   private onClickMenuButton() {
@@ -422,34 +424,40 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   }
 
   renderWorkflowResults() {
-    if (this.state.runWorkflowActionStatuses) {
-      return this.state.runWorkflowActionStatuses.map((actionStatus) => {
-        if ((actionStatus.status?.code || 0) !== 0 /*OK*/) {
-          return (
-            <div className="run-result">
-              <div className="run-result-header">
-                <XCircle className="icon red" />
-                <span>
-                  <b>{actionStatus.actionName}</b>: <b className="run-result-error">Error</b>
-                </span>
+    if (!this.state.runWorkflowActionStatuses) return;
+    return this.state.runWorkflowActionStatuses.map((actionStatus) => {
+      const ok = (actionStatus.status?.code || 0) === 0;
+      const statusIcon = ok ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
+      return (
+        <Link
+          className={`run-result card ${ok ? "card-success" : "card-failure"} ${ok ? "clickable" : ""}`}
+          href={ok ? `/invocation/${actionStatus.invocationId}` : undefined}>
+          <div className="content">
+            <div className="titles">
+              <div className="title">
+                <b>{actionStatus.actionName}</b>
               </div>
-              <div className="run-result-body">{actionStatus.status?.message ?? "unknown"}</div>
+              <span className="role-badge CI_RUNNER">Workflow</span>
             </div>
-          );
-        }
-        const invocationLink = `/invocation/${actionStatus.invocationId}`;
-        return (
-          <Link className="run-result" href={invocationLink}>
-            <div className="run-result-header">
-              <CheckCircle className="icon green" />
-              <span>
-                <b>{actionStatus.actionName}</b>: Started (click to view invocation)
-              </span>
+            <div className="details">
+              <div className="detail">
+                {statusIcon}
+                {ok ? "Started" : "Failed"}
+              </div>
+              <div className="detail">
+                <Wrench className="icon grey" />
+                workflow run
+              </div>
+              <div className="detail">
+                <GitBranch className="icon grey" />
+                {this.state.runWorkflowBranch}
+              </div>
             </div>
-          </Link>
-        );
-      });
-    }
+            {!ok && <div className="error-details">Error: {actionStatus.status?.message ?? "unknown"}</div>}
+          </div>
+        </Link>
+      );
+    });
   }
 
   renderActionErrorCard(actionResult: workflow.ExecuteWorkflowResponse.ActionStatus) {
@@ -545,9 +553,15 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
           )}
         </div>
         {this.state.runWorkflowActionStatuses && (
-          <div className="run-results">
+          <div className="run-results history">
             <div className="run-results-title">Run results</div>
-            <div className="run-results-list">{this.renderWorkflowResults()}</div>
+            {this.renderWorkflowResults()}
+          </div>
+        )}
+        {this.props.history && (
+          <div className="action-history">
+            <div className="history-title">History</div>
+            {this.props.history}
           </div>
         )}
       </div>
