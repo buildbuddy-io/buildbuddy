@@ -985,6 +985,11 @@ func (mc *multiWriteCloser) Close() error {
 //
 // This is like setting WRITE_CONSISTENCY = QUORUM.
 func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	// Don't bother doing any work if the context is already done.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	ps := c.writePeers(r.GetDigest())
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
@@ -995,10 +1000,11 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		r:           r,
 	}
 	for peer, hintedHandoff := ps.GetNextPeerAndHandoff(); peer != ""; peer, hintedHandoff = ps.GetNextPeerAndHandoff() {
+		start := time.Now()
 		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, r)
 		if err != nil {
 			ps.MarkPeerAsFailed(peer)
-			c.log.CtxInfof(ctx, "Error opening remote writer for %q to peer %q: %s", r.GetDigest().GetHash(), peer, err)
+			c.log.CtxInfof(ctx, "Error opening remote writer for %q to peer %q after %s: %s", r.GetDigest().GetHash(), peer, time.Since(start), err)
 			continue
 		}
 		mwc.peerClosers[peer] = rwc
