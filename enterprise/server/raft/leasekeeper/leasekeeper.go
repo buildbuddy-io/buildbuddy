@@ -364,14 +364,14 @@ func (lk *LeaseKeeper) HaveLease(shard uint64) bool {
 
 		shouldHaveLease := leader && open
 		if shouldHaveLease && !valid {
-			lk.log.Errorf("HaveLease range: %d valid: %t, should have lease: %t", shard, valid, shouldHaveLease)
+			lk.log.Warningf("HaveLease range: %d valid: %t, should have lease: %t", shard, valid, shouldHaveLease)
 			la.queueInstruction(leaseInstruction{
 				shard:  shardID(shard),
 				reason: "should have range",
 				action: Acquire,
 			})
 		} else if !shouldHaveLease && valid {
-			lk.log.Errorf("HaveLease range: %d valid: %t, should have lease: %t", shard, valid, shouldHaveLease)
+			lk.log.Warningf("HaveLease range: %d valid: %t, should have lease: %t", shard, valid, shouldHaveLease)
 			la.queueInstruction(leaseInstruction{
 				shard:  shardID(shard),
 				reason: "should not have range",

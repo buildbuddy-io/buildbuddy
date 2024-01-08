@@ -168,36 +168,34 @@ func isFileRecordKey(keyBytes []byte) bool {
 	return false
 }
 
-func batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) {
+func (sm *Replica) batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) {
+	k := sm.replicaLocalKey(key)
 	batchReader := wb.Reader()
 	for len(batchReader) > 0 {
 		_, ukey, value, _ := batchReader.Next()
-		if bytes.Equal(ukey, key) {
+		if bytes.Equal(ukey, k) {
 			return value, true
 		}
 	}
 	return nil, false
 }
 
-func replicaSpecificSuffix(shardID, replicaID uint64) []byte {
-	return []byte(fmt.Sprintf("-c%04dn%04d", shardID, replicaID))
-}
-
-func (sm *Replica) replicaSuffix() []byte {
-	return replicaSpecificSuffix(sm.ShardID, sm.ReplicaID)
-}
-
-func replicaSpecificKey(key []byte, shardID, replicaID uint64) []byte {
-	suffix := replicaSpecificSuffix(shardID, replicaID)
-	if bytes.HasSuffix(key, suffix) {
-		log.Debugf("Key %q already has replica suffix!", key)
-		return key
-	}
-	return append(key, suffix...)
+func (sm *Replica) replicaPrefix() []byte {
+	prefixString := fmt.Sprintf("c%04dn%04d-", sm.ShardID, sm.ReplicaID)
+	return append(constants.LocalPrefix, []byte(prefixString)...)
 }
 
 func (sm *Replica) replicaLocalKey(key []byte) []byte {
-	return replicaSpecificKey(key, sm.ShardID, sm.ReplicaID)
+	if !isLocalKey(key) {
+		log.Debugf("Key %q does not need a prefix!", key)
+		return key
+	}
+	prefix := sm.replicaPrefix()
+	if bytes.HasPrefix(key, prefix) {
+		log.Debugf("Key %q already has replica prefix!", key)
+		return key
+	}
+	return append(prefix, key...)
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
@@ -666,18 +664,17 @@ func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
 	iter := db.NewIter(iterOpts)
 	defer iter.Close()
 
-	suffix := sm.replicaSuffix()
+	prefix := sm.replicaPrefix()
 	for iter.First(); iter.Valid(); iter.Next() {
-		if !bytes.HasSuffix(iter.Key(), suffix) {
+		if !bytes.HasPrefix(iter.Key(), prefix) {
 			// Skip keys that are not ours.
 			continue
 		}
-		if !bytes.HasPrefix(iter.Key(), constants.LocalTransactionPrefix) {
+		key := iter.Key()[len(prefix):]
+		if !bytes.HasPrefix(key, constants.LocalTransactionPrefix) {
 			// Skip non-inflight-transactions
 			continue
 		}
-
-		key := iter.Key()[:len(iter.Key())-len(suffix)]
 		txid := key[len(constants.LocalTransactionPrefix):]
 
 		batchReq := &rfpb.BatchCmdRequest{}
@@ -975,11 +972,12 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 		return nil, status.InvalidArgumentError("Scan requires a valid key.")
 	}
 
+	start := sm.replicaLocalKey(req.GetStart())
 	iterOpts := &pebble.IterOptions{}
 	if req.GetEnd() != nil {
-		iterOpts.UpperBound = req.GetEnd()
+		iterOpts.UpperBound = sm.replicaLocalKey(req.GetEnd())
 	} else {
-		iterOpts.UpperBound = keys.Key(req.GetStart()).Next()
+		iterOpts.UpperBound = sm.replicaLocalKey(keys.Key(req.GetStart()).Next())
 	}
 
 	iter := db.NewIter(iterOpts)
@@ -988,24 +986,28 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 
 	switch req.GetScanType() {
 	case rfpb.ScanRequest_SEEKLT_SCAN_TYPE:
-		t = iter.SeekLT(req.GetStart())
+		t = iter.SeekLT(start)
 	case rfpb.ScanRequest_SEEKGE_SCAN_TYPE:
-		t = iter.SeekGE(req.GetStart())
+		t = iter.SeekGE(start)
 	case rfpb.ScanRequest_SEEKGT_SCAN_TYPE:
-		t = iter.SeekGE(req.GetStart())
+		t = iter.SeekGE(start)
 		// If the iter's current key is *equal* to start, go to the next
 		// key greater than this one.
-		if t && bytes.Equal(iter.Key(), req.GetStart()) {
+		if t && bytes.Equal(iter.Key(), start) {
 			t = iter.Next()
 		}
 	default:
-		t = iter.SeekGE(req.GetStart())
+		t = iter.SeekGE(start)
 	}
 
+	prefix := sm.replicaPrefix()
 	rsp := &rfpb.ScanResponse{}
 	for ; t; t = iter.Next() {
-		k := make([]byte, len(iter.Key()))
-		copy(k, iter.Key())
+		key := bytes.TrimPrefix(iter.Key(), prefix)
+		sm.log.Infof("scankey %q", string(key))
+
+		k := make([]byte, len(key))
+		copy(k, key)
 		v := make([]byte, len(iter.Value()))
 		copy(v, iter.Value())
 		rsp.Kvs = append(rsp.Kvs, &rfpb.KV{
@@ -1444,14 +1446,12 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*ap
 func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
 	// Update the local in-memory range descriptor iff this batch modified
 	// it.
-	localRangeKey := sm.replicaLocalKey(constants.LocalRangeKey)
-	if buf, ok := batchContainsKey(wb, localRangeKey); ok {
-		sm.setRange(localRangeKey, buf)
+	if buf, ok := sm.batchContainsKey(wb, constants.LocalRangeKey); ok {
+		sm.setRange(constants.LocalRangeKey, buf)
 	}
 	// Update the rangelease iff this batch sets it.
-	localRangeLeaseKey := sm.replicaLocalKey(constants.LocalRangeLeaseKey)
-	if buf, ok := batchContainsKey(wb, localRangeLeaseKey); ok {
-		sm.setRangeLease(localRangeLeaseKey, buf)
+	if buf, ok := sm.batchContainsKey(wb, constants.LocalRangeLeaseKey); ok {
+		sm.setRangeLease(constants.LocalRangeLeaseKey, buf)
 	}
 
 }
@@ -1814,16 +1814,16 @@ func (sm *Replica) saveRangeLocalData(w io.Writer, snap *pebble.Snapshot) error 
 		UpperBound: constants.MetaRangePrefix,
 	})
 	defer iter.Close()
-	suffix := sm.replicaSuffix()
+	prefix := sm.replicaPrefix()
 	for iter.First(); iter.Valid(); iter.Next() {
-		if !bytes.HasSuffix(iter.Key(), suffix) {
+		if !bytes.HasPrefix(iter.Key(), prefix) {
 			// Skip keys that are not ours.
 			continue
 		}
 		// Trim the replica-specific suffix from keys that have it.
 		// When this snapshot is loaded by another replica, it will
 		// append its own replica suffix to local keys that need it.
-		key := iter.Key()[:len(iter.Key())-len(suffix)]
+		key := iter.Key()[len(prefix):]
 		if err := encodeKeyValue(w, key, iter.Value()); err != nil {
 			return err
 		}
