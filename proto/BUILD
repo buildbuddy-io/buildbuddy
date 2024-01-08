@@ -13,6 +13,16 @@ go_proto_compiler(
     plugin = "@com_github_planetscale_vtprotobuf//cmd/protoc-gen-go-vtproto",
     suffix = "_vtproto.pb.go",
     valid_archive = False,
+	deps = [
+		"@com_github_planetscale_vtprotobuf//protohelpers",
+		"@com_github_planetscale_vtprotobuf//types/known/anypb",
+		"@com_github_planetscale_vtprotobuf//types/known/durationpb",
+		"@com_github_planetscale_vtprotobuf//types/known/emptypb",
+		"@com_github_planetscale_vtprotobuf//types/known/fieldmaskpb",
+		"@com_github_planetscale_vtprotobuf//types/known/structpb",
+		"@com_github_planetscale_vtprotobuf//types/known/timestamppb",
+		"@com_github_planetscale_vtprotobuf//types/known/wrapperspb",
+	]
 )
 
 proto_library(
