@@ -1008,7 +1008,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 			c.log.CtxInfof(ctx, "Error opening remote writer for %q to peer %q after %s: %s", r.GetDigest().GetHash(), peer, time.Since(start), err)
 			// If the context is done, there's no point trying more peers.
 			if err := ctx.Err(); err != nil {
-				c.log.CtxInfof(ctx, "Not trying more peers since the context is done: %s", err)
+				c.log.CtxInfof(ctx, "Not trying more peers for %q since the context is done: %s", r.GetDigest().GetHash(), err)
 				break
 			}
 			continue
