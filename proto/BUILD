@@ -1512,6 +1512,7 @@ go_proto_library(
 go_proto_library(
     name = "worker_go_proto",
     compilers = [
+        "//proto:vtprotobuf_compiler",
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
