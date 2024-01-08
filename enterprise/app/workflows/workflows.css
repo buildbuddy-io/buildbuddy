@@ -55,9 +55,7 @@
   margin-right: 8px;
 }
 
-.workflows-page .workflow-item.container {
-  display: flex;
-  flex-direction: row;
+.workflows-page .workflow-item {
   padding-top: 16px;
   padding-bottom: 16px;
   border-bottom: 1px solid #eee;
@@ -90,6 +88,7 @@
 .workflows-page .workflow-item-row {
   display: flex;
   align-items: center;
+  width: 100%;
 }
 
 .workflows-page .workflow-item-row > :not(:last-child) {
@@ -113,6 +112,38 @@
 
 .workflows-page .workflow-button-container {
   position: relative;
+}
+
+.workflows-page .run-workflow-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workflows-page .history .card .title {
+  font-size: 18px;
+  margin-right: 8px;
+}
+
+.workflows-page .history .card .details {
+  margin-top: 8px;
+}
+
+.workflows-page .run-results-title,
+.workflows-page .history-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 24px;
+}
+
+.workflows-page .error-details {
+  margin-top: 4px;
+  font-size: 14px;
+  color: #d32f2f;
+}
+
+.workflows-page .card .detail {
+  margin-top: 0;
 }
 
 .workflows-page .upgrade-notice {

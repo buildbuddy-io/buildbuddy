@@ -12,15 +12,13 @@ import CreateWorkflowComponent from "./create_workflow";
 import GitHubImport from "./github_import";
 import GitHubAppImport from "./github_app_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
-import { AlertCircle, GitMerge, MoreVertical } from "lucide-react";
+import { AlertCircle, CheckCircle, GitBranch, GitMerge, MoreVertical, Wrench, XCircle } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
 import { github } from "../../../proto/github_ts_proto";
 import error_service from "../../../app/errors/error_service";
 import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 import { normalizeRepoURL } from "../../../app/util/git";
-import Banner from "../../../app/components/banner/banner";
-import { Link, TextLink } from "../../../app/components/link/link";
-import { Tooltip } from "../../../app/components/tooltip/tooltip";
+import { Link } from "../../../app/components/link/link";
 import TextInput from "../../../app/components/input/input";
 import alert_service from "../../../app/alert/alert_service";
 import errorService from "../../../app/errors/error_service";
@@ -272,8 +270,8 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     repoUrl={repoUrl}
                     onClickUnlinkItem={() => this.setState({ repoToUnlink: repoUrl })}
                     showCleanWorkflowWarning={() => this.setState({ showCleanWorkflowWarning: true })}
+                    history={this.renderActionList(repoUrl)}
                   />
-                  {this.renderActionList(repoUrl)}
                 </>
               ))}
               {/* Render legacy workflows */}
@@ -284,6 +282,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     repoUrl={workflow.repoUrl}
                     webhookUrl={workflow.webhookUrl}
                     onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
+                    history={null}
                   />
                   {workflow.repoUrl && this.renderActionList(workflow.repoUrl)}
                 </>
@@ -341,6 +340,7 @@ type RepoItemProps = {
   webhookUrl?: string;
   onClickUnlinkItem: (url: string) => void;
   showCleanWorkflowWarning?: () => void;
+  history: React.ReactNode;
 };
 
 type RepoItemState = {
@@ -352,6 +352,7 @@ type RepoItemState = {
   runClean: boolean;
   isWorkflowRunning: boolean;
   runWorkflowActionStatuses: workflow.ExecuteWorkflowResponse.ActionStatus[] | null;
+  startTime: Date | null;
 };
 
 class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
@@ -363,6 +364,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     runClean: false,
     isWorkflowRunning: false,
     runWorkflowActionStatuses: null,
+    startTime: null,
   };
 
   private onClickMenuButton() {
@@ -370,8 +372,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   }
 
   private onCloseMenu() {
-    this.setState({ isMenuOpen: false });
-    this.setState({ showRunWorkflowInput: false });
+    this.setState({ isMenuOpen: false, showRunWorkflowInput: false });
   }
 
   private onClickCopyWebhookUrl() {
@@ -396,8 +397,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   }
 
   private runWorkflow() {
-    this.setState({ runWorkflowActionStatuses: null });
-    this.setState({ isWorkflowRunning: true });
+    this.setState({ runWorkflowActionStatuses: null, isWorkflowRunning: true });
     this.onCloseMenu();
 
     rpcService.service
@@ -409,6 +409,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
           targetBranch: this.state.runWorkflowBranch,
           clean: this.state.runClean,
           visibility: this.state.runWorkflowVisibility,
+          async: true,
         })
       )
       .then((response) => {
@@ -423,25 +424,40 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   }
 
   renderWorkflowResults() {
-    if (this.state.runWorkflowActionStatuses) {
-      return this.state.runWorkflowActionStatuses.map((actionStatus) => {
-        if ((actionStatus.status?.code || 0) !== 0 /*OK*/) {
-          return (
-            <Tooltip renderContent={() => this.renderActionErrorCard(actionStatus)}>
-              <TextLink>{actionStatus.actionName}</TextLink>
-            </Tooltip>
-          );
-        }
-        const invocationLink = `/invocation/${actionStatus.invocationId}`;
-        return (
-          <div>
-            <TextLink href={invocationLink} target="_blank">
-              {actionStatus.actionName}
-            </TextLink>
+    if (!this.state.runWorkflowActionStatuses) return;
+    return this.state.runWorkflowActionStatuses.map((actionStatus) => {
+      const ok = (actionStatus.status?.code || 0) === 0;
+      const statusIcon = ok ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
+      return (
+        <Link
+          className={`run-result card ${ok ? "card-success" : "card-failure"} ${ok ? "clickable" : ""}`}
+          href={ok ? `/invocation/${actionStatus.invocationId}` : undefined}>
+          <div className="content">
+            <div className="titles">
+              <div className="title">
+                <b>{actionStatus.actionName}</b>
+              </div>
+              <span className="role-badge CI_RUNNER">Workflow</span>
+            </div>
+            <div className="details">
+              <div className="detail">
+                {statusIcon}
+                {ok ? "Started" : "Failed"}
+              </div>
+              <div className="detail">
+                <Wrench className="icon grey" />
+                workflow run
+              </div>
+              <div className="detail">
+                <GitBranch className="icon grey" />
+                {this.state.runWorkflowBranch}
+              </div>
+            </div>
+            {!ok && <div className="error-details">Error: {actionStatus.status?.message ?? "unknown"}</div>}
           </div>
-        );
-      });
-    }
+        </Link>
+      );
+    });
   }
 
   renderActionErrorCard(actionResult: workflow.ExecuteWorkflowResponse.ActionStatus) {
@@ -455,86 +471,97 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
 
     return (
       <div className="workflow-item container">
-        <div className="workflow-item-column">
-          <div className="workflow-item-row">
-            {this.state.runWorkflowActionStatuses && (
-              <Banner type="success">
-                Executed workflow actions:
-                <div>{this.renderWorkflowResults()}</div>
-              </Banner>
-            )}
-            {this.state.isWorkflowRunning && <Spinner />}
-            <GitMerge />
-            <div>
-              <Link href={router.getWorkflowHistoryUrl(normalizeRepoURL(this.props.repoUrl))} className="repo-url">
-                {formatURL(this.props.repoUrl)}
-              </Link>
-              {capabilities.config.githubAppEnabled && this.props.webhookUrl && (
-                <div className="upgrade-notice">
-                  <AlertCircle className="icon orange" /> This repository uses the legacy GitHub OAuth integration.
-                  Unlink and re-link to use the new GitHub App integration.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        {this.props.user?.isGroupAdmin() && (
-          <div className="workflow-item-column workflow-buttons-container">
+        <div className="workflow-item-row">
+          <div className="workflow-item-column">
             <div className="workflow-item-row">
-              {/* The Run Workflow button is only supported for workflows configured with the Github App, not legacy workflows */}
-              {!this.props.webhookUrl && (
-                <div className="workflow-button-container">
-                  <OutlinedButton
-                    onClick={this.showRunWorkflowInput.bind(this)}
-                    disabled={this.state.isWorkflowRunning}>
-                    Run workflow
-                  </OutlinedButton>
-                  <Popup
-                    isOpen={this.state.showRunWorkflowInput}
-                    onRequestClose={this.onCloseMenu.bind(this)}
-                    className="run-workflow-input">
-                    <div className="title">Run workflow from branch:</div>
-                    <TextInput
-                      placeholder={"e.g. main"}
-                      onChange={(e) => this.setState({ runWorkflowBranch: e.target.value })}
-                    />
-                    <div className="title">Visibility metadata:</div>
-                    <TextInput
-                      placeholder={"e.g. PUBLIC (optional)"}
-                      onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
-                    />
-                    {/*The Popup component has e.preventDefault in its onClick handler, which messes up the checkbox.
-                  We need e.stopPropagation to prevent the parent Popup's onClick handler from triggering
-                  */}
-                    {showCleanRerun && (
-                      <label className="run-clean-container" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox checked={this.state.runClean} onChange={this.onClickRunClean.bind(this)} />
-                        <span>Run in a clean container</span>
-                      </label>
-                    )}
-                    <FilledButton onClick={this.runWorkflow.bind(this)} disabled={this.state.runWorkflowBranch === ""}>
-                      Run workflow
-                    </FilledButton>
-                  </Popup>
-                </div>
-              )}
-              <div className="workflow-button-container">
-                <OutlinedButton
-                  title="Workflow options"
-                  className="icon-button"
-                  onClick={this.onClickMenuButton.bind(this)}>
-                  <MoreVertical />
-                </OutlinedButton>
-                <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)}>
-                  <Menu className="workflow-dropdown-menu">
-                    {this.props.webhookUrl && (
-                      <MenuItem onClick={this.onClickCopyWebhookUrl.bind(this)}>Copy webhook URL</MenuItem>
-                    )}
-                    <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
-                  </Menu>
-                </Popup>
+              <GitMerge />
+              <div>
+                <Link href={router.getWorkflowHistoryUrl(normalizeRepoURL(this.props.repoUrl))} className="repo-url">
+                  {formatURL(this.props.repoUrl)}
+                </Link>
+                {capabilities.config.githubAppEnabled && this.props.webhookUrl && (
+                  <div className="upgrade-notice">
+                    <AlertCircle className="icon orange" /> This repository uses the legacy GitHub OAuth integration.
+                    Unlink and re-link to use the new GitHub App integration.
+                  </div>
+                )}
               </div>
             </div>
+          </div>
+          {this.props.user?.isGroupAdmin() && (
+            <div className="workflow-item-column workflow-buttons-container">
+              <div className="workflow-item-row">
+                {/* The Run Workflow button is only supported for workflows configured with the Github App, not legacy workflows */}
+                {!this.props.webhookUrl && (
+                  <div className="workflow-button-container">
+                    <OutlinedButton
+                      className="run-workflow-button"
+                      onClick={this.showRunWorkflowInput.bind(this)}
+                      disabled={this.state.isWorkflowRunning}>
+                      {this.state.isWorkflowRunning && <Spinner />}
+                      <span>Run workflow</span>
+                    </OutlinedButton>
+                    <Popup
+                      isOpen={this.state.showRunWorkflowInput}
+                      onRequestClose={this.onCloseMenu.bind(this)}
+                      className="run-workflow-input">
+                      <div className="title">Run workflow from branch:</div>
+                      <TextInput
+                        placeholder={"e.g. main"}
+                        onChange={(e) => this.setState({ runWorkflowBranch: e.target.value })}
+                      />
+                      <div className="title">Visibility metadata:</div>
+                      <TextInput
+                        placeholder={"e.g. PUBLIC (optional)"}
+                        onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
+                      />
+                      {/*The Popup component has e.preventDefault in its onClick handler, which messes up the checkbox.
+                  We need e.stopPropagation to prevent the parent Popup's onClick handler from triggering
+                  */}
+                      {showCleanRerun && (
+                        <label className="run-clean-container" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox checked={this.state.runClean} onChange={this.onClickRunClean.bind(this)} />
+                          <span>Run in a clean container</span>
+                        </label>
+                      )}
+                      <FilledButton
+                        onClick={this.runWorkflow.bind(this)}
+                        disabled={this.state.runWorkflowBranch === ""}>
+                        Run
+                      </FilledButton>
+                    </Popup>
+                  </div>
+                )}
+                <div className="workflow-button-container">
+                  <OutlinedButton
+                    title="Workflow options"
+                    className="icon-button"
+                    onClick={this.onClickMenuButton.bind(this)}>
+                    <MoreVertical />
+                  </OutlinedButton>
+                  <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)}>
+                    <Menu className="workflow-dropdown-menu">
+                      {this.props.webhookUrl && (
+                        <MenuItem onClick={this.onClickCopyWebhookUrl.bind(this)}>Copy webhook URL</MenuItem>
+                      )}
+                      <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
+                    </Menu>
+                  </Popup>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        {this.state.runWorkflowActionStatuses && (
+          <div className="run-results history">
+            <div className="run-results-title">Run results</div>
+            {this.renderWorkflowResults()}
+          </div>
+        )}
+        {this.props.history && (
+          <div className="action-history">
+            <div className="history-title">History</div>
+            {this.props.history}
           </div>
         )}
       </div>
