@@ -163,6 +163,8 @@ common --nolegacy_important_outputs
 
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
 common --incompatible_strict_action_env
+common --action_env=DEVELOPER_DIR
+common --host_action_env=DEVELOPER_DIR
 
 # rules_nodejs needs runfiles to be explicitly enabled.
 common:linux --enable_runfiles
@@ -202,6 +204,9 @@ common:windows --cxxopt=/std:c++17
 # as well as how linkopts are propagated through the dependency graph between libraries.
 # This flag is a workaround to silence the linker warnings.
 common:macos --linkopt="-Wl,-no_warn_duplicate_libraries"
+
+# Ensure that we don't use the apple_support cc_toolchain
+common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
