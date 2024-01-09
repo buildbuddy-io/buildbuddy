@@ -204,6 +204,7 @@ common:windows --cxxopt=/std:c++17
 # as well as how linkopts are propagated through the dependency graph between libraries.
 # This flag is a workaround to silence the linker warnings.
 common:macos --linkopt="-Wl,-no_warn_duplicate_libraries"
+common:macos --host_linkopt="-Wl,-no_warn_duplicate_libraries"
 
 # Ensure that we don't use the apple_support cc_toolchain
 common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
