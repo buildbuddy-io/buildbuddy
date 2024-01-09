@@ -202,6 +202,7 @@ common:windows --cxxopt=/std:c++17
 # as well as how linkopts are propagated through the dependency graph between libraries.
 # This flag is a workaround to silence the linker warnings.
 common:macos --linkopt="-Wl,-no_warn_duplicate_libraries"
+common:macos --host_linkopt="-Wl,-no_warn_duplicate_libraries"
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
