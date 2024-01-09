@@ -501,6 +501,8 @@ type UserDB interface {
 	// e-mail address. Normally this should not be the case, but it can occur
 	// if a user transitions between auth providers (e.g. oidc to saml).
 	GetUserByEmail(ctx context.Context, email string) (*tables.User, error)
+	// DeleteUser deletes a user and associated data.
+	DeleteUser(ctx context.Context, id string) error
 	// GetImpersonatedUser will return the authenticated user's information
 	// with a single group membership corresponding to the group they are trying
 	// to impersonate. It requires that the authenticated user has impersonation

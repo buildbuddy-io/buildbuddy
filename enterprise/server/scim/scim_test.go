@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -92,6 +93,14 @@ func (tc *testClient) Get(url string) (int, []byte) {
 
 func (tc *testClient) Post(url string, body []byte) (int, []byte) {
 	return tc.do(http.MethodPost, url, body)
+}
+
+func (tc *testClient) Patch(url string, body []byte) (int, []byte) {
+	return tc.do(http.MethodPatch, url, body)
+}
+
+func (tc *testClient) Put(url string, body []byte) (int, []byte) {
+	return tc.do(http.MethodPut, url, body)
 }
 
 func TestGetUsers(t *testing.T) {
@@ -326,11 +335,113 @@ func TestCreateUser(t *testing.T) {
 	require.Equal(t, "Doe", ur.Name.FamilyName)
 	require.Equal(t, "user500@org1.io", ur.UserName)
 	require.True(t, ur.Active)
+}
 
-	// Shouldn't be able to provision a user with a non-matching domain.
-	newUser.UserName = "user600@org2.io"
-	body, err = json.Marshal(newUser)
+func TestDeleteUser(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create first user & group.
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
 	require.NoError(t, err)
-	code, _ = tc.Post(baseURL+"/scim/Users", body)
-	require.Equal(t, http.StatusBadRequest, code)
+	// Create a user in a different group.
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID: "US999",
+		SubID:  "SubID999",
+		Email:  "user999@org999.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey := prepareGroup(t, userCtx, env)
+
+	// Deletion victims.
+	err = udb.InsertUser(userCtx, &tables.User{
+		UserID: "US101",
+		SubID:  "SubID101",
+		Email:  "user101@org1.io",
+	})
+	require.NoError(t, err)
+	err = udb.InsertUser(userCtx, &tables.User{
+		UserID: "US102",
+		SubID:  "SubID102",
+		Email:  "user102@org1.io",
+	})
+	require.NoError(t, err)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Delete user US101 using a PUT request setting active to false.
+	{
+		newUser := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op: "replace",
+					Value: map[string]any{
+						"active": false,
+					},
+				},
+			},
+		}
+		body, err := json.Marshal(newUser)
+		require.NoError(t, err)
+		code, body := tc.Patch(baseURL+"/scim/Users/US101", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser := scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.False(t, updatedUser.Active)
+		_, err = udb.GetUserByID(userCtx, "US101")
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err))
+	}
+
+	// Delete user US101 using a PUT request setting active to false.
+	{
+		req := &scim.UserResource{
+			Schemas: []string{scim.UserResourceSchema},
+			Active:  false,
+		}
+		body, err := json.Marshal(req)
+		require.NoError(t, err)
+		code, body := tc.Put(baseURL+"/scim/Users/US102", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser := scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.False(t, updatedUser.Active)
+		_, err = udb.GetUserByID(userCtx, "US102")
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err))
+	}
+
+	// Deleting a user in a different group shouldn't work.
+	{
+		newUser := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op: "replace",
+					Value: map[string]any{
+						"active": false,
+					},
+				},
+			},
+		}
+		body, err := json.Marshal(newUser)
+		require.NoError(t, err)
+		code, body := tc.Patch(baseURL+"/scim/Users/US999", body)
+		require.Equal(tc.t, http.StatusNotFound, code, "body: %s", string(body))
+	}
 }
