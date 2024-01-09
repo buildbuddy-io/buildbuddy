@@ -795,6 +795,19 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 	return nil, status.NotFoundError("user not found")
 }
 
+func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error) {
+	var user *tables.User
+	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		u, err := d.getUser(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		user = u
+		return err
+	})
+	return user, err
+}
+
 func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User, error) {
 	auth := d.env.GetAuthenticator()
 	if auth == nil {

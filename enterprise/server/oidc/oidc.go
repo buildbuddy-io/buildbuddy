@@ -610,7 +610,6 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	}
 
 	if authHeader := r.Header.Get(authorizationHeader); authHeader != "" {
-		log.Infof("got header: %s", authHeader)
 		apiKey := strings.TrimPrefix(authHeader, authScheme+" ")
 		claims, err := a.claimsFromAPIKey(ctx, apiKey)
 		return claims, nil, err
