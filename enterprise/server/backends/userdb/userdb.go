@@ -1038,6 +1038,15 @@ func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
 	})
 }
 
+func (d *UserDB) UpdateUser(ctx context.Context, u *tables.User) error {
+	// Permission check.
+	_, err := d.GetUserByID(ctx, u.UserID)
+	if err != nil {
+		return err
+	}
+	return d.h.NewQuery(ctx, "userdb_update_user").Update(u)
+}
+
 func (d *UserDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error {
 	rq := d.h.NewQuery(ctx, "userdb_get_user_count").Raw(`
 		SELECT 

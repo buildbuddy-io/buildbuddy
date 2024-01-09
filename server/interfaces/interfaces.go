@@ -501,6 +501,7 @@ type UserDB interface {
 	// e-mail address. Normally this should not be the case, but it can occur
 	// if a user transitions between auth providers (e.g. oidc to saml).
 	GetUserByEmail(ctx context.Context, email string) (*tables.User, error)
+	UpdateUser(ctx context.Context, u *tables.User) error
 	// DeleteUser deletes a user and associated data.
 	DeleteUser(ctx context.Context, id string) error
 	// GetImpersonatedUser will return the authenticated user's information

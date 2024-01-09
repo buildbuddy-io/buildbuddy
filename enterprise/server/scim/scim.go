@@ -18,10 +18,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 var (
@@ -30,6 +32,9 @@ var (
 
 const (
 	usersPath = "/scim/Users"
+
+	AdminRole     = "admin"
+	DeveloperRole = "developer"
 
 	ListResponseSchema  = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 	UserResourceSchema  = "urn:ietf:params:scim:schemas:core:2.0:User"
@@ -54,13 +59,32 @@ type UserResource struct {
 	Name     NameResource    `json:"name"`
 	Emails   []EmailResource `json:"emails"`
 	Active   bool            `json:"active"`
+	Role     string          `json:"role"`
 }
 
-func newUserResource(u *tables.User) *UserResource {
+func newUserResource(u *tables.User, authGroup *tables.Group) (*UserResource, error) {
+	userRole := ""
+	for _, g := range u.Groups {
+		if g.Group.GroupID == authGroup.GroupID {
+			switch role.Role(g.Role) {
+			case role.Developer:
+				userRole = DeveloperRole
+			case role.Admin:
+				userRole = AdminRole
+			default:
+				return nil, status.InternalErrorf("unhandled role: %d", g.Role)
+			}
+		}
+	}
+	if userRole == "" {
+		return nil, status.InternalErrorf("could not determine user role")
+	}
+
 	return &UserResource{
 		Schemas:  []string{UserResourceSchema},
 		ID:       u.UserID,
 		UserName: u.Email,
+		Role:     userRole,
 		Name: NameResource{
 			GivenName:  u.FirstName,
 			FamilyName: u.LastName,
@@ -72,7 +96,7 @@ func newUserResource(u *tables.User) *UserResource {
 			},
 		},
 		Active: true,
-	}
+	}, nil
 }
 
 type ListResponseResource struct {
@@ -187,7 +211,7 @@ func (s *SCIMServer) RegisterHandlers(mux interfaces.HttpServeMux) {
 	mux.Handle("/scim/", interceptors.WrapAuthenticatedExternalHandler(s.env, fn))
 }
 
-func (s *SCIMServer) getFilteredUsers(ctx context.Context, filter string) ([]*UserResource, error) {
+func (s *SCIMServer) getFilteredUsers(ctx context.Context, g *tables.Group, filter string) ([]*UserResource, error) {
 	filterParts := strings.Split(filter, " ")
 	if len(filterParts) != 3 {
 		return nil, status.InvalidArgumentErrorf("unsupported filter %q", filter)
@@ -209,7 +233,11 @@ func (s *SCIMServer) getFilteredUsers(ctx context.Context, filter string) ([]*Us
 		}
 		return nil, err
 	}
-	return []*UserResource{newUserResource(u)}, nil
+	ur, err := newUserResource(u, g)
+	if err != nil {
+		return nil, err
+	}
+	return []*UserResource{ur}, nil
 }
 
 func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
@@ -252,11 +280,18 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 				FirstName: du.GetUser().GetName().GetFirst(),
 				LastName:  du.GetUser().GetName().GetLast(),
 				Email:     du.GetUser().GetEmail(),
+				Groups: []*tables.GroupRole{
+					{Group: *g, Role: uint32(du.Role)},
+				},
 			}
-			users = append(users, newUserResource(u))
+			ur, err := newUserResource(u, g)
+			if err != nil {
+				return nil, err
+			}
+			users = append(users, ur)
 		}
 	} else {
-		fu, err := s.getFilteredUsers(ctx, filter)
+		fu, err := s.getFilteredUsers(ctx, g, filter)
 		if err != nil {
 			return nil, err
 		}
@@ -295,7 +330,31 @@ func (s *SCIMServer) getUser(ctx context.Context, r *http.Request, g *tables.Gro
 	if err != nil {
 		return nil, err
 	}
-	return newUserResource(u), nil
+	ur, err := newUserResource(u, g)
+	if err != nil {
+		return nil, err
+	}
+	return ur, nil
+}
+
+func mapRole(roleAttr string) (role.Role, error) {
+	switch roleAttr {
+	case "":
+		return role.Default, nil
+	case DeveloperRole:
+		return role.Developer, nil
+	case AdminRole:
+		return role.Admin, nil
+	default:
+		return 0, status.InvalidArgumentErrorf("invalid role %q", roleAttr)
+	}
+}
+
+func roleUpdateRequest(userID string, userRole role.Role) ([]*grpb.UpdateGroupUsersRequest_Update, error) {
+	return []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId: &uidpb.UserId{Id: userID},
+		Role:   role.ToProto(userRole),
+	}}, nil
 }
 
 func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
@@ -319,6 +378,14 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
+	userRole, err := mapRole(ur.Role)
+	if err != nil {
+		return nil, err
+	}
+	roleUpdate, err := roleUpdateRequest(pk, userRole)
+	if err != nil {
+		return nil, err
+	}
 	entityURL := build_buddy_url.WithPath("saml/metadata?slug=" + *g.URLIdentifier)
 	u := &tables.User{
 		UserID:    pk,
@@ -327,14 +394,16 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 		LastName:  ur.Name.FamilyName,
 		Email:     ur.UserName,
 		Groups: []*tables.GroupRole{
-			{Group: tables.Group{URLIdentifier: g.URLIdentifier}},
+			{Group: *g, Role: uint32(userRole)},
 		},
 	}
 	if err := s.env.GetUserDB().InsertUser(ctx, u); err != nil {
 		return nil, err
 	}
-
-	return newUserResource(u), nil
+	if err := s.env.GetUserDB().UpdateGroupUsers(ctx, g.GroupID, roleUpdate); err != nil {
+		return nil, err
+	}
+	return newUserResource(u, g)
 }
 
 func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
@@ -374,7 +443,10 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 		}
 	}
 
-	ur := newUserResource(u)
+	ur, err := newUserResource(u, g)
+	if err != nil {
+		return nil, err
+	}
 	if deleteUser {
 		err = s.env.GetUserDB().DeleteUser(ctx, id)
 		if err != nil {
@@ -404,7 +476,10 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 
 	u.FirstName = ur.Name.GivenName
 	u.LastName = ur.Name.FamilyName
-	updatedUser := newUserResource(u)
+	updatedUser, err := newUserResource(u, g)
+	if err != nil {
+		return nil, err
+	}
 	if !ur.Active {
 		err = s.env.GetUserDB().DeleteUser(ctx, id)
 		if err != nil {
@@ -412,7 +487,21 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 		}
 		updatedUser.Active = false
 	} else {
-		return nil, status.InvalidArgumentErrorf("updating attributes not yet supported")
+		if err := s.env.GetUserDB().UpdateUser(ctx, u); err != nil {
+			return nil, err
+		}
+		userRole, err := mapRole(ur.Role)
+		if err != nil {
+			return nil, err
+		}
+		roleUpdate, err := roleUpdateRequest(id, userRole)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.env.GetUserDB().UpdateGroupUsers(ctx, g.GroupID, roleUpdate); err != nil {
+			return nil, err
+		}
+		updatedUser.Role = ur.Role
 	}
 	return updatedUser, nil
 }
