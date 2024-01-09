@@ -699,7 +699,7 @@ export default class InvocationModel {
         return "k8";
       }
       if (this.workflowConfigured.os === "darwin" && this.workflowConfigured.arch === "amd64") {
-        return "darwin";
+        return "darwin_x86_64";
       }
       if (this.workflowConfigured.os === "darwin" && this.workflowConfigured.arch === "arm64") {
         return "darwin_arm64";
