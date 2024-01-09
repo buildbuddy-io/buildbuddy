@@ -141,14 +141,18 @@ func ParseClaims(token string) (*Claims, error) {
 }
 
 func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
+	keyRole := role.Default
+	// User management through SCIM requires Admin access.
+	if akg.GetCapabilities()&int32(akpb.ApiKey_SCIM_CAPABILITY) > 0 {
+		keyRole = role.Admin
+	}
 	return &Claims{
 		APIKeyID:      akg.GetAPIKeyID(),
 		UserID:        akg.GetUserID(),
 		GroupID:       akg.GetGroupID(),
 		AllowedGroups: []string{akg.GetGroupID()},
-		// For now, API keys are assigned the default role.
 		GroupMemberships: []*interfaces.GroupMembership{
-			{GroupID: akg.GetGroupID(), Role: role.Default},
+			{GroupID: akg.GetGroupID(), Role: keyRole},
 		},
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),

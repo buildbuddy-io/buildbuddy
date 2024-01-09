@@ -787,8 +787,13 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 	if err != nil {
 		return nil, err
 	}
+
+	authUser, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return nil, err
+	}
 	for _, g := range user.Groups {
-		if err := perms.AuthorizeGroupAccess(ctx, d.env, g.Group.GroupID); err == nil {
+		if err := authutil.AuthorizeGroupRole(authUser, g.Group.GroupID, role.Admin); err == nil {
 			return user, nil
 		}
 	}
