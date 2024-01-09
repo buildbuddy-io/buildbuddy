@@ -163,8 +163,8 @@ common --nolegacy_important_outputs
 
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
 common --incompatible_strict_action_env
-common --action_env=DEVELOPER_DIR
-common --host_action_env=DEVELOPER_DIR
+common:macos --action_env=DEVELOPER_DIR
+common:macos --host_action_env=DEVELOPER_DIR
 
 # rules_nodejs needs runfiles to be explicitly enabled.
 common:linux --enable_runfiles
