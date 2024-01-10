@@ -60,7 +60,7 @@ func (p *pool) registerContainerProviders(providers map[platform.ContainerType]c
 	return nil
 }
 
-func (r *commandRunner) startVFS() error {
+func (r *taskRunner) startVFS() error {
 	var fs *vfs.VFS
 	var vfsServer *vfs_server.Server
 	enableVFS := r.PlatformProperties.EnableVFS
@@ -98,7 +98,7 @@ func (r *commandRunner) startVFS() error {
 	return nil
 }
 
-func (r *commandRunner) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
+func (r *taskRunner) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
 	if r.PlatformProperties.EnableVFS {
 		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
 		// pass the layout information to the implementation.
@@ -125,7 +125,7 @@ func (r *commandRunner) prepareVFS(ctx context.Context, layout *container.FileSy
 	return nil
 }
 
-func (r *commandRunner) removeVFS() error {
+func (r *taskRunner) removeVFS() error {
 	var err error
 	if r.VFS != nil {
 		err = r.VFS.Unmount()
@@ -140,7 +140,7 @@ func (r *commandRunner) removeVFS() error {
 // If a firecracker runner has exceeded a certain % of allocated memory or disk, don't try to recycle
 // it, because that may cause failures if it's reused, and we don't want to save
 // bad snapshots to the cache.
-func (r *commandRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *repb.UsageStats) bool {
+func (r *taskRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *repb.UsageStats) bool {
 	if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
 		maxedOutStr := ""
 		maxMemory := false

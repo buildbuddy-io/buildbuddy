@@ -168,7 +168,7 @@ func withAuthenticatedUser(t *testing.T, ctx context.Context, env *testenv.TestE
 	return ctx
 }
 
-func mustRun(t *testing.T, r *commandRunner) {
+func mustRun(t *testing.T, r *taskRunner) {
 	res := r.Run(context.Background())
 	require.NoError(t, res.Error)
 }
@@ -192,15 +192,15 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *
 	return p
 }
 
-func get(ctx context.Context, p *pool, task *repb.ScheduledTask) (*commandRunner, error) {
+func get(ctx context.Context, p *pool, task *repb.ScheduledTask) (*taskRunner, error) {
 	r, err := p.Get(ctx, task)
 	if err != nil {
 		return nil, err
 	}
-	return r.(*commandRunner), nil
+	return r.(*taskRunner), nil
 }
 
-func mustGet(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
+func mustGet(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *taskRunner {
 	initialActiveCount := pool.ActiveRunnerCount()
 	r, err := get(ctx, pool, task)
 	require.NoError(t, err)
@@ -209,7 +209,7 @@ func mustGet(t *testing.T, ctx context.Context, pool *pool, task *repb.Scheduled
 	return r
 }
 
-func mustAdd(t *testing.T, ctx context.Context, pool *pool, r *commandRunner) {
+func mustAdd(t *testing.T, ctx context.Context, pool *pool, r *taskRunner) {
 	initialActiveCount := pool.ActiveRunnerCount()
 
 	err := pool.Add(ctx, r)
@@ -218,7 +218,7 @@ func mustAdd(t *testing.T, ctx context.Context, pool *pool, r *commandRunner) {
 	require.Equal(t, initialActiveCount-1, pool.ActiveRunnerCount(), "active runner count should decrease when adding back to pool")
 }
 
-func mustAddWithoutEviction(t *testing.T, ctx context.Context, pool *pool, r *commandRunner) {
+func mustAddWithoutEviction(t *testing.T, ctx context.Context, pool *pool, r *taskRunner) {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 
@@ -234,7 +234,7 @@ func mustAddWithoutEviction(t *testing.T, ctx context.Context, pool *pool, r *co
 	)
 }
 
-func mustAddWithEviction(t *testing.T, ctx context.Context, pool *pool, r *commandRunner) {
+func mustAddWithEviction(t *testing.T, ctx context.Context, pool *pool, r *taskRunner) {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 
@@ -250,7 +250,7 @@ func mustAddWithEviction(t *testing.T, ctx context.Context, pool *pool, r *comma
 	)
 }
 
-func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
+func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *taskRunner {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
@@ -259,7 +259,7 @@ func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *re
 	return r
 }
 
-func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
+func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *taskRunner {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
@@ -629,7 +629,7 @@ func TestRunnerPool_TaskSize(t *testing.T) {
 			r1 := mustGetNewRunner(t, ctxUser1, pool, t1)
 			mustAddWithoutEviction(t, ctxUser1, pool, r1)
 
-			var r2 *commandRunner
+			var r2 *taskRunner
 			if test.ShouldRecycle {
 				r2 = mustGetPausedRunner(t, ctxUser1, pool, t2)
 				require.Same(t, r1, r2)
