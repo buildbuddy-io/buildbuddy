@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -49,9 +50,13 @@ func TestPullsNotDeduped(t *testing.T) {
 	container, err := provider.New(ctx, &props, nil, nil, "")
 	require.NoError(t, err)
 
+	eg := errgroup.Group{}
 	for i := 0; i < 5; i++ {
-		go require.NoError(t, container.PullImage(ctx, oci.Credentials{}))
+		eg.Go(func() error {
+			return container.PullImage(ctx, oci.Credentials{})
+		})
 	}
+	require.NoError(t, eg.Wait())
 
 	// One extra command for `podman version`
 	require.Equal(t, int32(6), commandsRun.Load())
