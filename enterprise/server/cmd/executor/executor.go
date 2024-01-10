@@ -173,7 +173,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	realEnv.GetHealthChecker().AddHealthCheck("grpc_app_connection", conn)
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
 	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
-	realEnv.SetCommandRunner(&commandutil.RealCommandRunner{})
+	realEnv.SetCommandRunner(&commandutil.CommandRunner{})
 
 	return realEnv
 }

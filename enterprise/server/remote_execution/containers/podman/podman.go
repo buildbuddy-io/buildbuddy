@@ -821,14 +821,14 @@ func ConfigureSecondaryNetwork(ctx context.Context) error {
 		return nil
 	}
 
-	podmanVersion, err := getPodmanVersion(ctx, commandutil.RealCommandRunner{})
+	podmanVersion, err := getPodmanVersion(ctx, commandutil.CommandRunner{})
 	if err != nil {
 		return status.WrapError(err, "podman version")
 	}
 	// Hack: run a dummy podman container to setup default podman bridge network in ip route.
 	// "podman run --rm busybox sh". This should setup the following in ip route:
 	// "10.88.0.0/16 dev cni-podman0 proto kernel scope link src 10.88.0.1 linkdown"
-	result := runPodman(ctx, commandutil.RealCommandRunner{}, *podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
+	result := runPodman(ctx, commandutil.CommandRunner{}, *podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
 	if result.Error != nil {
 		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
 	}

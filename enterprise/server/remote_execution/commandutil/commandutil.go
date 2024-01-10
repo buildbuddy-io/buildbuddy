@@ -106,9 +106,9 @@ func RetryIfTextFileBusy(fn func() error) error {
 	}
 }
 
-type RealCommandRunner struct{}
+type CommandRunner struct{}
 
-func (_ RealCommandRunner) Run(ctx context.Context, command *repb.Command, workDir string, statsListener func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
+func (_ CommandRunner) Run(ctx context.Context, command *repb.Command, workDir string, statsListener func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
 	return Run(ctx, command, workDir, statsListener, stdio)
 }
 
