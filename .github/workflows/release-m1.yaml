@@ -18,7 +18,7 @@ on:
 
 jobs:
   build:
-    runs-on: m1
+    runs-on: macos-13-arm64
     if: "!contains(github.event.head_commit.message, 'release skip')"
     defaults:
       run:
