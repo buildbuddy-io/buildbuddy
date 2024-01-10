@@ -672,6 +672,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_buildbuddy_io_tensorflow_proto",
+        build_directives = [
+            "gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2",
+        ],
         importpath = "github.com/buildbuddy-io/tensorflow-proto",
         sum = "h1:LcKnQdAYrT3LOZt0mTgw6uiEi7QVkH75cCxPj+AbkLA=",
         version = "v0.0.0-20220908151343-929b41ab4dc6",
