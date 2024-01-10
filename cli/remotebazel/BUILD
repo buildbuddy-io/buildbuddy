@@ -7,6 +7,7 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
+        "//cli/setup",
         "//enterprise/server/remote_execution/dirtools",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",

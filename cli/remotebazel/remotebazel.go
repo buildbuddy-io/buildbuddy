@@ -18,6 +18,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/setup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -621,33 +622,42 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	return exitCode, nil
 }
 
-func HandleRemoteBazel(args, execArgs []string) (int, error) {
-	args = arg.Remove(args, "bes_backend")
-	args = arg.Remove(args, "remote_cache")
+func HandleRemoteBazel(args []string) (int, error) {
+	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
+	if err != nil {
+		return 1, err
+	}
+	defer func() {
+		os.RemoveAll(tempDir)
+	}()
+
+	_, bazelArgs, execArgs, err := setup.Setup(args, tempDir)
+	if err != nil {
+		return 1, status.WrapError(err, "bazel setup")
+	}
+
+	bazelArgs = arg.Remove(bazelArgs, "bes_backend")
+	bazelArgs = arg.Remove(bazelArgs, "remote_cache")
 
 	// Ensure all bazel remote runs use the remote cache
-	args = append(args, "--bes_backend="+defaultRemoteExecutionURL)
-	args = append(args, "--remote_cache="+defaultRemoteExecutionURL)
+	bazelArgs = append(bazelArgs, "--bes_backend="+defaultRemoteExecutionURL)
+	bazelArgs = append(bazelArgs, "--remote_cache="+defaultRemoteExecutionURL)
 
 	ctx := context.Background()
 	repoConfig, err := Config(".")
 	if err != nil {
-		log.Fatalf("config err: %s", err)
+		return 1, status.WrapError(err, "remote config")
 	}
 
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	if err != nil {
-		log.Fatalf("error finding workspace: %s", err)
-	}
-	exitCode, err := Run(ctx, RunOpts{
-		Server:            "grpcs://" + defaultRemoteExecutionURL,
-		APIKey:            arg.Get(args, "remote_header=x-buildbuddy-api-key"),
-		Args:              arg.JoinExecutableArgs(args, execArgs),
-		WorkspaceFilePath: wsFilePath,
-	}, repoConfig)
-	if err != nil {
-		log.Fatalf("error running remote bazel: %s", err)
+		return 1, status.WrapError(err, "finding workspace")
 	}
 
-	return exitCode, nil
+	return Run(ctx, RunOpts{
+		Server:            "grpcs://" + defaultRemoteExecutionURL,
+		APIKey:            arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key"),
+		Args:              arg.JoinExecutableArgs(bazelArgs, execArgs),
+		WorkspaceFilePath: wsFilePath,
+	}, repoConfig)
 }

@@ -4,16 +4,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
-	"github.com/buildbuddy-io/buildbuddy/cli/common"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
+	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
-	"github.com/buildbuddy-io/buildbuddy/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
 )
 
 type Command struct {
@@ -78,14 +78,9 @@ var Commands = []Command{
 		Handler: printlog.HandlePrint,
 	},
 	{
-		Name: "remote",
-		Help: "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service.",
-		// Because `remote` shares some setup with running a regular bazel command
-		// straight up (i.e. bb build), handle both together outside of the typical
-		// cli command handlers.
-		Handler: func(args []string) (exitCode int, err error) {
-			return common.ForwardCommandToBazelExitCode, nil
-		},
+		Name:    "remote",
+		Help:    "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service.",
+		Handler: remotebazel.HandleRemoteBazel,
 	},
 	{
 		Name:    "update",
@@ -100,6 +95,6 @@ var Commands = []Command{
 	{
 		Name:    "version",
 		Help:    "Prints bb cli version info.",
-		Handler: version.HandleVersion,
+		Handler: versioncmd.HandleVersion,
 	},
 }

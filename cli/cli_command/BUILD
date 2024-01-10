@@ -8,16 +8,16 @@ go_library(
         "//cli/add",
         "//cli/analyze",
         "//cli/ask",
-        "//cli/common",
         "//cli/download",
         "//cli/execute",
         "//cli/fix",
         "//cli/login",
         "//cli/plugin",
         "//cli/printlog",
+        "//cli/remotebazel",
         "//cli/update",
         "//cli/upload",
-        "//cli/version",
+        "//cli/versioncmd",
     ],
 )
 

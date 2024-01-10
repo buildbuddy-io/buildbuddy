@@ -18,11 +18,9 @@ go_library(
     srcs = ["version.go"],
     embedsrcs = [":version_flag"],  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/version",
-    deps = [
-        "//cli/arg",
-        "//cli/common",
-    ],
 )
+
+package(default_visibility = ["//cli:__subpackages__"])
 
 go_test(
     name = "version_test",
@@ -32,5 +30,3 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])
