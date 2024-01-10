@@ -202,6 +202,10 @@ common:windows --cxxopt=/std:c++17
 # Ensure that we don't use the apple_support cc_toolchain
 common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 
+# Ensure that our executors can run on macOS 11.0+
+common:macos --macos_minimum_os=11.0
+common:macos --host_macos_minimum_os=11.0
+
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
 common:webdriver-debug --test_arg=-webdriver_debug
