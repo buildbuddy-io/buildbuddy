@@ -18,7 +18,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-11
+    runs-on: macos-13
     if: "!contains(github.event.head_commit.message, 'release skip')"
     steps:
       - name: Configure variables
