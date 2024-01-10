@@ -187,10 +187,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--auto', default=False, action='store_true')
     parser.add_argument('--allow_dirty', default=False, action='store_true')
-    parser.add_argument('--skip_version_bump', default=False, action='store_true')
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
     parser.add_argument('--force', default=False, action='store_true')
-    parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch'])
+    parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
     args = parser.parse_args()
 
     if workspace_is_clean():
@@ -210,7 +209,7 @@ def main():
         " If you still want to upgrade the version, rerun the script with --force.")
 
     new_version = old_version
-    if not args.skip_version_bump:
+    if args.bump_version_type != 'none':
         if args.bump_version_type == 'patch':
             new_version = bump_patch_version(old_version)
         elif args.bump_version_type == 'minor':
