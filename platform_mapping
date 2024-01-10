@@ -1,4 +1,0 @@
-platforms:
-  @local_config_platform//:host
-    --linkopt="-Wl,-no_warn_duplicate_libraries"
-    --host_linkopt="-Wl,-no_warn_duplicate_libraries"
