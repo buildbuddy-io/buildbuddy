@@ -738,13 +738,26 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	if _, err := s.LeasedRange(req.GetHeader()); err != nil {
-		return nil, err
+	var shardID uint64
+	header := req.GetHeader()
+
+	// Proxied SyncPropose requests don't need a lease, so don't bother
+	// checking for one. If the referenced shard is not present on this
+	// node, the request will fail in client.SyncProposeLocal().
+	if header.GetRangeId() == 0 && header.GetReplica() != nil {
+		shardID = header.GetReplica().GetShardId()
+	} else {
+		r, err := s.LeasedRange(req.GetHeader())
+		if err != nil {
+			return nil, err
+		}
+		shardID = r.ShardID
 	}
-	shardID := req.GetHeader().GetReplica().GetShardId()
 
 	batch := req.GetBatch()
-	batch.Header = req.GetHeader()
+	if batch.Header == nil {
+		batch.Header = header
+	}
 
 	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, shardID, batch)
 	if err != nil {
