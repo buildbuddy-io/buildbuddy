@@ -21,10 +21,10 @@ import (
 )
 
 type SlowCommandRunner struct {
-	commandsRun *atomic.Int32
+	commandsRun atomic.Int32
 }
 
-func (r SlowCommandRunner) Run(_ context.Context, command *repb.Command, _ string, _ func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
+func (r *SlowCommandRunner) Run(_ context.Context, command *repb.Command, _ string, _ func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
 	if len(command.Arguments) >= 2 && command.Arguments[0] == "podman" && command.Arguments[1] == "version" {
 		stdio.Stdout.Write([]byte("1.0.0"))
 	}
@@ -36,9 +36,8 @@ func (r SlowCommandRunner) Run(_ context.Context, command *repb.Command, _ strin
 func TestPullsNotDeduped(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
-	commandsRun := atomic.Int32{}
-	commandRunner := SlowCommandRunner{commandsRun: &commandsRun}
-	env.SetCommandRunner(commandRunner)
+	commandRunner := SlowCommandRunner{}
+	env.SetCommandRunner(&commandRunner)
 	dir := testfs.MakeTempDir(t)
 	provider, err := podman.NewProvider(env, dir)
 	require.NoError(t, err)
@@ -59,7 +58,7 @@ func TestPullsNotDeduped(t *testing.T) {
 	require.NoError(t, eg.Wait())
 
 	// One extra command for `podman version`
-	require.Equal(t, int32(6), commandsRun.Load())
+	require.Equal(t, int32(6), commandRunner.commandsRun.Load())
 }
 
 type ControllableCommandRunner struct {
