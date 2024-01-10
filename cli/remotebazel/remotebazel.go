@@ -671,7 +671,6 @@ func HandleRemoteBazel(args []string) (int, error) {
 		runner = "grpcs://" + runner
 	}
 
-	fmt.Printf("Server is %s", runner)
 	return Run(ctx, RunOpts{
 		Server:            runner,
 		APIKey:            arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key"),
