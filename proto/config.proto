@@ -42,8 +42,7 @@ message FrontendConfig {
   // Whether or not SSO is enabled.
   bool sso_enabled = 13;
 
-  // DEPRECATED: Whether or not the global invocation filter is enabled.
-  bool global_filter_enabled = 14;
+  reserved 14; // DEPRECATED global_filter_enabled
 
   // Whether or not the usage page is enabled.
   bool usage_enabled = 15;
