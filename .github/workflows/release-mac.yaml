@@ -53,7 +53,7 @@ jobs:
                       type: 'plain_text',
                       text: 'More details.'
                     },
-                    url: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`,
+                    url: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`
                   }
                 ]
               }]
