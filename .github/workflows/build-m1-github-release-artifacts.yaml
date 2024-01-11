@@ -1,10 +1,18 @@
-name: "release-m1"
+name: "Build M1 Github Release Artifacts"
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
+    inputs:
+      release_branch:
+        description: "Git branch to checkout."
+        required: true
+        default: "master"
+        type: string
+      version_tag:
+        description: "Version to tag release artifacts."
+        required: true
+        type: string
+  workflow_call:
     inputs:
       release_branch:
         description: "Git branch to checkout."
@@ -19,7 +27,6 @@ on:
 jobs:
   build:
     runs-on: macos-13-xlarge
-    if: "!contains(github.event.head_commit.message, 'release skip')"
     defaults:
       run:
         shell: "/usr/bin/arch -arch arm64e /bin/bash --noprofile --norc -eo pipefail {0}"
@@ -32,25 +39,10 @@ jobs:
           rm -rf ./.??* || true
           ls -la ./
 
-      - name: Configure variables
-        id: vars
-        run: |
-          # Configure repo based on pushed tag if set
-          if [ ${{ github.event_name }} = 'push' ]; then
-            ref="${GITHUB_REF}"
-            tag=${GITHUB_REF/refs\/tags\//}
-          else
-            # Otherwise the workflow must have been manually triggered with inputs
-            ref="${{ inputs.release_branch }}"
-            tag="${{ inputs.version_tag }}"
-          fi
-          echo "ref=$ref" >> $GITHUB_OUTPUT
-          echo "tag=$tag" >> $GITHUB_OUTPUT
-
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          ref: ${{ steps.vars.outputs.ref }}
+          ref: ${{ inputs.release_branch }}
           # We need to fetch git tags to obtain the latest version tag to report
           # the version of the running binary.
           fetch-depth: 0
@@ -69,4 +61,4 @@ jobs:
           export DEVELOPER_DIR=/Library/Developer/CommandLineTools
           "${GITHUB_WORKSPACE}/bin/bazel" build --config=release-m1 --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-arm64
-          gh release upload ${{ steps.vars.outputs.tag }} executor-enterprise-darwin-arm64 --clobber
+          gh release upload ${{ inputs.version_tag }} executor-enterprise-darwin-arm64 --clobber

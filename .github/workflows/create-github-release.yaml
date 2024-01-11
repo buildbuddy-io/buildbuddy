@@ -1,0 +1,82 @@
+name: "Create Github Release"
+
+# NOTE: This workflow does not work well if not triggered by a tag push due to
+# unexpected behavior in action-automatic-releases when manually setting an
+# automatic_release_tag.
+# To manually trigger this, you can force push a tag.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    steps:
+      - uses: "marvinpinto/action-automatic-releases@v1.2.1"
+        with:
+          repo_token: "${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}"
+          prerelease: false
+          draft: true
+
+  build-linux-artifacts:
+    uses: ./.github/workflows/build-linux-github-release-artifacts.yaml
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    needs: create-release
+    with:
+      release_branch: ${GITHUB_REF}
+      version_tag: ${GITHUB_REF/refs\/tags\//}
+    secrets: inherit
+
+  build-mac-artifacts:
+    uses: ./.github/workflows/build-mac-github-release-artifacts.yaml
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    needs: create-release
+    with:
+      release_branch: ${GITHUB_REF}
+      version_tag: ${GITHUB_REF/refs\/tags\//}
+    secrets: inherit
+
+  build-m1-artifacts:
+    uses: ./.github/workflows/build-m1-github-release-artifacts.yaml
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    needs: create-release
+    with:
+      release_branch: ${GITHUB_REF}
+      version_tag: ${GITHUB_REF/refs\/tags\//}
+    secrets: inherit
+
+  slack_on_failure:
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              attachments: [{
+                blocks: [
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: "*Creating Github Release Failed*"
+                    },
+                  },
+                  {
+                    type: "button",
+                    text: {
+                      type: "plain_text",
+                      text: "More details."
+                    },
+                    url: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`,
+                  }
+                ],
+                color: "#ad1411",
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_AUTO_RELEASE_WEBHOOK_URL }}
