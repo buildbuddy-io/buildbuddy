@@ -1,4 +1,4 @@
-name: "Build M1 Github Release Artifacts"
+name: "Build Mac-M1 Github Release Artifacts"
 
 on:
   workflow_dispatch:

@@ -29,8 +29,8 @@ jobs:
       version_tag: ${GITHUB_REF/refs\/tags\//}
     secrets: inherit
 
-  build-mac-artifacts:
-    uses: ./.github/workflows/build-mac-github-release-artifacts.yaml
+  build-mac-intel-artifacts:
+    uses: ./.github/workflows/build-mac-intel-github-release-artifacts.yaml
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
@@ -38,8 +38,8 @@ jobs:
       version_tag: ${GITHUB_REF/refs\/tags\//}
     secrets: inherit
 
-  build-m1-artifacts:
-    uses: ./.github/workflows/build-m1-github-release-artifacts.yaml
+  build-mac-m1-artifacts:
+    uses: ./.github/workflows/build-mac-m1-github-release-artifacts.yaml
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
