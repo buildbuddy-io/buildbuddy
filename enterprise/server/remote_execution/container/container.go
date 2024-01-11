@@ -367,6 +367,10 @@ type TracedCommandContainer struct {
 	Delegate CommandContainer
 }
 
+func (t *TracedCommandContainer) IsolationType() string {
+	return t.Delegate.IsolationType()
+}
+
 func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
