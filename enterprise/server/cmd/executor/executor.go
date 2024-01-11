@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
@@ -172,6 +173,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	realEnv.GetHealthChecker().AddHealthCheck("grpc_app_connection", conn)
 	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
 	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
+	realEnv.SetCommandRunner(&commandutil.CommandRunner{})
 
 	return realEnv
 }

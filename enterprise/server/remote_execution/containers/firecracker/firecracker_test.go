@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
@@ -1740,7 +1739,7 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		require.Equal(t, expectedStderr, string(b))
 	}()
 
-	res := c.Exec(ctx, cmd, &commandutil.Stdio{
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{
 		// Write stderr to the pipe but buffer stdout in the result as usual.
 		Stderr: stderrWriter,
 	})

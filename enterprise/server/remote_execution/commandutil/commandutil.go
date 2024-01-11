@@ -43,19 +43,9 @@ var (
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
 
-// Stdio specifies standard input / output readers for a command.
-type Stdio struct {
-	// Stdin is an optional stdin source for the executed process.
-	Stdin io.Reader
-	// Stdout is an optional stdout sink for the executed process.
-	Stdout io.Writer
-	// Stderr is an optional stderr sink for the executed process.
-	Stderr io.Writer
-}
-
-func constructExecCommand(command *repb.Command, workDir string, stdio *Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {
-		stdio = &Stdio{}
+		stdio = &interfaces.Stdio{}
 	}
 	executable, args := splitExecutableArgs(command.GetArguments())
 	// Note: we don't use CommandContext here because the default behavior of
@@ -116,6 +106,12 @@ func RetryIfTextFileBusy(fn func() error) error {
 	}
 }
 
+type CommandRunner struct{}
+
+func (_ CommandRunner) Run(ctx context.Context, command *repb.Command, workDir string, statsListener func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
+	return Run(ctx, command, workDir, statsListener, stdio)
+}
+
 // Run a command, retrying "text file busy" errors and killing the process tree
 // when the context is cancelled.
 //
@@ -123,7 +119,7 @@ func RetryIfTextFileBusy(fn func() error) error {
 // invoked each time stats are measured. In addition, the last recorded stats
 // will be returned in CommandResult.Stats. Note that enabling stats incurs some
 // overhead, so a nil callback should be used if stats aren't needed.
-func Run(ctx context.Context, command *repb.Command, workDir string, statsListener procstats.Listener, stdio *Stdio) *interfaces.CommandResult {
+func Run(ctx context.Context, command *repb.Command, workDir string, statsListener procstats.Listener, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
 	var stats *repb.UsageStats

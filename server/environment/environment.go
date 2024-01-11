@@ -120,4 +120,5 @@ type Env interface {
 	GetGCPService() interfaces.GCPService
 	GetSCIMService() interfaces.SCIMService
 	GetGossipService() interfaces.GossipService
+	GetCommandRunner() interfaces.CommandRunner
 }

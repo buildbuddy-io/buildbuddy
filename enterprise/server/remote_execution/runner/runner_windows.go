@@ -20,18 +20,18 @@ func (p *pool) registerContainerProviders(providers map[platform.ContainerType]c
 	return nil
 }
 
-func (r *commandRunner) startVFS() error {
+func (r *taskRunner) startVFS() error {
 	return nil
 }
 
-func (r *commandRunner) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
+func (r *taskRunner) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
 	return nil
 }
 
-func (r *commandRunner) removeVFS() error {
+func (r *taskRunner) removeVFS() error {
 	return nil
 }
 
-func (r *commandRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *repb.UsageStats) bool {
+func (r *taskRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *repb.UsageStats) bool {
 	return false
 }

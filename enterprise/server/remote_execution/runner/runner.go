@@ -139,7 +139,7 @@ type WarmupConfig struct {
 	Isolation string
 }
 
-// state indicates the current state of a commandRunner.
+// state indicates the current state of a taskRunner.
 type state int
 
 func (s state) String() string {
@@ -157,7 +157,7 @@ func (s state) String() string {
 	}
 }
 
-type runnerSlice []*commandRunner
+type runnerSlice []*taskRunner
 
 func (rs runnerSlice) String() string {
 	descriptions := make([]string, 0, len(rs))
@@ -167,7 +167,7 @@ func (rs runnerSlice) String() string {
 	return "[" + strings.Join(descriptions, ", ") + "]"
 }
 
-type commandRunner struct {
+type taskRunner struct {
 	env environment.Env
 	p   *pool
 
@@ -229,7 +229,7 @@ type commandRunner struct {
 	diskUsageBytes   int64
 }
 
-func (r *commandRunner) String() string {
+func (r *taskRunner) String() string {
 	ph, err := platformHash(r.key.Platform)
 	if err != nil {
 		ph = "<ERR!>"
@@ -240,11 +240,11 @@ func (r *commandRunner) String() string {
 		truncate(r.key.InstanceName, 8, "..."), truncate(ph, 8, ""))
 }
 
-func (r *commandRunner) pullCredentials() (oci.Credentials, error) {
+func (r *taskRunner) pullCredentials() (oci.Credentials, error) {
 	return oci.CredentialsFromProperties(r.PlatformProperties)
 }
 
-func (r *commandRunner) PrepareForTask(ctx context.Context) error {
+func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	r.Workspace.SetTask(ctx, r.task)
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
@@ -275,7 +275,7 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 	return nil
 }
 
-func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
+func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
 	rootInstanceDigest := digest.NewResourceName(
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
@@ -320,7 +320,7 @@ func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStat
 }
 
 // Run runs the task that is currently bound to the command runner.
-func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
+func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	wsPath := r.Workspace.Path()
 	if r.VFS != nil {
 		wsPath = r.VFS.GetMountDir()
@@ -378,7 +378,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	execResult := r.Container.Exec(ctx, command, &commandutil.Stdio{})
+	execResult := r.Container.Exec(ctx, command, &interfaces.Stdio{})
 
 	if r.hasMaxResourceUtilization(ctx, execResult.UsageStats) {
 		r.doNotReuse = true
@@ -387,7 +387,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	return execResult
 }
 
-func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
+func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
 	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult)
 	if err != nil {
 		return err
@@ -398,7 +398,7 @@ func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats
 	return nil
 }
 
-func (r *commandRunner) GetIsolationType() string {
+func (r *taskRunner) GetIsolationType() string {
 	return r.PlatformProperties.WorkloadIsolationType
 }
 
@@ -406,7 +406,7 @@ func (r *commandRunner) GetIsolationType() string {
 // removing a runner from the pool. This has no effect for isolation types
 // that fully isolate all processes started by the runner and remove them
 // automatically via `Container.Remove`.
-func (r *commandRunner) shutdown(ctx context.Context) error {
+func (r *taskRunner) shutdown(ctx context.Context) error {
 	r.p.mu.RLock()
 	props := r.PlatformProperties
 	r.p.mu.RUnlock()
@@ -424,7 +424,7 @@ func (r *commandRunner) shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (r *commandRunner) Remove(ctx context.Context) error {
+func (r *taskRunner) Remove(ctx context.Context) error {
 	r.p.mu.Lock()
 	s := r.state
 	r.state = removed
@@ -461,13 +461,13 @@ func (r *commandRunner) Remove(ctx context.Context) error {
 	return nil
 }
 
-func (r *commandRunner) RemoveWithTimeout(ctx context.Context) error {
+func (r *taskRunner) RemoveWithTimeout(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, runnerCleanupTimeout)
 	defer cancel()
 	return r.Remove(ctx)
 }
 
-func (r *commandRunner) RemoveInBackground() {
+func (r *taskRunner) RemoveInBackground() {
 	// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 	go func() {
 		if err := r.RemoveWithTimeout(context.Background()); err != nil {
@@ -478,7 +478,7 @@ func (r *commandRunner) RemoveInBackground() {
 
 // isCIRunner returns whether the task assigned to this runner is a BuildBuddy
 // CI task.
-func (r *commandRunner) isCIRunner() bool {
+func (r *taskRunner) isCIRunner() bool {
 	r.p.mu.RLock()
 	task := r.task
 	props := r.PlatformProperties
@@ -488,7 +488,7 @@ func (r *commandRunner) isCIRunner() bool {
 	return props.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
 }
 
-func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
+func (r *taskRunner) cleanupCIRunner(ctx context.Context) error {
 	// Run the currently assigned buildbuddy_ci_runner command, appending the
 	// --shutdown_and_exit argument. We use this approach because we want to
 	// preserve the configuration from the last run command, which may include the
@@ -496,7 +496,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	cleanupCmd := r.task.GetCommand().CloneVT()
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
-	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=statsListener*/, &commandutil.Stdio{})
+	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=statsListener*/, &interfaces.Stdio{})
 	return res.Error
 }
 
@@ -523,7 +523,7 @@ type pool struct {
 	mu             sync.RWMutex // protects(isShuttingDown), protects(runners)
 	isShuttingDown bool
 	// runners holds all runners managed by the pool.
-	runners []*commandRunner
+	runners []*taskRunner
 }
 
 func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
@@ -540,7 +540,7 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		env:       env,
 		podID:     podID,
 		buildRoot: *rootDirectory,
-		runners:   []*commandRunner{},
+		runners:   []*taskRunner{},
 	}
 	if opts.ContainerProvider != nil {
 		p.overrideProvider = opts.ContainerProvider
@@ -574,7 +574,7 @@ func (p *pool) GetBuildRoot() string {
 //
 // If an error is returned, the runner was not successfully added to the pool,
 // and should be removed.
-func (p *pool) Add(ctx context.Context, r *commandRunner) error {
+func (p *pool) Add(ctx context.Context, r *taskRunner) error {
 	if err := p.add(ctx, r); err != nil {
 		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
 			metrics.RunnerPoolFailedRecycleReason: err.Label,
@@ -584,7 +584,7 @@ func (p *pool) Add(ctx context.Context, r *commandRunner) error {
 	return nil
 }
 
-func (p *pool) checkAddPreconditions(r *commandRunner) *labeledError {
+func (p *pool) checkAddPreconditions(r *taskRunner) *labeledError {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -605,7 +605,7 @@ func (p *pool) checkAddPreconditions(r *commandRunner) *labeledError {
 	return nil
 }
 
-func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
+func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 	if err := p.checkAddPreconditions(r); err != nil {
 		return err
 	}
@@ -967,7 +967,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 
 // newRunner creates a runner either for the given task (if set) or restores the
 // runner from the given state.ContainerState.
-func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *repb.ScheduledTask, state *rnpb.RunnerState) (*commandRunner, error) {
+func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *repb.ScheduledTask, state *rnpb.RunnerState) (*taskRunner, error) {
 	if st == nil && state.GetContainerState() == nil {
 		return nil, status.FailedPreconditionError("either a task or saved container state is required to create a runner")
 	}
@@ -984,7 +984,7 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	if err != nil {
 		return nil, err
 	}
-	r := &commandRunner{
+	r := &taskRunner{
 		env:                p.env,
 		p:                  p,
 		key:                state.GetRunnerKey(),
@@ -1065,7 +1065,7 @@ func (p *pool) String() string {
 // unpause fails, it retries up to 5 times. For any given attempt, if there
 // are no runners available to unpause, this will return nil. If an unpause
 // operation fails on a given attempt, the runner is removed from the pool.
-func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *commandRunner {
+func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 	for i := 1; i <= maxUnpauseAttempts; i++ {
 		r := p.take(ctx, key)
 		if r == nil {
@@ -1094,7 +1094,7 @@ func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *commandR
 // take finds the most recently used runner in the pool that matches the given
 // query. If one is found, it is marked ready and returned. The caller must
 // unpause the runner.
-func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *commandRunner {
+func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -1238,12 +1238,12 @@ func (p *pool) initializeFromSavedState(ctx context.Context) error {
 func (p *pool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.isShuttingDown = true
-	var runnersToRemove []*commandRunner
+	var runnersToRemove []*taskRunner
 	persistedState := &rnpb.RunnerPoolState{}
 	// Remove only paused runners, since active runners should be removed only
 	// after their currently assigned task is canceled due to the shutdown
 	// grace period expiring.
-	var pausedRunners, activeRunners []*commandRunner
+	var pausedRunners, activeRunners []*taskRunner
 	for _, r := range p.runners {
 		if r.state == paused {
 			pausedRunners = append(pausedRunners, r)
@@ -1320,7 +1320,7 @@ func (p *pool) Wait() {
 	p.pendingRemovals.Wait()
 }
 
-func (p *pool) remove(r *commandRunner) {
+func (p *pool) remove(r *taskRunner) {
 	for i := range p.runners {
 		if p.runners[i] == r {
 			// Not using the "swap with last element" trick here because we need to
@@ -1331,7 +1331,7 @@ func (p *pool) remove(r *commandRunner) {
 	}
 }
 
-func (p *pool) finalize(r *commandRunner) {
+func (p *pool) finalize(r *taskRunner) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.remove(r)
@@ -1344,7 +1344,7 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	ctx, cancel := background.ExtendContextForFinalization(ctx, runnerRecycleTimeout)
 	defer cancel()
 
-	cr, ok := r.(*commandRunner)
+	cr, ok := r.(*taskRunner)
 	if !ok {
 		alert.UnexpectedEvent("unexpected_runner_type", "unexpected runner type %T", r)
 		return
@@ -1497,7 +1497,7 @@ func SplitArgsIntoWorkerArgsAndFlagFiles(args []string) ([]string, []string) {
 	return workerArgs, flagFiles
 }
 
-func (r *commandRunner) supportsPersistentWorkers(ctx context.Context, command *repb.Command) bool {
+func (r *taskRunner) supportsPersistentWorkers(ctx context.Context, command *repb.Command) bool {
 	if r.PlatformProperties.PersistentWorkerKey != "" {
 		return true
 	}
@@ -1510,7 +1510,7 @@ func (r *commandRunner) supportsPersistentWorkers(ctx context.Context, command *
 	return len(flagFiles) > 0
 }
 
-func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs, flagFiles []string) {
+func (r *taskRunner) startPersistentWorker(command *repb.Command, workerArgs, flagFiles []string) {
 	// Note: Using the server context since this worker will stick around for
 	// other tasks.
 	ctx, cancel := context.WithCancel(r.env.GetServerContext())
@@ -1545,7 +1545,7 @@ func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs,
 		defer stdinReader.Close()
 		defer stdoutWriter.Close()
 
-		stdio := &commandutil.Stdio{
+		stdio := &interfaces.Stdio{
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
 			Stderr: &r.stderr,
@@ -1555,7 +1555,7 @@ func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs,
 	}()
 }
 
-func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
 	// Clear any stderr that might be associated with a previous request.
 	r.stderr.Reset()
 
@@ -1624,7 +1624,7 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	return result
 }
 
-func (r *commandRunner) workerStderrDebugString() string {
+func (r *taskRunner) workerStderrDebugString() string {
 	stderr, _ := r.stderr.ReadAll()
 	str := string(stderr)
 	if str == "" {
@@ -1633,7 +1633,7 @@ func (r *commandRunner) workerStderrDebugString() string {
 	return str
 }
 
-func (r *commandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {
+func (r *taskRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {
 	protocol := r.PlatformProperties.PersistentWorkerProtocol
 	if protocol == workerProtocolJSONValue {
 		marshaler := &protojson.MarshalOptions{EmitUnpopulated: true}
@@ -1658,7 +1658,7 @@ func (r *commandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, write
 	return err
 }
 
-func (r *commandRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, reader io.Reader) error {
+func (r *taskRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, reader io.Reader) error {
 	protocol := r.PlatformProperties.PersistentWorkerProtocol
 	if protocol == workerProtocolJSONValue {
 		raw := json.RawMessage{}
@@ -1690,7 +1690,7 @@ func (r *commandRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, 
 // files. The @ itself can be escaped with @@. This deliberately does not expand --flagfile= style
 // arguments, because we want to get rid of the expansion entirely at some point in time.
 // Based on: https://github.com/bazelbuild/bazel/blob/e9e6978809b0214e336fee05047d5befe4f4e0c3/src/main/java/com/google/devtools/build/lib/worker/WorkerSpawnRunner.java#L324
-func (r *commandRunner) expandArguments(args []string) ([]string, error) {
+func (r *taskRunner) expandArguments(args []string) ([]string, error) {
 	expandedArgs := make([]string, 0)
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "@") && !strings.HasPrefix(arg, "@@") && !externalRepositoryPattern.MatchString(arg) {

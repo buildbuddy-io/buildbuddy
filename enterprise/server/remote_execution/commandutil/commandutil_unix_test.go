@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
@@ -54,7 +55,7 @@ func TestRun_Stdio(t *testing.T) {
 		echo TestError >&2
 	`}}
 	var stdout, stderr bytes.Buffer
-	res := commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &commandutil.Stdio{
+	res := commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &interfaces.Stdio{
 		Stdin:  strings.NewReader("TestInput\n"),
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -82,7 +83,7 @@ func TestRun_Stdio_StdinNotConsumedByCommand(t *testing.T) {
 		defer inr.Close()
 		defer outw.Close()
 
-		res := commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &commandutil.Stdio{
+		res := commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &interfaces.Stdio{
 			Stdin:  inr,
 			Stdout: outw,
 		})
@@ -144,7 +145,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 
 	{
 		cmd := &repb.Command{Arguments: []string{"./command_not_found_in_working_dir"}}
-		res := commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &commandutil.Stdio{})
+		res := commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &interfaces.Stdio{})
 
 		assert.Error(t, res.Error)
 		assert.True(
@@ -154,7 +155,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 	}
 	{
 		cmd := &repb.Command{Arguments: []string{"command_not_found_in_PATH"}}
-		res := commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &commandutil.Stdio{})
+		res := commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &interfaces.Stdio{})
 
 		assert.Error(t, res.Error)
 		assert.True(
@@ -170,7 +171,7 @@ func TestRun_CommandNotExecutable_ErrorResult(t *testing.T) {
 	testfs.WriteAllFileContents(t, wd, map[string]string{"non_executable_file": ""})
 
 	cmd := &repb.Command{Arguments: []string{"./non_executable_file"}}
-	res := commandutil.Run(ctx, cmd, wd, nil /*=statsListener*/, &commandutil.Stdio{})
+	res := commandutil.Run(ctx, cmd, wd, nil /*=statsListener*/, &interfaces.Stdio{})
 
 	assert.Error(t, res.Error)
 	assert.True(
@@ -191,7 +192,7 @@ func TestRun_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	res := commandutil.Run(ctx, cmd, wd, nil /*=statsListener*/, &commandutil.Stdio{})
+	res := commandutil.Run(ctx, cmd, wd, nil /*=statsListener*/, &interfaces.Stdio{})
 
 	require.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
 	assert.Equal(t, "stdout\n", string(res.Stdout))
@@ -212,7 +213,7 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 
-	res := commandutil.Run(ctx, cmd, wd, nil /*=statsListener*/, &commandutil.Stdio{})
+	res := commandutil.Run(ctx, cmd, wd, nil /*=statsListener*/, &interfaces.Stdio{})
 
 	assert.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
 	assert.Equal(t, "stdout\n", string(res.Stdout))
@@ -227,7 +228,7 @@ func TestRun_EnableStats_RecordsMemoryStats(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	res := commandutil.Run(ctx, cmd, ".", nopStatsListener, &commandutil.Stdio{})
+	res := commandutil.Run(ctx, cmd, ".", nopStatsListener, &interfaces.Stdio{})
 
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
@@ -247,7 +248,7 @@ func TestRun_EnableStats_RecordsCPUStats(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	res := commandutil.Run(ctx, cmd, ".", nopStatsListener, &commandutil.Stdio{})
+	res := commandutil.Run(ctx, cmd, ".", nopStatsListener, &interfaces.Stdio{})
 
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
@@ -285,7 +286,7 @@ func TestRun_EnableStats_ComplexProcessTree_RecordsStatsFromAllChildren(t *testi
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	res := commandutil.Run(ctx, cmd, workDir, nopStatsListener, &commandutil.Stdio{})
+	res := commandutil.Run(ctx, cmd, workDir, nopStatsListener, &interfaces.Stdio{})
 
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)

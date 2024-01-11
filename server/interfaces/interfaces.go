@@ -957,6 +957,21 @@ type RunnerPool interface {
 	GetBuildRoot() string
 }
 
+// CommandRunner is an interface for running command-line commands.
+type CommandRunner interface {
+	Run(ctx context.Context, command *repb.Command, workDir string, statsListener func(*repb.UsageStats), stdio *Stdio) *CommandResult
+}
+
+// Stdio specifies standard input / output readers for a command.
+type Stdio struct {
+	// Stdin is an optional stdin source for the executed process.
+	Stdin io.Reader
+	// Stdout is an optional stdout sink for the executed process.
+	Stdout io.Writer
+	// Stderr is an optional stderr sink for the executed process.
+	Stderr io.Writer
+}
+
 // CommandResult captures the output and details of an executed command.
 type CommandResult struct {
 	// Error is populated only if the command was unable to be started, or if it was
