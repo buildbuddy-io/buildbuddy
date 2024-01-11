@@ -31,8 +31,9 @@ var (
 const (
 	usersPath = "/scim/Users"
 
-	ListResponseSchema = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
-	UserResourceSchema = "urn:ietf:params:scim:schemas:core:2.0:User"
+	ListResponseSchema  = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+	UserResourceSchema  = "urn:ietf:params:scim:schemas:core:2.0:User"
+	PatchResourceSchema = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 )
 
 type NameResource struct {
@@ -80,6 +81,17 @@ type ListResponseResource struct {
 	StartIndex   int      `json:"startIndex"`
 	ItemsPerPage int      `json:"itemsPerPage"`
 	Resources    []*UserResource
+}
+
+type OperationResource struct {
+	Op    string         `json:"op"`
+	Path  string         `json:"path"`
+	Value map[string]any `json:"value"`
+}
+
+type PatchResource struct {
+	Schemas    []string `json:"schemas"`
+	Operations []OperationResource
 }
 
 type SCIMServer struct {
@@ -151,7 +163,7 @@ func (s *SCIMServer) RegisterHandlers(mux interfaces.HttpServeMux) {
 		case "PUT":
 			h = s.updateUser
 		case "PATCH":
-			h = s.updateUser
+			h = s.patchUser
 		case "DELETE":
 			h = s.deleteUser
 		default:
@@ -325,8 +337,84 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	return newUserResource(u), nil
 }
 
+func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+	req, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	pr := PatchResource{}
+	if err := json.Unmarshal(req, &pr); err != nil {
+		return nil, err
+	}
+
+	id := path.Base(r.URL.Path)
+	u, err := s.env.GetUserDB().GetUserByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	deleteUser := false
+	// The only update we support in PATCH is user deletion.
+	for _, op := range pr.Operations {
+		if op.Op != "replace" {
+			return nil, status.InvalidArgumentErrorf("unsupported operation %q", op.Op)
+		}
+		if op.Path != "" {
+			return nil, status.InvalidArgumentErrorf("patch path not supported")
+		}
+		for k, v := range op.Value {
+			if k != "active" {
+				return nil, status.InvalidArgumentErrorf("unsupported patch attribute %q", k)
+			}
+			b, ok := v.(bool)
+			if !ok {
+				return nil, status.InvalidArgumentErrorf("expected boolean value for 'active' attribute, but got %T", v)
+			}
+			deleteUser = !b
+		}
+	}
+
+	ur := newUserResource(u)
+	if deleteUser {
+		err = s.env.GetUserDB().DeleteUser(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		ur.Active = false
+	}
+
+	return ur, nil
+}
+
 func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
-	return nil, status.UnimplementedError("update not implemented")
+	req, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	ur := UserResource{}
+	if err := json.Unmarshal(req, &ur); err != nil {
+		return nil, err
+	}
+
+	id := path.Base(r.URL.Path)
+	u, err := s.env.GetUserDB().GetUserByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	u.FirstName = ur.Name.GivenName
+	u.LastName = ur.Name.FamilyName
+	updatedUser := newUserResource(u)
+	if !ur.Active {
+		err = s.env.GetUserDB().DeleteUser(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		updatedUser.Active = false
+	} else {
+		return nil, status.InvalidArgumentErrorf("updating attributes not yet supported")
+	}
+	return updatedUser, nil
 }
 
 func (s *SCIMServer) deleteUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
