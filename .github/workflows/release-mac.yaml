@@ -55,7 +55,7 @@ jobs:
                     url: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`,
                   }
                 ],
-                color: "#ad1411",
+                color: "#ad1411"
               }]
             }
         env:
