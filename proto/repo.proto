@@ -30,7 +30,7 @@ message CreateRepoRequest {
   // If unset, the root of the template repo will be used.
   string template_directory = 9;
 
-  // Variables that should be replaced in the template, mapped to the values 
+  // Variables that should be replaced in the template, mapped to the values
   // they should be replaced with.
   map<string, string> template_variables = 10;
 
@@ -46,11 +46,11 @@ message CreateRepoRequest {
   int64 installation_id = 8;
 
   // If set, the template will be copied into the given directory in the
-  // newly created repo. 
+  // newly created repo.
   // If unset, the root of the destination repo will be used.
   string destination_directory = 11;
 
-  // If true, a GitHub repo will not be created and the template (if provided) 
+  // If true, a GitHub repo will not be created and the template (if provided)
   // will be initialized into the given repository which is assumed to exist.
   bool skip_repo = 12;
 
