@@ -416,7 +416,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   render() {
-    const digest = parseDigest(this.props.search.get("actionDigest") ?? "");
+    const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
 
     return (
       <div className="invocation-action-card">
