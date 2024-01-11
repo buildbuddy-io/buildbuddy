@@ -28,7 +28,8 @@ jobs:
 
   slack_on_failure:
     runs-on: ubuntu-latest
-    if: failure()
+    needs: [build]
+    if: ${{ always() && contains(needs.*.result, 'failure') }}
     steps:
       - name: Slack
         uses: 8398a7/action-slack@v3
