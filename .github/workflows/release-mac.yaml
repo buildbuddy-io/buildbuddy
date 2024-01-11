@@ -39,7 +39,15 @@ jobs:
             {
               attachments: [{
                 color: '#ad1411',
-                text: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`
+                blocks: [
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: '*TEST*'
+                    }
+                  }
+                ]
               }]
             }
         env:
