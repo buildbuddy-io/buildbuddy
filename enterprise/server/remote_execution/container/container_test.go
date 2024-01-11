@@ -146,7 +146,7 @@ func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
 		eg.Go(func() error { return container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, imageRef) })
 	}
 	require.NoError(t, eg.Wait())
-	assert.Equal(t, 1, c.PullCount, "should pull the image if credentials are valid")
+	assert.Equal(t, 1, c.PullCount, "image should only be pulled once")
 }
 
 func TestImageCacheAuthenticator(t *testing.T) {
