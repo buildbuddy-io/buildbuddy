@@ -1775,6 +1775,10 @@ func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileS
 	c.fsLayout = fsLayout
 }
 
+func (c *FirecrackerContainer) IsolationType() string {
+	return "firecracker"
+}
+
 // Run the given command within the container and remove the container after
 // it is done executing.
 //

@@ -47,6 +47,10 @@ func NewBareCommandContainer(opts *Opts) container.CommandContainer {
 	return &bareCommandContainer{opts: opts}
 }
 
+func (c *bareCommandContainer) IsolationType() string {
+	return "bare"
+}
+
 func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	return c.exec(ctx, command, workDir, nil /*=stdio*/)
 }
