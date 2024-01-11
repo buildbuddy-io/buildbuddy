@@ -115,6 +115,11 @@ func (bb *BatchBuilder) SetFinalizeOperation(op rfpb.FinalizeOperation) *BatchBu
 	return bb
 }
 
+func (bb *BatchBuilder) SetHeader(h *rfpb.Header) *BatchBuilder {
+	bb.cmd.Header = h
+	return bb
+}
+
 func (bb *BatchBuilder) AddPostCommitHook(m proto.Message) *BatchBuilder {
 	switch value := m.(type) {
 	case *rfpb.SnapshotClusterHook:
@@ -305,8 +310,8 @@ func (br *BatchResponse) UpdateAtimeResponse(n int) (*rfpb.UpdateAtimeResponse, 
 }
 
 type txnStatement struct {
-	shardID  uint64
-	rawBatch *BatchBuilder
+	replicaDescriptor *rfpb.ReplicaDescriptor
+	rawBatch          *BatchBuilder
 }
 
 type TxnBuilder struct {
@@ -319,10 +324,10 @@ func NewTxn() *TxnBuilder {
 	}
 }
 
-func (tb *TxnBuilder) AddStatement(shardID uint64, batch *BatchBuilder) *TxnBuilder {
+func (tb *TxnBuilder) AddStatement(replica *rfpb.ReplicaDescriptor, batch *BatchBuilder) *TxnBuilder {
 	tb.statements = append(tb.statements, txnStatement{
-		shardID:  shardID,
-		rawBatch: batch,
+		replicaDescriptor: replica,
+		rawBatch:          batch,
 	})
 	return tb
 }
@@ -343,7 +348,7 @@ func (tb *TxnBuilder) ToProto() (*rfpb.TxnRequest, error) {
 			return nil, err
 		}
 		req.Statements = append(req.Statements, &rfpb.TxnRequest_Statement{
-			ShardId:  statement.shardID,
+			Replica:  statement.replicaDescriptor,
 			RawBatch: batchProto,
 		})
 	}

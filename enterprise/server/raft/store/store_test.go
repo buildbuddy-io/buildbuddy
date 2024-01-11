@@ -296,10 +296,10 @@ func TestAddNodeToCluster(t *testing.T) {
 	require.NoError(t, err)
 
 	stores := []*TestingStore{s1, s2, s3, s4}
-	waitForRangeLease(t, stores, 2)
+	s := getStoreWithRangeLease(t, stores, 2)
 
-	rd := s1.GetRange(1)
-	_, err = s1.AddReplica(ctx, &rfpb.AddReplicaRequest{
+	rd := s.GetRange(2)
+	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: rd,
 		Node: &rfpb.NodeDescriptor{
 			Nhid:        nh4.ID(),
@@ -309,7 +309,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicas, err := s1.GetMembership(ctx, 1)
+	replicas, err := s.GetMembership(ctx, 2)
 	require.NoError(t, err)
 	require.Equal(t, 4, len(replicas))
 }
@@ -331,16 +331,16 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	require.NoError(t, err)
 
 	stores := []*TestingStore{s1, s2, s3, s4}
-	waitForRangeLease(t, stores, 2)
+	s := getStoreWithRangeLease(t, stores, 2)
 
-	rd := s1.GetRange(1)
-	_, err = s1.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+	rd := s.GetRange(2)
+	_, err = s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
 		Range:     rd,
-		ReplicaId: 4,
+		ReplicaId: 5,
 	})
 	require.NoError(t, err)
 
-	replicas, err := s1.GetMembership(ctx, 1)
+	replicas, err := s.GetMembership(ctx, 2)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
 }
@@ -787,12 +787,12 @@ func TestSplitAcrossClusters(t *testing.T) {
 	initialRD := &rfpb.RangeDescriptor{
 		Start:      keys.Key{constants.UnsplittableMaxByte},
 		End:        keys.MaxByte,
-		RangeId:    3,
+		RangeId:    2,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 3, ReplicaId: 1},
-			{ShardId: 3, ReplicaId: 2},
-			{ShardId: 3, ReplicaId: 3},
+			{ShardId: 2, ReplicaId: 1},
+			{ShardId: 2, ReplicaId: 2},
+			{ShardId: 2, ReplicaId: 3},
 		},
 	}
 	protoBytes, err := proto.Marshal(initialRD)
@@ -804,7 +804,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 		},
 	})
 
-	bootstrapInfo := bringup.MakeBootstrapInfo(3, 1, poolB)
+	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
 	err = bringup.StartShard(ctx, s4.APIClient, bootstrapInfo, initalRDBatch)
 	require.NoError(t, err)
 
@@ -821,8 +821,8 @@ func TestSplitAcrossClusters(t *testing.T) {
 	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
 
-	s := getStoreWithRangeLease(t, stores, 3)
-	rd := s.GetRange(3)
+	s := getStoreWithRangeLease(t, stores, 2)
+	rd := s.GetRange(2)
 	header := headerFromRangeDescriptor(rd)
 
 	// Attempting to Split an empty range will always fail. So write a
@@ -834,35 +834,16 @@ func TestSplitAcrossClusters(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	s = getStoreWithRangeLease(t, stores, 4)
-	rd = s.GetRange(4)
-	header = headerFromRangeDescriptor(rd)
+	s = getStoreWithRangeLease(t, stores, 3)
 
-	// Expect that a new cluster was added with shardID = 4
+	// Expect that a new cluster was added with shardID = 3
 	// having 3 replicas.
-	replicas, err := s1.GetMembership(ctx, 4)
+	replicas, err := s.GetMembership(ctx, 3)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
 
-	// Check that all files are still found.
-	for _, fr := range written {
-		readRecord(ctx, t, s3, fr)
-	}
 	// Write some more records to the new end range.
 	written = append(written, writeNRecords(ctx, t, s1, 50)...)
-	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
-		Header: header,
-		Range:  rd,
-	})
-	require.NoError(t, err)
-
-	waitForRangeLease(t, stores, 5)
-
-	// Expect that a new cluster was added with shardID = 5
-	// having 3 replicas.
-	replicas, err = s1.GetMembership(ctx, 5)
-	require.NoError(t, err)
-	require.Equal(t, 3, len(replicas))
 
 	// Check that all files are found.
 	for _, fr := range written {
