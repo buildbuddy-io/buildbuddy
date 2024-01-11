@@ -419,8 +419,9 @@ export default class InvocationModel {
   private getCacheBaseResourceName(): resource.IResourceName {
     return {
       instanceName: this.getRemoteInstanceName(),
-      compressor: this.getCompressor(),
       digestFunction: this.getDigestFunction(),
+      // Note: we don't set compressor for now because the UI cannot decompress
+      // zstd blobs.
     };
   }
 
