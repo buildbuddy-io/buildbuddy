@@ -407,7 +407,7 @@ export default class InvocationModel {
     }
     const digestFnEnum =
       build.bazel.remote.execution.v2.DigestFunction.Value[
-        digestFnName as keyof typeof build.bazel.remote.execution.v2.DigestFunction.Value
+        digestFnName.toUpperCase() as keyof typeof build.bazel.remote.execution.v2.DigestFunction.Value
       ];
     return digestFnEnum || build.bazel.remote.execution.v2.DigestFunction.Value.SHA256;
   }
