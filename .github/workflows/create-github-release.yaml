@@ -1,9 +1,9 @@
 name: "Create Github Release"
 
-# NOTE: This workflow does not work well if not triggered by a tag push due to
+# NOTE: This workflow only works well when triggered by a tag push due to
 # unexpected behavior in action-automatic-releases when manually setting an
 # automatic_release_tag.
-# To manually trigger this, you can force push a tag.
+# To manually trigger this, you can force push a version tag starting with `v`.
 on:
   push:
     tags:

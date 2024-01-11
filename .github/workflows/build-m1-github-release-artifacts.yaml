@@ -17,7 +17,6 @@ on:
       release_branch:
         description: "Git branch to checkout."
         required: true
-        default: "master"
         type: string
       version_tag:
         description: "Version to tag release artifacts."
