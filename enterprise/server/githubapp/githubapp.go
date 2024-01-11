@@ -735,7 +735,7 @@ func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir, destDir st
 	if err != nil {
 		return err
 	}
-	// Copy template files into the destination repo
+	// Move template files into the destination repo
 	for _, file := range fileInfo {
 		old := filepath.Join(path, file.Name())
 		new := filepath.Join(newPath, file.Name())
@@ -789,6 +789,8 @@ func initOrClone(init bool, dir, url string, auth transport.AuthMethod) (*git.Re
 	return gitRepo, err
 }
 
+// Walks the given directory and performs a find and replace in all file contents.
+// All instance of the keys in the replacements map are replaced by the values in the map.
 func replace(dir string, replacements map[string]string) error {
 	return filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
