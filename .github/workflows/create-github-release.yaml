@@ -49,7 +49,8 @@ jobs:
 
   slack_on_failure:
     runs-on: ubuntu-latest
-    if: failure()
+    needs: [ create-release, build-linux-artifacts, build-mac-artifacts, build-m1-artifacts ]
+    if: ${{ always() && contains(needs.*.result, 'failure') }}
     steps:
       - name: Slack
         uses: 8398a7/action-slack@v3
@@ -58,24 +59,23 @@ jobs:
           custom_payload: |
             {
               attachments: [{
+                color: '#ad1411',
                 blocks: [
                   {
-                    type: "section",
+                    type: 'section',
                     text: {
-                      type: "mrkdwn",
-                      text: "*Creating Github Release Failed*"
-                    },
+                      type: 'mrkdwn',
+                      text: '*Creating Github Release Failed*'
+                    }
                   },
                   {
-                    type: "button",
+                    type: 'section',
                     text: {
-                      type: "plain_text",
-                      text: "More details."
-                    },
-                    url: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`,
+                      type: 'mrkdwn',
+                      text: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`
+                    }
                   }
-                ],
-                color: "#ad1411",
+                ]
               }]
             }
         env:
