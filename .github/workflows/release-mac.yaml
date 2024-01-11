@@ -24,40 +24,38 @@ jobs:
       - name: Configure variables
         id: vars
         run: |
-          # Configure repo based on pushed tag if set
-          if [ ${{ github.event_name }} = 'push' ]; then
-            ref="${GITHUB_REF}"
-            tag=${GITHUB_REF/refs\/tags\//}
-          else
-            # Otherwise the workflow must have been manually triggered with inputs
-            ref="${{ inputs.release_branch }}"
-            tag="${{ inputs.version_tag }}"
-          fi
-          echo "ref=$ref" >> $GITHUB_OUTPUT
-          echo "tag=$tag" >> $GITHUB_OUTPUT
+          exit 1
 
-      - name: Checkout
-        uses: actions/checkout@v3
+  slack_on_failure:
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Slack
+        uses: 8398a7/action-slack@v3
         with:
-          ref: ${{ steps.vars.outputs.ref }}
-          # We need to fetch git tags to obtain the latest version tag to report
-          # the version of the running binary.
-          fetch-depth: 0
-
-      - name: Install bazelisk
-        run: |
-          curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-amd64"
-          mkdir -p "${GITHUB_WORKSPACE}/bin/"
-          mv bazelisk-darwin-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
-          chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
-
-      - name: Build and Upload Artifacts
+          status: custom
+          custom_payload: |
+            {
+              attachments: [{
+                blocks: [
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: "*TEST*"
+                    },
+                  },
+                  {
+                    type: "button",
+                    text: {
+                      type: "plain_text",
+                      text: "More details."
+                    },
+                    url: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`,
+                  }
+                ],
+                color: "#ad1411",
+              }]
+            }
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          export DEVELOPER_DIR=/Library/Developer/CommandLineTools
-          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release-mac --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
-          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-darwin-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-darwin-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-amd64
-          gh release upload ${{ steps.vars.outputs.tag }} buildbuddy-darwin-amd64 buildbuddy-enterprise-darwin-amd64 executor-enterprise-darwin-amd64 --clobber
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_AUTO_RELEASE_WEBHOOK_URL }}
