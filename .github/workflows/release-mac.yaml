@@ -50,8 +50,8 @@ jobs:
                   {
                     type: 'section',
                     text: {
-                      type: 'plain_text',
-                      text: `More details: https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`
+                      type: 'mrkdwn',
+                      text: `[Workflow Link](https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }})`
                     }
                   }
                 ]
