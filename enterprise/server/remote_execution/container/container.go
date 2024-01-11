@@ -252,8 +252,8 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	}
 
 	// TODO(iain): the auth/existence/pull synchronization is getting unruly.
-	unsafemu, _ := pullOperations.LoadOrStore(ctr.IsolationType()+imageRef, &sync.Mutex{})
-	mu, ok := unsafemu.(*sync.Mutex)
+	uncastmu, _ := pullOperations.LoadOrStore(ctr.IsolationType()+imageRef, &sync.Mutex{})
+	mu, ok := uncastmu.(*sync.Mutex)
 	if !ok {
 		alert.UnexpectedEvent("psi cannot be cast to *pullStatus")
 		return status.InternalError("PullImage failed: cannot get pull status")
