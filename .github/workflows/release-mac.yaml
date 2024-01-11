@@ -48,12 +48,11 @@ jobs:
                     }
                   },
                   {
-                    type: 'button',
+                    type: 'section',
                     text: {
                       type: 'plain_text',
-                      text: 'More details.'
-                    },
-                    url: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`
+                      text: `More details: https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`
+                    }
                   }
                 ]
               }]
