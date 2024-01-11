@@ -38,24 +38,8 @@ jobs:
           custom_payload: |
             {
               attachments: [{
-                blocks: [
-                  {
-                    type: "section",
-                    text: {
-                      type: "mrkdwn",
-                      text: "*TEST*"
-                    },
-                  },
-                  {
-                    type: "button",
-                    text: {
-                      type: "plain_text",
-                      text: "More details."
-                    },
-                    url: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`,
-                  }
-                ],
-                color: "#ad1411"
+                color: '#ad1411',
+                text: `https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}`
               }]
             }
         env:
