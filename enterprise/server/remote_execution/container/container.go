@@ -255,8 +255,8 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	uncastmu, _ := pullOperations.LoadOrStore(ctr.IsolationType()+imageRef, &sync.Mutex{})
 	mu, ok := uncastmu.(*sync.Mutex)
 	if !ok {
-		alert.UnexpectedEvent("psi cannot be cast to *pullStatus")
-		return status.InternalError("PullImage failed: cannot get pull status")
+		alert.UnexpectedEvent("loaded mutex from sync.map that isn't a mutex!")
+		return status.InternalError("PullImageIfNecessary failed: cannot obtain mutex")
 	}
 	mu.Lock()
 	defer mu.Unlock()
