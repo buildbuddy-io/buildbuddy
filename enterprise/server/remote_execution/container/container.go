@@ -55,7 +55,8 @@ var (
 
 	slowPullWarnOnce sync.Once
 
-	// A map from image name to pull status. This is used to avoid parallel pulling of the same image.
+	// A map from isolation type + image name to a mutex that serializes
+	// existence checks and image pulls.
 	pullOperations sync.Map
 )
 
