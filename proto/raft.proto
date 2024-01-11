@@ -252,7 +252,7 @@ message PostCommitHook {
 message TxnRequest {
   optional bytes transaction_id = 1;
   message Statement {
-    uint64 shard_id = 1;
+    ReplicaDescriptor replica = 1;
     BatchCmdRequest raw_batch = 2;
   }
   repeated Statement statements = 2;
