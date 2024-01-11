@@ -127,7 +127,7 @@ func CreateRandomUser(t *testing.T, env environment.Env, domain string) *tables.
 	err := udb.InsertUser(ctx, tu)
 	require.NoError(t, err)
 	// Refresh user to pick up default group.
-	tu, err = udb.GetUserByID(ctx, tu.UserID)
+	tu, err = udb.GetUserByIDWithoutAuthCheck(ctx, tu.UserID)
 	require.NoError(t, err)
 	return tu
 }

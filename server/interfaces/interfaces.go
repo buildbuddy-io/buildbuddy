@@ -493,6 +493,7 @@ type UserDB interface {
 	// a UserToken given the provided context.
 	GetUser(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string) (*tables.User, error)
+	GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error)
 	// GetUserByEmail lookups a user with the given e-mail address within the
 	// currently authenticated group.
 	//
@@ -1433,8 +1434,7 @@ type ServerNotificationService interface {
 }
 
 type SCIMService interface {
-	Users() http.Handler
-	Groups() http.Handler
+	RegisterHandlers(mux HttpServeMux)
 }
 
 type GossipListener interface {

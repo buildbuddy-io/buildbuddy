@@ -784,6 +784,32 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 		user = u
 		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	authUser, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range user.Groups {
+		if err := authutil.AuthorizeGroupRole(authUser, g.Group.GroupID, role.Admin); err == nil {
+			return user, nil
+		}
+	}
+	return nil, status.NotFoundError("user not found")
+}
+
+func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error) {
+	var user *tables.User
+	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		u, err := d.getUser(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		user = u
+		return err
+	})
 	return user, err
 }
 
@@ -901,6 +927,9 @@ func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (
 	rq := tx.NewQuery(ctx, "userdb_get_user").Raw(
 		`SELECT * FROM "Users" WHERE user_id = ?`, userID)
 	if err := rq.Take(user); err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundError("user not found")
+		}
 		return nil, err
 	}
 	if err := fillUserGroups(ctx, tx, user); err != nil {
