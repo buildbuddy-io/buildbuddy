@@ -1,27 +1,9 @@
 name: "Build Mac-Intel Github Release Artifacts"
 
 on:
-  workflow_dispatch:
-    inputs:
-      release_branch:
-        description: "Git branch to checkout."
-        required: true
-        default: "master"
-        type: string
-      version_tag:
-        description: "Version to tag release artifacts."
-        required: true
-        type: string
-  workflow_call:
-    inputs:
-      release_branch:
-        description: "Git branch to checkout."
-        required: true
-        type: string
-      version_tag:
-        description: "Version to tag release artifacts."
-        required: true
-        type: string
+  pull_request:
+    branches:
+      - master
 
 jobs:
   build:
@@ -31,9 +13,6 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.release_branch }}
-          # We need to fetch git tags to obtain the latest version tag to report
-          # the version of the running binary.
-          fetch-depth: 0
 
       - name: Install bazelisk
         run: |
@@ -45,10 +24,7 @@ jobs:
       - name: Build and Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEVELOPER_DIR: "/Library/Developer/CommandLineTools"
         run: |
-          export DEVELOPER_DIR=/Library/Developer/CommandLineTools
-          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release-mac --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
-          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-darwin-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-darwin-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-amd64
-          gh release upload ${{ inputs.version_tag }} buildbuddy-darwin-amd64 buildbuddy-enterprise-darwin-amd64 executor-enterprise-darwin-amd64 --clobber
+          env
+          "${GITHUB_WORKSPACE}/bin/bazel" build --toolchain_resolution_debug='@bazel_tools//tools/cpp:toolchain_type' --config=release-mac --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor

@@ -1,0 +1,5 @@
+platforms:
+  @local_config_platform//:host
+    --action_env=DEVELOPER_DIR=/Library/Developer/CommandLineTools
+    --host_action_env=DEVELOPER_DIR=/Library/Developer/CommandLineTools
+    --host_linkopt="-Wl,-v"
