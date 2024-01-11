@@ -29,6 +29,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 var (
@@ -151,8 +152,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	defer span.End()
 
 	metrics.RemoteExecutionTasksStartedCount.Inc()
-	stage := &stagedGauge{}
-	defer stage.End()
 
 	actionMetrics := &ActionMetrics{}
 	defer func() {
@@ -188,6 +187,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		EstimatedTaskSize:    st.GetSchedulingMetadata().GetTaskSize(),
 		DoNotCache:           task.GetAction().GetDoNotCache(),
 	}
+
+	stage := &stagedGauge{estimatedSize: md.EstimatedTaskSize}
+	defer stage.End()
 
 	if !req.GetSkipCacheLookup() {
 		log.CtxInfof(ctx, "Checking action cache for existing result.")
@@ -443,7 +445,8 @@ func observeStageDuration(groupID string, stage string, start *timestamppb.Times
 // ensuring that the gauge counts are correctly updated on each stage
 // transition.
 type stagedGauge struct {
-	stage string
+	stage         string
+	estimatedSize *scpb.TaskSize
 }
 
 func (g *stagedGauge) Set(stage string) {
@@ -451,11 +454,19 @@ func (g *stagedGauge) Set(stage string) {
 		metrics.RemoteExecutionTasksExecuting.
 			With(prometheus.Labels{metrics.ExecutedActionStageLabel: prev}).
 			Dec()
+		metrics.RemoteExecutionAssignedOrQueuedEstimatedMilliCPU.
+			Sub(float64(g.estimatedSize.EstimatedMilliCpu))
+		metrics.RemoteExecutionAssignedOrQueuedEstimatedRAMBytes.
+			Sub(float64(g.estimatedSize.EstimatedMemoryBytes))
 	}
 	if stage != "" {
 		metrics.RemoteExecutionTasksExecuting.
 			With(prometheus.Labels{metrics.ExecutedActionStageLabel: stage}).
 			Inc()
+		metrics.RemoteExecutionAssignedOrQueuedEstimatedMilliCPU.
+			Add(float64(g.estimatedSize.EstimatedMilliCpu))
+		metrics.RemoteExecutionAssignedOrQueuedEstimatedRAMBytes.
+			Add(float64(g.estimatedSize.EstimatedMemoryBytes))
 	}
 	g.stage = stage
 }

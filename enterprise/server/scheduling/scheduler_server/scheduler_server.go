@@ -1735,6 +1735,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			}
 		}
 
+		// Tell the executor to add queued task sizes to system-wide metrics
+		// only once, for the first probe.
+		enqueueRequest.SchedulingMetadata.TrackQueuedTaskSize = (probesSent == 0)
+
 		enqueueStart := time.Now()
 		if opts.scheduleOnConnectedExecutors {
 			if node.handle == nil {
