@@ -353,6 +353,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_awslabs_soci_snapshotter",
+        build_directives = [
+            "gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2",
+        ],
         importpath = "github.com/awslabs/soci-snapshotter",
         patch_args = ["-p1"],
         patches = ["@{}//buildpatches:com_github_awslabs_soci_snapshotter.patch".format(workspace_name)],
@@ -5048,12 +5051,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     # keep
     go_repository(
         name = "com_gitlab_arm_research_smarter_device_manager",
-        importpath = "gitlab.com/arm-research/smarter/smarter-device-manager",
-        strip_prefix = "smarter-device-manager-v1.20.7",
-        sha256 = "b2eb7e20373fbe257361fceff264037cac7d259ee075659fe1ec429c122e4d13",
         build_directives = [
             "gazelle:resolve go google.golang.org/grpc @org_golang_google_grpc//:grpc",
         ],
+        importpath = "gitlab.com/arm-research/smarter/smarter-device-manager",
+        sha256 = "b2eb7e20373fbe257361fceff264037cac7d259ee075659fe1ec429c122e4d13",
+        strip_prefix = "smarter-device-manager-v1.20.7",
         urls = ["https://gitlab.com/arm-research/smarter/smarter-device-manager/-/archive/v1.20.7/smarter-device-manager-v1.20.7.zip"],
     )
     go_repository(
@@ -6674,104 +6677,104 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
 def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
         name = "com_github_buildbuddy_io_firecracker_firecracker-v1.4.0-20230720-cf5f56f",
+        build_file_content = 'exports_files(["firecracker-v1.4.0-20230720-cf5f56f", "jailer-v1.4.0-20230720-cf5f56f"])',
         sha256 = "b36d9ad62ca467d2794635c4f19b0993c11bb46ed3b575037287964f9c82cc9b",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.4.0-20230720-cf5f56f.tgz"],
-        build_file_content = 'exports_files(["firecracker-v1.4.0-20230720-cf5f56f", "jailer-v1.4.0-20230720-cf5f56f"])',
     )
     http_archive(
         name = "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
+        build_file_content = 'exports_files(["stargz-store"])',
         sha256 = "56933aa04a64d3bf6991f9b1be127ac9896fe597d2fba194c67c2dd4368bbae3",
         urls = ["https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz"],
-        build_file_content = 'exports_files(["stargz-store"])',
     )
 
     http_file(
         name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.12-linux-amd64"],
-        sha256 = "9e9eda9b48ff6f364624e25bad1402f2f4df79ad1f4bc68b2e74f00cb989aebd",
-        executable = True,
         downloaded_file_path = "soci-store",
+        executable = True,
+        sha256 = "9e9eda9b48ff6f364624e25bad1402f2f4df79ad1f4bc68b2e74f00cb989aebd",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.12-linux-amd64"],
     )
 
     http_file(
         name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.12-linux-amd64-race"],
-        sha256 = "14b9d9ef0859c4e0a7697aa86f4ad2aa0164e37a0836c266847b622e690a1848",
-        executable = True,
         downloaded_file_path = "soci-store-race",
+        executable = True,
+        sha256 = "14b9d9ef0859c4e0a7697aa86f4ad2aa0164e37a0836c266847b622e690a1848",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.12-linux-amd64-race"],
     )
 
     http_file(
         name = "com_github_redis_redis-redis-server-v6.2.1-linux-x86_64",
+        executable = True,
         sha256 = "6d9c268fa0f696c3fc71b3656936c777d02b3b1c6637674ac3173facaefa4a77",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/redis/redis-server-6.2.1-linux-x86_64"],
-        executable = True,
     )
     http_file(
         name = "com_github_redis_redis-redis-server-v6.2.6-darwin-arm64",
+        executable = True,
         sha256 = "a70261f7a3f455a9a7c9d845299d487a86c1faef2af1605b94f39db44c098e69",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/redis/redis-server-6.2.6-darwin-arm64"],
-        executable = True,
     )
     http_file(
         name = "com_github_redis_redis-redis-server-v6.2.6-darwin-x86_64",
+        executable = True,
         sha256 = "398bcf2be83a30249ec81259c87a7fc5c3bf511ff9b222ed517d8e52c99733c6",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/redis/redis-server-6.2.6-darwin-x86_64"],
-        executable = True,
     )
     http_file(
         name = "io_bazel_bazel-5.3.2-darwin-x86_64",
+        executable = True,
         sha256 = "fe01824013184899386a4807435e38811949ca13f46713e7fc39c70fa1528a17",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-darwin-x86_64"],
-        executable = True,
     )
     http_file(
         name = "io_bazel_bazel-5.3.2-linux-x86_64",
+        executable = True,
         sha256 = "973e213b1e9207ccdd3ea4730c0f92cbef769ec112ac2b84980583220d8db845",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-linux-x86_64"],
-        executable = True,
     )
     http_file(
         name = "io_bazel_bazel-6.0.0-darwin-x86_64",
+        executable = True,
         sha256 = "8e543c5c9f1c8c91df945cd2fb4c3b43587929a43044a0ed87d13da0d19f96e8",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/6.0.0/bazel-6.0.0-darwin-x86_64"],
-        executable = True,
     )
     http_file(
         name = "io_bazel_bazel-6.0.0-linux-x86_64",
+        executable = True,
         sha256 = "f03d44ecaac3878e3d19489e37caa4ca1dc57427b686a78a85065ea3c27ebe68",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/6.0.0/bazel-6.0.0-linux-x86_64"],
-        executable = True,
     )
     http_file(
         name = "io_bazel_bazelisk-1.17.0-darwin-amd64",
+        executable = True,
         sha256 = "3cf03dab8f5ef7c29e354b8e9293c82098ace3634253f9c660c26168b9e34720",
         urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-darwin-amd64"],
-        executable = True,
     )
     http_file(
         name = "io_bazel_bazelisk-1.17.0-darwin-arm64",
+        executable = True,
         sha256 = "2d4c66d428176b6c65e284ff74951b074846f15d324b099959483c175dec5728",
         urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-darwin-arm64"],
-        executable = True,
     )
     http_file(
         name = "io_bazel_bazelisk-1.17.0-linux-amd64",
+        executable = True,
         sha256 = "61699e22abb2a26304edfa1376f65ad24191f94a4ffed68a58d42b6fee01e124",
         urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-linux-amd64"],
-        executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
+        executable = True,
         sha256 = "4582d9c5d572c0449f55cc1cf317bf154dc0ff25df97378991f7c5bc9554f14e",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.15-4582d9c5d572c0449f55cc1cf317bf154dc0ff25df97378991f7c5bc9554f14e"],
-        executable = True,
     )
 
     # TODO: mac build
     http_file(
         name = "org_llvm_llvm_clang-format_linux-x86_64",
+        executable = True,
         sha256 = "85b1c2591274422234955e906aee39e6f793a88a74f3efc49a1852a0646ce08f",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-14_linux-x86_64"],
-        executable = True,
     )
