@@ -934,6 +934,9 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 }
 
 func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
+	if *maxRangeSizeBytes == 0 {
+		return
+	}
 	eventsCh := s.AddEventListener()
 	for {
 		select {
