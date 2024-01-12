@@ -42,7 +42,7 @@ const (
 	tmpDir = "_tmp"
 )
 
-var enableAlwaysClone = flag.Bool("executor.enable_always_clone_filecache", false, "If true, files from the filecache will always be cloned instead of hardlinked")
+var enableAlwaysClone = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
 
 // fileCache implements a fixed-size, filesystem backed, LRU cache.
 //
