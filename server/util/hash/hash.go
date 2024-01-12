@@ -15,6 +15,14 @@ func String(input string) string {
 	return Bytes([]byte(input))
 }
 
+func Strings(input ...string) string {
+	h := ""
+	for _, s := range input {
+		h += String(s)
+	}
+	return String(h)
+}
+
 //go:noescape
 //go:linkname memhash runtime.memhash
 func memhash(p unsafe.Pointer, h, s uintptr) uintptr

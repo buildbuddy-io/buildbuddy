@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -253,7 +254,9 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	}
 
 	// TODO(iain): the auth/existence/pull synchronization is getting unruly.
-	uncastmu, _ := pullOperations.LoadOrStore(ctr.IsolationType()+imageRef, &sync.Mutex{})
+	// TODO: this (and the similar map in podman.go) can theoretically leak
+	// memory, though in practice it shouldn't be a problem.
+	uncastmu, _ := pullOperations.LoadOrStore(hash.Strings(ctr.IsolationType(), imageRef), &sync.Mutex{})
 	mu, ok := uncastmu.(*sync.Mutex)
 	if !ok {
 		alert.UnexpectedEvent("loaded mutex from sync.map that isn't a mutex!")
