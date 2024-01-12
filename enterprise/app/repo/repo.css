@@ -189,23 +189,21 @@
 }
 
 .create-repo-page .deployment-configs {
-  display: table;
-  border-spacing: 16px;
   width: 100%;
 }
 
 .create-repo-page .deployment-config {
-  display: table-row;
   align-items: center;
-  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .create-repo-page .deployment-config div {
-  display: table-cell;
 }
 
 .create-repo-page .deployment-config div:first-of-type {
   font-family: monospace;
+  font-weight: 700;
+  margin-bottom: 8px;
 }
 
 .create-repo-page .template {

@@ -727,7 +727,7 @@ func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir, destDir st
 		}
 	}
 	// Initialize or clone the destination repo
-	gitRepo, err := initOrClone(needsInit, destDir, destURL, auth)
+	gitRepo, err := initOrClone(needsInit, newPath, destURL, auth)
 	if err != nil {
 		return err
 	}
@@ -754,7 +754,13 @@ func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir, destDir st
 	if err != nil {
 		return err
 	}
-	_, err = gitWorkTree.Commit("Initial commit", &git.CommitOptions{All: true, Author: &gitobject.Signature{
+
+	commitMessage := "Initial commit"
+	if !needsInit {
+		commitMessage = "Update"
+	}
+
+	_, err = gitWorkTree.Commit(commitMessage, &git.CommitOptions{All: true, Author: &gitobject.Signature{
 		Email: email,
 		When:  time.Now(),
 	}})
