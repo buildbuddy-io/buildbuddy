@@ -1529,45 +1529,44 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	defer wb.Close()
 
 	batchRsp := &rfpb.BatchCmdResponse{}
-	var headerErr error
 	if header := batchReq.GetHeader(); header != nil {
-		headerErr = validateHeaderAgainstRange(rd, header)
-		batchRsp.Status = statusProto(headerErr)
-	}
-	if headerErr == nil {
-		if txid := batchReq.GetTransactionId(); len(txid) > 0 {
-			// Check that request is not malformed.
-			if len(batchReq.GetUnion()) > 0 && batchReq.GetFinalizeOperation() != rfpb.FinalizeOperation_UNKNOWN_OPERATION {
-				batchRsp.Status = statusProto(status.InvalidArgumentErrorf("Batch must be empty when finalizing transaction"))
-			}
-
-			switch batchReq.GetFinalizeOperation() {
-			case rfpb.FinalizeOperation_COMMIT:
-				if err := sm.CommitTransaction(txid); err != nil {
-					batchRsp.Status = statusProto(err)
-				}
-			case rfpb.FinalizeOperation_ROLLBACK:
-				if err := sm.RollbackTransaction(txid); err != nil {
-					batchRsp.Status = statusProto(err)
-				}
-			default:
-				txnRsp, err := sm.PrepareTransaction(wb, txid, batchReq)
-				if err != nil {
-					batchRsp.Status = statusProto(err)
-				} else {
-					batchRsp = txnRsp
-				}
-			}
-		} else {
-			for _, union := range batchReq.GetUnion() {
-				batchRsp.Union = append(batchRsp.Union, sm.handlePropose(wb, union))
-			}
-			if err := sm.checkLocks(wb, nil); err != nil {
-				batchRsp.Status = statusProto(err)
-				wb.Reset() // don't commit if conflict.
-			}
+		if err := validateHeaderAgainstRange(rd, header); err != nil {
+			return entry, err
 		}
 	}
+	if txid := batchReq.GetTransactionId(); len(txid) > 0 {
+		// Check that request is not malformed.
+		if len(batchReq.GetUnion()) > 0 && batchReq.GetFinalizeOperation() != rfpb.FinalizeOperation_UNKNOWN_OPERATION {
+			batchRsp.Status = statusProto(status.InvalidArgumentErrorf("Batch must be empty when finalizing transaction"))
+		}
+
+		switch batchReq.GetFinalizeOperation() {
+		case rfpb.FinalizeOperation_COMMIT:
+			if err := sm.CommitTransaction(txid); err != nil {
+				batchRsp.Status = statusProto(err)
+			}
+		case rfpb.FinalizeOperation_ROLLBACK:
+			if err := sm.RollbackTransaction(txid); err != nil {
+				batchRsp.Status = statusProto(err)
+			}
+		default:
+			txnRsp, err := sm.PrepareTransaction(wb, txid, batchReq)
+			if err != nil {
+				batchRsp.Status = statusProto(err)
+			} else {
+				batchRsp = txnRsp
+			}
+		}
+	} else {
+		for _, union := range batchReq.GetUnion() {
+			batchRsp.Union = append(batchRsp.Union, sm.handlePropose(wb, union))
+		}
+		if err := sm.checkLocks(wb, nil); err != nil {
+			batchRsp.Status = statusProto(err)
+			wb.Reset() // don't commit if conflict.
+		}
+	}
+
 	// BatchCMDResponse.MarshalVT() is slower than standard marshal(). See
 	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
 	rspBuf, err := proto.MarshalOld(batchRsp)
@@ -1679,23 +1678,21 @@ func (sm *Replica) BatchLookup(batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdRe
 
 	batchRsp := &rfpb.BatchCmdResponse{}
 
-	var headerErr error
 	if header := batchReq.GetHeader(); header != nil {
 		sm.rangeMu.RLock()
 		rd := sm.rangeDescriptor
 		sm.rangeMu.RUnlock()
 
-		headerErr = validateHeaderAgainstRange(rd, header)
-		batchRsp.Status = statusProto(headerErr)
+		if err := validateHeaderAgainstRange(rd, header); err != nil {
+			return nil, err
+		}
 	}
 
-	if headerErr == nil {
-		for _, req := range batchReq.GetUnion() {
-			//sm.log.Debugf("Lookup: request union: %+v", req)
-			rsp := sm.handleRead(db, req)
-			// sm.log.Debugf("Lookup: response union: %+v", rsp)
-			batchRsp.Union = append(batchRsp.Union, rsp)
-		}
+	for _, req := range batchReq.GetUnion() {
+		//sm.log.Debugf("Lookup: request union: %+v", req)
+		rsp := sm.handleRead(db, req)
+		// sm.log.Debugf("Lookup: response union: %+v", rsp)
+		batchRsp.Union = append(batchRsp.Union, rsp)
 	}
 
 	return batchRsp, nil
