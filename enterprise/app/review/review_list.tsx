@@ -1,13 +1,12 @@
 import Long from "long";
 import React from "react";
-import { User } from "../../../app/auth/user";
 import format from "../../../app/format/format";
 import rpc_service from "../../../app/service/rpc_service";
 import { joinReactNodes } from "../../../app/util/react";
 import { github } from "../../../proto/github_ts_proto";
 
 interface ReviewListComponentProps {
-  user?: User;
+  user?: string;
 }
 
 interface State {
@@ -19,7 +18,7 @@ export default class ReviewListComponent extends React.Component<ReviewListCompo
 
   componentWillMount() {
     document.title = "Reviews | Buildbuddy";
-    rpc_service.service.getGithubPullRequest({}).then((r) => {
+    rpc_service.service.getGithubPullRequest({ user: this.props.user }).then((r) => {
       console.log(r);
       this.setState({ response: r });
     });

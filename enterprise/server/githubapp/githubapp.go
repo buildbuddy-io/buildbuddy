@@ -1351,12 +1351,21 @@ func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithu
 	if err != nil {
 		return nil, err
 	}
-	incoming, outgoing, user, err := a.getIncomingAndOutgoingPRs(ctx, client)
+	usernameForFetch := req.GetUser()
+	if usernameForFetch == "" {
+		usernameForFetch = "@me"
+	}
+	incoming, outgoing, user, err := a.getIncomingAndOutgoingPRs(ctx, usernameForFetch, client)
 	if err != nil {
 		return nil, err
 	}
 	allIssues := append(outgoing.Issues, incoming.Issues...)
-	prs, err := a.populatePRMetadata(ctx, client, allIssues, user)
+
+	usernameForAttentionSet := req.GetUser()
+	if usernameForAttentionSet == "" {
+		usernameForAttentionSet = user.GetLogin()
+	}
+	prs, err := a.populatePRMetadata(ctx, client, allIssues, usernameForAttentionSet)
 	if err != nil {
 		return nil, err
 	}
@@ -1525,13 +1534,13 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	return resp, nil
 }
 
-func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, client *github.Client) (*github.IssuesSearchResult, *github.IssuesSearchResult, *github.User, error) {
+func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, username string, client *github.Client) (*github.IssuesSearchResult, *github.IssuesSearchResult, *github.User, error) {
 	var incoming *github.IssuesSearchResult
 	var outgoing *github.IssuesSearchResult
 	var user *github.User
 	eg, gCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		r, err := a.cachedSearch(gCtx, client, "is:open is:pr user-review-requested:@me archived:false draft:false")
+		r, err := a.cachedSearch(gCtx, client, fmt.Sprintf("is:open is:pr user-review-requested:%s archived:false draft:false", username))
 		if err != nil {
 			return err
 		}
@@ -1539,7 +1548,7 @@ func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, client *githu
 		return nil
 	})
 	eg.Go(func() error {
-		r, err := a.cachedSearch(gCtx, client, "is:open is:pr author:@me -review:none archived:false draft:false")
+		r, err := a.cachedSearch(gCtx, client, fmt.Sprintf("is:open is:pr author:%s -review:none archived:false draft:false", username))
 		if err != nil {
 			return err
 		}
@@ -1560,7 +1569,7 @@ func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, client *githu
 	return incoming, outgoing, user, nil
 }
 
-func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Client, prIssues []*github.Issue, currentUser *github.User) (map[string]*ghpb.PullRequest, error) {
+func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Client, prIssues []*github.Issue, requestedUser string) (map[string]*ghpb.PullRequest, error) {
 	prsMu := &sync.Mutex{}
 	prs := make(map[string]*ghpb.PullRequest, len(prIssues))
 	eg, gCtx := errgroup.WithContext(ctx)
@@ -1590,7 +1599,7 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 					prs[i.GetNodeID()].Reviews[r.GetLogin()] = review
 				}
 				review.Requested = true
-				if r.GetLogin() == currentUser.GetLogin() {
+				if r.GetLogin() == requestedUser {
 					review.IsCurrentUser = true
 				}
 			}
@@ -1611,7 +1620,7 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 				}
 				review.Status = strings.ToLower(r.GetState())
 				review.SubmittedAtUsec = r.GetSubmittedAt().UnixMicro()
-				if r.GetUser().GetLogin() == currentUser.GetLogin() {
+				if r.GetUser().GetLogin() == requestedUser {
 					review.IsCurrentUser = true
 				}
 				prsMu.Unlock()

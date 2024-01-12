@@ -1,11 +1,9 @@
 import React from "react";
-import { User } from "../../../app/auth/user";
 import ReviewListComponent from "./review_list";
 import ViewPullRequestComponent from "./view_pull_request";
 import { Path } from "../../../app/router/router";
 
 interface CodeReviewComponentProps {
-  user?: User;
   path: string;
 }
 
@@ -22,6 +20,9 @@ export default class CodeReviewComponent extends React.Component<CodeReviewCompo
           pull={Number(route[2])}></ViewPullRequestComponent>
       );
     }
-    return <ReviewListComponent user={this.props.user}></ReviewListComponent>;
+    if (route.length === 2 && route[0] === "user" && route[1]) {
+      return <ReviewListComponent user={route[1]}></ReviewListComponent>;
+    }
+    return <ReviewListComponent></ReviewListComponent>;
   }
 }
