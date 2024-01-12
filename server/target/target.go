@@ -649,7 +649,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	//      ORDER BY latest_created_at_usec DESC, commit_sha asc)
 	//    WHERE (
 	//      latest_created_at_usec < [ts_from_pagination_token] OR
-	//      (latest_crated_at_usec = [ts_from_pagination_token] AND
+	//      (latest_created_at_usec = [ts_from_pagination_token] AND
 	//      commit_sha > '[commit_sha_from_pagitation_token]'))
 	//    LIMIT [page_size]
 	//  ) AND group_id = '[group_id]'
