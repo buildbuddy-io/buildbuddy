@@ -29,7 +29,6 @@ jobs:
     steps:
       - name: Slack
         uses: 8398a7/action-slack@v3
-        if: ${{ steps.vars.outputs.release_prod == 'true' && steps.commits.outputs.exit_early != 'true' }}
         with:
           status: custom
           custom_payload: |
