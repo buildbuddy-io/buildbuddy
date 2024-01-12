@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:cache_go_proto",
+        "//proto:grpc_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
@@ -20,7 +21,6 @@ go_library(
         "//server/util/status",
         "//server/util/usageutil",
         "@com_github_prometheus_client_golang//prometheus",
-        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
