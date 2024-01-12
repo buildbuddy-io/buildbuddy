@@ -1462,11 +1462,7 @@ func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithu
 		resp.Outgoing = append(resp.Outgoing, pr)
 	}
 	for _, i := range incoming.Issues {
-		pr := prs[i.GetNodeID()]
-		if len(pr.Reviews) == 0 {
-			continue
-		}
-		resp.Incoming = append(resp.Incoming, pr)
+		resp.Incoming = append(resp.Incoming, prs[i.GetNodeID()])
 	}
 	return resp, nil
 }
