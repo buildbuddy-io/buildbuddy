@@ -1,6 +1,5 @@
 import Long from "long";
 import React, { ReactNode } from "react";
-import { User } from "../../../app/auth/user";
 import format from "../../../app/format/format";
 import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
@@ -8,7 +7,6 @@ import { Github, MessageCircle } from "lucide-react";
 import error_service from "../../../app/errors/error_service";
 
 interface ViewPullRequestComponentProps {
-  user?: User;
   owner: string;
   repo: string;
   pull: number;
