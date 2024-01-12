@@ -949,7 +949,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
 				if !s.leaseKeeper.HaveLease(rangeUsageEvent.RangeDescriptor.GetRangeId()) {
 					continue
 				}
-				if rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed() <= *maxRangeSizeBytes {
+				if rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed() < *maxRangeSizeBytes {
 					continue
 				}
 				rd := rangeUsageEvent.RangeDescriptor.CloneVT()
