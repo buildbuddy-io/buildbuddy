@@ -16,13 +16,13 @@ ts_library(
         "//app/components/spinner",
         "//app/components/tooltip",
         "//app/format",
+        "//app/invocation:invocation_card",
         "//app/router",
         "//app/router:router_params",
         "//app/service:rpc_service",
         "//app/shortcuts",
         "//enterprise/app/filter",
         "//enterprise/app/filter:filter_util",
-        "//enterprise/app/history:history_invocation_card",
         "//enterprise/app/history:history_invocation_stat_card",
         "//enterprise/app/org:org_join_requests",
         "//proto:invocation_status_ts_proto",
@@ -33,23 +33,6 @@ ts_library(
         "@npm//lucide-react",
         "@npm//react",
         "@npm//rxjs",
-        "@npm//tslib",
-    ],
-)
-
-ts_library(
-    name = "history_invocation_card",
-    srcs = ["history_invocation_card.tsx"],
-    deps = [
-        "//app/components/link",
-        "//app/format",
-        "//app/router",
-        "//app/util:exit_codes",
-        "//proto:invocation_status_ts_proto",
-        "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
         "@npm//tslib",
     ],
 )

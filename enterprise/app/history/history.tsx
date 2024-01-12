@@ -14,7 +14,7 @@ import { invocation } from "../../../proto/invocation_ts_proto";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import FilterComponent from "../filter/filter";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
-import HistoryInvocationCardComponent from "./history_invocation_card";
+import InvocationCardComponent from "../../../app/invocation/invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
 import { ProtoFilterParams, getProtoFilterParams } from "../filter/filter_util";
 import Spinner from "../../../app/components/spinner/spinner";
@@ -649,7 +649,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                       renderContent={() => (
                         // this renders in a portal, so wrap with .history to simplify styling
                         <div className="history">
-                          <HistoryInvocationCardComponent hover={true} invocation={invocation} />
+                          <InvocationCardComponent hover={true} invocation={invocation} />
                         </div>
                       )}
                       className={`clickable grid-block ${this.getInvocationStatusClass(invocation)}`}
@@ -666,7 +666,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">
             {this.state.invocations?.map((invocation) => (
-              <HistoryInvocationCardComponent
+              <InvocationCardComponent
                 className={this.state.hoveredInvocationId == invocation.invocationId ? "card-hovered" : ""}
                 onMouseOver={this.handleMouseOver.bind(this, invocation)}
                 onMouseOut={this.handleMouseOut.bind(this, invocation)}

@@ -1203,3 +1203,15 @@ svg.invocation-query-graph .nodes rect {
   background: #2196f3;
   transform-origin: left;
 }
+
+.invocation-card {
+  position: relative;
+
+  .comparison-buffer-illustration {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 16px;
+    margin-right: 0;
+  }
+}
