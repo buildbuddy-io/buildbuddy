@@ -25,8 +25,8 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
-      release_branch: ${GITHUB_REF}
-      version_tag: ${GITHUB_REF/refs\/tags\//}
+      release_branch: ${{ github.ref }}
+      version_tag: ${{ github.ref_name }}
     secrets: inherit
 
   build-mac-intel-artifacts:
@@ -34,8 +34,8 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
-      release_branch: ${GITHUB_REF}
-      version_tag: ${GITHUB_REF/refs\/tags\//}
+      release_branch: ${{ github.ref }}
+      version_tag: ${{ github.ref_name }}
     secrets: inherit
 
   build-mac-m1-artifacts:
@@ -43,8 +43,8 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
-      release_branch: ${GITHUB_REF}
-      version_tag: ${GITHUB_REF/refs\/tags\//}
+      release_branch: ${{ github.ref }}
+      version_tag: ${{ github.ref_name }}
     secrets: inherit
 
   slack_on_failure:
