@@ -1455,14 +1455,18 @@ func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithu
 		Incoming: []*ghpb.PullRequest{},
 	}
 	for _, i := range outgoing.Issues {
-		if pr, ok := prs[i.GetNodeID()]; ok {
-			resp.Outgoing = append(resp.Outgoing, pr)
+		pr := prs[i.GetNodeID()]
+		if len(pr.Reviews) == 0 {
+			continue
 		}
+		resp.Outgoing = append(resp.Outgoing, pr)
 	}
 	for _, i := range incoming.Issues {
-		if pr, ok := prs[i.GetNodeID()]; ok {
-			resp.Incoming = append(resp.Incoming, pr)
+		pr := prs[i.GetNodeID()]
+		if len(pr.Reviews) == 0 {
+			continue
 		}
+		resp.Incoming = append(resp.Incoming, pr)
 	}
 	return resp, nil
 }
@@ -1673,11 +1677,6 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 				return err
 			}
 			prsMu.Lock()
-			defer prsMu.Unlock()
-			if len(pr.RequestedReviewers) == 0 {
-				delete(prs, i.GetNodeID())
-				return nil
-			}
 			p := prs[i.GetNodeID()]
 			p.Additions = int64(pr.GetAdditions())
 			p.Deletions = int64(pr.GetDeletions())
@@ -1693,6 +1692,7 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 					review.IsCurrentUser = true
 				}
 			}
+			prsMu.Unlock()
 			return nil
 		})
 		eg.Go(func() error {
@@ -1702,9 +1702,6 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 			}
 			for _, r := range *reviews {
 				prsMu.Lock()
-				if _, ok := prs[i.GetNodeID()]; !ok {
-					return nil
-				}
 				review, ok := prs[i.GetNodeID()].Reviews[r.GetUser().GetLogin()]
 				if !ok {
 					review = &ghpb.Review{}
