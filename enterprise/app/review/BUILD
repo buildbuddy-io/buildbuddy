@@ -8,7 +8,6 @@ ts_library(
     name = "review",
     srcs = ["review.tsx"],
     deps = [
-        "//app/auth:user",
         "//app/router",
         "//enterprise/app/review:review_list",
         "//enterprise/app/review:view_pull_request",
@@ -21,7 +20,6 @@ ts_library(
     name = "review_list",
     srcs = ["review_list.tsx"],
     deps = [
-        "//app/auth:user",
         "//app/format",
         "//app/service:rpc_service",
         "//app/util:react",
@@ -37,7 +35,6 @@ ts_library(
     name = "view_pull_request",
     srcs = ["view_pull_request.tsx"],
     deps = [
-        "//app/auth:user",
         "//app/errors:error_service",
         "//app/format",
         "//app/service:rpc_service",

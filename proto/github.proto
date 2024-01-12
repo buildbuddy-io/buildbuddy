@@ -474,6 +474,11 @@ message Review {
 
 message GetGithubPullRequestRequest {
   context.RequestContext request_context = 1;
+
+  // The Github user whose PR dashboard we're fetching.  If this isn't
+  // specified, the logged in user's dashboard will be returned.  An error will
+  // be returned if the user hasn't linked their Github account.
+  string user = 2;
 }
 
 message GetGithubPullRequestResponse {
