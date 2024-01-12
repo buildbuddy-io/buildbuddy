@@ -143,7 +143,7 @@ func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, wor
 	// convert the image in the background so that one client's ctx timeout does
 	// not affect other clients. We do apply a timeout to the background
 	// conversion though to prevent it from running forever.
-	conversionOpKey := singleflightKey(
+	conversionOpKey := hash.Strings(
 		workspaceDir, containerImage, creds.Username, creds.Password,
 	)
 	resultChan := conversionGroup.DoChan(conversionOpKey, func() (interface{}, error) {
@@ -301,14 +301,4 @@ func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Cl
 	}
 	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
 	return imageFile, nil
-}
-
-// singleflightKey returns a key that can be used to dedupe a function whose
-// output depends solely on the given args.
-func singleflightKey(args ...string) string {
-	h := ""
-	for _, s := range args {
-		h += hash.String(s)
-	}
-	return hash.String(h)
 }

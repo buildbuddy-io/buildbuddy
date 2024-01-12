@@ -314,6 +314,10 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 	return result
 }
 
+func (c *sandbox) IsolationType() string {
+	return "sandbox"
+}
+
 func (c *sandbox) Run(ctx context.Context, command *repb.Command, workDir string, _ oci.Credentials) *interfaces.CommandResult {
 	return c.runCmdInSandbox(ctx, command, workDir, &interfaces.Stdio{})
 }

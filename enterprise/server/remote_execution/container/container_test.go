@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -21,8 +22,12 @@ import (
 type FakeContainer struct {
 	RequiredPullCredentials oci.Credentials
 	PullCount               int
+	pullDelay               time.Duration
 }
 
+func (c *FakeContainer) IsolationType() string {
+	return "fake"
+}
 func (c *FakeContainer) Run(context.Context, *repb.Command, string, oci.Credentials) *interfaces.CommandResult {
 	return nil
 }
@@ -30,6 +35,9 @@ func (c *FakeContainer) IsImageCached(context.Context) (bool, error) {
 	return c.PullCount > 0, nil
 }
 func (c *FakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+	if c.pullDelay > 0*time.Second {
+		time.Sleep(c.pullDelay)
+	}
 	if creds != c.RequiredPullCredentials {
 		return status.PermissionDeniedError("Permission denied: wrong pull credentials")
 	}
@@ -121,6 +129,24 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 	err = container.PullImageIfNecessary(ctx, env, c, goodCreds, imageRef)
 
 	require.NoError(t, err, "good creds should still work after previous incorrect attempts")
+}
+
+func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env.SetAuthenticator(ta)
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	imageRef := "docker.io/some-org/some-image:v1.0.0"
+	ctx := userCtx(t, ta, "US1")
+	c := &FakeContainer{pullDelay: time.Second}
+
+	assert.Equal(t, 0, c.PullCount, "sanity check: pull count should be 0 initially")
+	eg := errgroup.Group{}
+	for i := 0; i < 20; i++ {
+		eg.Go(func() error { return container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, imageRef) })
+	}
+	require.NoError(t, eg.Wait())
+	assert.Equal(t, 1, c.PullCount, "image should only be pulled once")
 }
 
 func TestImageCacheAuthenticator(t *testing.T) {

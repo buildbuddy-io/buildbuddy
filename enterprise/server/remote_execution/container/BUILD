@@ -14,8 +14,10 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
+        "//server/util/alert",
         "//server/util/authutil",
         "//server/util/flag",
+        "//server/util/hash",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/status",
@@ -40,5 +42,6 @@ go_test(
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )

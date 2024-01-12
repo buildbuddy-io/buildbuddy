@@ -356,6 +356,10 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	return args
 }
 
+func (c *podmanCommandContainer) IsolationType() string {
+	return "podman"
+}
+
 func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	c.workDir = workDir
 	defer os.RemoveAll(c.cidFilePath())

@@ -189,6 +189,10 @@ const (
 	ctrDidNotExitCleanly
 )
 
+func (c *dockerCommandContainer) IsolationType() string {
+	return "docker"
+}
+
 func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),

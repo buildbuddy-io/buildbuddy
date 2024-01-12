@@ -11,8 +11,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -53,6 +55,10 @@ var (
 	DebugEnableAnonymousRecycling = flag.Bool("debug_enable_anonymous_runner_recycling", false, "Whether to enable runner recycling for unauthenticated requests. For debugging purposes only - do not use in production.")
 
 	slowPullWarnOnce sync.Once
+
+	// A map from isolation type + image name to a mutex that serializes
+	// existence checks and image pulls.
+	pullOperations sync.Map
 )
 
 type DockerDeviceMapping struct {
@@ -169,6 +175,9 @@ type FileSystemLayout struct {
 
 // CommandContainer provides an execution environment for commands.
 type CommandContainer interface {
+	// Returns the isolation type of this container.
+	IsolationType() string
+
 	// Run the given command within the container and remove the container after
 	// it is done executing.
 	//
@@ -243,6 +252,18 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 		})
 		return ctr.PullImage(ctx, creds)
 	}
+
+	// TODO(iain): the auth/existence/pull synchronization is getting unruly.
+	// TODO: this (and the similar map in podman.go) can theoretically leak
+	// memory, though in practice it shouldn't be a problem.
+	uncastmu, _ := pullOperations.LoadOrStore(hash.Strings(ctr.IsolationType(), imageRef), &sync.Mutex{})
+	mu, ok := uncastmu.(*sync.Mutex)
+	if !ok {
+		alert.UnexpectedEvent("loaded mutex from sync.map that isn't a mutex!")
+		return status.InternalError("PullImageIfNecessary failed: cannot obtain mutex")
+	}
+	mu.Lock()
+	defer mu.Unlock()
 	isCached, err := ctr.IsImageCached(ctx)
 	if err != nil {
 		return err
@@ -347,6 +368,10 @@ type TracedCommandContainer struct {
 	mu       sync.RWMutex
 	removed  bool
 	Delegate CommandContainer
+}
+
+func (t *TracedCommandContainer) IsolationType() string {
+	return t.Delegate.IsolationType()
 }
 
 func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {
