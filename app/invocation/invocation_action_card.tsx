@@ -29,13 +29,13 @@ interface State {
   executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   // The first entry in the tuple is the size, the second is the number of files.
-  treeDigestToTotalSizeMap: Map<string, [Number, Number]>;
+  treeShaToTotalSizeMap: Map<string, [Number, Number]>;
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
   inputRoot?: build.bazel.remote.execution.v2.Directory;
   inputDirs: InputNode[];
-  treeDigestToExpanded: Map<string, boolean>;
-  treeDigestToChildrenMap: Map<string, InputNode[]>;
+  treeShaToExpanded: Map<string, boolean>;
+  treeShaToChildrenMap: Map<string, InputNode[]>;
   stderr?: string;
   stdout?: string;
   serverLogs?: ServerLog[];
@@ -48,9 +48,9 @@ interface ServerLog {
 
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
   state: State = {
-    treeDigestToExpanded: new Map<string, boolean>(),
-    treeDigestToChildrenMap: new Map<string, InputNode[]>(),
-    treeDigestToTotalSizeMap: new Map<string, [Number, Number]>(),
+    treeShaToExpanded: new Map<string, boolean>(),
+    treeShaToChildrenMap: new Map<string, InputNode[]>(),
+    treeShaToTotalSizeMap: new Map<string, [Number, Number]>(),
     serverLogs: [],
     inputDirs: [],
     loadingAction: true,
@@ -105,10 +105,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
         r.sizes.forEach((v) => {
           sizes.set(v.digest, [+v.totalSize, +v.childCount]);
         });
-        this.setState({ treeDigestToTotalSizeMap: sizes });
+        this.setState({ treeShaToTotalSizeMap: sizes });
       })
       .catch((e) => {
-        this.setState({ treeDigestToTotalSizeMap: new Map<string, [Number, Number]>() });
+        this.setState({ treeShaToTotalSizeMap: new Map<string, [Number, Number]>() });
       });
   }
 
@@ -351,9 +351,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (!node.obj?.digest) return;
 
     let dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
-    let digestString = node.obj.digest.hash + "/" + node.obj.digest.sizeBytes;
-    if (this.state.treeDigestToExpanded.get(digestString)) {
-      this.state.treeDigestToExpanded.set(digestString, false);
+    let digestString = node.obj.digest.hash ?? "";
+    if (this.state.treeShaToExpanded.get(digestString)) {
+      this.state.treeShaToExpanded.set(digestString, false);
       this.forceUpdate();
       return;
     }
@@ -365,7 +365,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
-        this.state.treeDigestToExpanded.set(digestString, true);
+        this.state.treeShaToExpanded.set(digestString, true);
         let dirs: InputNode[] = dir.directories.map((child) => ({
           obj: child,
           type: "dir",
@@ -374,7 +374,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           obj: child,
           type: "file",
         }));
-        this.state.treeDigestToChildrenMap.set(digestString, dirs.concat(files));
+        this.state.treeShaToChildrenMap.set(digestString, dirs.concat(files));
         this.forceUpdate();
       })
       .catch((e) => console.error(e));
@@ -472,9 +472,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           {this.state.inputDirs.map((node) => (
                             <InputNodeComponent
                               node={node}
-                              treeDigestToExpanded={this.state.treeDigestToExpanded}
-                              treeDigestToChildrenMap={this.state.treeDigestToChildrenMap}
-                              treeDigestToTotalSizeMap={this.state.treeDigestToTotalSizeMap}
+                              treeShaToExpanded={this.state.treeShaToExpanded}
+                              treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                              treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
                               handleFileClicked={this.handleFileClicked.bind(this)}
                             />
                           ))}

@@ -6,9 +6,9 @@ import format from "../format/format";
 
 interface Props {
   node: InputNode;
-  treeDigestToExpanded: Map<string, boolean>;
-  treeDigestToChildrenMap: Map<string, InputNode[]>;
-  treeDigestToTotalSizeMap: Map<string, [Number, Number]>;
+  treeShaToExpanded: Map<string, boolean>;
+  treeShaToChildrenMap: Map<string, InputNode[]>;
+  treeShaToTotalSizeMap: Map<string, [Number, Number]>;
   handleFileClicked: any;
 }
 
@@ -30,9 +30,9 @@ function getChildCountText(childCount: Number) {
 
 export default class InputNodeComponent extends React.Component<Props, State> {
   render() {
-    const digestString = this.props.node.obj.digest?.hash + "/" + this.props.node.obj.digest?.sizeBytes;
-    const sizeInfo = this.props.treeDigestToTotalSizeMap.get(digestString);
-    const expanded = this.props.treeDigestToExpanded.get(digestString);
+    const digestString = this.props.node.obj.digest?.hash ?? "";
+    const sizeInfo = this.props.treeShaToTotalSizeMap.get(digestString);
+    const expanded = this.props.treeShaToExpanded.get(digestString);
     return (
       <div className="input-tree-node">
         <div
@@ -63,12 +63,12 @@ export default class InputNodeComponent extends React.Component<Props, State> {
         </div>
         {expanded && (
           <div className="input-tree-node-children">
-            {this.props.treeDigestToChildrenMap.get(digestString)?.map((child: any) => (
+            {this.props.treeShaToChildrenMap.get(digestString)?.map((child: any) => (
               <InputNodeComponent
                 node={child}
-                treeDigestToExpanded={this.props.treeDigestToExpanded}
-                treeDigestToChildrenMap={this.props.treeDigestToChildrenMap}
-                treeDigestToTotalSizeMap={this.props.treeDigestToTotalSizeMap}
+                treeShaToExpanded={this.props.treeShaToExpanded}
+                treeShaToChildrenMap={this.props.treeShaToChildrenMap}
+                treeShaToTotalSizeMap={this.props.treeShaToTotalSizeMap}
                 handleFileClicked={this.props.handleFileClicked}
               />
             ))}

@@ -68,7 +68,7 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 	if err != nil {
 		return err
 	}
-	digestString := digest.String(dirDigest)
+	digestString := dirDigest.GetHash()
 	if _, ok := dsc.totalSize[digestString]; ok {
 		// We already finished computing this directory's size.
 		return nil
@@ -96,7 +96,7 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 
 	for _, d := range dir.GetDirectories() {
 		dsc.childCount[digestString] = dsc.childCount[digestString] + 1
-		subdirDigest := digest.String(d.GetDigest())
+		subdirDigest := d.GetDigest().GetHash()
 		// If we've already found the child directory's size, count it
 		// and move on.
 		if subDirTotal, ok := dsc.totalSize[subdirDigest]; ok {
