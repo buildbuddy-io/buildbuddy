@@ -1702,6 +1702,9 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 			}
 			for _, r := range *reviews {
 				prsMu.Lock()
+				if _, ok := prs[i.GetNodeID()]; !ok {
+					return nil
+				}
 				review, ok := prs[i.GetNodeID()].Reviews[r.GetUser().GetLogin()]
 				if !ok {
 					review = &ghpb.Review{}
