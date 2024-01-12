@@ -431,7 +431,7 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 	seenTargets := make(map[string]struct{}, 0)
 	targets := make([]*trpb.TargetMetadata, 0)
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
-	var nextPageToken *tppb.PaginationToken
+	commitTimestamps := make(map[string]int64, 0)
 
 	type row struct {
 		Label                   string
@@ -475,17 +475,13 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 			},
 			InvocationCreatedAtUsec: row.InvocationStartTimeUsec,
 		})
-		if nextPageToken == nil || nextPageToken.GetInvocationEndTimeUsec() >= row.InvocationStartTimeUsec {
-			nextPageToken = &tppb.PaginationToken{
-				InvocationEndTimeUsec: row.InvocationStartTimeUsec,
-			}
-			if nextPageToken.GetInvocationEndTimeUsec() == row.InvocationStartTimeUsec && nextPageToken.GetCommitSha() > row.CommitSHA {
-				return nil
-			}
-			nextPageToken.CommitSha = row.CommitSHA
+		created_at_usec := commitTimestamps[row.CommitSHA]
+		if row.InvocationStartTimeUsec > created_at_usec {
+			commitTimestamps[row.CommitSHA] = row.InvocationStartTimeUsec
 		}
 		return nil
 	})
+
 	if err != nil {
 		return nil, err
 	}
@@ -501,6 +497,7 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 	resp := &trpb.GetTargetHistoryResponse{
 		InvocationTargets: targetHistories,
 	}
+	nextPageToken := computeNextPaginationToken(commitTimestamps)
 	if nextPageToken != nil {
 		tokenStr, err := EncodePaginationToken(nextPageToken)
 		if err != nil {
@@ -511,13 +508,29 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 	return resp, nil
 }
 
+func computeNextPaginationToken(commitTimestamps map[string]int64) *tppb.PaginationToken {
+	var nextPageToken *tppb.PaginationToken
+	for commit, lastCreatedAtUsec := range commitTimestamps {
+		if nextPageToken == nil {
+			nextPageToken = &tppb.PaginationToken{
+				InvocationEndTimeUsec: lastCreatedAtUsec,
+				CommitSha:             commit,
+			}
+		} else if lastCreatedAtUsec < nextPageToken.GetInvocationEndTimeUsec() || (lastCreatedAtUsec == nextPageToken.GetInvocationEndTimeUsec() && commit > nextPageToken.GetCommitSha()) {
+			nextPageToken.InvocationEndTimeUsec = lastCreatedAtUsec
+			nextPageToken.CommitSha = commit
+		}
+	}
+	return nextPageToken
+}
+
 func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *query_builder.Query, repoURL string) (*trpb.GetTargetHistoryResponse, error) {
 	queryStr, args := q.Build()
 
 	seenTargets := make(map[string]struct{}, 0)
 	targets := make([]*trpb.TargetMetadata, 0)
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
-	var nextPageToken *tppb.PaginationToken
+	commitTimestamps := make(map[string]int64, 0)
 
 	type target struct {
 		Label         string
@@ -560,14 +573,9 @@ func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *quer
 				},
 				InvocationCreatedAtUsec: row.CreatedAtUsec,
 			})
-			if nextPageToken == nil || nextPageToken.GetInvocationEndTimeUsec() >= row.CreatedAtUsec {
-				nextPageToken = &tppb.PaginationToken{
-					InvocationEndTimeUsec: row.CreatedAtUsec,
-				}
-				if nextPageToken.GetInvocationEndTimeUsec() == row.CreatedAtUsec && nextPageToken.GetCommitSha() > row.CommitSHA {
-					return nil
-				}
-				nextPageToken.CommitSha = row.CommitSHA
+			created_at_usec := commitTimestamps[row.CommitSHA]
+			if row.CreatedAtUsec > created_at_usec {
+				commitTimestamps[row.CommitSHA] = row.CreatedAtUsec
 			}
 			return nil
 		})
@@ -588,6 +596,7 @@ func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *quer
 	resp := &trpb.GetTargetHistoryResponse{
 		InvocationTargets: targetHistories,
 	}
+	nextPageToken := computeNextPaginationToken(commitTimestamps)
 	if nextPageToken != nil {
 		tokenStr, err := EncodePaginationToken(nextPageToken)
 		if err != nil {
@@ -640,7 +649,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	//      ORDER BY latest_created_at_usec DESC, commit_sha asc)
 	//    WHERE (
 	//      latest_created_at_usec < [ts_from_pagination_token] OR
-	//      (latest_crated_at_usec = [ts_from_pagination_token] AND
+	//      (latest_created_at_usec = [ts_from_pagination_token] AND
 	//      commit_sha > '[commit_sha_from_pagitation_token]'))
 	//    LIMIT [page_size]
 	//  ) AND group_id = '[group_id]'
