@@ -1452,7 +1452,7 @@ func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithu
 	}
 	resp := &ghpb.GetGithubPullRequestResponse{
 		Outgoing: []*ghpb.PullRequest{},
-		Incoming: []*ghpb.PullRequest{},
+		Incoming: []*ghpb.PullRequest{},asdfasd
 	}
 	for _, i := range outgoing.Issues {
 		if pr, ok := prs[i.GetNodeID()]; ok {
