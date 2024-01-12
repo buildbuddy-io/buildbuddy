@@ -145,6 +145,9 @@ message FrontendConfig {
 
   // Whether the code review UI is enabled.
   bool code_review_enabled = 48;
+
+  // Whether SCIM API keys can be created.
+  bool scim_key_creation_enabled = 49;
 }
 
 message Region {

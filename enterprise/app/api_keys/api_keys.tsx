@@ -260,6 +260,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     ]);
   }
 
+  private onSelectSCIM(onChange: (name: string, value: any) => any) {
+    onChange("capability", [api_key.ApiKey.Capability.SCIM_CAPABILITY]);
+  }
+
   private onChangeVisibility(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
     onChange("visibleToDevelopers", e.target.checked);
   }
@@ -360,6 +364,22 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     />
                     <span>
                       Executor key <span className="field-description">(for self-hosted executors)</span>
+                    </span>
+                  </label>
+                </div>
+              )}
+              {/* User-owned keys cannot be used for SCIM. */}
+              {capabilities.config.scimKeyCreationEnabled && !this.props.userOwnedOnly && (
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectSCIM.bind(this, onChange)}
+                      checked={isSCIMKey(request)}
+                      disabled={!this.canChangeCapabilities()}
+                    />
+                    <span>
+                      SCIM key <span className="field-description">(for external user management)</span>
                     </span>
                   </label>
                 </div>
@@ -550,6 +570,10 @@ function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
   ]);
 }
 
+function isSCIMKey<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.SCIM_CAPABILITY]);
+}
+
 function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, []);
 }
@@ -562,6 +586,8 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities = "CAS-only";
   } else if (isExecutorKey(apiKey)) {
     capabilities = "Executor";
+  } else if (isSCIMKey(apiKey)) {
+    capabilities = "SCIM";
   }
   if (apiKey.visibleToDevelopers) {
     capabilities += " [D]";
