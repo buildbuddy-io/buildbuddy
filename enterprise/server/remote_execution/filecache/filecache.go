@@ -3,6 +3,7 @@ package filecache
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -40,6 +41,8 @@ const (
 	// Temporary directory under the filecache root.
 	tmpDir = "_tmp"
 )
+
+var enableAlwaysClone = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
 
 // fileCache implements a fixed-size, filesystem backed, LRU cache.
 //
@@ -237,7 +240,7 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 		return false
 	}
 
-	if groupID == interfaces.AuthAnonymousUser {
+	if groupID == interfaces.AuthAnonymousUser || *enableAlwaysClone {
 		if err := fastcopy.Clone(v.value, outputPath); err != nil {
 			log.Warningf("Error fast linking file: %s", err.Error())
 			return false
