@@ -1,6 +1,7 @@
 package githubapp
 
 import (
+	"bytes"
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
@@ -8,6 +9,8 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"io/fs"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -33,6 +36,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/go-github/v43/github"
 	"golang.org/x/oauth2"
@@ -612,59 +616,64 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 		return nil, err
 	}
 
-	// Create a new repository on github
-	repo, _, err := githubClient.Repositories.Create(ctx, req.Organization, &github.Repository{
-		Name:        github.String(req.Name),
-		Description: github.String(req.Description),
-		Private:     github.Bool(req.Private),
-	})
-	if err != nil {
-		return nil, err
-	}
+	repoURL := fmt.Sprintf("https://github.com/%s/%s", req.Organization, req.Name)
 
-	// If we have a template, copy the template contents to the new repo
-	if req.Template != "" {
-		tmpDirName := fmt.Sprintf("template-repo-%d-%s-*", req.InstallationId, req.Name)
-		err = cloneTemplate(tu.Email, tmpDirName, token, req.Template, *repo.CloneURL, req.TemplateDirectory)
+	// Create a new repository on github, if requested
+	if !req.SkipRepo {
+		_, _, err := githubClient.Repositories.Create(ctx, req.Organization, &github.Repository{
+			Name:        github.String(req.Name),
+			Description: github.String(req.Description),
+			Private:     github.Bool(req.Private),
+		})
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// Link new repository to enable workflows
-	wfs := a.env.GetWorkflowService()
-	if wfs == nil {
-		return nil, status.UnimplementedErrorf("no workflow service configured")
+	// If we have a template, copy the template contents to the new repo
+	if req.Template != "" {
+		tmpDirName := fmt.Sprintf("template-repo-%d-%s-*", req.InstallationId, req.Name)
+		err = cloneTemplate(tu.Email, tmpDirName, token, req.Template, repoURL+".git", req.TemplateDirectory, req.DestinationDirectory, req.TemplateVariables, !req.SkipRepo)
+		if err != nil {
+			return nil, err
+		}
 	}
-	_, err = a.LinkGitHubRepo(ctx, &ghpb.LinkRepoRequest{
-		RequestContext: req.RequestContext,
-		RepoUrl:        *repo.HTMLURL,
-	})
-	if err != nil {
-		return nil, err
+
+	// Link new repository to enable workflows, if requested
+	if !req.SkipLink {
+		wfs := a.env.GetWorkflowService()
+		if wfs == nil {
+			return nil, status.UnimplementedErrorf("no workflow service configured")
+		}
+		_, err = a.LinkGitHubRepo(ctx, &ghpb.LinkRepoRequest{
+			RequestContext: req.RequestContext,
+			RepoUrl:        repoURL,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &rppb.CreateRepoResponse{
-		RepoUrl: repo.GetHTMLURL(),
+		RepoUrl: repoURL,
 	}, nil
 }
 
 // TODO(siggisim): consider moving template cloning to a remote action if it causes us troubles doing this on apps.
-func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir string) error {
+func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir, destDir string, templateVariables map[string]string, needsInit bool) error {
 	// Make a temporary directory for the template
-	tmpDir, err := scratchspace.MkdirTemp(tmpDirName)
+	templateTmpDir, err := scratchspace.MkdirTemp(tmpDirName + "-template")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(templateTmpDir)
 
 	// Clone the template into the directory
 	auth := &githttp.BasicAuth{
 		Username: "github",
 		Password: token,
 	}
-
-	_, err = git.PlainClone(tmpDir, false, &git.CloneOptions{
+	_, err = git.PlainClone(templateTmpDir, false, &git.CloneOptions{
 		URL:  srcURL,
 		Auth: auth,
 	})
@@ -672,31 +681,70 @@ func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir string) err
 		return err
 	}
 	// Remove existing git information so we can create a single initial commit
-	err = os.RemoveAll(filepath.Join(tmpDir, ".git"))
+	err = os.RemoveAll(filepath.Join(templateTmpDir, ".git"))
 	if err != nil {
 		return err
 	}
 	// Remove any github workflows directories, because we won't have permission to create them
-	err = os.RemoveAll(filepath.Join(tmpDir, ".github/workflows"))
+	err = os.RemoveAll(filepath.Join(templateTmpDir, ".github/workflows"))
 	if err != nil {
 		return err
 	}
-	// Don't allow paths with dots or other non alphanumeric path components
+	// Don't allow template paths with dots or other non alphanumeric path components
 	if !validPathRegex.MatchString(srcDir) {
 		return status.FailedPreconditionErrorf("invalid template path: %q", srcDir)
 	}
-	path := filepath.Join(tmpDir, srcDir)
+	path := filepath.Join(templateTmpDir, srcDir)
 	// Intentionally using Lstat to avoid following symlinks
 	if fileInfo, err := os.Lstat(path); err != nil || !fileInfo.IsDir() {
 		return status.FailedPreconditionErrorf("not a valid directory: %q", srcDir)
 	}
-	gitRepo, err := git.PlainInit(path, false)
+	// Replace any template variables
+	if len(templateVariables) > 0 {
+		replace(path, templateVariables)
+	}
+	// Make a temporary directory for the new repo
+	repoTmpDir, err := scratchspace.MkdirTemp(tmpDirName + "-repo")
 	if err != nil {
 		return err
 	}
-	err = gitRepo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Main))
+	defer os.RemoveAll(repoTmpDir)
+
+	newPath := repoTmpDir
+
+	// If we have a destination directory that's not the repo root, update the path
+	if destDir != "" {
+		// Don't allow destinationPath paths with dots or other non alphanumeric path components
+		if !validPathRegex.MatchString(destDir) {
+			return status.FailedPreconditionErrorf("invalid destination path: %q", destDir)
+		}
+		if err := os.RemoveAll(newPath); err != nil {
+			return err
+		}
+		newPath = filepath.Join(repoTmpDir, destDir)
+		if err := os.MkdirAll(newPath, os.ModePerm); err != nil {
+			return err
+		}
+	}
+	// Initialize or clone the destination repo
+	gitRepo, err := initOrClone(needsInit, destDir, destURL, auth)
 	if err != nil {
 		return err
+	}
+	fileInfo, err := ioutil.ReadDir(path)
+	if err != nil {
+		return err
+	}
+	// Move template files into the destination repo
+	for _, file := range fileInfo {
+		old := filepath.Join(path, file.Name())
+		new := filepath.Join(newPath, file.Name())
+		if err := os.RemoveAll(new); err != nil {
+			return err
+		}
+		if err := os.Rename(old, new); err != nil {
+			return err
+		}
 	}
 	gitWorkTree, err := gitRepo.Worktree()
 	if err != nil {
@@ -713,19 +761,52 @@ func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir string) err
 	if err != nil {
 		return err
 	}
-
-	// Create a new remote and push to it
-	remote, err := gitRepo.CreateRemote(&config.RemoteConfig{
-		Name: git.DefaultRemoteName,
-		URLs: []string{destURL},
-	})
-	if err != nil {
-		return err
-	}
-	return remote.Push(&git.PushOptions{
+	return gitRepo.Push(&git.PushOptions{
 		RemoteName: git.DefaultRemoteName,
 		Auth:       auth,
 		Force:      true,
+	})
+}
+
+func initOrClone(init bool, dir, url string, auth transport.AuthMethod) (*git.Repository, error) {
+	if !init {
+		return git.PlainClone(dir, false, &git.CloneOptions{
+			URL:  url,
+			Auth: auth,
+		})
+	}
+	gitRepo, err := git.PlainInit(dir, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := gitRepo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Main)); err != nil {
+		return nil, err
+	}
+	_, err = gitRepo.CreateRemote(&config.RemoteConfig{
+		Name: git.DefaultRemoteName,
+		URLs: []string{url},
+	})
+	return gitRepo, err
+}
+
+// Walks the given directory and performs a find and replace in all file contents.
+// All instance of the keys in the replacements map are replaced by the values in the map.
+func replace(dir string, replacements map[string]string) error {
+	return filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		contents, err := ioutil.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for k, v := range replacements {
+			contents = bytes.Replace(contents, []byte(k), []byte(v), -1)
+		}
+		return ioutil.WriteFile(path, contents, os.ModePerm)
 	})
 }
 
