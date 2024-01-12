@@ -4,7 +4,7 @@ import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
 import { repo } from "../../../proto/repo_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
-import { BookCopy, ChevronRightSquare, Folders, Github } from "lucide-react";
+import { BookCopy, ChevronRightSquare, FolderInput, Folders, Github } from "lucide-react";
 import { workflow } from "../../../proto/workflow_ts_proto";
 import Select from "../../../app/components/select/select";
 import Checkbox from "../../../app/components/checkbox/checkbox";
@@ -36,8 +36,10 @@ interface RepoComponentState {
   repoName: string;
   template: string;
   templateDirectory: string;
+  destinationDirectory: string;
   private: boolean;
   secrets: Map<string, string>;
+  vars: Map<string, string>;
 
   repoResponse: repo.CreateRepoResponse | null;
   workflowResponse: workflow.ExecuteWorkflowResponse | null;
@@ -45,7 +47,7 @@ interface RepoComponentState {
 
 const selectedInstallationIndexLocalStorageKey = "repo-selectedInstallationIndex";
 const gcpRefreshTokenKey = "CLOUDSDK_AUTH_REFRESH_TOKEN";
-const gcpProjectKey = "GCP_PROJECT";
+const gcpProjectKey = "CLOUDSDK_CORE_PROJECT";
 export default class RepoComponent extends React.Component<RepoComponentProps, RepoComponentState> {
   state: RepoComponentState = {
     selectedInstallationIndex: localStorage[selectedInstallationIndexLocalStorageKey] || 0,
@@ -57,9 +59,11 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
 
     template: this.getTemplate(),
     templateDirectory: this.getTemplateDirectory(),
+    destinationDirectory: this.getDestinationDirectory(),
     repoName: this.getRepoName(),
     private: true,
     secrets: new Map<string, string>(),
+    vars: new Map<string, string>(),
 
     repoResponse: this.props.search.get("created")
       ? new repo.CreateRepoResponse({ repoUrl: this.props.search.get("created")! })
@@ -93,6 +97,10 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
 
   getTemplateImage() {
     return this.props.search.get("image") || "";
+  }
+
+  getDestinationDirectory() {
+    return this.props.search.get("destdir") || "";
   }
 
   getRepoName() {
@@ -204,10 +212,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     if (!selectedInstallation) {
       return true;
     }
-    return (
-      selectedInstallation.permissions?.administration == "write" &&
-      selectedInstallation.permissions?.repositoryHooks == "write"
-    );
+    return selectedInstallation.permissions?.administration == "write";
   }
 
   handleRepoChanged(e: React.ChangeEvent<HTMLInputElement>) {
@@ -235,7 +240,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       .catch((e) => error_service.handleError(e));
   }
 
-  createRepo() {
+  createOrUpdateRepo(update?: boolean) {
     let selectedInstallation = this.state.githubInstallationsResponse?.installations[
       this.state.selectedInstallationIndex
     ];
@@ -244,6 +249,12 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     r.private = this.state.private;
     r.template = this.state.template;
     r.templateDirectory = this.state.templateDirectory;
+    r.destinationDirectory = this.state.destinationDirectory;
+    if (update) {
+      r.skipRepo = true;
+      r.skipLink = true;
+      r.templateVariables = Object.fromEntries(this.state.vars.entries());
+    }
 
     if (selectedInstallation?.targetType == "Organization") {
       r.installationId = selectedInstallation.id;
@@ -268,6 +279,11 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
 
   getSecrets() {
     let s = this.props.search.get("secret") || this.props.search.get("secrets") || "";
+    return s ? s.split(",") : [];
+  }
+
+  getVars() {
+    let s = this.props.search.get("var") || this.props.search.get("vars") || "";
     return s ? s.split(",") : [];
   }
 
@@ -300,7 +316,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     this.setState({ isCreating: true });
     try {
       await this.linkInstallation();
-      let repoResponse = await this.createRepo();
+      let repoResponse = await this.createOrUpdateRepo();
       router.setQueryParam("created", repoResponse.repoUrl);
       router.setQueryParam("name", this.state.repoName);
       this.setState({ repoResponse: repoResponse });
@@ -363,9 +379,13 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     let needsGCPLink =
       isGCPDeploy && !this.state.secretsResponse?.secret.map((s) => s.name).includes(gcpRefreshTokenKey);
     let needsGCPProject = isGCPDeploy && !this.state.secretsResponse?.secret.map((s) => s.name).includes(gcpProjectKey);
+    let hasVariables = this.getVars().length > 0;
 
     this.setState({ isDeploying: true });
     try {
+      if (hasVariables) {
+        await this.createOrUpdateRepo(true /* update */);
+      }
       if (needsGCPLink) {
         await this.linkGoogleCloud().then(() => this.fetchSecrets());
       }
@@ -449,6 +469,14 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
                         <div className="template-repo-name">{this.getTemplateDirectory().replaceAll("/", " / ")}</div>
                       </div>
                     )}
+                    {this.getDestinationDirectory() && (
+                      <div className="template-repo">
+                        <FolderInput />
+                        <div className="template-repo-name">
+                          {this.getDestinationDirectory().replaceAll("/", " / ")}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 {this.getTemplateImage() && <img className="template-image" src={this.getTemplateImage()} />}
@@ -512,9 +540,28 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
             </div>
           )}
         </div>
-        {this.getSecrets().length > 0 && !this.state.workflowResponse && (
+        {(this.getSecrets().length > 0 || this.getVars().length > 0) && !this.state.workflowResponse && (
           <div className={`repo-block card repo-create ${!this.state.repoResponse && "disabled"}`}>
             <div className="repo-title">Configure deployment</div>
+            {Boolean(this.getVars().length) && (
+              <div className="deployment-configs">
+                {this.getVars().map((s) => (
+                  <div className="deployment-config">
+                    <div>{s}</div>
+                    <div>
+                      <TextInput
+                        placeholder={s}
+                        value={this.state.vars.get(s)}
+                        onChange={(e) => {
+                          this.state.vars.set("$" + s, e.target.value);
+                          this.forceUpdate();
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {Boolean(this.getUnsetSecrets().length) && (
               <div className="deployment-configs">
                 {this.getUnsetSecrets().map((s) => (
