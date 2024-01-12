@@ -15,12 +15,12 @@ import {
   Circle,
 } from "lucide-react";
 import React from "react";
-import format from "../../../app/format/format";
-import router from "../../../app/router/router";
-import Link from "../../../app/components/link/link";
-import { invocation } from "../../../proto/invocation_ts_proto";
-import { invocation_status } from "../../../proto/invocation_status_ts_proto";
-import { exitCode } from "../../../app/util/exit_codes";
+import format from "../format/format";
+import router from "../router/router";
+import Link from "../components/link/link";
+import { invocation } from "../../proto/invocation_ts_proto";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
+import { exitCode } from "../util/exit_codes";
 
 const durationRefreshIntervalMillis = 3000;
 
@@ -38,7 +38,7 @@ interface State {
   time: number;
 }
 
-export default class HistoryInvocationCardComponent extends React.Component<Props, State> {
+export default class InvocationCardComponent extends React.Component<Props, State> {
   state: State = {
     time: Date.now(),
   };

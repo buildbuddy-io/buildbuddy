@@ -722,3 +722,20 @@ ts_library(
         "//proto/api/v1:common_ts_proto",
     ],
 )
+
+ts_library(
+    name = "invocation_card",
+    srcs = ["invocation_card.tsx"],
+    deps = [
+        "//app/components/link",
+        "//app/format",
+        "//app/router",
+        "//app/util:exit_codes",
+        "//proto:invocation_status_ts_proto",
+        "//proto:invocation_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
+    ],
+)

@@ -54,7 +54,7 @@ func TestInvocationNavShortcuts(t *testing.T) {
 	enableShortcuts(t, wt)
 
 	wt.FindBody().SendKeys("ga")
-	require.Equal(t, 3, len(wt.FindAll(".history-invocation-card")))
+	require.Equal(t, 3, len(wt.FindAll(".invocation-card")))
 
 	wt.FindBody().SendKeys("j")
 	wt.Find(".selected-keyboard-shortcuts").SendKeys(selenium.EnterKey)
