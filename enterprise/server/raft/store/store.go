@@ -342,10 +342,12 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.log.Infof("Store shutdown finished in %s", time.Since(now))
 	}()
 
-	s.egCancel()
-	s.leaseKeeper.Stop()
-	s.liveness.Release()
-	s.eg.Wait()
+	if s.egCancel != nil {
+		s.egCancel()
+		s.leaseKeeper.Stop()
+		s.liveness.Release()
+		s.eg.Wait()
+	}
 
 	s.log.Info("Store: waitgroups finished")
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
@@ -1409,7 +1411,11 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 
 	// Propose the config change (this removes the node from the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		return s.nodeHost.SyncRequestDeleteReplica(ctx, shardID, replicaID, configChangeID)
+		err := s.nodeHost.SyncRequestDeleteReplica(ctx, shardID, replicaID, configChangeID)
+		if err == dragonboat.ErrShardClosed {
+			return nil
+		}
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -1440,6 +1446,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		metrics.RaftMoveLabel:       "remove",
 	}).Inc()
 
+	s.log.Infof("Removed shard: s%dr%d", shardID, replicaID)
 	return &rfpb.RemoveReplicaResponse{
 		Range: rd,
 	}, nil
