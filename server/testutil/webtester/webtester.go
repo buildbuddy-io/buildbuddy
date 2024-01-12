@@ -336,6 +336,15 @@ var (
 			fullCacheRadioButton.Click()
 		}
 	}
+
+	// WithEnableRemoteExecution is a setup page option that checks the "enable
+	// remote execution" checkbox.
+	WithEnableRemoteExecution SetupPageOption = func(wt *WebTester) {
+		checkbox := wt.Find("#execution")
+		if !checkbox.IsSelected() {
+			checkbox.Click()
+		}
+	}
 )
 
 // WithAPIKeySelection returns a setup page option that selects a given API key

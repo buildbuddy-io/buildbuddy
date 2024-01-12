@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -228,6 +229,49 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 	webtester.Logout(wt)
 	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)
 	wt.FindByDebugID("login-button")
+}
+
+func TestInvocationWithRemoteExecution(t *testing.T) {
+	ctx := context.Background()
+	wt := webtester.New(t)
+	target := buildbuddy_enterprise.SetupWebTarget(t)
+
+	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
+		"WORKSPACE": "",
+		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
+	})
+	buildArgs := []string{
+		"//:a",
+		"--show_progress=0",
+		"--remote_upload_local_results=1",
+		// Use a unique instance name to force action execution
+		"--remote_instance_name=" + uuid.New(),
+		// Disable retries since we expect execution to not be flaky
+		"--remote_retries=0",
+	}
+
+	webtester.Login(wt, target)
+	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(
+		wt, target.HTTPURL(),
+		webtester.WithEnableCache,
+		webtester.WithEnableRemoteExecution,
+	)
+	buildArgs = append(buildArgs, buildbuddyBuildFlags...)
+
+	result := testbazel.Invoke(ctx, t, workspacePath, "build", buildArgs...)
+	require.NotEmpty(t, result.InvocationID)
+
+	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)
+
+	wt.Find(`[href="#execution"]`).Click()
+
+	rows := wt.FindAll(".invocation-execution-row")
+	require.Equal(t, 1, len(rows), "should be exactly 1 execution")
+	row := rows[0]
+	require.Contains(t, row.Text(), "genrule-setup.sh", "row should show command snippet")
+
+	// TODO: run an actual executor, and make sure we can click through to the
+	// action page and see the action
 }
 
 type CacheRequestRow struct {

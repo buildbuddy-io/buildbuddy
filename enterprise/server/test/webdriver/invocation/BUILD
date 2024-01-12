@@ -8,11 +8,12 @@ go_web_test_suite(
         # requires networking.
         "test.dockerNetwork": "bridge",
     },
-    shard_count = 2,
+    shard_count = 3,
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//server/testutil/testbazel",
         "//server/testutil/webtester",
+        "//server/util/uuid",
         "@com_github_stretchr_testify//require",
     ],
 )
