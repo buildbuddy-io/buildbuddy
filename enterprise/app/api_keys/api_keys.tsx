@@ -370,19 +370,19 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
               )}
               {/* User-owned keys cannot be used for SCIM. */}
               {capabilities.config.scimKeyCreationEnabled && !this.props.userOwnedOnly && (
-                  <div className="field-container">
-                    <label className="checkbox-row">
-                      <input
-                          type="radio"
-                          onChange={this.onSelectSCIM.bind(this, onChange)}
-                          checked={isSCIMKey(request)}
-                          disabled={!this.canChangeCapabilities()}
-                      />
-                      <span>
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectSCIM.bind(this, onChange)}
+                      checked={isSCIMKey(request)}
+                      disabled={!this.canChangeCapabilities()}
+                    />
+                    <span>
                       SCIM key <span className="field-description">(for external user management)</span>
                     </span>
-                    </label>
-                  </div>
+                  </label>
+                </div>
               )}
               {/* "Visible to developers" bit does not apply for user-level keys. */}
               {!this.props.userOwnedOnly && (
@@ -587,7 +587,7 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
   } else if (isExecutorKey(apiKey)) {
     capabilities = "Executor";
   } else if (isSCIMKey(apiKey)) {
-    capabilities = "SCIM"
+    capabilities = "SCIM";
   }
   if (apiKey.visibleToDevelopers) {
     capabilities += " [D]";
