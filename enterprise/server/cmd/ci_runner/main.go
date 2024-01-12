@@ -724,11 +724,21 @@ func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
 
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
-	isWorkflow bool
-	reporter   *buildEventReporter
-	rootDir    string
-	username   string
-	hostname   string
+	isWorkflow   bool
+	reporter     *buildEventReporter
+	rootDir      string
+	username     string
+	hostname     string
+	sectionStart time.Time
+}
+
+func (ar *actionRunner) beginStep(name string) {
+	ar.sectionStart = time.Now()
+	ar.reporter.Printf(`@buildbuddy {"section": %q, "timestampUsec": %d}`, name, ar.sectionStart.UnixMicro())
+}
+
+func (ar *actionRunner) endStep(ok bool) {
+	ar.reporter.Printf(`@buildbuddy {"ok": %t, "durationUsec": %d}`, ok, time.Since(ar.sectionStart).Microseconds())
 }
 
 func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
@@ -788,6 +798,8 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			return nil
 		}
 	}
+
+	ar.beginStep("Setup")
 
 	if err := ws.setup(ctx); err != nil {
 		return status.WrapError(err, "failed to set up git repo")
@@ -885,7 +897,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}()
 
-	for i, bazelCmd := range action.BazelCommands {
+	runBazelCommand := func(i int, bazelCmd string) error {
 		cmdStartTime := time.Now()
 
 		// Publish a TargetConfigured event associated with the bazel command so
@@ -990,12 +1002,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				}},
 			}
 			if err := ar.reporter.Publish(e); err != nil {
-				break
+				return err
 			}
 		}
 
 		// Publish the status of each command as well as the finish time.
-		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
 		duration := time.Since(cmdStartTime)
 		completedEvent := &bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
@@ -1008,7 +1019,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			}},
 		}
 		if err := ar.reporter.Publish(completedEvent); err != nil {
-			break
+			return err
 		}
 		duration = time.Since(cmdStartTime)
 		childCompletedEvent := &bespb.BuildEvent{
@@ -1022,7 +1033,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			}},
 		}
 		if err := ar.reporter.Publish(childCompletedEvent); err != nil {
-			break
+			return err
 		}
 
 		if runErr != nil {
@@ -1033,16 +1044,30 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		// Flush progress after every command.
-		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
 		if err := ar.reporter.FlushProgress(); err != nil {
-			break
+			return err
 		}
 
 		// Kick off background uploads for the action that just completed
 		if uploader != nil {
 			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
+
+		return nil
 	}
+
+	// End the "Setup" section
+	ar.endStep(true /*=ok*/)
+	for i, bazelCmd := range action.BazelCommands {
+		// TODO: allow users to name steps.
+		ar.beginStep(bazelCmd)
+		err := runBazelCommand(i, bazelCmd)
+		ar.endStep(err == nil)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

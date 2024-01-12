@@ -174,12 +174,20 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   getBuildLogs(model: InvocationModel): string {
+    let logs = "";
     if (!model.hasChunkedEventLogs()) {
       // Use the inlined console buffer if this invocation was created before
       // log chunking existed.
-      return model.invocation.consoleBuffer;
+      logs = model.invocation.consoleBuffer;
+    } else {
+      logs = this.logsModel?.getLogs() ?? "";
     }
-    return this.logsModel?.getLogs() ?? "";
+    if (this.state.model?.isWorkflowInvocation()) {
+      // Strip out in-band section annotations for now (these will be used for
+      // the proposed workflows "steps" UI)
+      logs = logs.replaceAll(/^@buildbuddy \{.*?\}$/gm, "");
+    }
+    return logs;
   }
 
   areBuildLogsLoading(model: InvocationModel) {
