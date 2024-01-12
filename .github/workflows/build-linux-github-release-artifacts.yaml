@@ -48,4 +48,4 @@ jobs:
               }]
             }
         env:
-          SLACK_WEBHOOK_URL: https://hooks.slack.com/services/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
+          SLACK_WEBHOOK_URL: ${{ secrets.MAGGIE_TEST_SLACK_WEBHOOK }}
