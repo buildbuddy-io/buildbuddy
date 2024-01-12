@@ -340,6 +340,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	s = getStoreWithRangeLease(t, stores, 2)
 	replicas, err := s.GetMembership(ctx, 2)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
