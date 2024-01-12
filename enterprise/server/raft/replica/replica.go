@@ -1004,7 +1004,6 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 	rsp := &rfpb.ScanResponse{}
 	for ; t; t = iter.Next() {
 		key := bytes.TrimPrefix(iter.Key(), prefix)
-		sm.log.Infof("scankey %q", string(key))
 
 		k := make([]byte, len(key))
 		copy(k, key)
