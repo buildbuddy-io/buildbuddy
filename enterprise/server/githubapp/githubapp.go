@@ -1455,7 +1455,11 @@ func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithu
 		Incoming: []*ghpb.PullRequest{},
 	}
 	for _, i := range outgoing.Issues {
-		resp.Outgoing = append(resp.Outgoing, prs[i.GetNodeID()])
+		pr := prs[i.GetNodeID()]
+		if len(pr.Reviews) == 0 {
+			continue
+		}
+		resp.Outgoing = append(resp.Outgoing, pr)
 	}
 	for _, i := range incoming.Issues {
 		resp.Incoming = append(resp.Incoming, prs[i.GetNodeID()])
@@ -1629,7 +1633,7 @@ func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, username stri
 		return nil
 	})
 	eg.Go(func() error {
-		r, err := a.cachedSearch(gCtx, client, fmt.Sprintf("is:open is:pr author:%s -review:none archived:false draft:false", username))
+		r, err := a.cachedSearch(gCtx, client, fmt.Sprintf("is:open is:pr author:%s archived:false draft:false", username))
 		if err != nil {
 			return err
 		}
