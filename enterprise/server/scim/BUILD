@@ -9,12 +9,14 @@ go_library(
     deps = [
         "//proto:api_key_go_proto",
         "//proto:group_go_proto",
+        "//proto:user_id_go_proto",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/http/interceptors",
         "//server/interfaces",
         "//server/real_environment",
         "//server/tables",
+        "//server/util/role",
         "//server/util/status",
     ],
 )

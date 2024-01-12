@@ -293,48 +293,97 @@ func TestCreateUser(t *testing.T) {
 	baseURL := testhttp.StartServer(t, mux).String()
 	tc := &testClient{t: t, apiKey: apiKey}
 
-	// Create user
-	newUser := &scim.UserResource{
-		Schemas:  []string{scim.UserResourceSchema},
-		UserName: "user500@org1.io",
-		Name: scim.NameResource{
-			GivenName:  "User",
-			FamilyName: "Doe",
-		},
-		Emails: []scim.EmailResource{
-			{
-				Primary: true,
-				Value:   "user500@org1.io",
+	// Create developer user.
+	{
+		newUser := &scim.UserResource{
+			Schemas:  []string{scim.UserResourceSchema},
+			UserName: "user500@org1.io",
+			Name: scim.NameResource{
+				GivenName:  "User",
+				FamilyName: "Doe",
 			},
-		},
-		Active: true,
+			Emails: []scim.EmailResource{
+				{
+					Primary: true,
+					Value:   "user500@org1.io",
+				},
+			},
+			Active: true,
+		}
+		body, err := json.Marshal(newUser)
+		require.NoError(t, err)
+
+		code, body := tc.Post(baseURL+"/scim/Users", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		createdUser := scim.UserResource{}
+		err = json.Unmarshal(body, &createdUser)
+		require.NoError(t, err)
+		require.Equal(t, "User", createdUser.Name.GivenName)
+		require.Equal(t, "Doe", createdUser.Name.FamilyName)
+		require.Equal(t, "user500@org1.io", createdUser.UserName)
+		require.True(t, createdUser.Active)
+
+		code, body = tc.Get(baseURL + "/scim/Users/" + createdUser.ID)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		ur := scim.UserResource{}
+		err = json.Unmarshal(body, &ur)
+		require.NoError(t, err)
+		require.Len(t, ur.Schemas, 1)
+		require.Equal(t, scim.UserResourceSchema, ur.Schemas[0])
+		require.Equal(t, createdUser.ID, ur.ID)
+		require.Equal(t, "User", ur.Name.GivenName)
+		require.Equal(t, "Doe", ur.Name.FamilyName)
+		require.Equal(t, "user500@org1.io", ur.UserName)
+		require.Equal(t, scim.DeveloperRole, ur.Role)
+		require.True(t, ur.Active)
 	}
-	body, err := json.Marshal(newUser)
-	require.NoError(t, err)
 
-	code, body := tc.Post(baseURL+"/scim/Users", body)
-	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
-	createdUser := scim.UserResource{}
-	err = json.Unmarshal(body, &createdUser)
-	require.NoError(t, err)
-	require.Equal(t, "User", createdUser.Name.GivenName)
-	require.Equal(t, "Doe", createdUser.Name.FamilyName)
-	require.Equal(t, "user500@org1.io", createdUser.UserName)
-	require.True(t, createdUser.Active)
+	// Create admin user.
+	{
+		newUser := &scim.UserResource{
+			Schemas:  []string{scim.UserResourceSchema},
+			UserName: "user501@org1.io",
+			Role:     scim.AdminRole,
+			Name: scim.NameResource{
+				GivenName:  "Foo",
+				FamilyName: "Bar",
+			},
+			Emails: []scim.EmailResource{
+				{
+					Primary: true,
+					Value:   "user501@org1.io",
+				},
+			},
+			Active: true,
+		}
+		body, err := json.Marshal(newUser)
+		require.NoError(t, err)
 
-	// Test lookup by ID.
-	code, body = tc.Get(baseURL + "/scim/Users/" + createdUser.ID)
-	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
-	ur := scim.UserResource{}
-	err = json.Unmarshal(body, &ur)
-	require.NoError(t, err)
-	require.Len(t, ur.Schemas, 1)
-	require.Equal(t, scim.UserResourceSchema, ur.Schemas[0])
-	require.Equal(t, createdUser.ID, ur.ID)
-	require.Equal(t, "User", ur.Name.GivenName)
-	require.Equal(t, "Doe", ur.Name.FamilyName)
-	require.Equal(t, "user500@org1.io", ur.UserName)
-	require.True(t, ur.Active)
+		code, body := tc.Post(baseURL+"/scim/Users", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		createdUser := scim.UserResource{}
+		err = json.Unmarshal(body, &createdUser)
+		require.NoError(t, err)
+		require.Equal(t, "Foo", createdUser.Name.GivenName)
+		require.Equal(t, "Bar", createdUser.Name.FamilyName)
+		require.Equal(t, "user501@org1.io", createdUser.UserName)
+		require.Equal(t, scim.AdminRole, createdUser.Role)
+		require.True(t, createdUser.Active)
+
+		code, body = tc.Get(baseURL + "/scim/Users/" + createdUser.ID)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		ur := scim.UserResource{}
+		err = json.Unmarshal(body, &ur)
+		require.NoError(t, err)
+		require.Len(t, ur.Schemas, 1)
+		require.Equal(t, scim.UserResourceSchema, ur.Schemas[0])
+		require.Equal(t, createdUser.ID, ur.ID)
+		require.Equal(t, "Foo", ur.Name.GivenName)
+		require.Equal(t, "Bar", ur.Name.FamilyName)
+		require.Equal(t, "user501@org1.io", ur.UserName)
+		require.Equal(t, scim.AdminRole, ur.Role)
+		require.True(t, ur.Active)
+	}
 }
 
 func TestDeleteUser(t *testing.T) {
@@ -444,4 +493,89 @@ func TestDeleteUser(t *testing.T) {
 		code, body := tc.Patch(baseURL+"/scim/Users/US999", body)
 		require.Equal(tc.t, http.StatusNotFound, code, "body: %s", string(body))
 	}
+}
+
+func TestUpdateUser(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create first user & group.
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Update user.
+	req := &scim.UserResource{
+		Schemas: []string{scim.UserResourceSchema},
+		Name: scim.NameResource{
+			GivenName:  "Givy",
+			FamilyName: "Famy",
+		},
+		Active: true,
+	}
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
+	code, body := tc.Put(baseURL+"/scim/Users/US100", body)
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	updatedUser := scim.UserResource{}
+	err = json.Unmarshal(body, &updatedUser)
+	require.NoError(t, err)
+	require.True(t, updatedUser.Active)
+	require.Equal(t, "Givy", updatedUser.Name.GivenName)
+	require.Equal(t, "Famy", updatedUser.Name.FamilyName)
+
+	// Look up updated user.
+	code, body = tc.Get(baseURL + "/scim/Users/US100")
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	updatedUser = scim.UserResource{}
+	err = json.Unmarshal(body, &updatedUser)
+	require.NoError(t, err)
+	require.True(t, updatedUser.Active)
+	require.Equal(t, "Givy", updatedUser.Name.GivenName)
+	require.Equal(t, "Famy", updatedUser.Name.FamilyName)
+	require.Equal(t, scim.DeveloperRole, updatedUser.Role)
+
+	// Promote user to admin.
+	req.Role = scim.AdminRole
+	body, err = json.Marshal(req)
+	require.NoError(t, err)
+	code, _ = tc.Put(baseURL+"/scim/Users/US100", body)
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+
+	// Verify they have the admin role.
+	code, body = tc.Get(baseURL + "/scim/Users/US100")
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	updatedUser = scim.UserResource{}
+	err = json.Unmarshal(body, &updatedUser)
+	require.NoError(t, err)
+	require.Equal(t, scim.AdminRole, updatedUser.Role)
+
+	// If role is not set, it should default to Developer.
+	req.Role = ""
+	body, err = json.Marshal(req)
+	require.NoError(t, err)
+	code, _ = tc.Put(baseURL+"/scim/Users/US100", body)
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+
+	// Verify they have the developer role.
+	code, body = tc.Get(baseURL + "/scim/Users/US100")
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	updatedUser = scim.UserResource{}
+	err = json.Unmarshal(body, &updatedUser)
+	require.NoError(t, err)
+	require.Equal(t, scim.DeveloperRole, updatedUser.Role)
 }
