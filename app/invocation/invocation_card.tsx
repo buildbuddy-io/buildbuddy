@@ -203,7 +203,7 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
         href={`/invocation/${this.props.invocation.invocationId}`}
         onMouseOver={this.props.onMouseOver}
         onMouseOut={this.props.onMouseOut}
-        className={`clickable card history-invocation-card
+        className={`clickable card invocation-card
           ${this.props.className}
           ${this.props.hover ? "card-hover" : ""}
           ${this.getStatusClass()}
