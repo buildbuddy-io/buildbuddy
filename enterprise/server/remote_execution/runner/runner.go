@@ -329,21 +329,14 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	command := r.task.GetCommand()
 
 	if !r.PlatformProperties.RecycleRunner {
-		// If the container is not recyclable, then walk through the container
-		// lifecycle step-by-step.
+		// If the container is not recyclable, then use `Run` to walk through
+		// the entire container lifecycle in a single step.
+		// TODO: Remove this `Run` method and call lifecycle methods directly.
 		creds, err := r.pullCredentials()
 		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		if err = container.PullImageIfNecessary(ctx, r.env, r.Container, creds, r.PlatformProperties.ContainerImage); err != nil {
-			return commandutil.ErrorResult(err)
-		}
-		if err = r.Container.Create(ctx, wsPath); err != nil {
-			return commandutil.ErrorResult(err)
-		}
-		result := r.Container.Exec(ctx, command, &interfaces.Stdio{})
-		r.Container.Remove(ctx)
-		return result
+		return r.Container.Run(ctx, command, wsPath, creds)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
