@@ -27,27 +27,25 @@ jobs:
   build:
     runs-on: ubuntu-20.04-16cpu
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Slack
+        uses: 8398a7/action-slack@v3
+        if: ${{ steps.vars.outputs.release_prod == 'true' && steps.commits.outputs.exit_early != 'true' }}
         with:
-          ref: ${{ inputs.release_branch }}
-          # We need to fetch git tags to obtain the latest version tag to report
-          # the version of the running binary.
-          fetch-depth: 0
-
-      - name: Install bazelisk
-        run: |
-          curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.1.0/bazelisk-linux-amd64"
-          mkdir -p "${GITHUB_WORKSPACE}/bin/"
-          mv bazelisk-linux-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
-          chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
-
-      - name: Build and Upload Artifacts
+          status: custom
+          custom_payload: |
+            {
+              attachments: [{
+                color: '#11ad3d',
+                blocks: [
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `<https://github.com/buildbuddy-io/buildbuddy/actions/runs/${{ github.run_id }}|Kicking off auto-release.>`
+                    }
+                  }
+                ]
+              }]
+            }
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
-          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-linux-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64
-          gh release upload ${{ inputs.version_tag }} buildbuddy-linux-amd64 buildbuddy-enterprise-linux-amd64 executor-enterprise-linux-amd64 --clobber
+          SLACK_WEBHOOK_URL: https://hooks.slack.com/services/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
