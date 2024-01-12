@@ -103,7 +103,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .then((r) => {
         const sizes = new Map<string, [Number, Number]>();
         r.sizes.forEach((v) => {
-          sizes.set(v.digest, [+v.totalSize, +v.childCount]);
+          sizes.set(v.digest.split("/")[0], [+v.totalSize, +v.childCount]);
         });
         this.setState({ treeShaToTotalSizeMap: sizes });
       })
