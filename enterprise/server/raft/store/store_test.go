@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
@@ -140,7 +138,13 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	rc := rangecache.New()
 	ts.Sender = sender.New(rc, reg, apiClient)
 	reg.AddNode(nodeHost.ID(), ts.RaftAddress, ts.GRPCAddress)
-	s, err := store.New(te, ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, []disk.Partition{})
+	partitions := []disk.Partition{
+		{
+			ID:           "default",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+		},
+	}
+	s, err := store.New(te, ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, partitions)
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	s.Start()
@@ -404,15 +408,9 @@ func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.Fi
 }
 
 func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int) []*rfpb.FileRecord {
-	var groupID string
 	out := make([]*rfpb.FileRecord, 0, n)
 	for i := 0; i < n; i++ {
-		if i%10 == 0 {
-			g, err := random.RandomString(16)
-			require.NoError(t, err)
-			groupID = strings.ToLower(g)
-		}
-		out = append(out, writeRecord(ctx, t, store, groupID, 1000))
+		out = append(out, writeRecord(ctx, t, store, "default", 1000))
 	}
 	return out
 }
