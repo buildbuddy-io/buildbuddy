@@ -366,13 +366,6 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err := json.Unmarshal(req, &ur); err != nil {
 		return nil, err
 	}
-	emailParts := strings.Split(ur.UserName, "@")
-	if len(emailParts) != 2 {
-		return nil, status.InvalidArgumentErrorf("invalid username %q", ur.UserName)
-	}
-	if emailParts[1] != g.OwnedDomain {
-		return nil, status.InvalidArgumentErrorf("username domain %q does not match group domain %q", ur.UserName, g.OwnedDomain)
-	}
 
 	pk, err := tables.PrimaryKeyForTable("Users")
 	if err != nil {
