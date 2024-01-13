@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
@@ -16,6 +17,8 @@ import (
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
 
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	gstatus "google.golang.org/grpc/status"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
@@ -133,6 +136,15 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
 			return err
+		}
+		if result.Value == constants.EntryErrorValue {
+			s := &statuspb.Status{}
+			if err := proto.Unmarshal(result.Data, s); err != nil {
+				return err
+			}
+			if err := gstatus.FromProto(s).Err(); err != nil {
+				return err
+			}
 		}
 		raftResponse = result
 		return nil
