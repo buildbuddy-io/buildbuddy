@@ -111,6 +111,7 @@ type UserInfo interface {
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
+	IsSAML() bool
 }
 
 // Authenticator constants

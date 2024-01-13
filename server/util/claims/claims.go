@@ -51,6 +51,7 @@ type Claims struct {
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
+	SAML                   bool                          `json:"saml,omitempty"`
 }
 
 func (c *Claims) GetAPIKeyID() string {
@@ -109,6 +110,10 @@ func (c *Claims) GetCacheEncryptionEnabled() bool {
 
 func (c *Claims) GetEnforceIPRules() bool {
 	return c.EnforceIPRules
+}
+
+func (c *Claims) IsSAML() bool {
+	return c.SAML
 }
 
 func ParseClaims(token string) (*Claims, error) {
