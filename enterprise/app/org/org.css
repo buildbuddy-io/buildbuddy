@@ -269,7 +269,6 @@
 }
 
 .org-members .org-members-list-item {
-  cursor: pointer;
   user-select: none;
   display: flex;
   align-items: center;
@@ -281,12 +280,16 @@
   transition: background-color 100ms ease-out;
 }
 
-.org-members .org-members-list-item:first-child {
-  border-top: 1px solid #eee;
+.org-members .org-members-list-item.editable {
+  cursor: pointer;
 }
 
-.org-members .org-members-list-item:hover {
+.org-members .org-members-list-item.editable:hover {
   background-color: #fafafa;
+}
+
+.org-members .org-members-list-item:first-child {
+  border-top: 1px solid #eee;
 }
 
 .org-members .org-members-list-item.selected {

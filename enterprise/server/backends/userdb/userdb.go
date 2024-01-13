@@ -884,6 +884,7 @@ func fillUserGroups(ctx context.Context, tx interfaces.DB, user *tables.User) er
 			g.saml_idp_metadata_url,
 			g.suggestion_preference,
 			g.restrict_clean_workflow_runs_to_admins,
+			g.external_user_management,
 			ug.role
 		FROM "Groups" as g
 		JOIN "UserGroups" as ug
@@ -912,6 +913,7 @@ func fillUserGroups(ctx context.Context, tx interfaces.DB, user *tables.User) er
 			&gr.Group.SamlIdpMetadataUrl,
 			&gr.Group.SuggestionPreference,
 			&gr.Group.RestrictCleanWorkflowRunsToAdmins,
+			&gr.Group.ExternalUserManagement,
 			&gr.Role,
 		)
 		if err != nil {
@@ -973,7 +975,8 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				cache_encryption_enabled,
 				saml_idp_metadata_url,
 				suggestion_preference,
-				restrict_clean_workflow_runs_to_admins
+				restrict_clean_workflow_runs_to_admins,
+				external_user_management
 			FROM "Groups"
 			WHERE group_id = ?
 		`, u.GetGroupID())
@@ -995,6 +998,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				&gr.Group.SamlIdpMetadataUrl,
 				&gr.Group.SuggestionPreference,
 				&gr.Group.RestrictCleanWorkflowRunsToAdmins,
+				&gr.Group.ExternalUserManagement,
 			)
 			if err != nil {
 				return err

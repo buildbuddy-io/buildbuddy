@@ -18,6 +18,7 @@ import Dialog, {
 import Select, { Option } from "../../../app/components/select/select";
 import { user_id } from "../../../proto/user_id_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
+import Banner from "../../../app/components/banner/banner";
 
 export type OrgMembersProps = {
   user: User;
@@ -75,6 +76,9 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
   }
 
   private onClickRow(userID: string) {
+    if (this.props.user.selectedGroup.externalUserManagement) {
+      return;
+    }
     const clone = new Set(this.state.selectedUserIds);
     if (clone.has(userID)) {
       clone.delete(userID);
@@ -242,38 +246,50 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
     return (
       <div className="org-members">
         <div className="org-members-list-controls">
-          <CheckboxButton
-            className="select-all-button"
-            checked={this.state.isSelectingAll}
-            onClick={this.onClickSelectAllToggle.bind(this)}
-            checkboxOnLeft>
-            Select all
-          </CheckboxButton>
-
-          <Button onClick={this.onClickEditRole.bind(this)} disabled={isSelectionEmpty}>
-            Edit role
-          </Button>
-          <Button
-            onClick={this.onClickRemove.bind(this)}
-            disabled={isSelectionEmpty}
-            className="destructive org-member-remove-button">
-            Remove
-          </Button>
+          {this.props.user.selectedGroup.externalUserManagement && (
+            <div>
+              <Banner type="warning" className="user-management-warning">
+                Users are being managed via an external system. All changes must be made there.
+              </Banner>
+            </div>
+          )}
+          {!this.props.user.selectedGroup.externalUserManagement && (
+            <>
+              <CheckboxButton
+                className="select-all-button"
+                checked={this.state.isSelectingAll}
+                onClick={this.onClickSelectAllToggle.bind(this)}
+                checkboxOnLeft>
+                Select all
+              </CheckboxButton>
+              <Button onClick={this.onClickEditRole.bind(this)} disabled={isSelectionEmpty}>
+                Edit role
+              </Button>
+              <Button
+                onClick={this.onClickRemove.bind(this)}
+                disabled={isSelectionEmpty}
+                className="destructive org-member-remove-button">
+                Remove
+              </Button>
+            </>
+          )}
         </div>
         <div className="org-members-list">
           {this.state.response.user.map((member) => (
             <div
               className={`org-members-list-item ${
                 this.state.selectedUserIds.has(member?.user?.userId?.id || "") ? "selected" : ""
-              }`}
+              } ${!this.props.user.selectedGroup.externalUserManagement ? "editable" : ""}`}
               onClick={() => this.onClickRow(member?.user?.userId?.id || "")}>
-              <div>
-                <Checkbox
-                  title={`Select ${member?.user?.email || member?.user?.name?.full}`}
-                  className="org-member-checkbox"
-                  checked={this.state.selectedUserIds.has(member?.user?.userId?.id || "")}
-                />
-              </div>
+              {!this.props.user.selectedGroup.externalUserManagement && (
+                <div>
+                  <Checkbox
+                    title={`Select ${member?.user?.email || member?.user?.name?.full}`}
+                    className="org-member-checkbox"
+                    checked={this.state.selectedUserIds.has(member?.user?.userId?.id || "")}
+                  />
+                </div>
+              )}
               <div className="org-member-email">{member?.user?.email || member?.user?.name?.full}</div>
               <div className="org-member-role">{ROLE_LABELS[member?.role || 0]}</div>
             </div>
