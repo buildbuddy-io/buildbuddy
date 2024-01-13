@@ -1246,12 +1246,12 @@ func lookupFileMetadata(iter pebble.Iterator, fileMetadataKey []byte) (*rfpb.Fil
 	return fileMetadata, nil
 }
 
-func validateHeaderAgainstRange(rangeDescriptor *rfpb.RangeDescriptor, header *rfpb.Header) error {
-	if rangeDescriptor == nil {
+func validateHeaderAgainstRange(rd *rfpb.RangeDescriptor, header *rfpb.Header) error {
+	if rd == nil {
 		return status.FailedPreconditionError("range descriptor is not set")
 	}
-	if rangeDescriptor.GetGeneration() != header.GetGeneration() {
-		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rangeDescriptor.GetGeneration(), header.GetGeneration())
+	if rd.GetGeneration() != header.GetGeneration() {
+		return status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
 	}
 	return nil
 }
@@ -1500,6 +1500,16 @@ func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
 //
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
+
+func errorEntry(err error) dbsm.Result {
+	status := statusProto(err)
+	rspBuf, _ := proto.Marshal(status)
+	return dbsm.Result{
+		Value: constants.EntryErrorValue,
+		Data:  rspBuf,
+	}
+}
+
 func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Entry, error) {
 	// This method should return errors if something truly fails in an
 	// unrecoverable way (proto marshal/unmarshal, pebble batch commit) but
@@ -1530,7 +1540,8 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	batchRsp := &rfpb.BatchCmdResponse{}
 	if header := batchReq.GetHeader(); header != nil {
 		if err := validateHeaderAgainstRange(rd, header); err != nil {
-			return entry, err
+			entry.Result = errorEntry(err)
+			return entry, nil
 		}
 	}
 	if txid := batchReq.GetTransactionId(); len(txid) > 0 {

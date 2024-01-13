@@ -351,7 +351,11 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	var rsp *rfpb.SyncProposeResponse
+	customHeader := batchCmd.Header
 	err := s.Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		if customHeader == nil {
+			batchCmd.Header = h
+		}
 		r, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 			Header: h,
 			Batch:  batchCmd,
