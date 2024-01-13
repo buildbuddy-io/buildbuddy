@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -1261,6 +1262,41 @@ func TestRequestToJoinGroup_AlreadyInGroup_GetAlreadyExists(t *testing.T) {
 	require.Equal(t, status.Message(err), "You're already in this organization.")
 	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
 	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx1, env, "GR1").Role))
+}
+
+func TestRequestToJoinGroup_NoAutoJoinForSAMLUser(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+
+	// Have US2 be a user using SAML login.
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	p := auth.UserProvider
+	auth.UserProvider = func(userID string) interfaces.UserInfo {
+		c := p(userID).(*claims.Claims)
+		c.SAML = true
+		return c
+	}
+	createUser(t, ctx, env, "US2", "org1.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	// Note: US1 takes ownership of org1.io *after* US2 is created,
+	// so US2 doesn't get auto-added to org1.io
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+
+	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
+	require.NoError(t, err)
+	require.Equal(t, grpb.GroupMembershipStatus_REQUESTED, s)
+	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
+
+	// Submit the same request again; should get AlreadyExists and should still
+	// not be a member of the group.
+	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
+	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+	require.Equal(t, status.Message(err), "You've already requested to join this organization.")
+	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
 }
 
 func TestRequestToJoinGroup_DomainMember_GetsDeveloperRole(t *testing.T) {

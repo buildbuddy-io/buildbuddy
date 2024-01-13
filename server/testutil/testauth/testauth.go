@@ -52,6 +52,7 @@ type TestUser struct {
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
+	SAML                   bool                          `json:"saml,omitempty"`
 }
 
 func (c *TestUser) GetAPIKeyID() string                                { return "" }
@@ -80,6 +81,9 @@ func (c *TestUser) GetEnforceIPRules() bool {
 }
 func (c *TestUser) IsImpersonating() bool {
 	return false
+}
+func (c *TestUser) IsSAML() bool {
+	return c.SAML
 }
 
 func User(userID, groupID string) *TestUser {
