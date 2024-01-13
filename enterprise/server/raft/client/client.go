@@ -17,11 +17,11 @@ import (
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
 
-	statuspb "google.golang.org/genproto/googleapis/rpc/status"
-	gstatus "google.golang.org/grpc/status"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	gstatus "google.golang.org/grpc/status"
 )
 
 // A default timeout that can be applied to raft requests that do not have one
