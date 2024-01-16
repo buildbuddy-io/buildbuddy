@@ -54,6 +54,9 @@ func invocationMetricToDbField(m stat_filter.InvocationMetricType, paramPrefix s
 }
 
 func MetricToDbField(m *stat_filter.Metric, paramPrefix string) (string, error) {
+	if m == nil {
+		return "", status.InvalidArgumentErrorf("Filter metric must not be nil")
+	}
 	if m.Invocation != nil {
 		return invocationMetricToDbField(m.GetInvocation(), paramPrefix)
 	} else if m.Execution != nil {
