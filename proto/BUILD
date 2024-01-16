@@ -415,6 +415,7 @@ proto_library(
         ":invocation_status_proto",
         ":stat_filter_proto",
         ":target_proto",
+        ":user_id_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
@@ -1187,6 +1188,7 @@ go_proto_library(
         ":invocation_status_go_proto",
         ":stat_filter_go_proto",
         ":target_go_proto",
+        ":user_id_go_proto",
     ],
 )
 
@@ -1858,6 +1860,7 @@ ts_proto_library(
         ":invocation_status_ts_proto",
         ":stat_filter_ts_proto",
         ":target_ts_proto",
+        ":user_id_ts_proto",
         ":timestamp_ts_proto",
     ],
 )
