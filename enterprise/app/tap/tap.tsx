@@ -62,12 +62,12 @@ type SortDirection = "asc" | "desc";
 interface CommitGrouping {
   commits: string[] | null;
   commitToMaxInvocationCreatedAtUsec: Map<string, number> | null;
-  commitToTargetLabelToStatus: Map<string, Map<string, target.ITargetStatus>> | null;
+  commitToTargetLabelToStatuses: Map<string, Map<string, target.ITargetStatus[]>> | null;
 }
 
 interface CommitStatus {
   commitSha: string;
-  status: target.ITargetStatus | null;
+  statuses: target.ITargetStatus[] | null;
 }
 
 interface Stat {
@@ -94,7 +94,7 @@ export default class TapComponent extends React.Component<Props, State> {
     targetHistory: [],
     nextPageToken: "",
     commits: null,
-    commitToTargetLabelToStatus: null,
+    commitToTargetLabelToStatuses: null,
     commitToMaxInvocationCreatedAtUsec: null,
     loading: true,
     targetLimit: 100,
@@ -250,7 +250,7 @@ export default class TapComponent extends React.Component<Props, State> {
 
   groupByCommit(targetHistories: target.ITargetHistory[]): CommitGrouping {
     const commitToMaxInvocationCreatedAtUsec = new Map<string, number>();
-    const commitToTargetLabelToStatus = new Map<string, Map<string, target.ITargetStatus>>();
+    const commitToTargetLabelToStatuses = new Map<string, Map<string, target.ITargetStatus[]>>();
 
     for (const history of targetHistories) {
       for (const targetStatus of history.targetStatus || []) {
@@ -260,23 +260,18 @@ export default class TapComponent extends React.Component<Props, State> {
           commitToMaxInvocationCreatedAtUsec.set(targetStatus.commitSha, timestamp);
         }
 
-        let targetLabelToStatus = commitToTargetLabelToStatus.get(targetStatus.commitSha);
+        let targetLabelToStatus = commitToTargetLabelToStatuses.get(targetStatus.commitSha);
         if (!targetLabelToStatus) {
-          targetLabelToStatus = new Map<string, target.ITargetStatus>();
-          commitToTargetLabelToStatus.set(targetStatus.commitSha, targetLabelToStatus);
+          targetLabelToStatus = new Map<string, target.ITargetStatus[]>();
+          commitToTargetLabelToStatuses.set(targetStatus.commitSha, targetLabelToStatus);
         }
 
-        // For a given commit, the representative target status that
-        // we show in the UI is the one whose corresponding invocation
-        // was created latest.
-        //
-        // TODO(bduffany): Keep track of per-target count by commit, in
-        // case the same target was executed multiple times for a given
-        // commit. Otherwise the count stat looks incorrect.
         if (history.target) {
           const existing = targetLabelToStatus.get(history.target!.label);
-          if (!existing || timestamp > Number(existing.invocationCreatedAtUsec)) {
-            targetLabelToStatus.set(history.target!.label, targetStatus);
+          if (existing) {
+            existing.push(targetStatus);
+          } else {
+            targetLabelToStatus.set(history.target!.label, [targetStatus]);
           }
         }
       }
@@ -285,7 +280,7 @@ export default class TapComponent extends React.Component<Props, State> {
       (a, b) => commitToMaxInvocationCreatedAtUsec.get(b)! - commitToMaxInvocationCreatedAtUsec.get(a)!
     );
 
-    return { commits, commitToMaxInvocationCreatedAtUsec, commitToTargetLabelToStatus };
+    return { commits, commitToMaxInvocationCreatedAtUsec, commitToTargetLabelToStatuses };
   }
 
   navigateTo(destination: string, event: React.MouseEvent) {
@@ -459,14 +454,16 @@ export default class TapComponent extends React.Component<Props, State> {
 
   getTargetStatuses(history: target.ITargetHistory): CommitStatus[] {
     if (!this.isV2) {
-      return history.targetStatus?.map((status) => ({ commitSha: status.commitSha, status })) || [];
+      return (
+        history.targetStatus?.map((status) => ({ commitSha: status.commitSha, statuses: [status], count: 1 })) || []
+      );
     }
     // For test grid V2, ignore the incoming history (for now) and use the indexes we
     // built to order by commit.
     return (
       this.state.commits?.map((commitSha) => ({
         commitSha,
-        status: this.state.commitToTargetLabelToStatus?.get(commitSha)?.get(history.target?.label || "") || null,
+        statuses: this.state.commitToTargetLabelToStatuses?.get(commitSha)?.get(history.target?.label || "") || null,
       })) || []
     );
   }
@@ -641,51 +638,60 @@ export default class TapComponent extends React.Component<Props, State> {
                   {this.getTargetStatuses(targetHistory)
                     .slice(0, this.state.invocationLimit)
                     .map((commitStatus: CommitStatus) => {
-                      const { commitSha, status } = commitStatus;
-                      if (status === null) {
+                      let statuses = commitStatus.statuses?.sort(
+                        (a, b) => Number(b.invocationCreatedAtUsec) - Number(a.invocationCreatedAtUsec)
+                      );
+                      if (!statuses || statuses.length == 0) {
                         // For V2, null means the target was not run for this commit.
                         return (
                           <div
                             className="tap-block no-status"
                             title={
-                              commitSha ? `Target status not reported at commit ${commitSha}` : "No status reported"
+                              commitStatus.commitSha
+                                ? `Target status not reported at commit ${commitStatus.commitSha}`
+                                : "No status reported"
                             }
                           />
                         );
                       }
+                      let status = statuses[0];
 
                       let destinationUrl = `/invocation/${status.invocationId}?${new URLSearchParams({
                         target: targetHistory.target?.label || "",
-                        targetStatus: String(commitStatus.status?.status || 0),
+                        targetStatus: String(status || 0),
                       })}`;
                       let title =
                         this.getColorMode() == "timing"
                           ? `${this.durationToNum(status.timing?.duration || undefined).toFixed(2)}s`
                           : this.statusToString(status.status || Status.STATUS_UNSPECIFIED);
-                      if (this.isV2 && commitSha) {
-                        title += ` at commit ${commitSha}`;
+                      if (this.isV2 && commitStatus.commitSha) {
+                        title += ` at commit ${commitStatus.commitSha}`;
                       }
                       return (
-                        <a
-                          key={targetHistory.target?.label || "" + status.invocationId}
-                          href={destinationUrl}
-                          onClick={this.navigateTo.bind(this, destinationUrl)}
-                          title={title}
-                          style={{
-                            opacity:
-                              this.getColorMode() == "timing"
-                                ? Math.max(
-                                    MIN_OPACITY,
-                                    (1.0 * this.durationToNum(status.timing?.duration || undefined)) /
-                                      (stats?.maxDuration || 1)
-                                  )
-                                : undefined,
-                          }}
-                          className={`tap-block ${
-                            this.getColorMode() == "status" ? `status-${status.status}` : "timing"
-                          } clickable`}>
-                          {this.statusToIcon(status.status || Status.STATUS_UNSPECIFIED)}
-                        </a>
+                        <div className="tap-commit-container">
+                          {statuses.map((status) => (
+                            <a
+                              key={targetHistory.target?.label || "" + status.invocationId}
+                              href={destinationUrl}
+                              onClick={this.navigateTo.bind(this, destinationUrl)}
+                              title={title}
+                              style={{
+                                opacity:
+                                  this.getColorMode() == "timing"
+                                    ? Math.max(
+                                        MIN_OPACITY,
+                                        (1.0 * this.durationToNum(status.timing?.duration || undefined)) /
+                                          (stats?.maxDuration || 1)
+                                      )
+                                    : undefined,
+                              }}
+                              className={`tap-block ${
+                                this.getColorMode() == "status" ? `status-${status.status}` : "timing"
+                              } clickable`}>
+                              {this.statusToIcon(status.status || Status.STATUS_UNSPECIFIED)}
+                            </a>
+                          ))}
+                        </div>
                       );
                     })}
                 </div>
