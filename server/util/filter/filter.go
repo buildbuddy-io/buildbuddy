@@ -54,7 +54,7 @@ func invocationMetricToDbField(m stat_filter.InvocationMetricType, paramPrefix s
 }
 
 func MetricToDbField(m *stat_filter.Metric, paramPrefix string) (string, error) {
-	if m.Invocation != nil {
+	if m.GetInvocation() != nil {
 		return invocationMetricToDbField(m.GetInvocation(), paramPrefix)
 	} else if m.Execution != nil {
 		return executionMetricToDbField(m.GetExecution(), paramPrefix)
