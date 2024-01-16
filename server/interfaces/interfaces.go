@@ -45,6 +45,7 @@ import (
 	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
@@ -511,6 +512,8 @@ type UserDB interface {
 	// permissions and is requesting to impersonate a group.
 	GetImpersonatedUser(ctx context.Context) (*tables.User, error)
 	FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error
+
+	GetDisplayUsers(ctx context.Context, userIDs []string) (map[string]*uidpb.DisplayUser, error)
 
 	// Creates the DEFAULT group, for on-prem usage where there is only
 	// one group and all users are implicitly a part of it.

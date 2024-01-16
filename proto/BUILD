@@ -1860,8 +1860,8 @@ ts_proto_library(
         ":invocation_status_ts_proto",
         ":stat_filter_ts_proto",
         ":target_ts_proto",
-        ":user_id_ts_proto",
         ":timestamp_ts_proto",
+        ":user_id_ts_proto",
     ],
 )
 

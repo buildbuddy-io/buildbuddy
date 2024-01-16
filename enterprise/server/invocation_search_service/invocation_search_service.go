@@ -122,9 +122,29 @@ func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, req *
 		return nil, 0, err
 	}
 
+	userIDSet := make(map[string]struct{}, 0)
+	for _, ti := range tis {
+		userIDSet[ti.UserID] = struct{}{}
+	}
+
+	userIDs := make([]string, 0, len(userIDSet))
+	for userID := range userIDSet {
+		userIDs = append(userIDs, userID)
+	}
+
+	displayUsers, err := s.env.GetUserDB().GetDisplayUsers(ctx, userIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	invocations := make([]*inpb.Invocation, 0)
 	for _, ti := range tis {
-		invocations = append(invocations, build_event_handler.TableInvocationToProto(ti))
+		inv := build_event_handler.TableInvocationToProto(ti)
+		du := displayUsers[ti.UserID]
+		if du != nil {
+			inv.DisplayUser = du
+		}
+		invocations = append(invocations, inv)
 	}
 
 	return invocations, int64(len(invocations)), nil

@@ -24,6 +24,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 const (
@@ -1095,4 +1096,15 @@ func getEmailDomain(email string) string {
 		return ""
 	}
 	return parts[len(parts)-1]
+}
+
+func (d *UserDB) GetDisplayUsers(ctx context.Context, userIDs []string) (map[string]*uidpb.DisplayUser, error) {
+	rq := d.h.NewQuery(ctx, "get_display_users").Raw(
+		`SELECT user_id, first_name, last_name, email, image_url FROM "Users" WHERE user_id IN ?`, userIDs)
+	users, err := db.ScanAll(rq, &tables.User{})
+	res := make(map[string]*uidpb.DisplayUser, 0)
+	for _, u := range users {
+		res[u.UserID] = u.ToProto()
+	}
+	return res, err
 }

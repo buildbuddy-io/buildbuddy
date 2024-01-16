@@ -1389,8 +1389,17 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 	invocation := TableInvocationToProto(ti)
 	streamID := GetStreamIdFromInvocationIdAndAttempt(iid, ti.Attempt)
 
-	var scoreCard *capb.ScoreCard
 	eg, ctx := errgroup.WithContext(ctx)
+	var displayUser *uidpb.DisplayUser
+	eg.Go(func() error {
+		displayUsers, err := env.GetUserDB().GetDisplayUsers(ctx, []string{ti.UserID})
+		if err != nil {
+			return err
+		}
+		displayUser = displayUsers[ti.UserID]
+		return nil
+	})
+	var scoreCard *capb.ScoreCard
 	eg.Go(func() error {
 		// When detailed stats are enabled, the scorecard is not inlined in the
 		// invocation.
@@ -1490,6 +1499,7 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 	}
 
 	invocation.ScoreCard = scoreCard
+	invocation.DisplayUser = displayUser
 	return invocation, nil
 }
 
