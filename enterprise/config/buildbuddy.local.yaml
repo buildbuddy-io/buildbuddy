@@ -8,8 +8,8 @@ app:
   user_owned_keys_enabled: true
 database:
   data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
-#olap_database:
-#data_source: "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
+olap_database:
+  data_source: "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
 storage:
   ttl_seconds: 86400 # One day in seconds.
   disk:
