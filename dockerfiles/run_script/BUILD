@@ -6,6 +6,6 @@ container_push(
     image = "@run_script_image//image:dockerfile_image.tar",
     registry = "gcr.io",
     repository = "flame-build/run-script",  # Note flame-build, not flame-public.
-    tag_file = "//deployment:image_tag",
+    tag_file = "//deployment:image_tag_file",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )
