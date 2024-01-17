@@ -53,7 +53,7 @@ and [`--persistent_android_dex_desugar`][persistent_android_dex_desugar] flags.
 [experimental_persistent_aar_extractor]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--experimental_persistent_aar_extractor
 [persistent_android_resource_processor]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--persistent_android_resource_processor
 [persistent_android_dex_desugar]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--persistent_android_dex_desugar
-[reuse_sandbox_directories]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--experimental_circuit_breaker_strategy
+[reuse_sandbox_directories]: https://bazel.build/versions/7.0.0/reference/command-line-reference#flag--reuse_sandbox_directories
 
 ## Skymeld
 
