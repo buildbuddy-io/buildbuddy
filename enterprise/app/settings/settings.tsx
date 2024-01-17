@@ -18,6 +18,7 @@ import Link from "../../../app/components/link/link";
 import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
 import EncryptionComponent from "../encryption/encryption";
 import IpRulesComponent from "../iprules/iprules";
+import FeatureflagsComponent from "../featureflags/featureflags";
 
 export interface SettingsProps {
   user: User;
@@ -34,6 +35,7 @@ enum TabId {
   OrgSecrets = "org/secrets",
   OrgCacheEncryption = "org/cache-encryption",
   OrgIpRules = "org/ip-rules",
+  OrgFeatureFlags = "org/feature-flags",
 
   PersonalPreferences = "personal/preferences",
   PersonalApiKeys = "personal/api-keys",
@@ -159,6 +161,9 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     IP rules
                   </SettingsTab>
                 )}
+                <SettingsTab id={TabId.OrgFeatureFlags} activeTabId={activeTabId}>
+                  Feature Flags
+                </SettingsTab>
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>
@@ -336,6 +341,15 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       </div>
                       <IpRulesComponent user={this.props.user} />
                     </>
+                  )}
+                  {activeTabId == TabId.OrgFeatureFlags && (
+                      <>
+                        <div className="settings-option-title">Feature Flags</div>
+                        <div className="settings-option-description">
+                          Feature flags give you the ability to dynamically change flag values.
+                        </div>
+                        <FeatureflagsComponent />
+                      </>
                   )}
                 </>
               )}
