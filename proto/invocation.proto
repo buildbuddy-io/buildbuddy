@@ -290,6 +290,9 @@ message InvocationQuery {
 
   // Plaintext tags for the targets built (exact match). Ex: "my-cool-tag"
   repeated string tags = 16;
+
+  // The user id who performs the build.
+  string user_id = 17;
 }
 
 message InvocationSort {
