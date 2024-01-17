@@ -67,6 +67,15 @@ def _impl(ctx):
                     tool = ctx.file.ld,
                 ),
             ],
+            flag_sets = [
+                flag_set(
+                    flag_groups = [
+                        flag_group(
+                            flags = ["-t"],
+                        ),
+                    ],
+                ),
+            ],
         )
         for name in ACTION_NAME_GROUPS.all_cc_link_actions
     ])

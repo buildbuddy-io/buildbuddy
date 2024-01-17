@@ -46,6 +46,11 @@ toolchain(
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
 
+# cc_toolchain(
+    # name = "local",
+    # 
+# )
+
 cc_toolchain(
     name = "cosmo_cc_toolchain",
     # all_files = ":compiler_deps",
@@ -65,7 +70,8 @@ cc_toolchain(
     objcopy_files = "@cosmocc//:x86_64-full",
     static_runtime_lib = "@cosmocc//:x86_64-libstdc++.a",
     strip_files = "@cosmocc//:x86_64-full",
-    supports_param_files = 1,
+    # supports_param_files = 1,
+    supports_param_files = 0,
     toolchain_config = ":cosmo_cc_toolchain_config",
 )
 
@@ -86,6 +92,7 @@ cc_toolchain_config(
         "-Wall",
         "-Wunused-but-set-parameter",
         "-Wno-free-nonheap-object",
+        "-pass-exit-codes",
     ] + [
         "-fno-pie",
         "-nostdinc",
@@ -125,14 +132,13 @@ cc_toolchain_config(
         "-static",
         "-nostdlib",
         "-no-pie",
-        # "-fuse-ld=bfd",
-        "-Wl,--gc-sections",
-        "-Wl,-T,external/cosmocc/x86_64-linux-cosmo/lib/ape.lds",
-        "-Wl,-z,common-page-size=4096",
-        "-Wl,-z,max-page-size=16384",
-        "-Wl,-no-as-needed",
-        "-Wl,-z,norelro,-z,now",
-        "-pass-exit-codes",
+        "--gc-sections",
+        "-Texternal/cosmocc/x86_64-linux-cosmo/lib/ape.lds",
+        "-zcommon-page-size=4096",
+        "-zmax-page-size=16384",
+        "-no-as-needed",
+        "-znorelro",
+        "-znow",
         "external/cosmocc/x86_64-linux-cosmo/lib/ape.o",
         "external/cosmocc/x86_64-linux-cosmo/lib/crt.o",
         "-lcosmo",
