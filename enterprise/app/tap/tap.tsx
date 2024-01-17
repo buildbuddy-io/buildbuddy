@@ -654,43 +654,44 @@ export default class TapComponent extends React.Component<Props, State> {
                           />
                         );
                       }
-                      let status = statuses[0];
-
-                      let destinationUrl = `/invocation/${status.invocationId}?${new URLSearchParams({
-                        target: targetHistory.target?.label || "",
-                        targetStatus: String(status || 0),
-                      })}`;
-                      let title =
-                        this.getColorMode() == "timing"
-                          ? `${this.durationToNum(status.timing?.duration || undefined).toFixed(2)}s`
-                          : this.statusToString(status.status || Status.STATUS_UNSPECIFIED);
-                      if (this.isV2 && commitStatus.commitSha) {
-                        title += ` at commit ${commitStatus.commitSha}`;
-                      }
                       return (
                         <div className="tap-commit-container">
-                          {statuses.map((status) => (
-                            <a
-                              key={targetHistory.target?.label || "" + status.invocationId}
-                              href={destinationUrl}
-                              onClick={this.navigateTo.bind(this, destinationUrl)}
-                              title={title}
-                              style={{
-                                opacity:
-                                  this.getColorMode() == "timing"
-                                    ? Math.max(
-                                        MIN_OPACITY,
-                                        (1.0 * this.durationToNum(status.timing?.duration || undefined)) /
-                                          (stats?.maxDuration || 1)
-                                      )
-                                    : undefined,
-                              }}
-                              className={`tap-block ${
-                                this.getColorMode() == "status" ? `status-${status.status}` : "timing"
-                              } clickable`}>
-                              {this.statusToIcon(status.status || Status.STATUS_UNSPECIFIED)}
-                            </a>
-                          ))}
+                          {statuses.map((status) => {
+                            let destinationUrl = `/invocation/${status.invocationId}?${new URLSearchParams({
+                              target: targetHistory.target?.label || "",
+                              targetStatus: String(status),
+                            })}`;
+                            let title =
+                              this.getColorMode() == "timing"
+                                ? `${this.durationToNum(status.timing?.duration || undefined).toFixed(2)}s`
+                                : this.statusToString(status.status || Status.STATUS_UNSPECIFIED);
+                            if (this.isV2 && commitStatus.commitSha) {
+                              title += ` at commit ${commitStatus.commitSha}`;
+                            }
+
+                            return (
+                              <a
+                                key={targetHistory.target?.label || "" + status.invocationId}
+                                href={destinationUrl}
+                                onClick={this.navigateTo.bind(this, destinationUrl)}
+                                title={title}
+                                style={{
+                                  opacity:
+                                    this.getColorMode() == "timing"
+                                      ? Math.max(
+                                          MIN_OPACITY,
+                                          (1.0 * this.durationToNum(status.timing?.duration || undefined)) /
+                                            (stats?.maxDuration || 1)
+                                        )
+                                      : undefined,
+                                }}
+                                className={`tap-block ${
+                                  this.getColorMode() == "status" ? `status-${status.status}` : "timing"
+                                } clickable`}>
+                                {this.statusToIcon(status.status || Status.STATUS_UNSPECIFIED)}
+                              </a>
+                            );
+                          })}
                         </div>
                       );
                     })}
