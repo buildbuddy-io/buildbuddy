@@ -667,6 +667,14 @@ proto_library(
     ],
 )
 
+proto_library(
+    name = "featureflag_proto",
+    srcs = ["featureflag.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
 # Go proto rules below here
 go_proto_library(
     name = "grpc_status_go_proto",
@@ -1587,6 +1595,19 @@ go_proto_library(
     proto = ":metrics_proto",
     deps = [
         "@com_github_prometheus_client_model//go",
+    ],
+)
+
+go_proto_library(
+    name = "featureflag_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/featureflag",
+    proto = ":featureflag_proto",
+    deps = [
+        ":context_go_proto",
     ],
 )
 

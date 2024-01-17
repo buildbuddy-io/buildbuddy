@@ -745,6 +745,28 @@ func (*IPRule) TableName() string {
 	return "IPRules"
 }
 
+type FeatureFlag struct {
+	Model
+	Name        string `gorm:"primaryKey"`
+	Enabled     bool   `gorm:"not null;default:0"`
+	Description string
+}
+
+func (*FeatureFlag) TableName() string {
+	return "FeatureFlags"
+}
+
+type ExperimentAssignment struct {
+	Model
+	Name string `gorm:"primaryKey"`
+	// TODO: Do we want an index on group ID?
+	GroupID string
+}
+
+func (*ExperimentAssignment) TableName() string {
+	return "ExperimentAssignments"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -1244,4 +1266,6 @@ func RegisterTables() {
 	registerTable("UG", &UserGroup{})
 	registerTable("US", &User{})
 	registerTable("WF", &Workflow{})
+	registerTable("FF", &FeatureFlag{})
+	registerTable("EA", &ExperimentAssignment{})
 }
