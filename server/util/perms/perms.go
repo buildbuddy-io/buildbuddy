@@ -308,5 +308,9 @@ func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroup
 		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 
-	return GroupAuthPermissions(u.GetGroupID()), nil
+	return &UserGroupPerm{
+		UserID:  u.GetUserID(),
+		GroupID: u.GetGroupID(),
+		Perms:   GROUP_READ | GROUP_WRITE,
+	}, nil
 }
