@@ -644,14 +644,16 @@ export default class TapComponent extends React.Component<Props, State> {
                       if (!statuses || statuses.length == 0) {
                         // For V2, null means the target was not run for this commit.
                         return (
-                          <div
-                            className="tap-block no-status"
-                            title={
-                              commitStatus.commitSha
-                                ? `Target status not reported at commit ${commitStatus.commitSha}`
-                                : "No status reported"
-                            }
-                          />
+                          <div className="tap-commit-container">
+                            <div
+                              className="tap-block no-status"
+                              title={
+                                commitStatus.commitSha
+                                  ? `Target status not reported at commit ${commitStatus.commitSha}`
+                                  : "No status reported"
+                              }
+                            />
+                          </div>
                         );
                       }
                       return (
