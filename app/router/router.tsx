@@ -244,6 +244,10 @@ class Router {
     this.navigateTo(Path.userHistoryPath + user);
   }
 
+  navigateToMoma(userId: string) {
+    this.navigateTo(Path.momaPath + userId);
+  }
+
   navigateToHostHistory(host: string) {
     this.navigateTo(Path.hostHistoryPath + host);
   }
@@ -323,6 +327,10 @@ class Router {
 
   getHistoryUser(path: string) {
     return this.getLastPathComponent(path, Path.userHistoryPath);
+  }
+
+  getMomaUserId(path: string) {
+    return this.getLastPathComponent(path, Path.momaPath);
   }
 
   getHistoryHost(path: string) {
@@ -552,6 +560,7 @@ export class Path {
   static workflowsPath = "/workflows/";
   static codePath = "/code/";
   static reviewsPath = "/reviews/";
+  static momaPath = "/moma/";
 }
 
 /** Returns the longest path value in `Path` matching the given URL path. */
@@ -581,6 +590,7 @@ function getUnavailableMessage(matchedPath: string) {
     case Path.executorsPath:
     case Path.tapPath:
     case Path.userHistoryPath:
+    case Path.momaPath:
     case Path.hostHistoryPath:
     case Path.repoHistoryPath:
     case Path.branchHistoryPath:

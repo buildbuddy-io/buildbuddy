@@ -6,6 +6,7 @@ import {
   Code,
   HardDrive,
   Users,
+  UserIcon,
   GitBranch,
   Github,
   BarChart2,
@@ -66,6 +67,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
 
   isTapSelected() {
     return this.props.path.startsWith("/tests/");
+  }
+
+  isMomaSelected() {
+    return this.props.path.startsWith("/moma/");
   }
 
   isUsersSelected() {
@@ -150,6 +155,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
           <SidebarLink selected={this.isUsersSelected()} href="/#users" title="Users">
             <Users className="icon" />
             <span className="sidebar-item-text">Users</span>
+          </SidebarLink>
+          <SidebarLink selected={this.isMomaSelected()} href={Path.momaPath} title="Users">
+            <UserIcon className="icon" />
+            <span className="sidebar-item-text">MOMA</span>
           </SidebarLink>
           <SidebarLink selected={this.isReposSelected()} href="/#repos" title="Repos">
             <Github className="icon" />

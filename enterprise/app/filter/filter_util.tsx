@@ -13,6 +13,7 @@ import {
   STATUS_PARAM_NAME,
   LAST_N_DAYS_PARAM_NAME,
   USER_PARAM_NAME,
+  USER_ID_PARAM_NAME,
   REPO_PARAM_NAME,
   BRANCH_PARAM_NAME,
   COMMIT_PARAM_NAME,
@@ -86,6 +87,7 @@ export function getProtoFilterParams(search: URLSearchParams, now?: moment.Momen
     updatedBefore: endDate ? proto.dateToTimestamp(endDate) : undefined,
 
     user: search.get(USER_PARAM_NAME) || undefined,
+	userId: search.get(USER_ID_PARAM_NAME) || undefined,
     repo: search.get(REPO_PARAM_NAME) || undefined,
     branch: search.get(BRANCH_PARAM_NAME) || undefined,
     commit: search.get(COMMIT_PARAM_NAME) || undefined,
@@ -225,6 +227,7 @@ export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
     search.get(ROLE_PARAM_NAME) ||
       search.get(STATUS_PARAM_NAME) ||
       search.get(USER_PARAM_NAME) ||
+      search.get(USER_ID_PARAM_NAME) ||
       search.get(REPO_PARAM_NAME) ||
       search.get(BRANCH_PARAM_NAME) ||
       search.get(COMMIT_PARAM_NAME) ||

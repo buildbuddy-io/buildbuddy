@@ -9,6 +9,7 @@ export const END_DATE_PARAM_NAME = "end";
 export const LAST_N_DAYS_PARAM_NAME = "days";
 
 export const USER_PARAM_NAME = "user";
+export const USER_ID_PARAM_NAME = "user-id";
 export const REPO_PARAM_NAME = "repo";
 export const BRANCH_PARAM_NAME = "branch";
 export const COMMIT_PARAM_NAME = "commit";

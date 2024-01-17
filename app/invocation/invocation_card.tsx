@@ -70,7 +70,14 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
   handleUserClicked(event: any, invocation: invocation.Invocation) {
-    router.navigateToUserHistory(invocation.user);
+	let userId = invocation.displayUser?.userId?.id
+	if (userId) {
+		console.log(userId);
+      router.navigateToMoma(userId);
+	} else {
+		console.log("no userId");
+		router.navigateToUserHistory(invocation.user);
+	}
     event.stopPropagation();
     event.preventDefault();
   }
