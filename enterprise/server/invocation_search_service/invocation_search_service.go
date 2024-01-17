@@ -250,6 +250,9 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	if user := req.GetQuery().GetUser(); user != "" {
 		q.AddWhereClause("i.user = ?", user)
 	}
+	if userID := req.GetQuery().GetUserId(); userID != "" {
+		q.AddWhereClause("i.user_id = ?", userID)
+	}
 	if host := req.GetQuery().GetHost(); host != "" {
 		q.AddWhereClause("i.host = ?", host)
 	}
