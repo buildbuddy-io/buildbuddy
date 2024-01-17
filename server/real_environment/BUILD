@@ -11,6 +11,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:soci_go_proto",
+        "//server/featureflag",
         "//server/interfaces",
         "@com_github_go_redis_redis_v8//:redis",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

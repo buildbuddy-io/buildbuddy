@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/featureflag"
 	"io/fs"
 	"net"
 	"net/http"
@@ -362,6 +363,8 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if err := grpc_server.RegisterGRPCSServer(env, registerGRPCServices); err != nil {
 		log.Fatalf("%v", err)
 	}
+
+	env.SetFeatureflagService(featureflag.NewFeatureFlagService(env))
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
 	// can be called over HTTP(s).

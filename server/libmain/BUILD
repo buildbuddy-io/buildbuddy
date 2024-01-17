@@ -29,6 +29,7 @@ go_library(
         "//server/build_event_protocol/webhooks",
         "//server/buildbuddy_server",
         "//server/endpoint_urls/build_buddy_url",
+        "//server/featureflag",
         "//server/gossip",
         "//server/http/interceptors",
         "//server/http/protolet",

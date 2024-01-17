@@ -13,12 +13,12 @@ import (
 	ffpb "github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 )
 
-type featureFlagService struct {
+type FeatureFlagService struct {
 	env environment.Env
 }
 
-func NewFeatureFlagService(env environment.Env) *featureFlagService {
-	ff := &featureFlagService{
+func NewFeatureFlagService(env environment.Env) *FeatureFlagService {
+	ff := &FeatureFlagService{
 		env: env,
 	}
 	return ff
@@ -42,7 +42,7 @@ type featureFlagAssignment struct {
 	groupID     string
 }
 
-func (ffs *featureFlagService) GetAll(ctx context.Context) (map[string]*FeatureFlag, error) {
+func (ffs *FeatureFlagService) GetAll(ctx context.Context) (map[string]*FeatureFlag, error) {
 	rq := ffs.env.GetDBHandle().NewQuery(ctx, "feature_flag_service_get_all").Raw(
 		`SELECT * FROM "FeatureFlags"" ff LEFT JOIN "ExperimentAssignments"" ea ON ff.name = ea.name;`,
 	)
@@ -86,7 +86,7 @@ func (ffs *featureFlagService) GetAll(ctx context.Context) (map[string]*FeatureF
 	return ffMap, nil
 }
 
-func (ffs *featureFlagService) CreateFeatureFlag(ctx context.Context, req *ffpb.CreateFeatureFlagRequest) (*ffpb.CreateFeatureFlagResponse, error) {
+func (ffs *FeatureFlagService) CreateFeatureFlag(ctx context.Context, req *ffpb.CreateFeatureFlagRequest) (*ffpb.CreateFeatureFlagResponse, error) {
 	if err := ffs.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (ffs *featureFlagService) CreateFeatureFlag(ctx context.Context, req *ffpb.
 	return &ffpb.CreateFeatureFlagResponse{}, nil
 }
 
-func (ffs *featureFlagService) UpdateFeatureFlag(ctx context.Context, req *ffpb.UpdateFeatureFlagRequest) (*ffpb.UpdateFeatureFlagResponse, error) {
+func (ffs *FeatureFlagService) UpdateFeatureFlag(ctx context.Context, req *ffpb.UpdateFeatureFlagRequest) (*ffpb.UpdateFeatureFlagResponse, error) {
 	err := ffs.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		if err := ffs.env.GetDBHandle().NewQuery(ctx, "featureflag_service_update_featureflag").Raw(`
 				UPDATE "FeatureFlags""
@@ -156,7 +156,7 @@ func (ffs *featureFlagService) UpdateFeatureFlag(ctx context.Context, req *ffpb.
 
 // Check that user is in BB org
 // Won't have to do this if we put the page on something like flagz
-func (ffs *featureFlagService) checkPreconditions(ctx context.Context) error {
+func (ffs *FeatureFlagService) checkPreconditions(ctx context.Context) error {
 	//if ws.env.GetDBHandle() == nil {
 	//	return status.FailedPreconditionError("database not configured")
 	//}

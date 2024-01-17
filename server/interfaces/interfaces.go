@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	ffpb "github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 	"io"
 	"net/http"
 	"net/url"
@@ -1472,4 +1473,9 @@ type GossipService interface {
 	Statusz(ctx context.Context) string
 	Leave() error
 	Shutdown() error
+}
+
+type FeatureFlagService interface {
+	CreateFeatureFlag(ctx context.Context, req *ffpb.CreateFeatureFlagRequest) (*ffpb.CreateFeatureFlagResponse, error)
+	UpdateFeatureFlag(ctx context.Context, req *ffpb.UpdateFeatureFlagRequest) (*ffpb.UpdateFeatureFlagResponse, error)
 }

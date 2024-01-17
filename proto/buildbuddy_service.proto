@@ -7,6 +7,7 @@ import "proto/cache.proto";
 import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
 import "proto/encryption.proto";
+import "proto/featureflag.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
 import "proto/iprules.proto";
@@ -263,4 +264,11 @@ service BuildBuddyService {
   // GCP API
   rpc GetGCPProject(gcp.GetGCPProjectRequest)
       returns (gcp.GetGCPProjectResponse);
+
+  // FeatureFlag API
+  rpc CreateFeatureFlag(featureflag.CreateFeatureFlagRequest)
+      returns (featureflag.CreateFeatureFlagResponse);
+
+  rpc UpdateFeatureFlag(featureflag.UpdateFeatureFlagRequest)
+      returns (featureflag.UpdateFeatureFlagResponse);
 }

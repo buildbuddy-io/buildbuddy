@@ -492,6 +492,7 @@ proto_library(
         ":encryption_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
+        ":featureflag_proto",
         ":gcp_proto",
         ":github_proto",
         ":group_proto",
@@ -1263,6 +1264,7 @@ go_proto_library(
         ":encryption_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
+        ":featureflag_go_proto",
         ":gcp_go_proto",
         ":github_go_proto",
         ":group_go_proto",
@@ -2037,6 +2039,7 @@ ts_proto_library(
         ":encryption_ts_proto",
         ":eventlog_ts_proto",
         ":execution_stats_ts_proto",
+        ":featureflag_ts_proto",
         ":gcp_ts_proto",
         ":github_ts_proto",
         ":group_ts_proto",
@@ -2110,5 +2113,13 @@ ts_proto_library(
     deps = [
         ":context_ts_proto",
         ":vtproto_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "featureflag_ts_proto",
+    proto = ":featureflag_proto",
+    deps = [
+        ":context_ts_proto",
     ],
 )

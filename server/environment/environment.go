@@ -121,4 +121,5 @@ type Env interface {
 	GetSCIMService() interfaces.SCIMService
 	GetGossipService() interfaces.GossipService
 	GetCommandRunner() interfaces.CommandRunner
+	GetFeatureflagService() interfaces.FeatureFlagService
 }

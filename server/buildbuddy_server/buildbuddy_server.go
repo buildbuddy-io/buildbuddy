@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 	"io"
 	"net/http"
 	"net/url"
@@ -2009,4 +2010,17 @@ func (s *BuildBuddyServer) GetGCPProject(ctx context.Context, request *gcpb.GetG
 	}
 
 	return gcpService.GetGCPProject(ctx, request)
+}
+
+func (s *BuildBuddyServer) CreateFeatureFlag(ctx context.Context, request *featureflag.CreateFeatureFlagRequest) (*featureflag.CreateFeatureFlagResponse, error) {
+	ffs := s.env.GetFeatureflagService()
+	if ffs == nil {
+		return nil, status.FailedPreconditionError("Featureflag service not enabled")
+	}
+
+	return ffs.CreateFeatureFlag(ctx, request)
+}
+
+func (s *BuildBuddyServer) UpdateFeatureFlag(ctx context.Context, req *featureflag.UpdateFeatureFlagRequest) (*featureflag.UpdateFeatureFlagResponse, error) {
+	return nil, nil
 }

@@ -1,37 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "target",
-    srcs = ["target.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/target",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//proto:build_event_stream_go_proto",
-        "//proto:featureflag_go_proto",
-        "//proto:invocation_go_proto",
-        "//proto:invocation_status_go_proto",
-        "//proto:pagination_go_proto",
-        "//proto:target_go_proto",
-        "//proto:target_pagination_go_proto",
-        "//proto/api/v1:common_go_proto",
-        "//server/build_event_protocol/event_index",
-        "//server/environment",
-        "//server/interfaces",
-        "//server/util/db",
-        "//server/util/git",
-        "//server/util/log",
-        "//server/util/paging",
-        "//server/util/perms",
-        "//server/util/proto",
-        "//server/util/query_builder",
-        "//server/util/status",
-        "//server/util/uuid",
-        "@org_golang_google_protobuf//types/known/durationpb",
-        "@org_golang_google_protobuf//types/known/timestamppb",
-    ],
-)
-
-go_library(
     name = "featureflag",
     srcs = ["featureflag.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/featureflag",

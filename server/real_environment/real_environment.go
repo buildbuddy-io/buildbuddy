@@ -2,6 +2,7 @@ package real_environment
 
 import (
 	"context"
+	"github.com/buildbuddy-io/buildbuddy/server/featureflag"
 	"io/fs"
 	"sync"
 	"time"
@@ -121,6 +122,7 @@ type RealEnv struct {
 	localBufconnListener             *bufconn.Listener
 	gossipService                    interfaces.GossipService
 	commandRunner                    interfaces.CommandRunner
+	featureflagService               *featureflag.FeatureFlagService
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -719,4 +721,12 @@ func (r *RealEnv) GetCommandRunner() interfaces.CommandRunner {
 
 func (r *RealEnv) SetCommandRunner(c interfaces.CommandRunner) {
 	r.commandRunner = c
+}
+
+func (r *RealEnv) GetFeatureflagService() interfaces.FeatureFlagService {
+	return r.featureflagService
+}
+
+func (r *RealEnv) SetFeatureflagService(ffs *featureflag.FeatureFlagService) {
+	r.featureflagService = ffs
 }
