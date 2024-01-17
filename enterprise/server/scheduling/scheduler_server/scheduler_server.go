@@ -6,17 +6,20 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -29,6 +32,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -37,6 +41,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	sqpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler_queue"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
@@ -229,9 +234,10 @@ type executorHandle struct {
 	mu       sync.RWMutex
 	requests chan enqueueTaskReservationRequest
 	replies  map[string]chan<- *scpb.EnqueueTaskReservationResponse
+	doneFn   func(string, string)
 }
 
-func newExecutorHandle(env environment.Env, scheduler *SchedulerServer, requireAuthorization bool, stream scpb.Scheduler_RegisterAndStreamWorkServer) *executorHandle {
+func newExecutorHandle(env environment.Env, scheduler *SchedulerServer, requireAuthorization bool, stream scpb.Scheduler_RegisterAndStreamWorkServer, doneFn func(string, string)) *executorHandle {
 	h := &executorHandle{
 		env:                  env,
 		scheduler:            scheduler,
@@ -239,6 +245,7 @@ func newExecutorHandle(env environment.Env, scheduler *SchedulerServer, requireA
 		stream:               stream,
 		requests:             make(chan enqueueTaskReservationRequest, 10),
 		replies:              make(map[string]chan<- *scpb.EnqueueTaskReservationResponse),
+		doneFn:               doneFn,
 	}
 	h.startTaskReservationStreamer()
 	return h
@@ -350,6 +357,8 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 						log.CtxWarningf(ctx, "Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
 					}
 				}
+			} else if req.GetTaskReservationRemovedRequest() != nil {
+				h.doneFn(executorID, req.GetTaskReservationRemovedRequest().GetTaskId())
 			} else {
 				out, _ := prototext.Marshal(req)
 				log.CtxWarningf(ctx, "Invalid message from executor:\n%q", string(out))
@@ -1122,7 +1131,12 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 }
 
 func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error {
-	handle := newExecutorHandle(s.env, s, s.requireExecutorAuthorization, stream)
+	done := func(executorID string, taskID string) {
+		if err := s.removeQueuedTask(stream.Context(), executorID, taskID); err != nil {
+			log.CtxWarningf(stream.Context(), "could not remove task from queue: %s", err)
+		}
+	}
+	handle := newExecutorHandle(s.env, s, s.requireExecutorAuthorization, stream, done)
 	return handle.Serve(stream.Context())
 }
 
@@ -1488,6 +1502,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			log.CtxWarningf(ctx, "LeaseTask %q recv with err: %s", taskID, err)
 			break
 		}
+		if req.GetOperationStatus() != nil {
+			if err := s.updateQueuedTaskStatus(ctx, executorID, taskID, req.GetOperationStatus()); err != nil {
+				log.CtxWarningf(ctx, "could not update queued task status: %s", err)
+			}
+			continue
+		}
 		if req.GetTaskId() == "" || taskID != "" && req.GetTaskId() != taskID {
 			// We don't re-enqueue in this case which is a bummer but
 			// makes the code significantly simpler. Also, don't do this!
@@ -1625,6 +1645,93 @@ type enqueueTaskReservationOpts struct {
 	scheduleOnConnectedExecutors bool
 }
 
+// XXX: currently don't handle the case where work is added to a new executor
+func (s *SchedulerServer) addQueuedTask(ctx context.Context, executorID string, taskID string, serializedTask []byte) error {
+	t, err := s.readTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	key := "executorQueue/" + executorID
+	rbeTask := &repb.ExecutionTask{}
+	rn, err := digest.ParseUploadResourceName(taskID)
+	if err != nil {
+		return err
+	}
+	queueEntry := &sqpb.ExecutorQueueEntry{
+		InsertTime:     timestamppb.Now(),
+		TaskId:         taskID,
+		StageStartTime: timestamppb.Now(),
+		ActionDigest:   rn.GetDigest().GetHash(),
+	}
+	if err := proto.Unmarshal(t.serializedTask, rbeTask); err == nil {
+		queueEntry.RbeTask = rbeTask
+		queueEntry.InvocationId = rbeTask.InvocationId
+	} else {
+		log.CtxWarningf(ctx, "could not unmarshal task: %s", err)
+	}
+	bs, err := proto.Marshal(queueEntry)
+	if err != nil {
+		return err
+	}
+	log.CtxInfof(ctx, "VVVVV AFTER queued task %q %q\n{{{%s}}}", executorID, taskID, queueEntry)
+	return s.rdb.HSet(ctx, key, taskID, string(bs)).Err()
+}
+
+func (s *SchedulerServer) getQueuedTasks(ctx context.Context, executorID string) (map[string]*sqpb.ExecutorQueueEntry, error) {
+	key := "executorQueue/" + executorID
+	data, err := s.rdb.HGetAll(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]*sqpb.ExecutorQueueEntry)
+	for k, v := range data {
+		qe := &sqpb.ExecutorQueueEntry{}
+		if err := proto.Unmarshal([]byte(v), qe); err != nil {
+			return nil, status.UnknownErrorf("bad task data for %q: %s", k, err)
+		}
+		out[k] = qe
+	}
+	return out, nil
+}
+
+func (s *SchedulerServer) removeQueuedTask(ctx context.Context, executorID string, taskID string) error {
+	log.CtxInfof(ctx, "VVVVV removing queued task %q %q", executorID, taskID)
+	key := "executorQueue/" + executorID
+	return s.rdb.HDel(ctx, key, taskID).Err()
+}
+
+func (s *SchedulerServer) updateQueuedTaskStatus(ctx context.Context, executorID, taskID string, op *longrunning.Operation) error {
+	key := "executorQueue/" + executorID
+	bs, err := s.rdb.HGet(ctx, key, taskID).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil
+		}
+		return status.UnknownErrorf("could not get existing value: %s", err)
+	}
+	queueEntry := &sqpb.ExecutorQueueEntry{InsertTime: timestamppb.Now(), TaskId: taskID, StageStartTime: timestamppb.Now()}
+	if bs != "" {
+		if err := proto.Unmarshal([]byte(bs), queueEntry); err != nil {
+			return status.UnknownErrorf("could not unmarshal existing entry: %s", err)
+		}
+	}
+	oldStage := queueEntry.Stage
+	stage := operation.ExtractStage(op)
+	queueEntry.Stage = stage
+	if oldStage == repb.ExecutionStage_UNKNOWN && stage != repb.ExecutionStage_UNKNOWN {
+		queueEntry.ExecutionStartTime = timestamppb.Now()
+	}
+	if oldStage != stage {
+		queueEntry.StageStartTime = timestamppb.Now()
+	}
+	log.CtxInfof(ctx, "VVVVV updating queued task %q %q %q, new entry: %+v", executorID, taskID, stage, queueEntry)
+	nbs, err := proto.Marshal(queueEntry)
+	if err != nil {
+		return err
+	}
+	return s.rdb.HSet(ctx, key, taskID, string(nbs)).Err()
+}
+
 func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRequest *scpb.EnqueueTaskReservationRequest, serializedTask []byte, opts enqueueTaskReservationOpts) error {
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, enqueueRequest.GetTaskId())
 
@@ -1750,6 +1857,9 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				continue
 			} else if rankedNode.preferred {
 				scheduledOnPreferredNode = true
+			}
+			if err := s.addQueuedTask(ctx, node.executorID, enqueueRequest.GetTaskId(), serializedTask); err != nil {
+				log.CtxWarningf(ctx, "could not add queued task: %s", err)
 			}
 		} else {
 			if node.schedulerHostPort == "" {
@@ -1996,8 +2106,28 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	executors := make([]*scpb.GetExecutionNodesResponse_Executor, len(executionNodes))
 	for i, node := range executionNodes {
 		isDarwinExecutor := strings.EqualFold(node.Os, platform.DarwinOperatingSystemName)
+
+		qt, err := s.getQueuedTasks(ctx, node.GetExecutorId())
+		if err != nil {
+			return nil, err
+		}
+
+		numQueued := 0
+		numExecuting := 0
+		for _, v := range qt {
+			if v.Stage == repb.ExecutionStage_UNKNOWN {
+				numQueued++
+			} else {
+				numExecuting++
+			}
+		}
+
 		executors[i] = &scpb.GetExecutionNodesResponse_Executor{
 			Node: node,
+			Stats: &scpb.ExecutionNodeStats{
+				NumExecuting: int64(numExecuting),
+				NumQueued:    int64(numQueued),
+			},
 			IsDefault: !s.requireExecutorAuthorization ||
 				groupID == *sharedExecutorPoolGroupID ||
 				(s.enableUserOwnedExecutors &&
@@ -2009,6 +2139,21 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		Executor:                    executors,
 		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
 	}, nil
+}
+
+func (s *SchedulerServer) GetExecutionNodeDetails(ctx context.Context, req *sqpb.GetExecutionNodeDetailsRequest) (*sqpb.GetExecutionNodeDetailsResponse, error) {
+	unsorted, err := s.getQueuedTasks(ctx, req.GetExecutorId())
+	if err != nil {
+		return nil, err
+	}
+	entries := []*sqpb.ExecutorQueueEntry{}
+	for _, v := range unsorted {
+		entries = append(entries, v)
+	}
+	slices.SortFunc(entries, func(a, b *sqpb.ExecutorQueueEntry) int {
+		return a.GetInsertTime().AsTime().Compare(b.GetInsertTime().AsTime())
+	})
+	return &sqpb.GetExecutionNodeDetailsResponse{Entries: entries}, nil
 }
 
 // extractRoutingProps deserializes the given task and returns the properties

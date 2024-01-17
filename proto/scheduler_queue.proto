@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package scheduler_queue;
+
+import "google/protobuf/timestamp.proto";
+import "proto/remote_execution.proto";
+import "proto/context.proto";
+
+message ExecutorQueueEntry {
+  google.protobuf.Timestamp insert_time = 1;
+
+  string invocation_id = 2;
+
+  string task_id = 3;
+
+  string action_digest = 4;
+
+  build.bazel.remote.execution.v2.ExecutionTask rbe_task = 5;
+
+  google.protobuf.Timestamp execution_start_time = 6;
+
+  google.protobuf.Timestamp stage_start_time = 7;
+
+  build.bazel.remote.execution.v2.ExecutionStage.Value stage = 8;
+}
+
+message GetExecutionNodeDetailsRequest {
+  context.RequestContext request_context = 1;
+
+  string executor_id = 2;
+}
+
+message GetExecutionNodeDetailsResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated ExecutorQueueEntry entries = 2;
+}
+

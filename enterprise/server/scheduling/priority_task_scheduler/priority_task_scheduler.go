@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
+	"google.golang.org/genproto/googleapis/longrunning"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -79,7 +80,7 @@ func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
 	return reservations
 }
 
-func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
+func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest, doneFn func()) {
 	taskGroupID := req.GetSchedulingMetadata().GetTaskGroupId()
 	var pq *groupPriorityQueue
 	if el, ok := t.pqByGroupID[taskGroupID]; ok {
@@ -100,7 +101,7 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 			t.currentPQ = el
 		}
 	}
-	pq.Push(req)
+	pq.Push(req, doneFn)
 	t.numTasks++
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: taskGroupID}).Set(float64(pq.Len()))
 	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
@@ -111,18 +112,18 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 	}
 }
 
-func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
+func (t *taskQueue) Dequeue() (*scpb.EnqueueTaskReservationRequest, func()) {
 	if t.currentPQ == nil {
-		return nil
+		return nil, nil
 	}
 	pqEl := t.currentPQ
 	pq, ok := pqEl.Value.(*groupPriorityQueue)
 	if !ok {
 		// Why would this ever happen?
 		log.Error("not a *groupPriorityQueue!??!")
-		return nil
+		return nil, nil
 	}
-	req := pq.Pop()
+	req, doneFn := pq.Pop()
 
 	t.currentPQ = t.currentPQ.Next()
 	if pq.Len() == 0 {
@@ -140,7 +141,7 @@ func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
 		metrics.RemoteExecutionAssignedOrQueuedEstimatedRAMBytes.
 			Sub(float64(req.TaskSize.EstimatedMemoryBytes))
 	}
-	return req
+	return req, doneFn
 }
 
 func (t *taskQueue) Peek() *scpb.EnqueueTaskReservationRequest {
@@ -278,7 +279,7 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest, doneFn func()) (*scpb.EnqueueTaskReservationResponse, error) {
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 
 	if req.GetTaskSize().GetEstimatedMemoryBytes() > q.ramBytesCapacity ||
@@ -296,7 +297,7 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 
 	enqueueFn := func() {
 		q.mu.Lock()
-		q.q.Enqueue(req)
+		q.q.Enqueue(req, doneFn)
 		q.mu.Unlock()
 		log.CtxInfof(ctx, "Added task %+v to pq.", req)
 		// Wake up the scheduling loop so that it can run the task if there are
@@ -334,7 +335,26 @@ func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx contex
 	return ctx
 }
 
-func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledTask) (retry bool, err error) {
+type opStream struct {
+	publishStream operation.StreamLike
+	leaseHandle   *task_leaser.LeaseHandle
+}
+
+func (o *opStream) Context() context.Context {
+	return o.publishStream.Context()
+}
+
+func (o *opStream) Send(l *longrunning.Operation) error {
+	if err := o.publishStream.Send(l); err != nil {
+		return err
+	}
+	if err := o.leaseHandle.Send(l); err != nil {
+		log.Warningf("could not send op update via lease: %s", err)
+	}
+	return nil
+}
+
+func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledTask, leaseHandle *task_leaser.LeaseHandle) (retry bool, err error) {
 	if q.env.GetRemoteExecutionClient() == nil {
 		return false, status.FailedPreconditionError("Execution client not configured")
 	}
@@ -347,10 +367,15 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 		return true, status.WrapError(err, "failed to open execution status update stream")
 	}
 	start := time.Now()
+
+	ops := &opStream{
+		publishStream: clientStream,
+		leaseHandle:   leaseHandle,
+	}
 	// TODO(http://go/b/1192): Figure out why CloseAndRecv() hangs if we call
 	// it too soon after establishing the clientStream, and remove this delay.
 	const closeStreamDelay = 10 * time.Millisecond
-	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, st, clientStream); err != nil {
+	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, st, ops); err != nil {
 		log.CtxWarningf(ctx, "ExecuteTaskAndStreamResults error: %s", err)
 		time.Sleep(time.Until(start.Add(closeStreamDelay)))
 		_, _ = clientStream.CloseAndRecv()
@@ -437,7 +462,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	if nextTask == nil || !q.canFitAnotherTask(nextTask) {
 		return
 	}
-	reservation := q.q.Dequeue()
+	reservation, doneFn := q.q.Dequeue()
 	if reservation == nil {
 		log.CtxWarningf(q.rootContext, "reservation is nil")
 		return
@@ -458,9 +483,10 @@ func (q *PriorityTaskScheduler) handleTask() {
 			// may allow another task to become runnable.
 			q.checkQueueSignal <- struct{}{}
 		}()
+		defer doneFn()
 
 		taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.ID(), reservation.GetTaskId())
-		leaseCtx, serializedTask, err := taskLease.Claim(ctx)
+		leaseCtx, serializedTask, leaseHandle, err := taskLease.Claim(ctx)
 		if err != nil {
 			// NotFound means the task is already claimed.
 			if status.IsNotFoundError(err) {
@@ -482,7 +508,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			ExecutionTask:      execTask,
 			SchedulingMetadata: reservation.GetSchedulingMetadata(),
 		}
-		retry, err := q.runTask(ctx, scheduledTask)
+		retry, err := q.runTask(ctx, scheduledTask, leaseHandle)
 		if err != nil {
 			log.CtxErrorf(ctx, "Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}

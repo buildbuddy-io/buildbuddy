@@ -131,7 +131,17 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 			return false, status.FailedPreconditionErrorf("message from scheduler did not contain a task reservation request:\n%s", string(out))
 		}
 
-		rsp, err := r.taskScheduler.EnqueueTaskReservation(ctx, msg.GetEnqueueTaskReservationRequest())
+		done := func() {
+			rspMsg := &scpb.RegisterAndStreamWorkRequest{
+				TaskReservationRemovedRequest: &scpb.TaskReservationRemovedRequest{
+					TaskId: msg.GetEnqueueTaskReservationRequest().GetTaskId(),
+				},
+			}
+			if err := stream.Send(rspMsg); err != nil {
+				log.CtxWarningf(ctx, "Could not send reservation removal request: %s", err)
+			}
+		}
+		rsp, err := r.taskScheduler.EnqueueTaskReservation(ctx, msg.GetEnqueueTaskReservationRequest(), done)
 		if err != nil {
 			log.Warningf("Task reservation enqueue failed: %s", err)
 			return false, status.UnavailableErrorf("could not enqueue task reservation: %s", err)

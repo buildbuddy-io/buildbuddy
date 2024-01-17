@@ -225,6 +225,8 @@ message CancelExecutionsRequest {
 
   // The ID of the invocation to be canceled.
   string invocation_id = 2;
+
+  string execution_id = 3;
 }
 
 message CancelExecutionsResponse {

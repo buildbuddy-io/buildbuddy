@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/scheduler_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
@@ -226,7 +227,7 @@ func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.Cance
 		return nil, err
 	}
 
-	if err = res.Cancel(ctx, req.GetInvocationId()); err != nil {
+	if err = res.Cancel(ctx, req.GetInvocationId(), req.GetExecutionId()); err != nil {
 		return nil, err
 	}
 
@@ -1141,6 +1142,14 @@ func (s *BuildBuddyServer) GetTreeDirectorySizes(ctx context.Context, req *capb.
 func (s *BuildBuddyServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
 	if ss := s.env.GetSchedulerService(); ss != nil {
 		res, err := ss.GetExecutionNodes(ctx, req)
+		return res, err
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetExecutionNodeDetails(ctx context.Context, req *scheduler_queue.GetExecutionNodeDetailsRequest) (*scheduler_queue.GetExecutionNodeDetailsResponse, error) {
+	if ss := s.env.GetSchedulerService(); ss != nil {
+		res, err := ss.GetExecutionNodeDetails(ctx, req)
 		return res, err
 	}
 	return nil, status.UnimplementedError("Not implemented")

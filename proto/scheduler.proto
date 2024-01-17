@@ -3,6 +3,7 @@ syntax = "proto3";
 import "google/rpc/status.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+import "google/longrunning/operations.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/trace.proto";
@@ -58,6 +59,8 @@ message LeaseTaskRequest {
   // The token issued by the server when initially establishing the lease. This
   // should be set by the client when attempting to retry a disconnected lease.
   string reconnect_token = 8;
+
+  google.longrunning.Operation operation_status = 9;
 }
 
 message LeaseTaskResponse {
@@ -206,6 +209,10 @@ message ShuttingDownRequest {
   repeated string task_id = 1;
 }
 
+message TaskReservationRemovedRequest {
+  string task_id = 1;
+}
+
 message RegisterAndStreamWorkRequest {
   // Only one of the fields should be sent. oneofs not used due to awkward Go
   // APIs.
@@ -221,6 +228,8 @@ message RegisterAndStreamWorkRequest {
 
   // Notifications to the scheduler that this executor is going away.
   ShuttingDownRequest shutting_down_request = 3;
+
+  TaskReservationRemovedRequest task_reservation_removed_request = 4;
 }
 
 message RegisterAndStreamWorkResponse {
@@ -294,6 +303,11 @@ message GetExecutionNodesRequest {
   context.RequestContext request_context = 1;
 }
 
+message ExecutionNodeStats {
+  int64 num_executing = 1;
+  int64 num_queued = 2;
+}
+
 message GetExecutionNodesResponse {
   context.ResponseContext response_context = 1;
 
@@ -304,6 +318,8 @@ message GetExecutionNodesResponse {
 
     // Whether tasks will be routed to this node by default.
     bool is_default = 2;
+
+    ExecutionNodeStats stats = 3;
   }
 
   bool user_owned_executors_supported = 3;

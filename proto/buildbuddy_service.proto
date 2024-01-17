@@ -16,6 +16,7 @@ import "proto/target.proto";
 import "proto/user.proto";
 import "proto/workflow.proto";
 import "proto/scheduler.proto";
+import "proto/scheduler_queue.proto";
 import "proto/usage.proto";
 import "proto/gcp.proto";
 import "proto/github.proto";
@@ -105,6 +106,8 @@ service BuildBuddyService {
       returns (execution_stats.GetExecutionResponse);
   rpc GetExecutionNodes(scheduler.GetExecutionNodesRequest)
       returns (scheduler.GetExecutionNodesResponse);
+  rpc GetExecutionNodeDetails(scheduler_queue.GetExecutionNodeDetailsRequest)
+      returns (scheduler_queue.GetExecutionNodeDetailsResponse);
   rpc SearchExecution(execution_stats.SearchExecutionRequest)
       returns (execution_stats.SearchExecutionResponse);
 

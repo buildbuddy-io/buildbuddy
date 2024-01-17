@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -138,9 +139,17 @@ func (t *TaskLeaser) keepLease(ctx context.Context) {
 	}()
 }
 
-func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error) {
+type LeaseHandle struct {
+	stream scpb.Scheduler_LeaseTaskClient
+}
+
+func (h *LeaseHandle) Send(l *longrunning.Operation) error {
+	return h.stream.Send(&scpb.LeaseTaskRequest{OperationStatus: l})
+}
+
+func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, *LeaseHandle, error) {
 	if t.env.GetSchedulerClient() == nil {
-		return nil, nil, status.FailedPreconditionError("Scheduler client not configured")
+		return nil, nil, nil, status.FailedPreconditionError("Scheduler client not configured")
 	}
 	leaseTaskCtx := ctx
 	if *apiKey != "" {
@@ -148,7 +157,7 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 	}
 	stream, err := t.env.GetSchedulerClient().LeaseTask(leaseTaskCtx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	t.stream = stream
 	serializedTask, err := t.pingServer(leaseTaskCtx)
@@ -159,7 +168,7 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	t.cancelFunc = cancel
-	return ctx, serializedTask, err
+	return ctx, serializedTask, &LeaseHandle{stream: stream}, err
 }
 
 func (t *TaskLeaser) Close(ctx context.Context, taskErr error, retry bool) {

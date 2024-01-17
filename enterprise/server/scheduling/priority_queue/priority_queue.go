@@ -11,6 +11,7 @@ import (
 // A pqItem is the element managed by a priority queue.
 type pqItem struct {
 	value      *scpb.EnqueueTaskReservationRequest
+	doneFn     func()
 	priority   int
 	insertTime time.Time
 }
@@ -51,10 +52,11 @@ func NewPriorityQueue() *PriorityQueue {
 	}
 }
 
-func (pq *PriorityQueue) Push(req *scpb.EnqueueTaskReservationRequest) {
+func (pq *PriorityQueue) Push(req *scpb.EnqueueTaskReservationRequest, doneFn func()) {
 	pq.mu.Lock()
 	heap.Push(pq.inner, &pqItem{
 		value:      req,
+		doneFn:     doneFn,
 		priority:   0,
 		insertTime: time.Now(),
 	})
@@ -62,14 +64,14 @@ func (pq *PriorityQueue) Push(req *scpb.EnqueueTaskReservationRequest) {
 	pq.mu.Unlock()
 }
 
-func (pq *PriorityQueue) Pop() *scpb.EnqueueTaskReservationRequest {
+func (pq *PriorityQueue) Pop() (*scpb.EnqueueTaskReservationRequest, func()) {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
 	if len(*pq.inner) == 0 {
-		return nil
+		return nil, nil
 	}
 	item := heap.Pop(pq.inner).(*pqItem)
-	return item.value
+	return item.value, item.doneFn
 }
 
 func (pq *PriorityQueue) Peek() *scpb.EnqueueTaskReservationRequest {

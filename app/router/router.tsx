@@ -228,6 +228,10 @@ class Router {
     this.navigateTo(Path.executorsPath);
   }
 
+  navigateToExecutor(executorID: string) {
+    this.navigateTo(Path.executorsPath + executorID);
+  }
+
   navigateToTap() {
     this.navigateTo(Path.tapPath);
   }

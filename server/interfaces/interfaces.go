@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	sqpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -772,7 +773,7 @@ type RemoteExecutionService interface {
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error
 	MarkExecutionFailed(ctx context.Context, taskID string, reason error) error
-	Cancel(ctx context.Context, invocationID string) error
+	Cancel(ctx context.Context, invocationID string, executionID string) error
 	RedisAvailabilityMonitoringEnabled() bool
 }
 
@@ -802,6 +803,7 @@ type SchedulerService interface {
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
 	GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, useSelfHosted bool) (*PoolInfo, error)
+	GetExecutionNodeDetails(ctx context.Context, req *sqpb.GetExecutionNodeDetailsRequest) (*sqpb.GetExecutionNodeDetailsResponse, error)
 }
 
 // PoolInfo holds high level metadata for an executor pool.

@@ -26,6 +26,7 @@ go_library(
         "//proto:resource_go_proto",
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
+        "//proto:scheduler_queue_go_proto",
         "//proto:secrets_go_proto",
         "//proto:stats_go_proto",
         "//proto:stored_invocation_go_proto",

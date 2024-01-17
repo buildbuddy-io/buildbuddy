@@ -37,7 +37,7 @@ import Dialog, {
 const CodeComponent = React.lazy(() => import("../code/code"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 
-import ExecutorsComponent from "../executors/executors";
+import ExecutorsComponent, {ExecutorDetailsComponent} from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
 import Modal from "../../../app/components/modal/modal";
 import NewTrendsComponent from "../trends/new_trends";
@@ -220,7 +220,8 @@ export default class EnterpriseRootComponent extends React.Component {
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let usage = this.state.user && this.state.path.startsWith("/usage/");
     let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
-    let executors = this.state.user && this.state.path.startsWith("/executors");
+    let executor = this.state.user && router.getLastPathComponent(this.state.path, Path.executorsPath)
+    let executors = !executor && this.state.user && this.state.path.startsWith("/executors");
     let tests = this.state.user && this.state.path.startsWith("/tests");
     let workflows = this.state.user && this.state.path.startsWith("/workflows");
     let code = this.state.user && this.state.path.startsWith("/code");
@@ -236,6 +237,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !trends &&
       !usage &&
       !executors &&
+      !executor &&
       !tests &&
       !invocationId &&
       !compareInvocationIds &&
@@ -378,6 +380,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   {usage && this.state.user && <UsageComponent user={this.state.user} />}
                   {auditLogs && this.state.user && <AuditLogsComponent user={this.state.user} />}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
+                  {executor && this.state.user && <ExecutorDetailsComponent executorID={router.getLastPathComponent(this.state.path, Path.executorsPath)!} user={this.state.user} />}
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                   {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}

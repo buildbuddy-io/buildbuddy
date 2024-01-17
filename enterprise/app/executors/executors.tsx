@@ -1,17 +1,26 @@
 import React from "react";
 import Banner from "../../../app/components/banner/banner";
 import rpcService from "../../../app/service/rpc_service";
-import { BuildBuddyError } from "../../../app/util/errors";
-import { User } from "../../../app/auth/auth_service";
-import { scheduler } from "../../../proto/scheduler_ts_proto";
+import {BuildBuddyError} from "../../../app/util/errors";
+import {User} from "../../../app/auth/auth_service";
+import {scheduler} from "../../../proto/scheduler_ts_proto";
 import ExecutorCardComponent from "./executor_card";
-import { Subscription } from "rxjs";
-import { api_key } from "../../../proto/api_key_ts_proto";
-import { bazel_config } from "../../../proto/bazel_config_ts_proto";
+import {Subscription} from "rxjs";
+import {api_key} from "../../../proto/api_key_ts_proto";
+import {bazel_config} from "../../../proto/bazel_config_ts_proto";
 import router from "../../../app/router/router";
-import Select, { Option } from "../../../app/components/select/select";
+import Select, {Option} from "../../../app/components/select/select";
 import LinkButton from "../../../app/components/button/link_button";
-import { Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
+import {Cpu, Globe, Hash, Laptop, LucideIcon} from "lucide-react";
+import {scheduler_queue} from "../../../proto/scheduler_queue_ts_proto";
+import {durationMillis} from "../../../app/format/format";
+import {build} from "../../../proto/remote_execution_ts_proto";
+import error_service from "../../../app/errors/error_service";
+import {timestampToDate} from "../../../app/util/proto";
+import Value = build.bazel.remote.execution.v2.ExecutionStage.Value;
+import Link from "../../../app/components/link/link";
+import Button from "../../../app/components/button/button";
+import {invocation} from "../../../proto/invocation_ts_proto";
 
 enum FetchType {
   Executors,
@@ -133,8 +142,23 @@ interface ExecutorsListProps {
   regions: { name: string; response: scheduler.GetExecutionNodesResponse }[];
 }
 
-class ExecutorsList extends React.Component<ExecutorsListProps> {
+interface ExecutorListState {
+  selectedExecutorID?: string;
+}
+
+class ExecutorsList extends React.Component<ExecutorsListProps, ExecutorListState> {
+  state: ExecutorListState = {
+  }
+
+  selectExecutor(executorID: string) {
+    router.navigateToExecutor(executorID)
+  }
+
   render() {
+    if (this.state.selectedExecutorID) {
+      return <ExecutorDetailsComponent executorID={this.state.selectedExecutorID} />
+    }
+
     let executorsByPool = new Map<
       string,
       { region: string; executor: scheduler.GetExecutionNodesResponse.Executor }[]
@@ -188,7 +212,9 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
                   {executors.map(
                     (node) =>
                       node.executor.node && (
-                        <ExecutorCardComponent node={node.executor.node} isDefault={node.executor.isDefault} />
+                          <div onClick={this.selectExecutor.bind(this, node.executor.node.executorId)}>
+                            <ExecutorCardComponent node={node.executor.node} isDefault={node.executor.isDefault} stats={node.executor.stats}/>
+                          </div>
                       )
                   )}
                 </>
@@ -210,6 +236,142 @@ function ExecutorDetail({ Icon, label, children }: { Icon: LucideIcon; label: st
       </span>
     </span>
   );
+}
+
+interface EntryProps {
+  entry: scheduler_queue.ExecutorQueueEntry;
+}
+
+class ExecutorEntryComponent extends React.Component<EntryProps> {
+  onClickCancel(entry: scheduler_queue.ExecutorQueueEntry, e: React.MouseEvent<HTMLButtonElement>) {
+    rpcService.service.cancelExecutions(invocation.CancelExecutionsRequest.create({
+      invocationId: entry.invocationId,
+      executionId: entry.taskId,
+    }))
+    e.stopPropagation()
+    e.preventDefault()
+  }
+
+  render() {
+    let start = this.props.entry.insertTime
+    let isExecuting = false
+    if (this.props.entry.stage != build.bazel.remote.execution.v2.ExecutionStage.Value.UNKNOWN) {
+      start = this.props.entry.executionStartTime
+      isExecuting = true
+    }
+    const duration = durationMillis((new Date().getTime() - timestampToDate(start).getTime()))
+    let stageText = ""
+    switch (this.props.entry.stage) {
+      case Value.CACHE_CHECK:
+        stageText = "Checking Action Cache"
+        break
+    }
+    const stageDuration = durationMillis(new Date().getTime() - timestampToDate(this.props.entry.stageStartTime).getTime())
+    if (stageText != "") {
+      stageText += " (" + stageDuration + ")"
+    }
+    return (
+        <Link
+            href={`/invocation/${this.props.entry.invocationId}?actionDigest=${this.props.entry.actionDigest}#action`}>
+          <div className={`card ${isExecuting ? "card-success" : "card-neutral"}`}>
+            <div className="content">
+              <div style={{display: "flex"}}>
+                <div style={{display: "flex", flexDirection: "column", width: "1200px"}}>
+                  <div>{this.props.entry.taskId}</div>
+                  <div style={{display: "flex", marginTop: "24px"}}>
+                    <div className="details">
+                      <div className="executor-section" style={{display: "flex"}}>
+                        <div style={{display: "flex"}}><div style={{fontWeight: 700}}>{!isExecuting ? "QUEUED" : "EXECUTING"}</div> ({duration})</div>
+                        <div style={{marginLeft: "36px"}}>{stageText}</div>
+                      </div>
+                  </div>
+                  </div>
+                </div>
+                <div>
+                  <Button
+                    onClick={this.onClickCancel.bind(this, this.props.entry)}
+                    onMouseDown={e => e.stopPropagation()}
+                    className="destructive"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Link>
+    );
+  }
+}
+
+interface DetailsProps {
+  user: User;
+  executorID: string;
+}
+
+interface DetailsState {
+  entries: scheduler_queue.ExecutorQueueEntry[];
+}
+
+export class ExecutorDetailsComponent extends React.Component<DetailsProps, DetailsState> {
+  state: DetailsState = {
+    entries: [],
+  }
+
+  interval?: number;
+  lastFetch: Date = new Date(0);
+  fetching: boolean = false;
+
+  componentDidMount() {
+    this.interval = window.setInterval(() => this.fetch(), 100)
+    this.fetch()
+  }
+
+  componentWillUnmount() {
+    window.clearInterval(this.interval)
+  }
+
+  fetch() {
+    if (this.fetching) {
+      return
+    }
+    if ((new Date().getTime() - this.lastFetch.getTime()) < 100) {
+      return
+    }
+    this.fetching = true
+    const req = scheduler_queue.GetExecutionNodeDetailsRequest.create({executorId: this.props.executorID});
+    rpcService.service.getExecutionNodeDetails(req).then((rsp) => {
+      this.setState({entries: rsp.entries})
+    }).catch((e) => {
+      error_service.handleError(e)
+    })
+    this.fetching = false
+    this.lastFetch = new Date()
+  }
+
+  render() {
+    return (
+        <>
+        <div className="executors-page">
+          <div className="shelf">
+            <div className="container">
+              <div className="breadcrumbs">
+                {this.props.user && <span>{this.props.user?.selectedGroupName()}</span>}
+                <span>Executor {this.props.executorID}</span>
+              </div>
+              <div className="title">Executor queue for {this.props.executorID}</div>
+            </div>
+          </div>
+          <div className="container">
+            {this.state.entries.length == 0 && <div style={{marginTop: "16px"}}>There are no tasks in the queue.</div>}
+            {this.state.entries.map(
+                  (entry) => <ExecutorEntryComponent entry={entry}/>
+              )}
+          </div>
+        </div>
+        </>
+    )
+  }
 }
 
 type TabId = "status" | "setup";
@@ -239,20 +401,25 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
   };
 
   subscription?: Subscription;
+  interval?: number;
+  lastFetch: Date = new Date(0);
+  fetching: boolean = false;
 
   componentWillMount() {
     document.title = `Executors | BuildBuddy`;
   }
 
   componentDidMount() {
-    this.fetch();
     this.subscription = rpcService.events.subscribe({
       next: (name) => name == "refresh" && this.fetch(),
     });
+    this.interval = window.setInterval(() => this.fetch(), 100)
+    this.fetch();
   }
 
   componentWillUnmount() {
     this.subscription?.unsubscribe();
+    window.clearInterval(this.interval!)
   }
 
   async fetchApiKeys() {
@@ -280,9 +447,13 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
   }
 
   async fetchExecutors() {
-    this.setState((prevState) => ({
-      loading: [...prevState.loading, FetchType.Executors],
-    }));
+    let updateLoading = false
+    if (this.state.regions.length == 0) {
+      updateLoading = true
+      this.setState((prevState) => ({
+        loading: [...prevState.loading, FetchType.Executors],
+      }));
+    }
 
     try {
       let regions = rpcService.regionalServices.size
@@ -311,9 +482,11 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     } catch (e) {
       this.setState({ error: BuildBuddyError.parse(e) });
     } finally {
-      this.setState((prevState) => ({
-        loading: [...prevState.loading].filter((f) => f != FetchType.Executors),
-      }));
+      if (updateLoading) {
+        this.setState((prevState) => ({
+          loading: [...prevState.loading].filter((f) => f != FetchType.Executors),
+        }));
+      }
     }
   }
 
@@ -339,7 +512,16 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
   }
 
   fetch() {
-    this.fetchExecutors();
+    if (this.fetching) {
+      return
+    }
+    if ((new Date().getTime() - this.lastFetch.getTime()) < 100) {
+      return
+    }
+    this.fetching = true
+    this.fetchExecutors()
+    this.fetching = false
+    this.lastFetch = new Date()
   }
 
   onClickTab(tabId: TabId) {

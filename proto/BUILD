@@ -502,6 +502,7 @@ proto_library(
         ":resource_proto",
         ":runner_proto",
         ":scheduler_proto",
+        ":scheduler_queue_proto",
         ":secrets_proto",
         ":stats_proto",
         ":suggestion_proto",
@@ -614,7 +615,18 @@ proto_library(
         ":trace_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
+        "@googleapis//google/longrunning:operations_proto",
         "@googleapis//google/rpc:status_proto",
+    ],
+)
+
+proto_library(
+    name = "scheduler_queue_proto",
+    srcs = ["scheduler_queue.proto"],
+    deps = [
+        ":context_proto",
+        ":remote_execution_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -1265,6 +1277,7 @@ go_proto_library(
         ":resource_go_proto",
         ":runner_go_proto",
         ":scheduler_go_proto",
+        ":scheduler_queue_go_proto",
         ":secrets_go_proto",
         ":stats_go_proto",
         ":suggestion_go_proto",
@@ -1500,6 +1513,22 @@ go_proto_library(
         ":context_go_proto",
         ":grpc_status_go_proto",
         ":trace_go_proto",
+        "@org_golang_google_genproto//googleapis/longrunning",
+    ],
+)
+
+go_proto_library(
+    name = "scheduler_queue_go_proto",
+    compilers = [
+        "//proto:vtprotobuf_compiler",
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/scheduler_queue",
+    proto = ":scheduler_queue_proto",
+    deps = [
+        ":context_go_proto",
+        ":remote_execution_go_proto",
     ],
 )
 
@@ -1737,9 +1766,20 @@ ts_proto_library(
         ":acl_ts_proto",
         ":context_ts_proto",
         ":duration_ts_proto",
+        ":google_longrunning_ts_proto",
         ":grpc_status_ts_proto",
         ":timestamp_ts_proto",
         ":trace_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "scheduler_queue_ts_proto",
+    proto = ":scheduler_queue_proto",
+    deps = [
+        ":context_ts_proto",
+        ":remote_execution_ts_proto",
+        ":timestamp_ts_proto",
     ],
 )
 
@@ -2024,6 +2064,7 @@ ts_proto_library(
         ":quota_ts_proto",
         ":repo_ts_proto",
         ":runner_ts_proto",
+        ":scheduler_queue_ts_proto",
         ":scheduler_ts_proto",
         ":secrets_ts_proto",
         ":stats_ts_proto",
