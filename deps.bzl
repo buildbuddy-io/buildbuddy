@@ -9,7 +9,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:AGCNq9Evsj31mOgNPcLyXc+4PNABt905YmuqPYYpBWk=",
         version = "v1.0.0",
     )
-
     go_repository(
         name = "cc_mvdan_gofumpt",
         importpath = "mvdan.cc/gofumpt",
@@ -45,12 +44,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "4d63.com/gochecknoglobals",
         sum = "h1:zeZSRqj5yCg28tCkIV/z/lWbwvNm5qnKVS15PI8nhD0=",
         version = "v0.1.0",
-    )
-    go_repository(
-        name = "com_github_acomagu_bufpipe",
-        importpath = "github.com/acomagu/bufpipe",
-        sum = "h1:e3H4WUzM3npvo5uv95QuJM3cQspFNtFBzvJ2oNjKIDQ=",
-        version = "v1.0.4",
     )
     go_repository(
         name = "com_github_adalogics_go_fuzz_headers",
@@ -2917,12 +2910,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v2.0.3",
     )
     go_repository(
-        name = "com_github_jessevdk_go_flags",
-        importpath = "github.com/jessevdk/go-flags",
-        sum = "h1:1jKYvbxEjfUl0fmqTCOfonvskHHXMjBySTLW4y9LFvc=",
-        version = "v1.5.0",
-    )
-    go_repository(
         name = "com_github_jgautheron_goconst",
         importpath = "github.com/jgautheron/goconst",
         sum = "h1:HxVbL1MhydKs8R8n/HE5NPvzfaYmQJA3o879lE4+WcM=",
@@ -3503,12 +3490,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/matoous/godox",
         sum = "h1:pWxk9e//NbPwfxat7RXkts09K+dEBJWakUWwICVqYbA=",
         version = "v0.0.0-20210227103229-6504466cf951",
-    )
-    go_repository(
-        name = "com_github_matryer_is",
-        importpath = "github.com/matryer/is",
-        sum = "h1:92UTHpy8CDwaJ08GqLDzhhuixiBUUD1p3AU6PHddz4A=",
-        version = "v1.2.0",
     )
     go_repository(
         name = "com_github_mattermost_xml_roundtrip_validator",
