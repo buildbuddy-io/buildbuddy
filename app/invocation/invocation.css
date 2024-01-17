@@ -1174,16 +1174,6 @@ svg.invocation-query-graph .nodes rect {
   height: 20px;
 }
 
-.child-invocation-card .icon {
-  stroke: var(--status-color);
-}
-
-.child-invocation-card .duration {
-  text-align: right;
-  margin-left: auto;
-  white-space: nowrap;
-}
-
 .timing.card .progress-bar {
   height: 8px;
   border-radius: 4px;
@@ -1214,4 +1204,22 @@ svg.invocation-query-graph .nodes rect {
     padding: 16px;
     margin-right: 0;
   }
+}
+
+.profile-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  display:block;
+  margin-right: 8px;
+}
+
+.child-invocation-card .icon {
+  stroke: var(--status-color);
+}
+
+.child-invocation-card .duration {
+  text-align: right;
+  margin-left: auto;
+  white-space: nowrap;
 }

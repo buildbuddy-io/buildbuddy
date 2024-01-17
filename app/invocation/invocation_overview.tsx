@@ -131,8 +131,8 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           </div>
           {isBazelInvocation && (
             <div className="detail clickable" onClick={this.handleUserClicked.bind(this)}>
-              <UserIcon className="icon" />
-              {this.props.model.getUser(false)}
+              <img className="profile-icon" src={this.props.model.getUserProfileUrl() || "/image/user-regular.svg"}/>
+                {this.props.model.getUser(false)}
             </div>
           )}
           {isBazelInvocation && (

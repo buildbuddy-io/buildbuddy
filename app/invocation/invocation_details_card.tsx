@@ -134,6 +134,19 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div className="invocation-section-title">User</div>
               <div>{this.props.model.getUser(false)}</div>
             </div>
+			{ this.props.model.invocation.displayUser && (
+              <>
+            <div className="invocation-section">
+              <div className="invocation-section-title">User Name</div>
+              <div>{this.props.model.getUserFullName()}</div>
+            </div>
+            <div className="invocation-section">
+              <div className="invocation-section-title">Email</div>
+              <div>{this.props.model.getUserEmail()}</div>
+            </div>
+			</>
+			)
+			}
             <div className="invocation-section">
               <div className="invocation-section-title">Host name</div>
               <div>{this.props.model.getHost()}</div>

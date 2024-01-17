@@ -239,7 +239,7 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
                 onClick={(e) => {
                   this.handleUserClicked(e, this.props.invocation);
                 }}>
-                <User className="icon" />
+              <img className="profile-icon" src={this.props.invocation.displayUser?.profileImageUrl || "/image/user-regular.svg"}/>
                 {this.props.invocation.user}
               </div>
             )}
