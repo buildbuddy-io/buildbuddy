@@ -255,25 +255,26 @@
 
 .tap .tap-block {
   display: flex;
-  width: 32px;
-  height: 32px;
   margin: 1px;
   border-radius: 2px;
   box-sizing: border-box;
   font-size: 8px;
-  padding: 2px;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0.8;
-  flex-shrink: 0;
+  flex-grow: 1;
+  position: relative;
+  min-width: 6px;
+  min-height: 6px;
 }
 
 .tap-block svg {
   color: #fff;
   width: 50%;
+  height: 50%;
 }
 
 .tap .tap-block:hover,
@@ -317,6 +318,24 @@ FLAKY = 11;
 UNKNOWN = 12;
 SKIPPED = 13; 
 */
+
+.tap-commit-container {
+  display: flex;
+  flex-direction: column;
+  width: 32px;
+  height: 32px;
+  flex-grow: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  margin: 1px;
+}
+
+.tap .tap-invocation-count {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  color: #fff;
+}
 
 .tap .tap-block-header {
   border: 1px solid #ccc;
