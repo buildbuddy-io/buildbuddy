@@ -1,0 +1,51 @@
+name: "Build Windows Github Release Artifacts"
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: "Git branch to checkout."
+        required: true
+        default: "master"
+        type: string
+      version_tag:
+        description: "Version to tag release artifacts."
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      release_branch:
+        description: "Git branch to checkout."
+        required: true
+        type: string
+      version_tag:
+        description: "Version to tag release artifacts."
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_branch }}
+          # We need to fetch git tags to obtain the latest version tag to report
+          # the version of the running binary.
+          fetch-depth: 0
+
+      - name: Install bazelisk
+        run: |
+          curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-windows-amd64.exe" -o bazel.exe
+
+      - name: Build and Upload Artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bazel.exe --output_user_root=D:/0 build --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
+          $execution_root = bazel.exe --output_user_root=D:/0 info execution_root
+          $artifact_rel_path = bazel.exe --output_user_root=D:/0 cquery --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --output=files //enterprise/server/cmd/executor:executor
+          $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
+          Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-amd64-beta.exe
+          gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe --clobber
