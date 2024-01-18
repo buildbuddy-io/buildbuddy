@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
+	"github.com/buildbuddy-io/buildbuddy/server/badge"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -394,7 +395,7 @@ func (s *BuildBuddyServer) CreateBadges(ctx context.Context, req *badgepb.Create
 }
 
 func (s *BuildBuddyServer) GetUserBadges(ctx context.Context, req *badgepb.GetUserBadgesRequest) (*badgepb.GetUserBadgesResponse, error) {
-	return nil, nil
+	return badge.GetUserBadges(ctx, s.env, req)
 }
 
 func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupRequest) (*grpb.GetGroupResponse, error) {

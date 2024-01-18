@@ -33,6 +33,7 @@ go_library(
         "//proto:workflow_go_proto",
         "//proto:zip_go_proto",
         "//server/backends/chunkstore",
+        "//server/badge",
         "//server/build_event_protocol/build_event_handler",
         "//server/build_event_protocol/event_index",
         "//server/endpoint_urls/build_buddy_url",
