@@ -2021,6 +2021,17 @@ func (s *BuildBuddyServer) CreateFeatureFlag(ctx context.Context, request *featu
 	return ffs.CreateFeatureFlag(ctx, request)
 }
 
+func (s *BuildBuddyServer) GetFlag(ctx context.Context, req *featureflag.GetFlagRequest) (*featureflag.GetFlagResponse, error) {
+	ffs := s.env.GetFeatureflagService()
+	f, err := ffs.GetFlag(ctx, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	return &featureflag.GetFlagResponse{
+		Enabled: f.Enabled,
+	}, nil
+}
+
 func (s *BuildBuddyServer) GetAllFeatureFlags(ctx context.Context, req *featureflag.GetAllFeatureFlagsRequest) (*featureflag.GetAllFeatureFlagsResponse, error) {
 	ffs := s.env.GetFeatureflagService()
 	featureflags, err := ffs.GetAll(ctx)

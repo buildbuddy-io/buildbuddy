@@ -274,4 +274,6 @@ service BuildBuddyService {
       returns (featureflag.UpdateFeatureFlagResponse);
   rpc GetGroups(featureflag.GetGroupsRequest)
       returns (featureflag.GetGroupsResponse);
+  rpc GetFlag(featureflag.GetFlagRequest)
+      returns (featureflag.GetFlagResponse);
 }

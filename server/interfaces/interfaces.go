@@ -1480,4 +1480,5 @@ type FeatureFlagService interface {
 	UpdateFeatureFlag(ctx context.Context, req *ffpb.UpdateFeatureFlagRequest) (*ffpb.UpdateFeatureFlagResponse, error)
 	GetAll(ctx context.Context) ([]*ffpb.FeatureFlag, error)
 	GetGroups(ctx context.Context) ([]*ffpb.Group, error)
+	GetFlag(ctx context.Context, name string) (*ffpb.FeatureFlag, error)
 }
