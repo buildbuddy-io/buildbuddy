@@ -208,11 +208,11 @@ export default class EnterpriseRootComponent extends React.Component {
     let invocationId = router.getInvocationId(this.state.path);
     let compareInvocationIds = router.getInvocationIdsForCompare(this.state.path);
     let historyUser = this.state.user && router.getHistoryUser(this.state.path);
-	let momaUserId = router.getMomaUserId(this.state.path);
-	if (!Boolean(momaUserId)) {
-		momaUserId = this.state.user?.displayUser?.userId?.id;
-	}
-	let moma = momaUserId && this.state.path.startsWith("/moma");
+    let momaUserId = router.getMomaUserId(this.state.path);
+    if (!Boolean(momaUserId)) {
+      momaUserId = this.state.user?.displayUser?.userId?.id;
+    }
+    let moma = momaUserId && this.state.path.startsWith("/moma");
     let historyHost = this.state.user && router.getHistoryHost(this.state.path);
     let historyRepo = this.state.user && router.getHistoryRepo(this.state.path);
     let historyBranch = this.state.user && router.getHistoryBranch(this.state.path);
@@ -252,7 +252,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !historyCommit &&
       !auditLogs &&
       !repo &&
-      !review
+      !review;
 
     let setup =
       (this.state.path.startsWith("/docs/setup") && (this.state.user || capabilities.anonymous)) ||

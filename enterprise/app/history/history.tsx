@@ -119,7 +119,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       this.setState({ invocations: undefined, pageToken: undefined });
     }
 
-    console.log("userID: " + this.props.userId)
+    console.log("userID: " + this.props.userId);
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
@@ -138,7 +138,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         status: filterParams.status,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
-		userId: this.props.userId || filterParams.userId
+        userId: this.props.userId || filterParams.userId,
       }),
       sort: new invocation.InvocationSort({
         sortField: this.getSortField(filterParams),
@@ -449,7 +449,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
   render() {
     let scope =
-	  this.props.userId || 
+      this.props.userId ||
       this.props.username ||
       this.props.hostname ||
       (this.props.commit && format.formatCommitHash(this.props.commit)) ||

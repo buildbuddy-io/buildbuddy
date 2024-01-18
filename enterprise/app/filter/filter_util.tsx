@@ -87,7 +87,7 @@ export function getProtoFilterParams(search: URLSearchParams, now?: moment.Momen
     updatedBefore: endDate ? proto.dateToTimestamp(endDate) : undefined,
 
     user: search.get(USER_PARAM_NAME) || undefined,
-	userId: search.get(USER_ID_PARAM_NAME) || undefined,
+    userId: search.get(USER_ID_PARAM_NAME) || undefined,
     repo: search.get(REPO_PARAM_NAME) || undefined,
     branch: search.get(BRANCH_PARAM_NAME) || undefined,
     commit: search.get(COMMIT_PARAM_NAME) || undefined,

@@ -294,15 +294,15 @@ export default class InvocationModel {
   }
 
   getUserFullName() {
-	 return this.invocation.displayUser?.name?.full;
+    return this.invocation.displayUser?.name?.full;
   }
 
   getUserEmail() {
-	 return this.invocation.displayUser?.email;
+    return this.invocation.displayUser?.email;
   }
 
   getUserProfileUrl() {
-	  return this.invocation.displayUser?.profileImageUrl
+    return this.invocation.displayUser?.profileImageUrl;
   }
   getHost() {
     return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
