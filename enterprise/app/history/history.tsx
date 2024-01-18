@@ -1,6 +1,8 @@
 import React from "react";
 import { fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
+import { user_id } from "../../../proto/user_id_ts_proto";
+import { badge } from "../../../proto/badge_ts_proto";
 import capabilities from "../../../app/capabilities/capabilities";
 import Button from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
@@ -38,6 +40,10 @@ interface State {
   summaryStat?: invocation.InvocationStat;
   loadingSummaryStat?: boolean;
 
+  displayUser: user_id.DisplayUser;
+  badges?: badge.Badge[];
+  loadingBadges?: boolean;
+
   /**
    * Stats fetched for aggregate views.
    * Each stat corresponds to a card displaying the stats for a single repo (or user, etc.)
@@ -74,6 +80,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
   refreshSubscription = new Subscription();
 
+  badgesRpc?: CancelablePromise;
   invocationsRpc?: CancelablePromise;
   summaryStatRpc?: CancelablePromise;
   aggregateStatsRpc?: CancelablePromise;
@@ -109,6 +116,29 @@ export default class HistoryComponent extends React.Component<Props, State> {
       return invocation.InvocationSort.SortField.CACHE_TRANSFERRED_SORT_FIELD;
     }
     return invocation.InvocationSort.SortField.UNKNOWN_SORT_FIELD;
+  }
+
+  getBadges() {
+    this.setState({
+      badges: undefined,
+      loadingBadges: true,
+    });
+
+    console.log("userID:" + this.props.userId);
+    let request = new badge.GetUserBadgesRequest({
+      groupId: this.props.user?.selectedGroup?.id,
+      userId: this.props.userId,
+    });
+
+    this.badgeRpc = rpcService.service
+      .getUserBadges(request)
+      .then((response) => {
+        console.log(response);
+        this.setState({
+          badges: response.badges,
+        });
+      })
+      .finally(() => this.setState({ loadingBadges: false }));
   }
 
   getInvocations(nextPage?: boolean) {
@@ -336,6 +366,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
     this.invocationsRpc?.cancel();
     this.summaryStatRpc?.cancel();
     this.aggregateStatsRpc?.cancel();
+    this.badges?.cancel();
 
     this.setState({
       invocations: undefined,
@@ -344,7 +375,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
       pageToken: undefined,
     });
 
-    if (this.isAggregateView()) {
+    if (this.showBadges()) {
+      this.getBadges();
+      this.getInvocations();
+    } else if (this.isAggregateView()) {
       this.getAggregateStats();
     } else {
       this.getSummaryStat();
@@ -443,11 +477,16 @@ export default class HistoryComponent extends React.Component<Props, State> {
     return undefined;
   }
 
+  showBadges() {
+    return Boolean(this.props.userId);
+  }
+
   isAggregateView() {
-    return Boolean(this.props.tab);
+    return Boolean(this.props.tab) && !this.showBadges();
   }
 
   render() {
+    console.log(this.state.badges?.length);
     let scope =
       this.props.userId ||
       this.props.username ||
@@ -526,6 +565,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
             </div>
             <div className="titles">
               <div className="title">
+                {this.props.userId && (
+                  <>
+                    <span className="history-title">User</span>
+                  </>
+                )}
                 {this.props.username && (
                   <span>
                     <span className="history-title">{this.props.username}'s builds</span>
@@ -593,7 +637,8 @@ export default class HistoryComponent extends React.Component<Props, State> {
                     </a>
                   </span>
                 )}
-                {!this.props.hostname &&
+                {!this.props.userId &&
+                  !this.props.hostname &&
                   !this.props.username &&
                   !this.props.repo &&
                   !this.props.branch &&
@@ -644,7 +689,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
               </div>
             )}
           </div>
-          {this.state.invocations && this.state.invocations.length > 0 && (
+          {!this.props.userId && this.state.invocations && this.state.invocations.length > 0 && (
             <div className="container nopadding-dense">
               <div className={`grid ${this.state.invocations.length < 20 ? "grid-grow" : ""}`}>
                 {this.state.invocations.map((invocation) => (
@@ -666,6 +711,20 @@ export default class HistoryComponent extends React.Component<Props, State> {
         </div>
         {this.props.tab === "#users" && this.props.user?.canCall("getGroupUsers") && (
           <OrgJoinRequestsComponent user={this.props.user} />
+        )}
+        {this.showBadges() && <div>Achievements</div>}
+        {this.showBadges() && this.state.loadingBadges && (
+          <div className="details loading-details">
+            <Spinner />
+            <div>Loading badges</div>
+          </div>
+        )}
+        {Boolean(this.state.badges?.length) && (
+          <div className="container nopadding-dense">
+            {this.state.badges?.map((badge) => (
+              <img height="100px" width="100px" src={badge.imageUrl} title={badge.description} />
+            ))}
+          </div>
         )}
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">
@@ -702,6 +761,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
           !this.state.loadingInvocations &&
           !this.state.invocations?.length &&
           !this.state.loadingAggregateStats &&
+          !this.props.userId &&
           !this.state.aggregateStats?.length && (
             <div className="container narrow">
               <div className="empty-state history">

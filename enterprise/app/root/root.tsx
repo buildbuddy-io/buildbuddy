@@ -325,7 +325,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     <HistoryComponent
                       user={this.state.user}
                       userId={momaUserId}
-                      tab={this.state.tab}
+                      tab={"moma"}
                       search={this.state.search}
                     />
                   )}
