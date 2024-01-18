@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "proto/api_key.proto";
 import "proto/auditlog.proto";
+import "proto/badge.proto";
 import "proto/bazel_config.proto";
 import "proto/cache.proto";
 import "proto/eventlog.proto";
@@ -64,6 +65,11 @@ service BuildBuddyService {
   // User API
   rpc CreateUser(user.CreateUserRequest) returns (user.CreateUserResponse);
   rpc GetUser(user.GetUserRequest) returns (user.GetUserResponse);
+
+  rpc GetUserBadges(badge.GetUserBadgesRequest)
+      returns (badge.GetUserBadgesResponse);
+  rpc CreateBadges(badge.CreateBadgesRequest)
+      returns (badge.CreateBadgesResponse);
 
   // Groups API
   rpc GetGroup(grp.GetGroupRequest) returns (grp.GetGroupResponse);

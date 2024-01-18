@@ -66,6 +66,15 @@ proto_library(
 )
 
 proto_library(
+    name = "badge_proto",
+    srcs = ["badge.proto"],
+    deps = [
+        ":context_proto",
+        ":user_id_proto",
+    ],
+)
+
+proto_library(
     name = "bazel_query_proto",
     srcs = ["bazel_query.proto"],
 )
@@ -488,6 +497,7 @@ proto_library(
     deps = [
         ":api_key_proto",
         ":auditlog_proto",
+        ":badge_proto",
         ":bazel_config_proto",
         ":cache_proto",
         ":encryption_proto",
@@ -733,6 +743,20 @@ go_proto_library(
         ":iprules_go_proto",
         ":secrets_go_proto",
         ":workflow_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "badge_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/badge",
+    proto = ":badge_proto",
+    deps = [
+        ":context_go_proto",
+        ":user_id_go_proto",
     ],
 )
 
@@ -1252,6 +1276,7 @@ go_proto_library(
     deps = [
         ":api_key_go_proto",
         ":auditlog_go_proto",
+        ":badge_go_proto",
         ":bazel_config_go_proto",
         ":cache_go_proto",
         ":encryption_go_proto",
@@ -1629,6 +1654,15 @@ ts_proto_library(
         ":secrets_ts_proto",
         ":timestamp_ts_proto",
         ":workflow_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "badge_ts_proto",
+    proto = ":badge_proto",
+    deps = [
+        ":context_ts_proto",
+        ":user_id_ts_proto",
     ],
 )
 
@@ -2014,6 +2048,7 @@ ts_proto_library(
     deps = [
         ":api_key_ts_proto",
         ":auditlog_ts_proto",
+        ":badge_ts_proto",
         ":bazel_config_ts_proto",
         ":cache_ts_proto",
         ":encryption_ts_proto",

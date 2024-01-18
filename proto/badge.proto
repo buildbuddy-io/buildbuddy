@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+import "proto/user_id.proto";
+
+package badge;
+
+message Badge {
+  string badge_id = 1;
+  string description = 2;
+  string image_url = 3;
+}
+
+message GetUserBadgesRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  string user_id = 2;
+}
+
+message GetUserBadgesResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  user_id.DisplayUser display_user = 2;
+
+  repeated Badge badges = 3;
+}
+
+message CreateBadgesRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  repeated Badge badges = 2;
+}
+
+message CreateBadgesResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+}

@@ -43,6 +43,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	badgepb "github.com/buildbuddy-io/buildbuddy/proto/badge"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
@@ -386,6 +387,14 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	return &uspb.CreateUserResponse{
 		DisplayUser: tu.ToProto(),
 	}, nil
+}
+
+func (s *BuildBuddyServer) CreateBadges(ctx context.Context, req *badgepb.CreateBadgesRequest) (*badgepb.CreateBadgesResponse, error) {
+	return nil, nil
+}
+
+func (s *BuildBuddyServer) GetUserBadges(ctx context.Context, req *badgepb.GetUserBadgesRequest) (*badgepb.GetUserBadgesResponse, error) {
+	return nil, nil
 }
 
 func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupRequest) (*grpb.GetGroupResponse, error) {
