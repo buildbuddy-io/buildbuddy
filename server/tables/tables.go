@@ -745,6 +745,28 @@ func (*IPRule) TableName() string {
 	return "IPRules"
 }
 
+type Badge struct {
+	Model
+	BadgeID     string `gorm:"primaryKey"`
+	ImageURL    string
+	Description string
+}
+
+func (*Badge) TableName() string {
+	return "Badges"
+}
+
+type UserBadge struct {
+	Model
+	GroupID string `gorm:"primaryKey"`
+	UserID  string `gorm:"primaryKey"`
+	BadgeID string `gorm:"primaryKey"`
+}
+
+func (*UserBadge) TableName() string {
+	return "UserBadges"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -1244,4 +1266,6 @@ func RegisterTables() {
 	registerTable("UG", &UserGroup{})
 	registerTable("US", &User{})
 	registerTable("WF", &Workflow{})
+	registerTable("BA", &Badge{})
+	registerTable("UB", &UserBadge{})
 }
