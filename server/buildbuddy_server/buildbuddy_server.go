@@ -2021,6 +2021,27 @@ func (s *BuildBuddyServer) CreateFeatureFlag(ctx context.Context, request *featu
 	return ffs.CreateFeatureFlag(ctx, request)
 }
 
+func (s *BuildBuddyServer) GetAllFeatureFlags(ctx context.Context, req *featureflag.GetAllFeatureFlagsRequest) (*featureflag.GetAllFeatureFlagsResponse, error) {
+	ffs := s.env.GetFeatureflagService()
+	featureflags, err := ffs.GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &featureflag.GetAllFeatureFlagsResponse{
+		Flags: featureflags,
+	}, nil
+}
+
 func (s *BuildBuddyServer) UpdateFeatureFlag(ctx context.Context, req *featureflag.UpdateFeatureFlagRequest) (*featureflag.UpdateFeatureFlagResponse, error) {
-	return nil, nil
+	ffs := s.env.GetFeatureflagService()
+	return ffs.UpdateFeatureFlag(ctx, req)
+}
+
+func (s *BuildBuddyServer) GetGroups(ctx context.Context, req *featureflag.GetGroupsRequest) (*featureflag.GetGroupsResponse, error) {
+	ffs := s.env.GetFeatureflagService()
+	groups, err := ffs.GetGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &featureflag.GetGroupsResponse{Groups: groups}, nil
 }

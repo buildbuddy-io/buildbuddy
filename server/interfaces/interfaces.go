@@ -1478,4 +1478,6 @@ type GossipService interface {
 type FeatureFlagService interface {
 	CreateFeatureFlag(ctx context.Context, req *ffpb.CreateFeatureFlagRequest) (*ffpb.CreateFeatureFlagResponse, error)
 	UpdateFeatureFlag(ctx context.Context, req *ffpb.UpdateFeatureFlagRequest) (*ffpb.UpdateFeatureFlagResponse, error)
+	GetAll(ctx context.Context) ([]*ffpb.FeatureFlag, error)
+	GetGroups(ctx context.Context) ([]*ffpb.Group, error)
 }

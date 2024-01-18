@@ -45,6 +45,7 @@ genrule(
         "//enterprise/app/api_keys:api_keys.css",
         "//enterprise/app/auditlogs:auditlogs.css",
         "//enterprise/app/encryption:encryption.css",
+        "//enterprise/app/featureflags:featureflags.css",
         "//enterprise/app/history:history.css",
         "//enterprise/app/iprules:iprules.css",
         "//enterprise/app/org:org.css",

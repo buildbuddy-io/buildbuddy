@@ -758,9 +758,8 @@ func (*FeatureFlag) TableName() string {
 
 type ExperimentAssignment struct {
 	Model
-	Name string `gorm:"primaryKey"`
-	// TODO: Do we want an index on group ID?
-	GroupID string
+	Name    string `gorm:"primaryKey"`
+	GroupID string `gorm:"primaryKey"`
 }
 
 func (*ExperimentAssignment) TableName() string {

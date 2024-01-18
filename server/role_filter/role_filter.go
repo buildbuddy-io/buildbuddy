@@ -73,6 +73,10 @@ var (
 		"CreateGithubRef",
 		"GetGithubPullRequest",
 		"GetGithubPullRequestDetails",
+		"CreateFeatureFlag",
+		"GetAllFeatureFlags",
+		"UpdateFeatureFlag",
+		"GetGroups",
 	}
 
 	// DeveloperRPCs can be called only by developers or admins of the selected
