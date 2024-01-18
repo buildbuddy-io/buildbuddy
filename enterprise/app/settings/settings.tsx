@@ -19,6 +19,9 @@ import CompleteGitHubAppInstallationDialog from "./github_complete_installation"
 import EncryptionComponent from "../encryption/encryption";
 import IpRulesComponent from "../iprules/iprules";
 import FeatureflagsComponent from "../featureflags/featureflags";
+import rpcService from "../../../app/service/rpc_service";
+import {featureflag} from "../../../proto/featureflag_ts_proto";
+import errorService from "../../../app/errors/error_service";
 
 export interface SettingsProps {
   user: User;
@@ -36,6 +39,7 @@ enum TabId {
   OrgCacheEncryption = "org/cache-encryption",
   OrgIpRules = "org/ip-rules",
   OrgFeatureFlags = "org/feature-flags",
+  OrgFunTab = "org/fun-tab",
 
   PersonalPreferences = "personal/preferences",
   PersonalApiKeys = "personal/api-keys",
@@ -52,7 +56,15 @@ function isTabId(id: string): id is TabId {
   return TAB_IDS.has(id);
 }
 
+type State = {
+  funTabEnabled : boolean;
+}
+
 export default class SettingsComponent extends React.Component<SettingsProps> {
+  state: State = {
+    funTabEnabled: false,
+  }
+
   componentWillMount() {
     document.title = `Settings | BuildBuddy`;
 
@@ -64,6 +76,8 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
         router.replaceURL("/settings/org/api-keys?cli-login=1");
       }
     }
+
+    this.getFunTabEnabled();
   }
 
   private isCLILogin() {
@@ -97,6 +111,18 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
       }
     }
     return this.getDefaultTabId();
+  }
+
+  private getFunTabEnabled() {
+    rpcService.service
+        .getFlag(
+            new featureflag.GetFlagRequest({
+              name: "enable-fun-tab",
+            }))
+        .then((response) => {
+          this.setState({funTabEnabled: response.enabled});
+        })
+        .catch((e) => errorService.handleError(e));
   }
 
   render() {
@@ -164,6 +190,11 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 <SettingsTab id={TabId.OrgFeatureFlags} activeTabId={activeTabId}>
                   Feature Flags
                 </SettingsTab>
+                {this.state.funTabEnabled && (
+                    <SettingsTab id={TabId.OrgFunTab} activeTabId={activeTabId}>
+                      Fun Tab
+                    </SettingsTab>
+                )}
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>
@@ -349,6 +380,14 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                           Feature flags give you the ability to dynamically change flag values.
                         </div>
                         <FeatureflagsComponent />
+                      </>
+                  )}
+                  {activeTabId == TabId.OrgFunTab && (
+                      <>
+                        <div className="settings-option-title">Fun tab!!!</div>
+                        <div className="settings-option-description">
+                          Fun tab!!!
+                        </div>
                       </>
                   )}
                 </>
