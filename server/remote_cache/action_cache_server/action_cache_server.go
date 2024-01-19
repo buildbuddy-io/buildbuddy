@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -153,10 +154,16 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	downloadTracker := ht.TrackDownload(d)
 	blob, err := s.cache.Get(ctx, rn.ToProto())
 	if err != nil {
-		ht.TrackMiss(d)
+		if err := ht.TrackMiss(d); err != nil {
+			log.Debugf("GetActionResult: hit tracker error: %s", err)
+		}
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
-	defer downloadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server")
+	defer func() {
+		if err := downloadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server"); err != nil {
+			log.Debugf("GetActionResult: download tracker error: %s", err)
+		}
+	}()
 
 	rsp := &repb.ActionResult{}
 	if err := proto.Unmarshal(blob, rsp); err != nil {
@@ -230,6 +237,8 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err := s.cache.Set(ctx, acResource.ToProto(), blob); err != nil {
 		return nil, err
 	}
-	uploadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server")
+	if err := uploadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server"); err != nil {
+		log.Debugf("UpdateActionResult: upload tracker error: %s", err)
+	}
 	return req.ActionResult, nil
 }

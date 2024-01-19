@@ -101,7 +101,9 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
 	if r.IsEmpty() {
-		ht.TrackEmptyHit()
+		if err := ht.TrackEmptyHit(); err != nil {
+			log.Debugf("ByteStream Read: hit tracker TrackEmptyHit error: %s", err)
+		}
 		return nil
 	}
 	downloadTracker := ht.TrackDownload(r.GetDigest())
@@ -113,7 +115,9 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), req.ReadOffset, req.ReadLimit)
 	if err != nil {
-		ht.TrackMiss(r.GetDigest())
+		if err := ht.TrackMiss(r.GetDigest()); err != nil {
+			log.Debugf("ByteStream Read: hit tracker TrackMiss error: %s", err)
+		}
 		return err
 	}
 	defer reader.Close()
@@ -165,7 +169,9 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		bytesFromCache = counter.Count()
 	}
 
-	downloadTracker.CloseWithBytesTransferred(bytesFromCache, int64(bytesTransferredToClient), r.GetCompressor(), "byte_stream_server")
+	if err := downloadTracker.CloseWithBytesTransferred(bytesFromCache, int64(bytesTransferredToClient), r.GetCompressor(), "byte_stream_server"); err != nil {
+		log.Debugf("ByteStream Read: downloadTracker.CloseWithBytesTransferred error: %s", err)
+	}
 	return err
 }
 
@@ -394,7 +400,9 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			}()
 			uploadTracker := ht.TrackUpload(streamState.resourceName.GetDigest())
 			defer func() {
-				uploadTracker.CloseWithBytesTransferred(streamState.offset, int64(bytesUploadedFromClient), streamState.resourceName.GetCompressor(), "byte_stream_server")
+				if err := uploadTracker.CloseWithBytesTransferred(streamState.offset, int64(bytesUploadedFromClient), streamState.resourceName.GetCompressor(), "byte_stream_server"); err != nil {
+					log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
+				}
 			}()
 		} else { // Subsequent messages
 			if err := checkSubsequentPreconditions(req, streamState); err != nil {
@@ -460,7 +468,9 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht *hit_trac
 
 	uploadTracker := ht.TrackUpload(r.GetDigest())
 	defer func() {
-		uploadTracker.CloseWithBytesTransferred(0, clientUploadedBytes, r.GetCompressor(), "byte_stream_server")
+		if err := uploadTracker.CloseWithBytesTransferred(0, clientUploadedBytes, r.GetCompressor(), "byte_stream_server"); err != nil {
+			log.Debugf("handleAlreadyExists: uploadTracker.CloseWithBytesTransferred error: %s", err)
+		}
 	}()
 
 	// Uncompressed uploads can always short-circuit, returning
