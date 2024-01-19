@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testns"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ var (
 
 const (
 	busybox      = "mirror.gcr.io/library/busybox"
-	testFileName = "__linux_sandbox_test_file__"
+	testFileName = "_linux-sandbox-test-file"
 )
 
 func getBuildRoot(t *testing.T) string {
@@ -76,17 +77,29 @@ func lines(s ...string) string {
 	return strings.Join(s, "\n") + "\n"
 }
 
-func TestLinuxSandbox(t *testing.T) {
-	for _, test := range []struct {
-		Name            string
-		Image           string
-		EnableOverlayfs bool
-		Command         *repb.Command
+func TestMain(m *testing.M) {
+	// To make sure we can test bind / overlay mounts, run the test in its own
+	// user namespace as root, and with its own mount namespace owned by the new
+	// root user.
+	testns.Unshare(m, testns.MapID(0, 0), testns.UnshareMount)
+}
 
-		Outputs  map[string]string
-		ExitCode int
-		Stdout   string
-		Stderr   string
+func TestLinuxSandbox(t *testing.T) {
+	// Sanity check that we're root in the current namespace.
+	if os.Getuid() != 0 {
+		t.Fatalf("Test must be run as root in the current user namespace")
+	}
+
+	for _, test := range []struct {
+		Name    string
+		Image   string
+		Inputs  map[string]string
+		Command *repb.Command
+
+		WorkspaceAfter map[string]string
+		ExitCode       int
+		Stdout         string
+		Stderr         string
 	}{
 		{
 			Name:    "HostFS_NOP",
@@ -98,15 +111,19 @@ func TestLinuxSandbox(t *testing.T) {
 			Command: newCommand("/bin/true"),
 		},
 		{
-			Name:    "HostFS_WriteOutputFile",
-			Command: newCommand("touch", "test-output"),
-			Outputs: map[string]string{"test-output": ""},
+			Name:           "HostFS_WriteOutputFile",
+			Command:        newCommand("touch", "test-output"),
+			WorkspaceAfter: map[string]string{"test-output": ""},
 		},
 		{
 			Name:    "ContainerFS_WriteOutputFile",
 			Image:   busybox,
-			Command: newCommand("touch", "test-output"),
-			Outputs: map[string]string{"test-output": ""},
+			Inputs:  map[string]string{"test-input": "foo"},
+			Command: newCommand("sh", "-c", "(cat test-input && printf bar ) > ./test-output"),
+			WorkspaceAfter: map[string]string{
+				"test-input":  "foo",
+				"test-output": "foobar",
+			},
 		},
 		{
 			// Should run as root, to match podman behavior.
@@ -152,7 +169,6 @@ func TestLinuxSandbox(t *testing.T) {
 		},
 		// {
 		// 	Name:            "HostFS_CopyOnWrite",
-		// 	EnableOverlayfs: true,
 		// 	Command: newCommand("sh", "-c", `
 		// 		for dir in /bin /usr /lib ; do
 		// 			touch "${dir}/`+testFileName+`"
@@ -162,7 +178,6 @@ func TestLinuxSandbox(t *testing.T) {
 		// {
 		// 	Name:            "ContainerFS_CopyOnWrite",
 		// 	Image:           busybox,
-		// 	EnableOverlayfs: true,
 		// 	Command: newCommand("sh", "-c", `
 		// 		for dir in /bin /usr /lib ; do
 		// 			touch "${dir}/`+testFileName+`"
@@ -171,21 +186,20 @@ func TestLinuxSandbox(t *testing.T) {
 		// },
 	} {
 		t.Run(test.Name, func(t *testing.T) {
-			if test.EnableOverlayfs && os.Getuid() != 0 {
-				t.Skipf("Skipping overlayfs test - requires root but current uid is %d", os.Getuid())
-			}
-
 			ctx := context.Background()
 			buildRoot := getBuildRoot(t)
 			c := newContainer(ctx, t, buildRoot, test.Image)
 
 			wd := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, wd, test.Inputs)
 			res := c.Run(ctx, test.Command, wd, oci.Credentials{})
 
 			require.NoError(t, res.Error)
 			assert.Equal(t, test.ExitCode, res.ExitCode, "exit code")
 			assert.Equal(t, test.Stdout, string(res.Stdout), "stdout")
 			assert.Equal(t, test.Stderr, string(res.Stderr), "stdout")
+
+			testfs.AssertExactFileContents(t, wd, test.WorkspaceAfter)
 
 			// Make sure the host FS was not modified.
 			// NOTE: if this fails, the test may become permanently borked

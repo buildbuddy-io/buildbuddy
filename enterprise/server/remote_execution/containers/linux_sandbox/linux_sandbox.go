@@ -127,6 +127,8 @@ type sandbox struct {
 	rootFSDir string
 	// Path to the action working directory.
 	workDir string
+	// Paths which were mounted and need to be unmounted in Remove().
+	pathsToUnmount []string
 }
 
 var _ container.CommandContainer = (*sandbox)(nil)
@@ -194,9 +196,12 @@ func (s *sandbox) Exec(ctx context.Context, command *repb.Command, stdio *interf
 	}
 	// Move workdir into sandbox exec root. Once the action is complete, move it
 	// back.
-	// TODO: is this approach compatible with the current persistent workers
-	// impl?
-	// TODO: can we use a mount instead?
+	//
+	// Note: we can't just mount the workspace using -M/-m flags - if we do
+	// that, it winds up appearing empty. The mounting logic in linux-sandbox
+	// requires the workspace to be a regular directory under the execroot, not
+	// a mount. TODO: is this approach compatible with the current persistent
+	// workers impl?
 	const workspaceDirName = "workspace"
 	if err := os.Rename(s.workDir, filepath.Join(execRoot, workspaceDirName)); err != nil {
 		return commandutil.ErrorResult(status.WrapError(err, "move workspace to sandbox root"))
@@ -219,8 +224,6 @@ func (s *sandbox) Exec(ctx context.Context, command *repb.Command, stdio *interf
 		"-h", execRoot,
 		// Set working directory (relative to sandbox root).
 		"-W", filepath.Join(execRoot, workspaceDirName),
-		// Make the workspace directory writable
-		"-w", filepath.Join(execRoot, workspaceDirName),
 		// Make /tmp and /dev/shm writable (to match bazel's local behavior)
 		"-w", "/tmp",
 		"-w", "/dev/shm",
