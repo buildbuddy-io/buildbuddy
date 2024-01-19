@@ -2048,6 +2048,11 @@ func (s *BuildBuddyServer) UpdateFeatureFlag(ctx context.Context, req *featurefl
 	return ffs.UpdateFeatureFlag(ctx, req)
 }
 
+func (s *BuildBuddyServer) UpdateExperimentAssignments(ctx context.Context, req *featureflag.UpdateExperimentAssignmentsRequest) (*featureflag.UpdateExperimentAssignmentsResponse, error) {
+	ffs := s.env.GetFeatureflagService()
+	return ffs.UpdateExperimentAssignments(ctx, req)
+}
+
 func (s *BuildBuddyServer) GetGroups(ctx context.Context, req *featureflag.GetGroupsRequest) (*featureflag.GetGroupsResponse, error) {
 	ffs := s.env.GetFeatureflagService()
 	groups, err := ffs.GetGroups(ctx)

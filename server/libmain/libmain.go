@@ -364,7 +364,11 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 
-	env.SetFeatureflagService(featureflag.NewFeatureFlagService(env))
+	ffs, err := featureflag.NewFeatureFlagService(env)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	env.SetFeatureflagService(ffs)
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
 	// can be called over HTTP(s).

@@ -1478,8 +1478,9 @@ type GossipService interface {
 type FeatureFlagService interface {
 	CreateFeatureFlag(ctx context.Context, req *ffpb.CreateFeatureFlagRequest) (*ffpb.CreateFeatureFlagResponse, error)
 	UpdateFeatureFlag(ctx context.Context, req *ffpb.UpdateFeatureFlagRequest) (*ffpb.UpdateFeatureFlagResponse, error)
+	UpdateExperimentAssignments(ctx context.Context, req *ffpb.UpdateExperimentAssignmentsRequest) (*ffpb.UpdateExperimentAssignmentsResponse, error)
 	GetAll(ctx context.Context) ([]*ffpb.FeatureFlag, error)
 	GetGroups(ctx context.Context) ([]*ffpb.Group, error)
-	GetFlag(ctx context.Context, name string) (*ffpb.FeatureFlag, error)
+	FetchFlag(ctx context.Context, name string) (*ffpb.FeatureFlag, error)
 	IsEnabled(ctx context.Context, flagName string) (bool, error)
 }

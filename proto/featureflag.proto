@@ -34,12 +34,22 @@ message UpdateFeatureFlagRequest {
   string name = 2;
   string description = 3;
   bool enabled = 4;
-
-  // Regardless of state of enabled, need to create or delete these rows
-  repeated string configured_group_ids = 5;
 }
 
 message UpdateFeatureFlagResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+}
+
+message UpdateExperimentAssignmentsRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  string name = 2;
+  repeated string configured_group_ids = 3;
+}
+
+message UpdateExperimentAssignmentsResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 }

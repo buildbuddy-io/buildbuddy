@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -14,16 +13,28 @@ const (
 )
 
 func (ffs *FeatureFlagService) IsEnabled(ctx context.Context, flagName string) (bool, error) {
-	flag, err := ffs.GetFlag(ctx, flagName)
-	if err != nil {
-		return false, status.WrapError(err, "read flag")
-	}
-	if !flag.Enabled {
-		return false, nil
+	flagEntry, cached := ffs.featureFlagCache.Get(flagName)
+	if !cached {
+		flag, err := ffs.FetchFlag(ctx, flagName)
+		if err != nil {
+			return false, status.WrapError(err, "fetch flag")
+		}
+		configuredGroupMap := make(map[string]struct{})
+		for _, gid := range flag.ExperimentGroupIds {
+			configuredGroupMap[gid] = struct{}{}
+		}
+		flagEntry = &flagCacheEntry{
+			enabled:            flag.Enabled,
+			configuredGroupIds: configuredGroupMap,
+		}
+		ffs.featureFlagCache.Add(flagName, flagEntry)
 	}
 
+	if !flagEntry.enabled {
+		return false, nil
+	}
 	// If no groups are assigned to the experiment, it's default on for all groups
-	if len(flag.ExperimentGroupIds) == 0 {
+	if len(flagEntry.configuredGroupIds) == 0 {
 		return true, nil
 	}
 
@@ -32,7 +43,8 @@ func (ffs *FeatureFlagService) IsEnabled(ctx context.Context, flagName string) (
 		return false, status.WrapError(err, "get group id")
 	}
 
-	return contains(flag.ExperimentGroupIds, gid), nil
+	_, inExperiment := flagEntry.configuredGroupIds[gid]
+	return inExperiment, nil
 }
 
 func groupID(ctx context.Context, env environment.Env) (string, error) {
@@ -44,13 +56,4 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 		return "", err
 	}
 	return gid, nil
-}
-
-func contains(s []string, target string) bool {
-	for _, elem := range s {
-		if elem == target {
-			return true
-		}
-	}
-	return false
 }

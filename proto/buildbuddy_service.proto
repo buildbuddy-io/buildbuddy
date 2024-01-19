@@ -272,6 +272,8 @@ service BuildBuddyService {
       returns (featureflag.CreateFeatureFlagResponse);
   rpc UpdateFeatureFlag(featureflag.UpdateFeatureFlagRequest)
       returns (featureflag.UpdateFeatureFlagResponse);
+  rpc UpdateExperimentAssignments(featureflag.UpdateExperimentAssignmentsRequest)
+      returns (featureflag.UpdateExperimentAssignmentsResponse);
   rpc GetGroups(featureflag.GetGroupsRequest)
       returns (featureflag.GetGroupsResponse);
   rpc GetFlag(featureflag.GetFlagRequest)
