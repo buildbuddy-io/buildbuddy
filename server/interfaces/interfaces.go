@@ -1481,4 +1481,5 @@ type FeatureFlagService interface {
 	GetAll(ctx context.Context) ([]*ffpb.FeatureFlag, error)
 	GetGroups(ctx context.Context) ([]*ffpb.Group, error)
 	GetFlag(ctx context.Context, name string) (*ffpb.FeatureFlag, error)
+	IsEnabled(ctx context.Context, flagName string) (bool, error)
 }

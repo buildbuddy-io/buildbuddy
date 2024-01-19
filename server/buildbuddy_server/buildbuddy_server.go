@@ -2023,12 +2023,12 @@ func (s *BuildBuddyServer) CreateFeatureFlag(ctx context.Context, request *featu
 
 func (s *BuildBuddyServer) GetFlag(ctx context.Context, req *featureflag.GetFlagRequest) (*featureflag.GetFlagResponse, error) {
 	ffs := s.env.GetFeatureflagService()
-	f, err := ffs.GetFlag(ctx, req.Name)
+	enabled, err := ffs.IsEnabled(ctx, req.Name)
 	if err != nil {
 		return nil, err
 	}
 	return &featureflag.GetFlagResponse{
-		Enabled: f.Enabled,
+		Enabled: enabled,
 	}, nil
 }
 

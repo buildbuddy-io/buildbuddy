@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "featureflag",
-    srcs = ["featureflag_server.go"],
+    srcs = [
+        "featureflag.go",
+        "featureflag_server.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/featureflag",
     visibility = ["//visibility:public"],
     deps = [
@@ -10,8 +13,10 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
+        "//server/util/authutil",
         "//server/util/db",
         "//server/util/log",
+        "//server/util/perms",
         "//server/util/status",
     ],
 )

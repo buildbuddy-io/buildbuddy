@@ -2,9 +2,9 @@ package featureflag
 
 import (
 	"context"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -40,7 +40,7 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err == nil {
 		gid = u.GetGroupID()
-	} else if err != nil && !authutil.IsAnonymousUserError(err) && !*container.DebugEnableAnonymousRecycling {
+	} else if err != nil && !authutil.IsAnonymousUserError(err) {
 		return "", err
 	}
 	return gid, nil
