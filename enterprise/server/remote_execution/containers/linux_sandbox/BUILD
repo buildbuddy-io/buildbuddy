@@ -58,6 +58,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testns",
+        "//server/util/nsutil",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

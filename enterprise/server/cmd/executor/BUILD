@@ -60,6 +60,7 @@ go_library(
             "//enterprise/server/remote_execution/containers/podman",
             "//enterprise/server/remote_execution/vbd",
             "//server/util/networking",
+            "//server/util/nsutil",
         ],
         "//conditions:default": [],
     }),

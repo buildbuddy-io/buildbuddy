@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testns"
+	"github.com/buildbuddy-io/buildbuddy/server/util/nsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -81,7 +82,7 @@ func TestMain(m *testing.M) {
 	// To make sure we can test bind / overlay mounts, run the test in its own
 	// user namespace as root, and with its own mount namespace owned by the new
 	// root user.
-	testns.Unshare(m, testns.MapID(0, 0), testns.UnshareMount)
+	testns.Unshare(m, nsutil.MapID(0, 0), nsutil.UnshareMount)
 }
 
 func TestLinuxSandbox(t *testing.T) {
@@ -92,12 +93,13 @@ func TestLinuxSandbox(t *testing.T) {
 
 	for _, test := range []struct {
 		Name string
-		// Whether the test must have been run by the root user in the root
-		// user namespace (i.e. "pseudo-root" via Unshare() is not acceptable)
-		RequiresTrueRoot bool
-		Image            string
-		Inputs           map[string]string
-		Command          *repb.Command
+		// Whether the test must have been run by the root user in the root user
+		// namespace. i.e. it needs "true" root, not the "pseudo-root" that is
+		// set up in TestMain.
+		RequiresRoot bool
+		Image        string
+		Inputs       map[string]string
+		Command      *repb.Command
 
 		WorkspaceAfter map[string]string
 		ExitCode       int
@@ -164,8 +166,8 @@ func TestLinuxSandbox(t *testing.T) {
 			Stdout: "cat\x00/proc/self/cmdline\x00",
 		},
 		{
-			Name:             "HostFS_CopyOnWrite",
-			RequiresTrueRoot: true,
+			Name:         "HostFS_CopyOnWrite",
+			RequiresRoot: true,
 			// Write "/{bin,usr,lib}/$testFileName" in the sandbox. The test
 			// body will verify that these files do not exist outside the
 			// sandbox afterwards.
@@ -192,8 +194,8 @@ func TestLinuxSandbox(t *testing.T) {
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
-			if test.RequiresTrueRoot {
-				parentUID, ok := testns.ParentUid()
+			if test.RequiresRoot {
+				parentUID, ok := nsutil.ParentUid()
 				require.True(t, ok, "failed to get parent uid")
 				if parentUID != 0 {
 					t.Skipf("test requires uid 0 in root user ns")

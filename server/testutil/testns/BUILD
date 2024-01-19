@@ -8,4 +8,5 @@ go_library(
     srcs = ["testns.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testns",
     target_compatible_with = ["@platforms//os:linux"],
+    deps = ["//server/util/nsutil"],
 )
