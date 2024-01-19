@@ -9,5 +9,5 @@ import (
 var embedFS embed.FS
 
 func Open() (fs.File, error) {
-	return embedFS.Open("bazelisk-1.10.1")
+	return embedFS.Open("bazelisk-1.17.0")
 }
