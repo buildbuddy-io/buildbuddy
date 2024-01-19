@@ -6744,21 +6744,21 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazelisk-1.10.1-darwin-amd64",
-        sha256 = "e485bbf84532d02a60b0eb23c702610b5408df3a199087a4f2b5e0995bbf2d5a",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-amd64"],
+        name = "io_bazel_bazelisk-1.17.0-darwin-amd64",
+        sha256 = "3cf03dab8f5ef7c29e354b8e9293c82098ace3634253f9c660c26168b9e34720",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-darwin-amd64"],
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazelisk-1.10.1-darwin-arm64",
-        sha256 = "c22d48601466d9d3b043ccd74051f2f4230f9b9f4509f097017c97303aa88d13",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-arm64"],
+        name = "io_bazel_bazelisk-1.17.0-darwin-arm64",
+        sha256 = "2d4c66d428176b6c65e284ff74951b074846f15d324b099959483c175dec5728",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-darwin-arm64"],
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazelisk-1.10.1-linux-amd64",
-        sha256 = "4cb534c52cdd47a6223d4596d530e7c9c785438ab3b0a49ff347e991c210b2cd",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-linux-amd64"],
+        name = "io_bazel_bazelisk-1.17.0-linux-amd64",
+        sha256 = "61699e22abb2a26304edfa1376f65ad24191f94a4ffed68a58d42b6fee01e124",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-linux-amd64"],
         executable = True,
     )
     http_file(
