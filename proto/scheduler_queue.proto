@@ -22,6 +22,8 @@ message ExecutorQueueEntry {
   google.protobuf.Timestamp stage_start_time = 7;
 
   build.bazel.remote.execution.v2.ExecutionStage.Value stage = 8;
+
+  string snippet = 9;
 }
 
 message GetExecutionNodeDetailsRequest {

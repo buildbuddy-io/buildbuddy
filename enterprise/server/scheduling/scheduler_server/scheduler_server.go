@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -1645,8 +1646,26 @@ type enqueueTaskReservationOpts struct {
 	scheduleOnConnectedExecutors bool
 }
 
+func generateCommandSnippet(command *repb.Command) string {
+	const targetLength = 150
+	snippetBits := make([]string, 0)
+	for i, argument := range command.GetArguments() {
+		arg := argument
+		if i == 0 {
+			dir, file := filepath.Split(arg)
+			arg = filepath.Join(filepath.Base(dir), file)
+		}
+		snippetBits = append(snippetBits, arg)
+	}
+	snippet := strings.Join(snippetBits, " ")
+	if len(snippet) > targetLength {
+		snippet = snippet[:targetLength-3] + "..."
+	}
+	return snippet
+}
+
 // XXX: currently don't handle the case where work is added to a new executor
-func (s *SchedulerServer) addQueuedTask(ctx context.Context, executorID string, taskID string, serializedTask []byte) error {
+func (s *SchedulerServer) addQueuedTask(ctx context.Context, executorID string, taskID string) error {
 	t, err := s.readTask(ctx, taskID)
 	if err != nil {
 		return err
@@ -1666,6 +1685,7 @@ func (s *SchedulerServer) addQueuedTask(ctx context.Context, executorID string, 
 	if err := proto.Unmarshal(t.serializedTask, rbeTask); err == nil {
 		queueEntry.RbeTask = rbeTask
 		queueEntry.InvocationId = rbeTask.InvocationId
+		queueEntry.Snippet = generateCommandSnippet(rbeTask.Command)
 	} else {
 		log.CtxWarningf(ctx, "could not unmarshal task: %s", err)
 	}
@@ -1858,7 +1878,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			} else if rankedNode.preferred {
 				scheduledOnPreferredNode = true
 			}
-			if err := s.addQueuedTask(ctx, node.executorID, enqueueRequest.GetTaskId(), serializedTask); err != nil {
+			if err := s.addQueuedTask(ctx, node.executorID, enqueueRequest.GetTaskId()); err != nil {
 				log.CtxWarningf(ctx, "could not add queued task: %s", err)
 			}
 		} else {

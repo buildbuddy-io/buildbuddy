@@ -279,6 +279,9 @@ class ExecutorEntryComponent extends React.Component<EntryProps> {
                 <div style={{display: "flex", flexDirection: "column", width: "1200px"}}>
                   <div>{this.props.entry.taskId}</div>
                   <div style={{display: "flex", marginTop: "24px"}}>
+                    {this.props.entry.snippet}
+                  </div>
+                  <div style={{display: "flex", marginTop: "24px"}}>
                     <div className="details">
                       <div className="executor-section" style={{display: "flex"}}>
                         <div style={{display: "flex"}}><div style={{fontWeight: 700}}>{!isExecuting ? "QUEUED" : "EXECUTING"}</div> ({duration})</div>
