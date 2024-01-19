@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/linux_sandbox"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -51,6 +52,14 @@ func (p *pool) registerContainerProviders(providers map[platform.ContainerType]c
 			return status.FailedPreconditionErrorf("Failed to initialize firecracker container provider: %s", err)
 		}
 		providers[platform.FirecrackerContainerType] = p
+	}
+
+	if executor.SupportsIsolation(platform.LinuxSandboxContainerType) {
+		p, err := linux_sandbox.NewProvider(p.env, *rootDirectory)
+		if err != nil {
+			return status.FailedPreconditionErrorf("failed to initialize linux-sandbox container provider: %s", err)
+		}
+		providers[platform.LinuxSandboxContainerType] = p
 	}
 
 	if executor.SupportsIsolation(platform.BareContainerType) {

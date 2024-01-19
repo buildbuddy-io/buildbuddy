@@ -309,3 +309,14 @@ func EnvStringList(command *repb.Command) []string {
 	}
 	return env
 }
+
+// Getenv returns an environment variable with the given name, or nil if not
+// found.
+func Getenv(command *repb.Command, name string) *repb.Command_EnvironmentVariable {
+	for _, ev := range command.GetEnvironmentVariables() {
+		if ev.GetName() == name {
+			return ev
+		}
+	}
+	return nil
+}

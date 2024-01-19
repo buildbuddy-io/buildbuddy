@@ -11,10 +11,12 @@ go_library(
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
         "//server/util/disk",
+        "//server/util/flag",
         "//server/util/hash",
         "//server/util/log",
         "//server/util/status",
         "@com_github_docker_docker//client",
+        "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@org_golang_x_sync//singleflight",
     ],
 )

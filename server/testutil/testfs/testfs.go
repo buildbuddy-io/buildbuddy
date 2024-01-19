@@ -162,8 +162,8 @@ func ReadFileAsString(t testing.TB, rootDir, path string) string {
 	return string(b)
 }
 
-func Exists(t testing.TB, rootDir, path string) bool {
-	_, err := os.Stat(filepath.Join(rootDir, path))
+func Exists(t testing.TB, path string, join ...string) bool {
+	_, err := os.Stat(filepath.Join(append([]string{path}, join...)...))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false

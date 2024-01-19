@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,10 +25,12 @@ import (
 var (
 	dockerSocket               = flag.String("executor.docker_socket", "", "If set, run execution commands in docker using the provided socket.")
 	defaultXcodeVersion        = flag.String("executor.default_xcode_version", "", "Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used.")
-	defaultIsolationType       = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, podman, firecracker, or none (bare).")
+	defaultIsolationType       = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is enabled: docker, podman, firecracker, {linux|darwin}-sandbox, or none (bare).")
 	enableBareRunner           = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
 	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
-	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
+	enableDarwinSandbox        = flag.Bool("executor.enable_darwin_sandbox", false, "Enables running execution commands inside of sandbox-exec. macOS (darwin) only.")
+	enableLinuxSandbox         = flag.Bool("executor.enable_linux_sandbox", false, "Enables running commands using linux-sandbox (the sandbox implementation that ships with bazel). The sandbox is run in hermetic mode. Linux only.")
+	sandboxImages              = flag.Slice("executor.linux_sandbox.compatible_images", []string{}, "Enables linux-sandbox isolation for any tasks specifying these container images (for example, this can be set to match the executor's base image).")
 	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
 	defaultImage               = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
@@ -116,11 +119,12 @@ const (
 	EstimatedCPUPropertyName    = "EstimatedCPU"
 	EstimatedMemoryPropertyName = "EstimatedMemory"
 
-	BareContainerType        ContainerType = "none"
-	PodmanContainerType      ContainerType = "podman"
-	DockerContainerType      ContainerType = "docker"
-	FirecrackerContainerType ContainerType = "firecracker"
-	SandboxContainerType     ContainerType = "sandbox"
+	BareContainerType          ContainerType = "none"
+	PodmanContainerType        ContainerType = "podman"
+	DockerContainerType        ContainerType = "docker"
+	FirecrackerContainerType   ContainerType = "firecracker"
+	DarwinSandboxContainerType ContainerType = "darwin-sandbox"
+	LinuxSandboxContainerType  ContainerType = "linux-sandbox"
 
 	// The app will mint a signed client identity token to workflows.
 	workflowClientIdentityTokenLifetime = 12 * time.Hour
@@ -357,11 +361,19 @@ func GetExecutorProperties() *ExecutorProperties {
 		}
 	}
 
-	if *enableSandbox {
+	if *enableDarwinSandbox {
 		if runtime.GOOS == "darwin" {
-			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, SandboxContainerType)
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, DarwinSandboxContainerType)
 		} else {
-			log.Warning("Sandbox was enabled, but is unsupported outside of darwin. Ignoring.")
+			log.Warning("darwin-sandbox was enabled, but is unsupported outside of darwin. Ignoring.")
+		}
+	}
+
+	if *enableLinuxSandbox {
+		if runtime.GOOS == "linux" {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, LinuxSandboxContainerType)
+		} else {
+			log.Warning("linux-sandbox was enabled, but is unsupported outside of linux. Ignoring.")
 		}
 	}
 
@@ -389,8 +401,17 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 
 	if platformProps.WorkloadIsolationType == "" {
 		if *defaultIsolationType == "" {
-			// Backward-compatibility: if no default isolation type was specified; use the first configured one.
-			platformProps.WorkloadIsolationType = string(executorProps.SupportedIsolationTypes[0])
+			// If both the action's isolation type and the default isolation
+			// type are unspecified, AND linux-sandbox is enabled, AND no
+			// container-image was specified, then use linux-sandbox
+			// (effectively using the executor image as the container image for
+			// the action).
+			if slices.Contains(executorProps.SupportedIsolationTypes, LinuxSandboxContainerType) && platformProps.ContainerImage == "" {
+				platformProps.WorkloadIsolationType = string(LinuxSandboxContainerType)
+			} else {
+				// Backward-compatibility: if no default isolation type was specified; use the first configured one.
+				platformProps.WorkloadIsolationType = string(executorProps.SupportedIsolationTypes[0])
+			}
 		} else {
 			platformProps.WorkloadIsolationType = string(*defaultIsolationType)
 		}
@@ -424,6 +445,12 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		// Trim the docker prefix from ContainerImage -- we no longer need it.
 		platformProps.ContainerImage = strings.TrimPrefix(platformProps.ContainerImage, DockerPrefix)
 	}
+
+	// For docker and podman isolation, if the container-image is one of the
+	// configured sandbox-compatible images (e.g. it matches the executor base
+	// image), use lightweight linux-sandbox isolation instead of running a full
+	// OCI container.
+	useSandboxIsolationIfCompatible(platformProps)
 
 	if strings.EqualFold(platformProps.OS, DarwinOperatingSystemName) {
 		appleSDKVersion := ""
@@ -494,6 +521,22 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	return nil
+}
+
+func useSandboxIsolationIfCompatible(props *Properties) {
+	if !*enableLinuxSandbox {
+		return
+	}
+	t := ContainerType(props.WorkloadIsolationType)
+	if !(t == DockerContainerType || t == PodmanContainerType) {
+		return
+	}
+	// TODO: if ":" and "@" are both missing in the sandbox_image flag spec
+	// value then trim the @/: suffix from the incoming container-image spec.
+	if !slices.Contains(*sandboxImages, props.ContainerImage) {
+		return
+	}
+	props.WorkloadIsolationType = string(LinuxSandboxContainerType)
 }
 
 func stringProp(props map[string]string, name string, defaultValue string) string {

@@ -141,6 +141,17 @@ shows the directories relevant to a firecracker container instance:
             # we don't have multiple subdirs since we don't pull images if
             # one is already cached, but this may change in the future.
             - ...
+        # This directory contains the unpacked rootfs for the image.
+        # This is not directly used by firecracker, but linux-sandbox can
+        # reuse this directory to construct the sandbox rootfs for
+        # a container-image spec.
+        # Ex: sha256("gcr.io/flame-public/executor-docker-default:latest") + ".rootfs"
+        - /1f89a08e2136061a0bf54aaea89e47b533504b4241a5ff98d96c3dcbe04a67f3.rootfs/:
+            - /bin/:
+                - ...
+            - /usr/:
+                - ...
+            - ...
         # For other VM resources, the dir name is the sha256 of the file
         # contents and the dir contains a single file matching that sha256.
         #

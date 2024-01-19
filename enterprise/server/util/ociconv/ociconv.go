@@ -10,18 +10,25 @@ import (
 	"os/user"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/singleflight"
 
 	dockerclient "github.com/docker/docker/client"
+	registryv1 "github.com/google/go-containerregistry/pkg/v1"
+)
+
+var (
+	debugSkipAuthCheck = flag.Bool("debug_ociconv_skip_auth", false, "Skip auth checks for these images when converting OCI images to other formats (for debugging and testing only).")
 )
 
 const (
@@ -32,20 +39,19 @@ const (
 )
 
 var (
-	isRoot bool
-
-	// Single-flight group used to dedupe firecracker image conversions.
-	conversionGroup singleflight.Group
+	// Single-flight group used to dedupe ext4 image conversions.
+	ext4ConversionGroup singleflight.Group
+	// Single-flight group used to dedupe rootfs image extraction.
+	rootfsExtractionGroup singleflight.Group
 )
 
-func init() {
+var isUserRoot = sync.OnceValues(func() (bool, error) {
 	u, err := user.Current()
 	if err != nil {
-		log.Warningf("could not determine current user: %s", err)
-	} else {
-		isRoot = u.Uid == "0"
+		return false, err
 	}
-}
+	return u.Uid == "0", nil
+})
 
 func hashFile(filename string) (string, error) {
 	f, err := os.Open(filename)
@@ -63,9 +69,9 @@ func hashFile(filename string) (string, error) {
 // CachedDiskImagePath looks for an existing cached disk image and returns the
 // path to it, if it exists. It returns "" (with no error) if the disk image
 // does not exist and no other errors occurred while looking for the image.
-func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage string) (string, error) {
+func CachedDiskImagePath(ctx context.Context, buildRoot, containerImage string) (string, error) {
 	hashedContainerName := hash.String(containerImage)
-	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
+	containerImagesPath := filepath.Join(buildRoot, "executor", hashedContainerName)
 	files, err := os.ReadDir(containerImagesPath)
 	if os.IsNotExist(err) {
 		return "", nil
@@ -111,31 +117,18 @@ func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage strin
 // registry, but the credentials are still authenticated with the remote
 // registry to ensure that the image can be accessed. The path to the disk image
 // is returned.
-func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	existingPath, err := CachedDiskImagePath(ctx, workspaceDir, containerImage)
+func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, buildRoot, containerImage string, creds oci.Credentials) (string, error) {
+	// Always authenticate with the remote registry to ensure the credentials
+	// are valid.
+	if err := authenticate(ctx, buildRoot, containerImage, creds); err != nil {
+		return "", err
+	}
+
+	existingPath, err := CachedDiskImagePath(ctx, buildRoot, containerImage)
 	if err != nil {
 		return "", err
 	}
 	if existingPath != "" {
-		// Image is cached. Authenticate with the remote registry to be sure
-		// the credentials are valid.
-
-		inspectArgs := []string{"inspect", "--raw", fmt.Sprintf("docker://%s", containerImage)}
-		if !creds.IsEmpty() {
-			inspectArgs = append(inspectArgs, "--creds", creds.String())
-		}
-		cmd := exec.CommandContext(ctx, "skopeo", inspectArgs...)
-		b, err := cmd.CombinedOutput()
-		if err != nil {
-			// We don't know whether an authentication error occurred unless we do
-			// brittle parsing of the command output. So for now just return
-			// UnavailableError which is the "least common denominator" of errors.
-			return "", status.UnavailableErrorf(
-				"Failed to authenticate with container registry for image %q: %s: %s",
-				containerImage, err, string(b),
-			)
-		}
-
 		return existingPath, nil
 	}
 
@@ -143,15 +136,13 @@ func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, wor
 	// convert the image in the background so that one client's ctx timeout does
 	// not affect other clients. We do apply a timeout to the background
 	// conversion though to prevent it from running forever.
-	conversionOpKey := hash.Strings(
-		workspaceDir, containerImage, creds.Username, creds.Password,
-	)
-	resultChan := conversionGroup.DoChan(conversionOpKey, func() (interface{}, error) {
+	conversionOpKey := hash.Strings(buildRoot, containerImage)
+	resultChan := ext4ConversionGroup.DoChan(conversionOpKey, func() (interface{}, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), imageConversionTimeout)
 		defer cancel()
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKey above (if applicable).
-		return createExt4Image(ctx, dockerClient, workspaceDir, containerImage, creds)
+		return createExt4Image(ctx, dockerClient, buildRoot, containerImage, creds)
 	})
 
 	select {
@@ -168,12 +159,85 @@ func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, wor
 	}
 }
 
-func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
+func authenticate(ctx context.Context, buildRoot, containerImage string, creds oci.Credentials) error {
+	if *debugSkipAuthCheck {
+		return nil
+	}
+	_, err := oci.Resolve(ctx, containerImage, oci.HostPlatform(), creds)
+	if err != nil {
+		return status.UnauthenticatedErrorf("authenticate image access: %s", err)
+	}
+	return nil
+}
+
+// DO NOT SUBMIT: the caching part is not needed (yet?). Was planning to use
+// this to apply ENV vars from the image for greater podman compatibility - but
+// it seems like we actually need to fetch the individual layers in order to do
+// that?
+func resolveAndCache(ctx context.Context, buildRoot, containerImage string, creds oci.Credentials) error {
+	path := filepath.Join(buildRoot, "executor", hash.String(containerImage)+".metadata.json")
+	image, err := oci.Resolve(ctx, containerImage, oci.HostPlatform(), creds)
+	if err != nil {
+		return err
+	}
+	b, err := image.RawManifest()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, b, 0644); err != nil {
+		return status.WrapError(err, "write manifest to disk")
+	}
+	return nil
+}
+
+// GetCachedManifest returns the manifest that was cached during
+// resolveAndCache.
+func GetCachedManifest(ctx context.Context, buildRoot, containerImage string) (*registryv1.Manifest, error) {
+	path := filepath.Join(buildRoot, "executor", hash.String(containerImage)+".metadata.json")
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	m, err := registryv1.ParseManifest(f)
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func CachedRootFSPath(ctx context.Context, buildRoot, containerImage string) (string, error) {
+	rootFSDir := getRootFSDir(buildRoot, containerImage)
+	s, err := os.Stat(rootFSDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if s.IsDir() {
+		return rootFSDir, nil
+	}
+	return "", status.InternalErrorf("root FS path %q exists but is not a directory", rootFSDir)
+}
+
+// ExtractContainerImage extracts all image root FS layers and returns the path
+// to the root directory where the image was unpacked.
+func ExtractContainerImage(ctx context.Context, dockerClient *dockerclient.Client, buildRoot, containerImage string, creds oci.Credentials) (string, error) {
+	// Always authenticate with the remote registry to ensure the credentials
+	// are valid.
+	if err := authenticate(ctx, buildRoot, containerImage, creds); err != nil {
+		return "", err
+	}
+	return pullImageAndUnpackRootfs(ctx, dockerClient, buildRoot, containerImage, creds)
+}
+
+func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, buildRoot, containerImage string, creds oci.Credentials) (string, error) {
 	hashedContainerName := hash.String(containerImage)
-	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
+	containerImagesPath := filepath.Join(buildRoot, "executor", hashedContainerName)
 
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, dockerClient, workspaceDir, containerImage, creds)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, dockerClient, buildRoot, containerImage, creds)
 	if err != nil {
 		return "", err
 	}
@@ -197,13 +261,75 @@ func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, wor
 // image from an OCI container image reference.
 // NB: We use modern tools (not docker), that do not require root access. This
 // allows this binary to convert images even when not running as root.
-func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
+func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Client, buildRoot, containerImage string, creds oci.Credentials) (string, error) {
+	rootFSDir, err := pullImageAndUnpackRootfs(ctx, dockerClient, buildRoot, containerImage, creds)
+	if err != nil {
+		return "", err
+	}
+
+	// Take the rootfs and write it into an ext4 image.
+	f, err := os.CreateTemp(buildRoot, "containerfs-*.ext4")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	imageFile := f.Name()
+	if err := ext4.DirectoryToImageAutoSize(ctx, rootFSDir, imageFile); err != nil {
+		return "", err
+	}
+	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
+	return imageFile, nil
+}
+
+func pullImageAndUnpackRootfs(ctx context.Context, dockerClient *dockerclient.Client, buildRoot, containerImage string, creds oci.Credentials) (string, error) {
+	existingPath, err := CachedRootFSPath(ctx, buildRoot, containerImage)
+	if err != nil {
+		return "", err
+	}
+	if existingPath != "" {
+		return existingPath, nil
+	}
+
+	key := hash.Strings(buildRoot, containerImage)
+	resultChan := ext4ConversionGroup.DoChan(key, func() (interface{}, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), imageConversionTimeout)
+		defer cancel()
+		// NOTE: If more params are added to this func, be sure to update
+		// conversionOpKey above (if applicable).
+		return doPullImageAndUnpackRootfs(ctx, dockerClient, buildRoot, containerImage, creds)
+	})
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-resultChan:
+		if res.Err != nil {
+			return "", res.Err
+		}
+		if res.Shared {
+			log.CtxInfof(ctx, "De-duped rootfs extraction for %s", containerImage)
+		}
+		return res.Val.(string), nil
+	}
+}
+
+func getRootFSDir(buildRoot, containerImage string) string {
+	hashedContainerName := hash.String(containerImage)
+	return filepath.Join(buildRoot, "executor", hashedContainerName+".rootfs")
+}
+
+func doPullImageAndUnpackRootfs(ctx context.Context, dockerClient *dockerclient.Client, buildRoot, containerImage string, creds oci.Credentials) (string, error) {
 	// Make a temp directory to work in. Delete it when this fuction returns.
-	rootUnpackDir, err := os.MkdirTemp(workspaceDir, "container-unpack-*")
+	rootUnpackDir, err := os.MkdirTemp(buildRoot, "container-unpack-*")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(rootUnpackDir)
+
+	// Make the directory where we'll unpack the root FS.
+	rootFSUnpackDir := filepath.Join(rootUnpackDir, "rootfs")
+	if err := os.MkdirAll(rootFSUnpackDir, 0755); err != nil {
+		return "", err
+	}
 
 	// Make a directory to download the OCI image to.
 	ociImageDir := filepath.Join(rootUnpackDir, "image")
@@ -258,11 +384,6 @@ func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Cl
 	}
 
 	log.Debugf("Unpacking OCI image: %s", containerImage)
-	// Make a directory to unpack the bundle to.
-	rootFSDir := filepath.Join(rootUnpackDir, "rootfs")
-	if err := disk.EnsureDirectoryExists(rootFSDir); err != nil {
-		return "", err
-	}
 	// Note, the "--rootless" flag causes all unpacked files to be owned by the
 	// current uid, regardless of their original owner in the source OCI image.
 	// This lets us avoid "permission denied" errors when unpacking, but
@@ -279,26 +400,24 @@ func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Cl
 	//
 	// TODO: Find another way to convert OCI -> ext4 so that we don't get
 	// incorrect permissions when the executor is not running as root.
+	isRoot, err := isUserRoot()
+	if err != nil {
+		return "", err
+	}
 	cmd := exec.CommandContext(
 		ctx,
 		"umoci", "raw", "unpack",
 		fmt.Sprintf("--rootless=%v", !isRoot),
 		"--image", ociImageDir,
-		rootFSDir)
+		rootFSUnpackDir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", status.InternalErrorf("umoci unpack error: %q: %s", string(out), err)
 	}
-
-	// Take the rootfs and write it into an ext4 image.
-	f, err := os.CreateTemp(workspaceDir, "containerfs-*.ext4")
-	if err != nil {
+	// Now that we've successfully unpacked, move it to the finalized,
+	// non-temporary path.
+	rootFSDir := getRootFSDir(buildRoot, containerImage)
+	if err := os.Rename(rootFSUnpackDir, rootFSDir); err != nil {
 		return "", err
 	}
-	defer f.Close()
-	imageFile := f.Name()
-	if err := ext4.DirectoryToImageAutoSize(ctx, rootFSDir, imageFile); err != nil {
-		return "", err
-	}
-	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
-	return imageFile, nil
+	return rootFSDir, nil
 }

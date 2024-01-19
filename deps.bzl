@@ -6775,3 +6775,12 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-14_linux-x86_64"],
         executable = True,
     )
+
+    http_file(
+        name = "linux-sandbox_linux-x86_64",
+        sha256 = "ca7daaec2e042106df19ff1b43057fb883d8a69502c57e875ea14df4c46ea05b",
+        # Note: the version string is derived from the bazel version that
+        # included the linux-sandbox binary.
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux-sandbox/linux-sandbox-7.0.0_linux-x86_64"],
+        executable = True,
+    )
