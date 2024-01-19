@@ -1,10 +1,21 @@
 package testns
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 	"testing"
+)
+
+const (
+	// Environment variable that signals whether we're running as the unshared
+	// child process.
+	isChildEnvVarName = "__TESTNS_IS_UNSHARED_CHILD_PROC"
+	// Environment variable that lets us access the original UID from the
+	// parent process that called Unshare().
+	parentUidEnvVarName = "__TESTNS_PARENT_UID"
 )
 
 // Unshare works like the unshare(1) command on Linux (see `man 1 unshare`). It
@@ -21,9 +32,6 @@ import (
 //
 // Note, this is a Linux-only API.
 func Unshare(m *testing.M, opts ...UnshareOption) {
-	// Environment variable that signals whether we're running as the unshared
-	// child process.
-	const isChildEnvVarName = "__TEST_IS_UNSHARED_CHILD_PROC"
 	if os.Getenv(isChildEnvVarName) == "1" {
 		// We're the child process that is running in the new user namespace
 		// as root - clean up the env var that we set and run the test.
@@ -32,11 +40,13 @@ func Unshare(m *testing.M, opts ...UnshareOption) {
 	}
 	// Re-execute the current executable in a new user namespace as uid 0 (root).
 	cmd := exec.Command("/proc/self/exe", os.Args[1:]...)
-	cmd.Env = append(os.Environ(), isChildEnvVarName+"=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
 	for _, opt := range opts {
 		opt(cmd.SysProcAttr)
 	}
+	// Note: setting env after processing opts, since some opts may set env
+	// vars.
+	cmd.Env = append(os.Environ(), isChildEnvVarName+"=1")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -69,6 +79,7 @@ var UnshareUser = UnshareOption(func(p *syscall.SysProcAttr) {
 func MapID(uid, gid int) UnshareOption {
 	return func(p *syscall.SysProcAttr) {
 		UnshareUser(p)
+		os.Setenv(parentUidEnvVarName, fmt.Sprint(os.Getuid()))
 		p.UidMappings = append(
 			p.UidMappings,
 			syscall.SysProcIDMap{ContainerID: uid, HostID: os.Getuid(), Size: 1},
@@ -78,4 +89,15 @@ func MapID(uid, gid int) UnshareOption {
 			syscall.SysProcIDMap{ContainerID: gid, HostID: os.Getgid(), Size: 1},
 		)
 	}
+}
+
+// ParentUid returns the uid of the parent process that called Unshare() if
+// applicable.
+func ParentUid() (uid int, ok bool) {
+	s := os.Getenv(parentUidEnvVarName)
+	uid, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, false
+	}
+	return uid, true
 }

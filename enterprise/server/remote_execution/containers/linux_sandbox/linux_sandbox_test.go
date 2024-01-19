@@ -91,10 +91,13 @@ func TestLinuxSandbox(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		Name    string
-		Image   string
-		Inputs  map[string]string
-		Command *repb.Command
+		Name string
+		// Whether the test must have been run by the root user in the root
+		// user namespace (i.e. "pseudo-root" via Unshare() is not acceptable)
+		RequiresTrueRoot bool
+		Image            string
+		Inputs           map[string]string
+		Command          *repb.Command
 
 		WorkspaceAfter map[string]string
 		ExitCode       int
@@ -161,31 +164,42 @@ func TestLinuxSandbox(t *testing.T) {
 			Stdout: "cat\x00/proc/self/cmdline\x00",
 		},
 		{
-			Name: "HostFS_WritableHomeDir",
+			Name:             "HostFS_CopyOnWrite",
+			RequiresTrueRoot: true,
+			// Write "/{bin,usr,lib}/$testFileName" in the sandbox. The test
+			// body will verify that these files do not exist outside the
+			// sandbox afterwards.
 			Command: newCommand("sh", "-c", `
-				mkdir -p ~/.cache/
-				touch ~/.cache/foo
+				for dir in /bin /usr /lib ; do
+					touch "${dir}/`+testFileName+`"
+				done
 			`),
 		},
-		// {
-		// 	Name:            "HostFS_CopyOnWrite",
-		// 	Command: newCommand("sh", "-c", `
-		// 		for dir in /bin /usr /lib ; do
-		// 			touch "${dir}/`+testFileName+`"
-		// 		done
-		// 	`),
-		// },
-		// {
-		// 	Name:            "ContainerFS_CopyOnWrite",
-		// 	Image:           busybox,
-		// 	Command: newCommand("sh", "-c", `
-		// 		for dir in /bin /usr /lib ; do
-		// 			touch "${dir}/`+testFileName+`"
-		// 		done
-		// 	`),
-		// },
+		{
+			Name: "ContainerFS_CopyOnWrite",
+			// Note: we do not have a HostFS_CopyOnWrite test because it would
+			// require /usr, /bin etc. to be writable by the test user, which
+			// would require running bazel as root (sort of gross)
+			Image: busybox,
+			// Write "/{bin,usr,lib}/$testFileName" in the sandbox. The test
+			// body will verify that these files do not exist outside the
+			// sandbox afterwards.
+			Command: newCommand("sh", "-c", `
+				for dir in /bin /usr /lib ; do
+					touch "${dir}/`+testFileName+`"
+				done
+			`),
+		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
+			if test.RequiresTrueRoot {
+				parentUID, ok := testns.ParentUid()
+				require.True(t, ok, "failed to get parent uid")
+				if parentUID != 0 {
+					t.Skipf("test requires uid 0 in root user ns")
+				}
+			}
+
 			ctx := context.Background()
 			buildRoot := getBuildRoot(t)
 			c := newContainer(ctx, t, buildRoot, test.Image)

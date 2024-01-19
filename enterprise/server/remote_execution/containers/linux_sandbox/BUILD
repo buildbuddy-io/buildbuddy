@@ -29,6 +29,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/background",
+        "//server/util/disk",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/proto",
