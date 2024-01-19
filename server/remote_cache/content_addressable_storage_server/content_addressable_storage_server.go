@@ -175,7 +175,9 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		bytesWrittenToCache := 0
 		bytesFromClient := len(uploadRequest.GetData())
 		defer func() {
-			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(bytesFromClient), uploadRequest.GetCompressor(), "cas_server")
+			if err := uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(bytesFromClient), uploadRequest.GetCompressor(), "cas_server"); err != nil {
+				log.Debugf("BatchUpdateBlobs: upload tracker CloseWithBytesTransferred error: %s", err)
+			}
 		}()
 
 		if rn.IsEmpty() {
@@ -306,7 +308,9 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 
 		if !rn.IsEmpty() {
 			closeTrackerFuncs = append(closeTrackerFuncs, func(data downloadTrackerData) {
-				downloadTracker.CloseWithBytesTransferred(int64(data.bytesReadFromCache), int64(data.bytesDownloadedToClient), data.compressor, "cas_server")
+				if err := downloadTracker.CloseWithBytesTransferred(int64(data.bytesReadFromCache), int64(data.bytesDownloadedToClient), data.compressor, "cas_server"); err != nil {
+					log.Debugf("BatchReadBlobs: download tracker CloseWithBytesTransferred error: %s", err)
+				}
 			})
 			if readZstd {
 				rn.SetCompressor(repb.Compressor_ZSTD)

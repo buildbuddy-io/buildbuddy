@@ -16,6 +16,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",
         "//server/util/capabilities",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/proto",
         "//server/util/status",
