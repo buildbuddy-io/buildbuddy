@@ -8,5 +8,6 @@ go_library(
     deps = [
         "//proto:badge_go_proto",
         "//server/environment",
+        "//server/util/status",
     ],
 )
