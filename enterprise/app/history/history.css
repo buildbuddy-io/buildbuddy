@@ -27,3 +27,27 @@
   margin-top: 16px;
   gap: 8px;
 }
+
+.user-profile-icon {
+  width: 43px;
+  height: 43px;
+  border-radius: 20px;
+  margin-right: 8px;
+}
+
+.user-name {
+	line-height: 44px;
+	vertical-align: top;
+}
+
+.user-details {
+	margin-top: 10px;
+	margin-left: 62px;
+	font-size: 20px;
+}
+
+.badge .title{
+	margin-top:20px;
+	margin-bottom:20px;
+	font-weight: 700;
+}

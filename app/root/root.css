@@ -922,6 +922,10 @@ code .comment {
   gap: 4px 0;
 }
 
+.history .title {
+  font-size: 24px;
+}
+
 .history .card .title {
   font-size: 24px;
   flex-shrink: 0;
