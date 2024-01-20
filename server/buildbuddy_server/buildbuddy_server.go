@@ -1891,6 +1891,23 @@ func (s *BuildBuddyServer) GetGithubPullRequest(ctx context.Context, req *ghpb.G
 	return a.GetGithubPullRequest(ctx, req)
 }
 
+func (s *BuildBuddyServer) ApproveGithubPullRequest(ctx context.Context, req *ghpb.ApproveGithubPullRequestRequest) (*ghpb.ApproveGithubPullRequestResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.ApproveGithubPullRequest(ctx, req)
+}
+
+func (s *BuildBuddyServer) PostGithubPullRequestComment(ctx context.Context, req *ghpb.PostGithubPullRequestCommentRequest) (*ghpb.PostGithubPullRequestCommentResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.PostGithubPullRequestComment(ctx, req)
+}
+
+
 func (s *BuildBuddyServer) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
 	a := s.env.GetGitHubApp()
 	if a == nil {

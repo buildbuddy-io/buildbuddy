@@ -259,6 +259,10 @@ service BuildBuddyService {
       returns (github.GetGithubPullRequestResponse);
   rpc GetGithubPullRequestDetails(github.GetGithubPullRequestDetailsRequest)
       returns (github.GetGithubPullRequestDetailsResponse);
+  rpc ApproveGithubPullRequest(github.ApproveGithubPullRequestRequest)
+      returns (github.ApproveGithubPullRequestResponse);
+  rpc PostGithubPullRequestComment(github.PostGithubPullRequestCommentRequest)
+      returns (github.PostGithubPullRequestCommentResponse);
 
   // GCP API
   rpc GetGCPProject(gcp.GetGCPProjectRequest)

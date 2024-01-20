@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -39,6 +40,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/go-github/v43/github"
+	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 
@@ -991,6 +993,21 @@ func (a *GitHubApp) newAuthenticatedClient(ctx context.Context, accessToken stri
 	return github.NewClient(tc), nil
 }
 
+func (a *GitHubApp) newAuthenticatedGraphQLClient(ctx context.Context, accessToken string) (*githubv4.Client, error) {
+	if accessToken == "" {
+		return nil, status.UnauthenticatedError("missing user access token")
+	}
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
+	tc := oauth2.NewClient(ctx, ts)
+
+	if gh_oauth.IsEnterpriseConfigured() {
+		host := fmt.Sprintf("https://%s/", gh_oauth.GithubHost())
+		return githubv4.NewEnterpriseClient(host, tc), nil
+	}
+
+	return githubv4.NewClient(tc), nil
+}
+
 // decodePrivateKey decodes a PEM-format RSA private key.
 func decodePrivateKey(contents string) (*rsa.PrivateKey, error) {
 	contents = strings.TrimSpace(contents)
@@ -1044,6 +1061,17 @@ func (a *GitHubApp) getGithubClient(ctx context.Context) (*github.Client, error)
 		return nil, status.UnauthenticatedError("github account link is required")
 	}
 	return a.newAuthenticatedClient(ctx, tu.GithubToken)
+}
+
+func (a *GitHubApp) getGithubGraphQLClient(ctx context.Context) (*githubv4.Client, error) {
+	tu, err := a.env.GetUserDB().GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if tu.GithubToken == "" {
+		return nil, status.UnauthenticatedError("github account link is required")
+	}
+	return a.newAuthenticatedGraphQLClient(ctx, tu.GithubToken)
 }
 
 func (a *GitHubApp) GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error) {
@@ -1473,52 +1501,246 @@ func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithu
 	return resp, nil
 }
 
+
+func (a *GitHubApp) ApproveGithubPullRequest(ctx context.Context, req *ghpb.ApproveGithubPullRequestRequest) (*ghpb.ApproveGithubPullRequestResponse, error) {
+	client, err := a.getGithubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ghReq := &github.PullRequestReviewRequest{
+		Event: github.String("APPROVE"),
+	}
+	_, _, err = client.PullRequests.CreateReview(ctx, req.GetOwner(), req.GetRepo(), int(req.GetPull()), ghReq)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ghpb.ApproveGithubPullRequestResponse{}, nil
+}
+
+func (a *GitHubApp) PostGithubPullRequestComment(ctx context.Context, req *ghpb.PostGithubPullRequestCommentRequest) (*ghpb.PostGithubPullRequestCommentResponse, error) {
+	var client *github.Client
+	var err error
+	if (req.GetSubmitAsBot()) {
+		installations, err := a.GetGitHubAppInstallations(ctx, &ghpb.GetAppInstallationsRequest{})
+		if err != nil {
+			return nil, err
+		}
+		// Find a bot account, submit as that.
+		if len (installations.GetInstallations()) < 1 {
+			return nil, status.FailedPreconditionError("No installations")
+		}
+		installationId := installations.Installations[0].GetInstallationId()
+		client, _, err = a.newInstallationClient(ctx, installationId)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		client, err = a.getGithubClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if (req.GetInReplyTo() > 0) {
+		_, _, err = client.PullRequests.CreateCommentInReplyTo(ctx, req.GetOwner(), req.GetRepo(), int(req.GetPull()), req.GetBody(), req.GetInReplyTo())
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		ghReq := &github.PullRequestComment {
+			CommitID: github.String(req.GetCommitSha()),
+			Body: github.String(req.GetBody()),
+			Path: github.String(req.GetPath()),
+		}
+		ghReq.Line = github.Int(int(req.GetLine()))
+		ghReq.Side = github.String(req.GetSide())
+		_, _, err = client.PullRequests.CreateComment(ctx, req.GetOwner(), req.GetRepo(), int(req.GetPull()), ghReq)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &ghpb.PostGithubPullRequestCommentResponse{}, nil
+}
+
+type prUser struct {
+	Login string
+}
+
+type actor struct {
+	User prUser `graphql:"... on User"`
+}
+
+type timelineItem struct {
+	Typename string `graphql:"__typename"`
+	ReviewRequestedEvent struct {
+		RequestedReviewer actor
+	} `graphql:"... on ReviewRequestedEvent"`
+	ReviewRequestRemovedEvent struct {
+		RequestedReviewer actor
+	} `graphql:"... on ReviewRequestRemovedEvent"`
+	ReviewDismissedEvent struct {
+		Actor actor
+	} `graphql:"... on ReviewDismissedEvent"`
+	PullRequestReview struct {
+		Author actor
+		State string
+	} `graphql:"... on PullRequestReview"`
+}
+
+type reviewComment struct {
+	comment
+	OriginalCommit struct {
+		Oid string
+	}
+	PullRequestReview struct {
+		Id string
+	}
+	ReplyTo struct {
+		Id string
+	}
+}
+
+type comment struct {
+	Author actor
+	BodyHTML string `graphql:"bodyHTML"`
+	BodyText string
+	CreatedAt time.Time
+	Id string
+	DatabaseId int
+}
+
+type commentLink struct {
+	Id string
+}
+
+type reviewThread struct {
+	Id string
+	Path string
+	IsResolved bool
+	DiffSide githubv4.DiffSide
+	OriginalLine int
+	Line int
+	StartDiffSide githubv4.DiffSide
+	OriginalStartLine int
+	StartLine int
+	Comments struct {
+		Nodes []reviewComment
+	} `graphql:"comments(first: 100)"`
+}
+
+type reviewRequest struct {
+	RequestedReviewer actor
+}
+
+type review struct {
+	Id string
+	BodyText string
+	CreatedAt time.Time
+	Author actor
+}
+
+type file struct {
+	Path string
+	Patch string
+	Additions int
+	Deletions int
+	ChangeType githubv4.PatchStatus
+	ViewerViewedState githubv4.FileViewedState
+}
+
+type combinedContext struct {
+	Typename string `graphql:"__typename"`
+	StatusContext struct {
+		Context string
+		CreatedAt time.Time
+		Description string
+		TargetUrl string
+		State string
+	} `graphql:"... on StatusContext"`
+}
+
+type prCommit struct {
+	Commit struct {
+		Oid string
+		Status struct {
+			CombinedContexts struct {
+				Nodes []combinedContext
+			} `graphql:"combinedContexts(first: 100)"`
+		}
+	}
+}
+
+type prDetailsQuery struct {
+	Viewer struct {
+		Login string
+	}
+	Repository struct {
+		PullRequest struct {
+			Title string
+			TitleHTML string `graphql:"titleHTML"`
+			Body string
+			BodyHTML string `graphql:"bodyHTML"`
+			Author actor
+			CreatedAt time.Time
+			UpdatedAt time.Time
+			Mergeable githubv4.MergeableState
+			Merged bool
+			URL string `graphql:"url"`
+			HeadRefName string
+			TimelineItems struct {
+				Nodes []timelineItem
+			} `graphql:"timelineItems(first: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, REVIEW_DISMISSED_EVENT, PULL_REQUEST_REVIEW])"`
+			ReviewRequests struct {
+				Nodes []reviewRequest
+			} `graphql:"reviewRequests(first: 100)"`
+			ReviewThreads struct {
+				Nodes []reviewThread
+			} `graphql:"reviewThreads(first: 100)"`
+			Reviews struct {
+				Nodes []review
+			} `graphql:"reviews(first: 100)"`
+			Comments struct {
+				Nodes []comment
+			} `graphql:"comments(first: 100)"`
+			// XXX
+			// Files struct {
+			// 	Nodes []file
+			// } `graphql:"files(first: 100)"`
+			Commits struct {
+				Nodes []prCommit
+			} `graphql:"commits(first: 100)"`
+		} `graphql:"pullRequest(number: $pullNumber)"`
+	} `graphql:"repository(owner: $repoOwner, name: $repoName)"`
+}
+
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
 	}
-	eg, gCtx := errgroup.WithContext(ctx)
 
-	var issue *github.Issue
-
-	eg.Go(func() error {
-		r, err := a.cachedIssue(gCtx, client, req.Owner, req.Repo, int(req.Pull))
-		if err != nil {
-			return err
-		}
-		issue = r
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
+	gqClient, err := a.getGithubGraphQLClient(ctx)
+	if err != nil {
 		return nil, err
 	}
+	eg, gCtx := errgroup.WithContext(ctx)
 
-	eg, gCtx = errgroup.WithContext(ctx)
+	graph := &prDetailsQuery{}
+	vars := map[string]interface{}{
+		"repoOwner": githubv4.String(req.GetOwner()),
+		"repoName":  githubv4.String(req.GetRepo()),
+		"pullNumber": githubv4.Int(req.GetPull()),
+	}
+	eg.Go(func() error {
+		if err := gqClient.Query(gCtx, &graph, vars); err != nil {
+			return err
+		}
+		return nil
+	})
 
-	var pr *github.PullRequest
-	var events []*github.Timeline
 	var files []*github.CommitFile
-
-	eg.Go(func() error {
-		p, err := a.cachedPullRequests(gCtx, client, req.Owner, req.Repo, int(req.Pull), issue.GetUpdatedAt())
-		if err != nil {
-			return err
-		}
-		pr = p
-		return nil
-	})
-
-	eg.Go(func() error {
-		ev, err := a.cachedTimeline(gCtx, client, req.Owner, req.Repo, int(req.Pull))
-		if err != nil {
-			return err
-		}
-		events = *ev
-		return nil
-	})
-
 	eg.Go(func() error {
 		f, err := a.cachedFiles(gCtx, client, req.Owner, req.Repo, int(req.Pull))
 		if err != nil {
@@ -1527,40 +1749,62 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		files = *f
 		return nil
 	})
+
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
-	eg, gCtx = errgroup.WithContext(ctx)
+	// gqResponsePretty, _ := json.MarshalIndent(graph, "", " ")
+	// fmt.Print(string(gqResponsePretty))
+	pr := graph.Repository.PullRequest
 
-	var statuses *github.CombinedStatus
-	eg.Go(func() error {
-		s, err := a.cachedStatuses(gCtx, client, req.Owner, req.Repo, pr.Head.GetSHA())
-		if err != nil {
-			return err
+	outputComments := make([]*ghpb.Comment, 0)
+
+	for _, thread := range pr.ReviewThreads.Nodes {
+		for _, c := range thread.Comments.Nodes {
+			comment := &ghpb.Comment{}
+			comment.Id = c.Id
+			comment.DatabaseId = int64(c.DatabaseId)
+			comment.Body = c.BodyText
+			comment.Path = thread.Path
+			comment.CommitSha = c.OriginalCommit.Oid
+			comment.ReviewId = c.PullRequestReview.Id
+			comment.CreatedAtUsec = c.CreatedAt.UnixMicro()
+			comment.ParentCommentId = c.ReplyTo.Id
+			comment.ThreadId = thread.Id;
+			comment.IsResolved = thread.IsResolved;
+	
+			position := &ghpb.CommentPosition{}
+			position.StartLine = int64(thread.OriginalStartLine)
+			position.EndLine = int64(thread.OriginalLine)
+			position.LeftSide = thread.DiffSide == "LEFT"
+			comment.Position = position;
+	
+			commenter := &ghpb.ReviewUser{}
+			commenter.Login = c.Author.User.Login; // XXX
+			commenter.Bot = false;
+			comment.Commenter = commenter;
+	
+			outputComments = append(outputComments, comment)
 		}
-		statuses = s
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
-		return nil, err
 	}
+
+	// XXX: Include top-level comments.  Render file-level comments properly.
 
 	notExplicitlyRemoved := map[string]struct{}{}
 	approved := map[string]struct{}{}
 
-	for _, e := range events {
-		switch eventType := e.GetEvent(); eventType {
-		case "review_requested":
-			notExplicitlyRemoved[e.GetReviewer().GetLogin()] = struct{}{}
-		case "review_request_removed":
-			delete(notExplicitlyRemoved, e.GetReviewer().GetLogin())
-		case "reviewed":
-			if e.GetState() == "approved" {
-				approved[e.GetUser().GetLogin()] = struct{}{}
-			} else if e.GetState() == "changes_requested" {
-				delete(approved, e.GetUser().GetLogin())
+	for _, e := range pr.TimelineItems.Nodes {
+		switch eventType := e.Typename; eventType {
+		case "ReviewRequestedEvent":
+			notExplicitlyRemoved[e.ReviewRequestedEvent.RequestedReviewer.User.Login] = struct{}{}
+		case "ReviewRequestRemovedEvent":
+			delete(notExplicitlyRemoved, e.ReviewRequestRemovedEvent.RequestedReviewer.User.Login)
+		case "PullRequestReview":
+			if e.PullRequestReview.State == "APPROVED" {
+				approved[e.PullRequestReview.Author.User.Login] = struct{}{}
+			} else if e.PullRequestReview.State == "CHANGES_REQUESTED" {
+				delete(approved, e.PullRequestReview.Author.User.Login)
 			}
 		}
 	}
@@ -1568,8 +1812,8 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	activeReviewers := map[string]struct{}{}
 
 	reviewers := make([]*ghpb.Reviewer, 0)
-	for _, r := range pr.RequestedReviewers {
-		activeReviewers[r.GetLogin()] = struct{}{}
+	for _, r := range pr.ReviewRequests.Nodes {
+		activeReviewers[r.RequestedReviewer.User.Login] = struct{}{}
 	}
 
 	for r := range notExplicitlyRemoved {
@@ -1584,6 +1828,16 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		reviewers = append(reviewers, reviewer)
 	}
 
+	// fileSummaries := make([]*ghpb.FileSummary, 0)
+	// for _, f := range graph.Repository.PullRequest.Files.Nodes {
+	// 	summary := &ghpb.FileSummary{}
+	// 	summary.Name = f.Path
+	// 	summary.Additions = int64(f.Additions)
+	// 	summary.Deletions = int64(f.Deletions)
+	// 	summary.Patch = f.Patch
+	// 	// TODO(jdhollen): compute comment count.
+	// 	fileSummaries = append(fileSummaries, summary)
+	// }
 	fileSummaries := make([]*ghpb.FileSummary, 0)
 	for _, f := range files {
 		summary := &ghpb.FileSummary{}
@@ -1591,35 +1845,49 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		summary.Additions = int64(f.GetAdditions())
 		summary.Deletions = int64(f.GetDeletions())
 		summary.Patch = f.GetPatch()
+		url, err := url.Parse(f.GetContentsURL())
+		if err != nil {
+			return nil, err
+		}
+		ref := url.Query().Get("ref")
+		if ref == "" {
+			return nil, status.InternalErrorf("Get real.")
+		}
+		summary.CommitSha = ref
 		// TODO(jdhollen): compute comment count.
 		fileSummaries = append(fileSummaries, summary)
 	}
 
 	actionStatuses := make([]*ghpb.ActionStatus, 0)
-	for _, s := range statuses.Statuses {
-		status := &ghpb.ActionStatus{}
-		status.Name = s.GetContext()
-		status.Status = s.GetState()
-		status.Url = s.GetTargetURL()
-		actionStatuses = append(actionStatuses, status)
+	for _, c := range pr.Commits.Nodes {
+		for _, s := range c.Commit.Status.CombinedContexts.Nodes {
+			// XXX: Checks, too.
+			status := &ghpb.ActionStatus{}
+			status.Name = s.StatusContext.Context
+			status.Status = s.StatusContext.State
+			status.Url = s.StatusContext.TargetUrl
+			actionStatuses = append(actionStatuses, status)
+		}
 	}
 
 	resp := &ghpb.GetGithubPullRequestDetailsResponse{
 		Owner:          req.Owner,
 		Repo:           req.Repo,
 		Pull:           req.Pull,
-		Title:          pr.GetTitle(),
-		Body:           pr.GetBody(),
-		Author:         pr.GetUser().GetLogin(),
-		CreatedAtUsec:  pr.GetCreatedAt().UnixMicro(),
-		UpdatedAtUsec:  pr.GetUpdatedAt().UnixMicro(),
-		Branch:         pr.GetHead().GetLabel(),
+		Title:          pr.Title,
+		Body:           pr.Body,
+		Author:         pr.Author.User.Login,
+		CreatedAtUsec:  pr.CreatedAt.UnixMicro(),
+		UpdatedAtUsec:  pr.UpdatedAt.UnixMicro(),
+		Branch:         pr.HeadRefName,
 		Reviewers:      reviewers,
 		Files:          fileSummaries,
 		ActionStatuses: actionStatuses,
-		Mergeable:      pr.GetMergeableState() == "clean",
-		Submitted:      pr.GetMerged(),
-		GithubUrl:      pr.GetHTMLURL(),
+		Comments:		outputComments,
+		Mergeable:      pr.Mergeable == "MERGEABLE",
+		Submitted:      pr.Merged,
+		GithubUrl:      pr.URL,
+		CurrentUser:    graph.Viewer.Login,
 	}
 
 	return resp, nil
@@ -1793,6 +2061,18 @@ func (a *GitHubApp) cachedFiles(ctx context.Context, client *github.Client, owne
 	return pr.(*[]*github.CommitFile), nil
 }
 
+func (a *GitHubApp) cachedComments(ctx context.Context, client *github.Client, owner, repo string, number int) (*[]*github.PullRequestComment, error) {
+	key := fmt.Sprintf("comments/%s/%s/%d", owner, repo, number)
+	pr, err := a.cached(ctx, key, &[]*github.PullRequestComment{}, time.Second*30, func() (any, any, error) {
+		rev, res, err := client.PullRequests.ListComments(ctx, owner, repo, number, &github.PullRequestListCommentsOptions{ListOptions: github.ListOptions{PerPage: 100}})
+		return &rev, res, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return pr.(*[]*github.PullRequestComment), nil
+}
+
 func (a *GitHubApp) cachedPullRequests(ctx context.Context, client *github.Client, owner, repo string, number int, updatedAt time.Time) (*github.PullRequest, error) {
 	key := fmt.Sprintf("pr/%s/%s/%d/%d", owner, repo, number, updatedAt.Unix())
 
@@ -1861,3 +2141,5 @@ func issueToPullRequestProto(i *github.Issue) *ghpb.PullRequest {
 		Reviews:       map[string]*ghpb.Review{},
 	}
 }
+
+// https://docs.github.com/en/rest/commits/commits?apiVersion=2022-11-28#compare-two-commits

@@ -512,6 +512,36 @@ message FileSummary {
   int64 deletions = 3;
   int64 comments = 4;
   string patch = 5;
+  string commit_sha = 6;
+}
+
+message ReviewUser {
+  string login = 1;
+  bool bot = 2;
+}
+
+message CommentPosition {
+  int64 start_line = 1;
+  int64 end_line = 2;
+  bool left_side = 3;
+}
+
+message Comment {
+  string id = 1;
+  int64 database_id = 12;
+  string body = 2;
+  string path = 3;
+  string commit_sha = 4;
+  CommentPosition position = 5;
+
+  ReviewUser commenter = 6;
+  string review_id = 7;
+  int64 created_at_usec = 8;
+
+  string parent_comment_id = 9;
+  string thread_id = 11;
+
+  bool is_resolved = 10;
 }
 
 message GetGithubPullRequestDetailsResponse {
@@ -534,4 +564,37 @@ message GetGithubPullRequestDetailsResponse {
   int64 updated_at_usec = 15;
 
   string branch = 16;
+
+  repeated Comment comments = 17;
+
+  string current_user = 18;
+}
+
+message ApproveGithubPullRequestRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  int64 pull = 4;
+}
+
+message ApproveGithubPullRequestResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message PostGithubPullRequestCommentRequest {
+  context.RequestContext request_context = 1;
+  string owner = 2;
+  string repo = 3;
+  int64 pull = 4;
+  string path = 10;
+  string body = 5;
+  int64 in_reply_to = 6;
+  string commit_sha = 7;
+  int64 line = 8;
+  string side = 9;
+  bool submit_as_bot = 11;
+}
+
+message PostGithubPullRequestCommentResponse {
+  context.ResponseContext response_context = 1;
 }
