@@ -11,7 +11,7 @@ database:
 olap_database:
   data_source: "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
 storage:
-  ttl_seconds: 86400 # One day in seconds.
+  ttl_seconds: 0 # One day in seconds.
   disk:
     root_directory: /tmp/${USER}_buildbuddy_enterprise
   enable_chunked_event_logs: true
