@@ -391,7 +391,7 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 }
 
 func (s *BuildBuddyServer) CreateBadges(ctx context.Context, req *badgepb.CreateBadgesRequest) (*badgepb.CreateBadgesResponse, error) {
-	return nil, nil
+	return badge.CreateBadges(ctx, s.env, req)
 }
 
 func (s *BuildBuddyServer) GetUserBadges(ctx context.Context, req *badgepb.GetUserBadgesRequest) (*badgepb.GetUserBadgesResponse, error) {
