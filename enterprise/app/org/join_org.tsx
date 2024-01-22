@@ -128,10 +128,10 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
         if (!org) throw new Error("Invalid state: org is undefined.");
         if (org.externalUserManagement) {
           return (
-              <div className="organization-join-page">
-                <div>Please contact your organization administrators to join.</div>
-              </div>
-          )
+            <div className="organization-join-page">
+              <div>Please contact your organization administrators to join.</div>
+            </div>
+          );
         }
         return (
           <div className="organization-join-page">
