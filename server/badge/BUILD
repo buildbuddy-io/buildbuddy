@@ -10,6 +10,8 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
+        "//server/util/db",
         "//server/util/status",
+        "@io_gorm_gorm//clause",
     ],
 )
