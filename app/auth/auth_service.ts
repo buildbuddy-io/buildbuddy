@@ -194,7 +194,8 @@ export class AuthService {
     let cookieName = "userId";
     let match = document.cookie.match("(^|[^;]+)\\s*" + cookieName + "\\s*=\\s*([^;]+)");
     let userIdFromCookie = match ? match.pop() : "";
-    rpcService.requestContext.userId = new user_id.UserId({ id: userIdFromCookie });
+
+    rpcService.requestContext.userId = this.user?.displayUser?.userId;
     rpcService.requestContext.groupId = this.user?.selectedGroup?.id || "";
   }
 

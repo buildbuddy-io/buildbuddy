@@ -452,6 +452,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     rpcService.service
       .getStatHeatmap(heatmapRequest)
       .then((response) => {
+		console.log(response)
         this.setState({
           heatmapData: response,
         });

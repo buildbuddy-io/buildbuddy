@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/badge"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -16,12 +17,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	bpb "github.com/buildbuddy-io/buildbuddy/proto/badge"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -949,6 +952,17 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if reqUserId := req.GetRequestContext().GetUserId().GetId(); reqUserId != "" {
+		_, err := badge.GrantUserBadges(ctx, i.env, &bpb.GrantUserBadgesRequest{
+			RequestContext: req.GetRequestContext(),
+			BadgeId:        "smoking_hot",
+			AddUserIds:     []string{reqUserId},
+		})
+		if err != nil {
+			log.Infof("failed to grant badges to %q", reqUserId)
+		}
 	}
 	return rsp, nil
 }
