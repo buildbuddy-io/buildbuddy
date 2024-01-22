@@ -325,9 +325,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 		adInstanceDigest = digest.NewResourceName(resultDigest, req.GetInstanceName(), rspb.CacheType_AC, digestFunction)
 	}
-	if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
-		return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
-	}
+	// if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
+	// 	return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
+	// }
 
 	// If there's an error that we know the client won't retry, return an error
 	// so that the scheduler can retry it.

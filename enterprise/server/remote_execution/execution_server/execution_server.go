@@ -471,13 +471,6 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		rmd.ToolDetails = nil
 	}
 
-	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
-		return "", err
-	}
-	if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
-		return "", err
-	}
-
 	executionTask := &repb.ExecutionTask{
 		ExecuteRequest:  req,
 		InvocationId:    invocationID,
@@ -575,6 +568,14 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		defer cancel()
 		_ = s.deletePendingExecution(ctx, executionID)
 		return "", status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err)
+	}
+
+	// Note: SQL queries are relatively expensive, so are done after scheduling.
+	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
+		return "", err
+	}
+	if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
+		return "", err
 	}
 
 	return executionID, nil
@@ -959,16 +960,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		log.CtxDebugf(ctx, "PublishOperation: operation %q stage: %s", taskID, stage)
 
-		if stage == repb.ExecutionStage_COMPLETED {
-			response := operation.ExtractExecuteResponse(op)
-			if response != nil {
-				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
-					// Errors updating the router or recording usage are non-fatal.
-					log.CtxErrorf(ctx, "Could not update post-completion metadata for task %q: %s", taskID, err)
-				}
-			}
-		}
-
 		data, err := proto.Marshal(op)
 		if err != nil {
 			return err
@@ -976,6 +967,25 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if err := s.streamPubSub.Publish(ctx, s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
 			log.CtxWarningf(ctx, "Error publishing task %q on stream pubsub: %s", taskID, err)
 			return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
+		}
+
+		if stage == repb.ExecutionStage_COMPLETED {
+			response := operation.ExtractExecuteResponse(op)
+			if response != nil {
+				// Cache the action result. Note: it is OK to do this after sending the
+				// result back to the client, since the Execution service specification
+				// does not say whether the action needs to be immediately available in
+				// cache after the result is returned back to the client.
+				if response.GetResult() != nil {
+					if err := s.cacheActionResult(ctx, taskID, response); err != nil {
+						log.CtxErrorf(ctx, "Failed to cache action result: %s", err)
+					}
+				}
+				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
+					// Errors updating the router or recording usage are non-fatal.
+					log.CtxErrorf(ctx, "Could not update post-completion metadata for task %q: %s", taskID, err)
+				}
+			}
 		}
 
 		if stage == repb.ExecutionStage_COMPLETED {
@@ -1002,6 +1012,19 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 		}
 	}
+}
+
+func (s *ExecutionServer) cacheActionResult(ctx context.Context, taskID string, response *repb.ExecuteResponse) error {
+	result := response.GetResult()
+	if result == nil {
+		return status.FailedPreconditionError("execute response result is nil")
+	}
+	taskRN, err := digest.ParseUploadResourceName(taskID)
+	if err != nil {
+		return err
+	}
+	arn := digest.NewResourceName(taskRN.GetDigest(), taskRN.GetInstanceName(), rspb.CacheType_AC, taskRN.GetDigestFunction())
+	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), arn, result)
 }
 
 // cacheExecuteResponse caches the ExecuteResponse so that the client can see
