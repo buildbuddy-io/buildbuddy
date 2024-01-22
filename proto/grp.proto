@@ -79,6 +79,10 @@ message Group {
 
   // Whether IP rules are being enforced for this organization.
   bool enforce_ip_rules = 14;
+
+  // Whether users are being managed by an external system using the SCIM API.
+  // Disables in-app user management.
+  bool external_user_management = 17;
 }
 
 message JoinGroupRequest {
@@ -133,6 +137,9 @@ message GetGroupResponse {
   // reference the group subdomain, otherwise it will point to the default
   // BuildBuddy URL.
   string url = 6;
+
+  // True if the group users are being managed by an external system.
+  bool external_user_management = 7;
 }
 
 message GetGroupUsersRequest {

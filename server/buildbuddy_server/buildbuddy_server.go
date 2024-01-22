@@ -269,6 +269,7 @@ func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 			EnforceIpRules:                    g.EnforceIPRules,
 			SuggestionPreference:              g.SuggestionPreference,
 			Url:                               getGroupUrl(&gr.Group),
+			ExternalUserManagement:            g.ExternalUserManagement,
 		})
 	}
 	return r
@@ -432,10 +433,11 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		Id: group.GroupID,
 		// NOTE: this RPC does not require authentication, so sensitive group
 		// info should not be exposed here.
-		Name:        group.Name,
-		OwnedDomain: group.OwnedDomain,
-		SsoEnabled:  group.SamlIdpMetadataUrl != nil && *group.SamlIdpMetadataUrl != "",
-		Url:         getGroupUrl(group),
+		Name:                   group.Name,
+		OwnedDomain:            group.OwnedDomain,
+		SsoEnabled:             group.SamlIdpMetadataUrl != nil && *group.SamlIdpMetadataUrl != "",
+		Url:                    getGroupUrl(group),
+		ExternalUserManagement: group.ExternalUserManagement,
 	}, nil
 }
 

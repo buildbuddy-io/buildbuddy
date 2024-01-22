@@ -92,6 +92,7 @@ ts_library(
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
+        "//app/components/banner",
         "//app/components/button",
         "//app/components/button:checkbox_button",
         "//app/components/checkbox",
