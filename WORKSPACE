@@ -116,15 +116,10 @@ gazelle_dependencies()
 
 http_archive(
     name = "googleapis",
-    # TODO(sluongng): remove this once https://github.com/googleapis/googleapis/pull/831 is merged.
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:googleapis-bytestream-proto.patch",
-    ],
-    sha256 = "9d1a930e767c93c825398b8f8692eca3fe353b9aaadedfbcf1fca2282c85df88",
-    strip_prefix = "googleapis-64926d52febbf298cb82a8f472ade4a3969ba922",
+    sha256 = "14d4698e15d7341162363bfaed05995cca692f469c3c4710596aeecbcf44dcf2",
+    strip_prefix = "googleapis-c20f392efc5c9e4f16b37002996607c4cdde4dd3",
     urls = [
-        "https://github.com/googleapis/googleapis/archive/64926d52febbf298cb82a8f472ade4a3969ba922.zip",
+        "https://github.com/googleapis/googleapis/archive/c20f392efc5c9e4f16b37002996607c4cdde4dd3.zip",
     ],
 )
 
