@@ -8,8 +8,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/nsutil"
 )
 
-// Unshare calls nsutil.Unshare but includes the logic necessary for TestMain.
-func Unshare(m *testing.M, opts ...nsutil.UnshareOption) {
+// Unshare runs the test suite in a child process using nsutil.Unshare. See
+// nsutil package docs for more details.
+func Unshare(m *testing.M, opts ...nsutil.NamespaceOption) {
 	child, err := nsutil.Unshare(opts...)
 	if err != nil {
 		log.Fatalf("unshare: %s", err)

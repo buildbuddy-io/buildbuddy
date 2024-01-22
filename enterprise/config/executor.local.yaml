@@ -5,5 +5,3 @@ executor:
   docker_inherit_user_ids: true
   app_target: "grpc://localhost:1985"
   local_cache_size_bytes: 10000000000 # 10GB
-  # Enable pseudo-root (required for linux-sandbox).
-  enable_pseudo_root: true

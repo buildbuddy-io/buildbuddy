@@ -217,9 +217,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	execution.GroupID = permissions.GroupID
 	execution.Perms = execution.Perms | permissions.Perms
 
-	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		return tx.NewQuery(ctx, "execution_server_create_execution").Create(execution)
-	})
+	return s.env.GetDBHandle().NewQuery(ctx, "execution_server_create_execution").Create(execution)
 }
 
 func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {

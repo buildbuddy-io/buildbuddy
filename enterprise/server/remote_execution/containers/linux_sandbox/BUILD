@@ -11,16 +11,35 @@ genrule(
     target_compatible_with = ["@platforms//os:linux"],
 )
 
+genrule(
+    name = "sandbox_wrapper_copy",
+    srcs = ["//enterprise/server/remote_execution/containers/linux_sandbox/sandbox_wrapper"],
+    outs = ["sandbox-wrapper"],
+    cmd_bash = "cp $(SRCS) $@",
+)
+
+genrule(
+    name = "sandboxd_copy",
+    srcs = ["//enterprise/server/remote_execution/containers/linux_sandbox/sandboxd"],
+    outs = ["sandboxd-bin"],
+    cmd_bash = "cp $(SRCS) $@",
+)
+
 go_library(
     name = "linux_sandbox",
     srcs = ["linux_sandbox.go"],
-    embedsrcs = ["linux-sandbox"],
+    embedsrcs = [
+        "linux-sandbox",
+        "sandboxd-bin",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/linux_sandbox",
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/containers/linux_sandbox/proto:linux_sandbox_go_proto",
+        "//enterprise/server/remote_execution/containers/linux_sandbox/proto:execution_statistics_go_proto",
+        "//enterprise/server/remote_execution/containers/linux_sandbox/proto:sandboxd_go_proto",
+        "//enterprise/server/remote_execution/containers/linux_sandbox/sandboxd_client",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/oci",
         "//enterprise/server/util/ociconv",
@@ -28,10 +47,10 @@ go_library(
         "//proto:runner_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/util/background",
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/log",
+        "//server/util/nsutil",
         "//server/util/proto",
         "//server/util/status",
     ],
@@ -57,8 +76,6 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
-        "//server/testutil/testns",
-        "//server/util/nsutil",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

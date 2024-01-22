@@ -14,13 +14,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/nsutil"
 )
 
-func runInNamespaceAsRoot() {
-	child, err := nsutil.Unshare(
-		// Map our current uid/gid to 0:0 (root) within the new namespace.
-		nsutil.MapID(0, 0),
-		// Unshare the mount namespace so that we can create overlayfs mounts.
-		nsutil.UnshareMount,
-	)
+func unshare() {
+	var opts []nsutil.NamespaceOption
+	if os.Getuid() != 0 {
+		// If we're not already root, map our current uid/gid to 0:0 (root)
+		// within the new namespace.
+		opts = append(opts, nsutil.MapID(0, 0))
+	}
+	// Unshare the mount namespace so that we can create overlayfs mounts,
+	// and so that any mounts we create are not visible outside of the child
+	// process (this also makes cleanup easier).
+	opts = append(opts, nsutil.UnshareMount)
+	child, err := nsutil.Unshare(opts...)
 	if err != nil {
 		log.Fatalf("pseudo-root: unshare failed: %s", err)
 	}

@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package io.buildbuddy.remote.execution.sandbox;
+
+import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+
+service Sandbox {
+  rpc Exec(stream ExecRequest) returns (stream ExecResponse);
+  rpc Clean(CleanRequest) returns (CleanResponse);
+}
+
+message Mount {
+  string source = 1;
+  string target = 2;
+  string filesystemtype = 3;
+  uint64 flags = 4;
+  string data = 5;
+}
+
+message Command {
+  reserved 1;
+
+  message EnvironmentVariable {
+    // The variable name.
+    string name = 1;
+
+    // The variable value.
+    string value = 2;
+  }
+
+  // The environment variables to set when running the program.
+  repeated EnvironmentVariable environment_variables = 2;
+
+  // The arguments to the command. The first argument must be the path to the
+  // executable.
+  repeated string arguments = 3;
+
+  // An explicit timeout for the action. This is used instead of a request
+  // context deadline so that we can return partial command outputs in the
+  // ExecResponse.
+  google.protobuf.Duration timeout = 7;
+
+  // Whether to open a pipe for stdin. This needs to be specified when starting
+  // the command, because commands can behave differently depending on whether
+  // or not stdin is attached.
+  bool open_stdin = 8;
+
+  // Optional user to run the command as. If unset, the command will run as
+  // root.
+  string user = 9;
+
+  // Mounts to set up before running the command.
+  // Mounts will be torn down when the command completes.
+  repeated Mount mounts = 10;
+}
+
+message ExecRequest {
+  Command start = 1;
+  bytes stdin = 2;
+}
+
+message CommandStatus {
+  int32 exit_code = 1;
+  reserved 2, 3;
+  google.rpc.Status status = 4;
+}
+
+message ExecResponse {
+  CommandStatus status = 1;
+  bytes stdout = 2;
+  bytes stderr = 3;
+}
+
+message CleanRequest {
+  repeated string unmount_paths = 1;
+}
+
+message CleanResponse {}

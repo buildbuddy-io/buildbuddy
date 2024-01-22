@@ -3,6 +3,7 @@ package linux_sandbox
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -26,7 +26,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	_ "embed"
-	lspb "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/linux_sandbox/proto"
+
+	lspb "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/linux_sandbox/proto/execution_statistics"
+	sbdpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/linux_sandbox/proto/sandboxd"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/linux_sandbox/sandboxd_client"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
@@ -34,7 +37,6 @@ import (
 var (
 	logDebugOutput = flag.Bool("executor.linux_sandbox.log_debug_output", false, "If true, capture debug output from the linux-sandbox and log it at INFO level.")
 	debugStderr    = flag.Bool("debug_linux_sandbox_stderr", false, "If true, stream linux-sandbox debug output directly to stderr. Incompatible with other debug log flags. For development only.")
-	extraMounts    = flag.Slice("executor.linux_sandbox.host_overlay_mounts", []string{}, "Host mount pairs to always mount into the sandbox.")
 )
 
 const (
@@ -82,26 +84,58 @@ var (
 //go:embed linux-sandbox
 var toolBytes []byte
 
-type provider struct {
+//go:embed sandboxd-bin
+var sandboxdBytes []byte
+
+type Provider struct {
 	env environment.Env
 	// Path to the linux-sandbox binary.
 	toolPath string
+	sandboxd *sandboxd_client.Sandboxd
 	// Path to the executor build root dir, where container images will be
 	// extracted (if applicable).
 	buildRoot string
 }
 
-func NewProvider(env environment.Env, buildRoot string) (container.Provider, error) {
+func createBin(dir, name string, b []byte) (string, error) {
+	path := filepath.Join(dir, name)
+	// Remove existing executable first (fixes "text file busy" errors in tests)
+	if err := os.RemoveAll(path); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, b, 0755); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 	// Write the embedded linux-sandbox binary to
 	// {buildRoot}/executor/bin/linux-sandbox.
 	// TODO: find a better home for the binary.
-	executorBinDir := filepath.Join(buildRoot, "executor", "bin")
+	executorBinDir := filepath.Join(buildRoot, "executor/bin")
 	if err := os.MkdirAll(executorBinDir, 0755); err != nil {
 		return nil, err
 	}
-	toolPath := filepath.Join(executorBinDir, "linux-sandbox")
-	if err := os.WriteFile(toolPath, toolBytes, 0755); err != nil {
+	toolPath, err := createBin(executorBinDir, "linux-sandbox", toolBytes)
+	if err != nil {
 		return nil, err
+	}
+	sandboxdPath, err := createBin(executorBinDir, "sandboxd", sandboxdBytes)
+	if err != nil {
+		return nil, err
+	}
+	// Create sandboxd socket
+	runPath := filepath.Join(buildRoot, "executor/run")
+	if err := os.MkdirAll(runPath, 0755); err != nil {
+		return nil, err
+	}
+	socket := filepath.Join(runPath, fmt.Sprintf("sandbox.%d.sock", rand.Uint64()))
+
+	// TODO: do not use sandboxd if we're root. It's pure overhead in that case.
+	sandboxd, err := sandboxd_client.StartSandboxd(sandboxdPath, socket)
+	if err != nil {
+		return nil, status.WrapError(err, "start sandboxd")
 	}
 
 	// Debug: show tool paths available to the host
@@ -111,20 +145,29 @@ func NewProvider(env environment.Env, buildRoot string) (container.Provider, err
 	`).Output()
 	log.Debugf("linux-sandbox: found host tool paths:\n%s", strings.TrimSpace(string(b)))
 
-	return &provider{
+	return &Provider{
 		env:       env,
 		toolPath:  toolPath,
+		sandboxd:  sandboxd,
 		buildRoot: buildRoot,
 	}, nil
 }
 
-func (p *provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workDir string) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workDir string) (container.CommandContainer, error) {
 	return &sandbox{
 		env:       p.env,
 		imageRef:  props.ContainerImage,
 		toolPath:  p.toolPath,
+		sandboxd:  p.sandboxd,
 		buildRoot: p.buildRoot,
 	}, nil
+}
+
+func (p *Provider) Close() error {
+	if p.sandboxd != nil {
+		return p.sandboxd.Close()
+	}
+	return nil
 }
 
 // sandbox is a container implementation which uses the linux-sandbox
@@ -133,6 +176,8 @@ type sandbox struct {
 	env environment.Env
 	// Path to the linux-sandbox binary.
 	toolPath string
+	// sandboxd handle
+	sandboxd *sandboxd_client.Sandboxd
 	// Path to the executor build root dir, where container images will be
 	// extracted (if applicable).
 	buildRoot string
@@ -142,8 +187,8 @@ type sandbox struct {
 	rootFSDir string
 	// Path to the action working directory.
 	workDir string
-	// Paths which were mounted and need to be unmounted in Remove().
-	mountedDirs []string
+	// Paths to be unmounted by sandboxd in Remove().
+	pathsToUnmount []string
 }
 
 var _ container.CommandContainer = (*sandbox)(nil)
@@ -159,13 +204,6 @@ func (s *sandbox) Run(ctx context.Context, command *repb.Command, workDir string
 	if err := s.Create(ctx, workDir); err != nil {
 		return commandutil.ErrorResult(err)
 	}
-	defer func() {
-		ctx, cancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
-		defer cancel()
-		if err := s.Remove(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to clean up sandbox: %s", err)
-		}
-	}()
 	return s.Exec(ctx, command, nil /*=stdio*/)
 }
 
@@ -207,6 +245,11 @@ func (s *sandbox) Create(ctx context.Context, workDir string) error {
 }
 
 func (s *sandbox) Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	{
+		start := time.Now()
+		defer func() { log.Debugf("Exec() took %s", time.Since(start)) }()
+	}
+
 	execroot := s.execroot()
 	// Move workdir into sandbox exec root. Once the action is complete, move it
 	// back, because the executor will need to upload outputs from there.
@@ -223,12 +266,8 @@ func (s *sandbox) Exec(ctx context.Context, command *repb.Command, stdio *interf
 		if err := os.Rename(filepath.Join(execroot, workspaceDirName), s.workDir); err != nil {
 			log.CtxErrorf(ctx, "Failed to move sandbox workspace root back to build root: %s", err)
 		}
-		// Clean up sandbox root
-		if err := os.RemoveAll(execroot); err != nil {
-			log.CtxErrorf(ctx, "Failed to clean up sandbox execution root: %s", err)
-		}
 	}()
-	args := []string{
+	linuxSandboxArgs := []string{
 		s.toolPath,
 		// Run as root uid within the user namespace created by the sandbox, to
 		// match podman's default behavior.
@@ -253,23 +292,17 @@ func (s *sandbox) Exec(ctx context.Context, command *repb.Command, stdio *interf
 	if err != nil {
 		return commandutil.ErrorResult(err)
 	}
-	log.CtxDebugf(ctx, "Sandbox mounts: %v", mounts)
 	for _, m := range mounts {
-		parts := strings.SplitN(m, ":", 2)
-		switch len(parts) {
-		case 1:
-			args = append(args, "-M", parts[0])
-		case 2:
-			args = append(args, "-M", parts[0], "-m", parts[1])
-		default:
-			return commandutil.ErrorResult(status.InvalidArgumentErrorf("invalid mount pair %q", m))
+		linuxSandboxArgs = append(linuxSandboxArgs, "-M", m.LinuxSandboxSource)
+		if m.LinuxSandboxTarget != m.LinuxSandboxSource {
+			linuxSandboxArgs = append(linuxSandboxArgs, "-m", m.LinuxSandboxTarget)
 		}
 	}
 	if *debugStderr {
-		args = append(args, "-D", "/dev/stderr")
+		linuxSandboxArgs = append(linuxSandboxArgs, "-D", "/dev/stderr")
 	} else if *logDebugOutput {
 		logPath := filepath.Join(execroot, debugLogFileName)
-		args = append(args, "-D", logPath)
+		linuxSandboxArgs = append(linuxSandboxArgs, "-D", logPath)
 		defer func() {
 			b, err := os.ReadFile(logPath)
 			if err != nil {
@@ -283,19 +316,20 @@ func (s *sandbox) Exec(ctx context.Context, command *repb.Command, stdio *interf
 		}()
 	}
 	// Append command
-	args = append(args, "--")
-	args = append(args, command.GetArguments()...)
+	linuxSandboxArgs = append(linuxSandboxArgs, "--")
+	linuxSandboxArgs = append(linuxSandboxArgs, command.GetArguments()...)
 
-	// TODO: apply env vars from the image too.
+	// TODO: apply ENV vars from the image
+	// TODO: respect ENTRYPOINT in the image
 
 	command = command.CloneVT()
-	command.Arguments = args
+	command.Arguments = linuxSandboxArgs
 	// Set HOME for better compatibility with podman/docker.
 	// TODO: maybe also set HOSTNAME?
 	if commandutil.Getenv(command, "HOME") == nil {
 		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 			Name: "HOME",
-			// TODO: non-root support
+			// TODO: non-root support?
 			Value: "/root",
 		})
 	}
@@ -304,13 +338,18 @@ func (s *sandbox) Exec(ctx context.Context, command *repb.Command, stdio *interf
 	// TODO: set up a stats listener so that prom metrics are somewhat accurate
 	// while the cmd is running
 
-	// NOTE: we don't set workDir in Run here, since the sandbox process will
-	// make sure to change to the working directory we set in args.
-	res := commandutil.Run(ctx, command, "", nil /*=statsListener*/, stdio)
+	var sandboxdMounts []*sbdpb.Mount
+	for _, m := range mounts {
+		if m.SandboxdMount != nil {
+			sandboxdMounts = append(sandboxdMounts, m.SandboxdMount)
+		}
+	}
+
+	res := s.sandboxd.Exec(ctx, command, sandboxdMounts, "" /*=user*/, nil /*=statsListener*/, stdio)
 	// Read stats file if it exists and append to res
 	stats, err := s.readStatsFile()
 	if err != nil {
-		log.CtxErrorf(ctx, "Failed to read linux-sandbox stats: %s", err)
+		log.CtxWarningf(ctx, "Failed to read linux-sandbox stats: %s", err)
 	} else {
 		res.UsageStats = stats
 	}
@@ -329,17 +368,23 @@ func (s *sandbox) execroot() string {
 	return filepath.Join(s.tmpDir(), "execroot")
 }
 
-// Mounts directories into the sandbox execroot and returns the mount args to be
-// used for the sandbox. If a container-image is requested, this will return the
-// root directory paths from the extracted image's root filesystem. Otherwise,
-// this will return the default mounts if enabled, plus any mounts set via
-// executor configuration.
-func (s *sandbox) setupMounts(ctx context.Context) (mounts []string, err error) {
+func (s *sandbox) hostRoot() string {
 	hostRoot := s.rootFSDir
 	if s.imageRef == "" {
 		// container-image not set: use the host FS as the root dir.
 		hostRoot = "/"
 	}
+	return hostRoot
+}
+
+type Mount struct {
+	SandboxdMount *sbdpb.Mount
+
+	LinuxSandboxSource string
+	LinuxSandboxTarget string
+}
+
+func (s *sandbox) setupMounts(ctx context.Context) (mounts []Mount, err error) {
 	// Ideally, we could mount the root FS directly. However (TLDR) it is not
 	// possible without patching linux-sandbox.
 	//
@@ -359,13 +404,14 @@ func (s *sandbox) setupMounts(ctx context.Context) (mounts []string, err error) 
 	// files in the root dir :) For the workspace dir, we can then bind-mount to
 	// /workspace. We don't need MS_REC for any of this, because all of the
 	// mounts are siblings of each other, rather than nested.
-	entries, err := os.ReadDir(hostRoot)
+	hostRoot := s.hostRoot()
+	entries, err := os.ReadDir(s.hostRoot())
 	if err != nil {
 		return nil, status.InternalErrorf("read root FS dir: %s", err)
 	}
 	for _, e := range entries {
 		name := e.Name()
-		hostPath := filepath.Join(hostRoot, name)
+		hostPath := filepath.Join(s.hostRoot(), name)
 		sandboxPath := filepath.Join(s.execroot(), name)
 
 		// Do not create overlays for "special" filesystems.
@@ -377,7 +423,6 @@ func (s *sandbox) setupMounts(ctx context.Context) (mounts []string, err error) 
 		if hostRoot == "/" && !slices.Contains(allowedHostMounts, name) {
 			continue
 		}
-
 		// Skip tmp for now because linux-sandbox depends on provisioning its
 		// own tmp
 		// DO NOT SUBMIT: verify this?
@@ -392,14 +437,27 @@ func (s *sandbox) setupMounts(ctx context.Context) (mounts []string, err error) 
 		// For directories, create an overlay mount.
 		if e.Type().IsDir() {
 			// For regular dirs, set up an overlayfs.
-			upperDir := filepath.Join(s.tmpDir(), "overlay/upper", name)
-			workDir := filepath.Join(s.tmpDir(), "overlay/work", name)
-			targetDir := filepath.Join(s.tmpDir(), "overlay/mnt", name)
-			if err := mountOverlay(hostPath, upperDir, workDir, targetDir); err != nil {
-				return nil, status.WrapErrorf(err, "mount overlay %s => %s", hostPath, targetDir)
+			overlayLower := hostPath
+			overlayWork := filepath.Join(s.tmpDir(), "overlay/work")
+			overlayUpper := filepath.Join(s.tmpDir(), "overlay/upper")
+			overlayTarget := filepath.Join(s.tmpDir(), "overlay/mnt", name)
+			for _, d := range []string{overlayWork, overlayUpper, overlayTarget} {
+				if err := os.MkdirAll(d, 0755); err != nil {
+					return nil, status.WrapErrorf(err, "mkdir %s", err)
+				}
 			}
-			s.mountedDirs = append(s.mountedDirs, targetDir)
-			mounts = append(mounts, fmt.Sprintf("%s:%s", targetDir, "/"+name))
+			m := Mount{
+				SandboxdMount: &sbdpb.Mount{
+					Source:         "overlay",
+					Target:         overlayTarget,
+					Filesystemtype: "overlay",
+					Flags:          uint64(syscall.MS_RELATIME),
+					Data:           fmt.Sprintf("lowerdir=%s,workdir=%s,upperdir=%s", overlayLower, overlayWork, overlayUpper),
+				},
+				LinuxSandboxSource: overlayTarget,
+				LinuxSandboxTarget: "/" + name,
+			}
+			mounts = append(mounts, m)
 			continue
 		}
 
@@ -439,7 +497,16 @@ func (s *sandbox) setupMounts(ctx context.Context) (mounts []string, err error) 
 	// these are the "real thing".
 	//
 	// TODO: make these configurable?
-	mounts = append(mounts, "/proc", "/dev", "/sys")
+	directHostMounts := []string{"/proc", "/dev", "/sys"}
+	for _, d := range directHostMounts {
+		mounts = append(mounts, Mount{
+			// Sandboxd does not need to mount these - linux-sandbox will mount
+			// from the host directly.
+			SandboxdMount:      nil,
+			LinuxSandboxSource: d,
+			LinuxSandboxTarget: d,
+		})
+	}
 
 	return mounts, nil
 }
@@ -473,16 +540,15 @@ func (s *sandbox) Pause(ctx context.Context) error {
 
 func (s *sandbox) Remove(ctx context.Context) error {
 	var lastErr error
-	for _, d := range s.mountedDirs {
-		if err := syscall.Unmount(d, 0); err != nil {
-			lastErr = err
-			log.CtxWarningf(ctx, "Failed to unmount %s: %s", d, err)
-		}
+	req := &sbdpb.CleanRequest{UnmountPaths: s.pathsToUnmount}
+	_, err := s.sandboxd.GetClient().Clean(ctx, req)
+	if err != nil {
+		lastErr = status.WrapError(err, "clean sandboxd-created resources")
+		log.CtxWarningf(ctx, "%s", lastErr)
 	}
-	s.mountedDirs = nil
 	if err := os.RemoveAll(s.tmpDir()); err != nil {
-		lastErr = err
-		log.CtxWarningf(ctx, "Failed to remove temp dir: %s", err)
+		lastErr = status.WrapError(err, "remove sandbox temp directory")
+		log.CtxWarningf(ctx, "%s", lastErr)
 	}
 	return lastErr
 }
@@ -498,20 +564,4 @@ func (s *sandbox) State(ctx context.Context) (*rnpb.ContainerState, error) {
 
 func secUsecDuration(sec, usec int64) time.Duration {
 	return time.Duration(sec*1e9 + usec*1e3)
-}
-
-// mountOverlay sets up an overlay mount with a single lower layer using the
-// given dirs. The source ("lower") directory must already exist, but the other
-// directories will be created automatically if they don't already exist.
-func mountOverlay(lowerDir, upperDir, workDir, targetDir string) error {
-	for _, d := range []string{upperDir, workDir, targetDir} {
-		if err := os.MkdirAll(d, 0755); err != nil {
-			return fmt.Errorf("mkdir: %w", err)
-		}
-	}
-	options := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lowerDir, upperDir, workDir)
-	if err := syscall.Mount("", targetDir, "overlay", syscall.MS_RELATIME, options); err != nil {
-		return fmt.Errorf("mount overlay: %w", err)
-	}
-	return nil
 }

@@ -15,8 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testns"
-	"github.com/buildbuddy-io/buildbuddy/server/util/nsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +40,7 @@ func getBuildRoot(t *testing.T) string {
 	return testfs.MakeTempDir(t)
 }
 
-func newProvider(t *testing.T, buildRoot string) container.Provider {
+func newProvider(t *testing.T, buildRoot string) *linux_sandbox.Provider {
 	// Skip image auth to speed up tests - we only use public images.
 	flags.Set(t, "debug_ociconv_skip_auth", true)
 
@@ -60,6 +58,10 @@ func newProvider(t *testing.T, buildRoot string) container.Provider {
 
 func newContainer(ctx context.Context, t *testing.T, buildRoot, image string) container.CommandContainer {
 	p := newProvider(t, buildRoot)
+	t.Cleanup(func() {
+		// Clean up sandboxd.
+		p.Close()
+	})
 	props := &platform.Properties{
 		ContainerImage: image,
 	}
@@ -78,19 +80,7 @@ func lines(s ...string) string {
 	return strings.Join(s, "\n") + "\n"
 }
 
-func TestMain(m *testing.M) {
-	// To make sure we can test bind / overlay mounts, run the test in its own
-	// user namespace as root, and with its own mount namespace owned by the new
-	// root user.
-	testns.Unshare(m, nsutil.MapID(0, 0), nsutil.UnshareMount)
-}
-
 func TestLinuxSandbox(t *testing.T) {
-	// Sanity check that we're root in the current namespace.
-	if os.Getuid() != 0 {
-		t.Fatalf("Test must be run as root in the current user namespace")
-	}
-
 	for _, test := range []struct {
 		Name string
 		// Whether the test must have been run by the root user in the root user
@@ -101,10 +91,11 @@ func TestLinuxSandbox(t *testing.T) {
 		Inputs       map[string]string
 		Command      *repb.Command
 
-		WorkspaceAfter map[string]string
-		ExitCode       int
-		Stdout         string
-		Stderr         string
+		WorkspaceAfter  map[string]string
+		ExitCode        int
+		Stdout          string
+		Stderr          string
+		ExtraAssertions func()
 	}{
 		{
 			Name:    "HostFS_NOP",
@@ -192,19 +183,42 @@ func TestLinuxSandbox(t *testing.T) {
 				done
 			`),
 		},
+		{
+			Name:  "ContainerFS_Remove_KillsBackgroundProcesses",
+			Image: busybox,
+			// Run a command that spawns a BG process which tries to keep file
+			// handles open in the overlayfs. These processes should be killed
+			// and we should be able to successfully unmount the overlayfs.
+			Command: newCommand("sh", "-c", `
+				sh -c '
+					cd /bin
+					(
+						printf "_LINUX_SANDBOX_BG_PROCESS"
+						while true; do
+							sleep 1
+						done
+					) >> `+testFileName+`
+				' &
+				while ! [ -e /bin/`+testFileName+` ]; do
+					sleep 0.01
+				done
+			`),
+		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			if test.RequiresRoot {
-				parentUID, ok := nsutil.ParentUid()
-				require.True(t, ok, "failed to get parent uid")
-				if parentUID != 0 {
-					t.Skipf("test requires uid 0 in root user ns")
+				if os.Getuid() != 0 {
+					t.Skipf("test requires root")
 				}
 			}
 
 			ctx := context.Background()
 			buildRoot := getBuildRoot(t)
 			c := newContainer(ctx, t, buildRoot, test.Image)
+			t.Cleanup(func() {
+				err := c.Remove(ctx)
+				assert.NoError(t, err, "remove")
+			})
 
 			wd := testfs.MakeTempDir(t)
 			testfs.WriteAllFileContents(t, wd, test.Inputs)
@@ -213,7 +227,7 @@ func TestLinuxSandbox(t *testing.T) {
 			require.NoError(t, res.Error)
 			assert.Equal(t, test.ExitCode, res.ExitCode, "exit code")
 			assert.Equal(t, test.Stdout, string(res.Stdout), "stdout")
-			assert.Equal(t, test.Stderr, string(res.Stderr), "stdout")
+			assert.Equal(t, test.Stderr, string(res.Stderr), "stderr")
 
 			testfs.AssertExactFileContents(t, wd, test.WorkspaceAfter)
 
@@ -236,6 +250,10 @@ func TestLinuxSandbox(t *testing.T) {
 					assert.False(t, exists, "%s should not exist after execution", filepath.Join(d, testFileName))
 					_ = os.RemoveAll(filepath.Join(rootFSPath, d, testFileName))
 				}
+			}
+
+			if test.ExtraAssertions != nil {
+				test.ExtraAssertions()
 			}
 		})
 	}

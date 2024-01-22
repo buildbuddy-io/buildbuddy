@@ -62,7 +62,6 @@ var (
 	localCacheDirectory       = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
 	localCacheSizeBytes       = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
 	startupWarmupMaxWaitSecs  = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
-	pseudoRootUser            = flag.Bool("executor.enable_pseudo_root", false, "Runs the executor in 'pseudo-root' mode, which allows performing certain mount() operations that would otherwise require root. This is required for linux-sandbox when running the executor as a non-root user. Has no effect if not on Linux.")
 
 	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port              = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
@@ -180,6 +179,10 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 }
 
 func main() {
+	setUmask()
+
+	rootContext := context.Background()
+
 	// Flags must be parsed before config secrets integration is enabled since
 	// that feature itself depends on flag values.
 	flag.Parse()
@@ -189,17 +192,6 @@ func main() {
 	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
-
-	// Note: if pseudo-root is enabled, any logic above the current line will be
-	// run twice, because runInNamespaceAsRoot() restarts the current process
-	// with different permissions.
-	if *pseudoRootUser {
-		runInNamespaceAsRoot()
-	}
-	log.Infof("Executor uid=%d, gid=%d (pseudo_root=%t)", os.Getuid(), os.Getgid(), *pseudoRootUser)
-
-	setUmask()
-	rootContext := context.Background()
 
 	config.ReloadOnSIGHUP()
 

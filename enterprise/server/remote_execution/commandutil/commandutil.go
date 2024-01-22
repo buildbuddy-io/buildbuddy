@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -35,7 +36,8 @@ var (
 	// by SIGKILL and may be retried.
 	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 
-	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
+	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to stderr. Intended for debugging purposes only and should not be used in production.")
+	DebugLogCommandOutputs    = flag.Bool("debug_log_command_outputs", false, "Like debug_stream_command_outputs but logs each line instead of streaming directly to stderr.")
 )
 
 var (
@@ -43,7 +45,7 @@ var (
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
 
-func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+func MakeExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {
 		stdio = &interfaces.Stdio{}
 	}
@@ -80,6 +82,9 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 		}()
 	}
 	if *DebugStreamCommandOutputs {
+		cmd.Stdout = io.MultiWriter(cmd.Stdout, os.Stderr)
+		cmd.Stderr = io.MultiWriter(cmd.Stderr, os.Stderr)
+	} else if *DebugLogCommandOutputs {
 		logWriter := log.Writer(fmt.Sprintf("[%s] ", executable))
 		cmd.Stdout = io.MultiWriter(cmd.Stdout, logWriter)
 		cmd.Stderr = io.MultiWriter(cmd.Stderr, logWriter)
@@ -127,7 +132,7 @@ func Run(ctx context.Context, command *repb.Command, workDir string, statsListen
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
 		var err error
-		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, workDir, stdio)
+		cmd, stdoutBuf, stderrBuf, err = MakeExecCommand(command, workDir, stdio)
 		if err != nil {
 			return err
 		}

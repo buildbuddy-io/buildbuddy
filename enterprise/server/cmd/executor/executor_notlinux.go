@@ -4,7 +4,7 @@ package main
 
 import "context"
 
-func runInNamespaceAsRoot() {
+func unshare() {
 }
 
 func setupNetworking(rootContext context.Context) {

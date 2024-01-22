@@ -51,7 +51,7 @@ const (
 // See the package-level documentation for example code.
 //
 // Note, this is a Linux-only API.
-func Unshare(opts ...UnshareOption) (child *exec.Cmd, err error) {
+func Unshare(opts ...NamespaceOption) (child *exec.Cmd, err error) {
 	if os.Getenv(isChildEnvVarName) == "1" {
 		// We're the child process that is running in the new user namespace
 		// as root - clean up the env var that we set and run the test.
@@ -94,22 +94,30 @@ func TerminateAfter(cmd *exec.Cmd) {
 	os.Exit(ws.ExitStatus())
 }
 
-// UnshareOption is an option to be passed to Unshare.
-type UnshareOption func(*syscall.SysProcAttr)
+// SetOptions applies the given namespace options to the given child process
+// attributes.
+func SetOptions(p *syscall.SysProcAttr, opts ...NamespaceOption) {
+	for _, opt := range opts {
+		opt(p)
+	}
+}
+
+// NamespaceOption is an option to be passed to Unshare.
+type NamespaceOption func(*syscall.SysProcAttr)
 
 // UnshareMount is an UnshareOption that unshares the mount namespace.
-var UnshareMount = UnshareOption(func(p *syscall.SysProcAttr) {
+var UnshareMount = NamespaceOption(func(p *syscall.SysProcAttr) {
 	p.Cloneflags |= syscall.CLONE_NEWNS
 })
 
 // UnshareUser is an UnshareOption that unshares the user namespace.
-var UnshareUser = UnshareOption(func(p *syscall.SysProcAttr) {
+var UnshareUser = NamespaceOption(func(p *syscall.SysProcAttr) {
 	p.Cloneflags |= syscall.CLONE_NEWUSER
 })
 
 // MapID returns an UnshareOption that maps the current uid and gid
 // to the given values in a new user namespace. Implies UnshareUser.
-func MapID(uid, gid int) UnshareOption {
+func MapID(uid, gid int) NamespaceOption {
 	return func(p *syscall.SysProcAttr) {
 		UnshareUser(p)
 		os.Setenv(parentUidEnvVarName, fmt.Sprint(os.Getuid()))
