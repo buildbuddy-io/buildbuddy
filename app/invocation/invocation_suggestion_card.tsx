@@ -47,6 +47,7 @@ const IOS_EXECUTION_FILTER = {
     "DsymLipo",
     "GenerateAppleSymbolsFile",
     "ObjcBinarySymbolStrip",
+    "CppArchive",
     "CppLink",
     "ObjcLink",
     "ProcessAndSign",
