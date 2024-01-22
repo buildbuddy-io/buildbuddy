@@ -725,11 +725,14 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
 			if shouldCache {
 				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
+				if *snaputil.VerboseLogging {
+					log.CtxDebugf(ctx, "Caching snapshot artifact: dirty=%t src=%s file=%s hash=%s offset=0x%x", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash(), c.Offset)
+				}
 				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path); err != nil {
 					return status.WrapError(err, "write chunk to cache")
 				}
 			} else if *snaputil.VerboseLogging {
-				log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash())
+				log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s offset=0x%x", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash(), c.Offset)
 			}
 			mu.Lock()
 			chunkSourceCounter[chunkSrc]++
