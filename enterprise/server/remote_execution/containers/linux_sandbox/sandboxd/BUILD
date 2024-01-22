@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/containers/linux_sandbox/proto:sandboxd_go_proto",
+        "//enterprise/server/remote_execution/containers/linux_sandbox/sandboxutil",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//:go_default_library",

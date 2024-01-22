@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/linux_sandbox/sandboxutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
@@ -132,10 +133,13 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 	}
 	socket := filepath.Join(runPath, fmt.Sprintf("sandbox.%d.sock", rand.Uint64()))
 
-	// TODO: do not use sandboxd if we're root. It's pure overhead in that case.
-	sandboxd, err := sandboxd_client.StartSandboxd(sandboxdPath, socket)
-	if err != nil {
-		return nil, status.WrapError(err, "start sandboxd")
+	var sandboxd *sandboxd_client.Sandboxd
+	if os.Getuid() != 0 {
+		s, err := sandboxd_client.StartSandboxd(sandboxdPath, socket)
+		if err != nil {
+			return nil, status.WrapError(err, "start sandboxd")
+		}
+		sandboxd = s
 	}
 
 	// Debug: show tool paths available to the host
@@ -345,7 +349,19 @@ func (s *sandbox) Exec(ctx context.Context, command *repb.Command, stdio *interf
 		}
 	}
 
-	res := s.sandboxd.Exec(ctx, command, sandboxdMounts, "" /*=user*/, nil /*=statsListener*/, stdio)
+	// If we're root, mount and exec directly - we don't need pseudo-root
+	// via sandboxd. It just adds more overhead.
+	var res *interfaces.CommandResult
+	if os.Getuid() == 0 {
+		for _, m := range sandboxdMounts {
+			if err := sandboxutil.SetupMount(m); err != nil {
+				return commandutil.ErrorResult(err)
+			}
+		}
+		res = commandutil.Run(ctx, command, "", nil, stdio)
+	} else {
+		res = s.sandboxd.Exec(ctx, command, sandboxdMounts, "" /*=user*/, nil /*=statsListener*/, stdio)
+	}
 	// Read stats file if it exists and append to res
 	stats, err := s.readStatsFile()
 	if err != nil {
@@ -458,6 +474,7 @@ func (s *sandbox) setupMounts(ctx context.Context) (mounts []Mount, err error) {
 				LinuxSandboxTarget: "/" + name,
 			}
 			mounts = append(mounts, m)
+			s.pathsToUnmount = append(s.pathsToUnmount, overlayTarget)
 			continue
 		}
 
@@ -540,11 +557,21 @@ func (s *sandbox) Pause(ctx context.Context) error {
 
 func (s *sandbox) Remove(ctx context.Context) error {
 	var lastErr error
-	req := &sbdpb.CleanRequest{UnmountPaths: s.pathsToUnmount}
-	_, err := s.sandboxd.GetClient().Clean(ctx, req)
-	if err != nil {
-		lastErr = status.WrapError(err, "clean sandboxd-created resources")
-		log.CtxWarningf(ctx, "%s", lastErr)
+	if os.Getuid() == 0 {
+		// We're root - don't use sandboxd
+		for _, p := range s.pathsToUnmount {
+			if err := syscall.Unmount(p, 0); err != nil {
+				lastErr = status.WrapError(err, "clean sandboxd dir")
+				log.CtxWarningf(ctx, "%s", lastErr)
+			}
+		}
+	} else {
+		req := &sbdpb.CleanRequest{UnmountPaths: s.pathsToUnmount}
+		_, err := s.sandboxd.GetClient().Clean(ctx, req)
+		if err != nil {
+			lastErr = status.WrapError(err, "clean sandboxd-created resources")
+			log.CtxWarningf(ctx, "%s", lastErr)
+		}
 	}
 	if err := os.RemoveAll(s.tmpDir()); err != nil {
 		lastErr = status.WrapError(err, "remove sandbox temp directory")
