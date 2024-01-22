@@ -455,6 +455,11 @@ func recordSpanAfterFn(db *gorm.DB) {
 	span.End()
 }
 
+func logQuery(db *gorm.DB) {
+	sql := db.Dialector.Explain(db.Statement.SQL.String(), db.Statement.Vars...)
+	fmt.Println(sql)
+}
+
 // instrumentGORM adds GORM callbacks that populate query metrics.
 func instrumentGORM(gdb *gorm.DB) {
 	gormutil.InstrumentMetrics(gdb, gormRecordOpStartTimeCallbackKey, recordMetricsBeforeFn, gormRecordMetricsCallbackKey, recordMetricsAfterFn)
@@ -472,6 +477,8 @@ func instrumentGORM(gdb *gorm.DB) {
 	gdb.Callback().Raw().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
 	gdb.Callback().Row().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
 	gdb.Callback().Update().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
+
+	gdb.Callback().Raw().After("*").Register(gormEndSpanCallbackKey, logQuery)
 }
 
 // connector implements the sql Driver interface which allows us to control the

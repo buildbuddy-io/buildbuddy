@@ -278,4 +278,7 @@ service BuildBuddyService {
       returns (featureflag.GetGroupsResponse);
   rpc GetFlag(featureflag.GetFlagRequest)
       returns (featureflag.GetFlagResponse);
+
+  rpc CreateGroups(featureflag.CreateGroupsRequest)
+      returns (featureflag.CreateGroupsResponse);
 }

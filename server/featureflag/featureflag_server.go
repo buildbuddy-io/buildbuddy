@@ -310,3 +310,19 @@ func (c *featureFlagCache) UpdateFlag(flagName string, enabled bool) (ok bool) {
 
 	return true
 }
+
+func (ffs *FeatureFlagService) CreateGroups(ctx context.Context) error {
+	for i := 0; i < 100; i++ {
+		name, err := random.RandomString(8)
+		if err != nil {
+			return err
+		}
+		_, err = ffs.env.GetUserDB().CreateGroup(ctx, &tables.Group{
+			Name: name,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

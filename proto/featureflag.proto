@@ -93,3 +93,11 @@ message GetGroupsResponse {
   context.ResponseContext response_context = 1;
   repeated Group groups = 2;
 }
+
+message CreateGroupsRequest {
+  context.ResponseContext response_context = 1;
+}
+
+message CreateGroupsResponse {
+  context.ResponseContext response_context = 1;
+}

@@ -77,6 +77,7 @@ var (
 		"GetAllFeatureFlags",
 		"UpdateFeatureFlag",
 		"GetGroups",
+		"CreateGroups",
 	}
 
 	// DeveloperRPCs can be called only by developers or admins of the selected

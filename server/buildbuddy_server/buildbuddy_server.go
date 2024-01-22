@@ -2061,3 +2061,12 @@ func (s *BuildBuddyServer) GetGroups(ctx context.Context, req *featureflag.GetGr
 	}
 	return &featureflag.GetGroupsResponse{Groups: groups}, nil
 }
+
+func (s *BuildBuddyServer) CreateGroups(ctx context.Context, req *featureflag.CreateGroupsRequest) (*featureflag.CreateGroupsResponse, error) {
+	ffs := s.env.GetFeatureflagService()
+	err := ffs.CreateGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &featureflag.CreateGroupsResponse{}, nil
+}

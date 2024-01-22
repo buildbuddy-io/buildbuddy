@@ -61,6 +61,14 @@ export default class FeatureflagsComponent extends React.Component<Props, State>
                         </FilledButton>
                         {this.renderCreateForm()}
                     </div>
+                    <div className="create-button">
+                        <FilledButton
+                            className="big-button"
+                            onClick={this.onClickCreateGroups.bind(this)}>
+                            Create groups
+                        </FilledButton>
+                        {this.renderCreateForm()}
+                    </div>
                 </div>
                 {this.state.flags && (
                     <div>
@@ -361,6 +369,15 @@ export default class FeatureflagsComponent extends React.Component<Props, State>
                 new featureflag.GetGroupsRequest({}))
             .then((response) => {
                 this.setState({groups: response.groups})
+            })
+            .catch((e) => errorService.handleError(e));
+    }
+
+    onClickCreateGroups() {
+        rpcService.service
+            .createGroups(
+                new featureflag.CreateGroupsRequest({}))
+            .then((response) => {
             })
             .catch((e) => errorService.handleError(e));
     }

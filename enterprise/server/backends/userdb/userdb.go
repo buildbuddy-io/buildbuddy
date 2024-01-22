@@ -246,23 +246,23 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 			return "", status.InvalidArgumentError("URL is already in use")
 		}
 	}
+	//
+	//currentGroup, err := d.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	//// If the user is in at least one group, and we can't look up the selected group - return an error.
+	//if len(u.GetGroupMemberships()) > 0 && err != nil {
+	//	return "", err
+	//}
 
-	currentGroup, err := d.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
-	// If the user is in at least one group, and we can't look up the selected group - return an error.
-	if len(u.GetGroupMemberships()) > 0 && err != nil {
-		return "", err
-	}
-
-	err = authutil.AuthorizeGroupRole(u, u.GetGroupID(), role.Admin)
-
-	// We can continue if one of the following is true:
-	// 1) doesn't have an existing group
-	// 2) an user is an admin
-	// 3) developers are allowed to create organizations in their existing organization
-	// Otherwise we return that the user doesn't have permissions to create an organization.
-	if err != nil && currentGroup != nil && !currentGroup.DeveloperOrgCreationEnabled {
-		return "", status.UnauthenticatedErrorf("You don't have permission to create a group")
-	}
+	//err = authutil.AuthorizeGroupRole(u, u.GetGroupID(), role.Admin)
+	//
+	//// We can continue if one of the following is true:
+	//// 1) doesn't have an existing group
+	//// 2) an user is an admin
+	//// 3) developers are allowed to create organizations in their existing organization
+	//// Otherwise we return that the user doesn't have permissions to create an organization.
+	//if err != nil && currentGroup != nil && !currentGroup.DeveloperOrgCreationEnabled {
+	//	return "", status.UnauthenticatedErrorf("You don't have permission to create a group")
+	//}
 
 	groupID := ""
 	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
