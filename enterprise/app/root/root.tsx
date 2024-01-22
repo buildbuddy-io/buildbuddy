@@ -73,6 +73,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.executorsPath,
   Path.tapPath,
   Path.codePath,
+  Path.momaPath,
 ]);
 
 interface ImpersonationProps {

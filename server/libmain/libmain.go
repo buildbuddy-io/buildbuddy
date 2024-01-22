@@ -108,6 +108,7 @@ var (
 		"/audit-logs/",
 		"/repo/",
 		"/reviews/",
+		"/moma/",
 	}
 )
 

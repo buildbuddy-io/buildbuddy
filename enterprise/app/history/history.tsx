@@ -490,7 +490,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   render() {
-    console.log(this.state.badges?.length);
     let scope =
       this.props.userId ||
       this.props.username ||
@@ -525,7 +524,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
         : "";
     let displayUserName = this.state.displayUser?.name?.full;
     let displayEmail = this.state.displayUser?.email;
-	console.log("email: "+displayEmail);
 
     return (
       <div className="history">
@@ -734,6 +732,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
             <div>Loading badges</div>
           </div>
         )}
+        {!Boolean(this.state.badges?.length) && (
+          <div className="details loading-details">
+            <div>No badges yet!</div>
+          </div>
+		)}
         {Boolean(this.state.badges?.length) && (
           <div className="badge-container">
             {this.state.badges?.map((badge) => (
