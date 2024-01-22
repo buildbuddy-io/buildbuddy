@@ -71,6 +71,10 @@ func CreateBadges(ctx context.Context, env environment.Env, req *bpb.CreateBadge
 	return &bpb.CreateBadgesResponse{}, nil
 }
 
+func GrantUserBadges(ctx context.Context, env environment.Env, req *bpb.GrantUserBadgesRequest) (*bpb.GrantUserBadgesResponse, error) {
+	return nil, nil
+}
+
 func badgeProtoToTable(in *bpb.Badge) *tables.Badge {
 	return &tables.Badge{
 		BadgeID:     in.GetBadgeId(),

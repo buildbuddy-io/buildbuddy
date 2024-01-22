@@ -38,3 +38,16 @@ message CreateBadgesResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 }
+
+message GrantUserBadgesRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+  string badge_id = 2;
+  repeated string add_user_ids = 3;
+  repeated string remove_user_ids = 4;
+}
+
+message GrantUserBadgesResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+}

@@ -70,6 +70,8 @@ service BuildBuddyService {
       returns (badge.GetUserBadgesResponse);
   rpc CreateBadges(badge.CreateBadgesRequest)
       returns (badge.CreateBadgesResponse);
+  rpc GrantUserBadges(badge.GrantUserBadgesRequest)
+      returns (badge.GrantUserBadgesResponse);
 
   // Groups API
   rpc GetGroup(grp.GetGroupRequest) returns (grp.GetGroupResponse);

@@ -398,6 +398,10 @@ func (s *BuildBuddyServer) GetUserBadges(ctx context.Context, req *badgepb.GetUs
 	return badge.GetUserBadges(ctx, s.env, req)
 }
 
+func (s *BuildBuddyServer) GrantUserBadges(ctx context.Context, req *badgepb.GrantUserBadgesRequest) (*badgepb.GrantUserBadgesResponse, error) {
+	return badge.GrantUserBadges(ctx, s.env, req)
+}
+
 func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupRequest) (*grpb.GetGroupResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
