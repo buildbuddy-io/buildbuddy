@@ -22,28 +22,40 @@ func GetUserBadges(ctx context.Context, env environment.Env, req *bpb.GetUserBad
 		return nil, err
 	}
 
-	reqUserId := req.GetUserId()
-	if len(reqUserId) == 0 {
-		reqUserId = req.GetRequestContext().GetUserId().GetId()
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("group_id is required")
 	}
 
-	users, err := env.GetUserDB().GetDisplayUsers(ctx, []string{reqUserId})
+	reqUserID := req.GetUserId()
+	if len(reqUserID) == 0 {
+		reqUserID = req.GetRequestContext().GetUserId().GetId()
+	}
+
+	users, err := env.GetUserDB().GetDisplayUsers(ctx, []string{reqUserID})
 	if err != nil {
 		return nil, err
 	}
-	du := users[reqUserId]
+	du := users[reqUserID]
+
 	res := &bpb.GetUserBadgesResponse{
 		DisplayUser: du,
-		Badges: []*bpb.Badge{
-			{
-				Description: "Earth Saver",
-				ImageUrl:    "https://storage.googleapis.com/lulu-hackweek-badges/earth-saver.png",
-			},
-			{
-				Description: "First Build",
-				ImageUrl:    "https://storage.googleapis.com/lulu-hackweek-badges/first-build-badge-silver.png",
-			},
-		},
+	}
+
+	rq := env.GetDBHandle().NewQuery(ctx, "badge_get_user_badges").Raw(`
+       SELECT b.badge_id, b.image_url, b.description FROM "Badges" as b
+	   JOIN "UserBadges" as ub ON b.badge_id = ub.badge_id
+	   WHERE ub.group_id = ?
+	   AND ub.user_id = ?
+	   ORDER by b.badge_id
+    `, groupID, reqUserID)
+	badges, err := db.ScanAll(rq, &tables.Badge{})
+	if err != nil {
+		return res, err
+	}
+
+	for _, badge := range badges {
+		res.Badges = append(res.Badges, badgeTableToProto(badge))
 	}
 	return res, nil
 }
@@ -136,5 +148,13 @@ func badgeProtoToTable(in *bpb.Badge) *tables.Badge {
 		BadgeID:     in.GetBadgeId(),
 		ImageURL:    in.GetImageUrl(),
 		Description: in.GetDescription(),
+	}
+}
+
+func badgeTableToProto(in *tables.Badge) *bpb.Badge {
+	return &bpb.Badge{
+		BadgeId:     in.BadgeID,
+		ImageUrl:    in.ImageURL,
+		Description: in.Description,
 	}
 }
