@@ -41,6 +41,30 @@
   font-weight: bold;
 }
 
+.text-button {
+  margin-left: 38px;
+  color: #6f6c6c;
+  font-weight: bold;
+}
+
+.load-more-groups {
+  margin-top: 10px;
+}
+
+.assign-groups {
+  display: flex;
+  margin: 20px;
+  width: 100%;
+}
+
+.assign-groups > * {
+  margin-right: 20px;
+}
+
+.assign-groups > .assign-groups-slider {
+  width: 40%;
+}
+
 
 
 

@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"strings"
 	"sync"
@@ -206,12 +207,6 @@ func (ffs *FeatureFlagService) UpdateExperimentAssignments(ctx context.Context, 
 		}
 
 		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	_, err = ffs.env.GetUserDB().CreateGroup(ctx, &tables.Group{
-		Name: "Test",
 	})
 	if err != nil {
 		return nil, err

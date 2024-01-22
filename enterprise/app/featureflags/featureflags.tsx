@@ -1,9 +1,10 @@
 import React from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
-import {
+import Button, {
     FilledButton,
     OutlinedButton
 } from "../../../app/components/button/button";
+import Slider from "../../../app/components/slider/slider";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import TextInput from "../../../app/components/input/input";
 import rpcService from "../../../app/service/rpc_service";
@@ -15,16 +16,21 @@ import Dialog, {
     DialogHeader,
     DialogTitle
 } from "../../../app/components/dialog/dialog";
-import capabilities from "../../../app/capabilities/capabilities";
-import Spinner from "../../../app/components/spinner/spinner";
+import arrayContaining = jasmine.arrayContaining;
 
 export interface Props {
+}
+
+type FlagComponent = {
+    flag: featureflag.FeatureFlag;
+    groupsToDisplay: number;
+    groupAssignmentPercentage: number;
 }
 
 type State = {
     showCreateForm: boolean;
     createFlagName: string;
-    flags: Map<string, featureflag.FeatureFlag>;
+    flags: Map<string, FlagComponent>;
     showFlagGroups: Map<string, boolean>;
     groups: featureflag.Group[] | null;
 }
@@ -33,7 +39,7 @@ export default class FeatureflagsComponent extends React.Component<Props, State>
     state: State = {
         showCreateForm: false,
         createFlagName: "",
-        flags: new Map<string, featureflag.FeatureFlag>(),
+        flags: new Map<string, FlagComponent>(),
         showFlagGroups: new Map<string, boolean>(),
         groups: null,
     };
@@ -69,39 +75,39 @@ export default class FeatureflagsComponent extends React.Component<Props, State>
         if (this.state.flags.size == 0) return;
 
         var sortedFlagNames = new Array<string>();
-        this.state.flags.forEach((flag) => {
-            sortedFlagNames.push(flag.name);
+        this.state.flags.forEach((fc) => {
+            sortedFlagNames.push(fc.flag.name);
         })
         sortedFlagNames = sortedFlagNames.sort();
 
         const flags = new Array<JSX.Element>();
         sortedFlagNames.forEach((flagName) => {
-            const flag = this.state.flags.get(flagName)!;
+            const fc = this.state.flags.get(flagName)!;
 
-            const groupsInExperiment = flag.experimentGroupIds.length > 0;
-            const experimentOn = groupsInExperiment && flag.enabled;
+            const groupsInExperiment = fc.flag.experimentGroupIds.length > 0;
+            const experimentOn = groupsInExperiment && fc.flag.enabled;
             flags.push(
                 <div className="featureflag">
                     <div className="flag-details">
-                        <div>{flag.name}</div>
+                        <div>{fc.flag.name}</div>
                         <div className="toggle">
                             <label className="switch">
                                 <input type="checkbox"
-                                       checked={flag.enabled}
-                                       onChange={this.onToggleFlag.bind(this, flag)}
+                                       checked={fc.flag.enabled}
+                                       onChange={this.onToggleFlag.bind(this, fc)}
                                 />
                                 <span className="slider round"></span>
                             </label>
                         </div>
                     </div>
                     <div style={{padding: "20px", margin: "20px"}} className={`experiment-groups card ${experimentOn ? "card-success" : "card-neutral"}`}>
-                        <div className="group-toggle" onClick={this.onShowFlagGroups.bind(this, flag.name)}>
-                            {this.state.showFlagGroups.get(flag.name) ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />}
+                        <div className="group-toggle" onClick={this.onShowFlagGroups.bind(this, fc.flag.name)}>
+                            {this.state.showFlagGroups.get(fc.flag.name) ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />}
                             <div>
                                 {groupsInExperiment ? "Configured groups" : "Enabled for all groups"}
                             </div>
                         </div>
-                        {this.state.showFlagGroups.get(flag.name) && this.renderExperimentGroups(flag.name)}
+                        {this.state.showFlagGroups.get(fc.flag.name) && this.renderExperimentGroups(fc.flag.name)}
                     </div>
                 </div>
             )
@@ -115,19 +121,65 @@ export default class FeatureflagsComponent extends React.Component<Props, State>
             return;
         }
 
+        const fc = this.state.flags.get(flagName)!;
+        const groupElements = new Array<JSX.Element>()
 
-        const flag = this.state.flags.get(flagName)!;
-        return this.state.groups.map((eg) => {
-            return (
+        groupElements.push(
+            <div className="assign-groups">
+                <div className="text-button">
+                    Groups to assign:
+                </div>
+                <Slider
+                    className="assign-groups-slider"
+                    value={[
+                        fc.groupAssignmentPercentage,
+                    ]}
+                    min={0}
+                    max={100}
+                    renderThumb={(props, state) => (
+                        <div {...props}>
+                            <div className="slider-thumb-circle"></div>
+                            <div className="slider-thumb-value">
+                                {fc.groupAssignmentPercentage}%
+                            </div>
+                        </div>
+                    )}
+                    pearling
+                    minDistance={10}
+                    onChange={(e) => {
+                        fc.groupAssignmentPercentage = e;
+                        const mapClone = this.state.flags;
+                        mapClone.set(fc.flag.name, fc);
+                    }}
+                />
+                <div className="text-button" onClick={this.onAssignGroupPercentage.bind(this, fc)}>
+                    Apply
+                </div>
+            </div>
+        )
+        for (let i = 0; i < fc.groupsToDisplay; i++) {
+            const group = this.state.groups[i];
+            groupElements.push(
                 <div className="experiment-group">
                     <Checkbox
-                        checked={flag.experimentGroupIds.includes(eg.groupId)}
-                        onChange={this.onToggleGroup.bind(this, flag, eg.groupId)}
+                        checked={fc.flag.experimentGroupIds.includes(group.groupId)}
+                        onChange={this.onToggleGroup.bind(this, fc, group.groupId)}
                     />
-                    <div> {eg.name} </div>
+                    <div> {group.name} </div>
                 </div>
             )
-        })
+        }
+
+        const totalGroups = this.state.groups.length;
+        if (fc.groupsToDisplay < totalGroups) {
+            groupElements.push(
+                <div className="text-button load-more-groups" onClick={() => this.onClickLoadMoreGroups(fc)}>
+                    Load more groups
+                </div>
+            );
+        }
+
+        return groupElements
     }
 
     renderCreateForm() {
@@ -166,18 +218,51 @@ export default class FeatureflagsComponent extends React.Component<Props, State>
             </Modal>
         )
     }
-    onToggleGroup(flag: featureflag.FeatureFlag, groupID: string) {
-        const idx = flag.experimentGroupIds.indexOf(groupID);
+    onToggleGroup(fc: FlagComponent, groupID: string) {
+        const idx = fc.flag.experimentGroupIds.indexOf(groupID);
         if (idx == -1) {
-            flag.experimentGroupIds.push(groupID);
+            fc.flag.experimentGroupIds.push(groupID);
         } else {
-            flag.experimentGroupIds.splice(idx, 1);
+            fc.flag.experimentGroupIds.splice(idx, 1);
         }
 
         const mapClone = this.state.flags;
-        mapClone.set(flag.name, flag);
+        mapClone.set(fc.flag.name, fc);
         this.setState( {flags: mapClone });
-        this.updateExperimentAssignments(flag);
+        this.updateExperimentAssignments(fc.flag);
+    }
+
+    onAssignGroupPercentage(fc: FlagComponent) {
+        const numGroups = this.state.groups?.length!;
+        let groupsToSelect = Math.floor(numGroups * (fc.groupAssignmentPercentage / 100));
+
+        while (groupsToSelect > 0) {
+            const groupIdx = Math.floor(Math.random() * (numGroups - 1));
+            const group = this.state.groups![groupIdx];
+            if (!fc.flag.experimentGroupIds.includes(group.groupId)) {
+                fc.flag.experimentGroupIds.push(group.groupId);
+                groupsToSelect--;
+            }
+        }
+
+        const mapClone = this.state.flags;
+        mapClone.set(fc.flag.name, fc);
+        this.setState( {flags: mapClone });
+
+        this.updateExperimentAssignments(fc.flag);
+    }
+
+    onClickLoadMoreGroups(fc: FlagComponent) {
+        let numGroups = fc.groupsToDisplay + 10;
+        let totalGroups = this.state.groups?.length!;
+        if (numGroups > totalGroups) {
+            numGroups = totalGroups;
+        }
+        fc.groupsToDisplay = numGroups;
+
+        const mapClone = this.state.flags;
+        mapClone.set(fc.flag.name, fc);
+        this.setState( {flags: mapClone });
     }
 
     private createFF() {
@@ -205,7 +290,12 @@ export default class FeatureflagsComponent extends React.Component<Props, State>
                 const m = new Map(this.state.flags);
                 const showGroupsMap = this.state.showFlagGroups;
                 response.flags.forEach((flag) => {
-                    m.set(flag.name, flag);
+                    const fc: FlagComponent = {
+                        flag: flag,
+                        groupsToDisplay: 10,
+                        groupAssignmentPercentage: 0,
+                    }
+                    m.set(flag.name, fc);
                     showGroupsMap.set(flag.name, false);
                 })
                 this.setState({ flags: m, showFlagGroups: showGroupsMap });
@@ -242,12 +332,12 @@ export default class FeatureflagsComponent extends React.Component<Props, State>
             .catch((e) => errorService.handleError(e));
     }
 
-    onToggleFlag(flag: featureflag.FeatureFlag) {
+    onToggleFlag(fc: FlagComponent) {
         const mapClone = this.state.flags;
-        flag.enabled = !flag.enabled;
-        mapClone.set(flag.name, flag);
+        fc.flag.enabled = !fc.flag.enabled;
+        mapClone.set(fc.flag.name, fc);
         this.setState({flags: mapClone});
-        this.updateFlag(flag);
+        this.updateFlag(fc.flag);
     }
 
     onShowFlagGroups(flagName: string) {
