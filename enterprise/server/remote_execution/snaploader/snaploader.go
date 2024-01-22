@@ -817,7 +817,7 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 //
 // If the image is not cached, this func will split up the given ext4 image
 // file and create a new ChunkedFile from it, then add that to cache.
-func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef, imageExt4Path string, outDir string, chunkSize int64) (*copy_on_write.COWStore, error) {
+func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef, imageExt4Path string, outDir string, chunkSize int64, remoteEnabled bool) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -828,7 +828,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		ConfigurationHash: hashStrings("__UnpackContainerImage", imageRef),
 	}}
 
-	snap, err := l.GetSnapshot(ctx, key, *snaputil.EnableRemoteSnapshotSharing)
+	snap, err := l.GetSnapshot(ctx, key, remoteEnabled)
 	if err != nil && !(status.IsNotFoundError(err) || status.IsUnavailableError(err)) {
 		return nil, err
 	}
@@ -844,13 +844,9 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		return cf, nil
 	}
 	// containerfs is not available in cache; convert the EXT4 image to a
-	// ChunkedFile then add it to cache. Note that we don't use remote instance
-	// name here, since OCI -> ext4 conversion is expensive and we want to
-	// ensure that this is a one-time thing.
-	//
-	// TODO(bduffany): single-flight this.
+	// ChunkedFile then add it to cache.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, *snaputil.EnableRemoteSnapshotSharing)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, remoteEnabled)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}
@@ -858,7 +854,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	opts := &CacheSnapshotOptions{
 		ChunkedFiles: map[string]*copy_on_write.COWStore{rootfsFileName: cow},
 		Recycled:     false,
-		Remote:       *snaputil.EnableRemoteSnapshotSharing,
+		Remote:       remoteEnabled,
 	}
 	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
 		return nil, status.WrapError(err, "cache containerfs snapshot")
