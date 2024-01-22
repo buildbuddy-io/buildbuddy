@@ -12,6 +12,7 @@ EXPECTED_ASSETS = [
     "executor-enterprise-linux-amd64",
     "buildbuddy-enterprise-darwin-amd64",
     "executor-enterprise-darwin-amd64",
+    "executor-enterprise-windows-amd64-beta.exe",
     "buildbuddy-darwin-amd64"
 ]
 
