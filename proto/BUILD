@@ -1419,7 +1419,7 @@ go_proto_library(
         ":grpc_status_go_proto",
         ":remote_execution_go_proto",
         ":semver_go_proto",
-        "@org_golang_google_genproto//googleapis/longrunning",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
@@ -1435,7 +1435,7 @@ go_proto_library(
     deps = [
         ":grpc_status_go_proto",
         ":remote_execution_go_proto",
-        "@org_golang_google_genproto//googleapis/longrunning",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
@@ -1454,7 +1454,7 @@ go_proto_library(
         ":grpc_status_go_proto",
         ":scheduler_go_proto",
         ":semver_go_proto",
-        "@org_golang_google_genproto//googleapis/longrunning",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
