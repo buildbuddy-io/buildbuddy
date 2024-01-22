@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
+	"github.com/google/go-github/v43/github"
 	"github.com/hashicorp/serf/serf"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
@@ -627,7 +628,7 @@ type GitHubApp interface {
 	// for the installation associated with the given installation owner (GitHub
 	// username or org name). It does not authorize the authenticated group ID,
 	// so should be used for status reporting only.
-	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (string, error)
+	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error)
 
 	// GetRepositoryInstallationToken returns an installation token for the given
 	// GitRepository.

@@ -11,7 +11,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -26,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-github/v43/github"
 )
 
 var (
@@ -57,6 +57,9 @@ const (
 	installationIDCookieName = "Github-Linked-Installation-ID"
 
 	tempCookieDuration = 1 * time.Hour
+
+	// Refresh the GitHub token if it's this close to expiring.
+	tokenRefreshWindow = 5 * time.Minute
 )
 
 func AuthEnabled(env environment.Env) bool {
@@ -119,11 +122,13 @@ func (r *GithubAccessTokenResponse) Err() error {
 }
 
 type GithubClient struct {
-	env         environment.Env
-	client      *http.Client
-	oauth       *OAuthHandler
-	githubToken string
-	tokenLookup sync.Once
+	env    environment.Env
+	client *http.Client
+	oauth  *OAuthHandler
+
+	tokenValue      string
+	tokenExpiration *time.Time
+	tokenErr        error
 }
 
 func Register(env environment.Env) error {
@@ -137,10 +142,10 @@ func Register(env environment.Env) error {
 
 func NewGithubClient(env environment.Env, token string) *GithubClient {
 	return &GithubClient{
-		env:         env,
-		client:      &http.Client{},
-		githubToken: token,
-		oauth:       getLegacyOAuthHandler(env),
+		env:        env,
+		client:     &http.Client{},
+		tokenValue: token,
+		oauth:      getLegacyOAuthHandler(env),
 	}
 }
 
@@ -460,17 +465,9 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 		return status.InvalidArgumentError("failed to create GitHub status: commitSHA argument is empty")
 	}
 
-	var err error
-	c.tokenLookup.Do(func() {
-		err = c.populateTokenIfNecessary(ctx, ownerRepo)
-	})
+	token, err := c.getToken(ctx, ownerRepo)
 	if err != nil {
 		return status.WrapErrorf(err, "failed to populate GitHub token")
-	}
-
-	// If we don't have a github token, we can't post a status.
-	if c.githubToken == "" {
-		return status.UnknownError("failed to populate GitHub token")
 	}
 
 	url := fmt.Sprintf("https://%s/repos/%s/statuses/%s", apiEndpoint(), ownerRepo, commitSHA)
@@ -484,7 +481,7 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 		return status.InternalErrorf("failed to create request: %s", err)
 	}
 
-	req.Header.Set("Authorization", "token "+c.githubToken)
+	req.Header.Set("Authorization", "token "+token)
 	res, err := c.client.Do(req)
 	if err != nil {
 		return status.UnavailableErrorf("failed to send request: %s", err)
@@ -501,37 +498,65 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 	return nil
 }
 
-func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo string) (string, error) {
+func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo string) (*github.InstallationToken, error) {
 	app := c.env.GetGitHubApp()
 	if app == nil {
-		return "", nil
+		return nil, nil
 	}
 	parts := strings.Split(ownerRepo, "/")
 	if len(parts) != 2 {
-		return "", status.InvalidArgumentErrorf("invalid owner/repo %q", ownerRepo)
+		return nil, status.InvalidArgumentErrorf("invalid owner/repo %q", ownerRepo)
 	}
 	return app.GetInstallationTokenForStatusReportingOnly(ctx, parts[0])
 }
 
-func (c *GithubClient) populateTokenIfNecessary(ctx context.Context, ownerRepo string) error {
-	if c.githubToken != "" {
-		return nil
+func (c *GithubClient) getToken(ctx context.Context, ownerRepo string) (string, error) {
+	// If we've already tried fetching the token and it failed, don't try
+	// again.
+	if c.tokenErr != nil {
+		return "", c.tokenErr
 	}
+	// If we already fetched a token and it is not yet expired, return it.
+	if c.tokenValue != "" && c.tokenExpiration != nil && time.Now().Before((*c.tokenExpiration).Add(-tokenRefreshWindow)) {
+		return c.tokenValue, nil
+	}
+	// Token has either not yet been fetched or it's expired; fetch it.
+	if err := c.fetchToken(ctx, ownerRepo); err != nil {
+		c.tokenErr = err
+		return "", err
+	}
+	// Sanity check that it's not empty.
+	if c.tokenValue == "" {
+		c.tokenErr = status.InternalError("failed to fetch GitHub token")
+		return "", c.tokenErr
+	}
+	return c.tokenValue, nil
+}
 
+func (c *GithubClient) fetchToken(ctx context.Context, ownerRepo string) error {
+	// Reset state
+	c.tokenValue = ""
+	c.tokenExpiration = nil
+	c.tokenErr = nil
+
+	// Prefer fetching app installation token
 	installationToken, err := c.getAppInstallationToken(ctx, ownerRepo)
 	if err != nil {
 		log.CtxInfof(ctx, "Failed to look up app installation token; falling back to legacy OAuth lookup: %s", err)
 	}
-	if installationToken != "" {
-		c.githubToken = installationToken
+	if installationToken != nil {
+		c.tokenValue = installationToken.GetToken()
+		c.tokenExpiration = installationToken.ExpiresAt
 		return nil
 	}
 
+	// Fall back to token specified via flag if configured
 	if *accessToken != "" {
-		c.githubToken = *accessToken
+		c.tokenValue = *accessToken
 		return nil
 	}
 
+	// Fall back to legacy org-linked OAuth token if enabled
 	if !IsLegacyOAuthAppEnabled() {
 		return nil
 	}
@@ -555,7 +580,7 @@ func (c *GithubClient) populateTokenIfNecessary(ctx context.Context, ownerRepo s
 	}
 
 	if group.GithubToken != nil {
-		c.githubToken = *group.GithubToken
+		c.tokenValue = *group.GithubToken
 	}
 	return nil
 }
