@@ -16,12 +16,13 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/linux_sandbox/sandboxutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 
-	sbdpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/linux_sandbox/proto/sandboxd"
 	gstatus "google.golang.org/grpc/status"
+	sbdpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/linux_sandbox/proto/sandboxd"
 )
 
 var (
@@ -118,7 +119,7 @@ func (s *sandboxd) Exec(stream sbdpb.Sandbox_ExecServer) error {
 				// Setup mounts
 				mounts := msg.Start.GetMounts()
 				for _, m := range mounts {
-					if err := setupMount(m); err != nil {
+					if err := sandboxutil.SetupMount(m); err != nil {
 						msgs <- &message{Err: status.WrapError(err, "setup mount")}
 						return
 					}
@@ -178,14 +179,6 @@ func (s *sandboxd) Clean(ctx context.Context, req *sbdpb.CleanRequest) (*sbdpb.C
 		return nil, lastErr
 	}
 	return &sbdpb.CleanResponse{}, nil
-}
-
-func setupMount(m *sbdpb.Mount) error {
-	// log.Infof("sandboxd: mounting %+v", m)
-	if err := syscall.Mount(m.Source, m.Target, m.Filesystemtype, uintptr(m.Flags), m.Data); err != nil {
-		return status.WrapErrorf(err, "mount source=%s,target=%s,data=%s", m.Source, m.Target, m.Data)
-	}
-	return nil
 }
 
 type command struct {
