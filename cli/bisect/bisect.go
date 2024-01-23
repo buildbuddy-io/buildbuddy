@@ -118,6 +118,7 @@ func isGoodCommit(commit string) (bool, error) {
 		return false, err
 	}
 
+	// TODO: replace with bazelisk.Run()
 	if err := exec.Command("bazel", *bazelCommand, *bazelTarget).Run(); err != nil {
 		fmt.Printf("Error running bazel test at commit %s: %s\n", commit, err)
 		return false, nil
