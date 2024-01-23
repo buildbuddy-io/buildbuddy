@@ -128,6 +128,11 @@ common:release-mac --config=release-shared
 # Configuration used for release-m1 workflow
 common:release-m1 --config=release-shared
 
+# Configuration used for release-windows workflow
+common:release-windows --config=release-shared
+common:release-windows --config=cache
+common:release --remote_instance_name=buildbuddy-io/buildbuddy/release-windows
+
 # Configuration used for Buildbuddy auto-release
 common:auto-release --config=remote
 common:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release

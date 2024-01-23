@@ -47,6 +47,15 @@ jobs:
       version_tag: ${{ github.ref_name }}
     secrets: inherit
 
+  build-windows-artifacts:
+    uses: ./.github/workflows/build-windows-github-release-artifacts.yaml
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    needs: create-release
+    with:
+      release_branch: ${{ github.ref }}
+      version_tag: ${{ github.ref_name }}
+    secrets: inherit
+
   slack_on_failure:
     runs-on: ubuntu-latest
     needs: [create-release, build-linux-artifacts, build-mac-intel-artifacts, build-mac-m1-artifacts]
