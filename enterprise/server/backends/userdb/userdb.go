@@ -867,6 +867,8 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 }
 
 func fillUserGroups(ctx context.Context, tx interfaces.DB, user *tables.User) error {
+	// NOTE: When updating the group fields here, update GetImpersonatedUser
+	// as well.
 	q := `
 		SELECT
 			g.user_id,
