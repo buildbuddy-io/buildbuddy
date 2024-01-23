@@ -386,6 +386,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <>
                         <div className="settings-option-title">Fun tab!!!</div>
                         <div className="settings-option-description">
+                          <img src="/image/bb-on-beach.jpg" />
                           Fun tab!!!
                         </div>
                       </>
