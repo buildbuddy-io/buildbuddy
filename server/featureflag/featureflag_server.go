@@ -179,12 +179,21 @@ func (ffs *FeatureFlagService) UpdateExperimentAssignments(ctx context.Context, 
 	err := ffs.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		_ = ffs.featureFlagCache.UpdateExperimentAssignments(req.Name, req.GetConfiguredGroupIds())
 
-		if err := tx.NewQuery(ctx, "featureflag_service_delete_group_featureflag").Raw(`
+		if len(req.GetConfiguredGroupIds()) == 0 {
+			if err := tx.NewQuery(ctx, "featureflag_service_delete_group_featureflag").Raw(`
+				DELETE FROM "ExperimentAssignments" WHERE name = ?`,
+				req.Name,
+			).Exec().Error; err != nil {
+				return status.WrapError(err, "delete experiment assignments")
+			}
+		} else {
+			if err := tx.NewQuery(ctx, "featureflag_service_delete_group_featureflag").Raw(`
 				DELETE FROM "ExperimentAssignments"
 				WHERE name = ? AND group_id NOT IN ?`,
-			req.Name, req.GetConfiguredGroupIds(),
-		).Exec().Error; err != nil {
-			return status.WrapError(err, "delete experiment assignments")
+				req.Name, req.GetConfiguredGroupIds(),
+			).Exec().Error; err != nil {
+				return status.WrapError(err, "delete experiment assignments")
+			}
 		}
 
 		if len(req.GetConfiguredGroupIds()) > 0 {

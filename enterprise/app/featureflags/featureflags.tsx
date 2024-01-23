@@ -244,14 +244,16 @@ export default class FeatureflagsComponent extends React.Component<Props, State>
         const numGroups = this.state.groups?.length!;
         let groupsToSelect = Math.floor(numGroups * (fc.groupAssignmentPercentage / 100));
 
+        const assignedGroups = new Array<string>();
+        const groupCopy = this.state.groups?.slice()!;
         while (groupsToSelect > 0) {
-            const groupIdx = Math.floor(Math.random() * (numGroups - 1));
-            const group = this.state.groups![groupIdx];
-            if (!fc.flag.experimentGroupIds.includes(group.groupId)) {
-                fc.flag.experimentGroupIds.push(group.groupId);
-                groupsToSelect--;
-            }
+            const groupIdx = Math.floor(Math.random() * (groupCopy.length - 1));
+            const group = groupCopy.splice(groupIdx, 1)[0];
+            assignedGroups.push(group.groupId);
+            groupsToSelect--;
         }
+
+        fc.flag.experimentGroupIds = assignedGroups;
 
         const mapClone = this.state.flags;
         mapClone.set(fc.flag.name, fc);
