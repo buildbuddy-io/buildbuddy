@@ -4,6 +4,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
+	"github.com/buildbuddy-io/buildbuddy/cli/bisect"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
@@ -39,6 +40,11 @@ var Commands = []Command{
 		Help:    "Asks for suggestions about your last invocation.",
 		Handler: ask.HandleAsk,
 		Aliases: []string{"wtf", "huh"},
+	},
+	{
+		Name:    "bisect",
+		Help:    "Find which recent commit cause failing build.",
+		Handler: bisect.HandleBisect,
 	},
 	{
 		Name:    "download",

@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/cli/bisect"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -96,10 +95,6 @@ func run() (exitCode int, err error) {
 			args = args[1:]
 			return c.Handler(args)
 		}
-	}
-	exitCode, err = bisect.HandleBisect(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
 	}
 
 	// If none of the CLI subcommand handlers were triggered, assume we should
