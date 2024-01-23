@@ -142,6 +142,10 @@ func (p *CacheProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateAct
 	return p.acClient.UpdateActionResult(ctx, req)
 }
 
+func (p *CacheProxy) GetFeatureFlag(ctx context.Context, req *repb.GetFeatureFlagRequest) (*repb.GetFeatureFlagResult, error) {
+	return p.acClient.GetFeatureFlag(ctx, req)
+}
+
 func (p *CacheProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	return p.casClient.BatchUpdateBlobs(ctx, req)
 }

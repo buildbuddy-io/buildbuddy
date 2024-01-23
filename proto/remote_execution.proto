@@ -201,6 +201,10 @@ service ActionCache {
   rpc UpdateActionResult(UpdateActionResultRequest) returns (ActionResult) {
     option (google.api.http) = { put: "/v2/{instance_name=**}/actionResults/{action_digest.hash}/{action_digest.size_bytes}" body: "action_result" };
   }
+
+  rpc GetFeatureFlag(GetFeatureFlagRequest) returns (GetFeatureFlagResult){
+    option (google.api.http) = { get: "/v2/featureflag/{featureflag.name}" };
+  }
 }
 
 // The CAS (content-addressable storage) is used to store the inputs to and
@@ -1592,6 +1596,15 @@ message GetActionResultRequest {
   // length of the action digest hash and the digest functions announced
   // in the server's capabilities.
   DigestFunction.Value digest_function = 6;
+}
+
+message GetFeatureFlagRequest {
+  string name = 1;
+}
+
+message GetFeatureFlagResult {
+  bool enabled = 1;
+  repeated string configured_group_ids = 2;
 }
 
 // A request message for

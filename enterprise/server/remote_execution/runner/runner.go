@@ -900,6 +900,22 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if user != nil {
 		groupID = user.GetGroupID()
 	}
+
+	req := &repb.GetFeatureFlagRequest{Name: "aanotha"}
+	rsp, err := p.env.GetActionCacheClient().GetFeatureFlag(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	enabled := rsp.Enabled
+	if err != nil {
+		return nil, err
+	}
+	if enabled {
+		log.Warningf("ITS ENABLED")
+	} else {
+		log.Warningf("NOT ENABLED")
+	}
+
 	if !*container.DebugEnableAnonymousRecycling && (props.RecycleRunner && err != nil) {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +

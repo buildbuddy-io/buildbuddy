@@ -13,6 +13,10 @@ const (
 )
 
 func (ffs *FeatureFlagService) IsEnabled(ctx context.Context, flagName string) (bool, error) {
+	if ffs.env.GetDBHandle() == nil {
+		return false, status.UnimplementedError("feature flag service not supported")
+	}
+
 	flagEntry, cached := ffs.featureFlagCache.Get(flagName)
 	if !cached {
 		flag, err := ffs.FetchFlag(ctx, flagName)
