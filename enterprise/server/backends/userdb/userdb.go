@@ -893,35 +893,12 @@ func fillUserGroups(ctx context.Context, tx interfaces.DB, user *tables.User) er
 	`
 	rq := tx.NewQuery(ctx, "userdb_get_user_groups").Raw(
 		q, user.UserID, int32(grpb.GroupMembershipStatus_MEMBER))
-	return rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
-		gr := &tables.GroupRole{}
-		err := row.Scan(
-			// NOTE: When updating the group fields here, update GetImpersonatedUser
-			// as well.
-			&gr.Group.UserID,
-			&gr.Group.GroupID,
-			&gr.Group.URLIdentifier,
-			&gr.Group.Name,
-			&gr.Group.OwnedDomain,
-			&gr.Group.GithubToken,
-			&gr.Group.SharingEnabled,
-			&gr.Group.UserOwnedKeysEnabled,
-			&gr.Group.BotSuggestionsEnabled,
-			&gr.Group.DeveloperOrgCreationEnabled,
-			&gr.Group.UseGroupOwnedExecutors,
-			&gr.Group.CacheEncryptionEnabled,
-			&gr.Group.SamlIdpMetadataUrl,
-			&gr.Group.SuggestionPreference,
-			&gr.Group.RestrictCleanWorkflowRunsToAdmins,
-			&gr.Group.ExternalUserManagement,
-			&gr.Role,
-		)
-		if err != nil {
-			return err
-		}
-		user.Groups = append(user.Groups, gr)
-		return nil
-	})
+	gs, err := db.ScanAll(rq, &tables.GroupRole{})
+	if err != nil {
+		return err
+	}
+	user.Groups = gs
+	return nil
 }
 
 func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (*tables.User, error) {
@@ -980,37 +957,14 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 			FROM "Groups"
 			WHERE group_id = ?
 		`, u.GetGroupID())
-		err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
-			gr := &tables.GroupRole{}
-			err := row.Scan(
-				&gr.Group.UserID,
-				&gr.Group.GroupID,
-				&gr.Group.URLIdentifier,
-				&gr.Group.Name,
-				&gr.Group.OwnedDomain,
-				&gr.Group.GithubToken,
-				&gr.Group.SharingEnabled,
-				&gr.Group.UserOwnedKeysEnabled,
-				&gr.Group.BotSuggestionsEnabled,
-				&gr.Group.DeveloperOrgCreationEnabled,
-				&gr.Group.UseGroupOwnedExecutors,
-				&gr.Group.CacheEncryptionEnabled,
-				&gr.Group.SamlIdpMetadataUrl,
-				&gr.Group.SuggestionPreference,
-				&gr.Group.RestrictCleanWorkflowRunsToAdmins,
-				&gr.Group.ExternalUserManagement,
-			)
-			if err != nil {
-				return err
-			}
-			// Grant admin role within the impersonated group.
-			gr.Role = uint32(role.Admin)
-			user.Groups = append(user.Groups, gr)
-			return nil
-		})
+		gr := &tables.GroupRole{}
+		err := rq.Take(gr)
 		if err != nil {
 			return err
 		}
+		// Grant admin role within the impersonated group.
+		gr.Role = uint32(role.Admin)
+		user.Groups = []*tables.GroupRole{gr}
 		return nil
 	})
 	return user, err

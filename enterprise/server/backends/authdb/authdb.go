@@ -2,7 +2,6 @@ package authdb
 
 import (
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -457,34 +456,11 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 			AND ug.user_user_id = ?
 			`, int32(grpb.GroupMembershipStatus_MEMBER), user.UserID,
 		)
-		err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
-			gr := &tables.GroupRole{}
-			err := row.Scan(
-				&gr.Group.UserID,
-				&gr.Group.GroupID,
-				&gr.Group.URLIdentifier,
-				&gr.Group.Name,
-				&gr.Group.OwnedDomain,
-				&gr.Group.GithubToken,
-				&gr.Group.SharingEnabled,
-				&gr.Group.UserOwnedKeysEnabled,
-				&gr.Group.BotSuggestionsEnabled,
-				&gr.Group.DeveloperOrgCreationEnabled,
-				&gr.Group.UseGroupOwnedExecutors,
-				&gr.Group.CacheEncryptionEnabled,
-				&gr.Group.EnforceIPRules,
-				&gr.Group.SamlIdpMetadataUrl,
-				&gr.Role,
-			)
-			if err != nil {
-				return err
-			}
-			user.Groups = append(user.Groups, gr)
-			return nil
-		})
+		gs, err := db.ScanAll(rq, &tables.GroupRole{})
 		if err != nil {
 			return err
 		}
+		user.Groups = gs
 		return nil
 	})
 	if err != nil {
