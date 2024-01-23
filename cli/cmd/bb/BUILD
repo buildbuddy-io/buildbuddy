@@ -12,7 +12,6 @@ go_library(
         "//cli/arg",
         "//cli/ask",
         "//cli/bazelisk",
-        "//cli/bisect",
         "//cli/cli_command",
         "//cli/cmd/sidecar",
         "//cli/help",

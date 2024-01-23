@@ -8,6 +8,7 @@ go_library(
         "//cli/add",
         "//cli/analyze",
         "//cli/ask",
+        "//cli/bisect",
         "//cli/download",
         "//cli/execute",
         "//cli/fix",
