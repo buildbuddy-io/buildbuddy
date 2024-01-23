@@ -83,7 +83,7 @@ require (
 	github.com/jotfs/fastcdc-go v0.2.0
 	github.com/jsimonetti/rtnetlink v1.3.3
 	github.com/klauspost/compress v1.17.2
-	github.com/lestrrat-go/jwx v1.2.26
+	github.com/lestrrat-go/jwx v1.2.27
 	github.com/lni/dragonboat/v4 v4.0.0-00010101000000-000000000000
 	github.com/lni/goutils v1.3.1-0.20220604063047-388d67b4dbc4
 	github.com/logrusorgru/aurora v2.0.3+incompatible
@@ -268,7 +268,7 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
-	github.com/lestrrat-go/blackmagic v1.0.1 // indirect
+	github.com/lestrrat-go/blackmagic v1.0.2 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/iter v1.0.2 // indirect
 	github.com/lestrrat-go/option v1.0.1 // indirect
