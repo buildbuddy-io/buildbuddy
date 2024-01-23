@@ -233,15 +233,3 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	uploadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server")
 	return req.ActionResult, nil
 }
-
-func (s *ActionCacheServer) GetFeatureFlag(ctx context.Context, req *repb.GetFeatureFlagRequest) (*repb.GetFeatureFlagResult, error) {
-	ffs := s.env.GetFeatureflagService()
-	f, err := ffs.FetchFlag(ctx, req.Name)
-	if err != nil {
-		return nil, err
-	}
-	return &repb.GetFeatureFlagResult{
-		Enabled:            f.Enabled,
-		ConfiguredGroupIds: f.ExperimentGroupIds,
-	}, nil
-}
