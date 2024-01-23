@@ -12,8 +12,10 @@ import (
 var flags = flag.NewFlagSet("bisect", flag.ContinueOnError)
 
 var (
-	goodCommit = flags.String("good", "", "The commit that is known to be good")
-	badCommit  = flags.String("bad", "", "The commit that is known to be bad")
+	goodCommit   = flags.String("good", "", "The commit that is known to be good")
+	badCommit    = flags.String("bad", "", "The commit that is known to be bad")
+	bazelCommand = flags.String("bazel_command", "test", "The bazel command to run to test the commit")
+	bazelTarget  = flags.String("bazel_target", "//...", "The bazel target to run to test the commit")
 )
 
 func HandleBisect(args []string) (int, error) {
@@ -44,10 +46,23 @@ func HandleBisect(args []string) (int, error) {
 	return 0, nil
 }
 
-// TODO: find the last known bad commit automatically
-// This could be done by picking a range of commits to test: 1-week, 1-month, 6-months, etc.
 func findLastKnownBadCommit() (string, error) {
-	return "HEAD~10", nil
+	// TODO: is this too small for first step?
+	steps := 1
+	currentCommit := "HEAD"
+	for {
+		isGood, err := isGoodCommit(currentCommit)
+		if err != nil {
+			fmt.Printf("Error checking commit: %s\n", err)
+			return "", err
+		}
+
+		if !isGood {
+			return currentCommit, nil
+		}
+		currentCommit += fmt.Sprintf("~%d", steps)
+		steps = steps * 2
+	}
 }
 
 func runBisect(good, bad string) error {
@@ -79,7 +94,7 @@ func runBisect(good, bad string) error {
 		return err
 	}
 
-	// TODO: remove tail recursion here with a worker pool
+	// TODO: remove tail recursion here with a worker pool + queue
 	if isGood {
 		return runBisect(bisectCommit, bad)
 	}
@@ -87,6 +102,7 @@ func runBisect(good, bad string) error {
 }
 
 // TODO: visualize the whole stack of commit with status for known commits
+// TODO: find a way to visualize this better
 func printRange(gitLog []string, bisectionPoint int) {
 	fmt.Printf(`%s		<-- good
 .
@@ -96,7 +112,16 @@ func printRange(gitLog []string, bisectionPoint int) {
 `, gitLog[0], gitLog[bisectionPoint], gitLog[len(gitLog)-1])
 }
 
-// TODO: implement this
 func isGoodCommit(commit string) (bool, error) {
+	if err := exec.Command("git", "checkout", commit).Run(); err != nil {
+		fmt.Printf("Error checking out commit %s: %s\n", commit, err)
+		return false, err
+	}
+
+	if err := exec.Command("bazel", *bazelCommand, *bazelTarget).Run(); err != nil {
+		fmt.Printf("Error running bazel test at commit %s: %s\n", commit, err)
+		return false, nil
+	}
+
 	return true, nil
 }
