@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	enableFunTabFlag = "enable-fun-tab"
+	enableFunTabFlag      = "enable-fun-tab"
+	enableFunTabColorFlag = "fun-tab-color"
 )
 
 func (ffs *FeatureFlagService) IsEnabled(ctx context.Context, flagName string) (bool, error) {

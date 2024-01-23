@@ -2,7 +2,6 @@ package featureflag_cache
 
 import (
 	"flag"
-	"fmt"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"sync"

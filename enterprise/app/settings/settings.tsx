@@ -57,12 +57,14 @@ function isTabId(id: string): id is TabId {
 }
 
 type State = {
-  funTabEnabled : boolean;
+  funTabEnabled: boolean;
+  funTabColor: string;
 }
 
 export default class SettingsComponent extends React.Component<SettingsProps> {
   state: State = {
     funTabEnabled: false,
+    funTabColor: "white",
   }
 
   componentWillMount() {
@@ -123,6 +125,20 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
           this.setState({funTabEnabled: response.enabled});
         })
         .catch((e) => errorService.handleError(e));
+
+    rpcService.service
+        .getFlag(
+            new featureflag.GetFlagRequest({
+              name: "fun-tab-color",
+            }))
+        .then((response) => {
+          if (response.enabled) {
+            this.setState({funTabColor: "pink"});
+          } else {
+            this.setState({funTabColor: "white"});
+          }
+        })
+        .catch((e) => this.setState({funTabColor: "white"}));
   }
 
   render() {
@@ -384,10 +400,12 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   )}
                   {activeTabId == TabId.OrgFunTab && (
                       <>
-                        <div className="settings-option-title">Fun tab!!!</div>
-                        <div className="settings-option-description">
-                          <img src="/image/bb-on-beach.jpg" />
-                          Fun tab!!!
+                        <div style={{ backgroundColor: `${this.state.funTabColor}` }}>
+                          <div className="settings-option-title">Fun tab!!!</div>
+                          <div className="settings-option-description">
+                            <img src="/image/bb-on-beach.jpg" />
+                            Fun tab!!!
+                          </div>
                         </div>
                       </>
                   )}
