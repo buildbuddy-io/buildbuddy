@@ -901,14 +901,14 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		groupID = user.GetGroupID()
 	}
 
-	enabled, err := p.env.GetFeatureFlagClient().IsEnabled(ctx, "aanotha")
+	enabled, err := p.env.GetFeatureFlagClient().IsEnabled(ctx, "remote-snapshot-sharing")
 	if err != nil {
 		return nil, err
 	}
 	if enabled {
-		log.Warningf("ITS ENABLED")
+		log.Warningf("REMOTE SNAPSHOT SHARING ENABLED")
 	} else {
-		log.Warningf("NOT ENABLED")
+		log.Warningf("LOCAL ONLY")
 	}
 
 	if !*container.DebugEnableAnonymousRecycling && (props.RecycleRunner && err != nil) {
