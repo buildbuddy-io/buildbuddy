@@ -11,11 +11,11 @@ go_library(
     deps = [
         "//proto:featureflag_go_proto",
         "//server/environment",
+        "//server/featureflag/featureflag_cache",
         "//server/interfaces",
         "//server/tables",
         "//server/util/authutil",
         "//server/util/db",
-        "//server/util/lru",
         "//server/util/perms",
         "//server/util/random",
         "//server/util/status",

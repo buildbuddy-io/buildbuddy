@@ -22,7 +22,6 @@ go_library(
         "//enterprise/server/tasksize",
         "//enterprise/server/util/oci",
         "//enterprise/server/util/vfs_server",
-        "//proto:featureflag_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:runner_go_proto",

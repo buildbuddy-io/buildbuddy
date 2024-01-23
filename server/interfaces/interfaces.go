@@ -1487,3 +1487,7 @@ type FeatureFlagService interface {
 	CreateGroups(ctx context.Context) error
 	GetFeatureFlag(ctx context.Context, req *ffpb.GetFeatureFlagRequest) (*ffpb.GetFeatureFlagResult, error)
 }
+
+type FeatureFlagClient interface {
+	IsEnabled(ctx context.Context, flagName string) (bool, error)
+}

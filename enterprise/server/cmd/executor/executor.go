@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/featureflag_client"
 	ffpb "github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 	"math"
 	"net/http"
@@ -90,7 +91,12 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
-	realEnv.SetFeatureFlagServiceClient(ffpb.NewFeatureFlagServiceClient(conn))
+
+	ffClient, err := featureflag_client.NewFeatureFlagClient(realEnv, ffpb.NewFeatureFlagServiceClient(conn))
+	if err != nil {
+		log.Fatalf("Unable to initialize feature flag client: %s", err)
+	}
+	realEnv.SetFeatureFlagClient(ffClient)
 }
 
 func getExecutorHostID() string {

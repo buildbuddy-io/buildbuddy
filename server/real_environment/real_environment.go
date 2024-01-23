@@ -126,7 +126,7 @@ type RealEnv struct {
 	featureflagService               *featureflag.FeatureFlagService
 
 	featureFlagServer ffpb.FeatureFlagServiceServer
-	featureflagClient ffpb.FeatureFlagServiceClient
+	featureflagClient interfaces.FeatureFlagClient
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -735,18 +735,10 @@ func (r *RealEnv) SetFeatureflagService(ffs *featureflag.FeatureFlagService) {
 	r.featureflagService = ffs
 }
 
-func (r *RealEnv) GetFeatureFlagServiceServer() ffpb.FeatureFlagServiceServer {
-	return r.featureFlagServer
-}
-
-func (r *RealEnv) SetFeatureFlagServiceServer(ffs ffpb.FeatureFlagServiceServer) {
-	r.featureFlagServer = ffs
-}
-
-func (r *RealEnv) GetFeatureFlagServiceClient() ffpb.FeatureFlagServiceClient {
+func (r *RealEnv) GetFeatureFlagClient() interfaces.FeatureFlagClient {
 	return r.featureflagClient
 }
 
-func (r *RealEnv) SetFeatureFlagServiceClient(f ffpb.FeatureFlagServiceClient) {
+func (r *RealEnv) SetFeatureFlagClient(f interfaces.FeatureFlagClient) {
 	r.featureflagClient = f
 }

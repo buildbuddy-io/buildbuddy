@@ -3,39 +3,24 @@ package featureflag
 import (
 	"context"
 	"database/sql"
-	"flag"
 	ffpb "github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/featureflag/featureflag_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"strings"
-	"sync"
-	"time"
-)
-
-var (
-	cacheTTL = flag.Duration("featureflag.cache_ttl", 5*time.Minute, "Duration of time feature flags will be cached in memory.")
-)
-
-const (
-	// The number of feature flags that we will cache in memory.
-	flagCacheSize = 1000
-
-	// The number ofexperiment assignments we will cache in memory.
-	experimentAssignmentCacheSize = 100_000
 )
 
 type FeatureFlagService struct {
 	env              environment.Env
-	featureFlagCache *featureFlagCache
+	featureFlagCache *featureflag_cache.FeatureFlagCache
 }
 
 func NewFeatureFlagService(env environment.Env) (*FeatureFlagService, error) {
-	cache, err := newCache()
+	cache, err := featureflag_cache.NewCache(*featureflag_cache.CacheTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +97,6 @@ func (ffs *FeatureFlagService) parseFlags(query interfaces.DBRawQuery) ([]*ffpb.
 		return nil, status.NotFoundError("no feature flags found")
 	}
 
-	// TODO: Make ExperimentGroupIds a map
 	ffMap := make(map[string]*ffpb.FeatureFlag, 0)
 	for _, assignment := range assignments {
 		var ff *ffpb.FeatureFlag
@@ -159,7 +143,6 @@ func (ffs *FeatureFlagService) CreateFeatureFlag(ctx context.Context, req *ffpb.
 }
 
 func (ffs *FeatureFlagService) UpdateFeatureFlag(ctx context.Context, req *ffpb.UpdateFeatureFlagRequest) (*ffpb.UpdateFeatureFlagResponse, error) {
-	_ = ffs.featureFlagCache.UpdateFlag(req.Name, req.Enabled)
 	if err := ffs.env.GetDBHandle().NewQuery(ctx, "featureflag_service_update_featureflag").Raw(`
 				UPDATE "FeatureFlags"
 				SET enabled = ?, description = ?
@@ -169,13 +152,13 @@ func (ffs *FeatureFlagService) UpdateFeatureFlag(ctx context.Context, req *ffpb.
 		return nil, status.WrapError(err, "update featureflag")
 	}
 
+	_ = ffs.featureFlagCache.UpdateFlag(req.Name, req.Enabled)
+
 	return &ffpb.UpdateFeatureFlagResponse{}, nil
 }
 
 func (ffs *FeatureFlagService) UpdateExperimentAssignments(ctx context.Context, req *ffpb.UpdateExperimentAssignmentsRequest) (*ffpb.UpdateExperimentAssignmentsResponse, error) {
 	err := ffs.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		_ = ffs.featureFlagCache.UpdateExperimentAssignments(req.Name, req.GetConfiguredGroupIds())
-
 		if len(req.GetConfiguredGroupIds()) == 0 {
 			if err := tx.NewQuery(ctx, "featureflag_service_delete_group_featureflag").Raw(`
 				DELETE FROM "ExperimentAssignments" WHERE name = ?`,
@@ -212,6 +195,8 @@ func (ffs *FeatureFlagService) UpdateExperimentAssignments(ctx context.Context, 
 			}
 		}
 
+		_ = ffs.featureFlagCache.UpdateExperimentAssignments(req.Name, req.GetConfiguredGroupIds())
+
 		return nil
 	})
 	if err != nil {
@@ -240,81 +225,6 @@ func (ffs *FeatureFlagService) GetGroups(ctx context.Context) ([]*ffpb.Group, er
 		return nil, status.InternalError(err.Error())
 	}
 	return groups, nil
-}
-
-type flagCacheEntry struct {
-	enabled            bool
-	configuredGroupIds map[string]struct{}
-	expiresAfter       time.Time
-}
-
-type featureFlagCache struct {
-	mu        sync.Mutex
-	flagCache interfaces.LRU[*flagCacheEntry]
-}
-
-func newCache() (*featureFlagCache, error) {
-	flagConfig := &lru.Config[*flagCacheEntry]{
-		MaxSize: flagCacheSize,
-		SizeFn:  func(v *flagCacheEntry) int64 { return 1 },
-	}
-	flagCache, err := lru.NewLRU[*flagCacheEntry](flagConfig)
-	if err != nil {
-		return nil, err
-	}
-	return &featureFlagCache{
-		flagCache: flagCache,
-	}, nil
-}
-
-func (c *featureFlagCache) Get(flagName string) (e *flagCacheEntry, ok bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry, ok := c.flagCache.Get(flagName)
-	if !ok {
-		return nil, false
-	}
-	if time.Now().After(entry.expiresAfter) {
-		c.flagCache.Remove(flagName)
-		return nil, false
-	}
-	return entry, true
-}
-
-func (c *featureFlagCache) Add(flagName string, f *flagCacheEntry) {
-	f.expiresAfter = time.Now().Add(*cacheTTL)
-	c.mu.Lock()
-	c.flagCache.Add(flagName, f)
-	c.mu.Unlock()
-}
-
-func (c *featureFlagCache) UpdateExperimentAssignments(flagName string, experimentAssignments []string) (ok bool) {
-	f, ok := c.Get(flagName)
-	if !ok {
-		return false
-	}
-
-	m := make(map[string]struct{})
-	for _, e := range experimentAssignments {
-		m[e] = struct{}{}
-	}
-
-	f.configuredGroupIds = m
-	c.Add(flagName, f)
-
-	return true
-}
-
-func (c *featureFlagCache) UpdateFlag(flagName string, enabled bool) (ok bool) {
-	f, ok := c.Get(flagName)
-	if !ok {
-		return false
-	}
-
-	f.enabled = enabled
-	c.Add(flagName, f)
-
-	return true
 }
 
 func (ffs *FeatureFlagService) CreateGroups(ctx context.Context) error {

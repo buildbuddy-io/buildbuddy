@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	ffpb "github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 	"io"
 	"math"
 	"os"
@@ -902,12 +901,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		groupID = user.GetGroupID()
 	}
 
-	req := &ffpb.GetFeatureFlagRequest{Name: "aanotha"}
-	rsp, err := p.env.GetFeatureFlagServiceClient().GetFeatureFlag(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	enabled := rsp.Enabled
+	enabled, err := p.env.GetFeatureFlagClient().IsEnabled(ctx, "aanotha")
 	if err != nil {
 		return nil, err
 	}
