@@ -673,6 +673,7 @@ proto_library(
     srcs = ["featureflag.proto"],
     deps = [
         ":context_proto",
+        "@googleapis//google/api:annotations_proto",
     ],
 )
 
@@ -1604,12 +1605,14 @@ go_proto_library(
     name = "featureflag_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
         "//proto:vtprotobuf_compiler",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/featureflag",
     proto = ":featureflag_proto",
     deps = [
         ":context_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
 
@@ -2121,5 +2124,6 @@ ts_proto_library(
     proto = ":featureflag_proto",
     deps = [
         ":context_ts_proto",
+        ":google_api_annotations_ts_proto",
     ],
 )

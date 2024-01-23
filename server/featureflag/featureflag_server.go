@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"flag"
-	"fmt"
 	ffpb "github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -66,7 +65,6 @@ type featureFlagAssignment struct {
 }
 
 func (ffs *FeatureFlagService) GetAll(ctx context.Context) ([]*ffpb.FeatureFlag, error) {
-	fmt.Println("GetAll flags")
 	rq := ffs.env.GetDBHandle().NewQuery(ctx, "feature_flag_service_get_all").Raw(
 		`SELECT ff.name, enabled, description, group_id FROM "FeatureFlags" ff LEFT JOIN "ExperimentAssignments" ea on ff.name = ea.name ORDER BY ff.name;`,
 	)
@@ -74,7 +72,6 @@ func (ffs *FeatureFlagService) GetAll(ctx context.Context) ([]*ffpb.FeatureFlag,
 }
 
 func (ffs *FeatureFlagService) FetchFlag(ctx context.Context, name string) (*ffpb.FeatureFlag, error) {
-	fmt.Println("Fetch Flag")
 	rq := ffs.env.GetDBHandle().NewQuery(ctx, "feature_flag_service_get_all").Raw(
 		`SELECT ff.name, enabled, description, group_id FROM "FeatureFlags" ff LEFT JOIN "ExperimentAssignments" ea on ff.name = ea.name WHERE ff.name = ?;`,
 		name,
@@ -334,4 +331,15 @@ func (ffs *FeatureFlagService) CreateGroups(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (ffs *FeatureFlagService) GetFeatureFlag(ctx context.Context, req *ffpb.GetFeatureFlagRequest) (*ffpb.GetFeatureFlagResult, error) {
+	f, err := ffs.FetchFlag(ctx, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	return &ffpb.GetFeatureFlagResult{
+		Enabled:            f.Enabled,
+		ConfiguredGroupIds: f.ExperimentGroupIds,
+	}, nil
 }

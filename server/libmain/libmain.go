@@ -58,6 +58,7 @@ import (
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	ffpb "github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -266,6 +267,14 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if api := env.GetAPIService(); api != nil {
 		apipb.RegisterApiServiceServer(grpcServer, api)
 	}
+
+	// Register feature flag server as a gRPC service.
+	ffs, err := featureflag.NewFeatureFlagService(env)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	env.SetFeatureflagService(ffs)
+	ffpb.RegisterFeatureFlagServiceServer(grpcServer, env.GetFeatureflagService())
 }
 
 func registerLocalGRPCClients(env *real_environment.RealEnv) error {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	ffpb "github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 	"math"
 	"net/http"
 	"net/url"
@@ -89,6 +90,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
+	realEnv.SetFeatureFlagServiceClient(ffpb.NewFeatureFlagServiceClient(conn))
 }
 
 func getExecutorHostID() string {

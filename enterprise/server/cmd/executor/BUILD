@@ -32,6 +32,7 @@ go_library(
         "//enterprise/server/scheduling/priority_task_scheduler",
         "//enterprise/server/scheduling/scheduler_client",
         "//enterprise/server/tasksize",
+        "//proto:featureflag_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/config",

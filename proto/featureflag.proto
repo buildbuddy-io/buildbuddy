@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "google/api/annotations.proto";
 
 package featureflag;
 
@@ -100,4 +101,19 @@ message CreateGroupsRequest {
 
 message CreateGroupsResponse {
   context.ResponseContext response_context = 1;
+}
+
+message GetFeatureFlagRequest {
+  string name = 1;
+}
+
+message GetFeatureFlagResult {
+  bool enabled = 1;
+  repeated string configured_group_ids = 2;
+}
+
+service FeatureFlagService {
+  rpc GetFeatureFlag(GetFeatureFlagRequest) returns (GetFeatureFlagResult){
+    option (google.api.http) = { get: "/v2/featureflag/{featureflag.name}" };
+  }
 }

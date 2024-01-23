@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 
+	ffpb "github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -123,6 +124,9 @@ type RealEnv struct {
 	gossipService                    interfaces.GossipService
 	commandRunner                    interfaces.CommandRunner
 	featureflagService               *featureflag.FeatureFlagService
+
+	featureFlagServer ffpb.FeatureFlagServiceServer
+	featureflagClient ffpb.FeatureFlagServiceClient
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -729,4 +733,20 @@ func (r *RealEnv) GetFeatureflagService() interfaces.FeatureFlagService {
 
 func (r *RealEnv) SetFeatureflagService(ffs *featureflag.FeatureFlagService) {
 	r.featureflagService = ffs
+}
+
+func (r *RealEnv) GetFeatureFlagServiceServer() ffpb.FeatureFlagServiceServer {
+	return r.featureFlagServer
+}
+
+func (r *RealEnv) SetFeatureFlagServiceServer(ffs ffpb.FeatureFlagServiceServer) {
+	r.featureFlagServer = ffs
+}
+
+func (r *RealEnv) GetFeatureFlagServiceClient() ffpb.FeatureFlagServiceClient {
+	return r.featureflagClient
+}
+
+func (r *RealEnv) SetFeatureFlagServiceClient(f ffpb.FeatureFlagServiceClient) {
+	r.featureflagClient = f
 }

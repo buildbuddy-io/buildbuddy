@@ -9,6 +9,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/grpc"
 
+	ffpb "github.com/buildbuddy-io/buildbuddy/proto/featureflag"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -122,4 +123,5 @@ type Env interface {
 	GetGossipService() interfaces.GossipService
 	GetCommandRunner() interfaces.CommandRunner
 	GetFeatureflagService() interfaces.FeatureFlagService
+	GetFeatureFlagServiceClient() ffpb.FeatureFlagServiceClient
 }
