@@ -84,7 +84,13 @@ func findLastKnownBadCommit() (string, error) {
 }
 
 func runBisect(good, bad string) error {
-	log, err := exec.Command("git", "log", "--oneline", fmt.Sprintf("%s..%s", bad, good)).Output()
+	if bad == good {
+		fmt.Printf("Found the bad commit: %s\n", bad)
+		return nil
+	}
+
+	commitRange := fmt.Sprintf("%s..%s", bad, good)
+	log, err := exec.Command("git", "log", "--oneline", commitRange).Output()
 	if err != nil {
 		fmt.Printf("Error running git log: %s\n", err)
 		return err
@@ -92,7 +98,7 @@ func runBisect(good, bad string) error {
 
 	gitLog := strings.Split(strings.TrimSpace(string(log)), "\n")
 	if len(gitLog) < 2 {
-		return fmt.Errorf("Invalid git log: returned %d lines:\n%s", len(gitLog), log)
+		return fmt.Errorf("Invalid git log %s: returned %d lines:\n%s", commitRange, len(gitLog), log)
 	}
 	if len(gitLog) == 2 {
 		fmt.Printf("Found the bad commit: %s\n", bad)
