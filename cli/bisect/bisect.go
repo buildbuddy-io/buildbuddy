@@ -2,6 +2,8 @@ package bisect
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -15,13 +17,26 @@ var (
 	goodCommit   = flags.String("good", "", "The commit that is known to be good")
 	badCommit    = flags.String("bad", "", "The commit that is known to be bad")
 	bazelCommand = flags.String("bazel_command", "test", "The bazel command to run to test the commit")
+	bazelConfig  = flags.String("bazel_config", "", "The bazel config to run to test the commit")
 	bazelTarget  = flags.String("bazel_target", "//...", "The bazel target to run to test the commit")
 )
 
+const (
+	usage = `
+usage: bb bisect [flags]
+`
+)
+
 func HandleBisect(args []string) (int, error) {
-	cmd, _ := arg.GetCommandAndIndex(args)
-	if cmd != "bisect" {
-		return -1, nil
+	if err := arg.ParseFlagSet(flags, args); err != nil {
+		if err == flag.ErrHelp {
+			log.Print(usage)
+			log.Print("\nAll options:")
+			flags.SetOutput(os.Stderr)
+			flags.PrintDefaults()
+			return 1, nil
+		}
+		return -1, err
 	}
 
 	good := *goodCommit
@@ -33,24 +48,27 @@ func HandleBisect(args []string) (int, error) {
 	if bad == "" {
 		lastBad, err := findLastKnownBadCommit()
 		if err != nil {
-			fmt.Printf("Error finding last known bad commit: %s\n", err)
-			return 1, err
+			return 1, fmt.Errorf("Error finding last known bad commit: %s\n", err)
 		}
 		bad = lastBad
 	}
 
 	if err := runBisect(good, bad); err != nil {
-		return 1, err
+		return 1, fmt.Errorf("bisect failed: %w", err)
 	}
 
 	return 0, nil
 }
 
+// TODO: make the strategy configurable
 func findLastKnownBadCommit() (string, error) {
-	// TODO: is this too small for first step?
 	steps := 1
 	currentCommit := "HEAD"
 	for {
+		if steps > 100 {
+			return "", fmt.Errorf("unable to find last known bad commit")
+		}
+
 		isGood, err := isGoodCommit(currentCommit)
 		if err != nil {
 			fmt.Printf("Error checking commit: %s\n", err)
@@ -118,8 +136,15 @@ func isGoodCommit(commit string) (bool, error) {
 		return false, err
 	}
 
-	// TODO: replace with bazelisk.Run()
-	if err := exec.Command("bazel", *bazelCommand, *bazelTarget).Run(); err != nil {
+	bzlCmd := []string{*bazelCommand, *bazelTarget}
+	if *bazelConfig != "" {
+		bzlCmd = []string{*bazelCommand, fmt.Sprintf("--config=%s", *bazelConfig), *bazelTarget}
+	}
+
+	fmt.Printf("Running bazel test on commit %s: %s\n", commit, strings.Join(bzlCmd, " "))
+
+	// TODO: replace with bazelisk.Run() or bb remote
+	if err := exec.Command("bazel", bzlCmd...).Run(); err != nil {
 		fmt.Printf("Error running bazel test at commit %s: %s\n", commit, err)
 		return false, nil
 	}
