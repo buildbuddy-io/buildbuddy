@@ -434,22 +434,7 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 			return err
 		}
 		rq = tx.NewQuery(ctx, "authdb_lookup_user_groups").Raw(`
-			SELECT
-				g.user_id,
-				g.group_id,
-				g.url_identifier,
-				g.name,
-				g.owned_domain,
-				g.github_token,
-				g.sharing_enabled,
-				g.user_owned_keys_enabled,
-				g.bot_suggestions_enabled,
-				g.developer_org_creation_enabled,
-				g.use_group_owned_executors,
-				g.cache_encryption_enabled,
-				g.enforce_ip_rules,
-				g.saml_idp_metadata_url,
-				ug.role
+			SELECT g.*, ug.role
 			FROM "Groups" AS g, "UserGroups" AS ug
 			WHERE g.group_id = ug.group_group_id
 			AND ug.membership_status = ?

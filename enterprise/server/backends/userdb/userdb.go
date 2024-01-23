@@ -867,27 +867,8 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 }
 
 func fillUserGroups(ctx context.Context, tx interfaces.DB, user *tables.User) error {
-	// NOTE: When updating the group fields here, update GetImpersonatedUser
-	// as well.
 	q := `
-		SELECT
-			g.user_id,
-			g.group_id,
-			g.url_identifier,
-			g.name,
-			g.owned_domain,
-			g.github_token,
-			g.sharing_enabled,
-			g.user_owned_keys_enabled,
-			g.bot_suggestions_enabled,
-			g.developer_org_creation_enabled,
-			g.use_group_owned_executors,
-			g.cache_encryption_enabled,
-			g.saml_idp_metadata_url,
-			g.suggestion_preference,
-			g.restrict_clean_workflow_runs_to_admins,
-			g.external_user_management,
-			ug.role
+		SELECT g.*, ug.role
 		FROM "Groups" as g
 		JOIN "UserGroups" as ug
 		ON g.group_id = ug.group_group_id
@@ -939,23 +920,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 			return err
 		}
 		rq = tx.NewQuery(ctx, "userdb_impersonation_get_group").Raw(`
-			SELECT
-				user_id,
-				group_id,
-				url_identifier,
-				name,
-				owned_domain,
-				github_token,
-				sharing_enabled,
-				user_owned_keys_enabled,
-				bot_suggestions_enabled,
-				developer_org_creation_enabled,
-				use_group_owned_executors,
-				cache_encryption_enabled,
-				saml_idp_metadata_url,
-				suggestion_preference,
-				restrict_clean_workflow_runs_to_admins,
-				external_user_management
+			SELECT *
 			FROM "Groups"
 			WHERE group_id = ?
 		`, u.GetGroupID())
