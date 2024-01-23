@@ -23,7 +23,7 @@ var (
 
 const (
 	usage = `
-usage: bb bisect [flags]
+usage: bb bisect --config=remote
 `
 )
 
