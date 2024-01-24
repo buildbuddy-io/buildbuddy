@@ -59,6 +59,7 @@
 .code-search .cs-title {
     font-size: 32px;
     font-weight: 700;
+    margin-left: 32px;
 }
 
 .code-search .form-bs {
