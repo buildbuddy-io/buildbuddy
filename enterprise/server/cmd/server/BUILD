@@ -18,6 +18,7 @@ go_library(
         "//enterprise/server/auditlog",
         "//enterprise/server/auth",
         "//enterprise/server/backends/authdb",
+        "//enterprise/server/backends/codesearch",
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/gcs_cache",
