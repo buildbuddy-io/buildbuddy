@@ -190,14 +190,16 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <span className="sidebar-item-text">Code</span>
             </SidebarLink>
           )}
-          <SidebarLink selected={this.isCodeSearchSelected()} href={Path.codeSearchPath} title="Code search">
-            <SearchCode className="icon" />
-            <span className="sidebar-item-text">Code search</span>
-          </SidebarLink>
           {capabilities.config.codeReviewEnabled && (
             <SidebarLink selected={this.isReviewsSelected()} href={Path.reviewsPath} title="Review">
               <MessageCircle className="icon" />
               <span className="sidebar-item-text">Reviews</span>
+            </SidebarLink>
+          )}
+          {capabilities.config.codesearchEnabled && (
+            <SidebarLink selected={this.isCodeSearchSelected()} href={Path.codeSearchPath} title="Code search">
+              <SearchCode className="icon" />
+              <span className="sidebar-item-text">Code search</span>
             </SidebarLink>
           )}
           <SidebarLink selected={this.isSetupSelected()} href={Path.setupPath} title="Quickstart">
