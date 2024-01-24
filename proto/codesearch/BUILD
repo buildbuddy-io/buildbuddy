@@ -12,7 +12,7 @@ proto_library(
 
 go_proto_library(
     name = "index_go_proto",
-    importpath = "github.com/google/codesearch/proto/index",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/codesearch/index",
     proto = ":index_proto",
 )
 
@@ -24,7 +24,7 @@ proto_library(
 
 go_proto_library(
     name = "search_go_proto",
-    importpath = "github.com/google/codesearch/proto/search",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/codesearch/search",
     proto = ":search_proto",
 )
 
@@ -43,7 +43,7 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
-    importpath = "github.com/google/codesearch/proto/codesearch_service",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service",
     proto = ":codesearch_service_proto",
     deps = [
         ":index_go_proto",
