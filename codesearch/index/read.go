@@ -7,8 +7,8 @@ import (
 	"sort"
 
 	"github.com/RoaringBitmap/roaring"
-	"github.com/cockroachdb/pebble"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
+	"github.com/cockroachdb/pebble"
 )
 
 // An Index implements read-only access to a trigram index.

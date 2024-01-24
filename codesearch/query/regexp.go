@@ -220,7 +220,7 @@ func trigramsImply(t []string, q *Query) bool {
 		}
 		return true
 	default:
-		return false		
+		return false
 	}
 
 }

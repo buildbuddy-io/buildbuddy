@@ -14,8 +14,8 @@ import (
 	"runtime/pprof"
 	"sort"
 
-	"github.com/cockroachdb/pebble"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/cockroachdb/pebble"
 )
 
 var usageMessage = `usage: cindex [-list] [-reset] [path...]

@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/cockroachdb/pebble"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/regexp"
+	"github.com/cockroachdb/pebble"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 

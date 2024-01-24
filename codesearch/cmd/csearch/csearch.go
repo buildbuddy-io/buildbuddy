@@ -14,10 +14,10 @@ import (
 	"runtime"
 	"runtime/pprof"
 
-	"github.com/cockroachdb/pebble"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/regexp"
+	"github.com/cockroachdb/pebble"
 )
 
 var usageMessage = `usage: csearch [-c] [-f fileregexp] [-h] [-i] [-l] [-n] regexp

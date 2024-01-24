@@ -11,8 +11,8 @@ import (
 	"unsafe"
 
 	"github.com/RoaringBitmap/roaring"
-	"github.com/cockroachdb/pebble"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
+	"github.com/cockroachdb/pebble"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
