@@ -249,6 +249,17 @@
 
 .pr-view .reply-bar {
   padding: 8px 12px;
+  line-height: 18px;
+}
+
+.pr-view .resolved-check {
+  height: 18px;
+  vertical-align: top;
+}
+
+.pr-view .resolved-label {
+  margin-right: 24px;
+  font-weight: 600;
 }
 
 .pr-view .reply-fake-link {
@@ -293,10 +304,6 @@
 
 .pr-view .comment-block {
   background-color: #fff;
-}
-
-.pr-view .draft-buttons {
-  margin-top: 6px;
 }
 
 .pr-view .threads {
@@ -350,6 +357,25 @@
   background-color: #e0e0e0;
 }
 
+.pr-view .resolution-pill-box {
+  width: 100px;
+  display: inline-block;
+}
+
+.pr-view .resolution-pill {
+  border-radius: 8px;
+  line-height: 16px;
+  padding: 0 8px;
+  background-color: #FFD54F;
+  color: #795548;
+  font-weight: 600;
+}
+
+.pr-view .resolution-pill.resolved {
+  background-color: #BDBDBD;
+  color: #616161;
+}
+
 .pr-view .thread-comment {
   width: 100%;
   display: flex;
@@ -365,9 +391,7 @@
 }
 
 .pr-view .comment-author {
-  width: 20%;
-  flex-grow: 0;
-  max-width: 120px;
+  flex: 0 0 140px;
   display: inline-block;
 }
 .pr-view .comment-author-text {

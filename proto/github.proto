@@ -588,11 +588,13 @@ message PostGithubPullRequestCommentRequest {
   int64 pull = 4;
   string path = 10;
   string body = 5;
+  string thread_id = 13;
   int64 in_reply_to = 6;
   string commit_sha = 7;
   int64 line = 8;
   string side = 9;
   bool submit_as_bot = 11;
+  bool mark_as_resolved = 12;
 }
 
 message PostGithubPullRequestCommentResponse {

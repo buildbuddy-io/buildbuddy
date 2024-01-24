@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -1561,6 +1562,48 @@ func (a *GitHubApp) PostGithubPullRequestComment(ctx context.Context, req *ghpb.
 		}
 	}
 
+	// XXX: Move all into here so it's transactional.
+	if !req.GetSubmitAsBot() && req.GetThreadId() != "" {
+		graphqlClient, err := a.getGithubGraphQLClient(ctx);
+		if (err != nil) {
+			return nil, err
+		}
+		
+		if !req.GetMarkAsResolved() {
+			// Mark as unresolved (lol)
+			var m struct {
+				UnresolveReviewThread struct {
+					Thread struct {
+						ID string
+					}
+				} `graphql:"unresolveReviewThread(input: $input)"`
+			}
+			input := githubv4.UnresolveReviewThreadInput{
+				ThreadID: req.GetThreadId(),
+			}
+			err := graphqlClient.Mutate(ctx, &m, input, nil)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Mark as resolved!
+			var m struct {
+				ResolveReviewThread struct {
+					Thread struct {
+						ID string
+					}
+				} `graphql:"resolveReviewThread(input: $input)"`
+			}
+			input := githubv4.ResolveReviewThreadInput{
+				ThreadID: req.GetThreadId(),
+			}
+			err := graphqlClient.Mutate(ctx, &m, input, nil)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return &ghpb.PostGithubPullRequestCommentResponse{}, nil
 }
 
@@ -1568,8 +1611,14 @@ type prUser struct {
 	Login string
 }
 
+type bot struct {
+	Login string
+}
+
 type actor struct {
+	Typename string `graphql:"__typename"`
 	User prUser `graphql:"... on User"`
+	Bot bot `graphql:"... on Bot"`
 }
 
 type timelineItem struct {
@@ -1715,6 +1764,20 @@ type prDetailsQuery struct {
 	} `graphql:"repository(owner: $repoOwner, name: $repoName)"`
 }
 
+func getLogin(a *actor) string {
+	switch (a.Typename) {
+	case "Bot":
+		return a.Bot.Login
+	case "User":
+			return a.User.Login
+	}
+	return ""
+}
+
+func isBot(a *actor) bool {
+	return a.Typename == "Bot"
+}
+
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
@@ -1781,8 +1844,8 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 			comment.Position = position;
 	
 			commenter := &ghpb.ReviewUser{}
-			commenter.Login = c.Author.User.Login; // XXX
-			commenter.Bot = false;
+			commenter.Login = getLogin(&c.Author)
+			commenter.Bot = isBot(&c.Author);
 			comment.Commenter = commenter;
 	
 			outputComments = append(outputComments, comment)
@@ -1797,14 +1860,14 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	for _, e := range pr.TimelineItems.Nodes {
 		switch eventType := e.Typename; eventType {
 		case "ReviewRequestedEvent":
-			notExplicitlyRemoved[e.ReviewRequestedEvent.RequestedReviewer.User.Login] = struct{}{}
+			notExplicitlyRemoved[getLogin(&e.ReviewRequestedEvent.RequestedReviewer)] = struct{}{}
 		case "ReviewRequestRemovedEvent":
-			delete(notExplicitlyRemoved, e.ReviewRequestRemovedEvent.RequestedReviewer.User.Login)
+			delete(notExplicitlyRemoved, getLogin(&e.ReviewRequestRemovedEvent.RequestedReviewer))
 		case "PullRequestReview":
 			if e.PullRequestReview.State == "APPROVED" {
-				approved[e.PullRequestReview.Author.User.Login] = struct{}{}
+				approved[getLogin(&e.PullRequestReview.Author)] = struct{}{}
 			} else if e.PullRequestReview.State == "CHANGES_REQUESTED" {
-				delete(approved, e.PullRequestReview.Author.User.Login)
+				delete(approved, getLogin(&e.PullRequestReview.Author))
 			}
 		}
 	}
@@ -1813,7 +1876,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 
 	reviewers := make([]*ghpb.Reviewer, 0)
 	for _, r := range pr.ReviewRequests.Nodes {
-		activeReviewers[r.RequestedReviewer.User.Login] = struct{}{}
+		activeReviewers[getLogin(&r.RequestedReviewer)] = struct{}{}
 	}
 
 	for r := range notExplicitlyRemoved {
@@ -1858,17 +1921,29 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		fileSummaries = append(fileSummaries, summary)
 	}
 
-	actionStatuses := make([]*ghpb.ActionStatus, 0)
+	trackingMap := make(map[string]*combinedContext, 0)
 	for _, c := range pr.Commits.Nodes {
 		for _, s := range c.Commit.Status.CombinedContexts.Nodes {
-			// XXX: Checks, too.
-			status := &ghpb.ActionStatus{}
-			status.Name = s.StatusContext.Context
-			status.Status = s.StatusContext.State
-			status.Url = s.StatusContext.TargetUrl
-			actionStatuses = append(actionStatuses, status)
+			if prev, ok := trackingMap[s.StatusContext.Context]; ok && s.StatusContext.CreatedAt.UnixMicro() < prev.StatusContext.CreatedAt.UnixMicro() {
+				continue;
+			}
+			s2 := s
+			trackingMap[s.StatusContext.Context] = &s2;
 		}
 	}
+	actionStatuses := make([]*ghpb.ActionStatus, 0)
+	for _, s := range trackingMap {
+		// XXX: Checks, too.
+		status := &ghpb.ActionStatus{}
+		status.Name = s.StatusContext.Context
+		status.Status = s.StatusContext.State
+		status.Url = s.StatusContext.TargetUrl
+		actionStatuses = append(actionStatuses, status)
+	}
+	slices.SortFunc(actionStatuses, func(a, b *ghpb.ActionStatus) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
 
 	resp := &ghpb.GetGithubPullRequestDetailsResponse{
 		Owner:          req.Owner,
@@ -1876,7 +1951,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		Pull:           req.Pull,
 		Title:          pr.Title,
 		Body:           pr.Body,
-		Author:         pr.Author.User.Login,
+		Author:         getLogin(&pr.Author),
 		CreatedAtUsec:  pr.CreatedAt.UnixMicro(),
 		UpdatedAtUsec:  pr.UpdatedAt.UnixMicro(),
 		Branch:         pr.HeadRefName,

@@ -21,7 +21,8 @@ interface commentDraft {
   side?: string;
   line?: number;
   inReplyTo?: number;
-  resolved?: boolean;
+  threadId?: string;
+  defaultResolved?: boolean;
 }
 
 interface State {
@@ -52,6 +53,7 @@ interface Hunk {
 
 export default class ViewPullRequestComponent extends React.Component<ViewPullRequestComponentProps, State> {
   commentTextRef: React.RefObject<HTMLTextAreaElement> = React.createRef();
+  commentResolvedRef: React.RefObject<HTMLInputElement> = React.createRef();
   state: State = {
     displayedDiffs: [],
   };
@@ -121,11 +123,11 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     return "";
   }
 
-  submitComment(c: commentDraft | undefined, submitAsBot: boolean) {
-    if (c === undefined || !this.commentTextRef.current) {
+  submitComment(c: commentDraft | undefined, submitAsBot: boolean, resolved: boolean) {
+    if (c === undefined) {
       return;
     }
-    const commentText = this.commentTextRef.current.value;
+    const commentText = this.commentTextRef.current?.value ?? c.text;
     const req = new github.PostGithubPullRequestCommentRequest({
       owner: this.props.owner,
       repo: this.props.repo,
@@ -134,6 +136,8 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       body: commentText,
       commitSha: c.commitSha,
       submitAsBot: submitAsBot,
+      threadId: c.threadId,
+      markAsResolved: resolved,
     });
     if (c.inReplyTo) {
       req.inReplyTo = Long.fromNumber(c.inReplyTo);
@@ -167,8 +171,11 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       ? this.state.inProgressComment?.side === "LEFT"
       : comments[0]?.position?.leftSide ?? false;
     const replying = forNewComment || comments.find((c) => +c.databaseId === this.state.inProgressComment?.inReplyTo);
-    const resolved = (replying && this.state.inProgressComment?.resolved) || (!replying && comments[0].isResolved);
-
+    const resolved =
+      (replying && this.state.inProgressComment?.defaultResolved) || (!replying && comments[0].isResolved);
+    const isBot = comments.length > 0 && !comments.find((c) => !c.commenter?.bot);
+    const threadId = comments.length > 0 ? comments[0].threadId : "";
+    console.log(this.state.inProgressComment);
     return (
       <div className="thread-block">
         {!leftSide ? (
@@ -180,7 +187,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         <>
           <pre className="thread-line-number-space"> </pre>
           <div className="thread-container">
-            <div className={`thread${resolved ? " resolved" : ""}`}>
+            <div className={`thread${resolved || isBot ? " resolved" : ""}`}>
               {comments.map((c) => {
                 return (
                   <>
@@ -207,40 +214,102 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                       <div className="comment-timestamp">Draft</div>
                     </div>
                     <div className="comment-body">
-                      <textarea autoFocus ref={this.commentTextRef} className="comment-input"></textarea>
-                      <div className="draft-buttons">
-                        <span
-                          className="reply-fake-link"
-                          onClick={() => this.submitComment(this.state.inProgressComment, false)}>
-                          Send
-                        </span>
-                        <span className="reply-fake-link" onClick={() => this.cancelComment()}>
-                          Cancel
-                        </span>
-                      </div>
+                      <textarea
+                        autoFocus
+                        ref={this.commentTextRef}
+                        className="comment-input"
+                        defaultValue={this.state.inProgressComment?.text ?? ""}></textarea>
                     </div>
                   </div>
                 </div>
               )}
-              {!replying && (
-                <div className="reply-bar">
-                  <span
-                    className="reply-fake-link"
-                    onClick={() => this.startReply(+comments[comments.length - 1].databaseId)}>
-                    Reply
-                  </span>
-                  <span
-                    className="reply-fake-link"
-                    onClick={() => this.startReply(+comments[comments.length - 1].databaseId)}>
-                    Done
-                  </span>
-                  <span
-                    className="reply-fake-link"
-                    onClick={() => this.startReply(+comments[comments.length - 1].databaseId)}>
-                    Ack
-                  </span>
-                </div>
-              )}
+              <div className="reply-bar">
+                {replying && (
+                  <>
+                    {!forNewComment && (
+                      <>
+                        <input
+                          id="pr-view-resolved-check"
+                          className="resolved-check"
+                          type="checkbox"
+                          ref={this.commentResolvedRef}
+                          defaultChecked={this.state.inProgressComment?.defaultResolved}></input>
+                        <label className="resolved-label" htmlFor="pr-view-resolved-check">
+                          {replying ? "Resolved" : "No action required"}
+                        </label>
+                      </>
+                    )}
+                    <span
+                      className="reply-fake-link"
+                      onClick={() =>
+                        this.submitComment(
+                          this.state.inProgressComment,
+                          false,
+                          this.commentResolvedRef.current?.checked ??
+                            this.state.inProgressComment?.defaultResolved ??
+                            false
+                        )
+                      }>
+                      Send
+                    </span>
+                    <span className="reply-fake-link" onClick={() => this.cancelComment()}>
+                      Cancel
+                    </span>
+                  </>
+                )}
+                {!replying && (
+                  <>
+                    <span className="resolution-pill-box">
+                      <span className={resolved || isBot ? "resolution-pill resolved" : "resolution-pill unresolved"}>
+                        {isBot ? "Automated" : resolved ? "Resolved" : "Unresolved"}
+                      </span>
+                    </span>
+                    {isBot && (
+                      <>
+                        <span
+                          className="reply-fake-link"
+                          onClick={() =>
+                            this.startReply(+comments[comments.length - 1].databaseId, threadId, resolved)
+                          }>
+                          Reply
+                        </span>
+                        <span
+                          className="reply-fake-link"
+                          onClick={() =>
+                            this.startPleaseFixReply(
+                              +comments[comments.length - 1].databaseId,
+                              threadId,
+                              comments[comments.length - 1].body
+                            )
+                          }>
+                          Please fix
+                        </span>
+                      </>
+                    )}
+                    {!isBot && (
+                      <>
+                        <span
+                          className="reply-fake-link"
+                          onClick={() =>
+                            this.startReply(+comments[comments.length - 1].databaseId, threadId, resolved)
+                          }>
+                          Reply
+                        </span>
+                        <span
+                          className="reply-fake-link"
+                          onClick={() => this.markDone(+comments[comments.length - 1].databaseId, threadId, resolved)}>
+                          Done
+                        </span>
+                        <span
+                          className="reply-fake-link"
+                          onClick={() => this.ack(+comments[comments.length - 1].databaseId, threadId, resolved)}>
+                          Ack
+                        </span>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </>
@@ -297,8 +366,25 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     return <>{outs}</>;
   }
 
-  startReply(id: number) {
-    this.setState({ inProgressComment: { text: "", inReplyTo: id } });
+  startReply(id: number, threadId: string, defaultResolved: boolean) {
+    this.setState({ inProgressComment: { text: "", inReplyTo: id, defaultResolved, threadId } });
+  }
+
+  startPleaseFixReply(id: number, threadId: string, fixText: string) {
+    const text =
+      fixText
+        .split("\n")
+        .map((v) => "> " + v)
+        .reduce((o, v) => o + v + "\n", "") + "\nPlease fix.";
+    this.setState({ inProgressComment: { text, inReplyTo: id, defaultResolved: false, threadId } });
+  }
+
+  markDone(id: number, threadId: string, defaultResolved: boolean) {
+    this.submitComment({ text: "Done.", inReplyTo: id, defaultResolved: true, threadId }, false, true);
+  }
+
+  ack(id: number, threadId: string, defaultResolved: boolean) {
+    this.submitComment({ text: "Acknowledged.", inReplyTo: id, defaultResolved, threadId }, false, defaultResolved);
   }
 
   startComment(side: string, path: string, commitSha: string, lineNumber?: number) {
@@ -588,8 +674,8 @@ function readNextHunk(patchLines: string[], startIndex: number): [Hunk, number] 
   let leftLines: SourceLine[] = [];
   let rightLines: SourceLine[] = [];
   while (
-    leftLinesRead < (leftInfo?.lineCount ?? 0) &&
-    rightLinesRead < (rightInfo?.lineCount ?? 0) &&
+    leftLinesRead < (leftInfo?.lineCount || 1) &&
+    rightLinesRead < (rightInfo?.lineCount || 1) &&
     currentIndex < patchLines.length
   ) {
     let line = patchLines[currentIndex];
