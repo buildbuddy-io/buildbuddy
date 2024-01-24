@@ -61,7 +61,7 @@ export default class FeatureflagsComponent extends React.Component<Props, State>
                         </FilledButton>
                         {this.renderCreateForm()}
                     </div>
-                    <div className="create-button">
+                    <div className="create-button" style={{display:"none"}}>
                         <FilledButton
                             className="big-button"
                             onClick={this.onClickCreateGroups.bind(this)}>
