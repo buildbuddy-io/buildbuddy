@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package search;
+
+message Query {
+  string term = 1;
+}
+
+message Snippet {
+  string lines = 1;
+}
+
+message Result {
+  string repo = 1;
+  string filename = 2;
+  int32 match_count = 3;
+  repeated Snippet snippets = 4;
+}
+
+message SearchRequest {
+  Query query = 1;
+}
+
+message SearchResponse {
+  repeated Result results = 1;
+}
