@@ -2,5 +2,17 @@ syntax = "proto3";
 
 package index;
 
-message IndexRequest {}
-message IndexResponse {}
+message GitRepoRequest {
+  string repo_url = 1;
+  string commit_sha = 2;
+}
+
+message GitRepoResponse {}
+
+message IndexRequest {
+  GitRepoRequest git_repo = 1;
+}
+
+message IndexResponse {
+  GitRepoResponse git_repo = 1;
+}

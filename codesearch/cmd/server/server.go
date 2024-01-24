@@ -1,15 +1,20 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
-
+	"strings"
+	
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/regexp"
@@ -40,12 +45,16 @@ func defaultDir() string {
 	return filepath.Clean(home + "/.csindex")
 }
 
-func New() (*codesearchServer, error) {
+func resolveIndexDir() string {
 	d := *indexDir
 	if d == "" {
 		d = defaultDir()
 	}
-	db, err := pebble.Open(d, &pebble.Options{})
+	return d
+}
+
+func New() (*codesearchServer, error) {
+	db, err := pebble.Open(resolveIndexDir(), &pebble.Options{})
 	if err != nil {
 		return nil, err
 	}
@@ -56,12 +65,74 @@ func New() (*codesearchServer, error) {
 
 func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
 	log.Printf("Index RPC")
+	if req.GetGitRepo() == nil {
+		return nil, fmt.Errorf("Only git-repo is supported")
+	}
+
+	// https://github.com/buildbuddy-io/buildbuddy/archive/1d8a3184c996c3d167a281b70a4eeccd5188e5e1.tar.gz
+	archiveURL := fmt.Sprintf("https://github.com/%s/archive/%s.zip", req.GetGitRepo().GetRepoUrl(), req.GetGitRepo().GetCommitSha())
+	log.Printf("archive URL is %q", archiveURL)
+
+	httpRsp, err := http.Get(archiveURL)
+	if err != nil {
+		return nil, err
+	}
+	defer httpRsp.Body.Close()
+
+	tmpFile, err := os.CreateTemp(resolveIndexDir(), "archive-*.zip")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := io.Copy(tmpFile, httpRsp.Body); err != nil {
+		return nil, err
+	}
+	log.Printf("Copied archive to %q", tmpFile.Name())
+
+	zipReader, err := zip.OpenReader(tmpFile.Name())
+	if err != nil {
+		return nil, err
+	}
+	defer zipReader.Close()
+
 	iw, err := index.Create(css.db)
 	if err != nil {
 		return nil, err
 	}
-	_ = iw
-	return &inpb.IndexResponse{}, nil
+
+	for _, file := range zipReader.File {
+		in, err := file.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer in.Close()
+		fileCopy, err := os.CreateTemp(resolveIndexDir(), "*.tmp")
+		if err != nil {
+			return nil, err
+		}
+		defer os.Remove(fileCopy.Name())
+		if _, err := io.Copy(fileCopy, in); err != nil {
+			return nil, err
+		}
+		fileCopy.Seek(0, 0)
+
+		parts := strings.Split(file.Name, string(filepath.Separator))
+		if len(parts) == 1 {
+			continue
+		}
+		filePathOnly := filepath.Join(parts[1:]...)
+		if err := iw.Add(filePathOnly, fileCopy); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := iw.Flush(); err != nil {
+		return nil, err
+	}
+	return &inpb.IndexResponse{
+		GitRepo: &inpb.GitRepoResponse{},
+	}, nil
 }
 
 func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
