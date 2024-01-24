@@ -1885,6 +1885,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "search_ts_proto",
+    proto = "//proto/codesearch:search_proto",
+)
+
+ts_proto_library(
     name = "group_ts_proto",
     proto = ":group_proto",
     deps = [

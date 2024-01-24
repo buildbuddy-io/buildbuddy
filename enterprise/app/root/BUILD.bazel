@@ -31,6 +31,7 @@ ts_library(
         "//app/util:clipboard",
         "//enterprise/app/auditlogs",
         "//enterprise/app/code",
+        "//enterprise/app/codesearch",
         "//enterprise/app/executors",
         "//enterprise/app/group_search",
         "//enterprise/app/history",

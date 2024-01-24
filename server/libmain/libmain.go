@@ -105,6 +105,7 @@ var (
 		"/workflows/",
 		"/executors/",
 		"/code/",
+		"/csearch/",
 		"/audit-logs/",
 		"/repo/",
 		"/reviews/",
