@@ -30,32 +30,16 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     }
     const query = this.searchBoxRef.current.value;
     this.setState({ loading: true, response: undefined, lastQuery: query });
-
-    // XXX: Request...
-    setTimeout(() => {
-      this.setState({
-        loading: false,
-        response: new search.SearchResponse({
-          results: [
-            new search.Result({
-              filename: "//a/b/c.txt",
-              matchCount: 2,
-              repo: "buildbuddy-io/buildbuddy",
-              snippets: [
-                new search.Snippet({ lines: "aadjfhsd asdfhjs dsfj\nahsdffdhs shdfs hds\n" }),
-                new search.Snippet({ lines: "\tqqq asdfhjs dsfj\n\tahsdffdhs shdfs hds\n" }),
-              ],
-            }),
-            new search.Result({
-              filename: "//a/b/ddddd.txt",
-              matchCount: 6,
-              repo: "buildbuddy-io/buildbuddy",
-              snippets: [new search.Snippet({ lines: "aadjfbbbbb\nahsdffdhbbbbbbs hds\n" })],
-            }),
-          ],
-        }),
-      });
-    }, 1000);
+    rpcService.service
+      .search(new search.SearchRequest({ query: new search.Query({ term: query }) }))
+      .then((response) => {
+        if (response.results.length === 0) {
+          throw new Error("Server did not return any search results.");
+        }
+        this.setState({ response: response });
+      })
+      .catch((e) => errorService.handleError(e))
+      .finally(() => this.setState({ loading: false }));
   }
 
   componentDidMount() {
