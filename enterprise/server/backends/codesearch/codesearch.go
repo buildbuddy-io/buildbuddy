@@ -2,7 +2,7 @@ package codesearch
 
 import (
 	"context"
-	
+
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	codesearchBackend  = flag.String("codesearch_backend", "", "Address and port to connect to")
+	codesearchBackend = flag.String("codesearch_backend", "", "Address and port to connect to")
 )
 
 type CodesearchService struct {
@@ -54,4 +54,3 @@ func (css *CodesearchService) Index(ctx context.Context, req *inpb.IndexRequest)
 	log.Printf("BB Index")
 	return css.client.Index(ctx, req)
 }
-
