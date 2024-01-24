@@ -14,7 +14,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/badge"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -29,8 +31,10 @@ import (
 	"golang.org/x/crypto/chacha20"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	bpb "github.com/buildbuddy-io/buildbuddy/proto/badge"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	ctpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )
 
 const (
@@ -755,6 +759,16 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 	})
 	if err != nil {
 		return nil, err
+	}
+	_, err = badge.GrantUserBadges(ctx, d.env, &bpb.GrantUserBadgesRequest{
+		RequestContext: &ctpb.RequestContext{
+			GroupId: u.GetGroupID(),
+		},
+		BadgeId:        "personal_key",
+		AddUserIds:     []string{u.GetUserID()},
+	})
+	if err != nil {
+		log.Infof("failed to grant badges to %q", u.GetUserID())
 	}
 	return createdKey, nil
 }

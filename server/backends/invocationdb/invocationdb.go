@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/badge"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -20,6 +21,8 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	bpb "github.com/buildbuddy-io/buildbuddy/proto/badge"
+	ctpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -102,6 +105,19 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 	ti.GroupID = permissions.GroupID
 	ti.Perms = ti.Perms | permissions.Perms
 	ti.CreatedWithCapabilities = capabilities.ToInt(caps)
+
+	if ti.UserID != "" {
+		_, err := badge.GrantUserBadges(ctx, d.env, &bpb.GrantUserBadgesRequest{
+			RequestContext: &ctpb.RequestContext{
+				GroupId: ti.GroupID,
+			},
+			BadgeId:    "first_build",
+			AddUserIds: []string{ti.UserID},
+		})
+		if err != nil {
+			log.Infof("failed to grant badges to %q", ti.UserID)
+		}
+	}
 	return d.registerInvocationAttempt(ctx, ti)
 }
 
