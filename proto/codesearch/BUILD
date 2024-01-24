@@ -43,7 +43,7 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/codesearch/codesearch_service",
     proto = ":codesearch_service_proto",
     deps = [
         ":index_go_proto",
