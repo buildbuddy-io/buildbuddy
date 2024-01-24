@@ -243,7 +243,7 @@ func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, eventType string, e
 		ctx, row.GitRepository, wd, tok.GetToken())
 }
 
-func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (string, error) {
+func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {
 	var installation tables.GitHubAppInstallation
 	err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_token_for_status").Raw(`
 		SELECT *
@@ -252,15 +252,15 @@ func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Conte
 	`, owner).Take(&installation)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
+			return nil, status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
 		}
-		return "", err
+		return nil, err
 	}
 	tok, err := a.createInstallationToken(ctx, installation.InstallationID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return tok.GetToken(), nil
+	return tok, nil
 }
 
 func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {

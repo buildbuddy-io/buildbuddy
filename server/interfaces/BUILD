@@ -40,6 +40,7 @@ go_library(
         "//server/util/proto",
         "//server/util/role",
         "@com_github_golang_jwt_jwt//:jwt",
+        "@com_github_google_go_github_v43//github",
         "@com_github_hashicorp_serf//serf",
         "@com_github_prometheus_client_model//go",
         "@io_gorm_gorm//:gorm",
