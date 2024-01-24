@@ -510,6 +510,7 @@ proto_library(
         ":user_proto",
         ":workflow_proto",
         ":zip_proto",
+        "//proto/codesearch:search_proto",
     ],
 )
 
@@ -1273,6 +1274,7 @@ go_proto_library(
         ":user_go_proto",
         ":workflow_go_proto",
         ":zip_go_proto",
+        "//proto/codesearch:search_go_proto",
     ],
 )
 
@@ -2031,6 +2033,7 @@ ts_proto_library(
         ":runner_ts_proto",
         ":scheduler_ts_proto",
         ":secrets_ts_proto",
+	":search_ts_proto",
         ":stats_ts_proto",
         ":suggestion_ts_proto",
         ":target_ts_proto",

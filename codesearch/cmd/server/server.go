@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	
+
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/regexp"

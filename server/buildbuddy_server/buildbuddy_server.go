@@ -66,6 +66,7 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
+	srpb "github.com/buildbuddy-io/buildbuddy/proto/codesearch/search"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
@@ -1360,6 +1361,12 @@ func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRe
 func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {
 	if us := s.env.GetSuggestionService(); us != nil {
 		return us.GetSuggestion(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
+	if css := s.env.GetCodesearchService(); css != nil {
+		return css.Search(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

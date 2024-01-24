@@ -4,7 +4,6 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 exports_files(["codesearch.css"])
 
-
 ts_library(
     name = "codesearch",
     srcs = ["codesearch.tsx"],
@@ -21,4 +20,3 @@ ts_library(
         "@npm//tslib",
     ],
 )
-
