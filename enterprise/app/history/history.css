@@ -36,18 +36,24 @@
 }
 
 .user-name {
-	line-height: 44px;
-	vertical-align: top;
+  line-height: 44px;
+  vertical-align: top;
 }
 
 .user-details {
-	margin-top: 10px;
-	margin-left: 62px;
-	font-size: 20px;
+  margin-top: 10px;
+  margin-left: 62px;
+  font-size: 20px;
 }
 
-.badge .title{
-	margin-top:20px;
-	margin-bottom:20px;
-	font-weight: 700;
+.badge .title {
+  margin-top: 20px;
+  margin-bottom: 20px;
+  font-weight: 700;
+}
+
+.badge-img {
+  margin-right: 8px;
+  height: 100px;
+  width: 100px;
 }

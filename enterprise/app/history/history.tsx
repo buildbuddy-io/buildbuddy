@@ -121,14 +121,14 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
   getBadges() {
     this.setState({
-	  displayUser: undefined,
+      displayUser: undefined,
       badges: undefined,
       loadingBadges: true,
     });
 
-	if (this.props.userId === this.props.user?.displayUser?.userId?.id) {
-		this.state.displayUser = this.props.user.displayUser
-	}
+    if (this.props.userId === this.props.user?.displayUser?.userId?.id) {
+      this.state.displayUser = this.props.user.displayUser;
+    }
 
     let request = new badge.GetUserBadgesRequest({
       userId: this.props.userId,
@@ -139,7 +139,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       .then((response) => {
         console.log(response);
         this.setState({
-	      displayUser: response.displayUser,
+          displayUser: response.displayUser,
           badges: response.badges,
         });
       })
@@ -572,13 +572,12 @@ export default class HistoryComponent extends React.Component<Props, State> {
               <div className="title">
                 {this.props.userId && (
                   <>
-                <img
-                  className="user-profile-icon"
-                  src={this.state.displayUser?.profileImageUrl || "/image/user-regular.svg"}
-                /> <span className="user-name">{displayUserName}</span>
-				  <div className="user-details">
-				  {displayEmail}
-				  </div>
+                    <img
+                      className="user-profile-icon"
+                      src={this.state.displayUser?.profileImageUrl || "/image/user-regular.svg"}
+                    />{" "}
+                    <span className="user-name">{displayUserName}</span>
+                    <div className="user-details">{displayEmail}</div>
                   </>
                 )}
                 {this.props.username && (
@@ -725,27 +724,27 @@ export default class HistoryComponent extends React.Component<Props, State> {
         )}
         {this.showBadges() && (
           <div className="badge container nopadding-dense">
-		    <div className="title">Achievements</div>
-        {this.state.loadingBadges && (
-          <div className="details loading-details">
-            <Spinner />
-            <div>Loading badges</div>
+            <div className="title">Achievements</div>
+            {this.state.loadingBadges && (
+              <div className="details loading-details">
+                <Spinner />
+                <div>Loading badges</div>
+              </div>
+            )}
+            {!Boolean(this.state.badges?.length) && (
+              <div className="details loading-details">
+                <div>No badges yet!</div>
+              </div>
+            )}
+            {Boolean(this.state.badges?.length) && (
+              <div className="badge-container">
+                {this.state.badges?.map((badge) => (
+                  <img className="badge-img" src={badge.imageUrl} title={badge.description} />
+                ))}
+              </div>
+            )}
           </div>
         )}
-        {!Boolean(this.state.badges?.length) && (
-          <div className="details loading-details">
-            <div>No badges yet!</div>
-          </div>
-		)}
-        {Boolean(this.state.badges?.length) && (
-          <div className="badge-container">
-            {this.state.badges?.map((badge) => (
-              <img height="100px" width="100px" src={badge.imageUrl} title={badge.description} />
-            ))}
-          </div>
-        )}
-          </div>
-		)}
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">
             {this.state.invocations?.map((invocation) => (
