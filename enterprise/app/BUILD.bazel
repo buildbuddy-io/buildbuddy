@@ -62,6 +62,7 @@ genrule(
         "//enterprise/app/root:root.css",
         "//enterprise/app/code:code.css",
         "//enterprise/app/code:monaco.css",
+        "//enterprise/app/codesearch:codesearch.css",
         "//enterprise/app/executors:executors.css",
         "//enterprise/app/filter:css",
         "//app:style.css",
