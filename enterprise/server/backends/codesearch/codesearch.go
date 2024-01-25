@@ -44,6 +44,7 @@ func New(env environment.Env) (*CodesearchService, error) {
 	}, nil
 }
 
+// Search runs a search RPC against the configured codesearch backend.
 func (css *CodesearchService) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
 	return css.client.Search(ctx, req)
 }
