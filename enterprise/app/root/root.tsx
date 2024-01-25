@@ -49,6 +49,7 @@ import alert_service from "../../../app/alert/alert_service";
 import InvocationModel from "../../../app/invocation/invocation_model";
 import PickerComponent from "../../../app/picker/picker";
 import CodeReviewComponent from "../review/review";
+import CodeSearchComponent from "../codesearch/codesearch";
 
 interface State {
   user?: User;
@@ -73,6 +74,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.executorsPath,
   Path.tapPath,
   Path.codePath,
+  Path.codesearchPath,
 ]);
 
 interface ImpersonationProps {
@@ -226,6 +228,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let code = this.state.user && this.state.path.startsWith("/code");
     let repo = this.state.path.startsWith("/repo");
     let review = this.state.user && this.state.path.startsWith("/reviews");
+    let codesearch = this.state.user && this.state.path.startsWith("/search");
     let fallback =
       !code &&
       !workflows &&
@@ -246,6 +249,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !historyCommit &&
       !auditLogs &&
       !repo &&
+      !codesearch &&
       !review;
 
     let setup =
@@ -381,6 +385,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                   {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}
+                  {codesearch && <CodeSearchComponent path={this.state.path} />}
                   {review && <CodeReviewComponent path={this.state.path} />}
                   {code && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>

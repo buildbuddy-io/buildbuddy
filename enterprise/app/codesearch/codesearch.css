@@ -1,0 +1,67 @@
+/* I can't have this start on line 1 it kills me */
+
+.code-search .header {
+}
+
+.code-search .result-title-bar {
+  display: flex;
+  align-items: center;
+  background: #e1f5fe;
+  padding: 2px 32px;
+}
+
+.code-search .repo-name {
+  font-size: 14px;
+  margin: 0 12px;
+  color: #757575;
+}
+
+.code-search .filename {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.code-search .snippet {
+  border-bottom: solid #e5e5e5 1px;
+  padding: 2px 32px;
+}
+
+.code-search .code-line {
+  margin: 2px 0;
+}
+
+.code-search .title-bar {
+  display: flex;
+  align-items: center;
+}
+
+.code-search .search-input {
+  margin: 0 16px 0 32px;
+}
+
+.code-search .snippet:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.code-search .spinner-center {
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.code-search .highlight {
+  background-color: #64ffda;
+}
+
+.code-search .cs-title {
+  font-size: 32px;
+  font-weight: 700;
+  margin-left: 32px;
+}
+
+.code-search .form-bs {
+  margin: 0;
+  margin-block-end: 0;
+}

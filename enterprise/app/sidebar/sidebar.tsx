@@ -4,6 +4,7 @@ import {
   Cloud,
   PlayCircle,
   Code,
+  SearchCode,
   HardDrive,
   Users,
   GitBranch,
@@ -66,6 +67,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
 
   isTapSelected() {
     return this.props.path.startsWith("/tests/");
+  }
+
+  isCodeSearchSelected() {
+    return this.props.path.startsWith("/search/");
   }
 
   isUsersSelected() {
@@ -189,6 +194,12 @@ export default class SidebarComponent extends React.Component<Props, State> {
             <SidebarLink selected={this.isReviewsSelected()} href={Path.reviewsPath} title="Review">
               <MessageCircle className="icon" />
               <span className="sidebar-item-text">Reviews</span>
+            </SidebarLink>
+          )}
+          {capabilities.config.codesearchEnabled && (
+            <SidebarLink selected={this.isCodeSearchSelected()} href={Path.codesearchPath} title="Code search">
+              <SearchCode className="icon" />
+              <span className="sidebar-item-text">Code search</span>
             </SidebarLink>
           )}
           <SidebarLink selected={this.isSetupSelected()} href={Path.setupPath} title="Quickstart">
