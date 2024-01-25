@@ -30,6 +30,7 @@ import (
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
+	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -40,6 +41,7 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	cssrpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
@@ -49,8 +51,6 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
-	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
-	cssrpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 )
 
 // An interface representing a mux for handling/serving http requests.

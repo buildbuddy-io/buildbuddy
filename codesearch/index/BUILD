@@ -17,7 +17,7 @@ go_library(
         "//codesearch/sparse",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_google_uuid//:uuid",
-        "@com_github_roaringbitmap_roaring//:go_default_library",
+        "@com_github_roaringbitmap_roaring//:roaring",
         "@org_golang_x_sync//errgroup",
     ],
 )
@@ -31,6 +31,6 @@ go_test(
     embed = [":index"],
     deps = [
         "@com_github_cockroachdb_pebble//:pebble",
-        "@com_github_roaringbitmap_roaring//:go_default_library",
+        "@com_github_roaringbitmap_roaring//:roaring",
     ],
 )
