@@ -11,6 +11,7 @@ ts_library(
         "//app/components/button",
         "//app/components/input",
         "//app/components/spinner",
+        "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:search_ts_proto",
         "@npm//@types/react",
