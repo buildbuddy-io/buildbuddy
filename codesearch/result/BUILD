@@ -5,5 +5,5 @@ go_library(
     srcs = ["result.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/result",
     visibility = ["//visibility:public"],
-    deps = ["//proto/codesearch:search_go_proto"],
+    deps = ["//proto:search_go_proto"],
 )

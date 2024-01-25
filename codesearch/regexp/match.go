@@ -533,7 +533,7 @@ func (g *Grep) MakeResult(r io.Reader, name string) (*result.Result, error) {
 		}
 	}
 	return &result.Result{
-		Count:    count,
+		MatchCount: count,
 		Filename: name,
 		Snippets: snips,
 	}, nil

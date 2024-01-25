@@ -22,9 +22,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
-	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch/codesearch_service"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/codesearch/index"
-	srpb "github.com/buildbuddy-io/buildbuddy/proto/codesearch/search"
+	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
+	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 )
 
 var (
@@ -65,12 +65,13 @@ func New() (*codesearchServer, error) {
 
 func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
 	log.Printf("Index RPC")
-	if req.GetGitRepo() == nil {
+	gitRepo := req.GetGitRepo()
+	if gitRepo == nil {
 		return nil, fmt.Errorf("Only git-repo is supported")
 	}
 
 	// https://github.com/buildbuddy-io/buildbuddy/archive/1d8a3184c996c3d167a281b70a4eeccd5188e5e1.tar.gz
-	archiveURL := fmt.Sprintf("https://github.com/%s/archive/%s.zip", req.GetGitRepo().GetRepoUrl(), req.GetGitRepo().GetCommitSha())
+	archiveURL := fmt.Sprintf("https://github.com/%s/archive/%s.zip", gitRepo.GetOwnerRepo(), gitRepo.GetCommitSha())
 	log.Printf("archive URL is %q", archiveURL)
 
 	httpRsp, err := http.Get(archiveURL)
@@ -144,6 +145,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		Stderr: os.Stderr,
 	}
 
+	log.Printf("req: %+v", req)
 	pat := "(?m)" + req.GetQuery().GetTerm()
 	pat = "(?i)" + pat
 
@@ -174,6 +176,9 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		result, err := g.MakeResult(bytes.NewReader(buf), name)
 		if err != nil {
 			return nil, err
+		}
+		if result.MatchCount == 0 {
+			continue
 		}
 		rsp.Results = append(rsp.Results, result.ToProto())
 	}
