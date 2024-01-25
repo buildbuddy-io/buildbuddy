@@ -8,15 +8,13 @@ ts_library(
     name = "codesearch",
     srcs = ["codesearch.tsx"],
     deps = [
-        "//app/alert:alert_service",
-        "//app/auth:auth_service",
         "//app/components/button",
-        "//app/components/dialog",
-        "//app/components/modal",
+        "//app/components/input",
         "//app/components/spinner",
         "//app/service:rpc_service",
         "//proto:search_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
-        "@npm//tslib",
     ],
 )
