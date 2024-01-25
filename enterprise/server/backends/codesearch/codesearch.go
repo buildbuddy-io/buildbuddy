@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	codesearchBackend = flag.String("codesearch_backend", "", "Address and port to connect to")
+	codesearchBackend = flag.String("app.codesearch_backend", "", "Address and port to connect to")
 )
 
 type CodesearchService struct {
