@@ -57,6 +57,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
@@ -1360,6 +1361,12 @@ func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRe
 func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {
 	if us := s.env.GetSuggestionService(); us != nil {
 		return us.GetSuggestion(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
+	if css := s.env.GetCodesearchService(); css != nil {
+		return css.Search(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

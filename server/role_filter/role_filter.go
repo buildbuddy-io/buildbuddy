@@ -26,6 +26,7 @@ var (
 		"GetUser",
 		"CreateUser",
 		"GetGroup",
+
 		// Invocations can be shared publicly, so authorization for these RPCs is
 		// done purely using perms bits attached to each row.
 		"GetInvocation",
@@ -109,6 +110,8 @@ var (
 		"DeleteUserApiKey",
 		// Remote Bazel
 		"Run",
+		// Codesearch
+		"Search",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.
