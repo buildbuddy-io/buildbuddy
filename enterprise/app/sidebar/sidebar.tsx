@@ -70,7 +70,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
   }
 
   isCodeSearchSelected() {
-    return this.props.path.startsWith("/csearch/");
+    return this.props.path.startsWith("/search/");
   }
 
   isUsersSelected() {

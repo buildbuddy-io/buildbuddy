@@ -228,7 +228,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let code = this.state.user && this.state.path.startsWith("/code");
     let repo = this.state.path.startsWith("/repo");
     let review = this.state.user && this.state.path.startsWith("/reviews");
-    let codesearch = this.state.user && this.state.path.startsWith("/csearch");
+    let codesearch = this.state.user && this.state.path.startsWith("/search");
     let fallback =
       !code &&
       !workflows &&
