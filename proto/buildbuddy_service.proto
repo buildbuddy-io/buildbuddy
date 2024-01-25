@@ -197,7 +197,7 @@ service BuildBuddyService {
       returns (suggestion.GetSuggestionResponse);
 
   // Codesearch API
-  rpc Search(search.SearchRequest) returns (search.SearchResponse);
+  // rpc Search(search.SearchRequest) returns (search.SearchResponse);
 
   // Encryption API
   rpc SetEncryptionConfig(encryption.SetEncryptionConfigRequest)
