@@ -1,12 +1,12 @@
-diff --git a/go/private/actions/link.bzl b/go/private/actions/link.bzl
-index 32286416..c4ede25e 100644
---- a/go/private/actions/link.bzl
-+++ b/go/private/actions/link.bzl
-@@ -210,6 +210,7 @@ def emit_link(
-         executable = go.toolchain._builder,
-         arguments = [builder_args, "--", tool_args],
-         env = go.env,
-+        use_default_shell_env = True,
-         toolchain = GO_TOOLCHAIN_LABEL,
-     )
- 
+diff --git a/go/platform/apple.bzl b/go/platform/apple.bzl
+index 45c62d6c..f2d8f836 100644
+--- a/go/platform/apple.bzl
++++ b/go/platform/apple.bzl
+@@ -41,6 +41,7 @@ def apple_ensure_options(ctx, env, _tags, compiler_option_lists, linker_option_l
+     if not platform:
+         return
+     env.update(_apple_env(ctx, platform))
++    env.update({"DEVELOPER_DIR": "/Library/Developer/CommandLineTools"})
+     min_version = _apple_version_min(ctx, platform, platform_type)
+     for compiler_options in compiler_option_lists:
+         compiler_options.append(min_version)
