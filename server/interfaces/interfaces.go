@@ -49,6 +49,9 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
+
+	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
+	cssrpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 )
 
 // An interface representing a mux for handling/serving http requests.
@@ -1473,4 +1476,9 @@ type GossipService interface {
 	Statusz(ctx context.Context) string
 	Leave() error
 	Shutdown() error
+}
+
+type CodesearchService interface {
+	Search(ctx context.Context, req *cssrpb.SearchRequest) (*cssrpb.SearchResponse, error)
+	Index(ctx context.Context, req *csinpb.IndexRequest) (*csinpb.IndexResponse, error)
 }

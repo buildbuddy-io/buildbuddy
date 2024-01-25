@@ -121,6 +121,7 @@ type RealEnv struct {
 	localBufconnListener             *bufconn.Listener
 	gossipService                    interfaces.GossipService
 	commandRunner                    interfaces.CommandRunner
+	codesearchService                interfaces.CodesearchService
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -719,4 +720,11 @@ func (r *RealEnv) GetCommandRunner() interfaces.CommandRunner {
 
 func (r *RealEnv) SetCommandRunner(c interfaces.CommandRunner) {
 	r.commandRunner = c
+}
+
+func (r *RealEnv) GetCodesearchService() interfaces.CodesearchService {
+	return r.codesearchService
+}
+func (r *RealEnv) SetCodesearchService(css interfaces.CodesearchService) {
+	r.codesearchService = css
 }

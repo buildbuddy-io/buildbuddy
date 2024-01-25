@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/codesearch"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
@@ -269,6 +270,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := scim.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := codesearch.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 
