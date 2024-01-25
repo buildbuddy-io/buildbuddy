@@ -5,8 +5,8 @@ import "proto/context.proto";
 package index;
 
 message GitRepoRequest {
-  // A repo url like "buildbuddy-io/buildbuddy".
-  string repo_url = 1;
+  // A string like "buildbuddy-io/buildbuddy".
+  string owner_repo = 1;
 
   // A commit sha "1d8a3184c996c3d167a281b70a4eeccd5188e5e1".
   string commit_sha = 2;
