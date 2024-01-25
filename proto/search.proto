@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package search;
+
+message Query {
+  // Term contains a freeform text query.
+  string term = 1;
+}
+
+message Snippet {
+  string lines = 1;
+}
+
+message Result {
+  // The repository this result came from.
+  string repo = 1;
+
+  // The name of the file the match was found in.
+  string filename = 2;
+
+  // Number of matches found in the file.
+  int32 match_count = 3;
+
+  // Snippets that can be displayed showing matching context.
+  repeated Snippet snippets = 4;
+}
+
+message SearchRequest {
+  context.RequestContext request_context = 1;
+
+  Query query = 2;
+}
+
+message SearchResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated Result results = 2;
+}

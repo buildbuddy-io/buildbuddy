@@ -148,6 +148,9 @@ message FrontendConfig {
 
   // Whether SCIM API keys can be created.
   bool scim_key_creation_enabled = 49;
+
+  // Whether the codesearch UI is enabled.
+  bool codesearch_enabled = 50;
 }
 
 message Region {

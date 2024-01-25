@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+import "proto/index.proto";
+import "proto/search.proto";
+
+package codesearch.service;
+
+option go_package = "codesearch_service";
+
+service CodesearchService {
+  rpc Index(index.IndexRequest) returns (index.IndexResponse);
+  rpc Search(search.SearchRequest) returns (search.SearchResponse);
+}
