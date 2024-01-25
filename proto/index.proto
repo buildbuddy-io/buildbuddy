@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package index;
+
+message GitRepoRequest {
+  // A string like "buildbuddy-io/buildbuddy".
+  string owner_repo = 1;
+
+  // A commit sha "1d8a3184c996c3d167a281b70a4eeccd5188e5e1".
+  string commit_sha = 2;
+}
+
+message GitRepoResponse {}
+
+message IndexRequest {
+  context.RequestContext request_context = 1;
+
+  GitRepoRequest git_repo = 2;
+}
+
+message IndexResponse {
+  context.ResponseContext response_context = 1;
+
+  GitRepoResponse git_repo = 2;
+}

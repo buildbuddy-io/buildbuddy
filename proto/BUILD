@@ -502,6 +502,7 @@ proto_library(
         ":resource_proto",
         ":runner_proto",
         ":scheduler_proto",
+        ":search_proto",
         ":secrets_proto",
         ":stats_proto",
         ":suggestion_proto",
@@ -665,6 +666,31 @@ proto_library(
     srcs = ["metrics.proto"],
     deps = [
         "@com_github_prometheus_client_model//io/prometheus/client:io_prometheus_client_proto",
+    ],
+)
+
+proto_library(
+    name = "index_proto",
+    srcs = ["index.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
+    name = "search_proto",
+    srcs = ["search.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
+    name = "codesearch_service_proto",
+    srcs = ["codesearch_service.proto"],
+    deps = [
+        ":index_proto",
+        ":search_proto",
     ],
 )
 
@@ -1266,6 +1292,7 @@ go_proto_library(
         ":resource_go_proto",
         ":runner_go_proto",
         ":scheduler_go_proto",
+        ":search_go_proto",
         ":secrets_go_proto",
         ":stats_go_proto",
         ":suggestion_go_proto",
@@ -1592,6 +1619,38 @@ go_proto_library(
     ],
 )
 
+go_proto_library(
+    name = "index_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/index",
+    proto = ":index_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "search_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/search",
+    proto = ":search_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "codesearch_service_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service",
+    proto = ":codesearch_service_proto",
+    deps = [
+        ":index_go_proto",
+        ":search_go_proto",
+    ],
+)
+
 # TypeScript proto rules below here
 
 ts_proto_library(
@@ -1888,7 +1947,10 @@ ts_proto_library(
 
 ts_proto_library(
     name = "search_ts_proto",
-    proto = "//proto/codesearch:search_proto",
+    proto = ":search_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
 )
 
 ts_proto_library(

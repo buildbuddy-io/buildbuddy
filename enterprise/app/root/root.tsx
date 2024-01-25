@@ -74,7 +74,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.executorsPath,
   Path.tapPath,
   Path.codePath,
-  Path.codeSearchPath,
+  Path.codesearchPath,
 ]);
 
 interface ImpersonationProps {
@@ -228,7 +228,11 @@ export default class EnterpriseRootComponent extends React.Component {
     let code = this.state.user && this.state.path.startsWith("/code");
     let repo = this.state.path.startsWith("/repo");
     let review = this.state.user && this.state.path.startsWith("/reviews");
+<<<<<<< HEAD
     let codesearch = this.state.user && this.state.path.startsWith("/csearch");
+=======
+    let codesearch = this.state.user && this.state.path.startsWith("/search");
+>>>>>>> f51fb669d02409722d46a1d3c7691d8fa32fad7c
     let fallback =
       !code &&
       !workflows &&

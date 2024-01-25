@@ -49,9 +49,8 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
-
-	csinpb "github.com/buildbuddy-io/buildbuddy/proto/codesearch/index"
-	cssrpb "github.com/buildbuddy-io/buildbuddy/proto/codesearch/search"
+	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
+	cssrpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 )
 
 // An interface representing a mux for handling/serving http requests.

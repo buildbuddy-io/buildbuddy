@@ -22,6 +22,7 @@ go_library(
         "//proto:repo_go_proto",
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
+        "//proto:search_go_proto",
         "//proto:secrets_go_proto",
         "//proto:stats_go_proto",
         "//proto:suggestion_go_proto",

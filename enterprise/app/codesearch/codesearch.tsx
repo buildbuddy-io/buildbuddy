@@ -1,5 +1,6 @@
 import React from "react";
 import rpcService from "../../../app/service/rpc_service";
+import errorService from "../../../app/errors/error_service";
 import { search } from "../../../proto/search_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
 import { File } from "lucide-react";

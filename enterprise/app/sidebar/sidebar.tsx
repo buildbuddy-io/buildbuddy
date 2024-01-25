@@ -70,7 +70,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
   }
 
   isCodeSearchSelected() {
-    return this.props.path.startsWith("/csearch/");
+    return this.props.path.startsWith("/search/");
   }
 
   isUsersSelected() {
@@ -197,7 +197,11 @@ export default class SidebarComponent extends React.Component<Props, State> {
             </SidebarLink>
           )}
           {capabilities.config.codesearchEnabled && (
+<<<<<<< HEAD
             <SidebarLink selected={this.isCodeSearchSelected()} href={Path.codeSearchPath} title="Code search">
+=======
+            <SidebarLink selected={this.isCodeSearchSelected()} href={Path.codesearchPath} title="Code search">
+>>>>>>> f51fb669d02409722d46a1d3c7691d8fa32fad7c
               <SearchCode className="icon" />
               <span className="sidebar-item-text">Code search</span>
             </SidebarLink>

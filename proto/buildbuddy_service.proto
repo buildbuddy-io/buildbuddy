@@ -4,7 +4,7 @@ import "proto/api_key.proto";
 import "proto/auditlog.proto";
 import "proto/bazel_config.proto";
 import "proto/cache.proto";
-import "proto/codesearch/search.proto";
+import "proto/search.proto";
 import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
 import "proto/encryption.proto";

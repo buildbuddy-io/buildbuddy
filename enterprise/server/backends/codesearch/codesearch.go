@@ -7,12 +7,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch/codesearch_service"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/codesearch/index"
-	srpb "github.com/buildbuddy-io/buildbuddy/proto/codesearch/search"
+	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
+	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 )
 
 var (
@@ -46,11 +45,9 @@ func New(env environment.Env) (*CodesearchService, error) {
 }
 
 func (css *CodesearchService) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
-	log.Printf("BB Search")
 	return css.client.Search(ctx, req)
 }
 
 func (css *CodesearchService) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
-	log.Printf("BB Index")
 	return css.client.Index(ctx, req)
 }
