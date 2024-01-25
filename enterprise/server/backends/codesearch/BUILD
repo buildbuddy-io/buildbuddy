@@ -13,7 +13,6 @@ go_library(
         "//server/real_environment",
         "//server/util/flag",
         "//server/util/grpc_client",
-        "//server/util/log",
         "//server/util/status",
     ],
 )
