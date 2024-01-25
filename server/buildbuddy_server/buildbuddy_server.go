@@ -45,7 +45,6 @@ import (
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	srpb "github.com/buildbuddy-io/buildbuddy/proto/codesearch/search"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
