@@ -124,6 +124,7 @@ common:release --remote_download_toplevel
 
 # Configuration used for release-mac workflow
 common:release-mac --config=release-shared
+common:release-mac --config=cache
 
 # Configuration used for release-m1 workflow
 common:release-m1 --config=release-shared
