@@ -82,7 +82,7 @@ If you're looking for an llvm based toolchain instead, take a look at [this proj
 
 ### Java toolchain
 
-If your project depends on Java code, you'll need to set the following flags
+If your project depends on Java code, you'll need to set the following flags:
 
 ```bash
 --java_language_version=11
@@ -93,11 +93,11 @@ If your project depends on Java code, you'll need to set the following flags
 
 Available versions are listed in [Bazel's User Manual](https://bazel.build/docs/user-manual#java-language-version).
 
-If you need a custom Java toolchain, take a look at [Bazel and Java Docs](https://bazel.build/docs/bazel-and-java#config-java-toolchains)
+If you need a custom Java toolchain, see Bazel's docs on [Java toolchain configuration](https://bazel.build/docs/bazel-and-java#config-java-toolchains).
 
-#### Java toolchain for older Bazel
+#### Java toolchain for older Bazel versions
 
-If your project is using an older Bazel version (before Bazel 6.0.0), you will need the following 4 flags instead.
+If your project is using a Bazel version before 6.0.0, you will need the following 4 flags instead.
 They will tell the executors where to look for Java tools.
 
 ::::warning
