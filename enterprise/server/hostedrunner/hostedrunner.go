@@ -16,15 +16,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/grpc/metadata"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -52,25 +52,6 @@ func New(env environment.Env) (*runnerService, error) {
 	return &runnerService{
 		env: env,
 	}, nil
-}
-
-func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
-	auth := r.env.GetAuthenticator()
-	if auth == nil {
-		return "", status.FailedPreconditionError("Auth was not configured but is required")
-	}
-	u, err := auth.AuthenticatedUser(ctx)
-	if err != nil {
-		return "", err
-	}
-	q := query_builder.NewQuery(`SELECT * FROM "APIKeys"`)
-	q.AddWhereClause("group_id = ?", u.GetGroupID())
-	qStr, qArgs := q.Build()
-	k := &tables.APIKey{}
-	if err := r.env.GetDBHandle().NewQuery(ctx, "hostedrunner_get_api_key").Raw(qStr, qArgs...).Take(&k); err != nil {
-		return "", err
-	}
-	return k.Value, nil
 }
 
 // checkPreconditions verifies the RunRequest is not missing any required params.
@@ -217,10 +198,13 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 }
 
 func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
-	apiKey, err := r.lookupAPIKey(ctx)
-	if err != nil {
-		return nil, err
+	apiKeys := metadata.ValueFromIncomingContext(ctx, authutil.APIKeyHeader)
+	if len(apiKeys) == 0 {
+		return nil, status.UnauthenticatedError("must set api key with `--remote_header=x-buildbuddy-api-key=`")
 	}
+	// Get last key if multiple are set
+	apiKey := apiKeys[len(apiKeys)-1]
+
 	// Use env override headers for credentials.
 	envOverrides := []*repb.Command_EnvironmentVariable{
 		{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
