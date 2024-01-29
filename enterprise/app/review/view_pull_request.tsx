@@ -20,7 +20,7 @@ interface commentDraft {
   commitSha?: string;
   side?: string;
   line?: number;
-  inReplyTo?: number;
+  commentId?: string;
   threadId?: string;
   defaultResolved?: boolean;
 }
@@ -29,6 +29,7 @@ interface State {
   response?: github.GetGithubPullRequestDetailsResponse;
   displayedDiffs: string[];
   inProgressComment?: commentDraft;
+  pendingRequest: boolean;
 }
 
 interface DiffLineInfo {
@@ -56,6 +57,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
   commentResolvedRef: React.RefObject<HTMLInputElement> = React.createRef();
   state: State = {
     displayedDiffs: [],
+    pendingRequest: false,
   };
 
   componentWillMount() {
@@ -123,7 +125,22 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     return "";
   }
 
+  findComment(threadId: string): github.Comment | undefined {
+    return this.state.response?.comments.find((c) => c.threadId === threadId);
+  }
+
+  findPathFromThreadId(threadId: string): string {
+    return this.findComment(threadId)?.path || "";
+  }
+
+  findPositionFromThreadId(threadId: string): github.CommentPosition | undefined {
+    return this.findComment(threadId)?.position ?? undefined;
+  }
+
   submitComment(c: commentDraft | undefined, submitAsBot: boolean, resolved: boolean) {
+    if (this.state.pendingRequest) {
+      return;
+    }
     if (c === undefined) {
       return;
     }
@@ -137,30 +154,100 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       commitSha: c.commitSha,
       submitAsBot: submitAsBot,
       threadId: c.threadId,
+      pullId: this.state.response?.pullId,
+      reviewId: this.state.response?.draftReviewId,
+      commentId: c.commentId,
+      // XXX: Set review id, set to pending..
       markAsResolved: resolved,
     });
-    if (c.inReplyTo) {
-      req.inReplyTo = Long.fromNumber(c.inReplyTo);
+    if (c.commentId && c.commentId != "") {
+      req.commentId = c.commentId;
+    } else if (c.threadId) {
+      req.threadId = c.threadId;
     } else if (c.line && c.side) {
       req.line = Long.fromNumber(c.line);
       req.side = c.side;
     } else {
       return;
     }
-
     console.log(req);
+    this.setState({ pendingRequest: true });
     rpc_service.service
       .postGithubPullRequestComment(req)
       .then((r) => {
         console.log(r);
         error_service.handleError("posted!");
+        const comment = new github.Comment({
+          id: r.commentId,
+          body: req.body,
+          path: req.path || this.findPathFromThreadId(req.threadId),
+          commitSha: req.commitSha,
+          position: c.line
+            ? new github.CommentPosition({
+                startLine: Long.fromNumber(c.line || 0),
+                endLine: Long.fromNumber(c.line || 0),
+                leftSide: c.side === "LEFT",
+              })
+            : this.findPositionFromThreadId(req.threadId),
+          commenter: new github.ReviewUser({
+            login: "jdhollen",
+            bot: false,
+          }),
+          reviewId: req.reviewId,
+          createdAtUsec: Long.fromNumber(Date.now() * 1000),
+          threadId: req.threadId,
+          isResolved: req.markAsResolved,
+        });
+        if (req.commentId) {
+          if (this.state.response) {
+            const index = this.state.response.comments.findIndex((c) => c.id === req.commentId);
+            this.state.response.comments.splice(index, 1, comment);
+          }
+        } else {
+          this.state.response?.comments.push(comment);
+        }
+        console.log(this.state.response);
+        this.setState({ pendingRequest: false, inProgressComment: undefined });
       })
-      .catch((e) => error_service.handleError(e));
-    this.setState({ inProgressComment: undefined });
+      .catch((e) => {
+        error_service.handleError(e);
+
+        this.setState({ pendingRequest: false, inProgressComment: undefined });
+      });
   }
 
   cancelComment() {
+    if (this.state.pendingRequest) {
+      return;
+    }
     this.setState({ inProgressComment: undefined });
+  }
+
+  deleteComment(id: string) {
+    if (this.state.pendingRequest || id === "") {
+      return;
+    }
+    const req = new github.PostGithubPullRequestCommentRequest({
+      commentId: id,
+      delete: true,
+    });
+    console.log(req);
+    this.setState({ pendingRequest: true });
+    rpc_service.service
+      .postGithubPullRequestComment(req)
+      .then((r) => {
+        console.log(r);
+        const comment = this.state.response?.comments.findIndex((c) => c.id === id);
+        if (comment && this.state.response) {
+          this.state.response.comments.splice(comment, 1);
+        }
+        this.setState({ pendingRequest: false, inProgressComment: undefined });
+      })
+      .catch((e) => {
+        error_service.handleError(e);
+
+        this.setState({ pendingRequest: false, inProgressComment: undefined });
+      });
   }
 
   renderThread(comments: github.Comment[], forNewComment?: boolean) {
@@ -170,11 +257,16 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     const leftSide = forNewComment
       ? this.state.inProgressComment?.side === "LEFT"
       : comments[0]?.position?.leftSide ?? false;
-    const replying = forNewComment || comments.find((c) => +c.databaseId === this.state.inProgressComment?.inReplyTo);
+    const replying = forNewComment || comments.find((c) => c.threadId === this.state.inProgressComment?.threadId);
     const resolved =
       (replying && this.state.inProgressComment?.defaultResolved) || (!replying && comments[0].isResolved);
     const isBot = comments.length > 0 && !comments.find((c) => !c.commenter?.bot);
     const threadId = comments.length > 0 ? comments[0].threadId : "";
+    const draftCommentIndex = comments.findIndex((c) => c.reviewId === this.state.response?.draftReviewId);
+    const hasDraft = draftCommentIndex >= 0;
+    if (hasDraft) {
+      comments.push(comments.splice(draftCommentIndex, 1)[0]);
+    }
     console.log(this.state.inProgressComment);
     return (
       <div className="thread-block">
@@ -189,6 +281,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           <div className="thread-container">
             <div className={`thread${resolved || isBot ? " resolved" : ""}`}>
               {comments.map((c) => {
+                if (replying && hasDraft && c.id === comments[draftCommentIndex].id) {
+                  return undefined;
+                }
                 return (
                   <>
                     <div className="thread-comment">
@@ -215,6 +310,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                     </div>
                     <div className="comment-body">
                       <textarea
+                        disabled={this.state.pendingRequest}
                         autoFocus
                         ref={this.commentTextRef}
                         className="comment-input"
@@ -250,7 +346,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                             false
                         )
                       }>
-                      Send
+                      Save draft
                     </span>
                     <span className="reply-fake-link" onClick={() => this.cancelComment()}>
                       Cancel
@@ -261,7 +357,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                   <>
                     <span className="resolution-pill-box">
                       <span className={resolved || isBot ? "resolution-pill resolved" : "resolution-pill unresolved"}>
-                        {isBot ? "Automated" : resolved ? "Resolved" : "Unresolved"}
+                        {isBot ? "Automated" : hasDraft ? "Draft" : resolved ? "Resolved" : "Unresolved"}
                       </span>
                     </span>
                     {isBot && (
@@ -269,21 +365,23 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                         <span
                           className="reply-fake-link"
                           onClick={() =>
-                            this.startReply(+comments[comments.length - 1].databaseId, threadId, resolved)
-                          }>
-                          Reply
-                        </span>
-                        <span
-                          className="reply-fake-link"
-                          onClick={() =>
-                            this.startPleaseFixReply(
-                              +comments[comments.length - 1].databaseId,
+                            // XXX: draft text
+                            this.startReply(
+                              hasDraft ? comments[draftCommentIndex].body : "",
+                              hasDraft ? comments[draftCommentIndex].id : "",
                               threadId,
-                              comments[comments.length - 1].body
+                              resolved
                             )
                           }>
-                          Please fix
+                          {hasDraft ? "Edit" : "Reply"}
                         </span>
+                        {!hasDraft && (
+                          <span
+                            className="reply-fake-link"
+                            onClick={() => this.startPleaseFixReply("", threadId, comments[comments.length - 1].body)}>
+                            Please fix
+                          </span>
+                        )}
                       </>
                     )}
                     {!isBot && (
@@ -291,20 +389,39 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                         <span
                           className="reply-fake-link"
                           onClick={() =>
-                            this.startReply(+comments[comments.length - 1].databaseId, threadId, resolved)
+                            // XXX: draft text
+                            this.startReply(
+                              hasDraft ? comments[draftCommentIndex].body : "",
+                              hasDraft ? comments[draftCommentIndex].id : "",
+                              threadId,
+                              resolved
+                            )
                           }>
-                          Reply
+                          {hasDraft ? "Edit" : "Reply"}
                         </span>
-                        <span
-                          className="reply-fake-link"
-                          onClick={() => this.markDone(+comments[comments.length - 1].databaseId, threadId, resolved)}>
-                          Done
-                        </span>
-                        <span
-                          className="reply-fake-link"
-                          onClick={() => this.ack(+comments[comments.length - 1].databaseId, threadId, resolved)}>
-                          Ack
-                        </span>
+                        {!hasDraft && (
+                          <>
+                            <span
+                              className="reply-fake-link"
+                              onClick={() => this.markDone(comments[comments.length - 1].id, threadId, resolved)}>
+                              Done
+                            </span>
+                            <span
+                              className="reply-fake-link"
+                              onClick={() => this.ack(comments[comments.length - 1].id, threadId, resolved)}>
+                              Ack
+                            </span>
+                          </>
+                        )}
+                        {hasDraft && (
+                          <>
+                            <span
+                              className="reply-fake-link"
+                              onClick={() => this.deleteComment(comments[comments.length - 1].id)}>
+                              Discard
+                            </span>
+                          </>
+                        )}
                       </>
                     )}
                   </>
@@ -323,7 +440,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     );
   }
 
-  renderComments(comments: github.Comment[], leftLine: number, rightLine: number) {
+  renderComments(path: string, comments: github.Comment[], leftLine: number, rightLine: number) {
     const threads: Map<String, github.Comment[]> = new Map();
     comments.forEach((c) => {
       const thread = c.threadId;
@@ -336,7 +453,8 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     });
     const outs: JSX.Element[] = [];
     const newComment =
-      !this.state.inProgressComment?.inReplyTo &&
+      !this.state.inProgressComment?.threadId &&
+      this.state.inProgressComment?.path === path &&
       ((this.state.inProgressComment?.side === "LEFT" && leftLine === this.state.inProgressComment?.line) ||
         (this.state.inProgressComment?.side === "RIGHT" && rightLine === this.state.inProgressComment?.line));
     if (newComment) {
@@ -366,28 +484,43 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     return <>{outs}</>;
   }
 
-  startReply(id: number, threadId: string, defaultResolved: boolean) {
-    this.setState({ inProgressComment: { text: "", inReplyTo: id, defaultResolved, threadId } });
+  startReply(text: string, commentId: string, threadId: string, defaultResolved: boolean) {
+    if (this.state.pendingRequest) {
+      return;
+    }
+    this.setState({ inProgressComment: { text, commentId, defaultResolved, threadId } });
   }
 
-  startPleaseFixReply(id: number, threadId: string, fixText: string) {
+  startPleaseFixReply(id: string, threadId: string, fixText: string) {
+    if (this.state.pendingRequest) {
+      return;
+    }
     const text =
       fixText
         .split("\n")
         .map((v) => "> " + v)
         .reduce((o, v) => o + v + "\n", "") + "\nPlease fix.";
-    this.setState({ inProgressComment: { text, inReplyTo: id, defaultResolved: false, threadId } });
+    this.setState({ inProgressComment: { text, commentId: "", defaultResolved: false, threadId } });
   }
 
-  markDone(id: number, threadId: string, defaultResolved: boolean) {
-    this.submitComment({ text: "Done.", inReplyTo: id, defaultResolved: true, threadId }, false, true);
+  markDone(id: string, threadId: string, defaultResolved: boolean) {
+    if (this.state.pendingRequest) {
+      return;
+    }
+    this.submitComment({ text: "Done.", commentId: "", defaultResolved: true, threadId }, false, true);
   }
 
-  ack(id: number, threadId: string, defaultResolved: boolean) {
-    this.submitComment({ text: "Acknowledged.", inReplyTo: id, defaultResolved, threadId }, false, defaultResolved);
+  ack(id: string, threadId: string, defaultResolved: boolean) {
+    if (this.state.pendingRequest) {
+      return;
+    }
+    this.submitComment({ text: "Acknowledged.", commentId: "", defaultResolved, threadId }, false, defaultResolved);
   }
 
   startComment(side: string, path: string, commitSha: string, lineNumber?: number) {
+    if (this.state.pendingRequest) {
+      return;
+    }
     if (!lineNumber) {
       return;
     }
@@ -429,6 +562,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
               </div>
               <div className="threads">
                 {this.renderComments(
+                  path,
                   comments.filter((c) => {
                     return (
                       +(c.position?.startLine || c.position?.endLine || 0) ===
@@ -561,7 +695,22 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       })
       .then((r) => {
         console.log(r);
-        error_service.handleError("approved");
+        window.location.reload();
+      })
+      .catch((e) => error_service.handleError(e));
+  }
+
+  reply() {
+    if (!this.state.response?.draftReviewId) {
+      return;
+    }
+    rpc_service.service
+      .sendGithubPullRequestReview({
+        reviewId: this.state.response.draftReviewId,
+      })
+      .then((r) => {
+        console.log(r);
+        window.location.reload();
       })
       .catch((e) => error_service.handleError(e));
   }
@@ -595,6 +744,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                   <div></div>
                   <div>
                     <button onClick={() => this.approve()}>APPROVE</button>
+                    <button onClick={() => this.reply()}>REPLY</button>
                   </div>
                   <div></div>
                 </div>

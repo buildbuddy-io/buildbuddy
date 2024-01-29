@@ -1916,6 +1916,14 @@ func (s *BuildBuddyServer) GetGithubPullRequestDetails(ctx context.Context, req 
 	return a.GetGithubPullRequestDetails(ctx, req)
 }
 
+func (s *BuildBuddyServer) SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.SendGithubPullRequestReview(ctx, req)
+}
+
 func (s *BuildBuddyServer) SetIPRulesConfig(ctx context.Context, request *irpb.SetRulesConfigRequest) (*irpb.SetRulesConfigResponse, error) {
 	irs := s.env.GetIPRulesService()
 	if irs == nil {

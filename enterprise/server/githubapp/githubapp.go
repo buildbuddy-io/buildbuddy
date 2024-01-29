@@ -1519,7 +1519,7 @@ func (a *GitHubApp) ApproveGithubPullRequest(ctx context.Context, req *ghpb.Appr
 	return &ghpb.ApproveGithubPullRequestResponse{}, nil
 }
 
-func (a *GitHubApp) PostGithubPullRequestComment(ctx context.Context, req *ghpb.PostGithubPullRequestCommentRequest) (*ghpb.PostGithubPullRequestCommentResponse, error) {
+/*func (a *GitHubApp) PostGithubPullRequestCommentOld(ctx context.Context, req *ghpb.PostGithubPullRequestCommentRequest) (*ghpb.PostGithubPullRequestCommentResponse, error) {
 	var client *github.Client
 	var err error
 	if (req.GetSubmitAsBot()) {
@@ -1543,8 +1543,8 @@ func (a *GitHubApp) PostGithubPullRequestComment(ctx context.Context, req *ghpb.
 		}
 	}
 
-	if (req.GetInReplyTo() > 0) {
-		_, _, err = client.PullRequests.CreateCommentInReplyTo(ctx, req.GetOwner(), req.GetRepo(), int(req.GetPull()), req.GetBody(), req.GetInReplyTo())
+	if (req.GetInReplyToId() != "") {
+		_, _, err = client.PullRequests.CreateCommentInReplyTo(ctx, req.GetOwner(), req.GetRepo(), int(req.GetPull()), req.GetBody(), req.GetInReplyToId())
 		if err != nil {
 			return nil, err
 		}
@@ -1605,6 +1605,175 @@ func (a *GitHubApp) PostGithubPullRequestComment(ctx context.Context, req *ghpb.
 	}
 
 	return &ghpb.PostGithubPullRequestCommentResponse{}, nil
+}*/
+
+func (a *GitHubApp) PostGithubPullRequestComment(ctx context.Context, req *ghpb.PostGithubPullRequestCommentRequest) (*ghpb.PostGithubPullRequestCommentResponse, error) {
+	graphqlClient, err := a.getGithubGraphQLClient(ctx);
+	reviewId := req.GetReviewId()
+	commentId := req.GetCommentId()
+	var side githubv4.DiffSide
+	if req.GetSide() == "LEFT" {
+		side = githubv4.DiffSideLeft
+	} else {
+		side = githubv4.DiffSideRight
+	}
+	log.Printf("%+v", req)
+	if req.GetDelete() {
+		// Deleting a comment...
+		var m struct {
+			DeletePullRequestReviewComment struct {
+				ClientMutationId string
+			} `graphql:"deletePullRequestReviewComment(input: $input)"`
+		}
+		input := githubv4.DeletePullRequestReviewCommentInput{
+			ID: githubv4.ID(req.GetCommentId()),
+		}
+		err := graphqlClient.Mutate(ctx, &m, input, nil)
+		if err != nil {
+			return nil, err
+		}
+	} else if (req.GetCommentId() != "") {
+		// Editing a comment...
+		var m struct {
+			UpdatePullRequestReviewComment struct {
+				ClientMutationId string
+			} `graphql:"updatePullRequestReviewComment(input: $input)"`
+		}
+		input := githubv4.UpdatePullRequestReviewCommentInput{
+			PullRequestReviewCommentID: req.GetCommentId(),
+			Body: githubv4.String(req.GetBody()),
+		}
+		err := graphqlClient.Mutate(ctx, &m, input, nil)
+		if err != nil {
+			return nil, err
+		}
+	} else if (reviewId == "") {
+		// This is a comment without a review--make the draft comment as part
+		// of a newly-created review.
+		var m struct {
+			AddPullRequestReview struct {
+				PullRequestReview struct {
+					Id string
+					Comments struct {
+						Nodes []reviewComment
+					} `graphql:"comments(last: 1)"`
+				}
+			} `graphql:"addPullRequestReview(input: $input)"`
+		}
+		input := githubv4.AddPullRequestReviewInput{
+			PullRequestID: req.GetPullId(),
+			Threads: &[]*githubv4.DraftPullRequestReviewThread{
+				{
+					Path: githubv4.String(req.GetPath()),
+					Line: githubv4.Int(int(req.GetLine())),
+					Side: &side,
+					Body: githubv4.String(req.GetBody()),
+				},
+			},
+		}
+		err := graphqlClient.Mutate(ctx, &m, input, nil)
+		if err != nil {
+			return nil, err
+		}
+		reviewId = m.AddPullRequestReview.PullRequestReview.Id
+		commentId = m.AddPullRequestReview.PullRequestReview.Comments.Nodes[0].Id
+	} else if (req.GetThreadId() != "") {
+		log.Printf("yes")
+		// This is a comment in reply to an existing thread, just add it.
+		var m struct {
+			PullRequestReviewThreadReply struct {
+				ClientMutationId string
+				Comment struct {
+					Id string
+				}
+			} `graphql:"addPullRequestReviewThreadReply(input: $input)"`
+		}
+	
+		input := githubv4.AddPullRequestReviewThreadReplyInput{
+			PullRequestReviewID: githubv4.NewID(req.GetReviewId()),
+			PullRequestReviewThreadID: githubv4.String(req.GetThreadId()),
+			Body: githubv4.String(req.GetBody()),
+		}
+
+		err := graphqlClient.Mutate(ctx, &m, input, nil)
+		if err != nil {
+			return nil, err
+		}
+		commentId = m.PullRequestReviewThreadReply.Comment.Id
+	} else {
+		// This is a comment in a new thread, create it.
+		var m struct {
+			AddPullRequestReviewThread struct {
+				ClientMutationId string
+				Thread struct {
+					Comments struct {
+						Nodes []reviewComment
+					} `graphql:"comments(last: 1)"`
+				}
+			} `graphql:"addPullRequestReviewThread(input: $input)"`
+			
+		}
+	
+		input := githubv4.AddPullRequestReviewThreadInput{
+			PullRequestID: githubv4.NewID(req.GetPullId()),
+			Path: githubv4.String(req.GetPath()),
+			Line: githubv4.NewInt(githubv4.Int(int(req.GetLine()))),
+			Side: &side,
+			Body: githubv4.String(req.GetBody()),
+		}
+
+		err := graphqlClient.Mutate(ctx, &m, input, nil)
+		if err != nil {
+			return nil, err
+		}
+		commentId = m.AddPullRequestReviewThread.Thread.Comments.Nodes[0].Id
+	}
+
+	// XXX: Move all into here so it's transactional.
+	if !req.GetSubmitAsBot() && req.GetThreadId() != "" {
+		if (err != nil) {
+			return nil, err
+		}
+		
+		if !req.GetMarkAsResolved() {
+			// Mark as unresolved (lol)
+			var m struct {
+				UnresolveReviewThread struct {
+					Thread struct {
+						ID string
+					}
+				} `graphql:"unresolveReviewThread(input: $input)"`
+			}
+			input := githubv4.UnresolveReviewThreadInput{
+				ThreadID: req.GetThreadId(),
+			}
+			err := graphqlClient.Mutate(ctx, &m, input, nil)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Mark as resolved!
+			var m struct {
+				ResolveReviewThread struct {
+					Thread struct {
+						ID string
+					}
+				} `graphql:"resolveReviewThread(input: $input)"`
+			}
+			input := githubv4.ResolveReviewThreadInput{
+				ThreadID: req.GetThreadId(),
+			}
+			err := graphqlClient.Mutate(ctx, &m, input, nil)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return &ghpb.PostGithubPullRequestCommentResponse{
+		ReviewId: reviewId,
+		CommentId: commentId,
+	}, nil
 }
 
 type prUser struct {
@@ -1688,6 +1857,7 @@ type review struct {
 	BodyText string
 	CreatedAt time.Time
 	Author actor
+	State string
 }
 
 type file struct {
@@ -1733,6 +1903,7 @@ type prDetailsQuery struct {
 			BodyHTML string `graphql:"bodyHTML"`
 			Author actor
 			CreatedAt time.Time
+			Id string
 			UpdatedAt time.Time
 			Mergeable githubv4.MergeableState
 			Merged bool
@@ -1776,6 +1947,29 @@ func getLogin(a *actor) string {
 
 func isBot(a *actor) bool {
 	return a.Typename == "Bot"
+}
+
+func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error) {
+	graphqlClient, err := a.getGithubGraphQLClient(ctx);
+	if err != nil {
+		return nil, err
+	}
+	reviewId := req.GetReviewId()
+
+	var m struct {
+		SubmitPullRequestReview struct {
+			ClientMutationId string
+		} `graphql:"submitPullRequestReview(input: $input)"`
+	}
+	input := githubv4.SubmitPullRequestReviewInput{
+		PullRequestReviewID: githubv4.NewID(reviewId),
+		Event: githubv4.PullRequestReviewEventComment,
+	}
+	err = graphqlClient.Mutate(ctx, &m, input, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ghpb.SendGithubPullRequestReviewResponse{}, nil
 }
 
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
@@ -1822,6 +2016,13 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	pr := graph.Repository.PullRequest
 
 	outputComments := make([]*ghpb.Comment, 0)
+	draftReviewId := ""
+	for _, r := range pr.Reviews.Nodes {
+		log.Printf("%s", r.State)
+		if r.State == "PENDING" {
+			draftReviewId = r.Id
+		}
+	}
 
 	for _, thread := range pr.ReviewThreads.Nodes {
 		for _, c := range thread.Comments.Nodes {
@@ -1949,6 +2150,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		Owner:          req.Owner,
 		Repo:           req.Repo,
 		Pull:           req.Pull,
+		PullId:		    pr.Id,
 		Title:          pr.Title,
 		Body:           pr.Body,
 		Author:         getLogin(&pr.Author),
@@ -1963,6 +2165,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		Submitted:      pr.Merged,
 		GithubUrl:      pr.URL,
 		CurrentUser:    graph.Viewer.Login,
+		DraftReviewId:          draftReviewId,
 	}
 
 	return resp, nil

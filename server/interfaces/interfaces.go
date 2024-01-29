@@ -661,6 +661,7 @@ type GitHubApp interface {
 	ApproveGithubPullRequest(ctx context.Context, req *ghpb.ApproveGithubPullRequestRequest) (*ghpb.ApproveGithubPullRequestResponse, error)
 	PostGithubPullRequestComment(ctx context.Context, req *ghpb.PostGithubPullRequestCommentRequest) (*ghpb.PostGithubPullRequestCommentResponse, error)
 	GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error)
+	SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error)
 }
 
 type RunnerService interface {

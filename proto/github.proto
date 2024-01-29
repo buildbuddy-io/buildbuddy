@@ -549,6 +549,7 @@ message GetGithubPullRequestDetailsResponse {
   string owner = 2;
   string repo = 3;
   int64 pull = 4;
+  string pull_id = 20;
   string author = 5;
   bool mergeable = 6;
   bool submitted = 7;
@@ -568,6 +569,7 @@ message GetGithubPullRequestDetailsResponse {
   repeated Comment comments = 17;
 
   string current_user = 18;
+  string draft_review_id = 19;
 }
 
 message ApproveGithubPullRequestRequest {
@@ -586,17 +588,31 @@ message PostGithubPullRequestCommentRequest {
   string owner = 2;
   string repo = 3;
   int64 pull = 4;
+  string pull_id = 15;
   string path = 10;
   string body = 5;
   string thread_id = 13;
-  int64 in_reply_to = 6;
   string commit_sha = 7;
   int64 line = 8;
   string side = 9;
   bool submit_as_bot = 11;
   bool mark_as_resolved = 12;
+  string review_id = 14;
+  string comment_id = 16;
+  bool delete = 17;
 }
 
 message PostGithubPullRequestCommentResponse {
+  context.ResponseContext response_context = 1;
+  string review_id = 2;
+  string comment_id = 3;
+}
+
+message SendGithubPullRequestReviewRequest {
+  context.RequestContext request_context = 1;
+  string review_id = 2;
+}
+
+message SendGithubPullRequestReviewResponse {
   context.ResponseContext response_context = 1;
 }
