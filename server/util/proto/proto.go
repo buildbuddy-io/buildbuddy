@@ -8,7 +8,6 @@ var Size = gproto.Size
 var Merge = gproto.Merge
 var Equal = gproto.Equal
 var MarshalOld = gproto.Marshal
-var UnmarshalOld = gproto.Unmarshal
 
 var String = gproto.String
 var Float64 = gproto.Float64
@@ -39,7 +38,7 @@ func Unmarshal(b []byte, v Message) error {
 		return vt.UnmarshalVT(b)
 	}
 
-	return UnmarshalOld(b, v)
+	return gproto.Unmarshal(b, v)
 }
 
 func Clone(v Message) Message {

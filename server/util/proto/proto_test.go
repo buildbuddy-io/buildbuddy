@@ -181,7 +181,7 @@ func BenchmarkUnmarshal(b *testing.B) {
 			return proto.Unmarshal(buf, v)
 		},
 		"Old": func(buf []byte, v protoMessage) error {
-			return proto.UnmarshalOld(buf, v)
+			return gproto.Unmarshal(buf, v)
 		},
 	}
 
