@@ -20,11 +20,6 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Build Website
-        env:
-          # TODO: fix website build for bazel 7 and remove this. In some of our
-          # .mdx files, we are importing from a path under bazel-bin, which
-          # seems to not always be present in the action's workspace.
-          USE_BAZEL_VERSION: 6.4.0
         run: |
           bazel build //website:website --config=ci --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           rm -rf website/build
