@@ -265,7 +265,7 @@ func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 			UserOwnedKeysEnabled:              g.UserOwnedKeysEnabled,
 			BotSuggestionsEnabled:             g.BotSuggestionsEnabled,
 			DeveloperOrgCreationEnabled:       g.DeveloperOrgCreationEnabled,
-			UseGroupOwnedExecutors:            g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors,
+			UseGroupOwnedExecutors:            g.UseGroupOwnedExecutors,
 			RestrictCleanWorkflowRunsToAdmins: g.RestrictCleanWorkflowRunsToAdmins,
 			EnforceIpRules:                    g.EnforceIPRules,
 			SuggestionPreference:              g.SuggestionPreference,
@@ -491,7 +491,6 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		groupOwnedDomain = userEmailDomain
 	}
 
-	useGroupOwnedExecutors := req.GetUseGroupOwnedExecutors()
 	group := &tables.Group{
 		UserID:                      user.UserID,
 		Name:                        groupName,
@@ -500,7 +499,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		UserOwnedKeysEnabled:        req.GetUserOwnedKeysEnabled(),
 		BotSuggestionsEnabled:       req.GetBotSuggestionsEnabled(),
 		DeveloperOrgCreationEnabled: req.GetDeveloperOrgCreationEnabled(),
-		UseGroupOwnedExecutors:      &useGroupOwnedExecutors,
+		UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 	group.URLIdentifier = &urlIdentifier
@@ -549,11 +548,10 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		group.OwnedDomain = ""
 	}
 	group.SharingEnabled = req.GetSharingEnabled()
-	useGroupOwnedExecutors := req.GetUseGroupOwnedExecutors()
 	group.UserOwnedKeysEnabled = req.GetUserOwnedKeysEnabled()
 	group.BotSuggestionsEnabled = req.GetBotSuggestionsEnabled()
 	group.DeveloperOrgCreationEnabled = req.GetDeveloperOrgCreationEnabled()
-	group.UseGroupOwnedExecutors = &useGroupOwnedExecutors
+	group.UseGroupOwnedExecutors = req.GetUseGroupOwnedExecutors()
 	group.SuggestionPreference = req.GetSuggestionPreference()
 	group.RestrictCleanWorkflowRunsToAdmins = req.GetRestrictCleanWorkflowRunsToAdmins()
 	if group.SuggestionPreference == grpb.SuggestionPreference_UNKNOWN_SUGGESTION_PREFERENCE {

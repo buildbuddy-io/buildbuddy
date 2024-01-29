@@ -229,7 +229,7 @@ type Group struct {
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
-	UseGroupOwnedExecutors *bool
+	UseGroupOwnedExecutors bool
 
 	CacheEncryptionEnabled bool `gorm:"not null;default:0"`
 	EnforceIPRules         bool `gorm:"not null;default:0"`
@@ -268,8 +268,8 @@ func (ug *UserGroup) TableName() string {
 }
 
 type GroupRole struct {
-	Group Group
-	Role  uint32
+	Group
+	Role uint32
 }
 
 type User struct {
