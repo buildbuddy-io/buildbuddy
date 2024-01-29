@@ -264,7 +264,11 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, err
 	}
 
-	executionID, err := r.env.GetRemoteExecutionService().Dispatch(execCtx, &repb.ExecuteRequest{
+	executionClient := r.env.GetRemoteExecutionClient()
+	if executionClient == nil {
+		return nil, status.UnimplementedError("Missing remote execution client.")
+	}
+	opStream, err := executionClient.Execute(execCtx, &repb.ExecuteRequest{
 		InstanceName:    req.GetInstanceName(),
 		SkipCacheLookup: true,
 		ActionDigest:    actionDigest,
@@ -278,6 +282,11 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return res, nil
 	}
 
+	op, err := opStream.Recv()
+	if err != nil {
+		return nil, err
+	}
+	executionID := op.GetName()
 	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
 		return nil, err
 	}
