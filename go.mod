@@ -72,7 +72,7 @@ require (
 	github.com/google/uuid v1.4.0
 	github.com/groob/plist v0.0.0-20220217120414-63fa881b19a5
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
-	github.com/hanwen/go-fuse/v2 v2.3.0
+	github.com/hanwen/go-fuse/v2 v2.4.2
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/hashicorp/memberlist v0.5.0
 	github.com/hashicorp/serf v0.10.1
