@@ -1,0 +1,62 @@
+diff --git a/splice/pair_linux.go b/splice/pair_linux.go
+index f8923e3..fafdebf 100644
+--- a/splice/pair_linux.go
++++ b/splice/pair_linux.go
+@@ -40,7 +40,7 @@ func (p *Pair) WriteTo(fd uintptr, n int) (int, error) {
+ const _SPLICE_F_NONBLOCK = 0x2
+ 
+ func (p *Pair) discard() {
+-	_, err := syscall.Splice(p.r, nil, int(devNullFD), nil, int(p.size), _SPLICE_F_NONBLOCK)
++	_, err := syscall.Splice(p.r, nil, devNullFD(), nil, int(p.size), _SPLICE_F_NONBLOCK)
+ 	if err == syscall.EAGAIN {
+ 		// all good.
+ 	} else if err != nil {
+diff --git a/splice/splice.go b/splice/splice.go
+index cbb20b4..e1316ba 100644
+--- a/splice/splice.go
++++ b/splice/splice.go
+@@ -11,6 +11,7 @@ import (
+ 	"io/ioutil"
+ 	"log"
+ 	"os"
++	"sync"
+ 	"syscall"
+ )
+ 
+@@ -30,8 +31,11 @@ func MaxPipeSize() int {
+ // Since Linux 2.6.11, the pipe capacity is 65536 bytes.
+ const DefaultPipeSize = 16 * 4096
+ 
+-// We empty pipes by splicing to /dev/null.
+-var devNullFD uintptr
++var (
++	devNullFDOnce  sync.Once
++	devNullFDValue int
++	devNullFDErr   error
++)
+ 
+ func init() {
+ 	content, err := ioutil.ReadFile("/proc/sys/fs/pipe-max-size")
+@@ -51,13 +55,17 @@ func init() {
+ 	resizable = resizable && (errNo == 0)
+ 	r.Close()
+ 	w.Close()
++}
+ 
+-	fd, err := syscall.Open("/dev/null", os.O_WRONLY, 0)
+-	if err != nil {
+-		log.Panicf("splice: %v", err)
++// We empty pipes by splicing to /dev/null.
++func devNullFD() int {
++	devNullFDOnce.Do(func() {
++		devNullFDValue, devNullFDErr = syscall.Open("/dev/null", os.O_WRONLY, 0)
++	})
++	if devNullFDErr != nil {
++		panic(fmt.Sprintf("failed to open /dev/null: %s", devNullFDErr))
+ 	}
+-
+-	devNullFD = uintptr(fd)
++	return devNullFDValue
+ }
+ 
+ // copy & paste from syscall.
