@@ -2,23 +2,51 @@ package vbd_test
 
 import (
 	"bytes"
+	"log"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
 )
 
-func TestVBD(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("test must be run as root")
+func TestMain(m *testing.M) {
+	// Re-exec the test in a child process, running as uid 0 in a new user
+	// namespace + new mount namespace so that we have permission to perform a
+	// FUSE mount, and so that if the test crashes then the mounts will be
+	// automatically cleaned up.
+	const envVarName = "__TEST_IS_PSEUDOROOT"
+	if os.Getenv(envVarName) == "1" {
+		os.Unsetenv(envVarName)
+		os.Exit(m.Run())
 	}
+	cmd := exec.Command("/proc/self/exe", os.Args[1:]...)
+	cmd.Env = append(os.Environ(), envVarName+"=1")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
+		UidMappings: []syscall.SysProcIDMap{
+			{HostID: os.Getuid(), ContainerID: 0, Size: 1},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{HostID: os.Getgid(), ContainerID: 0, Size: 1},
+		},
+	}
+	if err := cmd.Run(); err != nil && (cmd.ProcessState == nil || !cmd.ProcessState.Exited()) {
+		log.Fatal(err)
+	}
+	os.Exit(cmd.ProcessState.ExitCode())
+}
 
-	const root = "/tmp/vbd_test"
-	err := os.MkdirAll(root, 0755)
-	require.NoError(t, err)
+func TestVBD(t *testing.T) {
+	root := testfs.MakeTempDir(t)
 
 	// Set up backing file
 	f, err := os.CreateTemp(root, "vbd-*")
