@@ -168,7 +168,7 @@ func (s *SCIMServer) RegisterHandlers(mux interfaces.HttpServeMux) {
 			w.Write([]byte("could not lookup group information"))
 			return
 		}
-		if g.SamlIdpMetadataUrl == nil || *g.SamlIdpMetadataUrl == "" {
+		if g.SamlIdpMetadataUrl == "" {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("SCIM API can only be used in conjunction with SAML"))
 			return
