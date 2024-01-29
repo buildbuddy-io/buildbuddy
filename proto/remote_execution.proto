@@ -1056,6 +1056,9 @@ message ExecutedActionMetadata {
 
   // Whether the executed Action was marked with `do_not_cache`.
   bool do_not_cache = 1004;
+
+  // Metadata associated with the VM that this action was executed on.
+  VMMetadata vm_metadata = 1005;
 }
 
 // An ActionResult represents the result of an
@@ -2265,4 +2268,23 @@ message StoredExecution {
   
   int32 status_code = 29;
   int32 exit_code = 30;
+}
+
+// Metadata associated with a firecracker VM.
+message VMMetadata {
+  // A UUID assigned to the VM upon creation which is preserved across
+  // snapshots.
+  string vm_id = 1;
+
+  message Creator {
+    // The ID of the invocation that created this snapshot.
+    string invocation_id = 1;
+
+    // The ID of the execution that created this snapshot.
+    string execution_id = 2;
+  }
+
+  // Who created the last snapshot that this VM was resumed from.
+  // If the VM was created from scratch, this field will be unset.
+  Creator last_snapshot_creator = 2;
 }
