@@ -2516,8 +2516,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_hanwen_go_fuse_v2",
         importpath = "github.com/hanwen/go-fuse/v2",
-        patch_args = ["-p1"],
-        patch_tool = "patch",
         sum = "h1:ujevavwvGMg4s1TTSGWqid0q7WHk0XC8EOzHtygnt9E=",
         version = "v2.4.2",
     )
