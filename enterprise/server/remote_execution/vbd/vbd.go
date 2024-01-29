@@ -180,7 +180,7 @@ var _ fusefs.FileWriter = (*fileHandle)(nil)
 var _ fusefs.FileFsyncer = (*fileHandle)(nil)
 
 func (h *fileHandle) Read(ctx context.Context, p []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
-	return &reader{h.file, off, len(p)}, 0
+	return &reader{ctx, h.file, off, len(p)}, 0
 }
 
 func (h *fileHandle) Write(ctx context.Context, p []byte, off int64) (uint32, syscall.Errno) {
@@ -198,6 +198,7 @@ func (h *fileHandle) Fsync(ctx context.Context, flags uint32) syscall.Errno {
 }
 
 type reader struct {
+	ctx  context.Context
 	file BlockDevice
 	off  int64
 	size int
@@ -212,7 +213,7 @@ func (r *reader) Bytes(p []byte) ([]byte, fuse.Status) {
 	}
 	_, err := r.file.ReadAt(p[:length], r.off)
 	if err != nil {
-		log.Errorf("VBD read failed: %s", err)
+		log.CtxErrorf(r.ctx, "VBD read failed: %s", err)
 		return nil, fuse.EIO
 	}
 	return p[:length], fuse.OK
