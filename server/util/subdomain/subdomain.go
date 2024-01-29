@@ -90,7 +90,7 @@ func ReplaceURLSubdomainForGroup(rawURL string, g *tables.Group) string {
 		return rawURL
 	}
 
-	if g.URLIdentifier == nil || *g.URLIdentifier == "" {
+	if g.URLIdentifier == "" {
 		return rawURL
 	}
 
@@ -102,7 +102,7 @@ func ReplaceURLSubdomainForGroup(rawURL string, g *tables.Group) string {
 	}
 
 	domain := urlutil.GetDomain(pURL.Hostname())
-	newHost := *g.URLIdentifier + "." + domain
+	newHost := g.URLIdentifier + "." + domain
 	if pURL.Port() != "" {
 		newHost += ":" + pURL.Port()
 	}

@@ -57,12 +57,9 @@ func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) string
 	require.Len(t, tu.Groups, 1, "takeOwnershipOfDomain: user must be part of exactly one group")
 
 	gr := tu.Groups[0].Group
-	slug := gr.URLIdentifier
-	if slug == nil || *slug == "" {
-		v := strings.ToLower(gr.GroupID + "-slug")
-		slug = &v
+	if gr.URLIdentifier == "" {
+		gr.URLIdentifier = strings.ToLower(gr.GroupID + "-slug")
 	}
-	gr.URLIdentifier = slug
 	gr.OwnedDomain = strings.Split(tu.Email, "@")[1]
 	_, err = env.GetUserDB().InsertOrUpdateGroup(ctx, &gr)
 	require.NoError(t, err)

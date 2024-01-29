@@ -202,7 +202,7 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 
 			// If the user requested impersonation but the subdomain doesn't
 			// match the impersonation target then don't enable impersonation.
-			if sd := subdomain.Get(ctx); sd != "" && ig.URLIdentifier != nil && sd != *ig.URLIdentifier {
+			if sd := subdomain.Get(ctx); sd != "" && sd != ig.URLIdentifier {
 				return claims, nil
 			}
 

@@ -93,11 +93,9 @@ func takeOwnershipOfDomain(t *testing.T, ctx context.Context, env environment.En
 	require.Len(t, tu.Groups, 1, "takeOwnershipOfDomain: user must be part of exactly one group")
 
 	gr := tu.Groups[0].Group
-	slug := gr.URLIdentifier
-	if slug == nil || *slug == "" {
-		slug = stringPointer(strings.ToLower(gr.GroupID + "-slug"))
+	if gr.URLIdentifier == "" {
+		gr.URLIdentifier = strings.ToLower(gr.GroupID + "-slug")
 	}
-	gr.URLIdentifier = slug
 	gr.OwnedDomain = strings.Split(tu.Email, "@")[1]
 	_, err = env.GetUserDB().InsertOrUpdateGroup(ctx, &gr)
 	require.NoError(t, err)
@@ -112,10 +110,6 @@ func getGroupRole(t *testing.T, ctx context.Context, env environment.Env, groupI
 		}
 	}
 	return nil
-}
-
-func stringPointer(val string) *string {
-	return &val
 }
 
 func apiKeyValues(keys []*tables.APIKey) []string {
@@ -135,14 +129,14 @@ func setUserOwnedKeysEnabled(t *testing.T, ctx context.Context, env environment.
 	require.NoError(t, err)
 
 	url := strings.ToLower(groupID + "-slug")
-	if g.URLIdentifier != nil && *g.URLIdentifier != "" {
-		url = *g.URLIdentifier
+	if g.URLIdentifier != "" {
+		url = g.URLIdentifier
 	}
 
 	updates := &tables.Group{
 		GroupID:              groupID,
 		UserOwnedKeysEnabled: enabled,
-		URLIdentifier:        &url,
+		URLIdentifier:        url,
 	}
 	_, err = env.GetUserDB().InsertOrUpdateGroup(ctx, updates)
 	require.NoError(t, err)
@@ -340,7 +334,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	// part of InsertUser).
 	orgGroupID, err := udb.InsertOrUpdateGroup(ctx1, &tables.Group{
 		GroupID:       "GR1",
-		URLIdentifier: stringPointer("gr1-slug"),
+		URLIdentifier: "gr1-slug",
 		OwnedDomain:   "org1.io",
 	})
 	require.NoError(t, err)
@@ -447,7 +441,7 @@ func TestInsertOrUpdateGroup(t *testing.T) {
 	createUser(t, ctx, env, "US2", "org2.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 
-	g1Update := &tables.Group{GroupID: "GR1", URLIdentifier: stringPointer("gr1")}
+	g1Update := &tables.Group{GroupID: "GR1", URLIdentifier: "gr1"}
 
 	_, err := udb.InsertOrUpdateGroup(ctx, g1Update)
 	require.Truef(
@@ -1431,10 +1425,9 @@ func TestGroupAuditLogs(t *testing.T) {
 	userCtx := authUserCtx(ctx, env, t, "US1")
 
 	// Create a new group as US1
-	groupURL := "my-group"
 	groupID, err := udb.CreateGroup(userCtx, &tables.Group{
 		Name:          "old name",
-		URLIdentifier: &groupURL,
+		URLIdentifier: "my-group",
 	})
 	require.NoError(t, err)
 	al.Reset()
@@ -1483,10 +1476,9 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 	userCtx := authUserCtx(ctx, env, t, "US1")
 
 	// Create a new group as US1
-	groupURL := "my-group"
 	groupID, err := udb.CreateGroup(userCtx, &tables.Group{
 		Name:          "old name",
-		URLIdentifier: &groupURL,
+		URLIdentifier: "my-group",
 	})
 	require.NoError(t, err)
 	al.Reset()

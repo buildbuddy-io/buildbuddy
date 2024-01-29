@@ -100,8 +100,7 @@ func TestEnforcement(t *testing.T) {
 
 	// Enable IP rule enforcement.
 	g.EnforceIPRules = true
-	urlIdentifier := "foo"
-	g.URLIdentifier = &urlIdentifier
+	g.URLIdentifier = "foo"
 	_, err = env.GetUserDB().InsertOrUpdateGroup(authCtx, &g)
 	require.NoError(t, err)
 
