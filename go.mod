@@ -16,7 +16,6 @@ require (
 	cloud.google.com/go/compute v1.23.3
 	cloud.google.com/go/compute/metadata v0.2.3
 	cloud.google.com/go/logging v1.8.1
-	cloud.google.com/go/longrunning v0.5.4
 	cloud.google.com/go/secretmanager v1.11.4
 	cloud.google.com/go/storage v1.31.0
 	github.com/AlecAivazis/survey/v2 v2.3.7
@@ -149,6 +148,7 @@ require (
 require (
 	cloud.google.com/go v0.110.10 // indirect
 	cloud.google.com/go/iam v1.1.5 // indirect
+	cloud.google.com/go/longrunning v0.5.4 // indirect
 	dario.cat/mergo v1.0.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/BurntSushi/toml v1.3.2 // indirect
