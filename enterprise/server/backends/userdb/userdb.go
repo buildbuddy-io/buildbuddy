@@ -237,8 +237,8 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 	if err != nil {
 		return "", err
 	}
-	if g.URLIdentifier != nil {
-		valid, err := d.validateURLIdentifier(ctx, "", *g.URLIdentifier)
+	if g.URLIdentifier != "" {
+		valid, err := d.validateURLIdentifier(ctx, "", g.URLIdentifier)
 		if err != nil {
 			return "", err
 		}
@@ -309,14 +309,11 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 	if isInOwnedDomainBlocklist(g.OwnedDomain) {
 		return "", status.InvalidArgumentError("This domain is not allowed to be owned by any group.")
 	}
-	if g.URLIdentifier == nil {
-		return "", status.InvalidArgumentError("Invalid organization URL.")
-	}
-	if match := groupUrlIdentifierPattern.MatchString(*g.URLIdentifier); !match {
+	if match := groupUrlIdentifierPattern.MatchString(g.URLIdentifier); !match {
 		return "", status.InvalidArgumentError("Invalid organization URL.")
 	}
 
-	valid, err := d.validateURLIdentifier(ctx, g.GroupID, *g.URLIdentifier)
+	valid, err := d.validateURLIdentifier(ctx, g.GroupID, g.URLIdentifier)
 	if err != nil {
 		return "", err
 	}
@@ -673,7 +670,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 
 	groupIDs := make([]string, 0)
 	for _, group := range u.Groups {
-		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, *group.Group.URLIdentifier)
+		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, group.Group.URLIdentifier)
 		if err != nil {
 			return err
 		}

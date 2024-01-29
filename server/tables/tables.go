@@ -196,7 +196,7 @@ type Group struct {
 	// A unique URL segment that is displayed in group-related URLs.
 	// e.g. "example-org" in app.buildbuddy.com/join/example-org or
 	// "example-org.buildbuddy.com" if we support subdomains in the future.
-	URLIdentifier *string `gorm:"default:NULL;unique;uniqueIndex:url_identifier_unique_index;"`
+	URLIdentifier string `gorm:"default:NULL;unique;uniqueIndex:url_identifier_unique_index;"`
 
 	// The group ID -- a unique ID.
 	GroupID string `gorm:"primaryKey;"`

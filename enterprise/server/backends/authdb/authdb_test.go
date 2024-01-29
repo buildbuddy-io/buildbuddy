@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	crand "crypto/rand"
+
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -538,7 +539,7 @@ func TestSubdomainRestrictions(t *testing.T) {
 		require.Truef(t, status.IsUnauthenticatedError(err), "expected unauthenticated error but got %v", err)
 
 		// Use a subdomain that matches the group.
-		ctx = subdomain.SetHost(ctx, *admin.Groups[0].Group.URLIdentifier+".buildbuddy.dev")
+		ctx = subdomain.SetHost(ctx, admin.Groups[0].Group.URLIdentifier+".buildbuddy.dev")
 		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, k.Value)
 		require.NoError(t, err)
 	}
