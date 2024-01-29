@@ -6,6 +6,10 @@ app:
   default_redis_target: "localhost:6379"
   enable_target_tracking: true
   user_owned_keys_enabled: true
+  # IP for my vm
+  cache_api_url: "grpc://10.138.0.182:1985"
+  events_api_url: "grpc://10.138.0.182:1985"
+  remote_execution_api_url: "grpc://10.138.0.182:1985"
 database:
   data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
 #olap_database:
@@ -26,6 +30,17 @@ auth:
   #   - issuer_url: "https://accounts.google.com"
   #     client_id: "${BB_DEV_OAUTH_CLIENT_ID}"
   #     client_secret: "${BB_DEV_OAUTH_CLIENT_SECRET}"
+#
+# Run the app with: --config_secrets.provider=gcp --config_secrets.gcp.project_id=flame-build
 github:
-  client_id: "${BB_DEV_GITHUB_CLIENT_ID}"
-  client_secret: "${BB_DEV_GITHUB_CLIENT_SECRET}"
+  app:
+    enabled: true
+    public_link: "https://github.com/apps/buildbuddy-local"
+    id: "403600"
+    client_id: ${SECRET:BB_LOCAL_GITHUB_APP_CLIENT_ID}
+    client_secret: ${SECRET:BB_LOCAL_GITHUB_APP_CLIENT_SECRET}
+    webhook_secret: ${SECRET:BB_LOCAL_GITHUB_APP_WEBHOOK_SECRET}
+    private_key: ${SECRET:BB_LOCAL_GITHUB_APP_PRIVATE_KEY}
+remote_execution:
+  enable_remote_exec: true
+  enable_workflows: true

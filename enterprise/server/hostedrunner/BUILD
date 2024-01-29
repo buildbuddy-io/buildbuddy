@@ -15,7 +15,6 @@ go_library(
         "//proto:resource_go_proto",
         "//proto:runner_go_proto",
         "//server/endpoint_urls/build_buddy_url",
-        "//server/endpoint_urls/cache_api_url",
         "//server/endpoint_urls/events_api_url",
         "//server/environment",
         "//server/remote_cache/cachetools",
