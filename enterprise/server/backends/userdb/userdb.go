@@ -376,9 +376,6 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 		if res.Error != nil {
 			return res.Error
 		}
-		if res.RowsAffected == 0 {
-			return status.NotFoundErrorf("Group %s not found", groupID)
-		}
 		return nil
 	})
 	return groupID, err
