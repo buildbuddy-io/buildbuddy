@@ -235,7 +235,7 @@ type Group struct {
 	EnforceIPRules         bool `gorm:"not null;default:0"`
 
 	// The SAML IDP Metadata URL for this group.
-	SamlIdpMetadataUrl *string
+	SamlIdpMetadataUrl string
 
 	InvocationWebhookURL string `gorm:"not null;default:''"`
 
