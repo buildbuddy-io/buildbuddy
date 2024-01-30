@@ -649,9 +649,11 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 			break // context canceled
 		}
 		if err := rateLimiter.Wait(ctx); err != nil {
-			if err != s.ctx.Err() {
-				log.CtxErrorf(s.ctx, "COWStore eager fetch rate limiter failed, stopping eager fetches: %s", err)
+			// Ignore if the ctx is done, since that's probably the root issue.
+			if ctx.Err() != nil {
+				return
 			}
+			log.CtxErrorf(s.ctx, "COWStore eager fetch rate limiter failed, stopping eager fetches: %s", err)
 			return
 		}
 		eg.Go(func() error {
