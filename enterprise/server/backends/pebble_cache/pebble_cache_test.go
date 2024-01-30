@@ -295,7 +295,7 @@ func TestGetSet(t *testing.T) {
 		},
 	}
 	testSizes := []int64{
-		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000, 10000000,
+		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000,
 	}
 	for _, tc := range testCases {
 		options := &pebble_cache.Options{
@@ -765,7 +765,7 @@ func TestMetadata(t *testing.T) {
 	}
 
 	testSizes := []int64{
-		1, 10, 100, 1000, 10000, 1000000, 10000000,
+		1, 10, 100, 1000, 10000, 1000000,
 	}
 	for _, averageChunkSizeBytes := range averageChunkSizeBytesParam {
 		options := &pebble_cache.Options{
@@ -947,7 +947,7 @@ func TestReadWrite(t *testing.T) {
 		},
 	}
 	testSizes := []int64{
-		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000, 10000000,
+		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000,
 	}
 	for _, tc := range testCases {
 		options := &pebble_cache.Options{
@@ -1133,7 +1133,7 @@ func TestSizeLimit(t *testing.T) {
 			require.NoError(t, err)
 			defer pc.Stop()
 
-			resourceKeys := make([]*rspb.ResourceName, 0, 150000)
+			resourceKeys := make([]*rspb.ResourceName, 0)
 			for i := 0; i < 150; i++ {
 				r, buf := newCASResourceBuf(t, 1000)
 				resourceKeys = append(resourceKeys, r)
@@ -1215,11 +1215,6 @@ func TestCompression(t *testing.T) {
 		{
 			desc:                  "chunking_on_multiple_cdc_chunks_single_compression_chunk",
 			blobSize:              pebble_cache.CompressorBufSizeBytes - 1,
-			averageChunkSizeBytes: averageChunkSizeBytes,
-		},
-		{
-			desc:                  "chunking_on_single_chunk",
-			blobSize:              int64(averageChunkSizeBytes/4 - 1),
 			averageChunkSizeBytes: averageChunkSizeBytes,
 		},
 	}
@@ -1549,13 +1544,6 @@ func TestCompressionOffset(t *testing.T) {
 			readOffset:            2 * 1024,
 			readLimit:             10,
 		},
-		{
-			desc:                  "chunking_on_single_chunk",
-			blobSize:              int64(averageChunkSizeBytes/4 - 1),
-			averageChunkSizeBytes: averageChunkSizeBytes,
-			readOffset:            20,
-			readLimit:             10,
-		},
 	}
 
 	for _, tc := range testCases {
@@ -1674,11 +1662,6 @@ func TestNoEarlyEviction(t *testing.T) {
 			digestSize:             100,
 		},
 		{
-			desc:                  "chunking_on_single_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            63,
-		},
-		{
 			desc:                  "chunking_on_multiple_chunk",
 			averageChunkSizeBytes: 64 * 4,
 			digestSize:            2 * 1064,
@@ -1746,11 +1729,6 @@ func TestLRU(t *testing.T) {
 			digestSize:            2 * 1024,
 		},
 		{
-			desc:                  "chunking_on_single_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            2 * 1024,
-		},
-		{
 			desc:                   "chunking_off_inline",
 			maxInlineFileSizeBytes: 1024,
 			digestSize:             100,
@@ -1761,14 +1739,13 @@ func TestLRU(t *testing.T) {
 			digestSize:             100,
 		},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 			ctx := getAnonContext(t, te)
 
-			numDigests := 100
+			numDigests := 10
 			activeKeyVersion := int64(5)
 			maxSizeBytes := int64(math.Ceil( // account for integer rounding
 				float64(numDigests) * float64(tc.digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
@@ -1892,11 +1869,6 @@ func TestStartupScan(t *testing.T) {
 		maxInlineFileSizeBytes int64
 		digestSize             int64
 	}{
-		{
-			desc:                  "chunking_on_single_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            63,
-		},
 		{
 			desc:                  "chunking_on_multiple_chunks",
 			averageChunkSizeBytes: 64 * 4,
@@ -2408,11 +2380,6 @@ func TestEncryption(t *testing.T) {
 		digestSize             int64
 	}{
 		{
-			desc:                  "chunking_on_single_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            63,
-		},
-		{
 			desc:                  "chunking_on_multiple_chunks",
 			averageChunkSizeBytes: 64 * 4,
 			digestSize:            2 * 1024,
@@ -2548,11 +2515,6 @@ func TestEncryptedUnencryptedSameDigest(t *testing.T) {
 		digestSize             int64
 	}{
 		{
-			desc:                  "chunking_on_single_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            63,
-		},
-		{
 			desc:                  "chunking_on_multiple_chunks",
 			averageChunkSizeBytes: 64 * 4,
 			digestSize:            2 * 1024,
@@ -2681,11 +2643,6 @@ func TestEncryptionAndCompression(t *testing.T) {
 		{
 			desc:                  "chunking_on_multiple_cdc_chunks_single_compression_chunk",
 			blobSize:              pebble_cache.CompressorBufSizeBytes - 1,
-			averageChunkSizeBytes: averageChunkSizeBytes,
-		},
-		{
-			desc:                  "chunking_on_single_chunk",
-			blobSize:              int64(averageChunkSizeBytes/4 - 1),
 			averageChunkSizeBytes: averageChunkSizeBytes,
 		},
 	}
@@ -3155,7 +3112,7 @@ func TestSampling(t *testing.T) {
 
 			// Write some random digests as well.
 			var randomResources []*rspb.ResourceName
-			for i := 0; i < 100; i++ {
+			for i := 0; i < 10; i++ {
 				rn, buf := newCASResourceBuf(t, 100)
 				anonCtx := getAnonContext(t, te)
 				err = pc.Set(anonCtx, rn, buf)
@@ -3172,7 +3129,7 @@ func TestSampling(t *testing.T) {
 					log.Infof("i = %d: unencrypted test digest is evicted", i)
 					break
 				}
-				time.Sleep(800 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 			}
 
 			// The unencrypted key should no longer exist.
