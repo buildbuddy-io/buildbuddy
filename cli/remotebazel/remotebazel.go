@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/setup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -49,14 +51,17 @@ const (
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
-	//TODO(Maggie): Make this configurable
-	defaultRemoteExecutionURL = "remote.buildbuddy.io"
+	defaultRemoteExecutionURL  = "remote.buildbuddy.io"
 )
 
 var (
-	execOs            = flag.String("os", "linux", "If set, requests execution on a specific OS.")
-	execArch          = flag.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
-	containerImage    = flag.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
+	remoteFlagset = flag.NewFlagSet("remote", flag.ContinueOnError)
+
+	execOs         = remoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
+	execArch       = remoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
+	containerImage = remoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
+	remoteRunner   = remoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
+
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
 
@@ -636,12 +641,19 @@ func HandleRemoteBazel(args []string) (int, error) {
 		return 1, status.WrapError(err, "bazel setup")
 	}
 
+	bazelArgs, err = parseRemoteCliFlags(bazelArgs)
+	if err != nil {
+		return 1, status.WrapError(err, "parse remote bazel cli flags")
+	}
+
 	bazelArgs = arg.Remove(bazelArgs, "bes_backend")
 	bazelArgs = arg.Remove(bazelArgs, "remote_cache")
 
-	// Ensure all bazel remote runs use the remote cache
-	bazelArgs = append(bazelArgs, "--bes_backend="+defaultRemoteExecutionURL)
-	bazelArgs = append(bazelArgs, "--remote_cache="+defaultRemoteExecutionURL)
+	// Ensure all bazel remote runs use the remote cache.
+	// The goal is to keep remote workloads close to our servers, so use the same
+	// app backend as the remote runner.
+	bazelArgs = append(bazelArgs, "--bes_backend="+*remoteRunner)
+	bazelArgs = append(bazelArgs, "--remote_cache="+*remoteRunner)
 
 	ctx := context.Background()
 	repoConfig, err := Config(".")
@@ -654,10 +666,77 @@ func HandleRemoteBazel(args []string) (int, error) {
 		return 1, status.WrapError(err, "finding workspace")
 	}
 
+	runner := *remoteRunner
+	if !strings.HasPrefix(runner, "grpc") {
+		runner = "grpcs://" + runner
+	}
+
 	return Run(ctx, RunOpts{
-		Server:            "grpcs://" + defaultRemoteExecutionURL,
+		Server:            runner,
 		APIKey:            arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key"),
 		Args:              arg.JoinExecutableArgs(bazelArgs, execArgs),
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
+}
+
+// parseRemoteCliFlags parses flags that affect configuration of remote bazel.
+// These flags are defined in `remoteFlagset`.
+//
+// These flags are expected to be set between the `remote` command and the bazel
+// command. Ex. bb remote <--remote_cli_flag> build //...
+//
+// If there are bazel startup flags set (also set before the bazel command),
+// the remote cli flags and startup flags can be mixed in any order and will still
+// be parsed correctly.
+// Ex. bb remote <--remote_cli_flag> <--startup_flag> <--remote_cli_flag> build //...
+//
+// Return the list of original args with all remote cli flags removed.
+func parseRemoteCliFlags(args []string) ([]string, error) {
+	// Discard flag parse error logging because it's very verbose if you parse
+	// a flag not in remoteFlagset, but we might expect that if bazel startup flags
+	// are set
+	remoteFlagset.SetOutput(io.Discard)
+
+	// Stop parsing flags when we reach the bazel command
+	_, bazelCmdIdx := parser.GetBazelCommandAndIndex(args)
+	if bazelCmdIdx == -1 {
+		return nil, status.InvalidArgumentErrorf("no bazel command passed to run remotely")
+	}
+	unparsedArgs := args[:bazelCmdIdx]
+
+	for len(unparsedArgs) > 0 {
+		err := remoteFlagset.Parse(unparsedArgs)
+		if err == nil {
+			// flagset.Args() contains the list of any unparsed arguments
+			// Keep parsing them in a loop until we process all the args
+			unparsedArgs = remoteFlagset.Args()
+		} else {
+			// Parsing undefined flags could happen if there are bazel startup flags set
+			// Remove them from the list of unparsed arguments and keep parsing
+			// remaining args.
+			if strings.Contains(err.Error(), "flag provided but not defined") {
+				// Remove the unrecognized flag and keep trying to parse
+				unparsedArgs = unparsedArgs[1:]
+
+				// Startup flags could be set in the format `--flag value`.
+				// flagset.Parse() won't process arg lists not starting with a flag,
+				// so remove any floating value arguments.
+				if len(unparsedArgs) > 0 && !strings.HasPrefix(unparsedArgs[0], "-") {
+					unparsedArgs = unparsedArgs[1:]
+				}
+			} else {
+				return nil, err
+			}
+		}
+	}
+
+	// Remove all cli flags from the arg list
+	argsRemoteFlagsRemoved := args[:bazelCmdIdx]
+	remoteFlagset.VisitAll(func(f *flag.Flag) {
+		_, argsRemoteFlagsRemoved = arg.Pop(argsRemoteFlagsRemoved, f.Name)
+	})
+
+	// Add back in the bazel command and any subsequent flags
+	argsRemoteFlagsRemoved = append(argsRemoteFlagsRemoved, args[bazelCmdIdx:]...)
+	return argsRemoteFlagsRemoved, nil
 }
