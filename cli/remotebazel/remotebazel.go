@@ -57,10 +57,10 @@ const (
 var (
 	remoteFlagset = flag.NewFlagSet("remote", flag.ContinueOnError)
 
-	execOs             = remoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
-	execArch           = remoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
-	containerImage     = remoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
-	remoteRunnerTarget = remoteFlagset.String("remote_runner_target", defaultRemoteExecutionURL, "The target the remote runner should run on. Defaults to the prod app server.")
+	execOs         = remoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
+	execArch       = remoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
+	containerImage = remoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
+	remoteRunner   = remoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
 
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
@@ -652,8 +652,8 @@ func HandleRemoteBazel(args []string) (int, error) {
 	// Ensure all bazel remote runs use the remote cache.
 	// The goal is to keep remote workloads close to our servers, so use the same
 	// app backend as the remote runner.
-	bazelArgs = append(bazelArgs, "--bes_backend="+*remoteRunnerTarget)
-	bazelArgs = append(bazelArgs, "--remote_cache="+*remoteRunnerTarget)
+	bazelArgs = append(bazelArgs, "--bes_backend="+*remoteRunner)
+	bazelArgs = append(bazelArgs, "--remote_cache="+*remoteRunner)
 
 	ctx := context.Background()
 	repoConfig, err := Config(".")
@@ -666,7 +666,7 @@ func HandleRemoteBazel(args []string) (int, error) {
 		return 1, status.WrapError(err, "finding workspace")
 	}
 
-	runner := *remoteRunnerTarget
+	runner := *remoteRunner
 	if !strings.HasPrefix(runner, "grpc") {
 		runner = "grpcs://" + runner
 	}

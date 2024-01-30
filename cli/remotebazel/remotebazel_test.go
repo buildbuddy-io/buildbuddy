@@ -19,7 +19,7 @@ func TestParseRemoteCliFlags(t *testing.T) {
 		{
 			name: "one remote cli flag",
 			inputArgs: []string{
-				"--remote_runner_target=val",
+				"--remote_runner=val",
 				"build",
 				"//...",
 			},
@@ -28,13 +28,13 @@ func TestParseRemoteCliFlags(t *testing.T) {
 				"//...",
 			},
 			expectedFlagValue: map[string]string{
-				"remote_runner_target": "val",
+				"remote_runner": "val",
 			},
 		},
 		{
 			name: "one remote cli flag - space between val",
 			inputArgs: []string{
-				"--remote_runner_target",
+				"--remote_runner",
 				"val",
 				"build",
 				"//...",
@@ -44,13 +44,13 @@ func TestParseRemoteCliFlags(t *testing.T) {
 				"//...",
 			},
 			expectedFlagValue: map[string]string{
-				"remote_runner_target": "val",
+				"remote_runner": "val",
 			},
 		},
 		{
 			name: "multiple remote cli flags",
 			inputArgs: []string{
-				"--remote_runner_target=val",
+				"--remote_runner=val",
 				"--os=val2",
 				"build",
 				"//...",
@@ -60,8 +60,8 @@ func TestParseRemoteCliFlags(t *testing.T) {
 				"//...",
 			},
 			expectedFlagValue: map[string]string{
-				"remote_runner_target": "val",
-				"os":                   "val2",
+				"remote_runner": "val",
+				"os":            "val2",
 			},
 		},
 		{
@@ -109,7 +109,7 @@ func TestParseRemoteCliFlags(t *testing.T) {
 				"--os",
 				"val2",
 				"--output_base=val",
-				"--remote_runner_target=val",
+				"--remote_runner=val",
 				"build",
 				"//...",
 			},
@@ -119,8 +119,8 @@ func TestParseRemoteCliFlags(t *testing.T) {
 				"//...",
 			},
 			expectedFlagValue: map[string]string{
-				"remote_runner_target": "val",
-				"os":                   "val2",
+				"remote_runner": "val",
+				"os":            "val2",
 			},
 		},
 		{
@@ -129,7 +129,7 @@ func TestParseRemoteCliFlags(t *testing.T) {
 				"--output_base=val",
 				"--os",
 				"val2",
-				"--remote_runner_target=val",
+				"--remote_runner=val",
 				"--system_rc",
 				"build",
 				"//...",
@@ -141,8 +141,8 @@ func TestParseRemoteCliFlags(t *testing.T) {
 				"//...",
 			},
 			expectedFlagValue: map[string]string{
-				"remote_runner_target": "val",
-				"os":                   "val2",
+				"remote_runner": "val",
+				"os":            "val2",
 			},
 		},
 		{
