@@ -100,11 +100,11 @@ func newUserResource(u *tables.User, authGroup *tables.Group) (*UserResource, er
 }
 
 type ListResponseResource struct {
-	Schemas      []string `json:"schemas"`
-	TotalResults int      `json:"totalResults"`
-	StartIndex   int      `json:"startIndex"`
-	ItemsPerPage int      `json:"itemsPerPage"`
-	Resources    []*UserResource
+	Schemas      []string        `json:"schemas"`
+	TotalResults int             `json:"totalResults"`
+	StartIndex   int             `json:"startIndex"`
+	ItemsPerPage int             `json:"itemsPerPage"`
+	Resources    []*UserResource `json:"resources,omitempty"`
 }
 
 type OperationResource struct {
