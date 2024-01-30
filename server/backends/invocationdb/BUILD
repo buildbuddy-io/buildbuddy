@@ -63,8 +63,10 @@ go_test(
         ":invocationdb",
         "//proto:invocation_status_go_proto",
         "//server/tables",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/db",
+        "//server/util/prefix",
         "@com_github_stretchr_testify//require",
     ],
 )
@@ -90,8 +92,10 @@ go_test(
         ":invocationdb",
         "//proto:invocation_status_go_proto",
         "//server/tables",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/db",
+        "//server/util/prefix",
         "@com_github_stretchr_testify//require",
     ],
 )
