@@ -94,6 +94,17 @@ sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
 			Examples: `# Number of bytes uploaded as measured over the last week
 sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))`,
 		},
+		{
+			sourceMetricName: "buildbuddy_remote_execution_duration_usec_exported",
+			LabelNames:       []string{metrics.OS},
+			ExportedFamily: &dto.MetricFamily{
+				Name: proto.String("exported_buildbuddy_remote_execution_duration_usec"),
+				Help: proto.String("The total duration of remote execution, in **microseconds**."),
+				Type: dto.MetricType_HISTOGRAM.Enum(),
+			},
+			Examples: `# The total duration of remote execution as measured over the last week
+sum by (os) (rate(exported_buildbuddy_remote_execution_duration_usec_exported[1w]))`,
+		},
 	}
 )
 
