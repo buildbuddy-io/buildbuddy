@@ -48,6 +48,7 @@ ts_library(
         "//app/capabilities",
         "//app/components/digest",
         "//app/service:rpc_service",
+        "//app/util:cache",
         "//proto:build_event_stream_ts_proto",
         "//proto:zip_ts_proto",
         "@npm//@types/react",

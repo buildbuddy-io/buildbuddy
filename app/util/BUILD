@@ -135,9 +135,20 @@ ts_library(
     name = "cache",
     srcs = ["cache.tsx"],
     deps = [
+        "//proto:build_event_stream_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:resource_ts_proto",
         "@npm//@types/long",
         "@npm//long",
+        "@npm//tslib",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "cache_test",
+    srcs = ["cache_test.ts"],
+    deps = [
+        ":cache",
+        "@npm//tslib",
     ],
 )
