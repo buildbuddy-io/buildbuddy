@@ -9,14 +9,34 @@ import (
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	userMap = testauth.TestUsers("user1", "group1")
+)
+
+func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
+	te := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(userMap)
+	te.SetAuthenticator(ta)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+	return te, ta, ctx
+}
+
 func TestCreateReadUpdateDelete(t *testing.T) {
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
+	env, authenticator, ctx := getEnvAuthAndCtx(t)
+
+	// Authenticate as user1.
+	ctx, err := authenticator.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
 	dbh := env.GetDBHandle()
 	idb := invocationdb.NewInvocationDB(env, dbh)
 
@@ -38,7 +58,7 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 	}
 
 	// Delete invocation 0 then look up again; should not be found.
-	err := idb.DeleteInvocation(ctx, "invocation-0")
+	err = idb.DeleteInvocation(ctx, "invocation-0")
 	require.NoError(t, err)
 	inv, err := idb.LookupInvocation(ctx, "invocation-0")
 	require.Nil(t, inv)
@@ -62,6 +82,8 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 	inv, err = idb.LookupInvocation(ctx, "invocation-2")
 	require.NoError(t, err)
 	require.Equal(t, "//pattern:2", inv.Pattern)
+	require.Equal(t, "user1", inv.UserID)
+	require.Equal(t, "group1", inv.GroupID)
 	ie := &tables.InvocationExecution{}
 	err = dbh.NewQuery(ctx, "get_invocation_executions").Raw(
 		`SELECT * FROM "InvocationExecutions" WHERE invocation_id = ?`,
