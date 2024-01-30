@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -24,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/longrunning"
-	"google.golang.org/grpc/metadata"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -198,21 +196,35 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 }
 
 func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
-	apiKeys := metadata.ValueFromIncomingContext(ctx, authutil.APIKeyHeader)
-	if len(apiKeys) == 0 {
-		return nil, status.UnauthenticatedError("must set api key with `--remote_header=x-buildbuddy-api-key=`")
+	gid, err := r.groupID(ctx)
+	if err != nil {
+		return nil, err
 	}
-	// Get last key if multiple are set
-	apiKey := apiKeys[len(apiKeys)-1]
+	apiKey, err := r.env.GetAuthDB().GetAPIKeyForInternalUseOnly(ctx, gid)
+	if err != nil {
+		return nil, err
+	}
 
 	// Use env override headers for credentials.
 	envOverrides := []*repb.Command_EnvironmentVariable{
-		{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
+		{Name: "BUILDBUDDY_API_KEY", Value: apiKey.Value},
 		{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
 		{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
 	}
 	ctx = withEnvOverrides(ctx, envOverrides)
 	return ctx, nil
+}
+
+func (r *runnerService) groupID(ctx context.Context) (string, error) {
+	auth := r.env.GetAuthenticator()
+	if auth == nil {
+		return "", status.FailedPreconditionError("Auth was not configured but is required")
+	}
+	u, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	return u.GetGroupID(), nil
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run

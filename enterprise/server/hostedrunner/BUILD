@@ -20,7 +20,6 @@ go_library(
         "//server/environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
-        "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/git",
         "//server/util/log",
@@ -28,7 +27,6 @@ go_library(
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto//googleapis/longrunning",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
     ],
 )
