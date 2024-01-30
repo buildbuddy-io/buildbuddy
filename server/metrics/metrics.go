@@ -721,6 +721,17 @@ var (
 		GroupID,
 	})
 
+	RemoteExecutionDurationUsecExported = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "duration_usec_exported",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*day, 5),
+		Help:      "Time spent in remote execution, in **microseconds**. ",
+	}, []string{
+		OS,
+		GroupID,
+	})
+
 	// #### Examples
 	//
 	// ```promql

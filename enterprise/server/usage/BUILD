@@ -7,6 +7,7 @@ go_library(
     srcs = ["usage.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage",
     deps = [
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/usage/config",
         "//enterprise/server/util/redisutil",
         "//server/environment",
