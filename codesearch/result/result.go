@@ -7,10 +7,10 @@ import (
 )
 
 type Result struct {
-	Project  string
-	MatchCount    int
-	Filename string
-	Snippets [][]byte
+	Project    string
+	MatchCount int
+	Filename   string
+	Snippets   [][]byte
 }
 
 func (r Result) String() string {

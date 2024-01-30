@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"strings"
 
+	osre "regexp"
+
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/regexp"
@@ -145,8 +147,27 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		Stderr: os.Stderr,
 	}
 
+	term := req.GetQuery().GetTerm()
+	// Try to extract filepath stuff before compiling.
+	filepathFilterRegex := osre.MustCompile(`filepath:[^\s]+`)
+	filepathRegex := ""
+	for _, filepathFilter := range filepathFilterRegex.FindAll([]byte(term), -1) {
+		filter := string(filepathFilter)
+		term = strings.ReplaceAll(term, filter, "")
+		filepathRegex = strings.TrimPrefix(filter, "filepath:")
+		log.Printf("term is now %q", term)
+	}
+	var fre *osre.Regexp
+	if filepathRegex != "" {
+		var err error
+		fre, err = osre.Compile(filepathRegex)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	log.Printf("req: %+v", req)
-	pat := "(?m)" + req.GetQuery().GetTerm()
+	pat := "(?m)" + term
 	pat = "(?i)" + pat
 
 	re, err := regexp.Compile(pat)
@@ -168,6 +189,9 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		name, err := ir.Name(fileid)
 		if err != nil {
 			return nil, err
+		}
+		if fre != nil && !fre.MatchString(name) {
+			continue
 		}
 		buf, err := ir.Contents(fileid)
 		if err != nil {
