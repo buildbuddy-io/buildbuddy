@@ -52,6 +52,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/google/uuid"
+	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -1312,6 +1313,14 @@ func (c *FirecrackerContainer) getChroot() string {
 func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
 	bootArgs := "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules=1 random.trust_cpu=on i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd tsc=reliable ipv6.disable=1"
 	var netNS string
+
+	// Temporarily disable TSC-Deadline on AMD CPUs - this works around an issue
+	// where VMs occasionally freeze up after being resumed from a snapshot.
+	// DO NOT SUBMIT: this causes StressIO test to fail with a UFFDIO_COPY error
+	// (errno 17)
+	if cpuid.CPU.VendorID == cpuid.AMD {
+		bootArgs += " lapic=notscdeadline"
+	}
 
 	if c.vmConfig.EnableNetworking {
 		bootArgs += " " + machineIPBootArgs

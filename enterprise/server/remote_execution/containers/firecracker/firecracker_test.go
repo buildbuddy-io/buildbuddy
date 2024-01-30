@@ -2148,7 +2148,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 	// High-level orchestration options
 	const (
 		// Total number of runs
-		runs = 10
+		runs = 100
 		// Max number of VMs to run concurrently
 		concurrency = 1
 	)
@@ -2170,7 +2170,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 	// VM lifecycle options
 	const (
 		// Max number of times a single VM can be used before it is removed
-		maxRunsPerVM = 1
+		maxRunsPerVM = 100
 	)
 	// VM configuration
 	const (
