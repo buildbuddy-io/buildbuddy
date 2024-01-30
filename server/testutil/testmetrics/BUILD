@@ -7,8 +7,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:prometheus_client_go_proto",
         "@com_github_prometheus_client_golang//prometheus",
-        "@com_github_prometheus_client_model//go",
         "@com_github_stretchr_testify//require",
     ],
 )
