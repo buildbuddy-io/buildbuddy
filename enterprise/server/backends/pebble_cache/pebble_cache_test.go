@@ -1253,8 +1253,10 @@ func TestCompression(t *testing.T) {
 		compressedRN.Compressor = repb.Compressor_ZSTD
 
 		for _, tc := range testCases {
+			tc := tc
 			desc := fmt.Sprintf("%s_%s", tp.desc, tc.name)
 			t.Run(desc, func(t *testing.T) {
+				t.Parallel()
 				opts := &pebble_cache.Options{
 					RootDirectory:          testfs.MakeTempDir(t),
 					MaxSizeBytes:           maxSizeBytes,
@@ -1740,7 +1742,9 @@ func TestLRU(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
 			te := testenv.GetTestEnv(t)
 			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 			ctx := getAnonContext(t, te)
