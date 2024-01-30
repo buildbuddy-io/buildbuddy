@@ -23,6 +23,7 @@ go_library(
         "//server/util/bazel_request",
         "//server/util/git",
         "//server/util/log",
+        "//server/util/perms",
         "//server/util/prefix",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",

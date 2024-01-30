@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
@@ -196,11 +197,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 }
 
 func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
-	gid, err := r.groupID(ctx)
+	u, err := perms.AuthenticatedUser(ctx, r.env)
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := r.env.GetAuthDB().GetAPIKeyForInternalUseOnly(ctx, gid)
+	apiKey, err := r.env.GetAuthDB().GetAPIKeyForInternalUseOnly(ctx, u.GetGroupID())
 	if err != nil {
 		return nil, err
 	}
@@ -213,18 +214,6 @@ func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunReques
 	}
 	ctx = withEnvOverrides(ctx, envOverrides)
 	return ctx, nil
-}
-
-func (r *runnerService) groupID(ctx context.Context) (string, error) {
-	auth := r.env.GetAuthenticator()
-	if auth == nil {
-		return "", status.FailedPreconditionError("Auth was not configured but is required")
-	}
-	u, err := auth.AuthenticatedUser(ctx)
-	if err != nil {
-		return "", err
-	}
-	return u.GetGroupID(), nil
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run
