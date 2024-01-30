@@ -2557,10 +2557,12 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	fileMetadata := rfpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
+	samplerDelay := time.NewTicker(SamplerSleepDuration)
+	defer samplerDelay.Stop()
+
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
 	// and just read forward, yielding digests until we've found enough.
-
 	for {
 		select {
 		case <-quitChan:
@@ -2575,7 +2577,11 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(e.part.MaxSizeBytes))
 		e.mu.Unlock()
 		if shouldSleep {
-			time.Sleep(SamplerSleepDuration)
+			select {
+			case <-quitChan:
+				return nil
+			case <-samplerDelay.C:
+			}
 		}
 
 		// Refresh the iterator once a while
