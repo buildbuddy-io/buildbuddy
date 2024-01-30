@@ -97,11 +97,11 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 	}
 }
 
-func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCode int) {
+func LogHTTPRequest(ctx context.Context, method, url string, dur time.Duration, statusCode int) {
 	if log.Logger.GetLevel() > zerolog.InfoLevel {
 		return
 	}
-	CtxDebugf(ctx, "HTTP %q %d %s [%s]", url, statusCode, http.StatusText(statusCode), formatDuration(dur))
+	CtxDebugf(ctx, "HTTP %s %q %d %s [%s]", method, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
 }
 
 func init() {
