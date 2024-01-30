@@ -119,10 +119,7 @@ const (
 	// and delete the oldest items from the cache.
 	JanitorCutoffThreshold = .90
 
-	// janitorCheckPeriod is how often the janitor thread will wake up to
-	// check the cache size.
-	JanitorCheckPeriod = 1 * time.Second
-	megabyte           = 1e6
+	megabyte = 1e6
 
 	DefaultPartitionID           = "default"
 	partitionDirectoryPrefix     = "PT"

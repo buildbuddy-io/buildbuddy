@@ -1142,7 +1142,6 @@ func TestSizeLimit(t *testing.T) {
 				}
 			}
 
-			time.Sleep(pebble_cache.JanitorCheckPeriod)
 			pc.TestingWaitForGC()
 
 			// Expect the sum of all contained digests be less than or equal to max
@@ -1499,7 +1498,6 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 				err = pc.Set(ctx, rn, blob)
 				require.NoError(t, err)
 			}
-			time.Sleep(pebble_cache.JanitorCheckPeriod)
 			pc.TestingWaitForGC()
 
 			// All reads should succeed. Nothing should've been evicted
@@ -1724,7 +1722,6 @@ func TestNoEarlyEviction(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			time.Sleep(pebble_cache.JanitorCheckPeriod)
 			pc.TestingWaitForGC()
 
 			// Verify that nothing was evicted
@@ -1843,7 +1840,6 @@ func TestLRU(t *testing.T) {
 			err = pc.Start()
 			require.NoError(t, err)
 
-			time.Sleep(pebble_cache.JanitorCheckPeriod)
 			pc.TestingWaitForGC()
 
 			evictionsByQuartile := make([][]*repb.Digest, 5)
@@ -1941,7 +1937,6 @@ func TestStartupScan(t *testing.T) {
 			}
 			log.Printf("Wrote %d digests", len(resources))
 
-			time.Sleep(pebble_cache.JanitorCheckPeriod)
 			pc.TestingWaitForGC()
 			pc.Stop()
 
@@ -2002,7 +1997,6 @@ func TestDeleteOrphans(t *testing.T) {
 	}
 
 	log.Printf("Wrote %d digests", len(digests))
-	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
 	pc.Stop()
 
@@ -2116,7 +2110,6 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	}
 
 	log.Printf("Wrote and deleted %d resources", len(resources))
-	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
 	pc.Stop()
 
@@ -2300,7 +2293,6 @@ func TestMigrateVersions(t *testing.T) {
 			digests = append(digests, r.GetDigest())
 		}
 		log.Printf("Wrote %d digests", len(digests))
-		time.Sleep(pebble_cache.JanitorCheckPeriod)
 		pc.TestingWaitForGC()
 		pc.Stop()
 	}
