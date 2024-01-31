@@ -13,11 +13,10 @@ go_test(
     srcs = ["proto_test.go"],
     deps = [
         ":proto",
-        "//proto:metrics_go_proto",
-        "//proto:prometheus_client_go_proto",
+        "//proto:cache_go_proto",
+        "//proto:distributed_cache_go_proto",
         "//proto:raft_go_proto",
         "@com_github_go_faker_faker_v4//:faker",
-        "@com_github_go_faker_faker_v4//pkg/options",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//proto",
     ],
