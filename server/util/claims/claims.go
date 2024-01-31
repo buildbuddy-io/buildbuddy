@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -171,13 +172,16 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	if authDB == nil {
 		return nil, status.FailedPreconditionError("AuthDB not configured")
 	}
+	log.CtxInfof(ctx, "lookup user by subid %q", subID)
 	u, err := authDB.LookupUserFromSubID(ctx, subID)
 	if err != nil {
 		return nil, err
 	}
 	eg := ""
 	if c := requestcontext.ProtoRequestContextFromContext(ctx); c != nil && c.GetGroupId() != "" {
+		log.CtxInfof(ctx, "lookup user by subid %q req group ID %s", subID, c.GetGroupId())
 		for _, g := range u.Groups {
+			log.CtxInfof(ctx, "lookup user by subid %q group ID %s", subID, g.GroupID)
 			if g.Group.GroupID == c.GetGroupId() {
 				eg = c.GetGroupId()
 			}
