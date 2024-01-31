@@ -246,7 +246,7 @@ func TestCreate_SuccessfullyRegisterWebhook(t *testing.T) {
 	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
 	require.NoError(t, err)
 	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
-	assert.Equal(t, gid, row.UserID, "inserted table workflow user should match auth")
+	assert.Equal(t, uid, row.UserID, "inserted table workflow user should match auth")
 	assert.Equal(t, gid, row.GroupID, "inserted table workflow group should match auth")
 	assert.Equal(
 		t, testgit.FakeWebhookID, row.GitProviderWebhookID,
@@ -284,7 +284,7 @@ func TestCreate_NoWebhookPermissions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
 	assert.Equal(t, repoURL, row.RepoURL)
-	assert.Equal(t, gid, row.UserID, "inserted table workflow user should match auth")
+	assert.Equal(t, uid, row.UserID, "inserted table workflow user should match auth")
 	assert.Equal(t, gid, row.GroupID, "inserted table workflow group should match auth")
 	assert.NotEmpty(t, row.WebhookID, "webhook ID in DB should be nonempty")
 	assert.Contains(t, rsp.GetWebhookUrl(), row.WebhookID, "webhook ID in DB should match the URL")
