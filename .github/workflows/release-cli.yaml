@@ -115,8 +115,8 @@ jobs:
       matrix:
         include:
           - os: ubuntu-20.04
-          - os: macos-13
-          - os: macos-13-xlarge
+          - os: macos-13 # MacOS amd64 (Intel)
+          - os: macos-13-xlarge # MacOS arm64 (M1)
     runs-on: ${{ matrix.os }}
     needs: create-release
     steps:
