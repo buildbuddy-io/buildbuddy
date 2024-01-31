@@ -474,11 +474,14 @@ func (a *SAMLAuthenticator) groupForSlug(ctx context.Context, slug string) (*tab
 func (a *SAMLAuthenticator) subjectIDAndSessionFromContext(ctx context.Context) (string, samlsp.SessionWithAttributes) {
 	entityID, ok := ctx.Value(contextSamlEntityIDKey).(string)
 	if !ok || entityID == "" {
+		log.CtxInfof(ctx, "entity ID not found")
 		return "", nil
 	}
 	if sa, ok := ctx.Value(contextSamlSessionKey).(samlsp.SessionWithAttributes); ok {
+		log.CtxInfof(ctx, "all attributes: %s", sa.GetAttributes())
 		return fmt.Sprintf("%s/%s", entityID, firstSet(sa.GetAttributes(), samlSubjectAttributes)), sa
 	}
+	log.CtxInfof(ctx, "session key not found")
 	return "", nil
 }
 
