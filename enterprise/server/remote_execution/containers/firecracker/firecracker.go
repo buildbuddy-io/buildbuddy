@@ -83,6 +83,8 @@ var healthCheckInterval = flag.Duration("executor.firecracker_health_check_inter
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 
+var asyncio = flag.Bool("asyncio", false, "")
+
 //go:embed guest_api_hash.sha256
 var GuestAPIHash string
 
@@ -1383,12 +1385,19 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			TrackDirtyPages: true,
 		},
 	}
+
+	ioEngine := fcclient.String(fcmodels.DriveIoEngineSync)
+	if *asyncio {
+		ioEngine = fcclient.String(fcmodels.DriveIoEngineAsync)
+	}
+
 	if *EnableRootfs {
 		cfg.Drives = append(cfg.Drives, fcmodels.Drive{
 			DriveID:      fcclient.String(rootDriveID),
 			PathOnHost:   &rootFS,
 			IsRootDevice: fcclient.Bool(false),
 			IsReadOnly:   fcclient.Bool(false),
+			IoEngine:     ioEngine,
 		})
 	} else {
 		cfg.Drives = append(cfg.Drives, fcmodels.Drive{
@@ -1396,11 +1405,13 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			PathOnHost:   &containerFS,
 			IsRootDevice: fcclient.Bool(false),
 			IsReadOnly:   fcclient.Bool(true),
+			IoEngine:     ioEngine,
 		}, fcmodels.Drive{
 			DriveID:      fcclient.String(scratchDriveID),
 			PathOnHost:   &scratchFS,
 			IsRootDevice: fcclient.Bool(false),
 			IsReadOnly:   fcclient.Bool(false),
+			IoEngine:     ioEngine,
 		})
 	}
 	// Workspace drive will be /dev/vdb if merged rootfs is enabled, /dev/vdc
@@ -1411,6 +1422,10 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			PathOnHost:   &workspaceFS,
 			IsRootDevice: fcclient.Bool(false),
 			IsReadOnly:   fcclient.Bool(false),
+			// Note: the VM hangs when using the async IO engine for the workspace
+			// drive, so we use the sync engine. (Maybe related to
+			// hotswapping?)
+			IoEngine: fcclient.String(fcmodels.DriveIoEngineSync),
 		},
 	}...)
 
