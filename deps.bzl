@@ -597,11 +597,11 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_bojand_ghz",
-        importpath = "github.com/bojand/ghz",
-        sum = "h1:dTMxg+tUcLMw8BYi7vQPjXsrM2DJ20ns53hz1am1SbQ=",
         build_directives = [
             "gazelle:resolve go github.com/prometheus/client_model/go @{}//proto:prometheus_client_go_proto".format(workspace_name),
         ],
+        importpath = "github.com/bojand/ghz",
+        sum = "h1:dTMxg+tUcLMw8BYi7vQPjXsrM2DJ20ns53hz1am1SbQ=",
         version = "v0.117.0",
     )
     go_repository(
