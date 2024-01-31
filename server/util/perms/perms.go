@@ -46,9 +46,9 @@ func AnonymousUserPermissions() *UserGroupPerm {
 	}
 }
 
-func GroupAuthPermissions(groupID string) *UserGroupPerm {
+func GroupAuthPermissions(userID, groupID string) *UserGroupPerm {
 	return &UserGroupPerm{
-		UserID:  groupID,
+		UserID:  userID,
 		GroupID: groupID,
 		Perms:   GROUP_READ | GROUP_WRITE,
 	}
@@ -308,5 +308,5 @@ func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroup
 		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 
-	return GroupAuthPermissions(u.GetGroupID()), nil
+	return GroupAuthPermissions(u.GetUserID(), u.GetGroupID()), nil
 }
