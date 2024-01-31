@@ -534,16 +534,17 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 
 	wfID := wfs.GetLegacyWorkflowIDForGitRepository(user.GetGroupID(), req.GetRepoUrl())
 	r := &workflow.ExecuteWorkflowRequest{
-		RequestContext: requestCtx,
-		WorkflowId:     wfID,
-		ActionNames:    req.GetActionNames(),
-		PushedRepoUrl:  req.GetRepoUrl(),
-		PushedBranch:   req.GetRef(),
-		TargetRepoUrl:  req.GetRepoUrl(),
-		TargetBranch:   req.GetRef(),
-		Clean:          req.GetClean(),
-		Visibility:     req.GetVisibility(),
-		Async:          req.GetAsync(),
+		RequestContext:  requestCtx,
+		WorkflowId:      wfID,
+		ActionNames:     req.GetActionNames(),
+		PushedRepoUrl:   req.GetRepoUrl(),
+		PushedBranch:    req.GetRef(),
+		TargetRepoUrl:   req.GetRepoUrl(),
+		TargetBranch:    req.GetRef(),
+		Clean:           req.GetClean(),
+		Visibility:      req.GetVisibility(),
+		Async:           req.GetAsync(),
+		EnvVarOverrides: req.GetEnvVarOverrides(),
 	}
 	rsp, err := wfs.ExecuteWorkflow(ctx, r)
 	if err != nil {

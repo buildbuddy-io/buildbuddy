@@ -139,10 +139,11 @@ func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActio
 // in the HTTP response to the webhook sender, in particular when there are
 // spikes in CAS or Execution service latency.
 type startWorkflowTask struct {
-	ctx         context.Context
-	gitProvider interfaces.GitProvider
-	webhookData *interfaces.WebhookData
-	workflow    *tables.Workflow
+	ctx             context.Context
+	gitProvider     interfaces.GitProvider
+	webhookData     *interfaces.WebhookData
+	workflow        *tables.Workflow
+	envVarOverrides map[string]string
 }
 
 type workflowService struct {
@@ -214,7 +215,7 @@ func (ws *workflowService) runStartWorkflowTask(task *startWorkflowTask) {
 	ctx, cancel := background.ExtendContextForFinalization(task.ctx, webhookWorkerTimeout)
 	defer cancel()
 
-	if err := ws.startWorkflow(ctx, task.gitProvider, task.webhookData, task.workflow); err != nil {
+	if err := ws.startWorkflow(ctx, task.gitProvider, task.webhookData, task.workflow, nil /*envVarOverrides*/); err != nil {
 		log.Errorf("Failed to start workflow in the background: %s", err)
 	}
 }
@@ -542,6 +543,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	actionStatuses := make([]*wfpb.ExecuteWorkflowResponse_ActionStatus, 0, len(actions))
 	for _, action := range actions {
 		action := action
+
 		actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
 			ActionName: action.Name,
 		}
@@ -575,7 +577,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			// The workflow execution is trusted since we're authenticated as a member of
 			// the BuildBuddy org that owns the workflow.
 			isTrusted := true
-			executionID, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
+			executionID, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnvVarOverrides())
 			if err != nil {
 				statusErr = status.WrapErrorf(err, "failed to execute workflow action %q", action.Name)
 				log.CtxWarning(ctx, statusErr.Error())
@@ -1068,7 +1070,7 @@ func (ws *workflowService) createBBURL(ctx context.Context, path string) (string
 // Creates an action that executes the CI runner for the given workflow and params.
 // Returns the digest of the action as well as the invocation ID that the CI runner
 // will assign to the workflow invocation.
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, ak *tables.APIKey, instanceName string, workflowAction *config.Action, invocationID string, extraArgs []string) (*repb.Digest, error) {
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, ak *tables.APIKey, instanceName string, workflowAction *config.Action, invocationID string, extraArgs []string, envVarOverrides map[string]string) (*repb.Digest, error) {
 	cache := ws.env.GetCache()
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
@@ -1124,11 +1126,15 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if workflowAction.SelfHosted {
 		useSelfHostedExecutors = "true"
 	}
-
 	besResultsURL, err := ws.createBBURL(ctx, "/invocation/")
 	if err != nil {
 		return nil, err
 	}
+	envVarOverridesJson, err := json.Marshal(envVarOverrides)
+	if err != nil {
+		return nil, err
+	}
+
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
@@ -1153,6 +1159,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--bazel_command=" + ws.ciRunnerBazelCommand(),
+			"--env_var_overrides=" + string(envVarOverridesJson),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		}, extraArgs...),
 		Platform: &repb.Platform{
@@ -1367,7 +1374,7 @@ func (ws *workflowService) startLegacyWorkflow(ctx context.Context, webhookID st
 	return ws.enqueueStartWorkflowTask(ctx, gitProvider, wd, wf)
 }
 
-func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interfaces.GitProvider, wd *interfaces.WebhookData, wf *tables.Workflow) error {
+func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interfaces.GitProvider, wd *interfaces.WebhookData, wf *tables.Workflow, envVarOverrides map[string]string) error {
 	isTrusted, err := ws.isTrustedCommit(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return err
@@ -1419,7 +1426,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/); err != nil {
+			if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, envVarOverrides); err != nil {
 				log.CtxErrorf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
 			}
 		}()
@@ -1429,13 +1436,13 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 }
 
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
-func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string) (string, error) {
+func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, envVarOverrides map[string]string) (string, error) {
 	opts := retry.DefaultOptions()
 	opts.MaxRetries = executeWorkflowMaxRetries
 	r := retry.New(ctx, opts)
 	var lastErr error
 	for r.Next() {
-		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
+		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, envVarOverrides)
 		if err == ApprovalRequired {
 			log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
 			if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
@@ -1456,14 +1463,14 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 	return "", lastErr
 }
 
-func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string) (string, error) {
+func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string, envVarOverrides map[string]string) (string, error) {
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env)
 	if err != nil {
 		return "", err
 	}
 	in := instanceName(wf, wd, workflowAction.Name, workflowAction.GitCleanExclude)
-	ad, err := ws.createActionForWorkflow(ctx, wf, wd, isTrusted, key, in, workflowAction, invocationID, extraCIRunnerArgs)
+	ad, err := ws.createActionForWorkflow(ctx, wf, wd, isTrusted, key, in, workflowAction, invocationID, extraCIRunnerArgs, envVarOverrides)
 	if err != nil {
 		return "", err
 	}
