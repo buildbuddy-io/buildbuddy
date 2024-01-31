@@ -99,6 +99,13 @@ func (tc *testClient) Put(url string, body []byte) (int, []byte) {
 	return tc.do(http.MethodPut, url, body)
 }
 
+func verifyRole(t *testing.T, ur scim.UserResource, expectedRole string) {
+	require.Equal(t, expectedRole, ur.Role)
+	require.Len(t, ur.Roles, 1)
+	require.Equal(t, expectedRole, ur.Roles[0].Value)
+	require.Equal(t, true, ur.Roles[0].Primary)
+}
+
 func TestGetUsers(t *testing.T) {
 	env := getEnv(t)
 	udb := env.GetUserDB()
@@ -330,7 +337,7 @@ func TestCreateUser(t *testing.T) {
 		require.Equal(t, "User", ur.Name.GivenName)
 		require.Equal(t, "Doe", ur.Name.FamilyName)
 		require.Equal(t, "user500@org1.io", ur.UserName)
-		require.Equal(t, scim.DeveloperRole, ur.Role)
+		verifyRole(t, ur, scim.DeveloperRole)
 		require.True(t, ur.Active)
 	}
 
@@ -363,7 +370,7 @@ func TestCreateUser(t *testing.T) {
 		require.Equal(t, "Foo", createdUser.Name.GivenName)
 		require.Equal(t, "Bar", createdUser.Name.FamilyName)
 		require.Equal(t, "user501@org1.io", createdUser.UserName)
-		require.Equal(t, scim.AdminRole, createdUser.Role)
+		verifyRole(t, createdUser, scim.AdminRole)
 		require.True(t, createdUser.Active)
 
 		code, body = tc.Get(baseURL + "/scim/Users/" + createdUser.ID)
@@ -377,7 +384,7 @@ func TestCreateUser(t *testing.T) {
 		require.Equal(t, "Foo", ur.Name.GivenName)
 		require.Equal(t, "Bar", ur.Name.FamilyName)
 		require.Equal(t, "user501@org1.io", ur.UserName)
-		require.Equal(t, scim.AdminRole, ur.Role)
+		verifyRole(t, ur, scim.AdminRole)
 		require.True(t, ur.Active)
 	}
 }
@@ -418,6 +425,12 @@ func TestDeleteUser(t *testing.T) {
 		Email:  "user102@org1.io",
 	})
 	require.NoError(t, err)
+	err = udb.InsertUser(userCtx, &tables.User{
+		UserID: "US103",
+		SubID:  "SubID103",
+		Email:  "user103@org1.io",
+	})
+	require.NoError(t, err)
 
 	ss := scim.NewSCIMServer(env)
 	mux := http.NewServeMux()
@@ -426,7 +439,7 @@ func TestDeleteUser(t *testing.T) {
 	baseURL := testhttp.StartServer(t, mux).String()
 	tc := &testClient{t: t, apiKey: apiKey}
 
-	// Delete user US101 using a PUT request setting active to false.
+	// Delete user US101 using a PATCH request setting active to false.
 	{
 		newUser := &scim.PatchResource{
 			Schemas: []string{scim.PatchResourceSchema},
@@ -452,7 +465,7 @@ func TestDeleteUser(t *testing.T) {
 		require.True(t, status.IsNotFoundError(err))
 	}
 
-	// Delete user US101 using a PUT request setting active to false.
+	// Delete user US102 using a PUT request setting active to false.
 	{
 		req := &scim.UserResource{
 			Schemas: []string{scim.UserResourceSchema},
@@ -467,6 +480,33 @@ func TestDeleteUser(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, updatedUser.Active)
 		_, err = udb.GetUserByID(userCtx, "US102")
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err))
+	}
+
+	// Delete user US103 using a PATCH request setting active to "false" and
+	// also setting patch path. Azure AD incorrectly sends the active field
+	// as a string instead of a boolean.
+	{
+		newUser := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op:    "RePlAcE",
+					Path:  scim.ActiveAttribute,
+					Value: "false",
+				},
+			},
+		}
+		body, err := json.Marshal(newUser)
+		require.NoError(t, err)
+		code, body := tc.Patch(baseURL+"/scim/Users/US103", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser := scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.False(t, updatedUser.Active)
+		_, err = udb.GetUserByID(userCtx, "US103")
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -514,7 +554,7 @@ func TestUpdateUser(t *testing.T) {
 	baseURL := testhttp.StartServer(t, mux).String()
 	tc := &testClient{t: t, apiKey: apiKey}
 
-	// Update user.
+	// Update user using PUT request.
 	req := &scim.UserResource{
 		Schemas: []string{scim.UserResourceSchema},
 		Name: scim.NameResource{
@@ -543,7 +583,45 @@ func TestUpdateUser(t *testing.T) {
 	require.True(t, updatedUser.Active)
 	require.Equal(t, "Givy", updatedUser.Name.GivenName)
 	require.Equal(t, "Famy", updatedUser.Name.FamilyName)
-	require.Equal(t, scim.DeveloperRole, updatedUser.Role)
+	verifyRole(t, updatedUser, scim.DeveloperRole)
+
+	// Update user using PATCH request.
+	patchReq := &scim.PatchResource{
+		Operations: []scim.OperationResource{
+			{
+				Op:    "replace",
+				Path:  scim.FamilyNameAttribute,
+				Value: "Fam",
+			},
+			{
+				Op:    "replace",
+				Path:  scim.GivenNameAttribute,
+				Value: "Gov",
+			},
+		},
+		Schemas: []string{scim.PatchResourceSchema},
+	}
+	body, err = json.Marshal(patchReq)
+	require.NoError(t, err)
+	code, body = tc.Patch(baseURL+"/scim/Users/US100", body)
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	updatedUser = scim.UserResource{}
+	err = json.Unmarshal(body, &updatedUser)
+	require.NoError(t, err)
+	require.True(t, updatedUser.Active)
+	require.Equal(t, "Gov", updatedUser.Name.GivenName)
+	require.Equal(t, "Fam", updatedUser.Name.FamilyName)
+
+	// Look up patched user.
+	code, body = tc.Get(baseURL + "/scim/Users/US100")
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	updatedUser = scim.UserResource{}
+	err = json.Unmarshal(body, &updatedUser)
+	require.NoError(t, err)
+	require.True(t, updatedUser.Active)
+	require.Equal(t, "Gov", updatedUser.Name.GivenName)
+	require.Equal(t, "Fam", updatedUser.Name.FamilyName)
+	verifyRole(t, updatedUser, scim.DeveloperRole)
 
 	// Promote user to admin.
 	req.Role = scim.AdminRole
@@ -558,7 +636,7 @@ func TestUpdateUser(t *testing.T) {
 	updatedUser = scim.UserResource{}
 	err = json.Unmarshal(body, &updatedUser)
 	require.NoError(t, err)
-	require.Equal(t, scim.AdminRole, updatedUser.Role)
+	verifyRole(t, updatedUser, scim.AdminRole)
 
 	// If role is not set, it should default to Developer.
 	req.Role = ""
@@ -573,5 +651,29 @@ func TestUpdateUser(t *testing.T) {
 	updatedUser = scim.UserResource{}
 	err = json.Unmarshal(body, &updatedUser)
 	require.NoError(t, err)
-	require.Equal(t, scim.DeveloperRole, updatedUser.Role)
+	verifyRole(t, updatedUser, scim.DeveloperRole)
+
+	// Promote user to Admin using patch request.
+	patchReq = &scim.PatchResource{
+		Operations: []scim.OperationResource{
+			{
+				Op:    "replace",
+				Path:  scim.RoleAttribute,
+				Value: scim.AdminRole,
+			},
+		},
+		Schemas: []string{scim.PatchResourceSchema},
+	}
+	body, err = json.Marshal(patchReq)
+	require.NoError(t, err)
+	code, body = tc.Patch(baseURL+"/scim/Users/US100", body)
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+
+	// Verify they have the admin role.
+	code, body = tc.Get(baseURL + "/scim/Users/US100")
+	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+	updatedUser = scim.UserResource{}
+	err = json.Unmarshal(body, &updatedUser)
+	require.NoError(t, err)
+	verifyRole(t, updatedUser, scim.AdminRole)
 }

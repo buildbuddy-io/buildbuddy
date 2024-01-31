@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -39,6 +40,11 @@ const (
 	ListResponseSchema  = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 	UserResourceSchema  = "urn:ietf:params:scim:schemas:core:2.0:User"
 	PatchResourceSchema = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
+
+	ActiveAttribute     = "active"
+	GivenNameAttribute  = "name.givenName"
+	FamilyNameAttribute = "name.familyName"
+	RoleAttribute       = `roles[primary eq "True"].value`
 )
 
 type NameResource struct {
@@ -52,6 +58,11 @@ type EmailResource struct {
 	Type    string `json:"type"`
 }
 
+type RoleResource struct {
+	Primary bool   `json:"primary"`
+	Value   string `json:"value"`
+}
+
 type UserResource struct {
 	Schemas  []string        `json:"schemas"`
 	ID       string          `json:"id"`
@@ -59,7 +70,13 @@ type UserResource struct {
 	Name     NameResource    `json:"name"`
 	Emails   []EmailResource `json:"emails"`
 	Active   bool            `json:"active"`
-	Role     string          `json:"role"`
+	// We map the user role in two different ways to be able to make both Okta
+	// and Azure AD happy. For simple mappings, Azure AD only supports a list of
+	// complex types and Okta does not support lists of complex types.
+	// https://devforum.okta.com/t/okta-support-for-complex-json-schema-types/1285
+	// Each provider will only look at the attribute it's expecting.
+	Role  string         `json:"role"`
+	Roles []RoleResource `json:"roles"`
 }
 
 func newUserResource(u *tables.User, authGroup *tables.Group) (*UserResource, error) {
@@ -85,6 +102,9 @@ func newUserResource(u *tables.User, authGroup *tables.Group) (*UserResource, er
 		ID:       u.UserID,
 		UserName: u.Email,
 		Role:     userRole,
+		Roles: []RoleResource{
+			{Primary: true, Value: userRole},
+		},
 		Name: NameResource{
 			GivenName:  u.FirstName,
 			FamilyName: u.LastName,
@@ -108,9 +128,9 @@ type ListResponseResource struct {
 }
 
 type OperationResource struct {
-	Op    string         `json:"op"`
-	Path  string         `json:"path"`
-	Value map[string]any `json:"value"`
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value"`
 }
 
 type PatchResource struct {
@@ -196,6 +216,7 @@ func (s *SCIMServer) RegisterHandlers(mux interfaces.HttpServeMux) {
 		}
 		val, err := h(r.Context(), r, g)
 		if err != nil {
+			log.CtxWarningf(r.Context(), "SCIM request %s %q failed: %s", r.Method, r.RequestURI, err)
 			w.WriteHeader(mapErrorCode(err))
 			w.Write([]byte(err.Error()))
 			return
@@ -337,8 +358,18 @@ func (s *SCIMServer) getUser(ctx context.Context, r *http.Request, g *tables.Gro
 	return ur, nil
 }
 
-func mapRole(roleAttr string) (role.Role, error) {
-	switch roleAttr {
+func mapRole(ur *UserResource) (role.Role, error) {
+	roleName := ur.Role
+	if roleName == "" {
+		if len(ur.Roles) > 1 {
+			return 0, status.InvalidArgumentErrorf("multiple roles are not supported")
+		}
+		if len(ur.Roles) == 1 {
+			roleName = ur.Roles[0].Value
+		}
+	}
+
+	switch roleName {
 	case "":
 		return role.Default, nil
 	case DeveloperRole:
@@ -346,7 +377,7 @@ func mapRole(roleAttr string) (role.Role, error) {
 	case AdminRole:
 		return role.Admin, nil
 	default:
-		return 0, status.InvalidArgumentErrorf("invalid role %q", roleAttr)
+		return 0, status.InvalidArgumentErrorf("invalid role %q", roleName)
 	}
 }
 
@@ -362,6 +393,7 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
+	log.CtxDebugf(ctx, "SCIM create user request: %s", string(req))
 	ur := UserResource{}
 	if err := json.Unmarshal(req, &ur); err != nil {
 		return nil, err
@@ -371,7 +403,7 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
-	userRole, err := mapRole(ur.Role)
+	userRole, err := mapRole(&ur)
 	if err != nil {
 		return nil, err
 	}
@@ -399,11 +431,24 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	return newUserResource(u, g)
 }
 
+// Azure AD incorrectly sends "active" field as a string instead of a native
+// boolean...
+func getBooleanValue(v any) (bool, error) {
+	if v, ok := v.(bool); ok {
+		return v, nil
+	}
+	if v, ok := v.(string); ok {
+		return strings.EqualFold(v, "true"), nil
+	}
+	return false, status.InvalidArgumentErrorf("boolean field has unexpected value %v of type %T", v, v)
+}
+
 func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
 	}
+	log.CtxDebugf(ctx, "SCIM patch user request: %s", string(req))
 	pr := PatchResource{}
 	if err := json.Unmarshal(req, &pr); err != nil {
 		return nil, err
@@ -416,23 +461,63 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 	}
 
 	deleteUser := false
-	// The only update we support in PATCH is user deletion.
-	for _, op := range pr.Operations {
-		if op.Op != "replace" {
-			return nil, status.InvalidArgumentErrorf("unsupported operation %q", op.Op)
-		}
-		if op.Path != "" {
-			return nil, status.InvalidArgumentErrorf("patch path not supported")
-		}
-		for k, v := range op.Value {
-			if k != "active" {
-				return nil, status.InvalidArgumentErrorf("unsupported patch attribute %q", k)
-			}
-			b, ok := v.(bool)
-			if !ok {
-				return nil, status.InvalidArgumentErrorf("expected boolean value for 'active' attribute, but got %T", v)
+	var newRole *string
+
+	handleAttr := func(name string, value any) error {
+		switch name {
+		case ActiveAttribute:
+			b, err := getBooleanValue(value)
+			if err != nil {
+				return err
 			}
 			deleteUser = !b
+		case GivenNameAttribute:
+			v, ok := value.(string)
+			if !ok {
+				return status.InvalidArgumentErrorf("expected string attribute for given name but got %T", value)
+			}
+			u.FirstName = v
+		case FamilyNameAttribute:
+			v, ok := value.(string)
+			if !ok {
+				return status.InvalidArgumentErrorf("expected string attribute for family name but got %T", value)
+			}
+			u.LastName = v
+		case RoleAttribute:
+			v, ok := value.(string)
+			if !ok {
+				return status.InvalidArgumentErrorf("expected string attribute for role but got %T", value)
+			}
+			newRole = &v
+		default:
+			return status.InvalidArgumentErrorf("unsupported attribute %q", value)
+		}
+		return nil
+	}
+
+	for _, op := range pr.Operations {
+		if !strings.EqualFold(op.Op, "replace") {
+			return nil, status.InvalidArgumentErrorf("unsupported operation %q", op.Op)
+		}
+
+		if op.Path == "" {
+			// If path is not set, then the value is a map of the properties to be
+			// modified.
+			m, ok := op.Value.(map[string]any)
+			if !ok {
+				return nil, status.InvalidArgumentErrorf("path was empty, but value was not a map but %T", op.Value)
+			}
+			for k, v := range m {
+				err := handleAttr(k, v)
+				if err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			err := handleAttr(op.Path, op.Value)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -446,6 +531,25 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 			return nil, err
 		}
 		ur.Active = false
+	} else {
+		if newRole != nil {
+			ur.Role = *newRole
+			ur.Roles = []RoleResource{{Primary: true, Value: *newRole}}
+			userRole, err := mapRole(ur)
+			if err != nil {
+				return nil, err
+			}
+			roleUpdate, err := roleUpdateRequest(id, userRole)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.env.GetUserDB().UpdateGroupUsers(ctx, g.GroupID, roleUpdate); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.env.GetUserDB().UpdateUser(ctx, u); err != nil {
+			return nil, err
+		}
 	}
 
 	return ur, nil
@@ -483,7 +587,7 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 		if err := s.env.GetUserDB().UpdateUser(ctx, u); err != nil {
 			return nil, err
 		}
-		userRole, err := mapRole(ur.Role)
+		userRole, err := mapRole(&ur)
 		if err != nil {
 			return nil, err
 		}
