@@ -26,7 +26,7 @@ if ! command -v "$docker" &>/dev/null; then
 fi
 
 start_clickhouse() {
-  "$docker" run --rm --detach --name=bb-clickhouse-local --publish="$BB_CLICKHOUSE_PORT:9000" "$BB_CLICKHOUSE_IMAGE"
+  "$docker" run --rm --detach --name=bb-clickhouse-local --publish="$BB_CLICKHOUSE_PORT:9000" --volume="/tmp/${USER}_clickhouse_data:/var/lib/clickhouse" "$BB_CLICKHOUSE_IMAGE"
 }
 
 if ! "$docker" inspect bb-clickhouse-local &>/dev/null; then
