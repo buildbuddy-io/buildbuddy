@@ -46,7 +46,7 @@ func AnonymousUserPermissions() *UserGroupPerm {
 	}
 }
 
-func GroupAuthPermissions(u interfaces.UserInfo) *UserGroupPerm {
+func DefaultPermissions(u interfaces.UserInfo) *UserGroupPerm {
 	return &UserGroupPerm{
 		UserID:  u.GetUserID(),
 		GroupID: u.GetGroupID(),
@@ -54,7 +54,14 @@ func GroupAuthPermissions(u interfaces.UserInfo) *UserGroupPerm {
 	}
 }
 
-func GroupAuthPermissionsByGroupID(groupID string) *UserGroupPerm {
+// Deprecated.
+// We used to use this function to set group permissions prior to introducing
+// user personal keys. Currently, this is only used when we insert into Workflows
+// table (https://github.com/buildbuddy-io/buildbuddy/blob/v2.38.0/enterprise/server/workflow/service/service.go#L271)
+// and Workflows table itself is deprecated.
+//
+// Please use DefaultPermissions if possible.
+func GroupPermissionsDeprecated(groupID string) *UserGroupPerm {
 	return &UserGroupPerm{
 		UserID:  groupID,
 		GroupID: groupID,
@@ -316,5 +323,5 @@ func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroup
 		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 
-	return GroupAuthPermissions(u), nil
+	return DefaultPermissions(u), nil
 }

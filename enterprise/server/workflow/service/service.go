@@ -268,7 +268,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	if err != nil {
 		return nil, err
 	}
-	permissions := perms.GroupAuthPermissionsByGroupID(groupID)
+	permissions := perms.GroupPermissionsDeprecated(groupID)
 
 	u, err := gitutil.NormalizeRepoURL(repoReq.GetRepoUrl())
 	if err != nil {
