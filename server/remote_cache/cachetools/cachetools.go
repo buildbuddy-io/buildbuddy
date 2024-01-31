@@ -84,20 +84,26 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	}
 	w := io.MultiWriter(checksum, out)
 
-	var wc io.WriteCloser = nopCloser{w}
+	close := func() error { return nil }
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		decompressor, err := compression.NewZstdDecompressor(w)
 		if err != nil {
 			return err
 		}
-		wc = decompressor
+		w = decompressor
+		close = sync.OnceValue(decompressor.Close)
 	}
+	defer close()
 
 	receiver := rpcutil.NewReceiver[*bspb.ReadResponse](ctx, stream)
 	for {
 		rsp, err := receiver.RecvWithTimeoutCause(*casRPCTimeout, status.DeadlineExceededError("Timed out waiting for Read response"))
 		if err == io.EOF {
-			if err := wc.Close(); err != nil {
+			// Close before returning from this loop to make sure all bytes are
+			// flushed from the decompressor to the output/checksum writers.
+			// Note: this is safe even though we also defer close() above, since we
+			// wrap decompressor.Close with sync.OnceValue.
+			if err := close(); err != nil {
 				return err
 			}
 			break
@@ -105,7 +111,7 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 		if err != nil {
 			return err
 		}
-		if _, err := wc.Write(rsp.Data); err != nil {
+		if _, err := w.Write(rsp.Data); err != nil {
 			return err
 		}
 	}
