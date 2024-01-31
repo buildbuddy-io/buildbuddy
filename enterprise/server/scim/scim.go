@@ -440,7 +440,7 @@ func getBooleanValue(v any) (bool, error) {
 	if v, ok := v.(string); ok {
 		return strings.EqualFold(v, "true"), nil
 	}
-	return false, status.InvalidArgumentErrorf("boolean field has unexpected type %T", v)
+	return false, status.InvalidArgumentErrorf("boolean field has unexpected value %v of type %T", v, v)
 }
 
 func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
