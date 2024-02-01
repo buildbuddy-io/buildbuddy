@@ -75,7 +75,7 @@ const (
 )
 
 var (
-	testExecutorRoot = flag.String("test_executor_root", "/tmp/test-executor-root", "If set, use this as the executor root data dir. Helps avoid excessive image pulling when re-running tests.")
+	testExecutorRoot = flag.String("test_executor_root", "/tmp/test-executor-root.b", "If set, use this as the executor root data dir. Helps avoid excessive image pulling when re-running tests.")
 	// TODO(bduffany): make the bazel test a benchmark, and run it for both
 	// NBD and non-NBD.
 	testBazelBuild = flag.Bool("test_bazel_build", false, "Whether to test a bazel build.")
@@ -2148,9 +2148,9 @@ func TestFirecrackerStressIO(t *testing.T) {
 	// High-level orchestration options
 	const (
 		// Total number of runs
-		runs = 10
+		runs = 100
 		// Max number of VMs to run concurrently
-		concurrency = 1
+		concurrency = 4
 	)
 	// Per-exec options
 	const (
@@ -2170,7 +2170,7 @@ func TestFirecrackerStressIO(t *testing.T) {
 	// VM lifecycle options
 	const (
 		// Max number of times a single VM can be used before it is removed
-		maxRunsPerVM = 1
+		maxRunsPerVM = 20
 	)
 	// VM configuration
 	const (
@@ -2180,6 +2180,13 @@ func TestFirecrackerStressIO(t *testing.T) {
 		dockerd    = false
 		networking = false
 	)
+
+	// DO NOT SUBMIT (this will wind up persisting across tests)
+	// const (
+	// 	mmapMemoryBytes int64 = 1e9
+	// )
+	// flags.Set(t, "executor.mmap_memory_bytes", mmapMemoryBytes)
+	// resources.Configure(true)
 
 	if dockerize && (!dockerd || !networking) {
 		require.FailNow(t, "dockerize option requires dockerd and networking")
@@ -2232,6 +2239,11 @@ func TestFirecrackerStressIO(t *testing.T) {
 		return &VM{Instance: c}, nil
 	}
 	pause := func(vm *VM) error {
+		// With some probability, maybe just remove the VM.
+		// if rand.Int63n(100) < 50 {
+		// 	return vm.Instance.Remove(context.Background())
+		// }
+
 		if err := vm.Instance.Pause(ctx); err != nil {
 			_ = vm.Instance.Remove(context.Background())
 			assert.FailNowf(t, "pause failed", "%s", err)

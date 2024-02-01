@@ -5,6 +5,7 @@ package uffd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"syscall"
@@ -75,6 +76,18 @@ type setupMessage struct {
 	Uffd     uintptr
 }
 
+type byteRange struct {
+	offset   int64
+	length   int64
+	destAddr int64
+	hostAddr int64
+	copySize int64
+}
+
+func (b byteRange) String() string {
+	return fmt.Sprintf("[0x%x, 0x%x), destAddr=0x%x, hostAddr=0x%x, copySize=%x", b.offset, b.offset+b.length, b.destAddr, b.hostAddr, b.copySize)
+}
+
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
 // This handler uses a copy_on_write.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
@@ -85,10 +98,14 @@ type Handler struct {
 
 	earlyTerminationReader *os.File
 	earlyTerminationWriter *os.File
+
+	mappedRanges map[int64][]byteRange
 }
 
 func NewHandler() (*Handler, error) {
-	return &Handler{}, nil
+	return &Handler{
+		mappedRanges: map[int64][]byteRange{},
+	}, nil
 }
 
 // Start starts a goroutine to listen on the given socket path for Firecracker's
@@ -277,8 +294,9 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
 		destAddr := guestPageAddr - relOffset
 		// Check for data below the valid memory range
+		var invalidBytesAtChunkStart uintptr = 0
 		if destAddr < mapping.BaseHostVirtAddr {
-			invalidBytesAtChunkStart := mapping.BaseHostVirtAddr - destAddr
+			invalidBytesAtChunkStart = mapping.BaseHostVirtAddr - destAddr
 			destAddr = mapping.BaseHostVirtAddr
 			hostAddr += invalidBytesAtChunkStart
 			copySize -= int64(invalidBytesAtChunkStart)
@@ -297,14 +315,33 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
 		}
 
+		chunkStartOffset := faultStoreOffset - relOffset
+		r := byteRange{
+			offset:   int64(chunkStartOffset) + int64(invalidBytesAtChunkStart),
+			length:   int64(copySize),
+			destAddr: int64(destAddr),
+			hostAddr: int64(hostAddr),
+			copySize: copySize,
+		}
+
 		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
 		if err != nil {
+
+			log.CtxDebugf(ctx, "ChunkStartOffset: 0x%x", chunkStartOffset)
+			log.CtxDebugf(ctx, "Attempted to map %s", r.String())
+			log.CtxDebugf(ctx, "Already mapped:")
+			for _, alreadyMapped := range h.mappedRanges[int64(chunkStartOffset)] {
+				log.CtxDebugf(ctx, "- %s", alreadyMapped.String())
+				log.CtxDebugf(ctx, "  overlap?: %t", !(r.offset+r.length <= alreadyMapped.offset || r.offset >= alreadyMapped.offset+alreadyMapped.length))
+			}
+
 			return err
 		}
 
+		h.mappedRanges[int64(chunkStartOffset)] = append(h.mappedRanges[int64(chunkStartOffset)], r)
+
 		// After memory has been copied to the VM, unmap the chunk to save memory
 		// usage on the executor
-		chunkStartOffset := faultStoreOffset - relOffset
 		if err := memoryStore.UnmapChunk(int64(chunkStartOffset)); err != nil {
 			return err
 		}

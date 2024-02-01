@@ -49,6 +49,9 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
 		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
 		return status.InternalErrorf("%s: %s", err, out)
 	}
@@ -79,6 +82,9 @@ func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) err
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
 		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
 		return status.InternalErrorf("%s: %s", err, out)
 	}
@@ -160,6 +166,9 @@ func ImageToDirectory(ctx context.Context, inputFile, outputDir string) error {
 		fmt.Sprintf("rdump \"/\" \"%s\"", outputDir),
 	}
 	if out, err := exec.CommandContext(ctx, args[0], args[1:]...).CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
 		return status.InternalErrorf("%s: %s", err, out)
 	}
 	return nil
