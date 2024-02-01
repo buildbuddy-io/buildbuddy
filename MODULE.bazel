@@ -4,3 +4,19 @@
 #
 # For more details, please check https://github.com/bazelbuild/bazel/issues/18958
 ###############################################################################
+
+bazel_dep(name = "rules_go", version = "0.45.1", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "gazelle", version = "0.35.0", repo_name = "bazel_gazelle")
+
+go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.21.6")
+go_sdk.nogo(nogo = "@//:vet")
+
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")
+
+use_repo(
+    go_sdk,
+    "go_toolchains",
+    "io_bazel_rules_nogo",
+)
