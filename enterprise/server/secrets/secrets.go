@@ -140,7 +140,7 @@ func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecret
 		return nil, false, err
 	}
 
-	secretPerms := perms.GroupAuthPermissions(u.GetGroupID())
+	secretPerms := perms.DefaultPermissions(u)
 
 	// Before writing the secret to the database, verify that we can open
 	// the secret box using this group's public key.

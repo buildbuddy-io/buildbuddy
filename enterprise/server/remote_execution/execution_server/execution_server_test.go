@@ -130,6 +130,7 @@ func TestDispatch(t *testing.T) {
 	rows := getExecutions(t, env)
 	require.Equal(t, 1, len(rows))
 	assert.Equal(t, taskID, rows[0].ExecutionID)
+	assert.Equal(t, "US1", rows[0].UserID)
 
 	sched := env.GetSchedulerService().(*schedulerServerMock)
 	require.Equal(t, 1, len(sched.scheduleReqs))

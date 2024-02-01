@@ -184,7 +184,7 @@ func (t *TargetTracker) testTargetsInAtLeastState(state targetState) bool {
 func (t *TargetTracker) permissionsFromContext(ctx context.Context) (*perms.UserGroupPerm, error) {
 	if auth := t.env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
-			return perms.GroupAuthPermissions(u.GetGroupID()), nil
+			return perms.DefaultPermissions(u), nil
 		}
 	}
 	return nil, status.UnauthenticatedError("Context did not contain auth information")
