@@ -70,6 +70,11 @@ var (
 	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
 )
 
+func init() {
+	// Register the codec for all RPC servers and clients.
+	vtprotocodec.Register()
+}
+
 func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.RealEnv) {
 	var err error
 	if cacheTarget == "" {
@@ -130,9 +135,6 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 
 	xl := xcode.NewXcodeLocator()
 	realEnv.SetXcodeLocator(xl)
-
-	// Register the codec for all RPC servers and clients.
-	vtprotocodec.Register()
 
 	if err := gcs_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
