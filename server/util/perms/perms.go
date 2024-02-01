@@ -61,7 +61,7 @@ func DefaultPermissions(u interfaces.UserInfo) *UserGroupPerm {
 // and Workflows table itself is deprecated.
 //
 // Please use DefaultPermissions if possible.
-func GroupPermissionsDeprecated(groupID string) *UserGroupPerm {
+func DeprecatedGroupPermissions(groupID string) *UserGroupPerm {
 	return &UserGroupPerm{
 		UserID:  groupID,
 		GroupID: groupID,
