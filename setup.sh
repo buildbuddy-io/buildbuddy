@@ -6,7 +6,16 @@ set -e
 sudo apt-get update
 sudo apt-get install git
 
+# Install gcloud
+echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+sudo apt-get install -y apt-transport-https ca-certificates gnupg
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+sudo apt-get update
+sudo apt-get install -y google-cloud-sdk
+
+
 # Enable virutalization
+# NOTE: Run this command from VM
 gcloud compute instances export $VM_NAME \
   --destination=out.yaml \
   --zone=us-central1-a
@@ -29,7 +38,7 @@ sudo cp /usr/local/bin/bazelisk /usr/local/bin/bazel
 cd buildbuddy
 sudo apt-get install -y --no-install-recommends       build-essential
 
-# Install firecracker
+# Install latest firecracker
 #release_url="https://github.com/firecracker-microvm/firecracker/releases"
 #latest=$(basename $(curl -fsSLI -o /dev/null -w  %{url_effective} ${release_url}/latest))
 #arch=`uname -m`
@@ -38,11 +47,12 @@ sudo apt-get install -y --no-install-recommends       build-essential
 #sudo mv release-${latest}-$(uname -m)/jailer-${latest}-$(uname -m) /usr/bin/jailer
 #sudo cp firecracker /usr/bin/
 
-# Install patched firecracker
-wget -c https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.4.0-20230720-cf5f56f.tgz
+# Install firecracker used by our apps
+wget -c https://github.com/firecracker-microvm/firecracker/releases/download/v1.1.1/firecracker-v1.1.1-x86_64.tgz
 tar -xzf firecracker-v1.4.0-20230720-cf5f56f.tgz
-sudo cp firecracker-v1.4.0-20230720-cf5f56f /usr/bin/firecracker
-sudo cp jailer-v1.4.0-20230720-cf5f56f /usr/bin/jailer
+cd release-v1.1.1-x86_64
+sudo cp firecracker-v1.1.1-x86_64 /usr/bin/firecracker
+sudo cp jailer-v1.1.1-x86_64 /usr/bin/jailer
 
 # Install skopeo
 echo 'deb https://downloadcontent.opensuse.org/repositories/home:/alvistack/Debian_11/ /' | sudo tee -a /etc/apt/sources.list.d/home:alvistack.list
@@ -52,6 +62,18 @@ sudo apt-get -y upgrade
 sudo apt-get install -y skopeo
 #This alone works on debian
 sudo apt install skopeo
+
+# Install go
+if ! [[ -e /usr/local/go/bin/go ]]; then
+  echo "Installing go..."
+  GO_VERSION=1.21.1
+  sudo rm -rf /usr/local/go
+  curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | \
+    sudo tar --directory /usr/local -xzf -
+fi
+export PATH="$PATH:/usr/local/go/bin"
+export PATH="$PATH:$HOME/go/bin"
+go install github.com/bazelbuild/buildtools/buildozer@latest
 
 sudo apt-get install umoci
 sudo apt-get install net-tools
