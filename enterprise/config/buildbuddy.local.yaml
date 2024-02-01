@@ -5,6 +5,7 @@ app:
   code_editor_enabled: true
   default_redis_target: "localhost:6379"
   enable_target_tracking: true
+  user_owned_keys_enabled: true
 database:
   data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
 #olap_database:
