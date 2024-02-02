@@ -610,7 +610,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 	if req.Organization == "" {
 		githubClient, err = a.newAuthenticatedClient(ctx, token)
 	} else {
-		githubClient, token, err = a.newInstallationClient(ctx, req.InstallationId)
+		githubClient, token, err = a.newInstallationClient(ctx, token, req.InstallationId)
 	}
 	if err != nil {
 		return nil, err
@@ -825,7 +825,8 @@ type installationRepository struct {
 // to the repo. It attempts to work around the fact that "apps.ListUserRepos"
 // doesn't have any filtering options.
 func (a *GitHubApp) findUserRepo(ctx context.Context, userToken string, installationID int64, repo string) (*installationRepository, error) {
-	if err := a.authorizeUserInstallationAccess(ctx, userToken, installationID); err != nil {
+	installationClient, _, err := a.newInstallationClient(ctx, userToken, installationID)
+	if err != nil {
 		return nil, err
 	}
 	installation, err := a.getInstallation(ctx, installationID)
@@ -835,10 +836,6 @@ func (a *GitHubApp) findUserRepo(ctx context.Context, userToken string, installa
 	owner := installation.GetAccount().GetLogin()
 	// Fetch repository so that we know the canonical repo name (the input
 	// `repo` parameter might be equal ignoring case, but not exactly equal).
-	installationClient, _, err := a.newInstallationClient(ctx, installationID)
-	if err != nil {
-		return nil, err
-	}
 	repository, response, err := installationClient.Repositories.Get(ctx, owner, repo)
 	if err := checkResponse(response, err); err != nil {
 		return nil, err
@@ -965,7 +962,10 @@ func (a *GitHubApp) newAppClient(ctx context.Context) (*github.Client, error) {
 	return a.newAuthenticatedClient(ctx, jwtStr)
 }
 
-func (a *GitHubApp) newInstallationClient(ctx context.Context, installationID int64) (*github.Client, string, error) {
+func (a *GitHubApp) newInstallationClient(ctx context.Context, userToken string, installationID int64) (*github.Client, string, error) {
+	if err := a.authorizeUserInstallationAccess(ctx, userToken, installationID); err != nil {
+		return nil, "", err
+	}
 	token, err := a.createInstallationToken(ctx, installationID)
 	if err != nil {
 		return nil, "", err
