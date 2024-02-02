@@ -83,6 +83,7 @@ require (
 	github.com/jotfs/fastcdc-go v0.2.0
 	github.com/jsimonetti/rtnetlink v1.3.3
 	github.com/klauspost/compress v1.17.2
+	github.com/klauspost/cpuid v1.2.1
 	github.com/lestrrat-go/jwx v1.2.26
 	github.com/lni/dragonboat/v4 v4.0.0-00010101000000-000000000000
 	github.com/lni/goutils v1.3.1-0.20220604063047-388d67b4dbc4
