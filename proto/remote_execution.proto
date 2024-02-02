@@ -2276,15 +2276,18 @@ message VMMetadata {
   // snapshots.
   string vm_id = 1;
 
-  message Creator {
-    // The ID of the invocation that created this snapshot.
+  // Represents a task executed on this VM.
+  message VMTask {
+    // The task's invocation ID. If multiple invocations are associated with the
+    // task (via action merging) then this will be the first invocation to have
+    // requested execution of this task.
     string invocation_id = 1;
 
-    // The ID of the execution that created this snapshot.
+    // The task's execution ID.
     string execution_id = 2;
   }
 
-  // Who created the last snapshot that this VM was resumed from.
-  // If the VM was created from scratch, this field will be unset.
-  Creator last_snapshot_creator = 2;
+  // The last task to execute on this VM. When resuming from snapshot, this
+  // represents the task which created the snapshot.
+  VMTask last_executed_task = 2;
 }
