@@ -475,22 +475,22 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_bazelbuild_bazelisk",
         build_file_generation = "on",
         importpath = "github.com/bazelbuild/bazelisk",
-        sum = "h1:TDt+a1PYrnBF9on3WRJUisXXFhCMrhcNo8OebyS5Q34=",
-        version = "v1.17.0",
+        sum = "h1:TOh9touXYcKKiZqE+Dj4XD/FHrzsqmu9iDvPTsW9jIc=",
+        version = "v1.19.0",
     )
     go_repository(
         name = "com_github_bazelbuild_buildtools",
         importpath = "github.com/bazelbuild/buildtools",
         patch_args = ["-p1"],
         patches = ["@{}//buildpatches:buildifier.patch".format(workspace_name)],
-        sum = "h1:Qo0AsLueoZhddfcCdxOOT0dlt3KOOuJodX8dw/f55I0=",
-        version = "v0.0.0-20240124160521-959427f9b6f0",
+        sum = "h1:wycIfuqZJzkloRT+fcazTM3NjvAMyAi1qC2QXmEZP4s=",
+        version = "v0.0.0-20240207142252-03bf520394af",
     )
     go_repository(
         name = "com_github_bazelbuild_rules_go",
         importpath = "github.com/bazelbuild/rules_go",
-        sum = "h1:kuiC/mK1SKoZ0lyX5gD9uVBGFWOoXT3I4W/ose6Jouo=",
-        version = "v0.45.1",
+        sum = "h1:CTefzjN/D3Cdn3rkrM6qMWuQj59OBcuOjyIp3m4hZ7s=",
+        version = "v0.46.0",
     )
     go_repository(
         name = "com_github_bazelbuild_rules_webtesting",
@@ -6443,8 +6443,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_mod",
         importpath = "golang.org/x/mod",
-        sum = "h1:SernR4v+D55NyBH2QiEQrlBAnj1ECL6AGrA5+dPaMY8=",
-        version = "v0.15.0",
+        sum = "h1:dGoOF9QVLYng8IHTm7BAyWqCqSheQ5pYWGhzW00YJr0=",
+        version = "v0.14.0",
     )
     go_repository(
         name = "org_golang_x_net",
@@ -6491,8 +6491,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_tools",
         importpath = "golang.org/x/tools",
-        sum = "h1:FvmRgNOcs3kOa+T20R1uhfP9F6HgG2mfxDv1vrx1Htc=",
-        version = "v0.17.0",
+        sum = "h1:GO788SKMRunPIBCXiQyo2AaexLstOrVhuAL5YwsckQM=",
+        version = "v0.16.0",
     )
     go_repository(
         name = "org_golang_x_tools_go_vcs",

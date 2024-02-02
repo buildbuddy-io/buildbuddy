@@ -11,6 +11,7 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//cli/workspace",
+        "@com_github_bazelbuild_bazelisk//config",
         "@com_github_bazelbuild_bazelisk//core:go_default_library",
         "@com_github_bazelbuild_bazelisk//repositories:go_default_library",
     ],
