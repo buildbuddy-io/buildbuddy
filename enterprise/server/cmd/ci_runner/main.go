@@ -115,7 +115,9 @@ const (
 	// Bazel exit codes
 	// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java
 
+	bazelOOMErrorExitCode                = 33
 	bazelLocalEnvironmentalErrorExitCode = 36
+	bazelInternalErrorExitCode           = 37
 
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
@@ -970,6 +972,17 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			}
 			if err := p.Kill(); err != nil {
 				return err
+			}
+		}
+
+		// If we get an OOM, or a Bazel internal error - copy the jvm.out to the artifacts directory so it
+		// gets uploaded as a workflow artifact.
+		if *workflowID != "" && (exitCode == bazelOOMErrorExitCode || exitCode == bazelInternalErrorExitCode) {
+			jvmOutPath := filepath.Join(ar.rootDir, outputBaseDirName, "server/jvm.out")
+			if err := os.Link(jvmOutPath, filepath.Join(artifactsDir, "jvm.out")); err != nil {
+				ar.reporter.Printf("%sjvm.out preserved%s\n", ansiGray, ansiReset)
+			} else {
+				ar.reporter.Printf("%sfailed to preserve jvm.out: %s\n", ansiGray, err, ansiReset)
 			}
 		}
 
