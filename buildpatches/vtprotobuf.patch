@@ -6,7 +6,7 @@ index 418af2e..f356ce6 100644
      srcs = ["ext.proto"],
      visibility = ["//visibility:public"],
      deps = ["@com_google_protobuf//:descriptor_proto"],
-+	strip_import_prefix = "/include"
++    strip_import_prefix = "/include",
  )
  
  go_proto_library(
