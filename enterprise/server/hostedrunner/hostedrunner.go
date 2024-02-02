@@ -240,11 +240,14 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, err
 	}
 
-	guid, err := uuid.NewRandom()
-	if err != nil {
-		return nil, err
+	invocationID := req.GetInvocationId()
+	if invocationID == "" {
+		guid, err := uuid.NewRandom()
+		if err != nil {
+			return nil, err
+		}
+		invocationID = guid.String()
 	}
-	invocationID := guid.String()
 	actionDigest, err := r.createAction(ctx, req, invocationID)
 	if err != nil {
 		return nil, err

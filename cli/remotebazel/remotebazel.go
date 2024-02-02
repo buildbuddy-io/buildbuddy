@@ -10,10 +10,12 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -485,7 +487,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 }
 
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
-	healthChecker := healthcheck.NewHealthChecker("ci-runner")
+	healthChecker := healthcheck.NewHealthChecker("remote-bazel-client")
 	env := real_environment.NewRealEnv(healthChecker)
 
 	conn, err := grpc_client.DialSimple(opts.Server)
@@ -537,6 +539,25 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		envVars[envVar] = val
 	}
 
+	guid, err := uuid.NewRandom()
+	if err != nil {
+		return 0, err
+	}
+	invocationID := guid.String()
+
+	// On SIGTERM, cancel the remote run
+	sigTerm := make(chan os.Signal)
+	go func() {
+		<-sigTerm
+		_, err = bbClient.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+			InvocationId: invocationID,
+		})
+		if err != nil {
+			log.Warnf("Failed to cancel remote run: %s", err)
+		}
+	}()
+	signal.Notify(sigTerm, os.Interrupt, syscall.SIGTERM)
+
 	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
 			RepoUrl: repoConfig.URL,
@@ -551,6 +572,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		Arch:               reqArch,
 		ContainerImage:     *containerImage,
 		Env:                envVars,
+		InvocationId:       invocationID,
 	}
 
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)

@@ -91,6 +91,10 @@ message RunRequest {
 
   // Environment variables to set in the runner env.
   map<string, string> env = 11;
+
+  // Invocation ID to associate with the `bazel_command`.
+  // If this is empty, the server will randomly generate one.
+  string invocation_id = 12;
 }
 
 message RunResponse {
