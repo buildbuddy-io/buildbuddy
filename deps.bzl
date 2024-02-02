@@ -482,10 +482,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_bazelbuild_buildtools",
         importpath = "github.com/bazelbuild/buildtools",
         patch_args = ["-p1"],
-        patch_tool = "patch --ignore-whitespace",
         patches = ["@{}//buildpatches:buildifier.patch".format(workspace_name)],
-        sum = "h1:2Gc2Q6hVR1SJ8bBI9Ybzoggp8u/ED2WkM4MfvEIn9+c=",
-        version = "v0.0.0-20231115204819-d4c9dccdfbb1",
+        sum = "h1:Qo0AsLueoZhddfcCdxOOT0dlt3KOOuJodX8dw/f55I0=",
+        version = "v0.0.0-20240124160521-959427f9b6f0",
     )
     go_repository(
         name = "com_github_bazelbuild_rules_go",
