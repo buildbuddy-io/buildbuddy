@@ -2,6 +2,7 @@ package hostedrunner
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"path/filepath"
@@ -117,6 +118,13 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, err
 	}
 
+	envJson, err := json.Marshal(req.GetEnv())
+	if err != nil {
+		return nil, err
+	}
+
+	// NOTE: Be cautious when adding new flags. See
+	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
 	args := []string{
 		"./" + runnerName,
 		"--bes_backend=" + events_api_url.String(),
@@ -127,6 +135,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--invocation_id=" + invocationID,
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
+	}
+	if len(string(envJson)) > 0 {
+		args = append(args, "--env_overrides="+string(envJson))
 	}
 	if strings.HasPrefix(req.GetBazelCommand(), "run ") {
 		args = append(args, "--record_run_metadata")

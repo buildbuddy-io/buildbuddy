@@ -60,6 +60,7 @@ var (
 	execOs         = remoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
 	execArch       = remoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
 	containerImage = remoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
+	envStr         = remoteFlagset.String("env", "", "Environment variables to set in the runner environment. Key-value pairs should be separated by '=', and multiple pairs should be separated by ','. Ex. --env=k1=val1,k2=val2")
 	remoteRunner   = remoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
 
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
@@ -519,6 +520,19 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		}
 	}
 
+	envVars := make(map[string]string, 0)
+	if len(*envStr) > 0 {
+		kvPairs := strings.Split(*envStr, ",")
+		for _, pair := range kvPairs {
+			keyValArr := strings.Split(pair, "=")
+			if len(keyValArr) != 2 {
+				return 0, status.InvalidArgumentErrorf("invalid --env input, must be in the format `--env=k1=val1,k2=val2`")
+			}
+			key := keyValArr[0]
+			val := keyValArr[1]
+			envVars[key] = val
+		}
+	}
 	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
 			RepoUrl: repoConfig.URL,
@@ -532,6 +546,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		Os:                 reqOS,
 		Arch:               reqArch,
 		ContainerImage:     *containerImage,
+		Env:                envVars,
 	}
 
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
