@@ -139,11 +139,10 @@ func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActio
 // in the HTTP response to the webhook sender, in particular when there are
 // spikes in CAS or Execution service latency.
 type startWorkflowTask struct {
-	ctx             context.Context
-	gitProvider     interfaces.GitProvider
-	webhookData     *interfaces.WebhookData
-	workflow        *tables.Workflow
-	envVarOverrides map[string]string
+	ctx         context.Context
+	gitProvider interfaces.GitProvider
+	webhookData *interfaces.WebhookData
+	workflow    *tables.Workflow
 }
 
 type workflowService struct {
@@ -543,7 +542,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	actionStatuses := make([]*wfpb.ExecuteWorkflowResponse_ActionStatus, 0, len(actions))
 	for _, action := range actions {
 		action := action
-
 		actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
 			ActionName: action.Name,
 		}
