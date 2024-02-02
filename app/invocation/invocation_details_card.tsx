@@ -58,14 +58,17 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
       .join(" ");
   }
 
+  hasPatternFile() {
+    return Boolean(this.props.model.optionsMap.get("target_pattern_file"));
+  }
+
   bazelCommandAndPatternWithOptions(options: string[]) {
+    let patterns: string[] = [];
+    if (!this.hasPatternFile()) {
+      patterns = this.props.model.expanded?.id?.pattern?.pattern || [];
+    }
     return this.quote(
-      [
-        "bazel",
-        this.props.model.started?.command ?? "",
-        ...(this.props.model.expanded?.id?.pattern?.pattern || []),
-        ...(options || []),
-      ].filter((value) => value)
+      ["bazel", this.props.model.started?.command ?? "", ...patterns, ...(options || [])].filter((value) => value)
     );
   }
 
@@ -287,7 +290,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                       onClick={this.handleCopyClicked.bind(this, this.explicitCommandLine())}
                     />
                   </div>
-                  {this.props.model.invocation.patternsTruncated && (
+                  {this.props.model.invocation.patternsTruncated && !this.hasPatternFile() && (
                     <Banner type="warning">Patterns have been truncated due to size limitations.</Banner>
                   )}
                   <div className="invocation-section">
@@ -306,7 +309,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                       )}
                     />
                   </div>
-                  {this.props.model.invocation.patternsTruncated && (
+                  {this.props.model.invocation.patternsTruncated && !this.hasPatternFile() && (
                     <Banner type="warning">Patterns have been truncated due to size limitations.</Banner>
                   )}
                   <div className="invocation-section">
