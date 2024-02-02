@@ -295,8 +295,10 @@ func (d *UserDB) createGroup(ctx context.Context, tx interfaces.DB, userID strin
 	if err != nil {
 		return "", err
 	}
-	if err = d.addUserToGroup(ctx, tx, userID, groupID); err != nil {
-		return "", err
+	if userID != "" {
+		if err = d.addUserToGroup(ctx, tx, userID, groupID); err != nil {
+			return "", err
+		}
 	}
 	return groupID, nil
 }

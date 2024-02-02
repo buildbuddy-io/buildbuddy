@@ -189,10 +189,27 @@ func (c *CacheEntry) TableName() string {
 	return "CacheEntries"
 }
 
+type GroupSettings struct {
+	SharingEnabled                    bool `gorm:"default:1"`
+	UserOwnedKeysEnabled              bool `gorm:"not null;default:0"`
+	BotSuggestionsEnabled             bool `gorm:"not null;default:1"`
+	DeveloperOrgCreationEnabled       bool `gorm:"not null;default:1"`
+	RestrictCleanWorkflowRunsToAdmins bool `gorm:"not null;default:0"`
+	ExternalUserManagement            bool `gorm:"not null;default:0"`
+
+	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
+	// executors.
+	UseGroupOwnedExecutors bool
+
+	SuggestionPreference grpb.SuggestionPreference `gorm:"not null;default:1"`
+}
+
 // NOTE: Do not use `url_identifier_index` as an index name for Group.
 // It is removed as part of a migration.
 
 type Group struct {
+	Model
+
 	// A unique URL segment that is displayed in group-related URLs.
 	// e.g. "example-org" in app.buildbuddy.com/join/example-org or
 	// "example-org.buildbuddy.com" if we support subdomains in the future.
@@ -218,18 +235,8 @@ type Group struct {
 
 	// The group's Github API token.
 	GithubToken *string
-	Model
 
-	SharingEnabled                    bool `gorm:"default:1"`
-	UserOwnedKeysEnabled              bool `gorm:"not null;default:0"`
-	BotSuggestionsEnabled             bool `gorm:"not null;default:1"`
-	DeveloperOrgCreationEnabled       bool `gorm:"not null;default:1"`
-	RestrictCleanWorkflowRunsToAdmins bool `gorm:"not null;default:0"`
-	ExternalUserManagement            bool `gorm:"not null;default:0"`
-
-	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
-	// executors.
-	UseGroupOwnedExecutors bool
+	GroupSettings
 
 	CacheEncryptionEnabled bool `gorm:"not null;default:0"`
 	EnforceIPRules         bool `gorm:"not null;default:0"`
@@ -238,8 +245,6 @@ type Group struct {
 	SamlIdpMetadataUrl string
 
 	InvocationWebhookURL string `gorm:"not null;default:''"`
-
-	SuggestionPreference grpb.SuggestionPreference `gorm:"not null;default:1"`
 
 	// The public key and encrypted private key. Used to upload secrets.
 	PublicKey           string

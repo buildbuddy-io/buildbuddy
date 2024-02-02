@@ -488,14 +488,16 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}
 
 	group := &tables.Group{
-		UserID:                      user.UserID,
-		Name:                        groupName,
-		OwnedDomain:                 groupOwnedDomain,
-		SharingEnabled:              req.GetSharingEnabled(),
-		UserOwnedKeysEnabled:        req.GetUserOwnedKeysEnabled(),
-		BotSuggestionsEnabled:       req.GetBotSuggestionsEnabled(),
-		DeveloperOrgCreationEnabled: req.GetDeveloperOrgCreationEnabled(),
-		UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
+		UserID:      user.UserID,
+		Name:        groupName,
+		OwnedDomain: groupOwnedDomain,
+		GroupSettings: tables.GroupSettings{
+			SharingEnabled:              req.GetSharingEnabled(),
+			UserOwnedKeysEnabled:        req.GetUserOwnedKeysEnabled(),
+			BotSuggestionsEnabled:       req.GetBotSuggestionsEnabled(),
+			DeveloperOrgCreationEnabled: req.GetDeveloperOrgCreationEnabled(),
+			UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
+		},
 	}
 	group.URLIdentifier = strings.TrimSpace(req.GetUrlIdentifier())
 	group.SuggestionPreference = grpb.SuggestionPreference_ENABLED

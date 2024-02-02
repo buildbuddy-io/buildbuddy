@@ -17,8 +17,10 @@ go_library(
         "//server/real_environment",
         "//server/tables",
         "//server/util/log",
+        "//server/util/perms",
         "//server/util/role",
         "//server/util/status",
+        "@org_golang_google_protobuf//encoding/prototext",
     ],
 )
 

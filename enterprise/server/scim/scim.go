@@ -19,8 +19,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -32,20 +34,28 @@ var (
 )
 
 const (
-	usersPath = "/scim/Users"
+	usersPath  = "/scim/Users"
+	groupsPath = "/scim/Groups"
 
 	AdminRole     = "admin"
 	DeveloperRole = "developer"
 
 	ListResponseSchema  = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 	UserResourceSchema  = "urn:ietf:params:scim:schemas:core:2.0:User"
+	GroupResourceSchema = "urn:ietf:params:scim:schemas:core:2.0:Group"
 	PatchResourceSchema = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 
-	ActiveAttribute     = "active"
-	GivenNameAttribute  = "name.givenName"
-	FamilyNameAttribute = "name.familyName"
-	UserNameAttribute   = "userName"
-	RoleAttribute       = `roles[primary eq "True"].value`
+	ActiveAttribute      = "active"
+	GivenNameAttribute   = "name.givenName"
+	FamilyNameAttribute  = "name.familyName"
+	UserNameAttribute    = "userName"
+	RoleAttribute        = `roles[primary eq "True"].value`
+	DisplayNameAttribute = "displayName"
+	MembersAttrbiute     = "members"
+
+	PatchReplaceOp = "replace"
+	PatchAddOp     = "add"
+	PatchRemoveOp  = "remove"
 )
 
 type NameResource struct {
@@ -222,13 +232,15 @@ func (s *SCIMServer) handleRequest(w http.ResponseWriter, r *http.Request, handl
 		w.Write([]byte(err.Error()))
 		return
 	}
-	out, err := json.Marshal(val)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
-		return
+	if val != nil {
+		out, err := json.Marshal(val)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		w.Write(out)
 	}
-	w.Write(out)
 }
 
 func (s *SCIMServer) getRequestHandler(r *http.Request) (handlerFunc, error) {
@@ -248,6 +260,23 @@ func (s *SCIMServer) getRequestHandler(r *http.Request) (handlerFunc, error) {
 			return s.patchUser, nil
 		case http.MethodDelete:
 			return s.deleteUser, nil
+		}
+	}
+
+	if strings.HasPrefix(r.URL.Path, groupsPath) {
+		switch r.Method {
+		case http.MethodPost:
+			return s.createGroup, nil
+		case http.MethodGet:
+			if r.URL.Path == groupsPath {
+				return s.getGroups, nil
+			} else {
+				return s.getGroup, nil
+			}
+		case http.MethodPatch:
+			return s.patchGroup, nil
+		case http.MethodDelete:
+			return s.deleteGroup, nil
 		}
 	}
 
@@ -445,7 +474,7 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
-	entityURL := build_buddy_url.WithPath("saml/metadata?slug=" + g.URLIdentifier)
+	entityURL := build_buddy_url.WithPath("saml/metadata").String() + "?slug=" + g.URLIdentifier
 	u := &tables.User{
 		UserID:    pk,
 		SubID:     fmt.Sprintf("%s/%s", entityURL, ur.UserName),
@@ -536,7 +565,8 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 	}
 
 	for _, op := range pr.Operations {
-		if !strings.EqualFold(op.Op, "replace") {
+		opType := strings.ToLower(op.Op)
+		if opType != PatchReplaceOp {
 			return nil, status.InvalidArgumentErrorf("unsupported operation %q", op.Op)
 		}
 
@@ -645,4 +675,166 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 
 func (s *SCIMServer) deleteUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
 	return nil, status.UnimplementedError("delete not supported")
+}
+
+func (s *SCIMServer) createGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+	req, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	log.CtxDebugf(ctx, "SCIM create group request: %s", string(req))
+	gr := GroupResource{}
+	if err := json.Unmarshal(req, &gr); err != nil {
+		return nil, err
+	}
+
+	ng := &tables.Group{
+		URLIdentifier:      gr.DisplayName,
+		Name:               gr.DisplayName,
+		GroupSettings:      g.GroupSettings,
+		SamlIdpMetadataUrl: g.SamlIdpMetadataUrl,
+	}
+	groupID, err := s.env.GetUserDB().InsertOrUpdateGroup(ctx, ng)
+	if err != nil {
+		return nil, err
+	}
+	ng.GroupID = groupID
+	return newGroupResource(g), nil
+}
+
+func (s *SCIMServer) getGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+	log.CtxInfof(ctx, "SCIM get group request %q", r.RequestURI)
+	id := path.Base(r.URL.Path)
+	// XXX worth adding a permission check here?
+	tg, err := s.env.GetUserDB().GetGroupByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return newGroupResource(tg), nil
+}
+
+func (s *SCIMServer) getGroups(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
+	log.CtxWarningf(ctx, "get groups request %q", r.RequestURI)
+	filter := r.URL.Query().Get("filter")
+	if filter == "" {
+		return nil, status.InvalidArgumentErrorf("group list without filter is not supported")
+	}
+	filterParts := strings.Split(filter, " ")
+	if len(filterParts) != 3 {
+		return nil, status.InvalidArgumentErrorf("unsupported filter %q", filter)
+	}
+	if filterParts[0] != DisplayNameAttribute {
+		return nil, status.InvalidArgumentErrorf("unsupported filter attribute %q", filterParts[0])
+	}
+	if filterParts[1] != "eq" {
+		return nil, status.InvalidArgumentErrorf("unsupported filter operator %q", filterParts[1])
+	}
+	urlIdentifier, err := strconv.Unquote(filterParts[2])
+	if err != nil {
+		return nil, err
+	}
+	// XXX: need auth check here?
+	tg, err := s.env.GetUserDB().GetGroupByURLIdentifier(ctx, urlIdentifier)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return &GroupListResponseResource{
+				Schemas:      []string{ListResponseSchema},
+				TotalResults: 0,
+				StartIndex:   1,
+				ItemsPerPage: 0,
+			}, nil
+		}
+		return nil, err
+	}
+	return &GroupListResponseResource{
+		Schemas:      []string{ListResponseSchema},
+		TotalResults: 1,
+		StartIndex:   1,
+		ItemsPerPage: 1,
+		Resources:    []*GroupResource{newGroupResource(tg)},
+	}, nil
+}
+
+func (s *SCIMServer) patchGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+	req, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	pr := PatchResource{}
+	if err := json.Unmarshal(req, &pr); err != nil {
+		return nil, err
+	}
+
+	id := path.Base(r.URL.Path)
+	log.CtxDebugf(ctx, "SCIM patch group request %q: %s", id, string(req))
+	tg, err := s.env.GetUserDB().GetGroupByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, op := range pr.Operations {
+		opType := strings.ToLower(op.Op)
+		switch opType {
+		case PatchReplaceOp:
+			if op.Path != DisplayNameAttribute {
+				return nil, status.InvalidArgumentErrorf("unsupported attribute update with path %q", op.Path)
+			}
+			v, ok := op.Value.(string)
+			if !ok {
+				return nil, status.InvalidArgumentErrorf("expected string attribute for display name but got %T", op.Value)
+			}
+			tg.URLIdentifier = v
+			tg.Name = v
+			if _, err := s.env.GetUserDB().InsertOrUpdateGroup(ctx, tg); err != nil {
+				return nil, err
+			}
+		case PatchAddOp, PatchRemoveOp:
+			if op.Path != MembersAttrbiute {
+				return nil, status.InvalidArgumentErrorf("unsupported attribute update with path %q", op.Path)
+			}
+			values, ok := op.Value.([]any)
+			if !ok {
+				return nil, status.InvalidArgumentErrorf("expected list of objects attribute for value but got %T", op.Value)
+			}
+			for _, rv := range values {
+				obj, ok := rv.(map[string]any)
+				if !ok {
+					return nil, status.InvalidArgumentErrorf("expect map but got %T", rv)
+				}
+				v, ok := obj["value"]
+				if !ok {
+					return nil, status.InvalidArgumentErrorf("value map missing user ID")
+				}
+
+				action := grpb.UpdateGroupUsersRequest_Update_ADD
+				if opType == PatchRemoveOp {
+					action = grpb.UpdateGroupUsersRequest_Update_REMOVE
+				}
+				// XXX check conversion
+				update := []*grpb.UpdateGroupUsersRequest_Update{{
+					UserId:           &uidpb.UserId{Id: v.(string)},
+					MembershipAction: action,
+				}}
+				log.CtxInfof(ctx, "membership update:\n%s", prototext.Format(update[0]))
+				u, err := perms.AuthenticatedUser(ctx, s.env)
+				if err != nil {
+					return nil, err
+				}
+				for _, gm := range u.GetGroupMemberships() {
+					log.CtxInfof(ctx, "group membership: %+v", gm)
+				}
+				if err := s.env.GetUserDB().UpdateGroupUsers(ctx, tg.GroupID, update); err != nil && !status.IsAlreadyExistsError(err) {
+					return nil, err
+				}
+			}
+		}
+	}
+
+	return newGroupResource(tg), nil
+}
+
+func (s *SCIMServer) deleteGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+	log.CtxInfof(ctx, "SCIM delete group request %q", r.RequestURI)
+	//id := path.Base(r.URL.Path)
+	return nil, nil
 }
