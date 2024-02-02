@@ -44,7 +44,7 @@ func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) string
 	require.NoError(t, err)
 	g := u.Groups[0].Group
 
-	apiKey, err := env.GetAuthDB().CreateAPIKey(ctx, g.GroupID, "SCIM", []akpb.ApiKey_Capability{akpb.ApiKey_SCIM_CAPABILITY}, false)
+	apiKey, err := env.GetAuthDB().CreateAPIKey(ctx, g.GroupID, "SCIM", []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}, false)
 	require.NoError(t, err)
 
 	g.SamlIdpMetadataUrl = "foo"

@@ -178,7 +178,7 @@ func (s *SCIMServer) RegisterHandlers(mux interfaces.HttpServeMux) {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		if !u.HasCapability(akpb.ApiKey_SCIM_CAPABILITY) {
+		if !u.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
