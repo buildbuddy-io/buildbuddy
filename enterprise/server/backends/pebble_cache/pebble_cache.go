@@ -495,7 +495,7 @@ func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 	// is enabled (if CompactionDebtConcurrency was not already exceeded).
 	// Every multiple of this value enables another concurrent
 	// compaction up to MaxConcurrentCompactions.
-	opts.Experimental.L0CompactionConcurrency = 4
+	opts.Experimental.L0CompactionConcurrency = 2
 	// CompactionDebtConcurrency controls the threshold of compaction debt
 	// at which additional compaction concurrency slots are added. For every
 	// multiple of this value in compaction debt bytes, an additional
