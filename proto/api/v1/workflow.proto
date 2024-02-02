@@ -36,7 +36,7 @@ message ExecuteWorkflowRequest {
   // conflict between an env var set here and in buildbuddy.yaml, these
   // overrides will take precedence. Otherwise all env vars set in
   // buildbuddy.yaml will still apply.
-  map<string, string> env_var_overrides = 7;
+  map<string, string> env = 7;
 }
 
 message ExecuteWorkflowResponse {
