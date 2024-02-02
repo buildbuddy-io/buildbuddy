@@ -4841,6 +4841,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -4875,9 +4876,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 24,
+            "w": 12,
             "x": 0,
-            "y": 18
+            "y": 9
           },
           "id": 3763,
           "options": {
@@ -4935,6 +4936,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -5003,9 +5005,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 24,
+            "w": 12,
             "x": 0,
-            "y": 26
+            "y": 17
           },
           "id": 5574,
           "options": {
@@ -5088,6 +5090,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -5156,9 +5159,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 24,
+            "w": 12,
             "x": 0,
-            "y": 34
+            "y": 25
           },
           "id": 3846,
           "options": {
@@ -5182,7 +5185,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (pod_name)",
               "legendFormat": "estimated debt",
               "range": true,
               "refId": "A"
@@ -5216,6 +5219,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -5251,9 +5255,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 24,
+            "w": 12,
             "x": 0,
-            "y": 42
+            "y": 33
           },
           "id": 5160,
           "options": {
@@ -5311,6 +5315,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -5346,9 +5351,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 24,
+            "w": 12,
             "x": 0,
-            "y": 50
+            "y": 41
           },
           "id": 5242,
           "options": {
@@ -5441,9 +5446,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 24,
+            "w": 12,
             "x": 0,
-            "y": 58
+            "y": 49
           },
           "id": 5324,
           "options": {
@@ -5536,9 +5541,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 24,
+            "w": 12,
             "x": 0,
-            "y": 66
+            "y": 57
           },
           "id": 5406,
           "options": {
@@ -13066,7 +13071,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 35
       },
       "id": 8,
       "panels": [
@@ -13298,7 +13303,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 36
       },
       "id": 1346,
       "panels": [
@@ -13812,7 +13817,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 37
       },
       "id": 5641,
       "panels": [
