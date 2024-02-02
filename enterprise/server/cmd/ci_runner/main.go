@@ -115,9 +115,9 @@ const (
 	// Bazel exit codes
 	// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java
 
-	bazelOOMErrorExitCode = 33
+	bazelOOMErrorExitCode                = 33
 	bazelLocalEnvironmentalErrorExitCode = 36
-	bazelInternalErrorExitCode = 37
+	bazelInternalErrorExitCode           = 37
 
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
