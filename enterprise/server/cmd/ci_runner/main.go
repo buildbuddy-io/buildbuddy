@@ -939,16 +939,18 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		artifactsDir := artifactsPathForCommand(ws, i)
 		namedSetID := filepath.Base(artifactsDir)
 
-		var envVarOverrides map[string]string
-		err = json.Unmarshal([]byte(*envVarOverrideStr), &envVarOverrides)
-		if err != nil {
-			return err
-		}
-		if action.Env == nil {
-			action.Env = map[string]string{}
-		}
-		for k, v := range envVarOverrides {
-			action.Env[k] = v
+		if *envVarOverrideStr != "" {
+			var envVarOverrides map[string]string
+			err = json.Unmarshal([]byte(*envVarOverrideStr), &envVarOverrides)
+			if err != nil {
+				return err
+			}
+			if action.Env == nil {
+				action.Env = map[string]string{}
+			}
+			for k, v := range envVarOverrides {
+				action.Env[k] = v
+			}
 		}
 
 		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), action.Env, action.BazelWorkspaceDir, ar.reporter)
