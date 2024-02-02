@@ -979,10 +979,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// gets uploaded as a workflow artifact.
 		if *workflowID != "" && exitCode == bazelOOMErrorExitCode || exitCode == bazelInternalErrorExitCode {
 			jvmOutPath := filepath.Join(ar.rootDir, outputBaseDirName, "server/jvm.out")
-			if err := os.Link(jvmOutPath, filepath.Join(os.Getenv(artifactsDir), "jvm.out")); err == nil {
-				ar.reporter.Printf("%sjvm.out preserved%s\n", ansiGray, ansiReset)
+			if err := os.Link(jvmOutPath, filepath.Join(os.Getenv(artifactsDir), "jvm.out")); err != nil {
+				ar.reporter.Printf("%sfailed to preserve jvm.out: %s\n", ansiGray, err, ansiReset)
 			} else {
-				ar.reporter.Printf("%sfailed to preserve jvm.out%s\n", ansiGray, ansiReset)
+				ar.reporter.Printf("%sjvm.out preserved%s\n", ansiGray, ansiReset)
 			}
 		}
 
