@@ -977,12 +977,12 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 		// If we get an OOM, or a Bazel internal error - copy the jvm.out to the artifacts directory so it
 		// gets uploaded as a workflow artifact.
-		if *workflowID != "" && exitCode == bazelOOMErrorExitCode || exitCode == bazelInternalErrorExitCode {
+		if *workflowID != "" && (exitCode == bazelOOMErrorExitCode || exitCode == bazelInternalErrorExitCode) {
 			jvmOutPath := filepath.Join(ar.rootDir, outputBaseDirName, "server/jvm.out")
-			if err := os.Link(jvmOutPath, filepath.Join(os.Getenv(artifactsDir), "jvm.out")); err != nil {
-				ar.reporter.Printf("%sfailed to preserve jvm.out: %s\n", ansiGray, err, ansiReset)
-			} else {
+			if err := os.Link(jvmOutPath, filepath.Join(artifactsDir, "jvm.out")); err != nil {
 				ar.reporter.Printf("%sjvm.out preserved%s\n", ansiGray, ansiReset)
+			} else {
+				ar.reporter.Printf("%sfailed to preserve jvm.out: %s\n", ansiGray, err, ansiReset)
 			}
 		}
 
