@@ -695,16 +695,6 @@ proto_library(
 
 # Go proto rules below here
 go_proto_library(
-    name = "grpc_status_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "//proto:vtprotobuf_compiler",
-    ],
-    importpath = "google.golang.org/genproto/googleapis/rpc/status",
-    proto = "@googleapis//google/rpc:status_proto",
-)
-
-go_proto_library(
     name = "prometheus_client_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
@@ -846,12 +836,12 @@ go_proto_library(
     deps = [
         ":acl_go_proto",
         ":context_go_proto",
-        ":grpc_status_go_proto",
         ":invocation_status_go_proto",
         ":remote_execution_go_proto",
         ":resource_go_proto",
         ":scheduler_go_proto",
         ":stat_filter_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1083,8 +1073,8 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/vmexec",
     proto = ":vmexec_proto",
     deps = [
-        ":grpc_status_go_proto",
         ":remote_execution_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1123,8 +1113,8 @@ go_proto_library(
     proto = ":workflow_proto",
     deps = [
         ":context_go_proto",
-        ":grpc_status_go_proto",
         ":invocation_status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1137,10 +1127,10 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/raft",
     proto = ":raft_proto",
     deps = [
-        ":grpc_status_go_proto",
         ":remote_execution_go_proto",
         ":resource_go_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1395,9 +1385,9 @@ go_proto_library(
     proto = ":cache_proto",
     deps = [
         ":context_go_proto",
-        ":grpc_status_go_proto",
         ":remote_execution_go_proto",
         ":resource_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1453,11 +1443,11 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_asset",
     proto = ":remote_asset_proto",
     deps = [
-        ":grpc_status_go_proto",
         ":remote_execution_go_proto",
         ":semver_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1470,11 +1460,11 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log",
     proto = ":remote_execution_log_proto",
     deps = [
-        ":grpc_status_go_proto",
         ":remote_execution_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1488,11 +1478,11 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution",
     proto = ":remote_execution_proto",
     deps = [
-        ":grpc_status_go_proto",
         ":scheduler_go_proto",
         ":semver_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1519,7 +1509,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/telemetry",
     proto = ":telemetry_proto",
     deps = [
-        ":grpc_status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -1535,8 +1525,8 @@ go_proto_library(
     deps = [
         ":acl_go_proto",
         ":context_go_proto",
-        ":grpc_status_go_proto",
         ":trace_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 

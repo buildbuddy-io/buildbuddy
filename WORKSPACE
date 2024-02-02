@@ -116,6 +116,10 @@ gazelle_dependencies()
 
 http_archive(
     name = "googleapis",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:googleapis.patch",
+    ],
     sha256 = "14d4698e15d7341162363bfaed05995cca692f469c3c4710596aeecbcf44dcf2",
     strip_prefix = "googleapis-c20f392efc5c9e4f16b37002996607c4cdde4dd3",
     urls = [

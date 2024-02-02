@@ -1442,9 +1442,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_envoyproxy_go_control_plane",
-        build_directives = [
-            "gazelle:resolve go google.golang.org/genproto/googleapis/rpc/status @{}//proto:grpc_status_go_proto".format(workspace_name),
-        ],
         importpath = "github.com/envoyproxy/go-control-plane",
         sum = "h1:wSUXTlLfiAQRWs2F+p+EKOY9rUyis1MyGqJ2DIk5HpM=",
         version = "v0.11.1",
@@ -5478,18 +5475,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_google_cloud_go_logging",
-        build_directives = [
-            "gazelle:resolve go google.golang.org/genproto/googleapis/rpc/status @{}//proto:grpc_status_go_proto".format(workspace_name),
-        ],
         importpath = "cloud.google.com/go/logging",
         sum = "h1:26skQWPeYhvIasWKm48+Eq7oUqdcdbwsCVwz5Ys0FvU=",
         version = "v1.8.1",
     )
     go_repository(
         name = "com_google_cloud_go_longrunning",
-        build_directives = [
-            "gazelle:resolve go google.golang.org/genproto/googleapis/rpc/status @{}//proto:grpc_status_go_proto".format(workspace_name),
-        ],
         importpath = "cloud.google.com/go/longrunning",
         sum = "h1:w8xEcbZodnA2BbW6sVirkkoC+1gP8wS57EUUgGS0GVg=",
         version = "v0.5.4",
@@ -6368,9 +6359,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "org_golang_google_genproto_googleapis_api",
-        build_directives = [
-            "gazelle:resolve go google.golang.org/genproto/googleapis/rpc/status @{}//proto:grpc_status_go_proto".format(workspace_name),
-        ],
         importpath = "google.golang.org/genproto/googleapis/api",
         sum = "h1:HJMDndgxest5n2y77fnErkM62iUsptE/H8p0dC2Huo4=",
         version = "v0.0.0-20231030173426-d783a09b4405",
@@ -6383,9 +6371,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "org_golang_google_genproto_googleapis_rpc",
-        build_directives = [
-            "gazelle:resolve go google.golang.org/genproto/googleapis/rpc/status @{}//proto:grpc_status_go_proto".format(workspace_name),
-        ],
         importpath = "google.golang.org/genproto/googleapis/rpc",
         sum = "h1:ultW7fxlIvee4HYrtnaRPon9HpEgFk5zYpmfMgtKB5I=",
         version = "v0.0.0-20231120223509-83a465c0220f",
@@ -6394,9 +6379,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     # gRPC
     go_repository(
         name = "org_golang_google_grpc",
-        build_directives = [
-            "gazelle:resolve go google.golang.org/genproto/googleapis/rpc/status @{}//proto:grpc_status_go_proto".format(workspace_name),
-        ],
         build_file_proto_mode = "disable",
         importpath = "google.golang.org/grpc",
         patch_args = ["-p1"],

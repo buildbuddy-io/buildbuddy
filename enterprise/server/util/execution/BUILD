@@ -7,12 +7,12 @@ go_library(
     visibility = ["//enterprise:__subpackages__"],
     deps = [
         "//proto:execution_stats_go_proto",
-        "//proto:grpc_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/status",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
