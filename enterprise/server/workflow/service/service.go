@@ -1139,6 +1139,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			// NOTE: The executor is responsible for making sure this
 			// buildbuddy_ci_runner binary exists at the workspace root. It does so
 			// whenever it sees the `workflow-id` platform property.
+			//
+			// Also be cautious when adding new flags. See
+			// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
 			"./buildbuddy_ci_runner",
 			"--invocation_id=" + invocationID,
 			"--action_name=" + workflowAction.Name,
@@ -1157,7 +1160,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--bazel_command=" + ws.ciRunnerBazelCommand(),
-			"--env_overrides=" + string(envJson),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		}, extraArgs...),
 		Platform: &repb.Platform{
@@ -1185,6 +1187,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: platform.EstimatedCPUPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedCPU()},
 			},
 		},
+	}
+	// See https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
+	// for more info on why we don't want to pass empty flags
+	if len(string(envJson)) > 0 {
+		cmd.Arguments = append(cmd.Arguments, "--env_overrides="+string(envJson))
 	}
 	if isSharedFirecrackerWorkflow {
 		// For firecracker workflows, init dockerd in case local actions or
