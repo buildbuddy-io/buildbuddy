@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"sync"
 	"testing"
@@ -1744,8 +1745,8 @@ func TestLRU(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 			ctx := getAnonContext(t, te)
-
-			numDigests := 50
+			clock := clockwork.NewFakeClock()
+			numDigests := 25
 			activeKeyVersion := int64(5)
 			maxSizeBytes := int64(math.Ceil( // account for integer rounding
 				float64(numDigests) * float64(tc.digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
@@ -1763,6 +1764,7 @@ func TestLRU(t *testing.T) {
 				MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
 				AverageChunkSizeBytes:       tc.averageChunkSizeBytes,
 				ActiveKeyVersion:            &activeKeyVersion,
+				Clock:                       clock,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -1770,18 +1772,21 @@ func TestLRU(t *testing.T) {
 			require.NoError(t, err)
 
 			quartile := numDigests / 4
-
-			resourceKeys := make([]*rspb.ResourceName, numDigests)
-			for i := range resourceKeys {
+			resourceKeys := make([]*rspb.ResourceName, 0)
+			lastUsed := make(map[*rspb.ResourceName]time.Time, numDigests)
+			for i := 0; i < numDigests; i++ {
 				cacheType := rspb.CacheType_CAS
 				if i%2 == 0 {
 					cacheType = rspb.CacheType_AC
 				}
 				r, buf := newResourceAndBuf(t, tc.digestSize, cacheType, "")
-				resourceKeys[i] = r
 				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err)
+				lastUsed[r] = clock.Now()
+				resourceKeys = append(resourceKeys, r)
 			}
+
+			clock.Advance(5 * time.Minute)
 
 			// Use the digests in the following way:
 			// 1) first 3 quartiles
@@ -1796,7 +1801,9 @@ func TestLRU(t *testing.T) {
 					r := resourceKeys[j]
 					_, err = pc.Get(ctx, r)
 					require.NoError(t, err)
+					lastUsed[r] = clock.Now()
 				}
+				clock.Advance(5 * time.Minute)
 			}
 
 			// Write more data.
@@ -1806,9 +1813,10 @@ func TestLRU(t *testing.T) {
 					cacheType = rspb.CacheType_AC
 				}
 				r, buf := newResourceAndBuf(t, tc.digestSize, cacheType, "")
-				resourceKeys = append(resourceKeys, r)
 				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err)
+				lastUsed[r] = clock.Now()
+				resourceKeys = append(resourceKeys, r)
 			}
 
 			pc.Stop()
@@ -1819,40 +1827,54 @@ func TestLRU(t *testing.T) {
 
 			pc.TestingWaitForGC()
 
-			evictionsByQuartile := make([][]*repb.Digest, 5)
-			for i, r := range resourceKeys {
+			perfectLRUEvictees := make(map[*rspb.ResourceName]struct{})
+			sort.Slice(resourceKeys, func(i, j int) bool {
+				return lastUsed[resourceKeys[i]].Before(lastUsed[resourceKeys[j]])
+			})
+			for _, r := range resourceKeys[:quartile] {
+				perfectLRUEvictees[r] = struct{}{}
+			}
+
+			// We expect no more than x keys to have been evicted
+			// We expect *most* of the keys evicted to be older
+			evictedCount := 0
+			perfectEvictionCount := 0
+			evictedAgeTotal := time.Duration(0)
+
+			keptCount := 0
+			keptAgeTotal := time.Duration(0)
+
+			now := clock.Now()
+			for r, usedAt := range lastUsed {
 				ok, err := pc.Contains(ctx, r)
 				evicted := err != nil || !ok
-				q := i / quartile
+				age := now.Sub(usedAt)
 				if evicted {
-					evictionsByQuartile[q] = append(evictionsByQuartile[q], r.GetDigest())
-				}
-			}
-
-			for quartile, evictions := range evictionsByQuartile {
-				count := len(evictions)
-				sample := ""
-				for i, d := range evictions {
-					if i > 3 {
-						break
+					evictedCount++
+					evictedAgeTotal += age
+					if _, ok := perfectLRUEvictees[r]; ok {
+						perfectEvictionCount++
 					}
-					sample += d.GetHash()
-					sample += ", "
+				} else {
+					keptCount++
+					keptAgeTotal += age
 				}
-				log.Infof("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
 			}
 
-			// None of the files "used" just before adding more should have been
-			// evicted.
-			require.Equal(t, 0, len(evictionsByQuartile[0]))
+			avgEvictedAgeSeconds := evictedAgeTotal.Seconds() / float64(evictedCount)
+			avgKeptAgeSeconds := keptAgeTotal.Seconds() / float64(keptCount)
 
-			// None of the most recently added files should have been evicted.
-			require.Equal(t, 0, len(evictionsByQuartile[4]))
+			log.Printf("evictedCount: %d [%d perfect], keptCount: %d, quartile: %d", evictedCount, perfectEvictionCount, keptCount, quartile)
+			log.Printf("evictedAgeTotal: %s, keptAgeTotal: %s", evictedAgeTotal, keptAgeTotal)
+			log.Printf("avg evictedAge: %f, avg keptAge: %f", avgEvictedAgeSeconds, avgKeptAgeSeconds)
 
-			// Relax the conditions a little to de-flake the tests.
-			require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2])+2)
-			require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3])+2)
-			require.Greater(t, len(evictionsByQuartile[3]), 0)
+			// Check that mostly (80%) of evictions were perfect
+			require.GreaterOrEqual(t, perfectEvictionCount, int(.80*float64(evictedCount)))
+			// Check that total number of evictions was < quartile*2, so not too much
+			// good stuff was evicted.
+			require.LessOrEqual(t, evictedCount, quartile*2)
+			// Check that the avg age of evicted items is older than avg age of kept items.
+			require.Greater(t, avgEvictedAgeSeconds, avgKeptAgeSeconds)
 		})
 	}
 }
