@@ -5,12 +5,12 @@ go_library(
     srcs = ["dsingleflight.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight",
     deps = [
-        "//proto:grpc_status_go_proto",
         "//server/real_environment",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//status",
     ],
 )

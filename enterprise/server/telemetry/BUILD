@@ -7,7 +7,6 @@ go_library(
     srcs = ["telemetry_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry",
     deps = [
-        "//proto:grpc_status_go_proto",
         "//proto:telemetry_go_proto",
         "//server/environment",
         "//server/interfaces",
@@ -16,6 +15,7 @@ go_library(
         "//server/util/db",
         "//server/util/log",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//codes",
     ],
