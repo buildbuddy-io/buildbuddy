@@ -1746,7 +1746,7 @@ func TestLRU(t *testing.T) {
 			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 			ctx := getAnonContext(t, te)
 			clock := clockwork.NewFakeClock()
-			numDigests := 20
+			numDigests := 25
 			activeKeyVersion := int64(5)
 			maxSizeBytes := int64(math.Ceil( // account for integer rounding
 				float64(numDigests) * float64(tc.digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
@@ -1785,6 +1785,8 @@ func TestLRU(t *testing.T) {
 				lastUsed[r] = clock.Now()
 				resourceKeys = append(resourceKeys, r)
 			}
+
+			clock.Advance(5 * time.Minute)
 
 			// Use the digests in the following way:
 			// 1) first 3 quartiles
@@ -1829,10 +1831,7 @@ func TestLRU(t *testing.T) {
 			sort.Slice(resourceKeys, func(i, j int) bool {
 				return lastUsed[resourceKeys[i]].Before(lastUsed[resourceKeys[j]])
 			})
-			for i, r := range resourceKeys {
-				if i >= quartile*2 {
-					break
-				}
+			for _, r := range resourceKeys[:quartile] {
 				perfectLRUEvictees[r] = struct{}{}
 			}
 
