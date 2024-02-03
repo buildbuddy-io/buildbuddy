@@ -1868,8 +1868,12 @@ func TestLRU(t *testing.T) {
 			log.Printf("evictedAgeTotal: %s, keptAgeTotal: %s", evictedAgeTotal, keptAgeTotal)
 			log.Printf("avg evictedAge: %f, avg keptAge: %f", avgEvictedAgeSeconds, avgKeptAgeSeconds)
 
+			// Check that mostly (80%) of evictions were perfect
 			require.GreaterOrEqual(t, perfectEvictionCount, int(.80*float64(evictedCount)))
+			// Check that total number of evictions was < quartile*2, so not too much
+			// good stuff was evicted.
 			require.LessOrEqual(t, evictedCount, quartile*2)
+			// Check that the avg age of evicted items is older than avg age of kept items.
 			require.Greater(t, avgEvictedAgeSeconds, avgKeptAgeSeconds)
 		})
 	}
