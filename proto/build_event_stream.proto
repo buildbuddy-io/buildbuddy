@@ -341,6 +341,17 @@ message Progress {
   // The next chunk of stderr that bazel produced since the last progress event
   // or the beginning of the build.
   string stderr = 2;
+
+  // BUILDBUDDY-SPECIFIC FIELDS BELOW.
+
+  // The progress stream ID. This is used for splitting progress streams into
+  // discrete "steps". At most one stream may be open at once - the server may
+  // finalize a stream when transitioning from one stream ID to another, and may
+  // return an error if attempting to resume a previously finalized stream.
+  //
+  // In particular, BuildBuddy will use this to render each step's output for a
+  // workflow invocation.
+  int32 stream_id = 1000;
 }
 
 // Payload of an event indicating that an expected event will not come, as
