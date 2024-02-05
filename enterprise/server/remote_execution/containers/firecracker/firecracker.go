@@ -910,7 +910,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 }
 
 func (c *FirecrackerContainer) getVMMetadata() *repb.VMMetadata {
-	if c.snapshot == nil {
+	if c.snapshot == nil || c.snapshot.GetVMMetadata() == nil {
 		return &repb.VMMetadata{VmId: c.id}
 	}
 	return c.snapshot.GetVMMetadata()
