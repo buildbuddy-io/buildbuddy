@@ -192,6 +192,10 @@ func (s *Snapshot) GetKey() *fcpb.SnapshotKey {
 	return s.key.CloneVT()
 }
 
+func (s *Snapshot) GetVMMetadata() *repb.VMMetadata {
+	return s.manifest.GetVmMetadata()
+}
+
 func (s *Snapshot) GetVMConfiguration() *fcpb.VMConfiguration {
 	return s.manifest.GetVmConfiguration()
 }
@@ -211,6 +215,7 @@ func (s *Snapshot) GetChunkedFiles() []*fcpb.ChunkedFile {
 // an asset shared across VMs (such as the containerfs), or a fully snapshotted
 // VM.
 type CacheSnapshotOptions struct {
+	VMMetadata          *repb.VMMetadata
 	VMConfiguration     *fcpb.VMConfiguration
 	VMStateSnapshotPath string
 	KernelImagePath     string
@@ -381,6 +386,7 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 	}
 
 	manifest := &fcpb.SnapshotManifest{
+		VmMetadata:      snapshotActionResult.GetExecutionMetadata().GetVmMetadata(),
 		VmConfiguration: vmConfig,
 		Files:           []*repb.FileNode{},
 		ChunkedFiles:    []*fcpb.ChunkedFile{},
@@ -491,6 +497,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	ar := &repb.ActionResult{
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
 			AuxiliaryMetadata: []*anypb.Any{vmConfig},
+			VmMetadata:        opts.VMMetadata,
 		},
 		OutputFiles:       []*repb.OutputFile{},
 		OutputDirectories: []*repb.OutputDirectory{},

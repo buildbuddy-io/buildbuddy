@@ -488,6 +488,8 @@ type FirecrackerContainer struct {
 	// If set, the snapshot used to load the VM
 	snapshot *snaploader.Snapshot
 
+	// The current task assigned to the VM.
+	task *repb.ExecutionTask
 	// When the VM was initialized (i.e. created or unpaused) for the command
 	// it is currently executing
 	//
@@ -567,6 +569,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		user:               opts.User,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		env:                env,
+		task:               task,
 		loader:             loader,
 		vmLog:              vmLog,
 		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
@@ -862,7 +865,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		c.memoryStore = memoryStore
 	}
 
+	vmd := c.getVMMetadata().CloneVT()
+	vmd.LastExecutedTask = c.getVMTask()
 	opts := &snaploader.CacheSnapshotOptions{
+		VMMetadata:          vmd,
 		VMConfiguration:     c.vmConfig,
 		VMStateSnapshotPath: filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
 		KernelImagePath:     c.executorConfig.KernelImagePath,
@@ -901,6 +907,23 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
 
 	return nil
+}
+
+func (c *FirecrackerContainer) getVMMetadata() *repb.VMMetadata {
+	if c.snapshot == nil {
+		return &repb.VMMetadata{VmId: c.id}
+	}
+	return c.snapshot.GetVMMetadata()
+}
+
+func (c *FirecrackerContainer) getVMTask() *repb.VMMetadata_VMTask {
+	d, _ := digest.Compute(strings.NewReader(c.task.GetExecutionId()), c.task.GetExecuteRequest().GetDigestFunction())
+	return &repb.VMMetadata_VMTask{
+		InvocationId:          c.task.GetInvocationId(),
+		ExecutionId:           c.task.GetExecutionId(),
+		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
+		ExecuteResponseDigest: d,
+	}
 }
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
@@ -2107,6 +2130,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 	defer func() {
+		// Attach VM metadata to the result
+		result.VMMetadata = c.getVMMetadata()
+
 		// Attach VM logs to the result
 		if result.AuxiliaryLogs == nil {
 			result.AuxiliaryLogs = map[string][]byte{}

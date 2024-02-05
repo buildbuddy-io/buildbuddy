@@ -2285,6 +2285,15 @@ message VMMetadata {
 
     // The task's execution ID.
     string execution_id = 2;
+
+    // The action digest associated with the task. The digest function used to
+    // compute the digest should match the one associated with the invocation.
+    Digest action_digest = 3;
+
+    // The digest of the execution ID, used as the AC key for the stored
+    // ExecuteResponse. The digest function used to compute the digest should
+    // match the one associated with the invocation.
+    Digest execute_response_digest = 4;
   }
 
   // The last task to execute on this VM. When resuming from snapshot, this
