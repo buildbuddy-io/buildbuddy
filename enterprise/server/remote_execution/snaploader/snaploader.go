@@ -337,7 +337,7 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 		return nil, err
 	}
 	tmpDir := l.env.GetFileCache().TempDir()
-	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir)
+	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, true /*remoteEnabled*/)
 }
 
 func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifestDigest *repb.Digest) (*repb.ActionResult, error) {
@@ -368,7 +368,7 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 	}
 
 	tmpDir := l.env.GetFileCache().TempDir()
-	manifest, err := l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir)
+	manifest, err := l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, false /*remoteEnabled*/)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +383,7 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 	return manifest, nil
 }
 
-func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInstanceName string, snapshotActionResult *repb.ActionResult, tmpDir string) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInstanceName string, snapshotActionResult *repb.ActionResult, tmpDir string, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
 	snapMetadata := snapshotActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
 	if len(snapMetadata) != 1 {
 		return nil, status.InternalErrorf("expected vm config in snapshot auxiliary metadata")
@@ -409,7 +409,7 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 	}
 
 	for _, chunkedFileMetadata := range snapshotActionResult.OutputDirectories {
-		tree, err := l.ChunkedFileTree(ctx, remoteInstanceName, chunkedFileMetadata, tmpDir)
+		tree, err := l.ChunkedFileTree(ctx, remoteInstanceName, chunkedFileMetadata, tmpDir, remoteEnabled)
 		if err != nil {
 			return nil, err
 		}
@@ -459,8 +459,8 @@ func chunkedFileProperty(chunkedFileTree *repb.Tree, propertyName string) (int64
 	return 0, status.InternalErrorf("chunked file metadata missing %s property", propertyName)
 }
 
-func (l *FileCacheLoader) ChunkedFileTree(ctx context.Context, remoteInstanceName string, chunkedFileMetadata *repb.OutputDirectory, tmpDir string) (*repb.Tree, error) {
-	b, err := snaputil.GetBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), true /*remoteEnabled*/, chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
+func (l *FileCacheLoader) ChunkedFileTree(ctx context.Context, remoteInstanceName string, chunkedFileMetadata *repb.OutputDirectory, tmpDir string, remoteEnabled bool) (*repb.Tree, error) {
+	b, err := snaputil.GetBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), remoteEnabled, chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read chunked file tree: %s", status.Message(err))
 	}
