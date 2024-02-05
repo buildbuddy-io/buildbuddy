@@ -1021,6 +1021,9 @@ type CommandResult struct {
 	// UsageStats holds the command's measured resource usage. It may be nil if
 	// resource measurement is not implemented by the command's isolation type.
 	UsageStats *repb.UsageStats
+
+	// VMMetadata associated with the VM that ran the task, if applicable.
+	VMMetadata *repb.VMMetadata
 }
 
 type Subscriber interface {

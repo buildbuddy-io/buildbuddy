@@ -10,7 +10,7 @@ import rpcService from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
 import TerminalComponent from "../terminal/terminal";
-import { parseDigest, parseActionDigest } from "../util/cache";
+import { parseDigest, parseActionDigest, digestToString } from "../util/cache";
 import UserPreferences from "../preferences/preferences";
 import alert_service from "../alert/alert_service";
 
@@ -380,6 +380,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .catch((e) => console.error(e));
   }
 
+  private getVMPreviousTaskHref(): string {
+    const task = this.state.actionResult?.executionMetadata?.vmMetadata?.lastExecutedTask;
+    if (!task?.executeResponseDigest || !task?.invocationId || !task?.actionDigest) return "";
+    return `/invocation/${task.invocationId}?actionDigest=${digestToString(
+      task.actionDigest
+    )}&executeResponseDigest=${digestToString(task.executeResponseDigest)}#action`;
+  }
+
   private renderNotFoundDetails({ result = false }) {
     const hasRemoteUploadLocalResults = this.props.model.booleanCommandLineOption("remote_upload_local_results");
     const hasRemoteExecutor = Boolean(this.props.model.stringCommandLineOption("remote_executor"));
@@ -543,6 +551,32 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             <div className="metadata-detail">
                               {this.state.actionResult.executionMetadata.executorId}
                             </div>
+                            {this.state.actionResult.executionMetadata.vmMetadata && (
+                              <>
+                                <div className="metadata-title">VM ID</div>
+                                <div className="metadata-detail">
+                                  {this.state.actionResult.executionMetadata.vmMetadata.vmId}
+                                </div>
+                                {this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask && (
+                                  <>
+                                    <div className="metadata-title">VM resumed from invocation</div>
+                                    <div className="metadata-detail">
+                                      <TextLink
+                                        href={this.getVMPreviousTaskHref()}
+                                        title={
+                                          this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask
+                                            .executionId
+                                        }>
+                                        {
+                                          this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask
+                                            .invocationId
+                                        }
+                                      </TextLink>
+                                    </div>
+                                  </>
+                                )}
+                              </>
+                            )}
                             {this.state.actionResult.executionMetadata.usageStats && (
                               <>
                                 <div className="metadata-title">Resource usage</div>
