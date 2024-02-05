@@ -53,6 +53,18 @@ message BuildEventId {
     // assigned; the only meaningful operation on this field is test for
     // equality.
     int32 opaque_count = 1;
+
+    // BUILDBUDDY-SPECIFIC FIELDS BELOW.
+
+    // The invocation step ID. This can be used to group progress streams into
+    // discrete "steps". At most one step's stream may be open at once - the
+    // server may finalize a stream when transitioning from one stream ID to
+    // another, and may return an error if attempting to resume a previously
+    // finalized stream.
+    //
+    // BuildBuddy will use this ID to render each step's output for a workflow
+    // invocation.
+    int32 step_id = 1000;
   }
 
   // Identifier of an event indicating the beginning of a build; this will
@@ -274,7 +286,14 @@ message BuildEventId {
 
   // Identifier of an event providing a list of commands that are
   // run as children of this invocation.
-  message ChildInvocationsConfiguredId {}
+  message ChildInvocationsConfiguredId {
+    // The workflow step number in which the child invocation(s) occurred.
+    int32 step_number = 1;
+
+    // A unique ID, required if multiple child invocations appear in the same
+    // step.
+    int32 opaque_count = 2;
+  }
 
   // Identifier of an event providing the status of a completed child
   // invocation.
@@ -286,6 +305,16 @@ message BuildEventId {
   // Identifier of an event providing metadata on a runnable target such as
   // default arguments and runtime files.
   message RunTargetAnalyzedId {}
+
+  message WorkflowStepStartedId {
+    // The workflow step number (0, 1, 2, ...)
+    int32 step_number = 1;
+  }
+
+  message WorkflowStepCompletedId {
+    // The workflow step number (0, 1, 2, ...)
+    int32 step_number = 1;
+  }
 
   oneof id {
     UnknownBuildEventId unknown = 1;
@@ -327,6 +356,8 @@ message BuildEventId {
     ChildInvocationsConfiguredId child_invocations_configured = 1002;
     ChildInvocationCompletedId child_invocation_completed = 1003;
     RunTargetAnalyzedId run_target_analyzed = 1004;
+    WorkflowStepStartedId workflow_step_started = 1005;
+    WorkflowStepCompletedId workflow_step_completed = 1006;
   }
 }
 
@@ -341,17 +372,6 @@ message Progress {
   // The next chunk of stderr that bazel produced since the last progress event
   // or the beginning of the build.
   string stderr = 2;
-
-  // BUILDBUDDY-SPECIFIC FIELDS BELOW.
-
-  // The progress stream ID. This is used for splitting progress streams into
-  // discrete "steps". At most one stream may be open at once - the server may
-  // finalize a stream when transitioning from one stream ID to another, and may
-  // return an error if attempting to resume a previously finalized stream.
-  //
-  // In particular, BuildBuddy will use this to render each step's output for a
-  // workflow invocation.
-  int32 stream_id = 1000;
 }
 
 // Payload of an event indicating that an expected event will not come, as
@@ -1433,6 +1453,25 @@ message WorkflowConfigured {
   // This formerly held the workflow's configured container image. It was
   // dropped from protocol so that the event could be published earlier.
   reserved 13;
+
+  // The names of the steps in the workflow, including the implicit setup step
+  // and explicit steps from the workflow config. The length of this field
+  // determines how many steps are in the workflow.
+  repeated string step_names = 14;
+}
+
+message WorkflowStepStarted {
+  // Start time of the workflow step.
+  google.protobuf.Timestamp timestamp = 1;
+}
+
+message WorkflowStepCompleted {
+  // The overall status of the step. A step was successful if and only if this
+  // value is equal to 0.
+  int32 exit_code = 1;
+
+  // How long it took for the workflow step to complete.
+  google.protobuf.Duration duration = 2;
 }
 
 // Event describing a workflow command that completed.
@@ -1475,6 +1514,9 @@ message ChildInvocationsConfigured {
 
   // Child Bazel invocations.
   repeated InvocationMetadata invocation = 1;
+
+  // The workflow step in which these child invocations appeared.
+  int32 step_id = 2;
 }
 
 // Event describing completion of a child invocation.
@@ -1561,5 +1603,7 @@ message BuildEvent {
     ChildInvocationsConfigured child_invocations_configured = 1002;
     ChildInvocationCompleted child_invocation_completed = 1003;
     RunTargetAnalyzed run_target_analyzed = 1004;
+    WorkflowStepStarted workflow_step_started = 1005;
+    WorkflowStepCompleted workflow_step_completed = 1006;
   }
 }

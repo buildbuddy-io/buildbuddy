@@ -144,6 +144,11 @@ message Invocation {
 
   // Number of TargetConfigured events seen in the invocation.
   int64 target_configured_count = 34;
+
+  // Any child invocations of this invocation, such as bazel invocations created
+  // as part of a BuildBuddy workflow invocation. Only the basic metadata fields
+  // from these invocations will be populated.
+  repeated Invocation child_invocations = 35;
 }
 
 message InvocationEvent {
