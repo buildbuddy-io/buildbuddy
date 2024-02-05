@@ -78,6 +78,17 @@ common:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 
+# Disabled RBE for Windows
+common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows
+common:untrusted-ci-windows --repository_cache=D:/repo-cache/untrusted
+common:untrusted-ci-windows --disk_cache=
+common:untrusted-ci-windows --flaky_test_attempts=2
+common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
+common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
+common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
+common:untrusted-ci-windows --experimental_remote_cache_compression
+common:untrusted-ci-windows --remote_upload_local_results
+
 # Configuration used for all BuildBuddy workflows
 common:workflows --experimental_remote_cache_compression
 common:workflows --build_metadata=ROLE=CI

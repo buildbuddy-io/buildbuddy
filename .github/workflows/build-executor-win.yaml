@@ -1,0 +1,28 @@
+name: "Build Windows executor"
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: windows-2022
+    if: "!contains(github.event.head_commit.message, 'ci skip')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Because "startup" options could not be assigned to different configs in .bazelrc, we are adding them directly here.
+        # These options follow the best practices in https://bazel.build/configure/windows. Specifically:
+        #   - Set output_user_root to the shortest path possible to avoid Windows path length limitations.
+        #     Without this, actions with longer path input files would fail randomly with irrelevant errors.
+        #
+        #   - Enable windows symlink helps reduce disk usage.
+        #     Without this, files will be fully copied instead.
+        run: |
+          bazelisk --output_user_root=D:/0 --windows_enable_symlinks build --config=untrusted-ci-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
