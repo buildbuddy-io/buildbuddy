@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	runnerPath                  = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
+	runnerPath                  = "buildbuddy/enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
 	DefaultRunnerContainerImage = "docker://" + platform.Ubuntu20_04WorkflowsImage
 )
 

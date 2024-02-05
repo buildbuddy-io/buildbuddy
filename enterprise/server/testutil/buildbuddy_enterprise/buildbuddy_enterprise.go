@@ -29,8 +29,8 @@ var (
 )
 
 const (
-	DefaultConfig = "enterprise/config/test/buildbuddy.selfauth.yaml"
-	NoAuthConfig  = "enterprise/config/test/buildbuddy.noauth.yaml"
+	DefaultConfig = "buildbuddy/enterprise/config/test/buildbuddy.selfauth.yaml"
+	NoAuthConfig  = "buildbuddy/enterprise/config/test/buildbuddy.noauth.yaml"
 )
 
 func Run(t *testing.T, args ...string) *app.App {
@@ -48,7 +48,7 @@ func RunWithConfig(t *testing.T, appConfig *app.App, configPath string, args ...
 	return app.RunWithApp(
 		t,
 		appConfig,
-		/* commandPath= */ "enterprise/server/cmd/server/buildbuddy_/buildbuddy",
+		/* commandPath= */ "buildbuddy/enterprise/server/cmd/server/buildbuddy_/buildbuddy",
 		commandArgs,
 		/* configPath= */ configPath,
 	)

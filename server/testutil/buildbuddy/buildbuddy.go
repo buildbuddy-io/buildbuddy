@@ -10,8 +10,8 @@ import (
 func Run(t *testing.T, args ...string) *app.App {
 	return app.Run(
 		t,
-		/* commandPath= */ "server/cmd/buildbuddy/buildbuddy_/buildbuddy",
+		/* commandPath= */ "buildbuddy/server/cmd/buildbuddy/buildbuddy_/buildbuddy",
 		/* commandArgs= */ args,
-		/* configPath= */ "config/buildbuddy.local.yaml",
+		/* configPath= */ "buildbuddy/config/buildbuddy.local.yaml",
 	)
 }

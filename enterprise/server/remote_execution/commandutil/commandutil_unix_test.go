@@ -208,7 +208,7 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 		// Spawn a nested process inside the shell which becomes its own process group leader.
 		// Using a go binary here because sh does not have a straightforward
 		// way to make the setpgid system call.
-		testfs.RunfilePath(t, "enterprise/server/remote_execution/commandutil/test_binary/test_binary_/test_binary"),
+		testfs.RunfilePath(t, "buildbuddy/enterprise/server/remote_execution/commandutil/test_binary/test_binary_/test_binary"),
 	}}
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()

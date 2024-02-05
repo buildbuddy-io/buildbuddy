@@ -29,7 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -207,11 +207,11 @@ type result struct {
 }
 
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
-	binPath, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
+	binPath, err := runfiles.Rlocation("buildbuddy/enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
 	if err != nil {
 		t.Fatal(err)
 	}
-	bazelPath, err := bazelgo.Runfile(testbazel.BazelBinaryPath)
+	bazelPath, err := runfiles.Rlocation(testbazel.BazelBinaryPath)
 	if err != nil {
 		t.Fatal(err)
 	}

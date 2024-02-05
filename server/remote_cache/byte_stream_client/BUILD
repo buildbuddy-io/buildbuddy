@@ -38,6 +38,7 @@ go_test(
     deps = [
         "//proto:zip_go_proto",
         "//server/util/proto",
-        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@com_github_stretchr_testify//assert",
+        "@io_bazel_rules_go//go/runfiles:go_default_library",
     ],
 )

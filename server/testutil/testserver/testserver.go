@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 )
 
 const (
@@ -33,7 +33,7 @@ type Server struct {
 }
 
 func runfile(t *testing.T, path string) string {
-	resolvedPath, err := bazelgo.Runfile(path)
+	resolvedPath, err := runfiles.Rlocation(path)
 	if err != nil {
 		t.Fatal(err)
 	}

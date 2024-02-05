@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
@@ -53,7 +54,6 @@ import (
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1277,7 +1277,7 @@ func (ws *workflowService) ciRunnerBazelCommand() string {
 }
 
 func runnerBinaryFile() (*os.File, error) {
-	path, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
+	path, err := runfiles.Rlocation("buildbuddy/enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not find runner binary runfile: %s", err)
 	}

@@ -1579,7 +1579,7 @@ func TestRedisRestart(t *testing.T) {
 	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.DefaultAppConfig(t), buildbuddy_enterprise.NoAuthConfig, args...)
 
 	_ = testexecutor.Run(t,
-		"enterprise/server/cmd/executor/executor_/executor",
+		"buildbuddy/enterprise/server/cmd/executor/executor_/executor",
 		[]string{"--executor.app_target=" + app.GRPCAddress()})
 
 	ctx := context.Background()

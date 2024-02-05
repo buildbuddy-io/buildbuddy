@@ -33,7 +33,7 @@ var (
 
 // BinaryPath returns the path to the CLI binary.
 func BinaryPath(t *testing.T) string {
-	return testfs.RunfilePath(t, "cli/cmd/bb/bb_/bb")
+	return testfs.RunfilePath(t, "buildbuddy/cli/cmd/bb/bb_/bb")
 }
 
 // Command returns an *exec.Cmd for the CLI binary.
