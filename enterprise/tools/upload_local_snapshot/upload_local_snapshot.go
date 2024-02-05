@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -18,10 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -44,11 +41,11 @@ var (
 	//
 	//  "INFO: Found snapshot for key {...}" // copy this JSON
 	//
-	// At the shell, paste it in single quotes: -remote_snapshot_key='<paste>'
-	remoteSnapshotKeyJSON = flag.String("remote_snapshot_key", "", "JSON struct containing a local snapshot key that should be uploaded to the remote cache.")
+	// At the shell, paste it in single quotes: -local_snapshot_key='<paste>'
+	localSnapshotKeyJSON = flag.String("local_snapshot_key", "", "JSON struct containing a local snapshot key that should be uploaded to the remote cache.")
 )
 
-type RemoteSnapshotKey struct {
+type LocalSnapshotKey struct {
 	GroupID      string `json:"group_id"`
 	InstanceName string `json:"instance_name"`
 	KeyDigest    string `json:"key_digest"`
@@ -58,10 +55,10 @@ type RemoteSnapshotKey struct {
 func main() {
 	flag.Parse()
 
-	if *remoteSnapshotKeyJSON == "" {
+	if *localSnapshotKeyJSON == "" {
 		log.Fatalf("You must pass in a snapshot key")
 	}
-	inputKey, key, err := parseSnapshotKeyJSON(*remoteSnapshotKeyJSON)
+	inputKey, key, err := parseSnapshotKeyJSON(*localSnapshotKeyJSON)
 	if err != nil {
 		log.Fatalf("Failed to parse snapshot key: %s", err)
 	}
@@ -78,10 +75,19 @@ func main() {
 		log.Fatalf("Failed to init snaploader: %s", err)
 	}
 
-	allSnapshotDigests := getAllDigestsFromSnapshotManifest(ctx, env, snapshotInstanceName, snapshotGroupID, key)
+	localManifestKey, err := snaploader.LocalManifestKey(snapshotGroupID, key)
+	if err != nil {
+		log.Fatalf("Failed to generate local manifest key: %s", err)
+	}
+	localACResult, err := loader.GetLocalManifestACResult(ctx, localManifestKey)
+	if err != nil {
+		log.Fatalf("Failed to get local manifest ac result: %s", err)
+	}
+
+	allSnapshotDigests := getAllDigestsFromSnapshotManifest(ctx, loader, snapshotInstanceName, localACResult)
 	missingDigestsRemoteCache := getMissingDigestsRemoteCache(ctx, env, snapshotInstanceName, allSnapshotDigests)
 	uploadDigestsRemoteCache(ctx, env, snapshotInstanceName, missingDigestsRemoteCache)
-	uploadManifestRemoteCache(ctx, env, key, snapshotGroupID, snapshotInstanceName)
+	uploadManifestRemoteCache(ctx, env, key, localACResult, snapshotInstanceName)
 
 	// Sanity check that snapshot exists in remote cache
 	flagutil.SetValueForFlagName("executor.enable_remote_snapshot_sharing", true, nil, false)
@@ -93,22 +99,13 @@ func main() {
 	log.Infof("Snapshot successfully uploaded!")
 }
 
-func hashStrings(strs ...string) string {
-	out := ""
-	for _, s := range strs {
-		out += hash.String(s)
-	}
-	return hash.String(out)
-}
-
 func getToolEnv() *real_environment.RealEnv {
 	healthChecker := healthcheck.NewHealthChecker("upload-local-snapshot")
 	re := real_environment.NewRealEnv(healthChecker)
 
 	// Set a large file cache size so this tool doesn't evict anything from
 	// the executor's filecache
-	// This is set to match the prod file cache size
-	fcSize := int64(1_250_000_000_000)
+	fcSize := int64(1e18)
 	fc, err := filecache.NewFileCache(*filecacheDir, fcSize, false)
 	if err != nil {
 		log.Fatalf("Unable to setup filecache %s", err)
@@ -128,8 +125,8 @@ func getToolEnv() *real_environment.RealEnv {
 	return re
 }
 
-func parseSnapshotKeyJSON(in string) (*RemoteSnapshotKey, *fcpb.SnapshotKey, error) {
-	k := &RemoteSnapshotKey{}
+func parseSnapshotKeyJSON(in string) (*LocalSnapshotKey, *fcpb.SnapshotKey, error) {
+	k := &LocalSnapshotKey{}
 	if err := json.Unmarshal([]byte(in), k); err != nil {
 		return nil, nil, status.WrapError(err, "unmarshal snapshot key JSON")
 	}
@@ -144,9 +141,8 @@ func parseSnapshotKeyJSON(in string) (*RemoteSnapshotKey, *fcpb.SnapshotKey, err
 	return k, pk, nil
 }
 
-func getAllDigestsFromSnapshotManifest(ctx context.Context, env environment.Env, remoteInstanceName string, groupID string, snapshotKey *fcpb.SnapshotKey) []*repb.Digest {
+func getAllDigestsFromSnapshotManifest(ctx context.Context, loader *snaploader.FileCacheLoader, remoteInstanceName string, localACResult *repb.ActionResult) []*repb.Digest {
 	digests := make([]*repb.Digest, 0)
-	localACResult := readLocalManifestACResult(ctx, env, snapshotKey, groupID)
 
 	tmpDir, err := os.MkdirTemp("", "upload-local-ss-*")
 	if err != nil {
@@ -165,7 +161,7 @@ func getAllDigestsFromSnapshotManifest(ctx context.Context, env environment.Env,
 		digests = append(digests, chunkedFileMetadata.GetTreeDigest())
 
 		// Add digests for chunked file chunks
-		tree, err := chunkedFileTree(ctx, env, remoteInstanceName, chunkedFileMetadata, tmpDir)
+		tree, err := loader.ChunkedFileTree(ctx, remoteInstanceName, chunkedFileMetadata, tmpDir)
 		if err != nil {
 			log.Fatalf("Failed to process chunked file tree: %s", err)
 		}
@@ -174,18 +170,6 @@ func getAllDigestsFromSnapshotManifest(ctx context.Context, env environment.Env,
 		}
 	}
 	return digests
-}
-
-func chunkedFileTree(ctx context.Context, env environment.Env, remoteInstanceName string, chunkedFileMetadata *repb.OutputDirectory, tmpDir string) (*repb.Tree, error) {
-	b, err := snaputil.GetBytes(ctx, env.GetFileCache(), env.GetByteStreamClient(), false /*remoteEnabled*/, chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
-	if err != nil {
-		return nil, status.UnavailableErrorf("failed to read chunked file tree: %s", status.Message(err))
-	}
-	tree := &repb.Tree{}
-	if err := proto.Unmarshal(b, tree); err != nil {
-		return nil, status.WrapError(err, "unmarshall chunked file tree")
-	}
-	return tree, nil
 }
 
 func getMissingDigestsRemoteCache(ctx context.Context, env environment.Env, remoteInstanceName string, digests []*repb.Digest) []*repb.Digest {
@@ -236,39 +220,13 @@ func uploadDigestsRemoteCache(ctx context.Context, env environment.Env, remoteIn
 	}
 }
 
-func uploadManifestRemoteCache(ctx context.Context, env environment.Env, key *fcpb.SnapshotKey, groupID string, remoteInstanceName string) {
-	localManifestACResult := readLocalManifestACResult(ctx, env, key, groupID)
-
-	kd, err := digest.ComputeForMessage(key, repb.DigestFunction_SHA256)
+func uploadManifestRemoteCache(ctx context.Context, env environment.Env, key *fcpb.SnapshotKey, localACResult *repb.ActionResult, remoteInstanceName string) {
+	remoteManifestKey, err := snaploader.RemoteManifestKey(key)
 	if err != nil {
 		log.Fatalf("Error generating digest for snapshot key: %s", err)
-	}
-	remoteManifestKey := &repb.Digest{
-		Hash:      hashStrings(kd.GetHash(), ".manifest"),
-		SizeBytes: 1, /*arbitrary size*/
 	}
 	acDigest := digest.NewResourceName(remoteManifestKey, remoteInstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
-	if err := cachetools.UploadActionResult(ctx, env.GetActionCacheClient(), acDigest, localManifestACResult); err != nil {
+	if err := cachetools.UploadActionResult(ctx, env.GetActionCacheClient(), acDigest, localACResult); err != nil {
 		log.Fatalf("Error uploading manifest to remote cache: %s", err)
 	}
-}
-
-func readLocalManifestACResult(ctx context.Context, env environment.Env, key *fcpb.SnapshotKey, groupID string) *repb.ActionResult {
-	kd, err := digest.ComputeForMessage(key, repb.DigestFunction_SHA256)
-	if err != nil {
-		log.Fatalf("Error generating digest for snapshot key: %s", err)
-	}
-	localManifestKey := &repb.Digest{
-		Hash:      hashStrings(groupID, kd.GetHash(), ".manifest"),
-		SizeBytes: 1, /*arbitrary size*/
-	}
-	localManifestACResult, err := env.GetFileCache().Read(ctx, &repb.FileNode{Digest: localManifestKey})
-	if err != nil {
-		log.Fatalf("Error reading manifest from local file cache: %s", err)
-	}
-	acResult := &repb.ActionResult{}
-	if err := proto.Unmarshal(localManifestACResult, acResult); err != nil {
-		log.Fatalf("Error unmarshalling snapshot manifest: %s", err)
-	}
-	return acResult
 }
