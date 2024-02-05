@@ -10,7 +10,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -35,19 +37,16 @@ import (
 // so it can be more easily inspected and run with vmstart, for example.
 
 var (
-	cacheTarget         = flag.String("cache_target", "grpcs://remote.buildbuddy.dev", "The remote cache target to upload the snapshot to.")
-	filecacheDir        = flag.String("file_cache_dir", "/tmp/buildbuddy/filecache", "The local filecache dir on the executor")
-	snapshotDirMaxBytes = flag.Int64("snapshot_dir_max_bytes", 20_000_000_000, "The max number of bytes the snapshot_dir can be")
-	remoteInstanceName  = flag.String("remote_instance_name", "", "The remote_instance_name for caching the snapshot.")
-	apiKey              = flag.String("api_key", "", "The API key to use to interact with the remote cache.")
+	cacheTarget        = flag.String("cache_target", "grpcs://remote.buildbuddy.dev", "The remote cache target to upload the snapshot to.")
+	filecacheDir       = flag.String("file_cache_dir", "/tmp/buildbuddy/filecache", "The local filecache dir on the executor")
+	remoteInstanceName = flag.String("remote_instance_name", "", "The remote_instance_name for caching the snapshot.")
+	apiKey             = flag.String("api_key", "", "The API key to use to interact with the remote cache.")
 	// Note: this key can be copied and pasted from logs:
 	//
-	//  "INFO: Fetched remote snapshot manifest {...}" // copy this JSON
+	//  "INFO: Found snapshot for key {...}" // copy this JSON
 	//
 	// At the shell, paste it in single quotes: -remote_snapshot_key='<paste>'
-	// Make sure to also set -api_key for proper auth. The API key must match
-	// the group ID in the logs.
-	remoteSnapshotKeyJSON = flag.String("remote_snapshot_key", "", "JSON struct containing a remote snapshot key that the VM should be resumed from.")
+	remoteSnapshotKeyJSON = flag.String("remote_snapshot_key", "", "JSON struct containing a local snapshot key that should be uploaded to the remote cache.")
 )
 
 type RemoteSnapshotKey struct {
@@ -67,7 +66,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to parse snapshot key: %s", err)
 	}
-	gid := inputKey.GroupID
+	snapshotGroupID := inputKey.GroupID
+	snapshotInstanceName := inputKey.InstanceName
 
 	ctx := context.Background()
 	if *apiKey != "" {
@@ -79,14 +79,10 @@ func main() {
 		log.Fatalf("Failed to init snaploader: %s", err)
 	}
 
-	localSnapshot, err := loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, false /*remoteEnabled*/)
-	if err != nil {
-		log.Fatalf("Failed to get snapshot manifest from local cache: %s", err)
-	}
-
-	missingDigestsRemoteCache := getMissingDigestsRemoteCache(ctx, env, localSnapshot)
+	allSnapshotDigests := getAllDigestsFromSnapshotManifest(ctx, env, snapshotInstanceName, snapshotGroupID, key)
+	missingDigestsRemoteCache := getMissingDigestsRemoteCache(ctx, env, allSnapshotDigests)
 	uploadDigestsRemoteCache(ctx, env, missingDigestsRemoteCache)
-	uploadManifestRemoteCache(ctx, env, key, gid)
+	uploadManifestRemoteCache(ctx, env, key, snapshotGroupID)
 
 	// Sanity check that snapshot exists in remote cache
 	flagutil.SetValueForFlagName("executor.enable_remote_snapshot_sharing", true, nil, false)
@@ -110,7 +106,11 @@ func getToolEnv() *real_environment.RealEnv {
 	healthChecker := healthcheck.NewHealthChecker("upload-local-snapshot")
 	re := real_environment.NewRealEnv(healthChecker)
 
-	fc, err := filecache.NewFileCache(*filecacheDir, *snapshotDirMaxBytes, false)
+	// Set a large file cache size so this tool doesn't evict anything from
+	// the executor's filecache
+	// This is set to match the prod file cache size
+	fcSize := int64(1_250_000_000_000)
+	fc, err := filecache.NewFileCache(*filecacheDir, fcSize, false)
 	if err != nil {
 		log.Fatalf("Unable to setup filecache %s", err)
 	}
@@ -125,6 +125,7 @@ func getToolEnv() *real_environment.RealEnv {
 	re.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	re.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	re.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	re.SetAuthenticator(&nullauth.NullAuthenticator{})
 	return re
 }
 
@@ -144,16 +145,51 @@ func parseSnapshotKeyJSON(in string) (*RemoteSnapshotKey, *fcpb.SnapshotKey, err
 	return k, pk, nil
 }
 
-func getMissingDigestsRemoteCache(ctx context.Context, env environment.Env, localSnapshot *snaploader.Snapshot) []*repb.Digest {
+func getAllDigestsFromSnapshotManifest(ctx context.Context, env environment.Env, remoteInstanceName string, groupID string, snapshotKey *fcpb.SnapshotKey) []*repb.Digest {
 	digests := make([]*repb.Digest, 0)
-	for _, f := range localSnapshot.GetFiles() {
-		digests = append(digests, f.GetDigest())
+	localACResult := readLocalManifestACResult(ctx, env, snapshotKey, groupID)
+
+	tmpDir, err := os.MkdirTemp("", "upload-local-ss-*")
+	if err != nil {
+		log.Fatalf("Error making temp dir: %s", err.Error())
 	}
-	for _, cf := range localSnapshot.GetChunkedFiles() {
-		for _, chunk := range cf.GetChunks() {
+	defer os.RemoveAll(tmpDir)
+
+	// Add digests for regular snapshot files
+	for _, file := range localACResult.OutputFiles {
+		digests = append(digests, file.GetDigest())
+	}
+
+	// Add digests for chunked snapshot files
+	for _, chunkedFileMetadata := range localACResult.OutputDirectories {
+		// Add digests for chunked file metadata objects
+		digests = append(digests, chunkedFileMetadata.GetTreeDigest())
+
+		// Add digests for chunked file chunks
+		tree, err := chunkedFileTree(ctx, env, remoteInstanceName, chunkedFileMetadata, tmpDir)
+		if err != nil {
+			log.Fatalf("Failed to process chunked file tree: %s", err)
+		}
+		for _, chunk := range tree.GetRoot().GetFiles() {
 			digests = append(digests, chunk.GetDigest())
 		}
 	}
+	return digests
+}
+
+func chunkedFileTree(ctx context.Context, env environment.Env, remoteInstanceName string, chunkedFileMetadata *repb.OutputDirectory, tmpDir string) (*repb.Tree, error) {
+	b, err := snaputil.GetBytes(ctx, env.GetFileCache(), env.GetByteStreamClient(), false /*remoteEnabled*/, chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to read chunked file tree: %s", status.Message(err))
+	}
+	tree := &repb.Tree{}
+	if err := proto.Unmarshal(b, tree); err != nil {
+		return nil, status.WrapError(err, "unmarshall chunked file tree")
+	}
+	return tree, nil
+}
+
+func getMissingDigestsRemoteCache(ctx context.Context, env environment.Env, digests []*repb.Digest) []*repb.Digest {
 	req := &repb.FindMissingBlobsRequest{
 		InstanceName:   *remoteInstanceName,
 		BlobDigests:    digests,
