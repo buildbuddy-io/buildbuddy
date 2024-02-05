@@ -37,10 +37,9 @@ import (
 // so it can be more easily inspected and run with vmstart, for example.
 
 var (
-	cacheTarget        = flag.String("cache_target", "grpcs://remote.buildbuddy.dev", "The remote cache target to upload the snapshot to.")
-	filecacheDir       = flag.String("file_cache_dir", "/tmp/buildbuddy/filecache", "The local filecache dir on the executor")
-	remoteInstanceName = flag.String("remote_instance_name", "", "The remote_instance_name for caching the snapshot.")
-	apiKey             = flag.String("api_key", "", "The API key to use to interact with the remote cache.")
+	cacheTarget  = flag.String("cache_target", "grpcs://remote.buildbuddy.dev", "The remote cache target to upload the snapshot to.")
+	filecacheDir = flag.String("file_cache_dir", "/tmp/buildbuddy/filecache", "The local filecache dir on the executor")
+	apiKey       = flag.String("api_key", "", "The API key to use to interact with the remote cache.")
 	// Note: this key can be copied and pasted from logs:
 	//
 	//  "INFO: Found snapshot for key {...}" // copy this JSON
@@ -80,9 +79,9 @@ func main() {
 	}
 
 	allSnapshotDigests := getAllDigestsFromSnapshotManifest(ctx, env, snapshotInstanceName, snapshotGroupID, key)
-	missingDigestsRemoteCache := getMissingDigestsRemoteCache(ctx, env, allSnapshotDigests)
-	uploadDigestsRemoteCache(ctx, env, missingDigestsRemoteCache)
-	uploadManifestRemoteCache(ctx, env, key, snapshotGroupID)
+	missingDigestsRemoteCache := getMissingDigestsRemoteCache(ctx, env, snapshotInstanceName, allSnapshotDigests)
+	uploadDigestsRemoteCache(ctx, env, snapshotInstanceName, missingDigestsRemoteCache)
+	uploadManifestRemoteCache(ctx, env, key, snapshotGroupID, snapshotInstanceName)
 
 	// Sanity check that snapshot exists in remote cache
 	flagutil.SetValueForFlagName("executor.enable_remote_snapshot_sharing", true, nil, false)
@@ -189,9 +188,9 @@ func chunkedFileTree(ctx context.Context, env environment.Env, remoteInstanceNam
 	return tree, nil
 }
 
-func getMissingDigestsRemoteCache(ctx context.Context, env environment.Env, digests []*repb.Digest) []*repb.Digest {
+func getMissingDigestsRemoteCache(ctx context.Context, env environment.Env, remoteInstanceName string, digests []*repb.Digest) []*repb.Digest {
 	req := &repb.FindMissingBlobsRequest{
-		InstanceName:   *remoteInstanceName,
+		InstanceName:   remoteInstanceName,
 		BlobDigests:    digests,
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
@@ -202,7 +201,7 @@ func getMissingDigestsRemoteCache(ctx context.Context, env environment.Env, dige
 	return res.MissingBlobDigests
 }
 
-func uploadDigestsRemoteCache(ctx context.Context, env environment.Env, digests []*repb.Digest) {
+func uploadDigestsRemoteCache(ctx context.Context, env environment.Env, remoteInstanceName string, digests []*repb.Digest) {
 	tmpDir, err := os.MkdirTemp("", "upload-local-ss-*")
 	if err != nil {
 		log.Fatalf("Error making temp dir: %s", err.Error())
@@ -220,7 +219,7 @@ func uploadDigestsRemoteCache(ctx context.Context, env environment.Env, digests 
 				log.Fatalf("Digest %s does not exist in the local file cache", d)
 			}
 
-			rn := digest.NewResourceName(d, *remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+			rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
 			rn.SetCompressor(repb.Compressor_ZSTD)
 			file, err := os.Open(path)
 			defer file.Close()
@@ -237,7 +236,7 @@ func uploadDigestsRemoteCache(ctx context.Context, env environment.Env, digests 
 	}
 }
 
-func uploadManifestRemoteCache(ctx context.Context, env environment.Env, key *fcpb.SnapshotKey, groupID string) {
+func uploadManifestRemoteCache(ctx context.Context, env environment.Env, key *fcpb.SnapshotKey, groupID string, remoteInstanceName string) {
 	localManifestACResult := readLocalManifestACResult(ctx, env, key, groupID)
 
 	kd, err := digest.ComputeForMessage(key, repb.DigestFunction_SHA256)
@@ -248,7 +247,7 @@ func uploadManifestRemoteCache(ctx context.Context, env environment.Env, key *fc
 		Hash:      hashStrings(kd.GetHash(), ".manifest"),
 		SizeBytes: 1, /*arbitrary size*/
 	}
-	acDigest := digest.NewResourceName(remoteManifestKey, *remoteInstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	acDigest := digest.NewResourceName(remoteManifestKey, remoteInstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
 	if err := cachetools.UploadActionResult(ctx, env.GetActionCacheClient(), acDigest, localManifestACResult); err != nil {
 		log.Fatalf("Error uploading manifest to remote cache: %s", err)
 	}
