@@ -984,6 +984,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			}
 		}
 
+		// Kick off background uploads for the action that just completed
+		if uploader != nil {
+			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
+		}
+
 		// If this is a successfully "bazel run" invocation from which we are extracting run information via
 		// --script_path, go ahead and extract run information from the script and send it via the event stream.
 		if exitCode == 0 && runScript != "" {
@@ -1047,11 +1052,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
 		if err := ar.reporter.FlushProgress(); err != nil {
 			break
-		}
-
-		// Kick off background uploads for the action that just completed
-		if uploader != nil {
-			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
 	}
 	return nil
