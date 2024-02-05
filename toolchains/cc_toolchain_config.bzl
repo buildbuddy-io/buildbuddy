@@ -67,15 +67,6 @@ def _impl(ctx):
                     tool = ctx.file.ld,
                 ),
             ],
-            flag_sets = [
-                flag_set(
-                    flag_groups = [
-                        flag_group(
-                            flags = ["-t"],
-                        ),
-                    ],
-                ),
-            ],
         )
         for name in ACTION_NAME_GROUPS.all_cc_link_actions
     ])
@@ -234,6 +225,7 @@ def _impl(ctx):
     )
 
     library_search_directories_feature = feature(
+        enabled = True,
         name = "library_search_directories",
         flag_sets = [
             flag_set(
@@ -562,6 +554,7 @@ def _impl(ctx):
     )
 
     libraries_to_link_feature = feature(
+        enabled = True,
         name = "libraries_to_link",
         flag_sets = [
             flag_set(
@@ -571,14 +564,14 @@ def _impl(ctx):
                         iterate_over = "libraries_to_link",
                         flag_groups = [
                             flag_group(
-                                flags = ["-Wl,--start-lib"],
+                                flags = ["--start-group"],
                                 expand_if_equal = variable_with_value(
                                     name = "libraries_to_link.type",
                                     value = "object_file_group",
                                 ),
                             ),
                             flag_group(
-                                flags = ["-Wl,-whole-archive"],
+                                flags = ["-whole-archive"],
                                 expand_if_true =
                                     "libraries_to_link.is_whole_archive",
                             ),
@@ -626,11 +619,11 @@ def _impl(ctx):
                                 ),
                             ),
                             flag_group(
-                                flags = ["-Wl,-no-whole-archive"],
+                                flags = ["-no-whole-archive"],
                                 expand_if_true = "libraries_to_link.is_whole_archive",
                             ),
                             flag_group(
-                                flags = ["-Wl,--end-lib"],
+                                flags = ["--end-group"],
                                 expand_if_equal = variable_with_value(
                                     name = "libraries_to_link.type",
                                     value = "object_file_group",
@@ -640,7 +633,7 @@ def _impl(ctx):
                         expand_if_available = "libraries_to_link",
                     ),
                     flag_group(
-                        flags = ["-Wl,@%{thinlto_param_file}"],
+                        flags = ["@%{thinlto_param_file}"],
                         expand_if_true = "thinlto_param_file",
                     ),
                 ],
@@ -650,6 +643,7 @@ def _impl(ctx):
 
     user_link_flags_feature = feature(
         name = "user_link_flags",
+        # enabled = True,
         flag_sets = [
             flag_set(
                 actions = ACTION_NAME_GROUPS.all_cc_link_actions,
@@ -734,6 +728,7 @@ def _impl(ctx):
 
     archiver_flags_feature = feature(
         name = "archiver_flags",
+        enabled = True,
         flag_sets = [
             flag_set(
                 actions = [ACTION_NAMES.cpp_link_static_library],
@@ -802,6 +797,7 @@ def _impl(ctx):
 
     output_execpath_flags_feature = feature(
         name = "output_execpath_flags",
+        enabled = True,
         flag_sets = [
             flag_set(
                 actions = ACTION_NAME_GROUPS.all_cc_link_actions,
@@ -933,11 +929,7 @@ def _impl(ctx):
         coverage_feature,
         gcc_coverage_map_format_feature,
         llvm_coverage_map_format_feature,
-    ] + (
-        [
-            supports_start_end_lib_feature,
-        ] if ctx.attr.supports_start_end_lib else []
-    ) + [
+        supports_start_end_lib_feature,
         default_compile_flags_feature,
         default_link_flags_feature,
         libraries_to_link_feature,
@@ -994,7 +986,6 @@ cc_toolchain_config = rule(
         "link_libs": attr.string_list(),
         "opt_compile_flags": attr.string_list(),
         "opt_link_flags": attr.string_list(),
-        "supports_start_end_lib": attr.bool(),
         "target_libc": attr.string(mandatory = True),
         "target_system_name": attr.string(mandatory = True),
         "tool_paths": attr.string_dict(),
