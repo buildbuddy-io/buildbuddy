@@ -494,7 +494,7 @@ def _impl(ctx):
                 flag_groups = [
                     flag_group(
                         flags = [
-                            "-Wl,--print-symbol-counts=%{symbol_counts_output}",
+                            "--print-symbol-counts=%{symbol_counts_output}",
                         ],
                         expand_if_available = "symbol_counts_output",
                     ),
@@ -561,15 +561,12 @@ def _impl(ctx):
                 actions = ACTION_NAME_GROUPS.all_cc_link_actions,
                 flag_groups = [
                     flag_group(
+                        flags = ["--start-group"],
+                    ),
+                    flag_group(flags = ctx.attr.link_libs) if ctx.attr.link_libs else flag_group(),
+                    flag_group(
                         iterate_over = "libraries_to_link",
                         flag_groups = [
-                            flag_group(
-                                flags = ["--start-group"],
-                                expand_if_equal = variable_with_value(
-                                    name = "libraries_to_link.type",
-                                    value = "object_file_group",
-                                ),
-                            ),
                             flag_group(
                                 flags = ["-whole-archive"],
                                 expand_if_true =
@@ -622,15 +619,11 @@ def _impl(ctx):
                                 flags = ["-no-whole-archive"],
                                 expand_if_true = "libraries_to_link.is_whole_archive",
                             ),
-                            flag_group(
-                                flags = ["--end-group"],
-                                expand_if_equal = variable_with_value(
-                                    name = "libraries_to_link.type",
-                                    value = "object_file_group",
-                                ),
-                            ),
                         ],
                         expand_if_available = "libraries_to_link",
+                    ),
+                    flag_group(
+                        flags = ["--end-group"],
                     ),
                     flag_group(
                         flags = ["@%{thinlto_param_file}"],
@@ -643,7 +636,7 @@ def _impl(ctx):
 
     user_link_flags_feature = feature(
         name = "user_link_flags",
-        # enabled = True,
+        enabled = False,
         flag_sets = [
             flag_set(
                 actions = ACTION_NAME_GROUPS.all_cc_link_actions,
@@ -653,7 +646,7 @@ def _impl(ctx):
                         iterate_over = "user_link_flags",
                         expand_if_available = "user_link_flags",
                     ),
-                ] + ([flag_group(flags = ctx.attr.link_libs)] if ctx.attr.link_libs else []),
+                ],
             ),
         ],
     )
@@ -871,20 +864,20 @@ def _impl(ctx):
                 flag_groups = [
                     flag_group(flags = [
                         "-flto=thin",
-                        "-Wl,-plugin-opt,thinlto-index-only%{thinlto_optional_params_file}",
-                        "-Wl,-plugin-opt,thinlto-emit-imports-files",
-                        "-Wl,-plugin-opt,thinlto-prefix-replace=%{thinlto_prefix_replace}",
+                        "-plugin-opt,thinlto-index-only%{thinlto_optional_params_file}",
+                        "-plugin-opt,thinlto-emit-imports-files",
+                        "-plugin-opt,thinlto-prefix-replace=%{thinlto_prefix_replace}",
                     ]),
                     flag_group(
                         expand_if_available = "thinlto_object_suffix_replace",
                         flags = [
-                            "-Wl,-plugin-opt,thinlto-object-suffix-replace=%{thinlto_object_suffix_replace}",
+                            "-plugin-opt,thinlto-object-suffix-replace=%{thinlto_object_suffix_replace}",
                         ],
                     ),
                     flag_group(
                         expand_if_available = "thinlto_merged_object_file",
                         flags = [
-                            "-Wl,-plugin-opt,obj-path=%{thinlto_merged_object_file}",
+                            "-plugin-opt,obj-path=%{thinlto_merged_object_file}",
                         ],
                     ),
                 ],

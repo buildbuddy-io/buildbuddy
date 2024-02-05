@@ -48,9 +48,9 @@ http_archive(
 
 http_archive(
     name = "com_google_absl",
-    sha256 = "987ce98f02eefbaf930d6e38ab16aa05737234d7afbab2d5c4ea7adbe50c28ed",
-    strip_prefix = "abseil-cpp-20230802.1",
-    urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/20230802.1.tar.gz"],
+    sha256 = "338420448b140f0dfd1a1ea3c3ce71b3bc172071f24f4d9a57d59b45037da440",
+    strip_prefix = "abseil-cpp-20240116.0",
+    urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/20240116.0.tar.gz"],
 )
 
 load(":deps.bzl", "install_go_mod_dependencies", "install_static_dependencies")
@@ -616,9 +616,8 @@ filegroup(name = "x86_64-librt.a", srcs = ["x86_64-linux-cosmo/lib/librt.a"])
 filegroup(name = "x86_64-libstdc++.a", srcs = ["x86_64-linux-cosmo/lib/libstdc++.a"])
 filegroup(name = "x86_64-libz.a", srcs = ["x86_64-linux-cosmo/lib/libz.a"])
     """,
-    # sha256 = "7470f05ef28f1941eb655c0359de08118023ba75767c2c47b398569a16397504",
-    # url = "https://github.com/jart/cosmopolitan/releases/download/3.1.3/cosmocc-3.1.3.zip",
-    url = "file:///home/zoey/src/software/cosmopolitan/cosmocc/cosmocc.zip",
+    sha256 = "d2fa6dbf6f987310494581deff5b915dbdc5ca701f20f7613bb0dcf1de2ee511",
+    url = "https://github.com/jart/cosmopolitan/releases/download/3.2.4/cosmocc-3.2.4.zip",
 )
 
 # Plain zig_toolchains() will pick reasonable defaults. See
