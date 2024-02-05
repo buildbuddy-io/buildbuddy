@@ -1190,7 +1190,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	// See https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
 	// for more info on why we don't want to pass empty flags
-	if len(string(envJson)) > 0 {
+	if len(env) > 0 {
 		cmd.Arguments = append(cmd.Arguments, "--env_overrides="+string(envJson))
 	}
 	if isSharedFirecrackerWorkflow {
