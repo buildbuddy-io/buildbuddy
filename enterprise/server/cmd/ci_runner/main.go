@@ -975,12 +975,18 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			}
 		}
 
-		// If we get an OOM, or a Bazel internal error - copy the jvm.out to the artifacts directory so it
-		// gets uploaded as a workflow artifact.
+		// If we get an OOM or a Bazel internal error, copy debug outputs to the
+		// artifacts directory so they get uploaded as workflow artifacts.
 		if *workflowID != "" && (exitCode == bazelOOMErrorExitCode || exitCode == bazelInternalErrorExitCode) {
 			jvmOutPath := filepath.Join(ar.rootDir, outputBaseDirName, "server/jvm.out")
 			if err := os.Link(jvmOutPath, filepath.Join(artifactsDir, "jvm.out")); err != nil {
-				ar.reporter.Printf("%sfailed to preserve jvm.out: %s\n", ansiGray, err, ansiReset)
+				ar.reporter.Printf("%sfailed to preserve jvm.out: %s%s\n", ansiGray, err, ansiReset)
+			}
+		}
+		if *workflowID != "" && exitCode == bazelOOMErrorExitCode {
+			heapDumpPath := filepath.Join(ar.rootDir, outputBaseDirName, iid+".heapdump.hprof")
+			if err := os.Link(heapDumpPath, filepath.Join(artifactsDir, "heapdump.hprof")); err != nil {
+				ar.reporter.Printf("%sfailed to preserve heapdump.hprof: %s%s\n", ansiGray, err, ansiReset)
 			}
 		}
 
@@ -1792,6 +1798,9 @@ func writeBazelrc(path, invocationID string) error {
 		"build --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true",
 		"build --bes_backend=" + *besBackend,
 		"build --bes_results_url=" + *besResultsURL,
+		// Dump Bazel's heap on OOM - we'll upload this file as a workflow
+		// artifact for easier debugging.
+		"build --heap_dump_on_oom",
 	}
 	if *workflowID != "" {
 		lines = append(lines, "build --build_metadata=WORKFLOW_ID="+*workflowID)
