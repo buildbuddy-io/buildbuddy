@@ -148,7 +148,7 @@ func ParseClaims(token string) (*Claims, error) {
 func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 	keyRole := role.Default
 	// User management through SCIM requires Admin access.
-	if akg.GetCapabilities()&int32(akpb.ApiKey_SCIM_CAPABILITY) > 0 {
+	if akg.GetCapabilities()&int32(akpb.ApiKey_ORG_ADMIN_CAPABILITY) > 0 {
 		keyRole = role.Admin
 	}
 	return &Claims{
