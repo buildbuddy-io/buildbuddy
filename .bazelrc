@@ -109,6 +109,17 @@ common:race --@io_bazel_rules_go//go/config:race
 
 common:performance --compilation_mode=opt
 
+# Configuration used to deflake tests
+common:deflake --config=remote
+common:deflake --runs_per_test=100
+common:deflake --test_output=errors
+common:deflake --notest_keep_going
+
+# Configuration used to deflake Go tests
+common:deflake-go --config=race
+common:deflake-go --config=deflake
+common:deflake-go --test_arg=-test.failfast
+
 # Configuration used for Linux workflows
 common:linux-workflows --config=remote-shared
 common:linux-workflows --config=workflows
