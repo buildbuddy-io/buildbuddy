@@ -1,9 +1,9 @@
 diff --git a/buildifier/BUILD.bazel b/buildifier/BUILD.bazel
-index 1209821..9237592 100644
+index 860cc7e..327f7b5 100644
 --- a/buildifier/BUILD.bazel
 +++ b/buildifier/BUILD.bazel
 @@ -76,7 +76,7 @@ go_library(
-     name = "go_default_library",
+     name = "buildifier_lib",
      srcs = ["buildifier.go"],
      importpath = "github.com/bazelbuild/buildtools/buildifier",
 -    visibility = ["//visibility:private"],
@@ -12,28 +12,26 @@ index 1209821..9237592 100644
          "main.buildVersion": "{STABLE_buildVersion}",
          "main.buildScmRevision": "{STABLE_buildScmRevision}",
 diff --git a/buildifier/buildifier.go b/buildifier/buildifier.go
-index 0a1b81a..1b4d9fb 100644
+index 9d0a677..ff49cc0 100644
 --- a/buildifier/buildifier.go
 +++ b/buildifier/buildifier.go
-@@ -114,6 +114,11 @@ Full list of flags with their defaults:
+@@ -95,6 +95,10 @@ with -config=off.
  }
-
+ 
  func main() {
-+       exitCode := Run()
-+       os.Exit(exitCode)
++	os.Exit(Run())
 +}
 +
 +func Run() int {
-        c := config.New()
-
-	      flags := c.FlagSet("buildifier", flag.ExitOnError)
-@@ -159,7 +164,7 @@ func main() {
-        b := buildifier{c, differ}
-	      exitCode := b.run(args)
-
--       os.Exit(exitCode)
-+       return exitCode
+ 	c := config.New()
+ 
+ 	flags := c.FlagSet("buildifier", flag.ExitOnError)
+@@ -159,7 +163,7 @@ func main() {
+ 	b := buildifier{c, differ}
+ 	exitCode := b.run(args)
+ 
+-	os.Exit(exitCode)
++	return exitCode
  }
-
+ 
  type buildifier struct {
-
