@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -150,6 +151,7 @@ var (
 	patchURIs          = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 	gitCleanExclude    = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
+	envOverrideStr     = flag.String("env_overrides", "", "These env vars should take precedence over any set on the command or in buildbuddy.yaml.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -936,6 +938,20 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 		artifactsDir := artifactsPathForCommand(ws, i)
 		namedSetID := filepath.Base(artifactsDir)
+
+		if *envOverrideStr != "" {
+			var envOverrides map[string]string
+			err = json.Unmarshal([]byte(*envOverrideStr), &envOverrides)
+			if err != nil {
+				return err
+			}
+			if action.Env == nil {
+				action.Env = map[string]string{}
+			}
+			for k, v := range envOverrides {
+				action.Env[k] = v
+			}
+		}
 
 		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), action.Env, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
