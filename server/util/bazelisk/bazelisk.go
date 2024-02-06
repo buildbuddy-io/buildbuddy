@@ -5,9 +5,9 @@ import (
 	"io/fs"
 )
 
-//go:embed bazelisk-bin
+//go:embed *
 var embedFS embed.FS
 
 func Open() (fs.File, error) {
-	return embedFS.Open("bazelisk-bin")
+	return embedFS.Open("bazelisk-1.17.0")
 }
