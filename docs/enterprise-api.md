@@ -788,10 +788,15 @@ rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
 ### Example cURL request
 
 ```bash
-curl -d '{"repo_url":"https://github.com/buildbuddy-io/buildbuddy-ci-playground", "ref": "main", "action_names": ["Build and test (Mac M1)"]}' \
-  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
-  -H 'Content-Type: application/json' \
-  https://app.buildbuddy.io/api/v1/ExecuteWorkflow
+curl -d '{
+  "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
+  "ref": "main",
+  "action_names": ["Build and test (Mac M1)"],
+  "env": {"USE_BAZEL_VERSION": "6.4.0"}
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/ExecuteWorkflow
 ```
 
 ### ExecuteWorkflowRequest
@@ -825,6 +830,11 @@ message ExecuteWorkflowRequest {
   string visibility = 5;
   // If true, start the workflow but do not wait for the status to be returned.
   bool async = 6;
+  // These env vars will be applied to each action that is run. If there is a
+  // conflict between an env var set here and in buildbuddy.yaml, these
+  // overrides will take precedence. Otherwise all env vars set in
+  // buildbuddy.yaml will still apply.
+  map<string, string> env = 7;
 }
 ```
 
