@@ -5186,7 +5186,7 @@
               },
               "editorMode": "code",
               "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (pod_name)",
-              "legendFormat": "estimated debt",
+              "legendFormat": "{{pod_name}}",
               "range": true,
               "refId": "A"
             }
