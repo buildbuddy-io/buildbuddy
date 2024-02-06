@@ -161,7 +161,7 @@ func getAllDigestsFromSnapshotManifest(ctx context.Context, loader *snaploader.F
 		digests = append(digests, chunkedFileMetadata.GetTreeDigest())
 
 		// Add digests for chunked file chunks
-		tree, err := loader.ChunkedFileTree(ctx, remoteInstanceName, chunkedFileMetadata, tmpDir)
+		tree, err := loader.ChunkedFileTree(ctx, remoteInstanceName, chunkedFileMetadata, tmpDir, false /*remoteEnabled*/)
 		if err != nil {
 			log.Fatalf("Failed to process chunked file tree: %s", err)
 		}
