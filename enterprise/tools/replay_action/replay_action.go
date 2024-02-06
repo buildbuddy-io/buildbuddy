@@ -136,7 +136,9 @@ func getClients(target string) (bspb.ByteStreamClient, repb.ExecutionClient, rep
 }
 
 func inCopyMode() bool {
-	return (*targetExecutor != "" && *targetExecutor != *sourceExecutor) || *targetRemoteInstanceName != *sourceRemoteInstanceName
+	return (*targetExecutor != "" && *targetExecutor != *sourceExecutor) ||
+		*targetRemoteInstanceName != *sourceRemoteInstanceName ||
+		*targetAPIKey != *sourceAPIKey
 }
 
 func contextWithSourceAPIKey(ctx context.Context) context.Context {
