@@ -598,6 +598,11 @@ func TestUpdateUser(t *testing.T) {
 				Path:  scim.GivenNameAttribute,
 				Value: "Gov",
 			},
+			{
+				Op:    "replace",
+				Path:  scim.UserNameAttribute,
+				Value: "somenewemail@example.domain",
+			},
 		},
 		Schemas: []string{scim.PatchResourceSchema},
 	}
@@ -611,6 +616,7 @@ func TestUpdateUser(t *testing.T) {
 	require.True(t, updatedUser.Active)
 	require.Equal(t, "Gov", updatedUser.Name.GivenName)
 	require.Equal(t, "Fam", updatedUser.Name.FamilyName)
+	require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
 
 	// Look up patched user.
 	code, body = tc.Get(baseURL + "/scim/Users/US100")
@@ -621,6 +627,7 @@ func TestUpdateUser(t *testing.T) {
 	require.True(t, updatedUser.Active)
 	require.Equal(t, "Gov", updatedUser.Name.GivenName)
 	require.Equal(t, "Fam", updatedUser.Name.FamilyName)
+	require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
 	verifyRole(t, updatedUser, scim.DeveloperRole)
 
 	// Promote user to admin.
