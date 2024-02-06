@@ -152,7 +152,6 @@ cc_toolchain_config(
         "-lresolv",
         "-lrt",
         "-lstdc++",
-        "external/cosmocc/x86_64-linux-cosmo/lib/ape-no-modify-self.o",
         "external/cosmocc/x86_64-linux-cosmo/lib/ape.o",
         "external/cosmocc/x86_64-linux-cosmo/lib/crt.o",
     ],
