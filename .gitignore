@@ -22,6 +22,9 @@ auto-save-list
 tramp
 .\#*
 
+# Vim swap viles
+*.swp
+
 # Bazel directories
 /bazel-*
 
