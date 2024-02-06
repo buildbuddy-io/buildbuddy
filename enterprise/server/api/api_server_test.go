@@ -386,9 +386,14 @@ func TestDeleteFile_InvalidAuth(t *testing.T) {
 	flags.Set(t, "enable_cache_delete_api", true)
 	userID := "user"
 	userWithoutWriteAuth := testauth.TestUser{
-		UserID:       userID,
-		GroupID:      "group",
-		Capabilities: []api_key.ApiKey_Capability{},
+		UserID:  userID,
+		GroupID: "group",
+		GroupMemberships: []*interfaces.GroupMembership{
+			{
+				GroupID:      "group",
+				Capabilities: nil,
+			},
+		},
 	}
 
 	env := testenv.GetTestEnv(t)

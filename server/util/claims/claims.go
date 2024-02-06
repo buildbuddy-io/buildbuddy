@@ -47,7 +47,6 @@ type Claims struct {
 	// TODO(bduffany): remove this field
 	AllowedGroups          []string                      `json:"allowed_groups"`
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
-	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
@@ -79,7 +78,12 @@ func (c *Claims) GetGroupMemberships() []*interfaces.GroupMembership {
 }
 
 func (c *Claims) GetCapabilities() []akpb.ApiKey_Capability {
-	return c.Capabilities
+	for _, gm := range c.GroupMemberships {
+		if gm.GroupID == c.GroupID {
+			return gm.Capabilities
+		}
+	}
+	return nil
 }
 
 func (c *Claims) IsAdmin() bool {
@@ -92,7 +96,7 @@ func (c *Claims) IsAdmin() bool {
 }
 
 func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
-	for _, cc := range c.Capabilities {
+	for _, cc := range c.GetCapabilities() {
 		if cap&cc > 0 {
 			return true
 		}
@@ -157,9 +161,12 @@ func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 		GroupID:       akg.GetGroupID(),
 		AllowedGroups: []string{akg.GetGroupID()},
 		GroupMemberships: []*interfaces.GroupMembership{
-			{GroupID: akg.GetGroupID(), Role: keyRole},
+			{
+				GroupID:      akg.GetGroupID(),
+				Capabilities: capabilities.FromInt(akg.GetCapabilities()),
+				Role:         keyRole,
+			},
 		},
-		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
 		EnforceIPRules:         akg.GetEnforceIPRules(),
@@ -184,7 +191,10 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 		}
 	}
 
-	claims := userClaims(u, eg)
+	claims, err := userClaims(u, eg)
+	if err != nil {
+		return nil, err
+	}
 
 	// If the user is trying to impersonate a member of another org and has Admin
 	// role within the configured admin group, set their authenticated user to
@@ -210,7 +220,10 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 				Group: *ig,
 				Role:  uint32(role.Admin),
 			}}
-			claims := userClaims(u, c.GetImpersonatingGroupId())
+			claims, err := userClaims(u, c.GetImpersonatingGroupId())
+			if err != nil {
+				return nil, err
+			}
 			claims.Impersonating = true
 			return claims, nil
 		}
@@ -220,16 +233,21 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	return claims, nil
 }
 
-func userClaims(u *tables.User, effectiveGroup string) *Claims {
+func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	allowedGroups := make([]string, 0, len(u.Groups))
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
+		caps, err := role.ToCapabilities(role.Role(g.Role))
+		if err != nil {
+			return nil, err
+		}
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
-			GroupID: g.Group.GroupID,
-			Role:    role.Role(g.Role),
+			GroupID:      g.Group.GroupID,
+			Capabilities: caps,
+			Role:         role.Role(g.Role),
 		})
 		if g.Group.GroupID == effectiveGroup {
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
@@ -243,7 +261,7 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 		GroupID:                effectiveGroup,
 		CacheEncryptionEnabled: cacheEncryptionEnabled,
 		EnforceIPRules:         enforceIPRules,
-	}
+	}, nil
 }
 
 func assembleJWT(ctx context.Context, c *Claims) (string, error) {
