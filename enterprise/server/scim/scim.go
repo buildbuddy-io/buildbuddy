@@ -44,6 +44,7 @@ const (
 	ActiveAttribute     = "active"
 	GivenNameAttribute  = "name.givenName"
 	FamilyNameAttribute = "name.familyName"
+	UserNameAttribute   = "userName"
 	RoleAttribute       = `roles[primary eq "True"].value`
 )
 
@@ -495,8 +496,14 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 				return status.InvalidArgumentErrorf("expected string attribute for role but got %T", value)
 			}
 			newRole = &v
+		case UserNameAttribute:
+			v, ok := value.(string)
+			if !ok {
+				return status.InvalidArgumentErrorf("expected string attribute for username but got %T", value)
+			}
+			u.Email = v
 		default:
-			return status.InvalidArgumentErrorf("unsupported attribute %q", value)
+			return status.InvalidArgumentErrorf("unsupported attribute %q", name)
 		}
 		return nil
 	}
