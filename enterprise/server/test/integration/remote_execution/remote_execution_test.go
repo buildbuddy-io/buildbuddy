@@ -1706,6 +1706,33 @@ func TestActionMerging(t *testing.T) {
 	require.Equal(t, op3, op4, "expected actions to be merged")
 }
 
+func TestActionMerging_ClaimingAppDies(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+	app := rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "sleep 10"},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "OSFamily", Value: runtime.GOOS},
+				{Name: "Arch", Value: runtime.GOARCH},
+			},
+		},
+	}
+
+	// Run a command which we know will be assigned by `app` to `executor`.
+	op1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"}).WaitAccepted()
+
+	// Start a new app, kill `app`, potentially orphaning `cmd1`, and then run
+	// the command again, verifying it's not merged.
+	rbe.AddBuildBuddyServer()
+	rbe.RemoveBuildBuddyServer(app)
+	op2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"}).WaitAccepted()
+
+	require.NotEqual(t, op1, op2, "Unexpected action merge: dead app shouldn't block future actions")
+}
+
 func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 	// Set a short progress publish interval since we want to test killing an
 	// app while an update stream is in progress, and want to catch the error
@@ -1745,7 +1772,7 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 		}
 		return ctx, conn, nil
 	}
-	rbe.AppProxy.Director = director
+	rbe.AppProxy.SetDirector(director)
 
 	var cmds []*rbetest.ControlledCommand
 	for i := 0; i < 10; i++ {
@@ -1835,7 +1862,7 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 		}
 		return ctx, conn, nil
 	}
-	rbe.AppProxy.Director = director
+	rbe.AppProxy.SetDirector(director)
 
 	// Add the executor after the proxy so the executor registers with app 1.
 	rbe.AddExecutor(t)

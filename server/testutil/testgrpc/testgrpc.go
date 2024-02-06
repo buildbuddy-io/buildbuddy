@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/rand"
 	"net"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -43,7 +44,8 @@ import (
 type Proxy struct {
 	t        *testing.T
 	Addr     net.Addr
-	Director Director
+	director Director
+	mu       sync.Mutex // protects director
 	Conn     *grpc.ClientConn
 }
 
@@ -53,23 +55,31 @@ type Director func(ctx context.Context, fullMethodName string) (ctxOut context.C
 // StartProxy runs a test-scoped gRPC proxy. The given director func decides how
 // to connect a client request to a backend. If needed, the func can be nil
 // initially and reconfigured later by setting Director on the returned proxy.
-func StartProxy(t *testing.T, director Director) *Proxy {
+func StartProxy(t *testing.T) *Proxy {
 	lis, err := net.Listen("tcp", "0.0.0.0:0")
 	require.NoError(t, err)
 	p := &Proxy{
 		t:        t,
 		Addr:     lis.Addr(),
-		Director: director,
+		director: nil,
 	}
-	director = func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
-		require.NotNil(t, p.Director, "Proxy.Director is nil")
-		return p.Director(ctx, fullMethodName)
+	director := func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		require.NotNil(t, p.director, "Proxy.Director is nil")
+		return p.director(ctx, fullMethodName)
 	}
 	handler := grpc.UnknownServiceHandler(proxy.TransparentHandler(proxy.StreamDirector(director)))
 	server := grpc.NewServer(handler)
 	go server.Serve(lis)
 	t.Cleanup(server.Stop)
 	return p
+}
+
+func (p *Proxy) SetDirector(director Director) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.director = director
 }
 
 func (p *Proxy) GRPCTarget() string {
@@ -83,7 +93,7 @@ func (p *Proxy) Dial() *grpc.ClientConn {
 }
 
 // RandomDialer returns a Director that randomly picks one of the given targets.
-func RandomDialer(targets ...string) Director {
+func RandomDialer(targets []string) Director {
 	return func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
 		var cc *grpc.ClientConn
 		var err error
