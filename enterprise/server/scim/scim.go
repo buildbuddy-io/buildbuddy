@@ -166,68 +166,74 @@ func mapErrorCode(err error) int {
 	return http.StatusInternalServerError
 }
 
+func (s *SCIMServer) handleRequest(w http.ResponseWriter, r *http.Request, handler handlerFunc) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	if !u.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	g, err := s.env.GetUserDB().GetGroupByID(r.Context(), u.GetGroupID())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("could not lookup group information"))
+		return
+	}
+	if g.SamlIdpMetadataUrl == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("SCIM API can only be used in conjunction with SAML"))
+		return
+	}
+	val, err := handler(r.Context(), r, g)
+	if err != nil {
+		log.CtxWarningf(r.Context(), "SCIM request %s %q failed: %s", r.Method, r.RequestURI, err)
+		w.WriteHeader(mapErrorCode(err))
+		w.Write([]byte(err.Error()))
+		return
+	}
+	out, err := json.Marshal(val)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	w.Write(out)
+}
+
+func (s *SCIMServer) getRequestHandler(r *http.Request) (handlerFunc, error) {
+	if strings.HasPrefix(r.URL.Path, usersPath) {
+		switch r.Method {
+		case http.MethodGet:
+			if r.URL.Path == usersPath {
+				return s.getUsers, nil
+			} else {
+				return s.getUser, nil
+			}
+		case http.MethodPost:
+			return s.createUser, nil
+		case http.MethodPut:
+			return s.updateUser, nil
+		case http.MethodPatch:
+			return s.patchUser, nil
+		case http.MethodDelete:
+			return s.deleteUser, nil
+		}
+	}
+
+	return nil, status.NotFoundError("not found")
+}
+
 func (s *SCIMServer) RegisterHandlers(mux interfaces.HttpServeMux) {
 	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, usersPath) {
+		h, err := s.getRequestHandler(r)
+		if err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-
-		u, err := s.env.GetAuthenticator().AuthenticatedUser(r.Context())
-		if err != nil {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-		if !u.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-		g, err := s.env.GetUserDB().GetGroupByID(r.Context(), u.GetGroupID())
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("could not lookup group information"))
-			return
-		}
-		if g.SamlIdpMetadataUrl == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("SCIM API can only be used in conjunction with SAML"))
-			return
-		}
-
-		var h handlerFunc
-		switch r.Method {
-		case "GET":
-			if r.URL.Path == usersPath {
-				h = s.getUsers
-			} else {
-				h = s.getUser
-			}
-		case "POST":
-			h = s.createUser
-		case "PUT":
-			h = s.updateUser
-		case "PATCH":
-			h = s.patchUser
-		case "DELETE":
-			h = s.deleteUser
-		default:
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		val, err := h(r.Context(), r, g)
-		if err != nil {
-			log.CtxWarningf(r.Context(), "SCIM request %s %q failed: %s", r.Method, r.RequestURI, err)
-			w.WriteHeader(mapErrorCode(err))
-			w.Write([]byte(err.Error()))
-			return
-		}
-		out, err := json.Marshal(val)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(err.Error()))
-			return
-		}
-		w.Write(out)
+		s.handleRequest(w, r, h)
 	})
 	mux.Handle("/scim/", interceptors.WrapAuthenticatedExternalHandler(s.env, fn))
 }
