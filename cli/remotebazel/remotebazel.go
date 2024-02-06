@@ -524,7 +524,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	envVars := make(map[string]string, 0)
 	for _, envVar := range *envInput {
 		// If a value was explicitly passed in, use that
-		keyValArr := strings.Split(envVar, "=")
+		keyValArr := strings.SplitN(envVar, "=", 2)
 		if len(keyValArr) == 2 {
 			key := keyValArr[0]
 			val := keyValArr[1]
