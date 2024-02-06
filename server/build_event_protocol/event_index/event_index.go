@@ -218,7 +218,23 @@ func (idx *Index) Finalize() {
 	// Sort TargetsByStatus list values.
 	for _, targets := range idx.TargetsByStatus {
 		sort.Slice(targets, func(i, j int) bool {
+			// Root cause targets should be sorted first. Compute a ranking
+			// that's 0 if root cause, 1 otherwise, and compare that ranking
+			// first.
+			ri := boolToInt(!targets[i].RootCause)
+			rj := boolToInt(!targets[j].RootCause)
+			if ri != rj {
+				return ri < rj
+			}
+
 			return targets[i].GetMetadata().GetLabel() < targets[j].GetMetadata().GetLabel()
 		})
 	}
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
