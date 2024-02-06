@@ -35,19 +35,12 @@ jobs:
           # the version of the running binary.
           fetch-depth: 0
 
-      - name: Install bazelisk
-        run: |
-          curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-amd64"
-          mkdir -p "${GITHUB_WORKSPACE}/bin/"
-          mv bazelisk-darwin-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
-          chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
-
       - name: Build and Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEVELOPER_DIR: /Library/Developer/CommandLineTools
         run: |
-          export DEVELOPER_DIR=/Library/Developer/CommandLineTools
-          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release-mac --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
+          bazelisk build --config=release-mac --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-darwin-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-darwin-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-amd64
