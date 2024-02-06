@@ -431,7 +431,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
       return (
         <Link
           className={`run-result card ${ok ? "card-success" : "card-failure"} ${ok ? "clickable" : ""}`}
-          href={ok ? `/invocation/${actionStatus.invocationId}` : undefined}>
+          href={ok ? `/invocation/${actionStatus.invocationId}?queued=true` : undefined}>
           <div className="content">
             <div className="titles">
               <div className="title">
