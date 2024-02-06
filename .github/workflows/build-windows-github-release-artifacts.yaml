@@ -35,15 +35,11 @@ jobs:
           # the version of the running binary.
           fetch-depth: 0
 
-      - name: Install bazelisk
-        run: |
-          curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-windows-amd64.exe" -o bazel.exe
-
       - name: Build and Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bazel.exe --output_user_root=D:/0 build --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
+          bazelisk --output_user_root=D:/0 build --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
           $execution_root = bazel.exe --output_user_root=D:/0 info execution_root
           $artifact_rel_path = bazel.exe --output_user_root=D:/0 cquery --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --output=files //enterprise/server/cmd/executor:executor
           $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
