@@ -88,6 +88,9 @@ message RunRequest {
   // A `docker://` prefix is required.
   // Ex. `docker://gcr.io/flame-public/rbe-ubuntu20-04`
   string container_image = 10;
+
+  // Environment variables to set in the runner env.
+  map<string, string> env = 11;
 }
 
 message RunResponse {
