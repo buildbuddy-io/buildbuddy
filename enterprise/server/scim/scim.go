@@ -120,12 +120,39 @@ func newUserResource(u *tables.User, authGroup *tables.Group) (*UserResource, er
 	}, nil
 }
 
-type ListResponseResource struct {
+type GroupMemberResource struct {
+	Value string `json:"value"`
+}
+
+type GroupResource struct {
+	Schemas     []string              `json:"schemas"`
+	ID          string                `json:"id"`
+	DisplayName string                `json:"displayName"`
+	Members     []GroupMemberResource `json:"members,omitempty"`
+}
+
+func newGroupResource(g *tables.Group) *GroupResource {
+	return &GroupResource{
+		Schemas:     []string{UserResourceSchema},
+		ID:          g.GroupID,
+		DisplayName: g.Name,
+	}
+}
+
+type UserListResponseResource struct {
 	Schemas      []string        `json:"schemas"`
 	TotalResults int             `json:"totalResults"`
 	StartIndex   int             `json:"startIndex"`
 	ItemsPerPage int             `json:"itemsPerPage"`
 	Resources    []*UserResource `json:"resources,omitempty"`
+}
+
+type GroupListResponseResource struct {
+	Schemas      []string         `json:"schemas"`
+	TotalResults int              `json:"totalResults"`
+	StartIndex   int              `json:"startIndex"`
+	ItemsPerPage int              `json:"itemsPerPage"`
+	Resources    []*GroupResource `json:"resources,omitempty"`
 }
 
 type OperationResource struct {
@@ -343,7 +370,7 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 	}
 	users = users[:count]
 
-	return &ListResponseResource{
+	return &UserListResponseResource{
 		Schemas:      []string{ListResponseSchema},
 		TotalResults: totalResults,
 		StartIndex:   startIndex + 1,
