@@ -178,7 +178,10 @@ type Options struct {
 
 	ActiveKeyVersion *int64
 
-	Clock          clockwork.Clock
+	// Clock instance used for timing. For tests only.
+	Clock clockwork.Clock
+	// NotifyEviction is an optional channel that will receive a signal whenever an eviction is
+	// completed. For tests only.
 	NotifyEviction chan<- struct{}
 
 	ClearCacheOnStartup bool
