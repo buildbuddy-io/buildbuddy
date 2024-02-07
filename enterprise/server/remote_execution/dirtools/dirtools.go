@@ -411,14 +411,15 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if !dirHelper.ShouldUploadAnythingInDir(fqfn) {
 					continue
 				}
-				if dirHelper.IsOutputPath(fqfn) {
+				isOutputPath := dirHelper.IsOutputPath(fqfn)
+				if isOutputPath {
 					treesToUpload = append(treesToUpload, fqfn)
 				}
 				dirNode, err := uploadDirFn(fullPath, info.Name())
 				if err != nil {
 					return nil, err
 				}
-				if !dirHelper.IsOutputPath(fqfn) {
+				if _, ok := dirHelper.FindParentOutputPath(fqfn); !ok && !isOutputPath {
 					continue
 				}
 				txInfo.FileCount += 1

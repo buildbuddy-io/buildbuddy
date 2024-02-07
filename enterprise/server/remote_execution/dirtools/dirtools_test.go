@@ -455,6 +455,51 @@ func TestUploadTree(t *testing.T) {
 			},
 		},
 		{
+			name: "LotsOfNesting",
+			cmd: &repb.Command{
+				OutputDirectories: []string{"a/b"},
+			},
+			directoryPaths: []string{
+				"a/f",
+				"a/b/c",
+				"a/b/c/d",
+				"a/b/e/g",
+			},
+			fileContents: map[string]string{
+				"a/b/c/fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{},
+			expectedResult: &repb.ActionResult{
+				OutputDirectories: []*repb.OutputDirectory{
+					{
+						Path: "a/b/c",
+						TreeDigest: &repb.Digest{
+							SizeBytes: 159,
+							Hash:      "d69a774656d42ed99962d1267db7be99d3d70875475d42122077ba60ef3ea8e2",
+						},
+					},
+					{
+						Path: "a/b/c/d",
+						TreeDigest: &repb.Digest{
+							SizeBytes: 2,
+							Hash:      "102b51b9765a56a3e899f7cf0ee38e5251f9c503b357b330a49183eb7b155604",
+						},
+					},
+					{
+						Path: "a/b/e/g",
+						TreeDigest: &repb.Digest{
+							SizeBytes: 2,
+							Hash:      "102b51b9765a56a3e899f7cf0ee38e5251f9c503b357b330a49183eb7b155604",
+						},
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        5,
+				BytesTransferred: 157,
+			},
+		},
+		{
 			name: "NestedOutputDirectory",
 			cmd: &repb.Command{
 				OutputDirectories: []string{"a/b/c"},
@@ -521,6 +566,10 @@ func TestUploadTree(t *testing.T) {
 			testfs.WriteAllFileContents(t, rootDir, tc.fileContents)
 			for name, target := range tc.symlinkPaths {
 				err := os.Symlink(target, filepath.Join(rootDir, name))
+				require.NoError(t, err)
+			}
+			for _, path := range tc.directoryPaths {
+				err := os.MkdirAll(filepath.Join(rootDir, path), fs.FileMode(0o755))
 				require.NoError(t, err)
 			}
 
