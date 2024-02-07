@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -203,6 +204,15 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
 	}
+
+	if req.GetTimeout() != "" {
+		d, err := time.ParseDuration(req.GetTimeout())
+		if err != nil {
+			return nil, status.WrapError(err, "parse timeout from request")
+		}
+		action.Timeout = durationpb.New(d)
+	}
+
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, action)
 	return actionDigest, err
 }
