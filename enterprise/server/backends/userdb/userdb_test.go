@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -1548,5 +1549,49 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 		require.Equal(t, alpb.Action_UPDATE_MEMBERSHIP, e.Action)
 
 		require.Equal(t, req, e.Request)
+	}
+}
+
+func TestCapabilitiesForUserRole(t *testing.T) {
+	for _, test := range []struct {
+		Name                 string
+		UserRole             role.Role
+		ExpectedCapabilities []akpb.ApiKey_Capability
+	}{
+		{
+			Name:                 "Developer",
+			UserRole:             role.Developer,
+			ExpectedCapabilities: nil,
+		},
+		{
+			Name:                 "Admin",
+			UserRole:             role.Admin,
+			ExpectedCapabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			env := newTestEnv(t)
+			ctx := context.Background()
+			udb := env.GetUserDB()
+
+			// Create a user + group
+			createUser(t, ctx, env, "US1", "org1.io")
+			userCtx := authUserCtx(ctx, env, t, "US1")
+			// Update their group role
+			gr := getGroup(t, userCtx, env)
+			err := udb.UpdateGroupUsers(userCtx, gr.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+				{
+					UserId: &uidpb.UserId{Id: "US1"},
+					Role:   grpb.Group_Role(test.UserRole),
+				},
+			})
+			require.NoError(t, err)
+			// Re-authenticate with the new role
+			userCtx = authUserCtx(ctx, env, t, "US1")
+			u, err := perms.AuthenticatedUser(userCtx, env)
+			require.NoError(t, err)
+
+			require.Equal(t, test.ExpectedCapabilities, u.GetCapabilities())
+		})
 	}
 }

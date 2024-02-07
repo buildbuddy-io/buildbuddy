@@ -1,6 +1,9 @@
 package role
 
 import (
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
@@ -38,4 +41,16 @@ func FromProto(role grpb.Group_Role) Role {
 		return Admin
 	}
 	return Developer
+}
+
+// ToCapabilities returns the capabilities granted to the given role.
+func ToCapabilities(role Role) ([]akpb.ApiKey_Capability, error) {
+	switch role {
+	case Developer:
+		return nil, nil
+	case Admin:
+		return []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}, nil
+	default:
+		return nil, status.InternalErrorf("unexpected role %d", role)
+	}
 }

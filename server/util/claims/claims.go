@@ -184,7 +184,10 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 		}
 	}
 
-	claims := userClaims(u, eg)
+	claims, err := userClaims(u, eg)
+	if err != nil {
+		return nil, err
+	}
 
 	// If the user is trying to impersonate a member of another org and has Admin
 	// role within the configured admin group, set their authenticated user to
@@ -210,7 +213,10 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 				Group: *ig,
 				Role:  uint32(role.Admin),
 			}}
-			claims := userClaims(u, c.GetImpersonatingGroupId())
+			claims, err := userClaims(u, c.GetImpersonatingGroupId())
+			if err != nil {
+				return nil, err
+			}
 			claims.Impersonating = true
 			return claims, nil
 		}
@@ -220,11 +226,12 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	return claims, nil
 }
 
-func userClaims(u *tables.User, effectiveGroup string) *Claims {
+func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	allowedGroups := make([]string, 0, len(u.Groups))
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
+	var capabilities []akpb.ApiKey_Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
@@ -232,8 +239,14 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 			Role:    role.Role(g.Role),
 		})
 		if g.Group.GroupID == effectiveGroup {
+			// TODO: move these fields into u.GroupMemberships
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
 			enforceIPRules = g.Group.EnforceIPRules
+			caps, err := role.ToCapabilities(role.Role(g.Role))
+			if err != nil {
+				return nil, err
+			}
+			capabilities = caps
 		}
 	}
 	return &Claims{
@@ -241,9 +254,10 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 		GroupMemberships:       groupMemberships,
 		AllowedGroups:          allowedGroups,
 		GroupID:                effectiveGroup,
+		Capabilities:           capabilities,
 		CacheEncryptionEnabled: cacheEncryptionEnabled,
 		EnforceIPRules:         enforceIPRules,
-	}
+	}, nil
 }
 
 func assembleJWT(ctx context.Context, c *Claims) (string, error) {
