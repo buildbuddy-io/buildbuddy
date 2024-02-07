@@ -1579,6 +1579,7 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			Name:     "Admin",
 			UserRole: role.Admin,
 			ExpectedCapabilities: []akpb.ApiKey_Capability{
+				akpb.ApiKey_CAS_WRITE_CAPABILITY,
 				akpb.ApiKey_CACHE_WRITE_CAPABILITY,
 				akpb.ApiKey_ORG_ADMIN_CAPABILITY,
 			},
@@ -1587,6 +1588,7 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			Name:     "Writer",
 			UserRole: role.Writer,
 			ExpectedCapabilities: []akpb.ApiKey_Capability{
+				akpb.ApiKey_CAS_WRITE_CAPABILITY,
 				akpb.ApiKey_CACHE_WRITE_CAPABILITY,
 			},
 		},
