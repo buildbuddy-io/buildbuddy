@@ -1,13 +1,13 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 genrule(
-    name = "bazelisk-binary",
+    name = "bazelisk-1.17.0_crossplatform",
     srcs = select({
-        "@bazel_tools//src/conditions:darwin_x86_64": ["@com_github_bazelbuild_bazelisk//:bazelisk-darwin-amd64"],
-        "@bazel_tools//src/conditions:darwin_arm64": ["@com_github_bazelbuild_bazelisk//:bazelisk-darwin-arm64"],
-        "//conditions:default": ["@com_github_bazelbuild_bazelisk//:bazelisk-linux-amd64"],
+        "@bazel_tools//src/conditions:darwin_x86_64": ["@io_bazel_bazelisk-1.17.0-darwin-amd64//file:downloaded"],
+        "@bazel_tools//src/conditions:darwin_arm64": ["@io_bazel_bazelisk-1.17.0-darwin-arm64//file:downloaded"],
+        "//conditions:default": ["@io_bazel_bazelisk-1.17.0-linux-amd64//file:downloaded"],
     }),
-    outs = ["bazelisk-bin"],
+    outs = ["bazelisk-1.17.0"],
     cmd_bash = "cp $(SRCS) $@",
     visibility = ["//visibility:public"],
 )
@@ -15,7 +15,7 @@ genrule(
 go_library(
     name = "bazelisk",
     srcs = ["bazelisk.go"],
-    embedsrcs = [":bazelisk-bin"],  # keep
+    embedsrcs = [":bazelisk-1.17.0"],  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bazelisk",
     visibility = ["//visibility:public"],
 )
