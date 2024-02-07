@@ -1221,8 +1221,8 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		DoNotCache:      true,
 	}
 
-	if workflowAction.MaxDuration != nil {
-		action.Timeout = durationpb.New(*workflowAction.MaxDuration)
+	if workflowAction.Timeout != nil {
+		action.Timeout = durationpb.New(*workflowAction.Timeout)
 	}
 
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, action)

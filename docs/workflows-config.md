@@ -371,8 +371,8 @@ A named group of Bazel commands that run when triggered.
   Environment variables are expanded, which means that the bazel command
   line can reference [secrets](secrets.md) if the workflow execution
   is trusted.
-- **`max_duration`** (`time.Duration`): If set, workflow actions that have been
-  running for longer than this max duration will be canceled automatically. This
+- **`timeout`** (`time.Duration`): If set, workflow actions that have been
+  running for longer than this timeout will be canceled automatically. This
   only applies to a single invocation, and does not include multiple retry attempts.
 
 ### `Triggers`

@@ -38,7 +38,7 @@ type Action struct {
 	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
 	Env               map[string]string `yaml:"env"`
 	BazelCommands     []string          `yaml:"bazel_commands"`
-	MaxDuration       *time.Duration    `yaml:"max_duration"`
+	Timeout           *time.Duration    `yaml:"timeout"`
 }
 
 func (a *Action) GetTriggers() *Triggers {
