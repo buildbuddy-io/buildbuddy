@@ -1220,6 +1220,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
 	}
+
+	if workflowAction.Timeout != nil {
+		action.Timeout = durationpb.New(*workflowAction.Timeout)
+	}
+
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, action)
 	return actionDigest, err
 }

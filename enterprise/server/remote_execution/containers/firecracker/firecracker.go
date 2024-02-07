@@ -2170,7 +2170,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer func() {
 		// TODO(bduffany): Figure out a good way to surface this in the command result.
 		if result.Error != nil {
-			log.CtxWarningf(ctx, "Execution error occurred. VM logs: %s", string(c.vmLog.Tail()))
+			if !status.IsDeadlineExceededError(result.Error) {
+				log.CtxWarningf(ctx, "Execution error occurred. VM logs: %s", string(c.vmLog.Tail()))
+			}
 		} else if err := c.parseOOMError(); err != nil {
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
 		}
