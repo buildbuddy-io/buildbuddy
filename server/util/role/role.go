@@ -25,10 +25,12 @@ const (
 	// Admin means a user has unrestricted access within a group.
 	Admin Role = 1 << 1
 
-	// Writer is like Developer but also includes AC write perms.
+	// Writer role grants the same capabilities as Developer role, except it
+	// allows CAS read+write and AC read+write.
 	Writer Role = 1 << 2
 
-	// Reader is like Developer but removes any cache write perms.
+	// Reader role grants the same capabilities as Developer role, except it
+	// allows only CAS reads and AC reads (no cache writes are allowed).
 	Reader Role = 1 << 3
 
 	// DefaultRole is the role assigned to users when joining a group they did

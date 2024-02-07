@@ -668,15 +668,15 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 		if err != nil {
 			return err
 		}
-		requestedCapBits := capabilities.ToInt(caps)
-		userMask := capabilities.ToInt(u.GetCapabilities())
-		if requestedCapBits&userMask != requestedCapBits {
+		requestedCapabilities := capabilities.ToInt(caps)
+		userCapabilities := capabilities.ToInt(u.GetCapabilities())
+		if requestedCapabilities&userCapabilities != requestedCapabilities {
 			return status.PermissionDeniedError("user does not have permission to assign these API key capabilities")
 		}
 
 		// Additionally, respect our list of capabilities that can be assigned
 		// to user-level keys.
-		if requestedCapBits&userAPIKeyCapabilitiesMask != requestedCapBits {
+		if requestedCapabilities&userAPIKeyCapabilitiesMask != requestedCapabilities {
 			return status.PermissionDeniedError("the requested API key capabilities are not allowed for user-level keys")
 		}
 	}

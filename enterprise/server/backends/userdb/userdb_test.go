@@ -1131,8 +1131,9 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 		{Name: "Developer_ACWrite_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
 		{Name: "Admin_Executor_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
 		{Name: "Developer_Executor_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
-		// Even admins should not be able to attach ORG_ADMIN caps to user-owned
-		// keys (for now, we only support setting cache caps on user-owned keys)
+		// Even admins should not be able to attach ORG_ADMIN capabilities to
+		// user-owned keys (for now, we only support setting cache capabilities
+		// on user-owned keys)
 		{Name: "Admin_OrgAdmin_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}, OK: false},
 		// TODO(bduffany): Figure out how these capabilities should work. For
 		// now, we just fail if they are assigned by these (role, capability)
