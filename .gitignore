@@ -52,3 +52,6 @@ buildbuddy-key.pem
 
 # genhtml coverage outputs
 /cover
+
+# User specific config files
+enterprise/config/user-configs
