@@ -39,11 +39,16 @@ type State = {
   isRemoveLoading?: boolean;
 };
 
-const ROLE_LABELS: Record<grp.Group.Role, string> = {
-  [grp.Group.Role.UNKNOWN_ROLE]: "",
-  [grp.Group.Role.ADMIN_ROLE]: "Admin",
-  [grp.Group.Role.DEVELOPER_ROLE]: "Developer",
-};
+function getRoleLabel(role: grp.Group.Role): string {
+  switch (role) {
+    case grp.Group.Role.ADMIN_ROLE:
+      return "Admin";
+    case grp.Group.Role.DEVELOPER_ROLE:
+      return "Developer";
+    default:
+      return "";
+  }
+}
 
 const DEFAULT_ROLE = grp.Group.Role.DEVELOPER_ROLE;
 
@@ -291,7 +296,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
                 </div>
               )}
               <div className="org-member-email">{member?.user?.email || member?.user?.name?.full}</div>
-              <div className="org-member-role">{ROLE_LABELS[member?.role || 0]}</div>
+              <div className="org-member-role">{getRoleLabel(member?.role || 0)}</div>
             </div>
           ))}
         </div>
@@ -310,8 +315,8 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
               <div className="select-role-row">
                 <div>Role</div>
                 <Select value={this.state.roleToApply} onChange={this.onChangeRoleToApply.bind(this)}>
-                  <Option value={grp.Group.Role.DEVELOPER_ROLE}>{ROLE_LABELS[grp.Group.Role.DEVELOPER_ROLE]}</Option>
-                  <Option value={grp.Group.Role.ADMIN_ROLE}>{ROLE_LABELS[grp.Group.Role.ADMIN_ROLE]}</Option>
+                  <Option value={grp.Group.Role.DEVELOPER_ROLE}>{getRoleLabel(grp.Group.Role.DEVELOPER_ROLE)}</Option>
+                  <Option value={grp.Group.Role.ADMIN_ROLE}>{getRoleLabel(grp.Group.Role.ADMIN_ROLE)}</Option>
                 </Select>
               </div>
               <div className="role-description">
