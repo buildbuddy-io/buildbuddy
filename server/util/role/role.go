@@ -70,7 +70,8 @@ func FromProto(role grpb.Group_Role) (Role, error) {
 	}
 }
 
-// ToCapabilities returns the capabilities granted to the given role.
+// ToCapabilities returns the maximum set of allowed capabilities that can be
+// granted to a user with the given role.
 func ToCapabilities(role Role) ([]akpb.ApiKey_Capability, error) {
 	switch role {
 	case Developer:
@@ -79,11 +80,13 @@ func ToCapabilities(role Role) ([]akpb.ApiKey_Capability, error) {
 		}, nil
 	case Admin:
 		return []akpb.ApiKey_Capability{
+			akpb.ApiKey_CAS_WRITE_CAPABILITY,
 			akpb.ApiKey_CACHE_WRITE_CAPABILITY,
 			akpb.ApiKey_ORG_ADMIN_CAPABILITY,
 		}, nil
 	case Writer:
 		return []akpb.ApiKey_Capability{
+			akpb.ApiKey_CAS_WRITE_CAPABILITY,
 			akpb.ApiKey_CACHE_WRITE_CAPABILITY,
 		}, nil
 	case Reader:

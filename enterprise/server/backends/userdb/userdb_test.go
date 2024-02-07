@@ -1131,6 +1131,14 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 		{Name: "Developer_ACWrite_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
 		{Name: "Admin_Executor_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
 		{Name: "Developer_Executor_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
+		// Even admins should not be able to attach ORG_ADMIN caps to user-owned
+		// keys (for now, we only support setting cache caps on user-owned keys)
+		{Name: "Admin_OrgAdmin_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}, OK: false},
+		// TODO(bduffany): Figure out how these capabilities should work. For
+		// now, we just fail if they are assigned by these (role, capability)
+		// combinations. See http://go/b/3091#issuecomment-1932266337
+		{Name: "Writer_ACWrite_Fail", Role: role.Writer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
+		{Name: "Reader_CASWrite_Fail", Role: role.Reader, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: false},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			ctx := context.Background()
@@ -1172,7 +1180,7 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 
 			key, err = adb.CreateUserAPIKey(
 				ctx1, g.GroupID, "US1's key",
-				[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+				[]akpb.ApiKey_Capability{})
 			require.NoError(t, err)
 			key.Capabilities = capabilities.ToInt(test.Capabilities)
 			err = adb.UpdateAPIKey(ctx1, key)
