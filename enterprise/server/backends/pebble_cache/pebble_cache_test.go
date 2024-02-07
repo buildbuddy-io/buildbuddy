@@ -3099,7 +3099,6 @@ func TestSampling(t *testing.T) {
 			minEvictionAge := 1 * time.Hour
 			samplesPerBatch := 50
 			clock := clockwork.NewFakeClock()
-			evictions := make(chan struct{}, 1024)
 
 			opts := &pebble_cache.Options{
 				RootDirectory: rootDir,
@@ -3114,7 +3113,6 @@ func TestSampling(t *testing.T) {
 				Clock:                 clock,
 				ActiveKeyVersion:      &activeKeyVersion,
 				SamplesPerBatch:       &samplesPerBatch,
-				NotifyEviction:        evictions,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -3148,10 +3146,12 @@ func TestSampling(t *testing.T) {
 			// kick in. The unencrypted test digest should be evicted.
 			clock.Advance(minEvictionAge - 1*time.Minute)
 
-			for range evictions {
+			for i := 0; ; i++ {
 				if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
+					log.Infof("i = %d: unencrypted test digest is evicted", i)
 					break
 				}
+				time.Sleep(100 * time.Millisecond)
 			}
 
 			// The unencrypted key should no longer exist.

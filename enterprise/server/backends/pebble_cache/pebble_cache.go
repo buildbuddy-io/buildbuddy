@@ -178,11 +178,7 @@ type Options struct {
 
 	ActiveKeyVersion *int64
 
-	// Clock instance used for timing. For tests only.
 	Clock clockwork.Clock
-	// NotifyEviction is an optional channel that will receive a signal whenever an eviction is
-	// completed. For tests only.
-	NotifyEviction chan<- struct{}
 
 	ClearCacheOnStartup bool
 }
@@ -680,7 +676,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(env.GetServerContext(), part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, opts.NotifyEviction, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch, *opts.DeleteBufferSize, *opts.NumDeleteWorkers)
+			pe, err := newPartitionEvictor(env.GetServerContext(), part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch, *opts.DeleteBufferSize, *opts.NumDeleteWorkers)
 			if err != nil {
 				return err
 			}
@@ -2422,7 +2418,6 @@ type partitionEvictor struct {
 	deletes       chan *approxlru.Sample[*evictionKey]
 	rng           *rand.Rand
 	clock         clockwork.Clock
-	notify        chan<- struct{}
 
 	lru       *approxlru.LRU[*evictionKey]
 	sizeBytes int64
@@ -2444,7 +2439,7 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, notify chan<- struct{}, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int, deleteBufferSize int, numDeleteWorkers int) (*partitionEvictor, error) {
+func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int, deleteBufferSize int, numDeleteWorkers int) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		ctx:              ctx,
 		mu:               &sync.Mutex{},
@@ -2457,7 +2452,6 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 		accesses:         accesses,
 		rng:              rand.New(rand.NewSource(time.Now().UnixNano())),
 		clock:            clock,
-		notify:           notify,
 		minEvictionAge:   minEvictionAge,
 		cacheName:        cacheName,
 		samples:          make(chan *approxlru.Sample[*evictionKey], sampleBufferSize),
@@ -2931,14 +2925,6 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	metrics.DiskCacheBytesEvicted.With(lbls).Add(float64(sample.SizeBytes))
 	metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
 	metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
-
-	if e.notify != nil {
-		select {
-		case e.notify <- struct{}{}:
-		default:
-			log.Infof("Failed to notify on eviction (notify channel saturated)")
-		}
-	}
 }
 
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
