@@ -10,10 +10,12 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -485,7 +487,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 }
 
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
-	healthChecker := healthcheck.NewHealthChecker("ci-runner")
+	healthChecker := healthcheck.NewHealthChecker("remote-bazel-client")
 	env := real_environment.NewRealEnv(healthChecker)
 
 	conn, err := grpc_client.DialSimple(opts.Server)
@@ -561,8 +563,20 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	iid := rsp.GetInvocationId()
-
 	log.Debugf("Invocation ID: %s", iid)
+
+	// If the remote bazel process is canceled or killed, cancel the remote run
+	sigChan := make(chan os.Signal)
+	go func() {
+		<-sigChan
+		_, err = bbClient.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+			InvocationId: iid,
+		})
+		if err != nil {
+			log.Warnf("Failed to cancel remote run: %s", err)
+		}
+	}()
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	if err := streamLogs(ctx, bbClient, iid); err != nil {
 		return 0, err
