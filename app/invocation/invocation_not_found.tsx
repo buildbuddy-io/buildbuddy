@@ -20,17 +20,16 @@ interface State {
 export default class InvocationNotFoundComponent extends React.Component<Props, State> {
   state: State = {};
 
-  isPermissionDenied: boolean;
-  canImpersonate: boolean;
+  canImpersonate() {
+   return this.props.user?.canCall("getInvocationOwner")
+  }
 
-  constructor(props: Props) {
-    super(props);
-    this.isPermissionDenied = props.error?.code === "PermissionDenied";
-    this.canImpersonate = props.user?.canCall("getInvocationOwner") || false;
+  isPermissionDenied() {
+    return this.props.error?.code === "PermissionDenied"
   }
 
   componentDidMount() {
-    if (!this.isPermissionDenied || !this.canImpersonate) {
+    if (!this.isPermissionDenied() || !this.canImpersonate()) {
       return;
     }
 
@@ -81,7 +80,7 @@ export default class InvocationNotFoundComponent extends React.Component<Props, 
                 <div className="details">Double check your invocation URL and try again.</div>
               </>
             )}
-            {this.isPermissionDenied && (
+            {this.isPermissionDenied() && (
               <>
                 <div className="titles">
                   <div className="title">Permission denied</div>
