@@ -21,11 +21,11 @@ export default class InvocationNotFoundComponent extends React.Component<Props, 
   state: State = {};
 
   canImpersonate() {
-   return this.props.user?.canCall("getInvocationOwner")
+    return this.props.user?.canCall("getInvocationOwner");
   }
 
   isPermissionDenied() {
-    return this.props.error?.code === "PermissionDenied"
+    return this.props.error?.code === "PermissionDenied";
   }
 
   componentDidMount() {
