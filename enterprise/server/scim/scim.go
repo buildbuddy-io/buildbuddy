@@ -416,9 +416,13 @@ func mapRole(ur *UserResource) (role.Role, error) {
 }
 
 func roleUpdateRequest(userID string, userRole role.Role) ([]*grpb.UpdateGroupUsersRequest_Update, error) {
+	r, err := role.ToProto(userRole)
+	if err != nil {
+		return nil, err
+	}
 	return []*grpb.UpdateGroupUsersRequest_Update{{
 		UserId: &uidpb.UserId{Id: userID},
-		Role:   role.ToProto(userRole),
+		Role:   r,
 	}}, nil
 }
 
