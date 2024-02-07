@@ -193,6 +193,11 @@ message GetInvocationOwnerResponse {
 
   // Group ID that owns the invocation.
   string group_id = 2;
+
+  // Default URL from the group. If custom subdomains are enabled this will
+  // reference the group subdomain, otherwise it will point to the default
+  // BuildBuddy URL.
+  string group_url = 3;
 }
 
 message UpdateInvocationRequest {

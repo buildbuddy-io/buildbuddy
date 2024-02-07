@@ -13,20 +13,50 @@ interface Props {
   user?: User;
 }
 
-export default class InvocationNotFoundComponent extends React.Component<Props> {
-  handleLoginClicked() {
-    authService.login();
+interface State {
+  impersonationGroupID?: string;
+}
+
+export default class InvocationNotFoundComponent extends React.Component<Props, State> {
+  state: State = {};
+
+  canImpersonate() {
+    return this.props.user?.canCall("getInvocationOwner");
   }
 
-  handleImpersonateClicked() {
+  isPermissionDenied() {
+    return this.props.error?.code === "PermissionDenied";
+  }
+
+  componentDidMount() {
+    if (!this.isPermissionDenied() || !this.canImpersonate()) {
+      return;
+    }
+
     rpcService.service
       .getInvocationOwner(
         new invocation.GetInvocationOwnerRequest({
           invocationId: this.props.invocationId,
         })
       )
-      .then((response) => authService.enterImpersonationMode(response.groupId))
+      .then((response) => {
+        if (!capabilities.config.subdomainsEnabled || capabilities.config.customerSubdomain) {
+          this.setState({ impersonationGroupID: response.groupId });
+          return;
+        }
+
+        if (new URL(response.groupUrl).hostname != window.location.hostname) {
+          window.location.href =
+            response.groupUrl + window.location.pathname + window.location.search + window.location.hash;
+        } else {
+          this.setState({ impersonationGroupID: response.groupId });
+        }
+      })
       .catch((e) => errorService.handleError(BuildBuddyError.parse(e)));
+  }
+
+  handleImpersonateClicked() {
+    authService.enterImpersonationMode(this.state.impersonationGroupID!);
   }
 
   render() {
@@ -50,13 +80,13 @@ export default class InvocationNotFoundComponent extends React.Component<Props> 
                 <div className="details">Double check your invocation URL and try again.</div>
               </>
             )}
-            {this.props.error?.code === "PermissionDenied" && (
+            {this.isPermissionDenied() && (
               <>
                 <div className="titles">
                   <div className="title">Permission denied</div>
                 </div>
                 <div className="details">You are not authorized to access this invocation.</div>
-                {this.props.user?.canCall("getInvocationOwner") && (
+                {this.state.impersonationGroupID && (
                   <div>
                     <FilledButton onClick={this.handleImpersonateClicked.bind(this)} className="impersonate-button">
                       Impersonate owner
