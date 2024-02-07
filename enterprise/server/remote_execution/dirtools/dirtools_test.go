@@ -429,6 +429,69 @@ func TestUploadTree(t *testing.T) {
 			},
 		},
 		{
+			name: "SomeNestedFile",
+			cmd: &repb.Command{
+				OutputFiles: []string{"foo/bar/baz/fileA.txt"},
+			},
+			directoryPaths: []string{},
+			fileContents: map[string]string{
+				"foo/bar/baz/fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{},
+			expectedResult: &repb.ActionResult{
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path: "foo/bar/baz/fileA.txt",
+						Digest: &repb.Digest{
+							SizeBytes: 1,
+							Hash:      hash.String("a"),
+						},
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        1,
+				BytesTransferred: 1,
+			},
+		},
+		{
+			name: "NestedOutputDirectory",
+			cmd: &repb.Command{
+				OutputDirectories: []string{"a/b/c"},
+			},
+			directoryPaths: []string{
+				"a/b/c",
+			},
+			fileContents: map[string]string{
+				"a/b/c/fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{},
+			expectedResult: &repb.ActionResult{
+				OutputDirectories: []*repb.OutputDirectory{
+					{
+						Path: "a/b/c",
+						TreeDigest: &repb.Digest{
+							SizeBytes: 85,
+							Hash:      "895545df6841b7efb2e9cc903a4eac7a60c645199be059f6056817ae6feb071d",
+						},
+					},
+				},
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path: "a/b/c/fileA.txt",
+						Digest: &repb.Digest{
+							SizeBytes: 1,
+							Hash:      hash.String("a"),
+						},
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        2,
+				BytesTransferred: 84,
+			},
+		},
+		{
 			name: "DanglingSymlinkInOutputPaths",
 			cmd: &repb.Command{
 				OutputPaths: []string{"a"},
