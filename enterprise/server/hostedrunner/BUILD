@@ -29,5 +29,6 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
