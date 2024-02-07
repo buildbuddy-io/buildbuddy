@@ -545,10 +545,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 	invocationID := guid.String()
 
-	// On SIGTERM, cancel the remote run
-	sigTerm := make(chan os.Signal)
+	// If the remote bazel process is canceled or killed, cancel the remote run
+	sigChan := make(chan os.Signal)
 	go func() {
-		<-sigTerm
+		<-sigChan
 		_, err = bbClient.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
 			InvocationId: invocationID,
 		})
@@ -556,7 +556,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			log.Warnf("Failed to cancel remote run: %s", err)
 		}
 	}()
-	signal.Notify(sigTerm, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
