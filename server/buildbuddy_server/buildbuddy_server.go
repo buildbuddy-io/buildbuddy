@@ -1119,7 +1119,14 @@ func (s *BuildBuddyServer) GetInvocationOwner(ctx context.Context, req *inpb.Get
 	if err != nil {
 		return nil, err
 	}
-	return &inpb.GetInvocationOwnerResponse{GroupId: gid}, nil
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, gid)
+	if err != nil {
+		return nil, err
+	}
+	return &inpb.GetInvocationOwnerResponse{
+		GroupId:  gid,
+		GroupUrl: getGroupUrl(g),
+	}, nil
 }
 
 func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
