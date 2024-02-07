@@ -2319,7 +2319,7 @@ func TestMigrateVersions(t *testing.T) {
 
 			exists, err := pc2.Contains(ctx, resourceName)
 			require.NoError(t, err)
-			require.True(t, exists)
+			require.True(t, exists, "digest %v is expected to exist, but not", resourceName.GetDigest())
 
 			rbuf, err := pc2.Get(ctx, resourceName)
 			require.NoError(t, err)

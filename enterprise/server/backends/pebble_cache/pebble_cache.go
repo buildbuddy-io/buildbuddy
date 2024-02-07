@@ -1601,43 +1601,81 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 	}
 	defer db.Close()
 
+	lockedResources, err := p.lockResourceKeys(ctx, resources)
+	if err != nil {
+		return nil, err
+	}
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
 	var missing []*repb.Digest
-	for _, r := range resources {
-		err = p.findMissing(ctx, iter, r)
+	for _, lockedResource := range lockedResources {
+		err = p.findMissing(ctx, db, iter, lockedResource.key)
 		if err != nil {
-			missing = append(missing, r.GetDigest())
+			missing = append(missing, lockedResource.resource.GetDigest())
 		}
+		lockedResource.unlockFn()
 	}
 	return missing, nil
 }
 
-func (p *PebbleCache) findMissing(ctx context.Context, iter pebble.Iterator, r *rspb.ResourceName) error {
-	fileRecord, err := p.makeFileRecord(ctx, r)
-	if err != nil {
-		return err
-	}
-	key, err := p.fileStorer.PebbleKey(fileRecord)
-	if err != nil {
-		return err
-	}
+type resourceLockInfo struct {
+	key      filestore.PebbleKey
+	unlockFn func()
+	resource *rspb.ResourceName
+}
 
-	unlockFn := p.locker.RLock(key.LockID())
-	defer unlockFn()
+func (p *PebbleCache) lockResourceKeys(ctx context.Context, resources []*rspb.ResourceName) ([]*resourceLockInfo, error) {
+	res := make([]*resourceLockInfo, 0, len(resources))
+	for _, r := range resources {
+		fileRecord, err := p.makeFileRecord(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		key, err := p.fileStorer.PebbleKey(fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		unlockFn := p.locker.RLock(key.LockID())
+		res = append(res, &resourceLockInfo{
+			key:      key,
+			unlockFn: unlockFn,
+			resource: r,
+		})
+	}
+	return res, nil
+}
+
+func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, iter pebble.Iterator, key filestore.PebbleKey) error {
 	md := rfpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
-	err = p.lookupFileMetadata(ctx, iter, key, md)
+	err := p.lookupFileMetadata(ctx, iter, key, md)
 	if err != nil {
+		log.Infof("lookupFileMetadata failed: %s", err)
 		return err
 	}
 
 	chunkedMD := md.GetStorageMetadata().GetChunkedMetadata()
-	for _, chunked := range chunkedMD.GetResource() {
-		err = p.findMissing(ctx, iter, chunked)
+	if len(chunkedMD.GetResource()) > 0 {
+		lockedResources, err := p.lockResourceKeys(ctx, chunkedMD.GetResource())
+
+		for _, lockedResource := range lockedResources {
+			defer lockedResource.unlockFn()
+		}
+
 		if err != nil {
 			return err
+		}
+		// we cannot re-use iter, because we didn't lock the keys for chunked
+		// metadata when iter was created.
+		iter2 := db.NewIter(nil)
+		defer iter2.Close()
+
+		for _, lockedResource := range lockedResources {
+			err = p.findMissing(ctx, db, iter2, lockedResource.key)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	p.sendAtimeUpdate(key, md.GetLastAccessUsec())
