@@ -16,6 +16,12 @@ import (
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 )
 
+var (
+	someFilesRunfilePath    string
+	noFilesRunfilePath      string
+	tooManyFilesRunfilePath string
+)
+
 func TestManifest_SomeFilesZip(t *testing.T) {
 	expected := &zipb.Manifest{
 		Entry: []*zipb.ManifestEntry{
@@ -44,7 +50,7 @@ func TestManifest_SomeFilesZip(t *testing.T) {
 			},
 		},
 	}
-	path, err := runfiles.Rlocation("buildbuddy/server/remote_cache/byte_stream_client/some_files.zip")
+	path, err := runfiles.Rlocation(someFilesRunfilePath)
 	assert.NoError(t, err)
 	bytes, err := os.ReadFile(path)
 	assert.NoError(t, err)
@@ -57,7 +63,7 @@ func TestManifest_SomeFilesZip(t *testing.T) {
 
 func TestManifest_NoFilesZip(t *testing.T) {
 	expected := &zipb.Manifest{}
-	path, err := runfiles.Rlocation("buildbuddy/server/remote_cache/byte_stream_client/no_files.zip")
+	path, err := runfiles.Rlocation(noFilesRunfilePath)
 	assert.NoError(t, err)
 	bytes, err := os.ReadFile(path)
 	assert.NoError(t, err)
@@ -69,7 +75,7 @@ func TestManifest_NoFilesZip(t *testing.T) {
 }
 
 func TestManifest_TooManyFilesZip(t *testing.T) {
-	path, err := runfiles.Rlocation("buildbuddy/server/remote_cache/byte_stream_client/too_many_files.zip")
+	path, err := runfiles.Rlocation(tooManyFilesRunfilePath)
 	assert.NoError(t, err)
 	bytes, err := os.ReadFile(path)
 	assert.NoError(t, err)
@@ -102,7 +108,7 @@ func validateZipContents(t *testing.T, ctx context.Context, entry *zipb.Manifest
 }
 
 func TestReadZipFileContents(t *testing.T) {
-	path, err := runfiles.Rlocation("buildbuddy/server/remote_cache/byte_stream_client/some_files.zip")
+	path, err := runfiles.Rlocation(someFilesRunfilePath)
 	assert.NoError(t, err)
 	b, err := os.ReadFile(path)
 	assert.NoError(t, err)

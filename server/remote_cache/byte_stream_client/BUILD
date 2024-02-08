@@ -35,6 +35,11 @@ go_test(
         "too_many_files.zip",
     ],
     embed = [":byte_stream_client"],
+    x_defs = {
+        "noFilesRunfilePath": "$(rlocationpath no_files.zip)",
+        "someFilesRunfilePath": "$(rlocationpath some_files.zip)",
+        "tooManyFilesRunfilePath": "$(rlocationpath too_many_files.zip)",
+    },
     deps = [
         "//proto:zip_go_proto",
         "//server/util/proto",
