@@ -83,14 +83,16 @@ import (
 )
 
 const (
-	testCommandBinaryRunfilePath = "buildbuddy/enterprise/server/test/integration/remote_execution/command/testcommand_/testcommand"
-	testCommandBinaryName        = "testcommand"
+	testCommandBinaryName = "testcommand"
 
 	// We are currently not testing non-default instances, but we should at some point.
 	defaultInstanceName = ""
 
 	defaultWaitTimeout = 60 * time.Second
 )
+
+// set by x_defs in BUILD file
+var testCommandBinaryRunfilePath string
 
 func init() {
 	// Set umask to match the executor process.

@@ -6,7 +6,13 @@ go_library(
     name = "rbetest",
     testonly = 1,
     srcs = ["rbetest.go"],
+    data = [
+        "//enterprise/server/test/integration/remote_execution/command:testcommand",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest",
+    x_defs = {
+        "testCommandBinaryRunfilePath": "$(rlocationpath //enterprise/server/test/integration/remote_execution/command:testcommand)",
+    },
     deps = [
         "//enterprise/server/backends/redis_execution_collector",
         "//enterprise/server/remote_execution/execution_server",
