@@ -326,6 +326,30 @@
   min-height: 40px;
 }
 
+.org-members-edit-modal .role-capabilities {
+  border-collapse: collapse;
+  font-size: 14px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.org-members-edit-modal .role-capabilities .icon {
+  width: 20px;
+}
+
+.org-members-edit-modal .role-capabilities th {
+  text-align: left;
+}
+
+.org-members-edit-modal .role-capabilities :is(td, th) {
+  padding: 4px;
+}
+
+.org-members-edit-modal .role-capabilities tr {
+  border-bottom: 1px solid #eee;
+  border-top: 1px solid #eee;
+}
+
 .org-members-edit-modal .affected-users-list {
   max-height: 320px;
   overflow-y: auto;

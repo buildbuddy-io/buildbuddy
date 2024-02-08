@@ -92,6 +92,7 @@ ts_library(
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
+        "//app/capabilities",
         "//app/components/banner",
         "//app/components/button",
         "//app/components/button:checkbox_button",
@@ -105,6 +106,7 @@ ts_library(
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
         "@npm//tslib",
     ],
