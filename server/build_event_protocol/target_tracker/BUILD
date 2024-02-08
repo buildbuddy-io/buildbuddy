@@ -10,7 +10,6 @@ go_library(
         "//proto/api/v1:common_go_proto",
         "//server/build_event_protocol/accumulator",
         "//server/environment",
-        "//server/interfaces",
         "//server/tables",
         "//server/util/background",
         "//server/util/clickhouse/schema",

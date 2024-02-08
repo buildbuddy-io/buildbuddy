@@ -215,9 +215,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	execution.GroupID = permissions.GroupID
 	execution.Perms = execution.Perms | permissions.Perms
 
-	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		return tx.NewQuery(ctx, "execution_server_create_execution").Create(execution)
-	})
+	return s.env.GetDBHandle().NewQuery(ctx, "execution_server_create_execution").Create(execution)
 }
 
 func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {
@@ -237,9 +235,7 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 		ExecutionID:  executionID,
 		Type:         int8(linkType),
 	}
-	err := s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		return tx.NewQuery(ctx, "execution_server_create_invocation_link").Create(link)
-	})
+	err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_create_invocation_link").Create(link)
 	// This probably means there were duplicate actions in a single invocation
 	// that were merged. Not an error.
 	if err != nil && s.env.GetDBHandle().IsDuplicateKeyError(err) {
@@ -321,10 +317,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		"execution_id = ?", executionID).First(&existing).Error; err != nil {
 		dbErr = err
 	} else {
-		dbErr = s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-			return tx.GORM(ctx, "execution_server_update_execution").Model(&existing).Where(
-				"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution).Error
-		})
+		dbErr = s.env.GetDBHandle().GORM(ctx, "execution_server_update_execution").Model(&existing).Where(
+			"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution).Error
 	}
 
 	if stage == repb.ExecutionStage_COMPLETED {
