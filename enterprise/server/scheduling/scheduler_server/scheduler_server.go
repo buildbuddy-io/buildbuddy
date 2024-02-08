@@ -1290,8 +1290,6 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken 
 		return "", status.UnknownErrorf("unknown error %d", c)
 	}
 
-	action_merger.RecordClaimedExecution(ctx, s.rdb, taskID)
-
 	return leaseId, nil
 }
 
@@ -1623,7 +1621,13 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			return status.UnavailableError("server is shutting down")
 		}
 
-		action_merger.ExtendLeasedExecution(ctx, s.rdb, taskID)
+		// If the task was successfully claimed, record action-merging state.
+		if claimed {
+			action_merger.RecordClaimedExecution(ctx, s.rdb, taskID)
+			if err != nil {
+				log.CtxWarningf(ctx, "could not record claimed pending execution %q: %s", taskID, err)
+			}
+		}
 
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = s.clock.Now()

@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1673,6 +1674,24 @@ func TestInvocationCancellation(t *testing.T) {
 	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 }
 
+func WaitForPendingExecution(rdb redis.UniversalClient, opID string) error {
+	forwardKey, err := rdb.Get(context.Background(), fmt.Sprintf("pendingExecutionDigest/%s", opID)).Result()
+	if err == redis.Nil {
+		return status.NotFoundError("No reverse key for pending execution")
+	}
+	if err != nil {
+		return err
+	}
+	for i := 0; i < 10; i++ {
+		_, err := rdb.Get(context.Background(), forwardKey).Result()
+		if err == nil {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return status.NotFoundError("No forward key for pending execution")
+}
+
 func TestActionMerging(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
@@ -1686,12 +1705,12 @@ func TestActionMerging(t *testing.T) {
 		},
 	}
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "sleep 1"},
+		Arguments: []string{"sh", "-c", "sleep 10"},
 		Platform:  platform,
 	}
 	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
 	op1 := cmd1.WaitAccepted()
-	time.Sleep(100 * time.Millisecond)
+	WaitForPendingExecution(rbe.GetRedisClient(), op1)
 
 	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
 	op2 := cmd2.WaitAccepted()
@@ -1699,19 +1718,41 @@ func TestActionMerging(t *testing.T) {
 
 	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, APIKey: rbe.APIKey1, InvocationID: "invocation3"})
 	op3 := cmd3.WaitAccepted()
-	time.Sleep(100 * time.Millisecond)
+	WaitForPendingExecution(rbe.GetRedisClient(), op3)
 	require.NotEqual(t, op2, op3, "actions under different organizations should not be merged")
 
 	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, APIKey: rbe.APIKey1, InvocationID: "invocation4"})
 	op4 := cmd4.WaitAccepted()
-	time.Sleep(100 * time.Millisecond)
 	require.Equal(t, op3, op4, "expected actions to be merged")
+}
 
-	cmd3.Wait()
-	cmd5 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: false, APIKey: rbe.APIKey1, InvocationID: "invocation5"})
-	op5 := cmd5.WaitAccepted()
-	time.Sleep(100 * time.Millisecond)
-	require.NotEqual(t, op3, op5, "shouldn't merge against completed actions")
+func TestActionMerging_LongTask(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "sleep 60"},
+		Platform:  platform,
+	}
+	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
+	op1 := cmd1.WaitAccepted()
+	WaitForPendingExecution(rbe.GetRedisClient(), op1)
+
+	// Wait long enough for the first action-merging state to have expired.
+	time.Sleep(21 * time.Second)
+
+	// Ensure actions are still merged against the running original execution.
+	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
+	op2 := cmd2.WaitAccepted()
+	require.Equal(t, op1, op2, "the execution IDs for both commands should be the same")
 }
 
 func TestActionMerging_ClaimingAppDies(t *testing.T) {
@@ -1720,7 +1761,7 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 	rbe.AddExecutor(t)
 
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "sleep 1"},
+		Arguments: []string{"sh", "-c", "sleep 10"},
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "OSFamily", Value: runtime.GOOS},
@@ -1732,21 +1773,21 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 	// Run a command which we know will be assigned by `app` to `executor`.
 	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
 	op1 := cmd1.WaitAccepted()
+	WaitForPendingExecution(rbe.GetRedisClient(), op1)
 
 	// Start a new app, kill `app`, potentially orphaning `cmd1`, and then run
 	// the command again, verifying it's not merged.
 	rbe.AddBuildBuddyServer()
 	rbe.RemoveBuildBuddyServer(app)
 
-	// TODO(iain): put a sleep in here that's slightly longer than the lease extension time.
+	// Sleep long enough for the action-merging data to timeout of Redis.
+	time.Sleep(21 * time.Second)
+
+	// Confirm that subsequent actions are not merged against the orphaned
+	// execution.
 	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
 	op2 := cmd2.WaitAccepted()
 	require.NotEqual(t, op1, op2, "unexpected action merge: dead app shouldn't block future actions")
-
-	cmd2.Wait()
-	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation3"})
-	op3 := cmd3.WaitAccepted()
-	require.NotEqual(t, op2, op3, "shouldn't merge against completed actions")
 }
 
 func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {

@@ -544,7 +544,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if err := action_merger.RecordQueuedExecution(ctx, s.rdb, executionID, r); err != nil {
-		log.CtxWarningf(ctx, "could not recording pending execution %q: %s", executionID, err)
+		log.CtxWarningf(ctx, "could not record queued pending execution %q: %s", executionID, err)
 	}
 
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {

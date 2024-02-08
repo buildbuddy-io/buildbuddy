@@ -64,6 +64,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -154,6 +155,10 @@ func (r *Env) GetOLAPDBHandle() *testolapdb.Handle {
 		servers = append(servers, server)
 	}
 	return servers[rand.Intn(len(servers))].olapDBHandle
+}
+
+func (r *Env) GetRedisClient() redis.UniversalClient {
+	return r.testEnv.GetDefaultRedisClient()
 }
 
 func (r *Env) ShutdownBuildBuddyServers() {
