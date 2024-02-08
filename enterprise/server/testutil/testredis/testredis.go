@@ -21,11 +21,12 @@ import (
 )
 
 const (
-	redisBinRunfilePath = "buildbuddy/enterprise/server/testutil/testredis/redis-server"
-
 	startupTimeout      = 10 * time.Second
 	startupPingInterval = 5 * time.Millisecond
 )
+
+// set by x_defs in BUILD file
+var redisBinRunfilePath string
 
 type Handle struct {
 	Target     string
