@@ -1751,6 +1751,7 @@ func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec in
 	}
 }
 
+// The key should be locked before calling this function.
 func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.PebbleKey) error {
 	db, err := p.leaser.DB()
 	if err != nil {
