@@ -122,6 +122,10 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 		}
 	})
 
+	// Errors are only returned by the error group if the command was unable to start
+	// or never completed. If the command runs to completion and returns a non-zero exit code,
+	// CommandResult.Error will be nil, and the ExitCode will be set.
+	// See the definition of CommandResult for more details.
 	err = eg.Wait()
 	exitCode := commandutil.NoExitCode
 	if res != nil {
