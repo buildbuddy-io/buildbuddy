@@ -14,10 +14,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -27,7 +30,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	crand "crypto/rand"
-
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -115,6 +117,21 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 			assert.Equal(t, randKey.GroupID, akg.GetGroupID())
 			assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
 			assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
+
+			// Converting to Claims should produce the expected value
+			c := claims.APIKeyGroupClaims(akg)
+			assert.Equal(t, randKey.GroupID, c.GetGroupID())
+			assert.Equal(t, capabilities.FromInt(randKey.Capabilities), c.GetCapabilities())
+			require.Len(t, c.GetGroupMemberships(), 1)
+			assert.Equal(t, []*interfaces.GroupMembership{
+				{
+					GroupID:      randKey.GroupID,
+					Capabilities: capabilities.FromInt(randKey.Capabilities),
+					// TODO(bduffany): API keys should not have roles - just
+					// capabilities.
+					Role: role.Developer,
+				},
+			}, c.GetGroupMemberships())
 
 			// Using an invalid or empty value should produce an error
 			akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "")
