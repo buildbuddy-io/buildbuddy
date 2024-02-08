@@ -1564,9 +1564,6 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	}
 	defer db.Close()
 
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
 	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -1578,6 +1575,9 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
 
 	md := rfpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
@@ -1758,6 +1758,8 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	}
 	defer db.Close()
 
+	unlockFn := p.locker.RLock(key.lockID())
+
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
@@ -1765,6 +1767,8 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	fileMetadata := rfpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 	version, err := p.lookupFileMetadataAndVersion(ctx, iter, key, fileMetadata)
+	unlockFn()
+
 	if err != nil {
 		return err
 	}
