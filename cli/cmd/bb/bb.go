@@ -131,9 +131,6 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 		return exitCode, err
 	}
 
-	// Show a picker if target argument is omitted.
-	args = picker.HandlePicker(args)
-
 	//Prepare a dir for temporary files created by this CLI run
 	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
 	if err != nil {
@@ -157,6 +154,11 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	if err != nil {
 		return 1, err
 	}
+
+	// Show a picker if the target is omitted. Note: we do this after expanding
+	// args, in case a bazelrc specifies the target patterns (e.g. via
+	// --target_pattern_file).
+	bazelArgs = picker.HandlePicker(bazelArgs)
 
 	// Save some flags from the current invocation, in case the `ask` command
 	// is invoked in the future.
