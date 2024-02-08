@@ -527,7 +527,11 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 			return err
 		}
 		groupUser.User = user.ToProto()
-		groupUser.Role = role.ToProto(role.Role(groupRole))
+		r, err := role.ToProto(role.Role(groupRole))
+		if err != nil {
+			return err
+		}
+		groupUser.Role = r
 		users = append(users, groupUser)
 		return nil
 	})
@@ -611,7 +615,11 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 			}
 
 			if update.Role != grpb.Group_UNKNOWN_ROLE {
-				if err := d.updateUserRole(ctx, tx, update.GetUserId().GetId(), groupID, role.FromProto(update.GetRole())); err != nil {
+				r, err := role.FromProto(update.GetRole())
+				if err != nil {
+					return err
+				}
+				if err := d.updateUserRole(ctx, tx, update.GetUserId().GetId(), groupID, r); err != nil {
 					return err
 				}
 			}

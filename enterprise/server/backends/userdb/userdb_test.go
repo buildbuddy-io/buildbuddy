@@ -1131,6 +1131,15 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 		{Name: "Developer_ACWrite_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
 		{Name: "Admin_Executor_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
 		{Name: "Developer_Executor_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
+		// Even admins should not be able to attach ORG_ADMIN capabilities to
+		// user-owned keys (for now, we only support setting cache capabilities
+		// on user-owned keys)
+		{Name: "Admin_OrgAdmin_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}, OK: false},
+		// TODO(bduffany): Figure out how these capabilities should work. For
+		// now, we just fail if they are assigned by these (role, capability)
+		// combinations. See http://go/b/3091#issuecomment-1932266337
+		{Name: "Writer_ACWrite_Fail", Role: role.Writer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
+		{Name: "Reader_CASWrite_Fail", Role: role.Reader, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: false},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			ctx := context.Background()
@@ -1141,9 +1150,11 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 			ctx1 := authUserCtx(ctx, env, t, "US1")
 			g := getGroup(t, ctx1, env).Group
 			setUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
-			err := udb.UpdateGroupUsers(ctx1, g.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			r, err := role.ToProto(test.Role)
+			require.NoError(t, err)
+			err = udb.UpdateGroupUsers(ctx1, g.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
 				UserId: &uidpb.UserId{Id: "US1"},
-				Role:   role.ToProto(test.Role),
+				Role:   r,
 			}})
 			require.NoError(t, err)
 			// Re-authenticate with the updated role.
@@ -1170,7 +1181,7 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 
 			key, err = adb.CreateUserAPIKey(
 				ctx1, g.GroupID, "US1's key",
-				[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+				[]akpb.ApiKey_Capability{})
 			require.NoError(t, err)
 			key.Capabilities = capabilities.ToInt(test.Capabilities)
 			err = adb.UpdateAPIKey(ctx1, key)
@@ -1559,14 +1570,33 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 		ExpectedCapabilities []akpb.ApiKey_Capability
 	}{
 		{
-			Name:                 "Developer",
-			UserRole:             role.Developer,
-			ExpectedCapabilities: nil,
+			Name:     "Developer",
+			UserRole: role.Developer,
+			ExpectedCapabilities: []akpb.ApiKey_Capability{
+				akpb.ApiKey_CAS_WRITE_CAPABILITY,
+			},
 		},
 		{
-			Name:                 "Admin",
-			UserRole:             role.Admin,
-			ExpectedCapabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+			Name:     "Admin",
+			UserRole: role.Admin,
+			ExpectedCapabilities: []akpb.ApiKey_Capability{
+				akpb.ApiKey_CAS_WRITE_CAPABILITY,
+				akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+				akpb.ApiKey_ORG_ADMIN_CAPABILITY,
+			},
+		},
+		{
+			Name:     "Writer",
+			UserRole: role.Writer,
+			ExpectedCapabilities: []akpb.ApiKey_Capability{
+				akpb.ApiKey_CAS_WRITE_CAPABILITY,
+				akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+			},
+		},
+		{
+			Name:                 "Reader",
+			UserRole:             role.Reader,
+			ExpectedCapabilities: nil,
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
@@ -1579,10 +1609,14 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			userCtx := authUserCtx(ctx, env, t, "US1")
 			// Update their group role
 			gr := getGroup(t, userCtx, env)
-			err := udb.UpdateGroupUsers(userCtx, gr.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+
+			r, err := role.ToProto(test.UserRole)
+			require.NoError(t, err)
+
+			err = udb.UpdateGroupUsers(userCtx, gr.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
 				{
 					UserId: &uidpb.UserId{Id: "US1"},
-					Role:   grpb.Group_Role(test.UserRole),
+					Role:   r,
 				},
 			})
 			require.NoError(t, err)

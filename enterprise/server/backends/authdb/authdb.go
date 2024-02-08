@@ -57,6 +57,14 @@ var (
 	encryptOldKeys       = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
 )
 
+var (
+	// Capabilities that are allowed to be assigned to user-owned API keys.
+	userAPIKeyCapabilitiesMask = capabilities.ToInt([]akpb.ApiKey_Capability{
+		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+	})
+)
+
 type apiKeyGroupCacheEntry struct {
 	data         interfaces.APIKeyGroup
 	expiresAfter time.Time
@@ -654,8 +662,22 @@ func hasAdminOnlyCapabilities(capabilities []akpb.ApiKey_Capability) bool {
 
 func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, groupID string, caps []akpb.ApiKey_Capability) error {
 	if userID != "" {
-		if capabilities.ToInt(caps)&int32(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY) > 0 {
-			return status.PermissionDeniedError("user-owned API keys cannot be used to register executors")
+		// Capabilities assigned to the user-level key should not exceed the
+		// capabilities of the currently authenticated user.
+		u, err := perms.AuthenticatedUser(ctx, d.env)
+		if err != nil {
+			return err
+		}
+		requestedCapabilities := capabilities.ToInt(caps)
+		userCapabilities := capabilities.ToInt(u.GetCapabilities())
+		if requestedCapabilities&userCapabilities != requestedCapabilities {
+			return status.PermissionDeniedError("user does not have permission to assign these API key capabilities")
+		}
+
+		// Additionally, respect our list of capabilities that can be assigned
+		// to user-level keys.
+		if requestedCapabilities&userAPIKeyCapabilitiesMask != requestedCapabilities {
+			return status.PermissionDeniedError("the requested API key capabilities are not allowed for user-level keys")
 		}
 	}
 
