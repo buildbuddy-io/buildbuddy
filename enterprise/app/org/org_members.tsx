@@ -19,6 +19,8 @@ import Select, { Option } from "../../../app/components/select/select";
 import { user_id } from "../../../proto/user_id_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
 import Banner from "../../../app/components/banner/banner";
+import capabilities from "../../../app/capabilities/capabilities";
+import { CheckCircle, XCircle } from "lucide-react";
 
 export type OrgMembersProps = {
   user: User;
@@ -32,7 +34,7 @@ type State = {
   selectedUserIds: Set<string>;
 
   isEditRoleModalVisible?: boolean;
-  roleToApply?: grp.Group.Role;
+  roleToApply: grp.Group.Role;
   isRoleUpdateLoading?: boolean;
 
   isRemoveModalVisible?: boolean;
@@ -45,6 +47,10 @@ function getRoleLabel(role: grp.Group.Role): string {
       return "Admin";
     case grp.Group.Role.DEVELOPER_ROLE:
       return "Developer";
+    case grp.Group.Role.WRITER_ROLE:
+      return "Writer";
+    case grp.Group.Role.READER_ROLE:
+      return "Reader";
     default:
       return "";
   }
@@ -240,6 +246,58 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
     );
   }
 
+  private renderRoleDescription(role: grp.Group.Role) {
+    // TODO: send up role=>capabilities mapping from server, and base these
+    // descriptions on that.
+    type Capability = {
+      description: React.ReactNode;
+      read: boolean;
+      write: boolean;
+    };
+    const capabilities: Capability[] = [
+      {
+        description: "Organization settings and users",
+        read: role === grp.Group.Role.ADMIN_ROLE,
+        write: role === grp.Group.Role.ADMIN_ROLE,
+      },
+      {
+        description: "Invocations",
+        read: true,
+        write: true,
+      },
+      {
+        description: "Content-addressable storage (CAS)",
+        read: true,
+        write: role !== grp.Group.Role.READER_ROLE,
+      },
+      {
+        description: "Action cache (AC)",
+        read: true,
+        write: role === grp.Group.Role.WRITER_ROLE || role === grp.Group.Role.ADMIN_ROLE,
+      },
+    ];
+    const statusIcon = (ok: boolean) =>
+      ok ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
+    return (
+      <>
+        <table className="role-capabilities">
+          <tr className="role-capability-header">
+            <th>Object type</th>
+            <th>Read</th>
+            <th>Write</th>
+          </tr>
+          {capabilities.map((capability, i) => (
+            <tr key={i} className="role-capability-row">
+              <td>{capability.description}</td>
+              <td>{statusIcon(capability.read)}</td>
+              <td>{statusIcon(capability.write)}</td>
+            </tr>
+          ))}
+        </table>
+      </>
+    );
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading" />;
@@ -315,25 +373,21 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
               <div className="select-role-row">
                 <div>Role</div>
                 <Select value={this.state.roleToApply} onChange={this.onChangeRoleToApply.bind(this)}>
+                  {capabilities.config.readerWriterRolesEnabled && (
+                    <>
+                      <Option value={grp.Group.Role.READER_ROLE}>{getRoleLabel(grp.Group.Role.READER_ROLE)}</Option>
+                    </>
+                  )}
                   <Option value={grp.Group.Role.DEVELOPER_ROLE}>{getRoleLabel(grp.Group.Role.DEVELOPER_ROLE)}</Option>
+                  {capabilities.config.readerWriterRolesEnabled && (
+                    <>
+                      <Option value={grp.Group.Role.WRITER_ROLE}>{getRoleLabel(grp.Group.Role.WRITER_ROLE)}</Option>
+                    </>
+                  )}
                   <Option value={grp.Group.Role.ADMIN_ROLE}>{getRoleLabel(grp.Group.Role.ADMIN_ROLE)}</Option>
                 </Select>
               </div>
-              <div className="role-description">
-                {/* TODO(bduffany): Get role metadata from the server so that we
-                   don't have to keep these descriptions in sync. */}
-                {this.state.roleToApply === grp.Group.Role.DEVELOPER_ROLE && (
-                  <>
-                    Developers can view invocations and stats, but do not have access to org settings, usage data, or
-                    workflow configuration.
-                  </>
-                )}
-                {this.state.roleToApply === grp.Group.Role.ADMIN_ROLE && (
-                  <>
-                    Admins have <b>full access</b> to all data within the organization.
-                  </>
-                )}
-              </div>
+              <div className="role-description">{this.renderRoleDescription(this.state.roleToApply)}</div>
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>

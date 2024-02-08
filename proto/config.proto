@@ -151,6 +151,9 @@ message FrontendConfig {
 
   // Whether the codesearch UI is enabled.
   bool codesearch_enabled = 50;
+
+  // Enables reader/writer roles in the UI.
+  bool reader_writer_roles_enabled = 51;
 }
 
 message Region {
