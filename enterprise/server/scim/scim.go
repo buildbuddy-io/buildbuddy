@@ -281,7 +281,7 @@ func (s *SCIMServer) getFilteredUsers(ctx context.Context, g *tables.Group, filt
 	if err != nil {
 		return nil, err
 	}
-	u, err := s.env.GetUserDB().GetUserByEmail(ctx, email)
+	u, err := s.env.GetUserDB().GetUserBySubIDWithoutAuthCheck(ctx, subIDPrefix(g)+email)
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, nil
@@ -325,20 +325,11 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 	users := []*UserResource{}
 	filter := r.URL.Query().Get("filter")
 	if filter == "" {
-		displayUsers, err := s.env.GetUserDB().GetGroupUsers(ctx, g.GroupID, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
+		su, err := s.env.GetUserDB().GetUsersBySubIDPrefixWithoutAuthCheck(ctx, subIDPrefix(g))
 		if err != nil {
 			return nil, err
 		}
-		for _, du := range displayUsers {
-			u := &tables.User{
-				UserID:    du.GetUser().GetUserId().GetId(),
-				FirstName: du.GetUser().GetName().GetFirst(),
-				LastName:  du.GetUser().GetName().GetLast(),
-				Email:     du.GetUser().GetEmail(),
-				Groups: []*tables.GroupRole{
-					{Group: *g, Role: uint32(du.Role)},
-				},
-			}
+		for _, u := range su {
 			ur, err := newUserResource(u, g)
 			if err != nil {
 				return nil, err
@@ -353,7 +344,7 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 		users = fu
 	}
 	slices.SortFunc(users, func(a, b *UserResource) int {
-		return strings.Compare(a.UserName, b.UserName)
+		return strings.Compare(a.ID, b.ID)
 	})
 	totalResults := len(users)
 
@@ -381,8 +372,11 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 
 func (s *SCIMServer) getUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
 	id := path.Base(r.URL.Path)
-	u, err := s.env.GetUserDB().GetUserByID(ctx, id)
+	u, err := s.env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkUserOwnership(u, g); err != nil {
 		return nil, err
 	}
 	ur, err := newUserResource(u, g)
@@ -422,6 +416,10 @@ func roleUpdateRequest(userID string, userRole role.Role) ([]*grpb.UpdateGroupUs
 	}}, nil
 }
 
+func subIDPrefix(g *tables.Group) string {
+	return build_buddy_url.WithPath("saml/metadata").String() + "?slug=" + g.URLIdentifier + "/"
+}
+
 func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -445,10 +443,9 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
-	entityURL := build_buddy_url.WithPath("saml/metadata?slug=" + g.URLIdentifier)
 	u := &tables.User{
 		UserID:    pk,
-		SubID:     fmt.Sprintf("%s/%s", entityURL, ur.UserName),
+		SubID:     fmt.Sprintf("%s%s", subIDPrefix(g), ur.UserName),
 		FirstName: ur.Name.GivenName,
 		LastName:  ur.Name.FamilyName,
 		Email:     ur.UserName,
@@ -477,6 +474,18 @@ func getBooleanValue(v any) (bool, error) {
 	return false, status.InvalidArgumentErrorf("boolean field has unexpected value %v of type %T", v, v)
 }
 
+// checkUserOwnership validates that the user is being managed by the auth
+// provider configured for the given group by virtue of the SubID matching
+// the group.
+func checkUserOwnership(u *tables.User, g *tables.Group) error {
+	providerSubIDPrefix := subIDPrefix(g)
+	log.Infof("expected prefix %q", providerSubIDPrefix)
+	if strings.HasPrefix(u.SubID, providerSubIDPrefix) {
+		return nil
+	}
+	return status.NotFoundError("user not found")
+}
+
 func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -489,8 +498,11 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 	}
 
 	id := path.Base(r.URL.Path)
-	u, err := s.env.GetUserDB().GetUserByID(ctx, id)
+	u, err := s.env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkUserOwnership(u, g); err != nil {
 		return nil, err
 	}
 
@@ -566,7 +578,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 		return nil, err
 	}
 	if deleteUser {
-		err = s.env.GetUserDB().DeleteUser(ctx, id)
+		err = s.env.GetUserDB().DeleteUserWithoutAuthCheck(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -587,7 +599,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 				return nil, err
 			}
 		}
-		if err := s.env.GetUserDB().UpdateUser(ctx, u); err != nil {
+		if err := s.env.GetUserDB().UpdateUserWithoutAuthCheck(ctx, u); err != nil {
 			return nil, err
 		}
 	}
@@ -606,8 +618,11 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 	}
 
 	id := path.Base(r.URL.Path)
-	u, err := s.env.GetUserDB().GetUserByID(ctx, id)
+	u, err := s.env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkUserOwnership(u, g); err != nil {
 		return nil, err
 	}
 
@@ -618,13 +633,13 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 		return nil, err
 	}
 	if !ur.Active {
-		err = s.env.GetUserDB().DeleteUser(ctx, id)
+		err = s.env.GetUserDB().DeleteUserWithoutAuthCheck(ctx, id)
 		if err != nil {
 			return nil, err
 		}
 		updatedUser.Active = false
 	} else {
-		if err := s.env.GetUserDB().UpdateUser(ctx, u); err != nil {
+		if err := s.env.GetUserDB().UpdateUserWithoutAuthCheck(ctx, u); err != nil {
 			return nil, err
 		}
 		userRole, err := mapRole(&ur)

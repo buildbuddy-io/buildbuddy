@@ -167,11 +167,11 @@ func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 }
 
 func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {
-	authDB := env.GetAuthDB()
-	if authDB == nil {
-		return nil, status.FailedPreconditionError("AuthDB not configured")
+	userDB := env.GetUserDB()
+	if userDB == nil {
+		return nil, status.FailedPreconditionError("UserDB not configured")
 	}
-	u, err := authDB.LookupUserFromSubID(ctx, subID)
+	u, err := userDB.GetUserBySubIDWithoutAuthCheck(ctx, subID)
 	if err != nil {
 		return nil, err
 	}

@@ -433,7 +433,6 @@ type AuthDB interface {
 	ClearSession(ctx context.Context, sessionID string) error
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
-	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 
 	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
 	// group. It is only to be used in situations where the user has a
@@ -499,16 +498,11 @@ type UserDB interface {
 	GetUser(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string) (*tables.User, error)
 	GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error)
-	// GetUserByEmail lookups a user with the given e-mail address within the
-	// currently authenticated group.
-	//
-	// An error will be returned if there are multiple users with the same
-	// e-mail address. Normally this should not be the case, but it can occur
-	// if a user transitions between auth providers (e.g. oidc to saml).
-	GetUserByEmail(ctx context.Context, email string) (*tables.User, error)
-	UpdateUser(ctx context.Context, u *tables.User) error
-	// DeleteUser deletes a user and associated data.
-	DeleteUser(ctx context.Context, id string) error
+	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string) (*tables.User, error)
+	GetUsersBySubIDPrefixWithoutAuthCheck(ctx context.Context, subIDPrefix string) ([]*tables.User, error)
+	UpdateUserWithoutAuthCheck(ctx context.Context, u *tables.User) error
+	// DeleteUserWithoutAuthCheck deletes a user and associated data.
+	DeleteUserWithoutAuthCheck(ctx context.Context, id string) error
 	// GetImpersonatedUser will return the authenticated user's information
 	// with a single group membership corresponding to the group they are trying
 	// to impersonate. It requires that the authenticated user has impersonation

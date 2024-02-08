@@ -807,37 +807,21 @@ func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*t
 	return user, err
 }
 
-func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User, error) {
-	auth := d.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.InternalError("No auth configured on this BuildBuddy instance")
-	}
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rq := d.h.NewQuery(ctx, "userdb_get_user_by_email").Raw(`
-		SELECT * 
-		FROM "Users" u 
-		JOIN "UserGroups" ug on u.user_id = ug.user_user_id
-		WHERE u.email = ? AND ug.group_group_id = ?
-	`, email, u.GetGroupID())
-	users, err := db.ScanAll(rq, &tables.User{})
-	if err != nil {
-		return nil, err
-	}
-	switch len(users) {
-	case 0:
-		return nil, status.NotFoundErrorf("no users found with email %q", email)
-	case 1:
-		user := users[0]
-		if err := fillUserGroups(ctx, d.h, user); err != nil {
-			return nil, err
+func (d *UserDB) GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string) (*tables.User, error) {
+	log.CtxInfof(ctx, "lookup sub ID %q", subID)
+	rq := d.h.NewQuery(ctx, "userdb_get_user_by_sub_id").Raw(`
+		SELECT * FROM "Users" WHERE sub_id = ? ORDER BY user_id ASC`, subID)
+	u := &tables.User{}
+	if err := rq.Take(u); err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundError("user not found")
 		}
-		return user, nil
-	default:
-		return nil, status.FailedPreconditionErrorf("multiple users found for email %q", email)
+		return nil, err
 	}
+	if err := fillUserGroups(ctx, d.h, u); err != nil {
+		return nil, err
+	}
+	return u, nil
 }
 
 func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
@@ -931,12 +915,60 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 	return user, err
 }
 
-func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
-	// Permission check.
-	_, err := d.GetUserByID(ctx, userID)
+type userGroupRole struct {
+	UserUserID string
+	tables.GroupRole
+}
+
+func (d *UserDB) GetUsersBySubIDPrefixWithoutAuthCheck(ctx context.Context, subIDPrefix string) ([]*tables.User, error) {
+	rq := d.h.NewQuery(ctx, "userdb_get_users_by_sub_id_prefix").Raw(`
+			SELECT * FROM "Users" WHERE sub_id LIKE ?
+	`, subIDPrefix+"%")
+	users, err := db.ScanAll(rq, &tables.User{})
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	byID := map[string]*tables.User{}
+	for _, u := range users {
+		byID[u.UserID] = u
+	}
+
+	for len(users) > 0 {
+		count := min(len(users), 200)
+		userIDs := []string{}
+		for _, u := range users[:count] {
+			userIDs = append(userIDs, u.UserID)
+		}
+		rq := d.h.NewQuery(ctx, "userdb_get_users_by_sub_id_prefix").Raw(`
+				SELECT ug.user_user_id, g.*, ug.role
+				FROM "UserGroups" ug
+				JOIN "Groups" g ON g.group_id = ug.group_group_id
+				WHERE ug.membership_status = ?
+				AND ug.user_user_id in ?
+				`, int32(grpb.GroupMembershipStatus_MEMBER), userIDs)
+		gs, err := db.ScanAll(rq, &userGroupRole{})
+		if err != nil {
+			return nil, err
+		}
+		for _, g := range gs {
+			u, ok := byID[g.UserUserID]
+			if !ok {
+				return nil, status.InternalErrorf("user %q not in map", g.UserUserID)
+			}
+			u.Groups = append(u.Groups, &g.GroupRole)
+		}
+		users = users[count:]
+	}
+
+	for _, u := range byID {
+		users = append(users, u)
+	}
+
+	return users, nil
+}
+
+func (d *UserDB) DeleteUserWithoutAuthCheck(ctx context.Context, userID string) error {
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		rq := tx.NewQuery(ctx, "userdb_delete_user_memberships").Raw(`
 			DELETE FROM "UserGroups" WHERE user_user_id = ?`, userID)
@@ -957,12 +989,7 @@ func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
 	})
 }
 
-func (d *UserDB) UpdateUser(ctx context.Context, u *tables.User) error {
-	// Permission check.
-	_, err := d.GetUserByID(ctx, u.UserID)
-	if err != nil {
-		return err
-	}
+func (d *UserDB) UpdateUserWithoutAuthCheck(ctx context.Context, u *tables.User) error {
 	return d.h.NewQuery(ctx, "userdb_update_user").Update(u)
 }
 
