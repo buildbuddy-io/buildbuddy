@@ -41,7 +41,7 @@ func runfile(t *testing.T, path string) string {
 }
 
 type Opts struct {
-	BinaryPath            string
+	BinaryRunfilePath     string
 	Args                  []string
 	HTTPPort              int
 	HealthCheckServerType string
@@ -53,7 +53,7 @@ func Run(t *testing.T, opts *Opts) *Server {
 		healthCheckServerType: opts.HealthCheckServerType,
 	}
 
-	cmd := exec.Command(runfile(t, opts.BinaryPath), opts.Args...)
+	cmd := exec.Command(runfile(t, opts.BinaryRunfilePath), opts.Args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {

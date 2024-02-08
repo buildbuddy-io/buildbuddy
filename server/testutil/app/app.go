@@ -61,7 +61,7 @@ func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string
 	args = append(args, commandArgs...)
 
 	testserver.Run(t, &testserver.Opts{
-		BinaryPath:            commandPath,
+		BinaryRunfilePath:     commandPath,
 		Args:                  args,
 		HTTPPort:              app.HttpPort,
 		HealthCheckServerType: "buildbuddy-server",

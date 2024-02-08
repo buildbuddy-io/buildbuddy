@@ -14,6 +14,9 @@ type Executor struct {
 	monitoringPort int
 }
 
+// set by x_defs in BUILD file
+var ExecutorRunfilePath string
+
 // Run a local BuildBuddy executor for the scope of the given test case.
 //
 // The given command path and config file path refer to the workspace-relative runfile
@@ -31,7 +34,7 @@ func Run(t *testing.T, commandPath string, commandArgs []string) *Executor {
 	args = append(args, commandArgs...)
 
 	testserver.Run(t, &testserver.Opts{
-		BinaryPath:            commandPath,
+		BinaryRunfilePath:     commandPath,
 		Args:                  args,
 		HTTPPort:              e.httpPort,
 		HealthCheckServerType: "prod-buildbuddy-executor",
