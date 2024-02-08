@@ -131,7 +131,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 
 	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
 
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	assert.Equal(t, res, expectedResult)
 
 	err = c.Pause(ctx)
@@ -150,7 +150,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	// Try executing the same command again after unpausing.
 	res = c.Exec(ctx, cmd, &interfaces.Stdio{})
 
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	assert.Equal(t, res, expectedResult)
 
 	err = c.Remove(ctx)
@@ -209,8 +209,8 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	assert.True(
-		t, status.IsUnavailableError(res.Error),
-		"expected UnavailableError error, got: %s", res.Error)
+		t, status.IsUnavailableError(res.InitError),
+		"expected UnavailableError error, got: %s", res.InitError)
 	assert.Less(
 		t, res.ExitCode, 0,
 		"if timed out, exit code should be < 0 (unset)")
@@ -268,8 +268,8 @@ func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
 
 	assert.True(
-		t, status.IsDeadlineExceededError(res.Error),
-		"expected DeadlineExceeded error, got: %s", res.Error)
+		t, status.IsDeadlineExceededError(res.InitError),
+		"expected DeadlineExceeded error, got: %s", res.InitError)
 	assert.Less(
 		t, res.ExitCode, 0,
 		"if timed out, exit code should be < 0 (unset)")
@@ -325,7 +325,7 @@ func TestDockerExec_Stdio(t *testing.T) {
 		Stderr: &stderr,
 	})
 
-	assert.NoError(t, res.Error)
+	assert.NoError(t, res.InitError)
 	assert.Equal(t, "TestOutput\n", stdout.String(), "stdout opt should be respected")
 	assert.Empty(t, string(res.Stdout), "stdout in command result should be empty when stdout opt is specified")
 	assert.Equal(t, "TestError\n", stderr.String(), "stderr opt should be respected")

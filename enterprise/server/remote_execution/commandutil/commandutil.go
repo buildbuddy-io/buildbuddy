@@ -138,7 +138,7 @@ func Run(ctx context.Context, command *repb.Command, workDir string, statsListen
 	exitCode, err := ExitCode(ctx, cmd, err)
 	return &interfaces.CommandResult{
 		ExitCode:           exitCode,
-		Error:              err,
+		InitError:          err,
 		Stdout:             stdoutBuf.Bytes(),
 		Stderr:             stderrBuf.Bytes(),
 		CommandDebugString: cmd.String(),
@@ -240,8 +240,8 @@ func ChildPids(pid int) ([]int, error) {
 
 func ErrorResult(err error) *interfaces.CommandResult {
 	return &interfaces.CommandResult{
-		Error:    err,
-		ExitCode: NoExitCode,
+		InitError: err,
+		ExitCode:  NoExitCode,
 	}
 }
 

@@ -1297,8 +1297,8 @@ func nonCmdExit(ctx context.Context, err error) *interfaces.CommandResult {
 		log.CtxErrorf(ctx, "nonCmdExit returning error: %s", err)
 	}
 	return &interfaces.CommandResult{
-		Error:    err,
-		ExitCode: -2,
+		InitError: err,
+		ExitCode:  -2,
 	}
 }
 

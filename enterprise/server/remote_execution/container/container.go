@@ -381,7 +381,7 @@ func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command,
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.removed {
-		return &interfaces.CommandResult{ExitCode: noExitCode, Error: ErrRemoved}
+		return &interfaces.CommandResult{ExitCode: noExitCode, InitError: ErrRemoved}
 	}
 
 	return t.Delegate.Run(ctx, command, workingDir, creds)
@@ -433,7 +433,7 @@ func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.removed {
-		return &interfaces.CommandResult{ExitCode: noExitCode, Error: ErrRemoved}
+		return &interfaces.CommandResult{ExitCode: noExitCode, InitError: ErrRemoved}
 	}
 
 	return t.Delegate.Exec(ctx, command, opts)

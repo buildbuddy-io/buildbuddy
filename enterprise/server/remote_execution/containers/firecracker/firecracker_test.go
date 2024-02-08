@@ -325,8 +325,8 @@ func TestFirecrackerRunSimple(t *testing.T) {
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
+	if res.InitError != nil {
+		t.Fatal(res.InitError)
 	}
 
 	assertCommandResult(t, expectedResult, res)
@@ -389,8 +389,8 @@ func TestFirecrackerLifecycle(t *testing.T) {
 		}
 	})
 	res := c.Exec(ctx, cmd, nil)
-	if res.Error != nil {
-		t.Fatal(res.Error)
+	if res.InitError != nil {
+		t.Fatal(res.InitError)
 	}
 	assertCommandResult(t, expectedResult, res)
 }
@@ -470,7 +470,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		}
 
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
-		require.NoError(t, res.Error)
+		require.NoError(t, res.InitError)
 
 		assert.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
 
@@ -489,7 +489,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 			}
 
 			res := c.Exec(ctx, cmd, nil /*=stdio*/)
-			require.NoError(t, res.Error)
+			require.NoError(t, res.InitError)
 
 			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
 		}
@@ -547,7 +547,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	// when other VMs reuse the snapshot
 	cmd := appendToLog("Base")
 	res := baseVM.Exec(ctx, cmd, nil /*=stdio*/)
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	require.Equal(t, "Base\n", string(res.Stdout))
 	err = baseVM.Pause(ctx)
 	require.NoError(t, err)
@@ -586,7 +586,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 		// Write VM-specific data to the log
 		cmd = appendToLog(fmt.Sprintf("Fork-%d", i))
 		res = forkedVM.Exec(ctx, cmd, nil /*=stdio*/)
-		require.NoError(t, res.Error)
+		require.NoError(t, res.InitError)
 		// The log should contain data written to the original snapshot
 		// and the current VM, but not from any of the other VMs sharing
 		// the same original snapshot
@@ -643,7 +643,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	require.NoError(t, err)
 	cmd = appendToLog("Last")
 	res = c.Exec(ctx, cmd, nil /*=stdio*/)
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	require.Equal(t, "Base\nFork-3\nLast\n", string(res.Stdout))
 
 	err = c.Pause(ctx)
@@ -711,7 +711,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	// when other VMs reuse the snapshot
 	cmd := appendToLog("Base")
 	res := baseVM.Exec(ctx, cmd, nil /*=stdio*/)
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	require.Equal(t, "Base\n", string(res.Stdout))
 	err = baseVM.Pause(ctx)
 	require.NoError(t, err)
@@ -739,7 +739,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	// Write VM-specific data to the log
 	cmd = appendToLog("Fork local fetch")
 	res = forkedVM.Exec(ctx, cmd, nil /*=stdio*/)
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	// The log should contain data written to the original snapshot
 	// and the current VM, but not from any of the other VMs sharing
 	// the same original snapshot
@@ -776,7 +776,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	// Write VM-specific data to the log
 	cmd = appendToLog("Fork remote fetch")
 	res = forkedVM2.Exec(ctx, cmd, nil /*=stdio*/)
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	// The log should contain data written to the original snapshot
 	// and the current VM, but not from any of the other VMs sharing
 	// the same original snapshot
@@ -846,7 +846,7 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 		}
 		require.Empty(t, string(res.Stderr))
 		require.Equal(t, 0, res.ExitCode)
-		require.NoError(t, res.Error)
+		require.NoError(t, res.InitError)
 		assert.Equal(t, expectedLogs, string(res.Stdout))
 	}
 
@@ -909,7 +909,7 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 		}
 		require.Empty(t, string(res.Stderr))
 		require.Equal(t, 0, res.ExitCode)
-		require.NoError(t, res.Error)
+		require.NoError(t, res.InitError)
 		assert.Equal(t, expectedLogs, string(res.Stdout))
 	}
 
@@ -1021,8 +1021,8 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 	}
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatalf("error: %s", res.Error)
+	if res.InitError != nil {
+		t.Fatalf("error: %s", res.InitError)
 	}
 
 	// Check that the result has the expected disk usage stats.
@@ -1122,8 +1122,8 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
+	if res.InitError != nil {
+		t.Fatal(res.InitError)
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
@@ -1191,8 +1191,8 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
+	if res.InitError != nil {
+		t.Fatal(res.InitError)
 	}
 	assert.Empty(t, string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
@@ -1260,10 +1260,10 @@ func TestFirecrackerNonRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
+	if res.InitError != nil {
+		t.Fatal(res.InitError)
 	}
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	require.Empty(t, string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
 	require.Regexp(t, regexp.MustCompile(`uid=[0-9]+\(nobody\) gid=[0-9]+\(nobody\)`), string(res.Stdout))
@@ -1294,7 +1294,7 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "", string(res.Stderr))
 	assert.Equal(t, "/workspace\n", string(res.Stdout))
@@ -1344,8 +1344,8 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
+	if res.InitError != nil {
+		t.Fatal(res.InitError)
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
@@ -1398,8 +1398,8 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	if res.Error != nil {
-		t.Fatal(res.Error)
+	if res.InitError != nil {
+		t.Fatal(res.InitError)
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
@@ -1478,7 +1478,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 		assert.NoError(t, err)
 	})
 	res := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test1.sh"}}, nil /*=stdio*/)
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "Hello\n", string(res.Stdout))
 
@@ -1498,7 +1498,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 
 	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil /*=stdio*/)
 
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "world\n", string(res.Stdout))
 
@@ -1518,7 +1518,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 
 	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test3.sh"}}, nil /*=stdio*/)
 
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "world\n", string(res.Stdout))
 
@@ -1581,7 +1581,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 		OutputFiles: []string{"preserves.txt"},
 	}
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "Hello\nworld\n", string(res.Stdout))
 
@@ -1617,7 +1617,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 
 	log.Debugf("Resumed VM and executed docker-in-firecracker command in %s", time.Since(start))
 
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "world\n", string(res.Stdout))
 	require.Equal(t, 0, res.ExitCode)
@@ -1679,7 +1679,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "Hello\n", string(res.Stdout), "stdout should contain expected output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
@@ -1700,7 +1700,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 
 	res = c.Exec(ctx, cmd, nil /*=stdio*/)
 
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "world\n", string(res.Stdout), "stdout should contain expected output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
@@ -1741,8 +1741,8 @@ func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
 
 	require.True(
-		t, status.IsDeadlineExceededError(res.Error),
-		"expected DeadlineExceeded, but got: %s", res.Error)
+		t, status.IsDeadlineExceededError(res.InitError),
+		"expected DeadlineExceeded, but got: %s", res.InitError)
 	assert.Equal(
 		t, "stdout\n", string(res.Stdout),
 		"should get partial stdout if the exec times out")
@@ -1813,8 +1813,8 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	})
 
 	require.True(
-		t, status.IsCanceledError(res.Error),
-		"expected Canceled, but got: %s", res.Error)
+		t, status.IsCanceledError(res.InitError),
+		"expected Canceled, but got: %s", res.InitError)
 	assert.Equal(
 		t, "stdout\n", string(res.Stdout),
 		"should get partial stdout if the exec times out")
@@ -1846,7 +1846,7 @@ func TestFirecrackerLargeResult(t *testing.T) {
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", fmt.Sprintf(`yes | head -c %d`, stdoutSize)}}
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 	assert.Equal(t, string(res.Stderr), "")
 	assert.Len(t, res.Stdout, stdoutSize)
 }
@@ -1913,7 +1913,7 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 	require.NoError(t, err)
 
 	res := r.Run(ctxUS1)
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 
 	finishedCleanly := true
 	pool.TryRecycle(ctxUS1, r, finishedCleanly)
@@ -1944,7 +1944,7 @@ func TestFirecrackerWithExecutorRestart(t *testing.T) {
 		log.Infof("Running task...")
 
 		res = r.Run(ctxUS1)
-		require.NoError(t, res.Error)
+		require.NoError(t, res.InitError)
 
 		// Should be able to read /root/KEEP from the previous run.
 		require.Equal(t, "foo", string(res.Stdout))
@@ -2095,7 +2095,7 @@ func TestFirecrackerExecScriptLoadedFromDisk(t *testing.T) {
 	require.NoError(t, err)
 
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 }
 
 func TestFirecrackerHealthChecking(t *testing.T) {
@@ -2138,7 +2138,7 @@ func TestFirecrackerHealthChecking(t *testing.T) {
 		`},
 	}
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
-	require.True(t, status.IsUnavailableError(res.Error), "expected Unavailable err, got %s", res.Error)
+	require.True(t, status.IsUnavailableError(res.InitError), "expected Unavailable err, got %s", res.InitError)
 	require.GreaterOrEqual(t, res.UsageStats.GetPeakMemoryBytes(), int64(0))
 }
 
@@ -2308,8 +2308,8 @@ func TestFirecrackerStressIO(t *testing.T) {
 			}
 
 			res := vm.Instance.Exec(ctx, cmd, nil)
-			if res.Error != nil {
-				return res.Error
+			if res.InitError != nil {
+				return res.InitError
 			}
 			if res.ExitCode != 0 {
 				return fmt.Errorf("exit code %d; stderr: %s", res.ExitCode, string(res.Stderr))
@@ -2355,7 +2355,7 @@ func TestBazelBuild(t *testing.T) {
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	require.NoError(t, res.Error)
+	require.NoError(t, res.InitError)
 }
 
 func tree(label string) {

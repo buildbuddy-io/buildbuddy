@@ -201,14 +201,14 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	containerName, err := generateContainerName()
 	if err != nil {
-		result.Error = status.UnavailableErrorf("failed to generate docker container name: %s", err)
+		result.InitError = status.UnavailableErrorf("failed to generate docker container name: %s", err)
 		return result
 	}
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
 	if err := container.PullImageIfNecessary(ctx, r.env, r, creds, r.image); err != nil {
-		result.Error = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
+		result.InitError = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
 		return result
 	}
 
@@ -218,7 +218,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		workDir,
 	)
 	if err != nil {
-		result.Error = err
+		result.InitError = err
 		return result
 	}
 	createResponse, err := r.client.ContainerCreate(
@@ -230,7 +230,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		containerName,
 	)
 	if err != nil {
-		result.Error = wrapDockerErr(err, "failed to create docker container")
+		result.InitError = wrapDockerErr(err, "failed to create docker container")
 		return result
 	}
 	cid := createResponse.ID
@@ -241,14 +241,14 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		Stderr: true,
 	})
 	if err != nil {
-		result.Error = wrapDockerErr(err, "failed to attach to docker container")
+		result.InitError = wrapDockerErr(err, "failed to attach to docker container")
 		return result
 	}
 	defer hijackedResp.Close()
 
 	err = r.client.ContainerStart(ctx, cid, dockertypes.ContainerStartOptions{})
 	if err != nil {
-		result.Error = wrapDockerErr(err, "failed to start docker container")
+		result.InitError = wrapDockerErr(err, "failed to start docker container")
 		return result
 	}
 
@@ -311,7 +311,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		}
 	})
 	if err := eg.Wait(); err != nil {
-		result.Error = err
+		result.InitError = err
 	}
 
 	return result
@@ -578,7 +578,7 @@ func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command
 	// Ignore error from this function; it is returned as part of res.
 	commandutil.RetryIfTextFileBusy(func() error {
 		res = r.exec(ctx, command, stdio)
-		return res.Error
+		return res.InitError
 	})
 	return res
 }
@@ -590,7 +590,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 	}
 	u, err := r.getUser()
 	if err != nil {
-		result.Error = err
+		result.InitError = err
 		return result
 	}
 	cfg := dockertypes.ExecConfig{
@@ -604,12 +604,12 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 	}
 	exec, err := r.client.ContainerExecCreate(ctx, r.id, cfg)
 	if err != nil {
-		result.Error = wrapDockerErr(err, "docker exec create failed")
+		result.InitError = wrapDockerErr(err, "docker exec create failed")
 		return result
 	}
 	attachResp, err := r.client.ContainerExecAttach(ctx, exec.ID, dockertypes.ExecStartCheck{})
 	if err != nil {
-		result.Error = wrapDockerErr(err, "docker exec attach failed")
+		result.InitError = wrapDockerErr(err, "docker exec attach failed")
 		return result
 	}
 
@@ -634,15 +634,15 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		// If we timed out, ignore the "closed connection" error from copying
 		// outputs
 		if ctx.Err() == context.DeadlineExceeded {
-			result.Error = status.DeadlineExceededError("command timed out")
+			result.InitError = status.DeadlineExceededError("command timed out")
 			return result
 		}
-		result.Error = wrapDockerErr(err, "failed to get output of exec process")
+		result.InitError = wrapDockerErr(err, "failed to get output of exec process")
 		return result
 	}
 	info, err := r.client.ContainerExecInspect(ctx, exec.ID)
 	if err != nil {
-		result.Error = wrapDockerErr(err, "failed to get exec process info")
+		result.InitError = wrapDockerErr(err, "failed to get exec process info")
 		return result
 	}
 	// Docker does not provide a direct way to get the exit signal from an exec
@@ -660,7 +660,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 	// removed.
 	if r.removed && info.ExitCode == dockerExecSIGKILLExitCode {
 		result.ExitCode = commandutil.KilledExitCode
-		result.Error = commandutil.ErrSIGKILL
+		result.InitError = commandutil.ErrSIGKILL
 		return result
 	}
 

@@ -158,8 +158,8 @@ func getPodmanVersion(ctx context.Context, commandRunner interfaces.CommandRunne
 	stdio := interfaces.Stdio{Stdout: &stdout, Stderr: &stderr}
 	command := []string{"podman", "version", fmt.Sprintf("--storage-driver=%s", *podmanStorageDriver), "--format={{.Client.Version}}"}
 	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, &stdio)
-	if result.Error != nil || result.ExitCode != 0 {
-		return nil, status.InternalErrorf("command failed: %s: %s", result.Error, stderr.String())
+	if result.InitError != nil || result.ExitCode != 0 {
+		return nil, status.InternalErrorf("command failed: %s: %s", result.InitError, stderr.String())
 	}
 	return semver.NewVersion(strings.TrimSpace(stdout.String()))
 }
@@ -370,12 +370,12 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	containerName, err := generateContainerName()
 	c.name = containerName
 	if err != nil {
-		result.Error = status.UnavailableErrorf("failed to generate podman container name: %s", err)
+		result.InitError = status.UnavailableErrorf("failed to generate podman container name: %s", err)
 		return result
 	}
 
 	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image); err != nil {
-		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
+		result.InitError = status.UnavailableErrorf("failed to pull docker image: %s", err)
 		return result
 	}
 
@@ -427,7 +427,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 
-	if err = createResult.Error; err != nil {
+	if err = createResult.InitError; err != nil {
 		return status.UnavailableErrorf("failed to create container: %s", err)
 	}
 
@@ -436,8 +436,8 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	}
 
 	startResult := c.runPodman(ctx, "start", &interfaces.Stdio{}, c.name)
-	if startResult.Error != nil {
-		return startResult.Error
+	if startResult.InitError != nil {
+		return startResult.InitError
 	}
 	if startResult.ExitCode != 0 {
 		return status.UnknownErrorf("podman start failed: exit code %d, stderr: %s", startResult.ExitCode, startResult.Stderr)
@@ -476,7 +476,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	c.mu.Unlock()
 	if removed && res.ExitCode == podmanExecSIGKILLExitCode {
 		res.ExitCode = commandutil.KilledExitCode
-		res.Error = commandutil.ErrSIGKILL
+		res.InitError = commandutil.ErrSIGKILL
 	}
 	return res
 }
@@ -487,8 +487,8 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 	}
 
 	res := c.runPodman(ctx, "image", &interfaces.Stdio{}, "exists", c.image)
-	if res.Error != nil {
-		return false, res.Error
+	if res.InitError != nil {
+		return false, res.InitError
 	}
 	// Exit code 0 = exists, 1 = does not exist. Other exit codes indicate
 	// errors.
@@ -664,8 +664,8 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 		stdio.Stdout = io.MultiWriter(stdio.Stdout, log.CtxWriter(ctx, "[podman pull] "))
 	}
 	pullResult := c.runPodman(pullCtx, "pull", stdio, podmanArgs...)
-	if pullResult.Error != nil {
-		return pullResult.Error
+	if pullResult.InitError != nil {
+		return pullResult.InitError
 	}
 	if pullResult.ExitCode != 0 {
 		return status.UnavailableErrorf("podman pull failed: exit code %d, output: %s", pullResult.ExitCode, output.String())
@@ -683,8 +683,8 @@ func (c *podmanCommandContainer) Remove(ctx context.Context) error {
 	c.mu.Unlock()
 	os.RemoveAll(c.cidFilePath()) // intentionally ignoring error.
 	res := c.runPodman(ctx, "kill", &interfaces.Stdio{}, "--signal=KILL", c.name)
-	if res.Error != nil {
-		return res.Error
+	if res.InitError != nil {
+		return res.InitError
 	}
 	if res.ExitCode == 0 || strings.Contains(string(res.Stderr), "no such container") {
 		return nil
@@ -702,8 +702,8 @@ func (c *podmanCommandContainer) Pause(ctx context.Context) error {
 
 func (c *podmanCommandContainer) Unpause(ctx context.Context) error {
 	res := c.runPodman(ctx, "unpause", &interfaces.Stdio{}, c.name)
-	if res.Error != nil {
-		return res.Error
+	if res.InitError != nil {
+		return res.InitError
 	}
 	if res.ExitCode != 0 {
 		return status.UnknownErrorf("podman unpause failed: exit code %d, stderr: %s", res.ExitCode, string(res.Stderr))
@@ -796,7 +796,7 @@ func (c *podmanCommandContainer) maybeCleanupCorruptedImages(ctx context.Context
 	if !storageErrorRegex.MatchString(string(result.Stderr)) {
 		return nil
 	}
-	result.Error = status.UnavailableError("a storage corruption occurred")
+	result.InitError = status.UnavailableError("a storage corruption occurred")
 	result.ExitCode = commandutil.NoExitCode
 	return c.removeImage(ctx, c.image)
 }
@@ -808,8 +808,8 @@ func (c *podmanCommandContainer) removeImage(ctx context.Context, imageName stri
 	defer c.imageExistsCache.Remove(imageName)
 
 	result := c.runPodman(ctx, "rmi", &interfaces.Stdio{}, imageName)
-	if result.Error != nil {
-		return result.Error
+	if result.InitError != nil {
+		return result.InitError
 	}
 	if result.ExitCode == 0 || strings.Contains(string(result.Stderr), "image not known") {
 		return nil
@@ -833,8 +833,8 @@ func ConfigureSecondaryNetwork(ctx context.Context) error {
 	// "podman run --rm busybox sh". This should setup the following in ip route:
 	// "10.88.0.0/16 dev cni-podman0 proto kernel scope link src 10.88.0.1 linkdown"
 	result := runPodman(ctx, commandutil.CommandRunner{}, *podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
-	if result.Error != nil {
-		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
+	if result.InitError != nil {
+		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.InitError, string(result.Stderr))
 	}
 	if result.ExitCode != 0 {
 		return status.UnknownErrorf("failed to setup podman default network: podman run exited with code %d: %q", result.ExitCode, string(result.Stderr))

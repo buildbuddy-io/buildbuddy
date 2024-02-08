@@ -982,7 +982,7 @@ type Stdio struct {
 
 // CommandResult captures the output and details of an executed command.
 type CommandResult struct {
-	// Error is populated only if the command was unable to be started, or if it was
+	// InitError is populated only if the command was unable to be started, or if it was
 	// started but never completed.
 	//
 	// In particular, if the command runs and returns a non-zero exit code (such as 1),
@@ -1000,7 +1000,7 @@ type CommandResult struct {
 	// reason, such as DEADLINE_EXCEEDED (if the command times out), UNAVAILABLE (if
 	// there is a transient error that can be retried), or RESOURCE_EXHAUSTED (if the
 	// command ran out of memory while executing).
-	Error error
+	InitError error
 	// CommandDebugString indicates the command that was run, for debugging purposes only.
 	CommandDebugString string
 	// Stdout from the command. This may contain data even if there was an Error.
