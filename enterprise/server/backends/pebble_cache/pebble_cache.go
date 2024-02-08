@@ -1758,7 +1758,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	}
 	defer db.Close()
 
-	unlockFn := p.locker.RLock(key.lockID())
+	unlockFn := p.locker.RLock(key.LockID())
 
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
