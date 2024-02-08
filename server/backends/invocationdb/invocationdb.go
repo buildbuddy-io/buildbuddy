@@ -43,17 +43,17 @@ func getACL(i *tables.Invocation) *aclpb.ACL {
 
 func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	ti.Attempt = 1
+	// First, try inserting the invocation. This will work for first attempts.
+	result := d.h.GORM(ctx, "invocationdb_insert_invocation").Clauses(clause.OnConflict{DoNothing: true}).Create(ti)
+	if result.Error != nil {
+		return false, result.Error
+	} else if result.RowsAffected > 0 {
+		// Insert worked; we're done.
+		return true, nil
+	}
+	// Insert failed due to conflict; update the existing row instead.
 	created := false
 	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		// First, try inserting the invocation. This will work for first attempts.
-		result := tx.GORM(ctx, "invocationdb_insert_invocation").Clauses(clause.OnConflict{DoNothing: true}).Create(ti)
-		if result.Error != nil {
-			return result.Error
-		} else if created = result.RowsAffected > 0; created {
-			// Insert worked; we're done.
-			return nil
-		}
-		// Insert failed due to conflict; update the existing row instead.
 		err := tx.NewQuery(ctx, "invocationdb_find_existing_attempt").Raw(`
 				SELECT attempt FROM "Invocations"
 				WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ? 
