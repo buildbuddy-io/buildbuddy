@@ -21,6 +21,9 @@ go_test(
         "test.dockerNetwork": "bridge",
     },
     shard_count = 13,
+    x_defs = {
+        "ciRunnerRunfilePath": "$(rlocationpath //enterprise/server/cmd/ci_runner)",
+    },
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:eventlog_go_proto",

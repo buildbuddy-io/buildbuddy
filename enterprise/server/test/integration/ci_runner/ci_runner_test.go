@@ -47,6 +47,9 @@ const (
 )
 
 var (
+	// set by x_defs in BUILD file
+	ciRunnerRunfilePath string
+
 	workspaceContentsWithBazelVersionAction = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
 		"buildbuddy.yaml": `
@@ -207,7 +210,7 @@ type result struct {
 }
 
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
-	binPath, err := runfiles.Rlocation("buildbuddy/enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
+	binPath, err := runfiles.Rlocation(ciRunnerRunfilePath)
 	if err != nil {
 		t.Fatal(err)
 	}
