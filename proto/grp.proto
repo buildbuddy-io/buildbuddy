@@ -52,18 +52,20 @@ message Group {
     // keys and viewing usage data, but can perform most other common actions
     // such as viewing invocation history. Developers get cache read/write
     // access and AC readonly access.
-    DEVELOPER_ROLE = 1;
+    DEVELOPER_ROLE = 1;  // 1 << 0
 
     // Admins have unrestricted access to any data owned by this group.
-    ADMIN_ROLE = 2;
+    ADMIN_ROLE = 2;  // 1 << 1
 
     // Writer role grants the same capabilities as Developer role, except it
     // allows CAS read+write and AC read+write.
-    WRITER_ROLE = 3;
+    WRITER_ROLE = 4;  // 1 << 2
 
     // Reader role grants the same capabilities as Developer role, except it
     // allows only CAS reads and AC reads (no cache writes are allowed).
-    READER_ROLE = 4;
+    READER_ROLE = 8;  // 1 << 3
+
+    // Next role should be field number 16 (1 << 4)
   }
 
   // Controls who can see invocation suggestions.
