@@ -329,6 +329,8 @@
 .org-members-edit-modal .role-capabilities {
   border-collapse: collapse;
   font-size: 14px;
+  width: 100%;
+  margin-top: 8px;
 }
 
 .org-members-edit-modal .role-capabilities .icon {
