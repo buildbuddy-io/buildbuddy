@@ -78,6 +78,17 @@ common:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 
+# Disabled RBE for Windows
+common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows
+common:untrusted-ci-windows --repository_cache=D:/repo-cache/untrusted
+common:untrusted-ci-windows --disk_cache=
+common:untrusted-ci-windows --flaky_test_attempts=2
+common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
+common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
+common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
+common:untrusted-ci-windows --experimental_remote_cache_compression
+common:untrusted-ci-windows --remote_upload_local_results
+
 # Configuration used for all BuildBuddy workflows
 common:workflows --experimental_remote_cache_compression
 common:workflows --build_metadata=ROLE=CI
@@ -97,6 +108,17 @@ common:workflows --config=buildbuddy_remote_cache
 common:race --@io_bazel_rules_go//go/config:race
 
 common:performance --compilation_mode=opt
+
+# Configuration used to deflake tests
+common:deflake --config=remote
+common:deflake --runs_per_test=100
+common:deflake --test_output=errors
+common:deflake --notest_keep_going
+
+# Configuration used to deflake Go tests
+common:deflake-go --config=race
+common:deflake-go --config=deflake
+common:deflake-go --test_arg=-test.failfast
 
 # Configuration used for Linux workflows
 common:linux-workflows --config=remote-shared
@@ -131,7 +153,7 @@ common:release-m1 --config=release-shared
 # Configuration used for release-windows workflow
 common:release-windows --config=release-shared
 common:release-windows --config=cache
-common:release --remote_instance_name=buildbuddy-io/buildbuddy/release-windows
+common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows
 
 # Configuration used for Buildbuddy auto-release
 common:auto-release --config=remote

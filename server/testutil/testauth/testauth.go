@@ -10,13 +10,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"
 	"google.golang.org/grpc/metadata"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -42,49 +42,7 @@ var (
 	jwtTestKey      = []byte("testKey")
 )
 
-type TestUser struct {
-	jwt.StandardClaims
-	UserID                 string                        `json:"user_id"`
-	GroupID                string                        `json:"group_id"`
-	AllowedGroups          []string                      `json:"allowed_groups"`
-	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
-	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
-	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
-	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
-	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
-	SAML                   bool                          `json:"saml,omitempty"`
-}
-
-func (c *TestUser) GetAPIKeyID() string                                { return "" }
-func (c *TestUser) GetUserID() string                                  { return c.UserID }
-func (c *TestUser) GetGroupID() string                                 { return c.GroupID }
-func (c *TestUser) GetAllowedGroups() []string                         { return c.AllowedGroups }
-func (c *TestUser) GetGroupMemberships() []*interfaces.GroupMembership { return c.GroupMemberships }
-func (c *TestUser) GetCapabilities() []akpb.ApiKey_Capability          { return c.Capabilities }
-func (c *TestUser) IsAdmin() bool                                      { return false }
-func (c *TestUser) HasCapability(cap akpb.ApiKey_Capability) bool {
-	for _, cc := range c.Capabilities {
-		if cap&cc > 0 {
-			return true
-		}
-	}
-	return false
-}
-func (c *TestUser) GetUseGroupOwnedExecutors() bool {
-	return c.UseGroupOwnedExecutors
-}
-func (c *TestUser) GetCacheEncryptionEnabled() bool {
-	return c.CacheEncryptionEnabled
-}
-func (c *TestUser) GetEnforceIPRules() bool {
-	return c.EnforceIPRules
-}
-func (c *TestUser) IsImpersonating() bool {
-	return false
-}
-func (c *TestUser) IsSAML() bool {
-	return c.SAML
-}
+type TestUser = claims.Claims
 
 func User(userID, groupID string) *TestUser {
 	return &TestUser{
@@ -107,18 +65,13 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 		log.Errorf("You're calling TestUsers wrong!")
 	}
 	testUsers := make(map[string]interfaces.UserInfo, 0)
-	var u *TestUser
+	var uid string
 	for i, val := range vals {
 		if i%2 == 0 {
-			u = &TestUser{UserID: val}
+			uid = val
 		} else {
-			u.GroupID = val
-			u.AllowedGroups = []string{val}
-			u.GroupMemberships = []*interfaces.GroupMembership{
-				{GroupID: val, Role: role.Admin},
-			}
-			u.Capabilities = capabilities.DefaultAuthenticatedUserCapabilities
-			testUsers[u.UserID] = u
+			gid := val
+			testUsers[uid] = User(uid, gid)
 		}
 	}
 	return testUsers

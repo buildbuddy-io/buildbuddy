@@ -261,7 +261,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 
   private onSelectSCIM(onChange: (name: string, value: any) => any) {
-    onChange("capability", [api_key.ApiKey.Capability.SCIM_CAPABILITY]);
+    onChange("capability", [api_key.ApiKey.Capability.ORG_ADMIN_CAPABILITY]);
   }
 
   private onChangeVisibility(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
@@ -379,7 +379,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                       disabled={!this.canChangeCapabilities()}
                     />
                     <span>
-                      SCIM key <span className="field-description">(for external user management)</span>
+                      Org admin key <span className="field-description">(for external user management)</span>
                     </span>
                   </label>
                 </div>
@@ -571,7 +571,7 @@ function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
 }
 
 function isSCIMKey<T extends ApiKeyFields>(apiKey: T | null) {
-  return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.SCIM_CAPABILITY]);
+  return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.ORG_ADMIN_CAPABILITY]);
 }
 
 function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {

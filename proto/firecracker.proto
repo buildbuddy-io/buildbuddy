@@ -77,6 +77,12 @@ message SnapshotManifest {
   // Cached chunked files in the snapshot. These follow the same convention
   // mentioned in `files`.
   repeated ChunkedFile chunked_files = 3;
+
+  // Metadata associated with the snapshot. The VM ID stored in the metadata
+  // stays constant across each resume/pause cycle of a particular snapshot, but
+  // the snapshot creator is expected to change each time the snapshot is
+  // updated.
+  build.bazel.remote.execution.v2.VMMetadata vm_metadata = 4;
 }
 
 // Represents a chunked file for use with copy-on-write snapshotting.

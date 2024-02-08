@@ -114,6 +114,8 @@ var (
 
 func init() {
 	grpc.EnableTracing = false
+	// Register the codec for all RPC servers and clients.
+	vtprotocodec.Register()
 }
 
 func configureFilesystemsOrDie(realEnv *real_environment.RealEnv, appBundleFS fs.FS) {
@@ -347,9 +349,6 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if err := capabilities_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-
-	// Register the codec for all RPC servers and clients.
-	vtprotocodec.Register()
 
 	if err := grpc_server.RegisterInternalGRPCServer(env, registerInternalGRPCServices); err != nil {
 		log.Fatalf("%v", err)

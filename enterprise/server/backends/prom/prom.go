@@ -94,6 +94,17 @@ sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
 			Examples: `# Number of bytes uploaded as measured over the last week
 sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))`,
 		},
+		{
+			sourceMetricName: "buildbuddy_remote_execution_duration_usec_exported",
+			LabelNames:       []string{metrics.OS},
+			ExportedFamily: &dto.MetricFamily{
+				Name: proto.String("exported_buildbuddy_remote_execution_duration_usec"),
+				Help: proto.String("The total duration of remote execution, in **microseconds**."),
+				Type: dto.MetricType_HISTOGRAM.Enum(),
+			},
+			Examples: `# The total duration of remote execution as measured over the last week
+sum by (os) (rate(exported_buildbuddy_remote_execution_duration_usec_sum[1w]))`,
+		},
 	}
 )
 
@@ -463,8 +474,7 @@ func (q *promQuerier) setMetrics(ctx context.Context, groupID string, metricFami
 		return nil
 	}
 	key := getExportedMetricsKey(groupID)
-	// MarshalVT() is slower than regular Marshal for proto mpb.Metrics.
-	b, err := proto.MarshalOld(metricFamilies)
+	b, err := proto.Marshal(metricFamilies)
 	if err != nil {
 		return status.InternalErrorf("failed to marshal json: %s", err)
 	}

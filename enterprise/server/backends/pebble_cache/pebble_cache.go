@@ -119,10 +119,7 @@ const (
 	// and delete the oldest items from the cache.
 	JanitorCutoffThreshold = .90
 
-	// janitorCheckPeriod is how often the janitor thread will wake up to
-	// check the cache size.
-	JanitorCheckPeriod = 1 * time.Second
-	megabyte           = 1e6
+	megabyte = 1e6
 
 	DefaultPartitionID           = "default"
 	partitionDirectoryPrefix     = "PT"
@@ -498,7 +495,7 @@ func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 	// is enabled (if CompactionDebtConcurrency was not already exceeded).
 	// Every multiple of this value enables another concurrent
 	// compaction up to MaxConcurrentCompactions.
-	opts.Experimental.L0CompactionConcurrency = 4
+	opts.Experimental.L0CompactionConcurrency = 2
 	// CompactionDebtConcurrency controls the threshold of compaction debt
 	// at which additional compaction concurrency slots are added. For every
 	// multiple of this value in compaction debt bytes, an additional
@@ -2557,10 +2554,12 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	fileMetadata := rfpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
+	samplerDelay := time.NewTicker(SamplerSleepDuration)
+	defer samplerDelay.Stop()
+
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
 	// and just read forward, yielding digests until we've found enough.
-
 	for {
 		select {
 		case <-quitChan:
@@ -2575,7 +2574,11 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(e.part.MaxSizeBytes))
 		e.mu.Unlock()
 		if shouldSleep {
-			time.Sleep(SamplerSleepDuration)
+			select {
+			case <-quitChan:
+				return nil
+			case <-samplerDelay.C:
+			}
 		}
 
 		// Refresh the iterator once a while

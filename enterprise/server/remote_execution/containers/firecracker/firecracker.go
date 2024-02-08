@@ -52,6 +52,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/google/uuid"
+	"github.com/klauspost/cpuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -487,6 +488,8 @@ type FirecrackerContainer struct {
 	// If set, the snapshot used to load the VM
 	snapshot *snaploader.Snapshot
 
+	// The current task assigned to the VM.
+	task *repb.ExecutionTask
 	// When the VM was initialized (i.e. created or unpaused) for the command
 	// it is currently executing
 	//
@@ -566,6 +569,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		user:               opts.User,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		env:                env,
+		task:               task,
 		loader:             loader,
 		vmLog:              vmLog,
 		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
@@ -861,7 +865,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		c.memoryStore = memoryStore
 	}
 
+	vmd := c.getVMMetadata().CloneVT()
+	vmd.LastExecutedTask = c.getVMTask()
 	opts := &snaploader.CacheSnapshotOptions{
+		VMMetadata:          vmd,
 		VMConfiguration:     c.vmConfig,
 		VMStateSnapshotPath: filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
 		KernelImagePath:     c.executorConfig.KernelImagePath,
@@ -900,6 +907,23 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
 
 	return nil
+}
+
+func (c *FirecrackerContainer) getVMMetadata() *repb.VMMetadata {
+	if c.snapshot == nil || c.snapshot.GetVMMetadata() == nil {
+		return &repb.VMMetadata{VmId: c.id}
+	}
+	return c.snapshot.GetVMMetadata()
+}
+
+func (c *FirecrackerContainer) getVMTask() *repb.VMMetadata_VMTask {
+	d, _ := digest.Compute(strings.NewReader(c.task.GetExecutionId()), c.task.GetExecuteRequest().GetDigestFunction())
+	return &repb.VMMetadata_VMTask{
+		InvocationId:          c.task.GetInvocationId(),
+		ExecutionId:           c.task.GetExecutionId(),
+		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
+		ExecuteResponseDigest: d,
+	}
 }
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
@@ -1316,6 +1340,15 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	if c.vmConfig.EnableNetworking {
 		bootArgs += " " + machineIPBootArgs
 		netNS = networking.NetNamespacePath(c.id)
+	}
+
+	// On AMD CPUs, disabling the LAPIC TSC-Deadline feature works around an
+	// issue where processes occasionally freeze up after being resumed from
+	// snapshot.
+	// TODO(https://github.com/firecracker-microvm/firecracker/issues/4099):
+	// remove this workaround.
+	if cpuid.CPU.VendorID == cpuid.AMD {
+		bootArgs += " lapic=notscdeadline"
 	}
 
 	// Pass some flags to the init script.
@@ -2097,6 +2130,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 	defer func() {
+		// Attach VM metadata to the result
+		result.VMMetadata = c.getVMMetadata()
+
 		// Attach VM logs to the result
 		if result.AuxiliaryLogs == nil {
 			result.AuxiliaryLogs = map[string][]byte{}
@@ -2134,7 +2170,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer func() {
 		// TODO(bduffany): Figure out a good way to surface this in the command result.
 		if result.Error != nil {
-			log.CtxWarningf(ctx, "Execution error occurred. VM logs: %s", string(c.vmLog.Tail()))
+			if !status.IsDeadlineExceededError(result.Error) {
+				log.CtxWarningf(ctx, "Execution error occurred. VM logs: %s", string(c.vmLog.Tail()))
+			}
 		} else if err := c.parseOOMError(); err != nil {
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
 		}

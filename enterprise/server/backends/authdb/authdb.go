@@ -2,7 +2,6 @@ package authdb
 
 import (
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -56,6 +55,14 @@ var (
 	apiKeyEncryptionKey  = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flag.Secret)
 	encryptNewKeys       = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
 	encryptOldKeys       = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
+)
+
+var (
+	// Capabilities that are allowed to be assigned to user-owned API keys.
+	userAPIKeyCapabilitiesMask = capabilities.ToInt([]akpb.ApiKey_Capability{
+		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+	})
 )
 
 type apiKeyGroupCacheEntry struct {
@@ -435,56 +442,18 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 			return err
 		}
 		rq = tx.NewQuery(ctx, "authdb_lookup_user_groups").Raw(`
-			SELECT
-				g.user_id,
-				g.group_id,
-				g.url_identifier,
-				g.name,
-				g.owned_domain,
-				g.github_token,
-				g.sharing_enabled,
-				g.user_owned_keys_enabled,
-				g.bot_suggestions_enabled,
-				g.developer_org_creation_enabled,
-				g.use_group_owned_executors,
-				g.cache_encryption_enabled,
-				g.enforce_ip_rules,
-				g.saml_idp_metadata_url,
-				ug.role
+			SELECT g.*, ug.role
 			FROM "Groups" AS g, "UserGroups" AS ug
 			WHERE g.group_id = ug.group_group_id
 			AND ug.membership_status = ?
 			AND ug.user_user_id = ?
 			`, int32(grpb.GroupMembershipStatus_MEMBER), user.UserID,
 		)
-		err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
-			gr := &tables.GroupRole{}
-			err := row.Scan(
-				&gr.Group.UserID,
-				&gr.Group.GroupID,
-				&gr.Group.URLIdentifier,
-				&gr.Group.Name,
-				&gr.Group.OwnedDomain,
-				&gr.Group.GithubToken,
-				&gr.Group.SharingEnabled,
-				&gr.Group.UserOwnedKeysEnabled,
-				&gr.Group.BotSuggestionsEnabled,
-				&gr.Group.DeveloperOrgCreationEnabled,
-				&gr.Group.UseGroupOwnedExecutors,
-				&gr.Group.CacheEncryptionEnabled,
-				&gr.Group.EnforceIPRules,
-				&gr.Group.SamlIdpMetadataUrl,
-				&gr.Role,
-			)
-			if err != nil {
-				return err
-			}
-			user.Groups = append(user.Groups, gr)
-			return nil
-		})
+		gs, err := db.ScanAll(rq, &tables.GroupRole{})
 		if err != nil {
 			return err
 		}
+		user.Groups = gs
 		return nil
 	})
 	if err != nil {
@@ -693,8 +662,22 @@ func hasAdminOnlyCapabilities(capabilities []akpb.ApiKey_Capability) bool {
 
 func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, groupID string, caps []akpb.ApiKey_Capability) error {
 	if userID != "" {
-		if capabilities.ToInt(caps)&int32(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY) > 0 {
-			return status.PermissionDeniedError("user-owned API keys cannot be used to register executors")
+		// Capabilities assigned to the user-level key should not exceed the
+		// capabilities of the currently authenticated user.
+		u, err := perms.AuthenticatedUser(ctx, d.env)
+		if err != nil {
+			return err
+		}
+		requestedCapabilities := capabilities.ToInt(caps)
+		userCapabilities := capabilities.ToInt(u.GetCapabilities())
+		if requestedCapabilities&userCapabilities != requestedCapabilities {
+			return status.PermissionDeniedError("user does not have permission to assign these API key capabilities")
+		}
+
+		// Additionally, respect our list of capabilities that can be assigned
+		// to user-level keys.
+		if requestedCapabilities&userAPIKeyCapabilitiesMask != requestedCapabilities {
+			return status.PermissionDeniedError("the requested API key capabilities are not allowed for user-level keys")
 		}
 	}
 

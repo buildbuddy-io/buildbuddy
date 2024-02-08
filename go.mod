@@ -37,7 +37,7 @@ require (
 	github.com/awslabs/soci-snapshotter v0.1.0
 	github.com/bazelbuild/bazel-gazelle v0.31.1
 	github.com/bazelbuild/bazelisk v1.17.0
-	github.com/bazelbuild/buildtools v0.0.0-20231115204819-d4c9dccdfbb1
+	github.com/bazelbuild/buildtools v0.0.0-20240124160521-959427f9b6f0
 	github.com/bazelbuild/rules_go v0.40.1
 	github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
@@ -84,6 +84,7 @@ require (
 	github.com/jotfs/fastcdc-go v0.2.0
 	github.com/jsimonetti/rtnetlink v1.3.3
 	github.com/klauspost/compress v1.17.2
+	github.com/klauspost/cpuid v1.2.1
 	github.com/lestrrat-go/jwx v1.2.26
 	github.com/lni/dragonboat/v4 v4.0.0-00010101000000-000000000000
 	github.com/lni/goutils v1.3.1-0.20220604063047-388d67b4dbc4
@@ -98,7 +99,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc3
 	github.com/pkg/errors v0.9.1
-	github.com/planetscale/vtprotobuf v0.5.1-0.20231212170721-e7d721933795
+	github.com/planetscale/vtprotobuf v0.6.0
 	github.com/prometheus/client_golang v1.16.0
 	github.com/prometheus/client_model v0.4.0
 	github.com/prometheus/common v0.44.0

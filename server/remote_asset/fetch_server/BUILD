@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:grpc_status_go_proto",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -19,6 +18,7 @@ go_library(
         "//server/util/scratchspace",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_protobuf//types/known/durationpb",
     ],

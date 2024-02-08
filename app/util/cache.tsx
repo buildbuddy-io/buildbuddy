@@ -1,3 +1,4 @@
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
 import Long from "long";
@@ -9,6 +10,34 @@ const Compressor = build.bazel.remote.execution.v2.Compressor.Value;
 type Compressor = build.bazel.remote.execution.v2.Compressor.Value;
 const DigestFunction = build.bazel.remote.execution.v2.DigestFunction.Value;
 type DigestFunction = build.bazel.remote.execution.v2.DigestFunction.Value;
+
+function lowercaseEnumNames(e: Record<string | number, string | number>): string[] {
+  return Object.keys(e).map((name) => String(name).toLowerCase());
+}
+
+const DIGEST_FUNCTION_NAMES = lowercaseEnumNames(DigestFunction);
+const COMPRESSOR_NAMES = lowercaseEnumNames(Compressor);
+
+const BYTESTREAM_URL_PATTERN = new RegExp(
+  // Start of string
+  `^` +
+    // Protocol + "//" separator (required)
+    `bytestream://` +
+    // Address + "/" (required)
+    `(?<address>[^/]+)/` +
+    // Instance name + "/" (optional)
+    `((?<instanceName>.+)/)?` +
+    // blobs/ or compressed-blobs/<compressor>/ (required)
+    `(blobs|compressed-blobs/(?<compressor>${COMPRESSOR_NAMES.join("|")}))/` +
+    // Action cache identifier + "/" (optional)
+    `((?<ac>ac)/)?` +
+    // Digest function + "/" (optional - defaults to sha256)
+    `((?<digestFunction>${DIGEST_FUNCTION_NAMES.join("|")})/)?` +
+    // Digest hash/size (required)
+    `(?<hash>[0-9a-f]+)/(?<sizeBytes>\\d+)` +
+    // End of string
+    `$`
+);
 
 /**
  * Parses a Digest proto from a string like "HASH/SIZE".
@@ -22,6 +51,60 @@ export function parseDigest(raw: string): Digest {
     hash,
     sizeBytes: Long.fromString(rawSize),
   });
+}
+
+type RequiredNonNullable<T> = { [k in keyof T]: NonNullable<T[k]> };
+
+/** A fully-qualified bytestream URL. */
+export interface BytestreamURL extends RequiredNonNullable<resource.IResourceName> {
+  /** Bytestream service address host or host:port. */
+  address: string;
+}
+
+/**
+ * Returns a fully-qualified bytestream URL from the given "bytestream://..." string.
+ * Throws a `TypeError` if the given URL is not a valid bytestream URL (similar to
+ * the `new URL(...)` constructor).
+ */
+export function parseBytestreamURL(url: string): BytestreamURL {
+  // Use a better type for regexp match groups (default is Record<string, string>)
+  const match = url.match(BYTESTREAM_URL_PATTERN) as { groups?: Record<string, string | undefined> } | undefined;
+  if (!match?.groups) {
+    throw new TypeError("Invalid bytestream URL");
+  }
+  return {
+    address: match.groups.address!,
+    cacheType: match.groups.ac ? resource.CacheType.AC : resource.CacheType.CAS,
+    instanceName: match.groups.instanceName ?? "",
+    compressor: parseCompressor(match.groups.compressor ?? ""),
+    digestFunction: parseDigestFunction(match.groups.digestFunction ?? ""),
+    digest: new Digest({
+      hash: match.groups.hash!,
+      sizeBytes: Long.fromString(match.groups.sizeBytes!),
+    }),
+  };
+}
+
+/**
+ * Returns whether the given value is a valid bytestream URL string.
+ */
+export function isBytestreamURL(url: any): url is string {
+  if (typeof url !== "string") return false;
+  return BYTESTREAM_URL_PATTERN.test(url);
+}
+
+/**
+ * Returns a digest for the given file using the digest/length fields if
+ * present, otherwise tries to parse the bytestream URL.
+ */
+export function getFileDigest(file: build_event_stream.IFile): Digest | undefined {
+  if (file.digest) {
+    return new Digest({ hash: file.digest, sizeBytes: file.length ?? Long.ZERO });
+  }
+  if (isBytestreamURL(file.uri)) {
+    return parseBytestreamURL(file.uri).digest;
+  }
+  return undefined;
 }
 
 /**

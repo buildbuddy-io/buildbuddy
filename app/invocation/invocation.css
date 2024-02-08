@@ -947,9 +947,15 @@
 }
 
 .metadata-title {
-  text-decoration: underline;
   font-weight: 600;
   color: #222;
+  margin-bottom: 2px;
+}
+
+.metadata-title:not(:first-child) {
+  margin-top: 8px;
+  border-top: 1px solid #eee;
+  padding-top: 8px;
 }
 
 .metadata-detail {

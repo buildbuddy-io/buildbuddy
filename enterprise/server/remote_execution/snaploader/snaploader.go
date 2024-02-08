@@ -106,19 +106,16 @@ func getEnv(task *repb.ExecutionTask, name string) string {
 	return ""
 }
 
-// localManifestKey returns the key for the local snapshot manifest.
+// LocalManifestKey returns the key for the local snapshot manifest.
 //
 // Because we always want runners to use the newest manifest/snapshot, this
 // doesn't actually create a digest of the manifest contents. It just takes a
 // hash of shared properties, for which the snapshot should be shared
-func localManifestKey(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) (*repb.Digest, error) {
-	// Note: filecache does not have explicit group AC partitioning unlike
-	// remote cache, so we need to manually hash in the group ID as part of the
-	// key.
-	gid, err := groupID(ctx, env)
-	if err != nil {
-		return nil, err
-	}
+//
+// Note: filecache does not have explicit group AC partitioning unlike
+// remote cache, so we need to manually hash in the group ID as part of the
+// key.
+func LocalManifestKey(gid string, s *fcpb.SnapshotKey) (*repb.Digest, error) {
 	kd, err := digest.ComputeForMessage(s, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
@@ -131,8 +128,8 @@ func localManifestKey(ctx context.Context, env environment.Env, s *fcpb.Snapshot
 	}, nil
 }
 
-// remoteManifestKey returns the key for the remote snapshot manifest.
-func remoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
+// RemoteManifestKey returns the key for the remote snapshot manifest.
+func RemoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 	kd, err := digest.ComputeForMessage(s, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
@@ -146,7 +143,7 @@ func remoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 }
 
 func KeyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) string {
-	d, err := remoteManifestKey(s)
+	d, err := RemoteManifestKey(s)
 	var dStr string
 	if err != nil {
 		dStr = fmt.Sprintf("<error: %s>", err)
@@ -192,6 +189,10 @@ func (s *Snapshot) GetKey() *fcpb.SnapshotKey {
 	return s.key.CloneVT()
 }
 
+func (s *Snapshot) GetVMMetadata() *repb.VMMetadata {
+	return s.manifest.GetVmMetadata()
+}
+
 func (s *Snapshot) GetVMConfiguration() *fcpb.VMConfiguration {
 	return s.manifest.GetVmConfiguration()
 }
@@ -211,6 +212,7 @@ func (s *Snapshot) GetChunkedFiles() []*fcpb.ChunkedFile {
 // an asset shared across VMs (such as the containerfs), or a fully snapshotted
 // VM.
 type CacheSnapshotOptions struct {
+	VMMetadata          *repb.VMMetadata
 	VMConfiguration     *fcpb.VMConfiguration
 	VMStateSnapshotPath string
 	KernelImagePath     string
@@ -325,7 +327,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
 func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
-	d, err := remoteManifestKey(key)
+	d, err := RemoteManifestKey(key)
 	if err != nil {
 		return nil, err
 	}
@@ -335,15 +337,11 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 		return nil, err
 	}
 	tmpDir := l.env.GetFileCache().TempDir()
-	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir)
+	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, true /*remoteEnabled*/)
 }
 
-func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
-	d, err := localManifestKey(ctx, l.env, key)
-	if err != nil {
-		return nil, err
-	}
-	manifestNode := &repb.FileNode{Digest: d}
+func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifestDigest *repb.Digest) (*repb.ActionResult, error) {
+	manifestNode := &repb.FileNode{Digest: manifestDigest}
 	buf, err := l.env.GetFileCache().Read(ctx, manifestNode)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read snapshot manifest: %s", status.Message(err))
@@ -352,9 +350,25 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 	if err := proto.Unmarshal(buf, acResult); err != nil {
 		return nil, status.UnavailableErrorf("failed to unmarshal snapshot manifest: %s", status.Message(err))
 	}
+	return acResult, nil
+}
+
+func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
+	gid, err := groupID(ctx, l.env)
+	if err != nil {
+		return nil, err
+	}
+	d, err := LocalManifestKey(gid, key)
+	if err != nil {
+		return nil, err
+	}
+	acResult, err := l.GetLocalManifestACResult(ctx, d)
+	if err != nil {
+		return nil, err
+	}
 
 	tmpDir := l.env.GetFileCache().TempDir()
-	manifest, err := l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir)
+	manifest, err := l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, false /*remoteEnabled*/)
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +383,7 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 	return manifest, nil
 }
 
-func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInstanceName string, snapshotActionResult *repb.ActionResult, tmpDir string) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInstanceName string, snapshotActionResult *repb.ActionResult, tmpDir string, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
 	snapMetadata := snapshotActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
 	if len(snapMetadata) != 1 {
 		return nil, status.InternalErrorf("expected vm config in snapshot auxiliary metadata")
@@ -381,6 +395,7 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 	}
 
 	manifest := &fcpb.SnapshotManifest{
+		VmMetadata:      snapshotActionResult.GetExecutionMetadata().GetVmMetadata(),
 		VmConfiguration: vmConfig,
 		Files:           []*repb.FileNode{},
 		ChunkedFiles:    []*fcpb.ChunkedFile{},
@@ -394,7 +409,7 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 	}
 
 	for _, chunkedFileMetadata := range snapshotActionResult.OutputDirectories {
-		tree, err := l.chunkedFileTree(ctx, remoteInstanceName, chunkedFileMetadata, tmpDir)
+		tree, err := l.ChunkedFileTree(ctx, remoteInstanceName, chunkedFileMetadata, tmpDir, remoteEnabled)
 		if err != nil {
 			return nil, err
 		}
@@ -444,8 +459,8 @@ func chunkedFileProperty(chunkedFileTree *repb.Tree, propertyName string) (int64
 	return 0, status.InternalErrorf("chunked file metadata missing %s property", propertyName)
 }
 
-func (l *FileCacheLoader) chunkedFileTree(ctx context.Context, remoteInstanceName string, chunkedFileMetadata *repb.OutputDirectory, tmpDir string) (*repb.Tree, error) {
-	b, err := snaputil.GetBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), true /*remoteEnabled*/, chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
+func (l *FileCacheLoader) ChunkedFileTree(ctx context.Context, remoteInstanceName string, chunkedFileMetadata *repb.OutputDirectory, tmpDir string, remoteEnabled bool) (*repb.Tree, error) {
+	b, err := snaputil.GetBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), remoteEnabled, chunkedFileMetadata.GetTreeDigest(), remoteInstanceName, tmpDir)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read chunked file tree: %s", status.Message(err))
 	}
@@ -491,6 +506,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	ar := &repb.ActionResult{
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
 			AuxiliaryMetadata: []*anypb.Any{vmConfig},
+			VmMetadata:        opts.VMMetadata,
 		},
 		OutputFiles:       []*repb.OutputFile{},
 		OutputDirectories: []*repb.OutputDirectory{},
@@ -573,7 +589,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		return err
 	}
 	if *snaputil.EnableRemoteSnapshotSharing && !*snaputil.RemoteSnapshotReadonly && opts.Remote {
-		d, err := remoteManifestKey(key)
+		d, err := RemoteManifestKey(key)
 		if err != nil {
 			return err
 		}
@@ -585,7 +601,11 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		return nil
 	}
 
-	d, err := localManifestKey(ctx, l.env, key)
+	gid, err := groupID(ctx, l.env)
+	if err != nil {
+		return err
+	}
+	d, err := LocalManifestKey(gid, key)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package hostedrunner
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"path/filepath"
@@ -16,15 +17,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -52,25 +53,6 @@ func New(env environment.Env) (*runnerService, error) {
 	return &runnerService{
 		env: env,
 	}, nil
-}
-
-func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
-	auth := r.env.GetAuthenticator()
-	if auth == nil {
-		return "", status.FailedPreconditionError("Auth was not configured but is required")
-	}
-	u, err := auth.AuthenticatedUser(ctx)
-	if err != nil {
-		return "", err
-	}
-	q := query_builder.NewQuery(`SELECT * FROM "APIKeys"`)
-	q.AddWhereClause("group_id = ?", u.GetGroupID())
-	qStr, qArgs := q.Build()
-	k := &tables.APIKey{}
-	if err := r.env.GetDBHandle().NewQuery(ctx, "hostedrunner_get_api_key").Raw(qStr, qArgs...).Take(&k); err != nil {
-		return "", err
-	}
-	return k.Value, nil
 }
 
 // checkPreconditions verifies the RunRequest is not missing any required params.
@@ -137,6 +119,13 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, err
 	}
 
+	envJson, err := json.Marshal(req.GetEnv())
+	if err != nil {
+		return nil, err
+	}
+
+	// NOTE: Be cautious when adding new flags. See
+	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
 	args := []string{
 		"./" + runnerName,
 		"--bes_backend=" + events_api_url.String(),
@@ -147,6 +136,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--invocation_id=" + invocationID,
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
+	}
+	if len(string(envJson)) > 0 {
+		args = append(args, "--env_overrides="+string(envJson))
 	}
 	if strings.HasPrefix(req.GetBazelCommand(), "run ") {
 		args = append(args, "--record_run_metadata")
@@ -212,18 +204,32 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
 	}
+
+	if req.GetTimeout() != "" {
+		d, err := time.ParseDuration(req.GetTimeout())
+		if err != nil {
+			return nil, status.WrapError(err, "parse timeout from request")
+		}
+		action.Timeout = durationpb.New(d)
+	}
+
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, action)
 	return actionDigest, err
 }
 
 func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
-	apiKey, err := r.lookupAPIKey(ctx)
+	u, err := perms.AuthenticatedUser(ctx, r.env)
 	if err != nil {
 		return nil, err
 	}
+	apiKey, err := r.env.GetAuthDB().GetAPIKeyForInternalUseOnly(ctx, u.GetGroupID())
+	if err != nil {
+		return nil, err
+	}
+
 	// Use env override headers for credentials.
 	envOverrides := []*repb.Command_EnvironmentVariable{
-		{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
+		{Name: "BUILDBUDDY_API_KEY", Value: apiKey.Value},
 		{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
 		{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
 	}
@@ -264,7 +270,11 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, err
 	}
 
-	executionID, err := r.env.GetRemoteExecutionService().Dispatch(execCtx, &repb.ExecuteRequest{
+	executionClient := r.env.GetRemoteExecutionClient()
+	if executionClient == nil {
+		return nil, status.UnimplementedError("Missing remote execution client.")
+	}
+	opStream, err := executionClient.Execute(execCtx, &repb.ExecuteRequest{
 		InstanceName:    req.GetInstanceName(),
 		SkipCacheLookup: true,
 		ActionDigest:    actionDigest,
@@ -278,6 +288,11 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return res, nil
 	}
 
+	op, err := opStream.Recv()
+	if err != nil {
+		return nil, err
+	}
+	executionID := op.GetName()
 	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
 		return nil, err
 	}

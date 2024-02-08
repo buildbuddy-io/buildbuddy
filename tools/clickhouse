@@ -15,7 +15,7 @@ Example:
 # Host network port that clickhouse server will listen on
 : "${BB_CLICKHOUSE_PORT:=9000}"
 # Clickhouse image to use
-: "${BB_CLICKHOUSE_IMAGE:=mirror.gcr.io/clickhouse/clickhouse-server:22.3}"
+: "${BB_CLICKHOUSE_IMAGE:=mirror.gcr.io/clickhouse/clickhouse-server:23.8}"
 
 # Start clickhouse server if not already running.
 docker="$BB_CLICKHOUSE_CONTAINER_RUNNER"
@@ -26,7 +26,7 @@ if ! command -v "$docker" &>/dev/null; then
 fi
 
 start_clickhouse() {
-  "$docker" run --rm --detach --name=bb-clickhouse-local --publish="$BB_CLICKHOUSE_PORT:9000" "$BB_CLICKHOUSE_IMAGE"
+  "$docker" run --rm --detach --name=bb-clickhouse-local --publish="$BB_CLICKHOUSE_PORT:9000" --volume="/tmp/${USER}_clickhouse_data:/var/lib/clickhouse" "$BB_CLICKHOUSE_IMAGE"
 }
 
 if ! "$docker" inspect bb-clickhouse-local &>/dev/null; then

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -115,7 +116,9 @@ const (
 	// Bazel exit codes
 	// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java
 
+	bazelOOMErrorExitCode                = 33
 	bazelLocalEnvironmentalErrorExitCode = 36
+	bazelInternalErrorExitCode           = 37
 
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
@@ -148,6 +151,7 @@ var (
 	patchURIs          = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 	gitCleanExclude    = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
+	envOverrideStr     = flag.String("env_overrides", "", "These env vars should take precedence over any set on the command or in buildbuddy.yaml.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -935,6 +939,20 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		artifactsDir := artifactsPathForCommand(ws, i)
 		namedSetID := filepath.Base(artifactsDir)
 
+		if *envOverrideStr != "" {
+			var envOverrides map[string]string
+			err = json.Unmarshal([]byte(*envOverrideStr), &envOverrides)
+			if err != nil {
+				return err
+			}
+			if action.Env == nil {
+				action.Env = map[string]string{}
+			}
+			for k, v := range envOverrides {
+				action.Env[k] = v
+			}
+		}
+
 		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), action.Env, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 		ar.reporter.Publish(&bespb.BuildEvent{
@@ -971,6 +989,26 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			if err := p.Kill(); err != nil {
 				return err
 			}
+		}
+
+		// If we get an OOM or a Bazel internal error, copy debug outputs to the
+		// artifacts directory so they get uploaded as workflow artifacts.
+		if *workflowID != "" && (exitCode == bazelOOMErrorExitCode || exitCode == bazelInternalErrorExitCode) {
+			jvmOutPath := filepath.Join(ar.rootDir, outputBaseDirName, "server/jvm.out")
+			if err := os.Link(jvmOutPath, filepath.Join(artifactsDir, "jvm.out")); err != nil {
+				ar.reporter.Printf("%sfailed to preserve jvm.out: %s%s\n", ansiGray, err, ansiReset)
+			}
+		}
+		if *workflowID != "" && exitCode == bazelOOMErrorExitCode {
+			heapDumpPath := filepath.Join(ar.rootDir, outputBaseDirName, iid+".heapdump.hprof")
+			if err := os.Link(heapDumpPath, filepath.Join(artifactsDir, "heapdump.hprof")); err != nil {
+				ar.reporter.Printf("%sfailed to preserve heapdump.hprof: %s%s\n", ansiGray, err, ansiReset)
+			}
+		}
+
+		// Kick off background uploads for the action that just completed
+		if uploader != nil {
+			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
 
 		// If this is a successfully "bazel run" invocation from which we are extracting run information via
@@ -1036,11 +1074,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
 		if err := ar.reporter.FlushProgress(); err != nil {
 			break
-		}
-
-		// Kick off background uploads for the action that just completed
-		if uploader != nil {
-			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
 	}
 	return nil
@@ -1781,6 +1814,9 @@ func writeBazelrc(path, invocationID string) error {
 		"build --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true",
 		"build --bes_backend=" + *besBackend,
 		"build --bes_results_url=" + *besResultsURL,
+		// Dump Bazel's heap on OOM - we'll upload this file as a workflow
+		// artifact for easier debugging.
+		"build --heap_dump_on_oom",
 	}
 	if *workflowID != "" {
 		lines = append(lines, "build --build_metadata=WORKFLOW_ID="+*workflowID)

@@ -115,17 +115,10 @@ jobs:
       matrix:
         include:
           - os: ubuntu-20.04
-            shell: bash
-          - os: macos-11
-            shell: bash
-          - os: m1
-            # TODO: Can we remove this if we upgrade our m1 runner to native arm64?
-            shell: /usr/bin/arch -arch arm64e bash --noprofile --norc -eo pipefail {0}
+          - os: macos-13 # MacOS amd64 (Intel)
+          - os: macos-13-xlarge # MacOS arm64 (M1)
     runs-on: ${{ matrix.os }}
     needs: create-release
-    defaults:
-      run:
-        shell: ${{ matrix.shell }}
     steps:
       - name: Clean workspace
         run: |
@@ -139,24 +132,6 @@ jobs:
         uses: actions/checkout@v3
         with:
           path: buildbuddy
-
-      - name: Install bazelisk
-        run: |
-          set -x  # print executed commands
-          if [[ "$OSTYPE" == darwin* ]]; then
-            OS=darwin
-          else
-            OS=linux
-          fi
-          ARCH=$(uname -m)
-          if [[ "$ARCH" == x86_64 ]]; then
-            ARCH=amd64
-          fi
-
-          curl -L "https://github.com/bazelbuild/bazelisk/releases/download/v1.14.0/bazelisk-${OS}-${ARCH}" --output bazelisk
-          mkdir -p "${GITHUB_WORKSPACE}/bin/"
-          mv bazelisk "${GITHUB_WORKSPACE}/bin/bazel"
-          chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
 
       - name: Build Artifacts
         id: build
@@ -173,7 +148,7 @@ jobs:
           VERSION=${{ needs.create-release.outputs.VERSION }}
 
           cd "${GITHUB_WORKSPACE}/buildbuddy"
-          "${GITHUB_WORKSPACE}/bin/bazel" build //cli/cmd/bb \
+          bazelisk build //cli/cmd/bb \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               --//cli/version:cli_version="$VERSION"
 

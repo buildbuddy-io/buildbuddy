@@ -6,6 +6,7 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
+import { getFileDigest } from "../util/cache";
 
 interface Props {
   name: string;
@@ -147,7 +148,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
                       <FileCode /> View
                     </a>
                   )}
-                  <DigestComponent digest={{ hash: output.digest, sizeBytes: output.length }} />
+                  <DigestComponent digest={getFileDigest(output) ?? {}} />
                 </div>
                 {output.name === TargetArtifactsCardComponent.ZIPPED_OUTPUTS_FILE &&
                   this.state.manifest &&

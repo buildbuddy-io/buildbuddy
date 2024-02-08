@@ -196,7 +196,7 @@ type Group struct {
 	// A unique URL segment that is displayed in group-related URLs.
 	// e.g. "example-org" in app.buildbuddy.com/join/example-org or
 	// "example-org.buildbuddy.com" if we support subdomains in the future.
-	URLIdentifier *string `gorm:"default:NULL;unique;uniqueIndex:url_identifier_unique_index;"`
+	URLIdentifier string `gorm:"default:NULL;unique;uniqueIndex:url_identifier_unique_index;"`
 
 	// The group ID -- a unique ID.
 	GroupID string `gorm:"primaryKey;"`
@@ -229,13 +229,13 @@ type Group struct {
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
-	UseGroupOwnedExecutors *bool
+	UseGroupOwnedExecutors bool
 
 	CacheEncryptionEnabled bool `gorm:"not null;default:0"`
 	EnforceIPRules         bool `gorm:"not null;default:0"`
 
 	// The SAML IDP Metadata URL for this group.
-	SamlIdpMetadataUrl *string
+	SamlIdpMetadataUrl string
 
 	InvocationWebhookURL string `gorm:"not null;default:''"`
 
@@ -268,8 +268,8 @@ func (ug *UserGroup) TableName() string {
 }
 
 type GroupRole struct {
-	Group Group
-	Role  uint32
+	Group
+	Role uint32
 }
 
 type User struct {

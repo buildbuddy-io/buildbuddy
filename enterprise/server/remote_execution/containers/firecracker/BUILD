@@ -58,6 +58,7 @@ go_library(
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/operations",
         "@com_github_google_uuid//:uuid",
+        "@com_github_klauspost_cpuid//:cpuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_sirupsen_logrus//:logrus",
         "@org_golang_google_grpc//:go_default_library",

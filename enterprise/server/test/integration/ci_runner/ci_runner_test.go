@@ -38,6 +38,14 @@ import (
 	rlpb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log"
 )
 
+const (
+	// Startup flags to be applied to bazel for the test only. max_idle_secs
+	// prevents the process from sticking around after the test completes.
+	// noblock_for_lock is set as a way to assert that we never have multiple
+	// bazel processes contending for the workspace lock.
+	bazelStartupFlags = "--max_idle_secs=5 --noblock_for_lock"
+)
+
 var (
 	workspaceContentsWithBazelVersionAction = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
@@ -207,10 +215,10 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	if err != nil {
 		t.Fatal(err)
 	}
-	args = append(args, []string{
+	args = append([]string{
 		"--bazel_command=" + bazelPath,
-		"--bazel_startup_flags=--max_idle_secs=5 --noblock_for_lock",
-	}...)
+		"--bazel_startup_flags=" + bazelStartupFlags,
+	}, args...)
 
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = workDir
@@ -966,7 +974,7 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 	checkRunnerResult(t, result)
 }
 
-func TestArtifactUploads(t *testing.T) {
+func TestArtifactUploads_GRPCLog(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithArtifactUploads)
 
@@ -1037,4 +1045,63 @@ func TestArtifactUploads(t *testing.T) {
 	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
 
 	checkRunnerResult(t, result)
+}
+
+func TestArtifactUploads_JVMLog(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithArtifactUploads)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+		// Set a small JVM memory limit to cause Bazel to OOM.
+		"--bazel_startup_flags=" + bazelStartupFlags + " --host_jvm_args=-Xmx5m",
+	}
+	// Start the app so the runner can use it as the BES+cache backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+	runnerFlags = append(runnerFlags, "--cache_backend="+app.GRPCAddress())
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	require.Equal(t, 37, result.ExitCode, "bazel should have exited with code 37 due to OOM")
+
+	runnerInvocation := singleInvocation(t, app, result)
+
+	var files []*bespb.File
+	for _, tg := range runnerInvocation.GetTargetGroups() {
+		for _, t := range tg.GetTargets() {
+			files = append(files, t.GetFiles()...)
+		}
+	}
+
+	bytestreamURI := files[0].GetUri()
+	require.NotEmpty(t, bytestreamURI)
+	fileName := files[0].GetName()
+	require.Equal(t, "jvm.out", fileName)
+
+	// Make sure that we can download the artifact.
+	downloadURL := fmt.Sprintf(
+		"%s/file/download?invocation_id=%s&bytestream_url=%s",
+		app.HTTPURL(),
+		url.QueryEscape(runnerInvocation.GetInvocationId()),
+		url.QueryEscape(bytestreamURI))
+	res, err := http.Get(downloadURL)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		b, _ := io.ReadAll(res.Body)
+		require.FailNowf(t, res.Status, "response body: %s", string(b))
+	}
+
+	b, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "java.lang.OutOfMemoryError")
 }

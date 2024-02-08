@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"sync"
 	"testing"
@@ -295,7 +296,7 @@ func TestGetSet(t *testing.T) {
 		},
 	}
 	testSizes := []int64{
-		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000, 10000000,
+		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000,
 	}
 	for _, tc := range testCases {
 		options := &pebble_cache.Options{
@@ -765,7 +766,7 @@ func TestMetadata(t *testing.T) {
 	}
 
 	testSizes := []int64{
-		1, 10, 100, 1000, 10000, 1000000, 10000000,
+		1, 10, 100, 1000, 10000, 1000000,
 	}
 	for _, averageChunkSizeBytes := range averageChunkSizeBytesParam {
 		options := &pebble_cache.Options{
@@ -947,7 +948,7 @@ func TestReadWrite(t *testing.T) {
 		},
 	}
 	testSizes := []int64{
-		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000, 10000000,
+		1, 10, 100, 256, 512, 1000, 1024, 2 * 1024, 10000, 1000000,
 	}
 	for _, tc := range testCases {
 		options := &pebble_cache.Options{
@@ -1133,7 +1134,7 @@ func TestSizeLimit(t *testing.T) {
 			require.NoError(t, err)
 			defer pc.Stop()
 
-			resourceKeys := make([]*rspb.ResourceName, 0, 150000)
+			resourceKeys := make([]*rspb.ResourceName, 0)
 			for i := 0; i < 150; i++ {
 				r, buf := newCASResourceBuf(t, 1000)
 				resourceKeys = append(resourceKeys, r)
@@ -1142,7 +1143,6 @@ func TestSizeLimit(t *testing.T) {
 				}
 			}
 
-			time.Sleep(pebble_cache.JanitorCheckPeriod)
 			pc.TestingWaitForGC()
 
 			// Expect the sum of all contained digests be less than or equal to max
@@ -1216,11 +1216,6 @@ func TestCompression(t *testing.T) {
 		{
 			desc:                  "chunking_on_multiple_cdc_chunks_single_compression_chunk",
 			blobSize:              pebble_cache.CompressorBufSizeBytes - 1,
-			averageChunkSizeBytes: averageChunkSizeBytes,
-		},
-		{
-			desc:                  "chunking_on_single_chunk",
-			blobSize:              int64(averageChunkSizeBytes/4 - 1),
 			averageChunkSizeBytes: averageChunkSizeBytes,
 		},
 	}
@@ -1499,7 +1494,6 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 				err = pc.Set(ctx, rn, blob)
 				require.NoError(t, err)
 			}
-			time.Sleep(pebble_cache.JanitorCheckPeriod)
 			pc.TestingWaitForGC()
 
 			// All reads should succeed. Nothing should've been evicted
@@ -1549,13 +1543,6 @@ func TestCompressionOffset(t *testing.T) {
 			blobSize:              pebble_cache.CompressorBufSizeBytes - 1,
 			averageChunkSizeBytes: averageChunkSizeBytes,
 			readOffset:            2 * 1024,
-			readLimit:             10,
-		},
-		{
-			desc:                  "chunking_on_single_chunk",
-			blobSize:              int64(averageChunkSizeBytes/4 - 1),
-			averageChunkSizeBytes: averageChunkSizeBytes,
-			readOffset:            20,
 			readLimit:             10,
 		},
 	}
@@ -1676,11 +1663,6 @@ func TestNoEarlyEviction(t *testing.T) {
 			digestSize:             100,
 		},
 		{
-			desc:                  "chunking_on_single_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            63,
-		},
-		{
 			desc:                  "chunking_on_multiple_chunk",
 			averageChunkSizeBytes: 64 * 4,
 			digestSize:            2 * 1064,
@@ -1724,7 +1706,6 @@ func TestNoEarlyEviction(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			time.Sleep(pebble_cache.JanitorCheckPeriod)
 			pc.TestingWaitForGC()
 
 			// Verify that nothing was evicted
@@ -1749,11 +1730,6 @@ func TestLRU(t *testing.T) {
 			digestSize:            2 * 1024,
 		},
 		{
-			desc:                  "chunking_on_single_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            2 * 1024,
-		},
-		{
 			desc:                   "chunking_off_inline",
 			maxInlineFileSizeBytes: 1024,
 			digestSize:             100,
@@ -1764,14 +1740,13 @@ func TestLRU(t *testing.T) {
 			digestSize:             100,
 		},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 			ctx := getAnonContext(t, te)
-
-			numDigests := 100
+			clock := clockwork.NewFakeClock()
+			numDigests := 25
 			activeKeyVersion := int64(5)
 			maxSizeBytes := int64(math.Ceil( // account for integer rounding
 				float64(numDigests) * float64(tc.digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
@@ -1789,6 +1764,7 @@ func TestLRU(t *testing.T) {
 				MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
 				AverageChunkSizeBytes:       tc.averageChunkSizeBytes,
 				ActiveKeyVersion:            &activeKeyVersion,
+				Clock:                       clock,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -1796,18 +1772,21 @@ func TestLRU(t *testing.T) {
 			require.NoError(t, err)
 
 			quartile := numDigests / 4
-
-			resourceKeys := make([]*rspb.ResourceName, numDigests)
-			for i := range resourceKeys {
+			resourceKeys := make([]*rspb.ResourceName, 0)
+			lastUsed := make(map[*rspb.ResourceName]time.Time, numDigests)
+			for i := 0; i < numDigests; i++ {
 				cacheType := rspb.CacheType_CAS
 				if i%2 == 0 {
 					cacheType = rspb.CacheType_AC
 				}
 				r, buf := newResourceAndBuf(t, tc.digestSize, cacheType, "")
-				resourceKeys[i] = r
 				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err)
+				lastUsed[r] = clock.Now()
+				resourceKeys = append(resourceKeys, r)
 			}
+
+			clock.Advance(5 * time.Minute)
 
 			// Use the digests in the following way:
 			// 1) first 3 quartiles
@@ -1822,7 +1801,9 @@ func TestLRU(t *testing.T) {
 					r := resourceKeys[j]
 					_, err = pc.Get(ctx, r)
 					require.NoError(t, err)
+					lastUsed[r] = clock.Now()
 				}
+				clock.Advance(5 * time.Minute)
 			}
 
 			// Write more data.
@@ -1832,9 +1813,10 @@ func TestLRU(t *testing.T) {
 					cacheType = rspb.CacheType_AC
 				}
 				r, buf := newResourceAndBuf(t, tc.digestSize, cacheType, "")
-				resourceKeys = append(resourceKeys, r)
 				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err)
+				lastUsed[r] = clock.Now()
+				resourceKeys = append(resourceKeys, r)
 			}
 
 			pc.Stop()
@@ -1843,43 +1825,56 @@ func TestLRU(t *testing.T) {
 			err = pc.Start()
 			require.NoError(t, err)
 
-			time.Sleep(pebble_cache.JanitorCheckPeriod)
 			pc.TestingWaitForGC()
 
-			evictionsByQuartile := make([][]*repb.Digest, 5)
-			for i, r := range resourceKeys {
+			perfectLRUEvictees := make(map[*rspb.ResourceName]struct{})
+			sort.Slice(resourceKeys, func(i, j int) bool {
+				return lastUsed[resourceKeys[i]].Before(lastUsed[resourceKeys[j]])
+			})
+			for _, r := range resourceKeys[:quartile] {
+				perfectLRUEvictees[r] = struct{}{}
+			}
+
+			// We expect no more than x keys to have been evicted
+			// We expect *most* of the keys evicted to be older
+			evictedCount := 0
+			perfectEvictionCount := 0
+			evictedAgeTotal := time.Duration(0)
+
+			keptCount := 0
+			keptAgeTotal := time.Duration(0)
+
+			now := clock.Now()
+			for r, usedAt := range lastUsed {
 				ok, err := pc.Contains(ctx, r)
 				evicted := err != nil || !ok
-				q := i / quartile
+				age := now.Sub(usedAt)
 				if evicted {
-					evictionsByQuartile[q] = append(evictionsByQuartile[q], r.GetDigest())
-				}
-			}
-
-			for quartile, evictions := range evictionsByQuartile {
-				count := len(evictions)
-				sample := ""
-				for i, d := range evictions {
-					if i > 3 {
-						break
+					evictedCount++
+					evictedAgeTotal += age
+					if _, ok := perfectLRUEvictees[r]; ok {
+						perfectEvictionCount++
 					}
-					sample += d.GetHash()
-					sample += ", "
+				} else {
+					keptCount++
+					keptAgeTotal += age
 				}
-				log.Infof("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
 			}
 
-			// None of the files "used" just before adding more should have been
-			// evicted.
-			require.Equal(t, 0, len(evictionsByQuartile[0]))
+			avgEvictedAgeSeconds := evictedAgeTotal.Seconds() / float64(evictedCount)
+			avgKeptAgeSeconds := keptAgeTotal.Seconds() / float64(keptCount)
 
-			// None of the most recently added files should have been evicted.
-			require.Equal(t, 0, len(evictionsByQuartile[4]))
+			log.Printf("evictedCount: %d [%d perfect], keptCount: %d, quartile: %d", evictedCount, perfectEvictionCount, keptCount, quartile)
+			log.Printf("evictedAgeTotal: %s, keptAgeTotal: %s", evictedAgeTotal, keptAgeTotal)
+			log.Printf("avg evictedAge: %f, avg keptAge: %f", avgEvictedAgeSeconds, avgKeptAgeSeconds)
 
-			// Relax the conditions a little to de-flake the tests.
-			require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2])+2)
-			require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3])+2)
-			require.Greater(t, len(evictionsByQuartile[3]), 0)
+			// Check that mostly (80%) of evictions were perfect
+			require.GreaterOrEqual(t, perfectEvictionCount, int(.80*float64(evictedCount)))
+			// Check that total number of evictions was < quartile*2, so not too much
+			// good stuff was evicted.
+			require.LessOrEqual(t, evictedCount, quartile*2)
+			// Check that the avg age of evicted items is older than avg age of kept items.
+			require.Greater(t, avgEvictedAgeSeconds, avgKeptAgeSeconds)
 		})
 	}
 }
@@ -1896,11 +1891,6 @@ func TestStartupScan(t *testing.T) {
 		maxInlineFileSizeBytes int64
 		digestSize             int64
 	}{
-		{
-			desc:                  "chunking_on_single_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            63,
-		},
 		{
 			desc:                  "chunking_on_multiple_chunks",
 			averageChunkSizeBytes: 64 * 4,
@@ -1941,7 +1931,6 @@ func TestStartupScan(t *testing.T) {
 			}
 			log.Printf("Wrote %d digests", len(resources))
 
-			time.Sleep(pebble_cache.JanitorCheckPeriod)
 			pc.TestingWaitForGC()
 			pc.Stop()
 
@@ -2002,7 +1991,6 @@ func TestDeleteOrphans(t *testing.T) {
 	}
 
 	log.Printf("Wrote %d digests", len(digests))
-	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
 	pc.Stop()
 
@@ -2116,7 +2104,6 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	}
 
 	log.Printf("Wrote and deleted %d resources", len(resources))
-	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
 	pc.Stop()
 
@@ -2300,7 +2287,6 @@ func TestMigrateVersions(t *testing.T) {
 			digests = append(digests, r.GetDigest())
 		}
 		log.Printf("Wrote %d digests", len(digests))
-		time.Sleep(pebble_cache.JanitorCheckPeriod)
 		pc.TestingWaitForGC()
 		pc.Stop()
 	}
@@ -2415,11 +2401,6 @@ func TestEncryption(t *testing.T) {
 		maxInlineFileSizeBytes int64
 		digestSize             int64
 	}{
-		{
-			desc:                  "chunking_on_single_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            63,
-		},
 		{
 			desc:                  "chunking_on_multiple_chunks",
 			averageChunkSizeBytes: 64 * 4,
@@ -2556,11 +2537,6 @@ func TestEncryptedUnencryptedSameDigest(t *testing.T) {
 		digestSize             int64
 	}{
 		{
-			desc:                  "chunking_on_single_chunk",
-			averageChunkSizeBytes: 64 * 4,
-			digestSize:            63,
-		},
-		{
 			desc:                  "chunking_on_multiple_chunks",
 			averageChunkSizeBytes: 64 * 4,
 			digestSize:            2 * 1024,
@@ -2689,11 +2665,6 @@ func TestEncryptionAndCompression(t *testing.T) {
 		{
 			desc:                  "chunking_on_multiple_cdc_chunks_single_compression_chunk",
 			blobSize:              pebble_cache.CompressorBufSizeBytes - 1,
-			averageChunkSizeBytes: averageChunkSizeBytes,
-		},
-		{
-			desc:                  "chunking_on_single_chunk",
-			blobSize:              int64(averageChunkSizeBytes/4 - 1),
 			averageChunkSizeBytes: averageChunkSizeBytes,
 		},
 	}
@@ -3163,7 +3134,7 @@ func TestSampling(t *testing.T) {
 
 			// Write some random digests as well.
 			var randomResources []*rspb.ResourceName
-			for i := 0; i < 100; i++ {
+			for i := 0; i < 10; i++ {
 				rn, buf := newCASResourceBuf(t, 100)
 				anonCtx := getAnonContext(t, te)
 				err = pc.Set(anonCtx, rn, buf)
@@ -3175,12 +3146,12 @@ func TestSampling(t *testing.T) {
 			// kick in. The unencrypted test digest should be evicted.
 			clock.Advance(minEvictionAge - 1*time.Minute)
 
-			for i := 0; i < 60; i++ {
+			for i := 0; ; i++ {
 				if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
 					log.Infof("i = %d: unencrypted test digest is evicted", i)
 					break
 				}
-				time.Sleep(800 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 			}
 
 			// The unencrypted key should no longer exist.

@@ -47,12 +47,23 @@ message Group {
 
   enum Role {
     UNKNOWN_ROLE = 0;
+
     // Developers cannot perform certain privileged actions such as creating API
     // keys and viewing usage data, but can perform most other common actions
-    // such as viewing invocation history.
+    // such as viewing invocation history. Developers get cache read/write
+    // access and AC readonly access.
     DEVELOPER_ROLE = 1;
+
     // Admins have unrestricted access to any data owned by this group.
     ADMIN_ROLE = 2;
+
+    // Writer role grants the same capabilities as Developer role, except it
+    // allows CAS read+write and AC read+write.
+    WRITER_ROLE = 3;
+
+    // Reader role grants the same capabilities as Developer role, except it
+    // allows only CAS reads and AC reads (no cache writes are allowed).
+    READER_ROLE = 4;
   }
 
   // Controls who can see invocation suggestions.

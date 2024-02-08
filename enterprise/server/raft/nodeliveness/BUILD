@@ -27,10 +27,10 @@ go_test(
         ":nodeliveness",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/sender",
-        "//proto:grpc_status_go_proto",
         "//proto:raft_go_proto",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//status",
     ],
 )

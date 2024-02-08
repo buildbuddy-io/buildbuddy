@@ -737,7 +737,7 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	user.ImageURL = t.Picture
 	if t.slug != "" {
 		user.Groups = []*tables.GroupRole{
-			{Group: tables.Group{URLIdentifier: &t.slug}},
+			{Group: tables.Group{URLIdentifier: t.slug}},
 		}
 	}
 	return nil

@@ -82,7 +82,31 @@ If you're looking for an llvm based toolchain instead, take a look at [this proj
 
 ### Java toolchain
 
-If your project depends on Java code, you'll need 4 more flags to tell the executors where to look for Java tools.
+If your project depends on Java code, you'll need to set the following flags:
+
+```bash
+--java_language_version=11
+--tool_java_language_version=11
+--java_runtime_version=remotejdk_11
+--tool_java_runtime_version==remotejdk_11
+```
+
+Available versions are listed in [Bazel's User Manual](https://bazel.build/docs/user-manual#java-language-version).
+
+If you need a custom Java toolchain, see Bazel's docs on [Java toolchain configuration](https://bazel.build/docs/bazel-and-java#config-java-toolchains).
+
+#### Java toolchain for older Bazel versions
+
+If your project is using a Bazel version before 6.0.0, you will need the following 4 flags instead.
+They will tell the executors where to look for Java tools.
+
+::::warning
+
+Setting both the old flags and the new flags will result in an error and may result in incorrect toolchain selection.
+
+See https://github.com/bazelbuild/bazel/issues/7849 for more information.
+
+::::
 
 Using BuildBuddy's default Java 8 config:
 
@@ -93,7 +117,7 @@ Using BuildBuddy's default Java 8 config:
 --host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
 ```
 
-If you need a different version of Java, we recommend using [bazel-toolchains](https://releases.bazel.build/bazel-toolchains.html) for now.
+If you need a different version of Java, we recommend using [bazel-toolchains](https://github.com/bazelbuild/bazel-toolchains) for now.
 
 ### Attributes
 
@@ -114,10 +138,10 @@ build:remote --platforms=@buildbuddy_toolchain//:platform
 build:remote --extra_execution_platforms=@buildbuddy_toolchain//:platform
 build:remote --crosstool_top=@buildbuddy_toolchain//:toolchain
 build:remote --extra_toolchains=@buildbuddy_toolchain//:cc_toolchain
-build:remote --javabase=@buildbuddy_toolchain//:javabase_jdk8
-build:remote --host_javabase=@buildbuddy_toolchain//:javabase_jdk8
-build:remote --java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
-build:remote --host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
+build:remote --java_language_version=11
+build:remote --tool_java_language_version=11
+build:remote --java_runtime_version=remotejdk_11
+build:remote --tool_java_runtime_version==remotejdk_11
 build:remote --define=EXECUTOR=remote
 ```
 
@@ -303,10 +327,10 @@ build:remote --jobs=50
 # properties.
 # These flags should only be used as is for the rbe-ubuntu16-04 container
 # and need to be adapted to work with other toolchain containers.
-build:remote --host_javabase=@rbe_default//java:jdk
-build:remote --javabase=@rbe_default//java:jdk
-build:remote --host_java_toolchain=@bazel_tools//tools/jdk:toolchain_hostjdk8
-build:remote --java_toolchain=@bazel_tools//tools/jdk:toolchain_hostjdk8
+build:remote --java_language_version=11
+build:remote --tool_java_language_version=11
+build:remote --java_runtime_version=remotejdk_11
+build:remote --tool_java_runtime_version==remotejdk_11
 build:remote --crosstool_top=@rbe_default//cc:toolchain
 build:remote --action_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 # Platform flags:

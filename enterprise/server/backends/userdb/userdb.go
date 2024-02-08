@@ -237,8 +237,8 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 	if err != nil {
 		return "", err
 	}
-	if g.URLIdentifier != nil {
-		valid, err := d.validateURLIdentifier(ctx, "", *g.URLIdentifier)
+	if g.URLIdentifier != "" {
+		valid, err := d.validateURLIdentifier(ctx, "", g.URLIdentifier)
 		if err != nil {
 			return "", err
 		}
@@ -309,14 +309,11 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 	if isInOwnedDomainBlocklist(g.OwnedDomain) {
 		return "", status.InvalidArgumentError("This domain is not allowed to be owned by any group.")
 	}
-	if g.URLIdentifier == nil {
-		return "", status.InvalidArgumentError("Invalid organization URL.")
-	}
-	if match := groupUrlIdentifierPattern.MatchString(*g.URLIdentifier); !match {
+	if match := groupUrlIdentifierPattern.MatchString(g.URLIdentifier); !match {
 		return "", status.InvalidArgumentError("Invalid organization URL.")
 	}
 
-	valid, err := d.validateURLIdentifier(ctx, g.GroupID, *g.URLIdentifier)
+	valid, err := d.validateURLIdentifier(ctx, g.GroupID, g.URLIdentifier)
 	if err != nil {
 		return "", err
 	}
@@ -375,9 +372,6 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			g.GroupID).Exec()
 		if res.Error != nil {
 			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return status.NotFoundErrorf("Group %s not found", groupID)
 		}
 		return nil
 	})
@@ -533,7 +527,11 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 			return err
 		}
 		groupUser.User = user.ToProto()
-		groupUser.Role = role.ToProto(role.Role(groupRole))
+		r, err := role.ToProto(role.Role(groupRole))
+		if err != nil {
+			return err
+		}
+		groupUser.Role = r
 		users = append(users, groupUser)
 		return nil
 	})
@@ -617,7 +615,11 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 			}
 
 			if update.Role != grpb.Group_UNKNOWN_ROLE {
-				if err := d.updateUserRole(ctx, tx, update.GetUserId().GetId(), groupID, role.FromProto(update.GetRole())); err != nil {
+				r, err := role.FromProto(update.GetRole())
+				if err != nil {
+					return err
+				}
+				if err := d.updateUserRole(ctx, tx, update.GetUserId().GetId(), groupID, r); err != nil {
 					return err
 				}
 			}
@@ -673,7 +675,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 
 	groupIDs := make([]string, 0)
 	for _, group := range u.Groups {
-		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, *group.Group.URLIdentifier)
+		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, group.Group.URLIdentifier)
 		if err != nil {
 			return err
 		}
@@ -868,24 +870,7 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 
 func fillUserGroups(ctx context.Context, tx interfaces.DB, user *tables.User) error {
 	q := `
-		SELECT
-			g.user_id,
-			g.group_id,
-			g.url_identifier,
-			g.name,
-			g.owned_domain,
-			g.github_token,
-			g.sharing_enabled,
-			g.user_owned_keys_enabled,
-			g.bot_suggestions_enabled,
-			g.developer_org_creation_enabled,
-			g.use_group_owned_executors,
-			g.cache_encryption_enabled,
-			g.saml_idp_metadata_url,
-			g.suggestion_preference,
-			g.restrict_clean_workflow_runs_to_admins,
-			g.external_user_management,
-			ug.role
+		SELECT g.*, ug.role
 		FROM "Groups" as g
 		JOIN "UserGroups" as ug
 		ON g.group_id = ug.group_group_id
@@ -893,35 +878,12 @@ func fillUserGroups(ctx context.Context, tx interfaces.DB, user *tables.User) er
 	`
 	rq := tx.NewQuery(ctx, "userdb_get_user_groups").Raw(
 		q, user.UserID, int32(grpb.GroupMembershipStatus_MEMBER))
-	return rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
-		gr := &tables.GroupRole{}
-		err := row.Scan(
-			// NOTE: When updating the group fields here, update GetImpersonatedUser
-			// as well.
-			&gr.Group.UserID,
-			&gr.Group.GroupID,
-			&gr.Group.URLIdentifier,
-			&gr.Group.Name,
-			&gr.Group.OwnedDomain,
-			&gr.Group.GithubToken,
-			&gr.Group.SharingEnabled,
-			&gr.Group.UserOwnedKeysEnabled,
-			&gr.Group.BotSuggestionsEnabled,
-			&gr.Group.DeveloperOrgCreationEnabled,
-			&gr.Group.UseGroupOwnedExecutors,
-			&gr.Group.CacheEncryptionEnabled,
-			&gr.Group.SamlIdpMetadataUrl,
-			&gr.Group.SuggestionPreference,
-			&gr.Group.RestrictCleanWorkflowRunsToAdmins,
-			&gr.Group.ExternalUserManagement,
-			&gr.Role,
-		)
-		if err != nil {
-			return err
-		}
-		user.Groups = append(user.Groups, gr)
-		return nil
-	})
+	gs, err := db.ScanAll(rq, &tables.GroupRole{})
+	if err != nil {
+		return err
+	}
+	user.Groups = gs
+	return nil
 }
 
 func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (*tables.User, error) {
@@ -960,57 +922,18 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 			return err
 		}
 		rq = tx.NewQuery(ctx, "userdb_impersonation_get_group").Raw(`
-			SELECT
-				user_id,
-				group_id,
-				url_identifier,
-				name,
-				owned_domain,
-				github_token,
-				sharing_enabled,
-				user_owned_keys_enabled,
-				bot_suggestions_enabled,
-				developer_org_creation_enabled,
-				use_group_owned_executors,
-				cache_encryption_enabled,
-				saml_idp_metadata_url,
-				suggestion_preference,
-				restrict_clean_workflow_runs_to_admins,
-				external_user_management
+			SELECT *
 			FROM "Groups"
 			WHERE group_id = ?
 		`, u.GetGroupID())
-		err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
-			gr := &tables.GroupRole{}
-			err := row.Scan(
-				&gr.Group.UserID,
-				&gr.Group.GroupID,
-				&gr.Group.URLIdentifier,
-				&gr.Group.Name,
-				&gr.Group.OwnedDomain,
-				&gr.Group.GithubToken,
-				&gr.Group.SharingEnabled,
-				&gr.Group.UserOwnedKeysEnabled,
-				&gr.Group.BotSuggestionsEnabled,
-				&gr.Group.DeveloperOrgCreationEnabled,
-				&gr.Group.UseGroupOwnedExecutors,
-				&gr.Group.CacheEncryptionEnabled,
-				&gr.Group.SamlIdpMetadataUrl,
-				&gr.Group.SuggestionPreference,
-				&gr.Group.RestrictCleanWorkflowRunsToAdmins,
-				&gr.Group.ExternalUserManagement,
-			)
-			if err != nil {
-				return err
-			}
-			// Grant admin role within the impersonated group.
-			gr.Role = uint32(role.Admin)
-			user.Groups = append(user.Groups, gr)
-			return nil
-		})
+		gr := &tables.GroupRole{}
+		err := rq.Take(gr)
 		if err != nil {
 			return err
 		}
+		// Grant admin role within the impersonated group.
+		gr.Role = uint32(role.Admin)
+		user.Groups = []*tables.GroupRole{gr}
 		return nil
 	})
 	return user, err

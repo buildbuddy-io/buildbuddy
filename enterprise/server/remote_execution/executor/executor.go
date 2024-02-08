@@ -298,6 +298,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	defer cancel()
 
 	md.UsageStats = cmdResult.UsageStats
+	md.VmMetadata = cmdResult.VMMetadata
 	md.ExecutionCompletedTimestamp = timestamppb.Now()
 	md.OutputUploadStartTimestamp = timestamppb.Now()
 

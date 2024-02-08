@@ -1056,6 +1056,9 @@ message ExecutedActionMetadata {
 
   // Whether the executed Action was marked with `do_not_cache`.
   bool do_not_cache = 1004;
+
+  // Metadata associated with the VM that this action was executed on.
+  VMMetadata vm_metadata = 1005;
 }
 
 // An ActionResult represents the result of an
@@ -2265,4 +2268,35 @@ message StoredExecution {
   
   int32 status_code = 29;
   int32 exit_code = 30;
+}
+
+// Metadata associated with a firecracker VM.
+message VMMetadata {
+  // A UUID assigned to the VM upon creation which is preserved across
+  // snapshots.
+  string vm_id = 1;
+
+  // Represents a task executed on this VM.
+  message VMTask {
+    // The task's invocation ID. If multiple invocations are associated with the
+    // task (via action merging) then this will be the first invocation to have
+    // requested execution of this task.
+    string invocation_id = 1;
+
+    // The task's execution ID.
+    string execution_id = 2;
+
+    // The action digest associated with the task. The digest function used to
+    // compute the digest should match the one associated with the invocation.
+    Digest action_digest = 3;
+
+    // The digest of the execution ID, used as the AC key for the stored
+    // ExecuteResponse. The digest function used to compute the digest should
+    // match the one associated with the invocation.
+    Digest execute_response_digest = 4;
+  }
+
+  // The last task to execute on this VM. When resuming from snapshot, this
+  // represents the task which created the snapshot.
+  VMTask last_executed_task = 2;
 }

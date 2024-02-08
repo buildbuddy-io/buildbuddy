@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -181,6 +182,14 @@ func (ut *tracker) emitMetrics(groupID string, uc *tables.UsageCounts) {
 	if uc.ActionCacheHits > 0 {
 		hitLabels := prometheus.Labels{metrics.GroupID: groupID, metrics.CacheTypeLabel: "action"}
 		metrics.CacheNumHitsExported.With(hitLabels).Add(float64(uc.ActionCacheHits))
+	}
+	if uc.LinuxExecutionDurationUsec > 0 {
+		execLabels := prometheus.Labels{metrics.GroupID: groupID, metrics.OS: platform.LinuxOperatingSystemName}
+		metrics.RemoteExecutionDurationUsecExported.With(execLabels).Observe(float64(uc.LinuxExecutionDurationUsec))
+	}
+	if uc.MacExecutionDurationUsec > 0 {
+		execLabels := prometheus.Labels{metrics.GroupID: groupID, metrics.OS: platform.DarwinOperatingSystemName}
+		metrics.RemoteExecutionDurationUsecExported.With(execLabels).Observe(float64(uc.MacExecutionDurationUsec))
 	}
 }
 

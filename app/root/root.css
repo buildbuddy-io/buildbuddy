@@ -45,6 +45,12 @@ a {
   text-decoration: none;
   color: inherit;
   outline: 0;
+  /*
+    If we do set an underline, offset it.
+    We often render underscores in links, and the underscores
+    are not clearly visible unless we offset the underline.
+  */
+  text-underline-offset: 4px;
 }
 
 button {

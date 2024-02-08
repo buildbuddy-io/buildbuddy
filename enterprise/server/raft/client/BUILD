@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/rbuilder",
-        "//proto:grpc_status_go_proto",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/environment",
@@ -21,6 +20,7 @@ go_library(
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//client",
         "@com_github_lni_dragonboat_v4//statemachine",
+        "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//status",
     ],
 )
