@@ -395,20 +395,20 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 		return nil, status.FailedPreconditionError("missing installation_id")
 	}
 	dbh := a.env.GetDBHandle()
+	var ti tables.GitHubAppInstallation
+	err = dbh.NewQuery(ctx, "githubapp_get_installation_for_unlink").Raw(`
+		SELECT *
+		FROM "GitHubAppInstallations"
+		WHERE installation_id = ?
+		`+dbh.SelectForUpdateModifier()+`
+	`, req.GetInstallationId()).Take(&ti)
+	if err != nil {
+		return nil, err
+	}
+	if err := authutil.AuthorizeOrgAdmin(u, ti.GroupID); err != nil {
+		return err
+	}
 	err = dbh.Transaction(ctx, func(tx interfaces.DB) error {
-		var ti tables.GitHubAppInstallation
-		err := tx.NewQuery(ctx, "githubapp_get_installation_for_unlink").Raw(`
-			SELECT *
-			FROM "GitHubAppInstallations"
-			WHERE installation_id = ?
-			`+dbh.SelectForUpdateModifier()+`
-		`, req.GetInstallationId()).Take(&ti)
-		if err != nil {
-			return err
-		}
-		if err := authutil.AuthorizeOrgAdmin(u, ti.GroupID); err != nil {
-			return err
-		}
 		return tx.NewQuery(ctx, "githubapp_unlink_installation").Raw(`
 			DELETE FROM "GitHubAppInstallations"
 			WHERE installation_id = ?

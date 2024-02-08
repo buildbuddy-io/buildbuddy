@@ -316,27 +316,33 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 	}
 
 	groupID := ""
-	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		if g.OwnedDomain != "" {
-			existingDomainOwnerGroup, err := d.getDomainOwnerGroup(ctx, tx, g.OwnedDomain)
-			if err != nil {
-				return err
-			}
-			if existingDomainOwnerGroup != nil && existingDomainOwnerGroup.GroupID != g.GroupID {
-				return status.InvalidArgumentError("There is already a group associated with this domain.")
-			}
+	if g.OwnedDomain != "" {
+		existingDomainOwnerGroup, err := d.getDomainOwnerGroup(ctx, d.h, g.OwnedDomain)
+		if err != nil {
+			return "", err
 		}
-		if g.GroupID == "" {
+		if existingDomainOwnerGroup != nil && existingDomainOwnerGroup.GroupID != g.GroupID {
+			return "", status.InvalidArgumentError("There is already a group associated with this domain.")
+		}
+	}
+	if g.GroupID == "" {
+		err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
 			groupID, err = d.createGroup(ctx, tx, u.GetUserID(), g)
 			return err
+		})
+		if err != nil {
+			return "", err
 		}
+		return groupID, nil
+	}
 
-		groupID = g.GroupID
-		if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
-			return err
-		}
+	groupID = g.GroupID
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		return "", err
+	}
 
-		res := tx.NewQuery(ctx, "userdb_update_group").Raw(`
+	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		return tx.NewQuery(ctx, "userdb_update_group").Raw(`
 			UPDATE "Groups" SET
 				name = ?,
 				url_identifier = ?,
@@ -363,13 +369,12 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			g.SuggestionPreference,
 			g.RestrictCleanWorkflowRunsToAdmins,
 			g.EnforceIPRules,
-			g.GroupID).Exec()
-		if res.Error != nil {
-			return res.Error
-		}
-		return nil
+			g.GroupID).Exec().Error
 	})
-	return groupID, err
+	if err != nil {
+		return "", err
+	}
+	return groupID, nil
 }
 
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {
@@ -435,46 +440,50 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 	if groupID == "" {
 		return 0, status.InvalidArgumentError("Group ID is required.")
 	}
-	var membershipStatus grpb.GroupMembershipStatus
-	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		tu, err := d.getUser(ctx, tx, u.GetUserID())
-		if err != nil {
-			return err
-		}
-		group, err := d.getGroupByID(ctx, tx, groupID)
-		if err != nil {
-			return err
-		}
-		// If the org has an owned domain that matches the user's email,
-		// the user can join directly as a member.
-		membershipStatus = grpb.GroupMembershipStatus_REQUESTED
-		if !u.IsSAML() && group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(tu.Email) {
-			membershipStatus = grpb.GroupMembershipStatus_MEMBER
+	tu, err := d.getUser(ctx, d.h, u.GetUserID())
+	if err != nil {
+		return 0, err
+	}
+	group, err := d.getGroupByID(ctx, d.h, groupID)
+	if err != nil {
+		return 0, err
+	}
+	// If the org has an owned domain that matches the user's email,
+	// the user can join directly as a member.
+	if !u.IsSAML() && group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(tu.Email) {
+		err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
 			return d.addUserToGroup(ctx, tx, userID, groupID)
-		}
-
-		// Check if there's an existing request and return AlreadyExists if so.
-		existing, err := getUserGroup(ctx, tx, userID, groupID)
-		if err != nil {
-			return err
-		}
-		if existing != nil {
-			if existing.MembershipStatus == int32(grpb.GroupMembershipStatus_REQUESTED) {
-				return status.AlreadyExistsError("You've already requested to join this organization.")
-			}
-			return status.AlreadyExistsError("You're already in this organization.")
-		}
-		return tx.NewQuery(ctx, "userdb_create_join_group_request").Create(&tables.UserGroup{
-			UserUserID:       userID,
-			GroupGroupID:     groupID,
-			Role:             uint32(role.Default),
-			MembershipStatus: int32(membershipStatus),
 		})
+		if err != nil {
+			return 0, err
+		}
+		return grpb.GroupMembershipStatus_MEMBER, nil
+	}
+
+	// Check if there's an existing request and return AlreadyExists if so.
+	existing, err := getUserGroup(ctx, d.h, userID, groupID)
+	if err != nil {
+		return 0, err
+	}
+	if existing != nil {
+		if existing.MembershipStatus == int32(grpb.GroupMembershipStatus_REQUESTED) {
+			return 0, status.AlreadyExistsError("You've already requested to join this organization.")
+		}
+		return 0, status.AlreadyExistsError("You're already in this organization.")
+	}
+	ug := tables.UserGroup{
+		UserUserID:       userID,
+		GroupGroupID:     groupID,
+		Role:             uint32(role.Default),
+		MembershipStatus: int32(grpb.GroupMembershipStatus_REQUESTED),
+	}
+	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		return tx.NewQuery(ctx, "userdb_create_join_group_request").Create(&ug)
 	})
 	if err != nil {
 		return 0, err
 	}
-	return membershipStatus, nil
+	return grpb.GroupMembershipStatus(ug.MembershipStatus), nil
 }
 
 func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
@@ -644,11 +653,11 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 }
 
 func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
-	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		var existing tables.Group
-		if err := tx.GORM(ctx, "userdb_check_existing_group").Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
-				gc := d.getDefaultGroupConfig()
+	var existing tables.Group
+	if err := d.h.GORM(ctx, "userdb_check_existing_group").Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
+		if db.IsRecordNotFound(err) {
+			gc := d.getDefaultGroupConfig()
+			return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 				if err := tx.NewQuery(ctx, "userdb_create_default_group").Create(gc); err != nil {
 					return err
 				}
@@ -656,10 +665,12 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 					return err
 				}
 				return nil
-			}
-			return err
+			})
 		}
+		return err
+	}
 
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		return tx.GORM(ctx, "userdb_update_existing_group").Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
 	})
 }
@@ -779,16 +790,16 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 }
 
 func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
-	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		var existing tables.User
-		if err := tx.GORM(ctx, "userdb_check_existing_user").Where("sub_id = ?", u.SubID).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
+	var existing tables.User
+	if err := d.h.GORM(ctx, "userdb_check_existing_user").Where("sub_id = ?", u.SubID).First(&existing).Error; err != nil {
+		if db.IsRecordNotFound(err) {
+			return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 				return d.createUser(ctx, tx, u)
-			}
-			return err
+			})
 		}
-		return status.FailedPreconditionError("User already exists!")
-	})
+		return err
+	}
+	return status.FailedPreconditionError("User already exists!")
 }
 
 func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, error) {
