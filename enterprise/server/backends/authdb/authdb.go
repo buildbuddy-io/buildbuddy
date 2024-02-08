@@ -66,7 +66,7 @@ var (
 )
 
 type apiKeyGroupCacheEntry struct {
-	data         interfaces.APIKeyGroup
+	data         *apiKeyGroupRow
 	expiresAfter time.Time
 }
 
@@ -95,7 +95,7 @@ func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
 	return &apiKeyGroupCache{lru: lru, ttl: *apiKeyGroupCacheTTL}, nil
 }
 
-func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
+func (c *apiKeyGroupCache) Get(apiKey string) (akg *apiKeyGroupRow, ok bool) {
 	c.mu.Lock()
 	entry, ok := c.lru.Get(apiKey)
 	c.mu.Unlock()
@@ -108,7 +108,7 @@ func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bo
 	return entry.data, true
 }
 
-func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup) {
+func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup *apiKeyGroupRow) {
 	c.mu.Lock()
 	c.lru.Add(apiKey, &apiKeyGroupCacheEntry{data: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
 	c.mu.Unlock()
@@ -196,42 +196,65 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 	return nil
 }
 
-type apiKeyGroup struct {
+type apiKeyGroupRow struct {
 	APIKeyID               string
 	UserID                 string
 	GroupID                string
+	Role                   role.Role
 	Capabilities           int32
 	UseGroupOwnedExecutors bool
 	CacheEncryptionEnabled bool
 	EnforceIPRules         bool
 }
 
+// apiKeyGroup wraps an apiKeyGroupRow but enforces an upperbound on
+// Capabilities based on the user's role.
+// Do NOT construct directly - use newAPIKeyGroup to ensure that the correct
+// capabilities are applied.
+type apiKeyGroup struct{ values apiKeyGroupRow }
+
+func newAPIKeyGroup(row *apiKeyGroupRow) (*apiKeyGroup, error) {
+	akg := &apiKeyGroup{
+		values: *row, // shallow copy
+	}
+	// For user-level keys, restrict capabilities to the ones allowed by the
+	// role.
+	if row.UserID != "" {
+		roleCapabilities, err := role.ToCapabilities(row.Role)
+		if err != nil {
+			return nil, err
+		}
+		akg.values.Capabilities = row.Capabilities & capabilities.ToInt(roleCapabilities)
+	}
+	return akg, nil
+}
+
 func (g *apiKeyGroup) GetAPIKeyID() string {
-	return g.APIKeyID
+	return g.values.APIKeyID
 }
 
 func (g *apiKeyGroup) GetUserID() string {
-	return g.UserID
+	return g.values.UserID
 }
 
 func (g *apiKeyGroup) GetGroupID() string {
-	return g.GroupID
+	return g.values.GroupID
 }
 
 func (g *apiKeyGroup) GetCapabilities() int32 {
-	return g.Capabilities
+	return g.values.Capabilities
 }
 
 func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
-	return g.UseGroupOwnedExecutors
+	return g.values.UseGroupOwnedExecutors
 }
 
 func (g *apiKeyGroup) GetCacheEncryptionEnabled() bool {
-	return g.CacheEncryptionEnabled
+	return g.values.CacheEncryptionEnabled
 }
 
 func (g *apiKeyGroup) GetEnforceIPRules() bool {
-	return g.EnforceIPRules
+	return g.values.EnforceIPRules
 }
 
 func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
@@ -358,14 +381,14 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 
 	if d.apiKeyGroupCache != nil {
-		d, ok := d.apiKeyGroupCache.Get(cacheKey)
+		row, ok := d.apiKeyGroupCache.Get(cacheKey)
 		if ok {
 			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_hit"}).Inc()
-			return d, nil
+			return newAPIKeyGroup(row)
 		}
 	}
 
-	akg := &apiKeyGroup{}
+	row := &apiKeyGroupRow{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
 		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
 		keyClauses := query_builder.OrClauses{}
@@ -383,7 +406,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 		qb.AddWhereClause(keyQuery, keyArgs...)
 		q, args := qb.Build()
 		rq := tx.NewQuery(ctx, "authdb_get_api_key_group_by_key").Raw(q, args...)
-		return rq.Take(akg)
+		return rq.Take(row)
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
@@ -396,9 +419,9 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 	if d.apiKeyGroupCache != nil {
 		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
-		d.apiKeyGroupCache.Add(cacheKey, akg)
+		d.apiKeyGroupCache.Add(cacheKey, row)
 	}
-	return akg, nil
+	return newAPIKeyGroup(row)
 }
 
 func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {
@@ -408,18 +431,18 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		cacheKey = sd + "," + apiKeyID
 	}
 	if d.apiKeyGroupCache != nil {
-		d, ok := d.apiKeyGroupCache.Get(cacheKey)
+		row, ok := d.apiKeyGroupCache.Get(cacheKey)
 		if ok {
-			return d, nil
+			return newAPIKeyGroup(row)
 		}
 	}
-	akg := &apiKeyGroup{}
+	row := &apiKeyGroupRow{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
 		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
 		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
 		q, args := qb.Build()
 		rq := tx.NewQuery(ctx, "authdb_get_api_key_group_by_id").Raw(q, args...)
-		return rq.Take(akg)
+		return rq.Take(row)
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
@@ -428,9 +451,9 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		return nil, err
 	}
 	if d.apiKeyGroupCache != nil {
-		d.apiKeyGroupCache.Add(cacheKey, akg)
+		d.apiKeyGroupCache.Add(cacheKey, row)
 	}
-	return akg, nil
+	return newAPIKeyGroup(row)
 }
 
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
@@ -471,11 +494,16 @@ func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) 
 			g.group_id,
 			g.use_group_owned_executors,
 			g.cache_encryption_enabled,
-			g.enforce_ip_rules
-		FROM "Groups" AS g,
-		"APIKeys" AS ak
+			g.enforce_ip_rules,
+			ug.role
+		FROM
+			"Groups" AS g
+			INNER JOIN "APIKeys" AS ak
+				ON ak.group_id = g.group_id
+			LEFT JOIN "UserGroups" AS ug
+				ON ug.group_group_id = g.group_id
+				AND ug.user_user_id = ak.user_id
 	`)
-	qb.AddWhereClause(`ak.group_id = g.group_id`)
 
 	if subDomain != "" {
 		qb.AddWhereClause("url_identifier = ?", subDomain)

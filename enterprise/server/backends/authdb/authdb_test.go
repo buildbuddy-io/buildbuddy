@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -31,6 +32,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
 func TestSessionInsertUpdateDeleteRead(t *testing.T) {
@@ -235,6 +237,10 @@ func TestGetAPIKeys(t *testing.T) {
 }
 
 func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
+	// Disable apiKeyGroupCache so we can make assertions about API keys
+	// immediately after making updates.
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
 	rand.Seed(time.Now().UnixNano())
 	ctx := context.Background()
 	env := setupEnv(t)
@@ -250,20 +256,25 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 		}
 	}
 	require.NotNil(t, admin)
-	// Look up one of their keys and convert it to a user-owned key.
-	// TODO(bduffany): Once user-level keys are implemented in UserDB, use that
-	// instead of directly updating the key in the DB.
+	// Enable user-owned keys for the group.
 	groupID := admin.Groups[0].Group.GroupID
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
 	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
 	require.NoError(t, err)
-	keys, err := adb.GetAPIKeys(adminCtx, groupID)
+	g, err := env.GetUserDB().GetGroupByID(adminCtx, groupID)
 	require.NoError(t, err)
-	key := keys[0]
-	key.UserID = admin.UserID
-	err = env.GetDBHandle().NewQuery(ctx, "update_key").Update(key)
+	g.UserOwnedKeysEnabled = true
+	_, err = env.GetUserDB().InsertOrUpdateGroup(adminCtx, g)
 	require.NoError(t, err)
-	g, err := env.GetUserDB().GetGroupByID(adminCtx, key.GroupID)
+	// Create a user-owned key for the admin user.
+	key, err := env.GetAuthDB().CreateUserAPIKey(adminCtx, groupID, "", []akpb.ApiKey_Capability{
+		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+	})
+	require.NoError(t, err)
+	// Disable user-owned keys for the group again.
+	g.UserOwnedKeysEnabled = false
+	_, err = env.GetUserDB().InsertOrUpdateGroup(adminCtx, g)
 	require.NoError(t, err)
 
 	// Should not be able to use this user-level key, since groups have the
@@ -285,20 +296,47 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	_, err = env.GetUserDB().InsertOrUpdateGroup(adminCtx, g)
 	require.NoError(t, err)
 
-	// Should now be able to use the user-owned key.
+	// Should now be able to use the user-owned key by API key value.
 	akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, key.Value)
 	require.NoError(t, err)
 	assert.Equal(t, key.UserID, akg.GetUserID())
 	assert.Equal(t, key.GroupID, akg.GetGroupID())
-	assert.Equal(t, key.Capabilities, akg.GetCapabilities())
+	assert.Equal(t, capabilities.ToInt([]akpb.ApiKey_Capability{
+		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+	}), akg.GetCapabilities())
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 
+	// Should also be able to look up by API key ID.
 	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, key.APIKeyID)
 	require.NoError(t, err)
 	assert.Equal(t, key.UserID, akg.GetUserID())
 	assert.Equal(t, key.GroupID, akg.GetGroupID())
-	assert.Equal(t, key.Capabilities, akg.GetCapabilities())
+	assert.Equal(t, capabilities.ToInt([]akpb.ApiKey_Capability{
+		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+	}), akg.GetCapabilities())
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
+
+	// Now demote the user from Admin to Developer.
+	udb := env.GetUserDB()
+	err = udb.UpdateGroupUsers(adminCtx, groupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{
+			UserId: admin.ToProto().GetUserId(),
+			Role:   grpb.Group_DEVELOPER_ROLE,
+		},
+	})
+	require.NoError(t, err)
+	// Get the user-owned API key again - it should no longer have CACHE_WRITE
+	// capability. Note, this assertion works immediately because we've disabled
+	// apiKeyGroupCache.
+	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, key.APIKeyID)
+	require.NoError(t, err)
+	assert.Equal(t, key.UserID, akg.GetUserID())
+	assert.Equal(t, key.GroupID, akg.GetGroupID())
+	assert.Equal(t, capabilities.ToInt([]akpb.ApiKey_Capability{
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+	}), akg.GetCapabilities())
 }
 
 func TestLookupUserFromSubID(t *testing.T) {
