@@ -1686,24 +1686,32 @@ func TestActionMerging(t *testing.T) {
 		},
 	}
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "sleep 10"},
+		Arguments: []string{"sh", "-c", "sleep 1"},
 		Platform:  platform,
 	}
 	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
 	op1 := cmd1.WaitAccepted()
+	time.Sleep(100 * time.Millisecond)
 
 	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
 	op2 := cmd2.WaitAccepted()
-
 	require.Equal(t, op1, op2, "the execution IDs for both commands should be the same")
 
 	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, APIKey: rbe.APIKey1, InvocationID: "invocation3"})
 	op3 := cmd3.WaitAccepted()
+	time.Sleep(100 * time.Millisecond)
 	require.NotEqual(t, op2, op3, "actions under different organizations should not be merged")
 
 	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, APIKey: rbe.APIKey1, InvocationID: "invocation4"})
 	op4 := cmd4.WaitAccepted()
+	time.Sleep(100 * time.Millisecond)
 	require.Equal(t, op3, op4, "expected actions to be merged")
+
+	cmd3.Wait()
+	cmd5 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: false, APIKey: rbe.APIKey1, InvocationID: "invocation5"})
+	op5 := cmd5.WaitAccepted()
+	time.Sleep(100 * time.Millisecond)
+	require.NotEqual(t, op3, op5, "shouldn't merge against completed actions")
 }
 
 func TestActionMerging_ClaimingAppDies(t *testing.T) {
@@ -1712,7 +1720,7 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 	rbe.AddExecutor(t)
 
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "sleep 10"},
+		Arguments: []string{"sh", "-c", "sleep 1"},
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "OSFamily", Value: runtime.GOOS},
@@ -1722,15 +1730,23 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 	}
 
 	// Run a command which we know will be assigned by `app` to `executor`.
-	op1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"}).WaitAccepted()
+	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
+	op1 := cmd1.WaitAccepted()
 
 	// Start a new app, kill `app`, potentially orphaning `cmd1`, and then run
 	// the command again, verifying it's not merged.
 	rbe.AddBuildBuddyServer()
 	rbe.RemoveBuildBuddyServer(app)
-	op2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"}).WaitAccepted()
 
-	require.NotEqual(t, op1, op2, "Unexpected action merge: dead app shouldn't block future actions")
+	// TODO(iain): put a sleep in here that's slightly longer than the lease extension time.
+	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
+	op2 := cmd2.WaitAccepted()
+	require.NotEqual(t, op1, op2, "unexpected action merge: dead app shouldn't block future actions")
+
+	cmd2.Wait()
+	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation3"})
+	op3 := cmd3.WaitAccepted()
+	require.NotEqual(t, op2, op3, "shouldn't merge against completed actions")
 }
 
 func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {

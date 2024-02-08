@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -1220,6 +1221,9 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 	if c, ok := r.(int64); !ok || c != 1 {
 		return status.NotFoundErrorf("unable to delete claimed task %s", taskID)
 	}
+
+	action_merger.DeletePendingExecution(ctx, s.rdb, taskID)
+
 	return nil
 }
 
@@ -1240,6 +1244,9 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reco
 		return status.NotFoundErrorf("unable to release task claim for task %s", taskID)
 	}
 	log.CtxDebugf(ctx, "Released task claim in Redis (reconnecting=%t)", reconnectToken != "")
+
+	action_merger.DeletePendingExecution(ctx, s.rdb, taskID)
+
 	return nil
 }
 
@@ -1282,6 +1289,8 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken 
 		log.CtxErrorf(ctx, "claimTask %q error: unknown error code: %d", taskID, c)
 		return "", status.UnknownErrorf("unknown error %d", c)
 	}
+
+	action_merger.RecordClaimedExecution(ctx, s.rdb, taskID)
 
 	return leaseId, nil
 }
@@ -1613,6 +1622,9 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		if s.isShuttingDown() && reconnectToken != "" && claimed {
 			return status.UnavailableError("server is shutting down")
 		}
+
+		action_merger.ExtendLeasedExecution(ctx, s.rdb, taskID)
+
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = s.clock.Now()
 		if err := stream.Send(rsp); err != nil {
