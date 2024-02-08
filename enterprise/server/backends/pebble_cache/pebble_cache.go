@@ -1758,8 +1758,6 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	}
 	defer db.Close()
 
-	unlockFn := p.locker.RLock(key.LockID())
-
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
@@ -1767,7 +1765,6 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	fileMetadata := rfpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 	version, err := p.lookupFileMetadataAndVersion(ctx, iter, key, fileMetadata)
-	unlockFn()
 
 	if err != nil {
 		return err
