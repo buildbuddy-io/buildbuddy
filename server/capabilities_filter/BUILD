@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/capabilities_filter",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:api_key_go_proto",
         "//server/environment",
-        "//server/util/authutil",
         "//server/util/perms",
         "//server/util/role",
         "//server/util/status",

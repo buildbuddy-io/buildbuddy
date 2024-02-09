@@ -12,7 +12,7 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )
 
-func TestAllRPCsHaveExplicitRolesSpecified(t *testing.T) {
+func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
 	serviceMethodNames := []string{}
 	buildbuddyServiceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
 	for i := 0; i < buildbuddyServiceType.NumMethod(); i++ {
@@ -23,11 +23,7 @@ func TestAllRPCsHaveExplicitRolesSpecified(t *testing.T) {
 		serviceMethodNames = append(serviceMethodNames, apiServiceType.Method(i).Name)
 	}
 
-	allDefinedMethods := []string{}
-	allDefinedMethods = append(allDefinedMethods, capabilities_filter.RoleIndependentRPCs()...)
-	allDefinedMethods = append(allDefinedMethods, capabilities_filter.GroupAdminOnlyRPCs()...)
-	allDefinedMethods = append(allDefinedMethods, capabilities_filter.GroupDeveloperRPCs()...)
-	allDefinedMethods = append(allDefinedMethods, capabilities_filter.ServerAdminOnlyRPCs()...)
+	allDefinedMethods := capabilities_filter.AllRPCsForTestOnly()
 
 	assert.Subset(
 		t, allDefinedMethods, serviceMethodNames,
