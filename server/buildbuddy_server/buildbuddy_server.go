@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
+	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
@@ -25,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
-	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -333,19 +333,19 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 			}
 		}
 	}
-	allowedRPCs := role_filter.RoleIndependentRPCs()
+	allowedRPCs := capabilities_filter.RoleIndependentRPCs()
 	if selectedGroupRole&role.Admin > 0 {
-		allowedRPCs = append(allowedRPCs, role_filter.GroupAdminOnlyRPCs()...)
+		allowedRPCs = append(allowedRPCs, capabilities_filter.GroupAdminOnlyRPCs()...)
 	}
 	if selectedGroupRole&(role.Admin|role.Developer) > 0 {
-		allowedRPCs = append(allowedRPCs, role_filter.GroupDeveloperRPCs()...)
+		allowedRPCs = append(allowedRPCs, capabilities_filter.GroupDeveloperRPCs()...)
 	}
 
 	subdomainGroupID := ""
 	if serverAdminGID := s.env.GetAuthenticator().AdminGroupID(); serverAdminGID != "" {
 		for _, gr := range tu.Groups {
 			if gr.Group.GroupID == serverAdminGID && gr.Role == uint32(role.Admin) {
-				allowedRPCs = append(allowedRPCs, role_filter.ServerAdminOnlyRPCs()...)
+				allowedRPCs = append(allowedRPCs, capabilities_filter.ServerAdminOnlyRPCs()...)
 				gid, err := s.getGroupIDForSubdomain(ctx)
 				if err != nil && !status.IsNotFoundError(err) {
 					return nil, err

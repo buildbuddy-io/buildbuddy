@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -182,7 +182,7 @@ func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInter
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
 			methodName := strings.TrimPrefix(info.FullMethod, buildBuddyServicePrefix)
-			if err := role_filter.AuthorizeRPC(stream.Context(), env, methodName); err != nil {
+			if err := capabilities_filter.AuthorizeRPC(stream.Context(), env, methodName); err != nil {
 				return err
 			}
 		}
@@ -194,7 +194,7 @@ func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
 			methodName := strings.TrimPrefix(info.FullMethod, buildBuddyServicePrefix)
-			if err := role_filter.AuthorizeRPC(ctx, env, methodName); err != nil {
+			if err := capabilities_filter.AuthorizeRPC(ctx, env, methodName); err != nil {
 				return nil, err
 			}
 		}

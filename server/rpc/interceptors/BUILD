@@ -6,9 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/capabilities_filter",
         "//server/environment",
         "//server/metrics",
-        "//server/role_filter",
         "//server/util/alert",
         "//server/util/bazel_request",
         "//server/util/claims",

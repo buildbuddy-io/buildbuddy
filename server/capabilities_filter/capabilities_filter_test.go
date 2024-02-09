@@ -1,10 +1,10 @@
-package role_filter_test
+package capabilities_filter_test
 
 import (
 	"reflect"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
+	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/stretchr/testify/assert"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -24,19 +24,19 @@ func TestAllRPCsHaveExplicitRolesSpecified(t *testing.T) {
 	}
 
 	allDefinedMethods := []string{}
-	allDefinedMethods = append(allDefinedMethods, role_filter.RoleIndependentRPCs()...)
-	allDefinedMethods = append(allDefinedMethods, role_filter.GroupAdminOnlyRPCs()...)
-	allDefinedMethods = append(allDefinedMethods, role_filter.GroupDeveloperRPCs()...)
-	allDefinedMethods = append(allDefinedMethods, role_filter.ServerAdminOnlyRPCs()...)
+	allDefinedMethods = append(allDefinedMethods, capabilities_filter.RoleIndependentRPCs()...)
+	allDefinedMethods = append(allDefinedMethods, capabilities_filter.GroupAdminOnlyRPCs()...)
+	allDefinedMethods = append(allDefinedMethods, capabilities_filter.GroupDeveloperRPCs()...)
+	allDefinedMethods = append(allDefinedMethods, capabilities_filter.ServerAdminOnlyRPCs()...)
 
 	assert.Subset(
 		t, allDefinedMethods, serviceMethodNames,
-		"All BuildBuddyService RPCs should be added to one of the lists in role_filter.go",
+		"All BuildBuddyService RPCs should be added to one of the lists in capabilities_filter.go",
 	)
 	assert.Subset(
 		t, serviceMethodNames, allDefinedMethods,
-		"All BuildBuddyService RPCs listed in role_filter.go should be valid BuildBuddy service RPCs. "+
-			"(check for typos, or if you deleted an RPC, remove it from role_filter.go)",
+		"All BuildBuddyService RPCs listed in capabilities_filter.go should be valid BuildBuddy service RPCs. "+
+			"(check for typos, or if you deleted an RPC, remove it from capabilities_filter.go)",
 	)
 }
 
