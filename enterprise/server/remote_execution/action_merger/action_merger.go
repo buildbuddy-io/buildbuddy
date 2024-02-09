@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	// TTL for action-merging data about queued executions.
-	queuedExecutionTTL = 1 * time.Hour
+	// TTL for action-merging data about queued executions. This should be
+	// approximately equal to the longest execution queue times.
+	queuedExecutionTTL = 10 * time.Minute
 
 	// TTL for action-merging data about claimed executions. This is set to
 	// twice the length of `remote_execution.lease_duration` to give a short
@@ -48,15 +49,13 @@ func redisKeyForPendingExecutionDigest(executionID string) string {
 // This optimization is particularly helpful for preventing duplicate work for
 // long-running actions. It is implemented as a pair of entries in redis, one
 // from the action digest to the execution ID (the forward mapping), and one
-// from the execution ID to the action digest (the reverse mapping). These two
-// entries are added to Redis at different times, the reverse entry is added
-// when an execution is enqueued and has no effect, it is just there so the app
-// can determine the action digest for an execution ID later. The forward entry
-// is added when an execution is claimed, and subsequent actions will be merged
-// against this execution once this entry is present. While this two-phase
-// approach creates a window (during queueing) during which duplicate actions
-// can run concurrently, it is necessary to prevent actions which are queued
-// but never run from blocking subsequent actions.
+// from the execution ID to the action digest (the reverse mapping). These
+// entries are initially written to Redis when an execution is enqueued, and
+// then rewritten (to extend the TTL) while the action is running. Because
+// the queueing mechanism isn't 100% reliable, it is possible for the merging
+// data to exist in Redis pointing to a dead execution. For this reason, the
+// TTLs are set somewhat conservatively so this problem self-heals reasonably
+// quickly.
 //
 // This function records a queued execution in Redis.
 func RecordQueuedExecution(ctx context.Context, rdb redis.UniversalClient, executionID string, adResource *digest.ResourceName) error {
@@ -69,7 +68,11 @@ func RecordQueuedExecution(ctx context.Context, rdb redis.UniversalClient, execu
 		return err
 	}
 	reverseKey := redisKeyForPendingExecutionDigest(executionID)
-	return rdb.Set(ctx, reverseKey, forwardKey, queuedExecutionTTL).Err()
+	pipe := rdb.TxPipeline()
+	pipe.Set(ctx, forwardKey, executionID, queuedExecutionTTL)
+	pipe.Set(ctx, reverseKey, forwardKey, queuedExecutionTTL)
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 // This function records a claimed execution in Redis.
