@@ -79,8 +79,10 @@ type BasicAuthToken interface {
 // GroupMembership represents a user's membership within a group as well as
 // their role within that group.
 type GroupMembership struct {
-	GroupID string    `json:"group_id"`
-	Role    role.Role `json:"role"`
+	GroupID      string                   `json:"group_id"`
+	Capabilities []akpb.ApiKey_Capability `json:"capabilities"`
+	// DEPRECATED. Check Capabilities instead.
+	Role role.Role `json:"role"`
 }
 
 type UserInfo interface {

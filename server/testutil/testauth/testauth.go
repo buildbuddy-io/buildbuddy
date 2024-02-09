@@ -50,7 +50,11 @@ func User(userID, groupID string) *TestUser {
 		GroupID:       groupID,
 		AllowedGroups: []string{groupID},
 		GroupMemberships: []*interfaces.GroupMembership{
-			{GroupID: groupID, Role: role.Admin},
+			{
+				GroupID:      groupID,
+				Capabilities: capabilities.DefaultAuthenticatedUserCapabilities,
+				Role:         role.Admin,
+			},
 		},
 		Capabilities: capabilities.DefaultAuthenticatedUserCapabilities,
 	}

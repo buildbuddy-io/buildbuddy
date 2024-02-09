@@ -157,7 +157,11 @@ func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 		GroupID:       akg.GetGroupID(),
 		AllowedGroups: []string{akg.GetGroupID()},
 		GroupMemberships: []*interfaces.GroupMembership{
-			{GroupID: akg.GetGroupID(), Role: keyRole},
+			{
+				GroupID:      akg.GetGroupID(),
+				Capabilities: capabilities.FromInt(akg.GetCapabilities()),
+				Role:         keyRole,
+			},
 		},
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
@@ -234,19 +238,20 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	var capabilities []akpb.ApiKey_Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
+		c, err := role.ToCapabilities(role.Role(g.Role))
+		if err != nil {
+			return nil, err
+		}
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
-			GroupID: g.Group.GroupID,
-			Role:    role.Role(g.Role),
+			GroupID:      g.Group.GroupID,
+			Capabilities: c,
+			Role:         role.Role(g.Role),
 		})
 		if g.Group.GroupID == effectiveGroup {
 			// TODO: move these fields into u.GroupMemberships
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
 			enforceIPRules = g.Group.EnforceIPRules
-			caps, err := role.ToCapabilities(role.Role(g.Role))
-			if err != nil {
-				return nil, err
-			}
-			capabilities = caps
+			capabilities = c
 		}
 	}
 	return &Claims{
