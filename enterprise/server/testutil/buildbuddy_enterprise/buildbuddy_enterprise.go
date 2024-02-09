@@ -28,9 +28,11 @@ var (
 	remoteSSOSlug     = flag.String("remote_sso_slug", "", "For remote targets, the SSO slug to login. Self-auth must be enabled for these targets.")
 )
 
-const (
-	DefaultConfig = "enterprise/config/test/buildbuddy.selfauth.yaml"
-	NoAuthConfig  = "enterprise/config/test/buildbuddy.noauth.yaml"
+var (
+	// set by x_defs in BUILD file
+	DefaultConfig         string
+	NoAuthConfig          string
+	buildbuddyRunfilePath string
 )
 
 func Run(t *testing.T, args ...string) *app.App {
@@ -48,7 +50,7 @@ func RunWithConfig(t *testing.T, appConfig *app.App, configPath string, args ...
 	return app.RunWithApp(
 		t,
 		appConfig,
-		/* commandPath= */ "enterprise/server/cmd/server/buildbuddy_/buildbuddy",
+		/* commandPath= */ buildbuddyRunfilePath,
 		commandArgs,
 		/* configPath= */ configPath,
 	)

@@ -7,6 +7,9 @@ go_library(
     srcs = ["hostedrunner.go"],
     data = ["//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner",
+    x_defs = {
+        "runnerRunfilePath": "$(rlocationpath //enterprise/server/cmd/ci_runner:buildbuddy_ci_runner)",
+    },
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
         "//enterprise/server/remote_execution/operation",

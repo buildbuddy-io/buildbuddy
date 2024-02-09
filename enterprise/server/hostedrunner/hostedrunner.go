@@ -35,9 +35,11 @@ import (
 )
 
 const (
-	runnerPath                  = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
 	DefaultRunnerContainerImage = "docker://" + platform.Ubuntu20_04WorkflowsImage
 )
+
+// set by x_defs in BUILD file
+var runnerRunfilePath string
 
 type runnerService struct {
 	env              environment.Env
@@ -45,7 +47,7 @@ type runnerService struct {
 }
 
 func New(env environment.Env) (*runnerService, error) {
-	f, err := ci_runner_bundle.Get().Open(runnerPath)
+	f, err := ci_runner_bundle.Get().Open(runnerRunfilePath)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not open runner binary runfile: %s", err)
 	}
@@ -77,7 +79,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	binaryBlob, err := fs.ReadFile(ci_runner_bundle.Get(), runnerPath)
+	binaryBlob, err := fs.ReadFile(ci_runner_bundle.Get(), runnerRunfilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +88,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, err
 	}
 	// Save this to use when constructing the command to run below.
-	runnerName := filepath.Base(runnerPath)
+	runnerName := filepath.Base(runnerRunfilePath)
 	dir := &repb.Directory{
 		Files: []*repb.FileNode{{
 			Name:         runnerName,

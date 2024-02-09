@@ -25,6 +25,9 @@ import (
 )
 
 var (
+	// Set by x_defs in BUILD file
+	bbRunfilePath string
+
 	streamOutputs = flag.Bool("test_stream_cli_output", false, "Show live CLI output during test execution.")
 	verbose       = flag.Bool("test_cli_verbose", false, "Whether to add --verbose=1 to the CLI.")
 
@@ -33,7 +36,7 @@ var (
 
 // BinaryPath returns the path to the CLI binary.
 func BinaryPath(t *testing.T) string {
-	return testfs.RunfilePath(t, "cli/cmd/bb/bb_/bb")
+	return testfs.RunfilePath(t, bbRunfilePath)
 }
 
 // Command returns an *exec.Cmd for the CLI binary.
