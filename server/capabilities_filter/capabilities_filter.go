@@ -1,4 +1,4 @@
-package role_filter
+package capabilities_filter
 
 import (
 	"context"
