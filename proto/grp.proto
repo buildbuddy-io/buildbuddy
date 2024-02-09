@@ -96,7 +96,9 @@ message Group {
   bool external_user_management = 17;
 
   // Maximum set of allowed capabilities that the user can assign to a user API
-  // key created within this group.
+  // key created within this group. Note that these are specific to the
+  // currently authenticated user, not to
+  // the group as a whole.
   repeated api_key.ApiKey.Capability allowed_user_api_key_capabilities = 18;
 }
 
