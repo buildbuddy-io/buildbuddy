@@ -1609,12 +1609,12 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 		return err
 	}
 
-	unlockFn := p.locker.Lock(key.LockID())
+	unlockFn := p.locker.RLock(key.LockID())
+	defer unlockFn()
 
 	md := rfpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
 	err = p.lookupFileMetadata(ctx, db, key, md)
-	unlockFn()
 	if err != nil {
 		return err
 	}
