@@ -1,12 +1,12 @@
 syntax = "proto3";
 
+import "proto/api_key.proto";
 import "proto/context.proto";
 import "proto/user_id.proto";
 
 package grp;
 
 // Group represents a group that a user is a member of.
-// Next tag: 10
 message Group {
   reserved 8;
 
@@ -96,6 +96,12 @@ message Group {
   // Whether users are being managed by an external system using the SCIM API.
   // Disables in-app user management.
   bool external_user_management = 17;
+
+  // Maximum set of allowed capabilities that the user can assign to a user API
+  // key created within this group. Note that these are specific to the
+  // currently authenticated user, not to
+  // the group as a whole.
+  repeated api_key.ApiKey.Capability allowed_user_api_key_capabilities = 18;
 }
 
 message JoinGroupRequest {
