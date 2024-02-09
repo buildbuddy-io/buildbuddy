@@ -315,35 +315,6 @@ const matchers: SuggestionMatcher[] = [
   },
   // Suggest timing profile flags
   getTimingDataSuggestion,
-  // Suggest using remote_download_minimal
-  ({ model }) => {
-    // TODO(https://github.com/bazelbuild/bazel/issues/10880):
-    // Show once BwtB issues are fixed.
-    return null;
-
-    if (!capabilities.config.expandedSuggestionsEnabled) return null;
-    if (!model.isBazelInvocation()) return null;
-
-    if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
-    if (model.optionsMap.get("remote_download_outputs")) return null;
-
-    return {
-      level: SuggestionLevel.INFO,
-      message: (
-        <>
-          Consider adding the Bazel flag <BazelFlag>--remote_download_minimal</BazelFlag> or{" "}
-          <BazelFlag>--remote_download_toplevel</BazelFlag>, which can significantly improve performance for builds with
-          a large number of intermediate results.
-        </>
-      ),
-      reason: (
-        <>
-          Shown because this build is cache-enabled and the flag{" "}
-          <span className="inline-code">--remote_download_outputs</span> is not explicitly set.
-        </>
-      ),
-    };
-  },
   // Suggest --nolegacy_important_outputs
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
