@@ -2020,6 +2020,15 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 			}
 		}
 	}()
+
+	// Debug log to see open fds in workspace dir
+	lsofRes := vmexec_client.Execute(ctx, client, &repb.Command{
+		Arguments:        []string{"lsof"},
+		Platform:         cmd.Platform,
+		WorkingDirectory: cmd.WorkingDirectory,
+	}, workDir, c.user, statsListener, stdio)
+	log.Warningf("Output of lsof: %s", string(lsofRes.Stdout))
+
 	select {
 	case res := <-resultCh:
 		return res
