@@ -591,6 +591,24 @@ func GetCopy(b Reader, key []byte) ([]byte, error) {
 	return val, nil
 }
 
+func GetProto(b Reader, key []byte, pb proto.Message) error {
+	buf, closer, err := b.Get(key)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return status.NotFoundErrorf("key %q not found", key)
+		}
+		return err
+	}
+	defer closer.Close()
+	if len(buf) == 0 {
+		return status.NotFoundErrorf("key %q not found (empty value)", key)
+	}
+	if err := proto.Unmarshal(buf, pb); err != nil {
+		return status.InternalErrorf("error parsing value for %q: %s", key, err)
+	}
+	return nil
+}
+
 func LookupProto(iter Iterator, key []byte, pb proto.Message) error {
 	if !iter.SeekGE(key) || !bytes.Equal(iter.Key(), key) {
 		return status.NotFoundErrorf("key %q not found", key)
