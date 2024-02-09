@@ -8,7 +8,7 @@ index 18835af..d24aeaf 100755
      name = "status_go_proto",
 +    compilers = [
 +        "@io_bazel_rules_go//proto:go_proto",
-+        "@com_github_planetscale_vtprotobuf//:vtprotobuf_compiler",
++        "//proto:vtprotobuf_compiler",
 +    ],
      importpath = "google.golang.org/genproto/googleapis/rpc/status",
      protos = [":status_proto"],

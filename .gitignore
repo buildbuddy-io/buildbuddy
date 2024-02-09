@@ -29,7 +29,6 @@ tramp
 /bazel-*
 
 # MODULE.bazel stuff, for now
-MODULE.bazel
 MODULE.bazel.lock
 
 # Generated protos

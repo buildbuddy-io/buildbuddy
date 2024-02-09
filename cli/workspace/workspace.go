@@ -13,15 +13,25 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 )
 
+const (
+	WorkspaceFileName    = "WORKSPACE"
+	WorkspaceAltFileName = "WORKSPACE.bazel"
+
+	ModuleFileName          = "MODULE.bazel"
+	ModuleWorkspaceFileName = "WORKSPACE.bzlmod"
+)
+
 var (
 	pathOnce sync.Once
 	pathVal  string
 	pathErr  error
 	basename string
+
+	WorkspaceIndicatorFiles = []string{WorkspaceFileName, WorkspaceAltFileName, ModuleFileName}
 )
 
 // Path returns the current Bazel workspace path by traversing upwards until
-// we see a WORKSPACE, WORKSPACE.bazel, MODULE, or MODULE.bazel file.
+// we see a WORKSPACE, WORKSPACE.bazel or MODULE.bazel file.
 func Path() (string, error) {
 	pathOnce.Do(func() {
 		pathVal, basename, pathErr = path()
@@ -40,13 +50,13 @@ func path() (string, string, error) {
 		return "", "", err
 	}
 	for {
-		for _, basename := range []string{"WORKSPACE", "WORKSPACE.bazel", "MODULE", "MODULE.bazel"} {
-			ex, err := disk.FileExists(context.TODO(), filepath.Join(dir, basename))
+		for _, file := range WorkspaceIndicatorFiles {
+			ex, err := disk.FileExists(context.TODO(), filepath.Join(dir, file))
 			if err != nil {
 				return "", "", err
 			}
 			if ex {
-				return dir, basename, nil
+				return dir, file, nil
 			}
 		}
 		next := filepath.Dir(dir)
@@ -73,9 +83,9 @@ func CreateWorkspaceIfNotExists() (string, string, error) {
 
 	useModules := useModules()
 
-	fileName := "MODULE.bazel"
+	fileName := ModuleFileName
 	if !useModules {
-		fileName = "WORKSPACE" // gazelle doesn't like WORKSPACE.bazel...
+		fileName = WorkspaceFileName // gazelle doesn't like WORKSPACE.bazel...
 	}
 
 	log.Debugf("Creating %s file", fileName)
