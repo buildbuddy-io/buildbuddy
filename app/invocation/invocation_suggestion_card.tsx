@@ -265,6 +265,31 @@ const matchers: SuggestionMatcher[] = [
       ),
     };
   },
+  // Suggest using blake3
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+
+    if (model.optionsMap.get("digest_function")) return null;
+    const version = getBazelMajorVersion(model);
+    // Bazel pre-v7 doesn't support blake3 (well, 6.4+ does, but it's easier just to suggest it for 7+).
+    if (version === null || version < 7) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider adding the Bazel startup flag <BazelFlag>--digest_function=blake3</BazelFlag> to improve the
+          performance of digest calculation.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because <span className="inline-code">--digest_function</span> is not configured.
+        </>
+      ),
+    };
+  },
   // Suggest using --jobs
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
