@@ -61,6 +61,8 @@ build:workspace_status_with_space --workspace_status_command="bash workspace_sta
 common --noverbose_test_summary
 test --config=bar
 
+build:no_value_flag --remote_download_minimal
+
 import     %workspace%/import.bazelrc
 try-import %workspace%/NONEXISTENT.bazelrc
 `,
@@ -239,6 +241,23 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--build_metadata=VALID_COMMON_FLAG=2",
 				"--build_flag_1",
 				"--workspace_status_command=bash workspace_status.sh",
+			},
+		},
+		// Test parsing flags that do not require a value to be set, like
+		// --remote_download_minimal or --java_debug
+		{
+			[]string{
+				"build",
+				"--config=no_value_flag",
+			},
+			[]string{
+				"--startup_flag_1",
+				"--ignore_all_rc_files",
+				"build",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
+				"--build_flag_1",
+				"--remote_download_minimal",
 			},
 		},
 	} {
