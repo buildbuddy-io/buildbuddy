@@ -1564,9 +1564,6 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	}
 	defer db.Close()
 
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
 	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -1578,6 +1575,9 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
 
 	md := rfpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
@@ -1751,6 +1751,7 @@ func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec in
 	}
 }
 
+// The key should be locked before calling this function.
 func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.PebbleKey) error {
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -1765,6 +1766,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	fileMetadata := rfpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 	version, err := p.lookupFileMetadataAndVersion(ctx, iter, key, fileMetadata)
+
 	if err != nil {
 		return err
 	}
