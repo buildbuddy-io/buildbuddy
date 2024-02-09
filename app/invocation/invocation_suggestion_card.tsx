@@ -294,8 +294,9 @@ const matchers: SuggestionMatcher[] = [
     if (model.optionsMap.get("remote_build_event_upload")) return null;
     if (model.optionsMap.get("experimental_remote_build_event_upload")) return null;
     const version = getBazelMajorVersion(model);
-    // Bazel pre-v6 doesn't support --experimental_remote_build_event_upload=minimal
-    if (version === null || version < 6) return null;
+    // Bazel pre-v6 doesn't support --experimental_remote_build_event_upload=minimal, and Bazel post-v6 default to the
+    // correct setting
+    if (version === null || version != 6) return null;
 
     return {
       level: SuggestionLevel.INFO,
