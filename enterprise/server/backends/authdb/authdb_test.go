@@ -318,32 +318,6 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 }
 
-func TestLookupUserFromSubID(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
-	ctx := context.Background()
-	env := setupEnv(t)
-	adb := env.GetAuthDB()
-
-	users := enterprise_testauth.CreateRandomGroups(t, env)
-	randUser := users[rand.Intn(len(users))]
-
-	u, err := adb.LookupUserFromSubID(ctx, randUser.SubID)
-	require.NoError(t, err)
-	require.Equal(t, randUser, u)
-
-	// Using empty or invalid values should produce an error
-	u, err = adb.LookupUserFromSubID(ctx, "")
-	require.Nil(t, u)
-	require.Truef(
-		t, db.IsRecordNotFound(err),
-		"expected RecordNotFound error; got: %v", err)
-	u, err = adb.LookupUserFromSubID(ctx, "INVALID")
-	require.Nil(t, u)
-	require.Truef(
-		t, db.IsRecordNotFound(err),
-		"expected RecordNotFound error; got: %v", err)
-}
-
 func newFakeUser(userID, domain string) *tables.User {
 	return &tables.User{
 		UserID:    userID,

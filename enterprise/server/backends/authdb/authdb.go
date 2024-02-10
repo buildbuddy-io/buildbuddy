@@ -28,7 +28,6 @@ import (
 	"golang.org/x/crypto/chacha20"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -431,35 +430,6 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		d.apiKeyGroupCache.Add(cacheKey, akg)
 	}
 	return akg, nil
-}
-
-func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
-	user := &tables.User{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
-		rq := tx.NewQuery(ctx, "authdb_lookup_user_from_subid").Raw(
-			`SELECT * FROM "Users" WHERE sub_id = ? ORDER BY user_id ASC`, subID)
-		if err := rq.Take(user); err != nil {
-			return err
-		}
-		rq = tx.NewQuery(ctx, "authdb_lookup_user_groups").Raw(`
-			SELECT g.*, ug.role
-			FROM "Groups" AS g, "UserGroups" AS ug
-			WHERE g.group_id = ug.group_group_id
-			AND ug.membership_status = ?
-			AND ug.user_user_id = ?
-			`, int32(grpb.GroupMembershipStatus_MEMBER), user.UserID,
-		)
-		gs, err := db.ScanAll(rq, &tables.GroupRole{})
-		if err != nil {
-			return err
-		}
-		user.Groups = gs
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return user, nil
 }
 
 func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) *query_builder.Query {

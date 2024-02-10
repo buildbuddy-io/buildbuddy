@@ -114,12 +114,12 @@ func TestGetUsers(t *testing.T) {
 	// Create first user & group.
 	err := udb.InsertUser(ctx, &tables.User{
 		UserID: "US100",
-		SubID:  "SubID100",
+		SubID:  "http://localhost:8080/saml/metadata?slug=gr100-slug/user100@org1.io",
 		Email:  "user100@org1.io",
 	})
 	require.NoError(t, err)
 
-	// Create a user in a different group.
+	// Create a user with a subID that doesn't match the group provider prefix.
 	err = udb.InsertUser(ctx, &tables.User{
 		UserID: "US999",
 		SubID:  "SubID999",
@@ -134,7 +134,7 @@ func TestGetUsers(t *testing.T) {
 	for i := 101; i < 111; i++ {
 		extraUsers = append(extraUsers, &tables.User{
 			UserID: fmt.Sprintf("US%d", i),
-			SubID:  fmt.Sprintf("SubID%d", i),
+			SubID:  fmt.Sprintf("http://localhost:8080/saml/metadata?slug=gr100-slug/user%d@org1.io", i),
 			Email:  fmt.Sprintf("user%d@org1.io", i),
 		})
 	}
@@ -397,11 +397,11 @@ func TestDeleteUser(t *testing.T) {
 	// Create first user & group.
 	err := udb.InsertUser(ctx, &tables.User{
 		UserID: "US100",
-		SubID:  "SubID100",
+		SubID:  "http://localhost:8080/saml/metadata?slug=gr100-slug/user100@org1.io",
 		Email:  "user100@org1.io",
 	})
 	require.NoError(t, err)
-	// Create a user in a different group.
+	// Create a user with a subID that doesn't match the provider prefix.
 	err = udb.InsertUser(ctx, &tables.User{
 		UserID: "US999",
 		SubID:  "SubID999",
@@ -415,19 +415,19 @@ func TestDeleteUser(t *testing.T) {
 	// Deletion victims.
 	err = udb.InsertUser(userCtx, &tables.User{
 		UserID: "US101",
-		SubID:  "SubID101",
+		SubID:  "http://localhost:8080/saml/metadata?slug=gr100-slug/user101@org1.io",
 		Email:  "user101@org1.io",
 	})
 	require.NoError(t, err)
 	err = udb.InsertUser(userCtx, &tables.User{
 		UserID: "US102",
-		SubID:  "SubID102",
+		SubID:  "http://localhost:8080/saml/metadata?slug=gr100-slug/user102@org1.io",
 		Email:  "user102@org1.io",
 	})
 	require.NoError(t, err)
 	err = udb.InsertUser(userCtx, &tables.User{
 		UserID: "US103",
-		SubID:  "SubID103",
+		SubID:  "http://localhost:8080/saml/metadata?slug=gr100-slug/user103@org1.io",
 		Email:  "user103@org1.io",
 	})
 	require.NoError(t, err)
@@ -539,7 +539,7 @@ func TestUpdateUser(t *testing.T) {
 	// Create first user & group.
 	err := udb.InsertUser(ctx, &tables.User{
 		UserID: "US100",
-		SubID:  "SubID100",
+		SubID:  "http://localhost:8080/saml/metadata?slug=gr100-slug/user100@org1.io",
 		Email:  "user100@org1.io",
 	})
 	require.NoError(t, err)
@@ -683,4 +683,15 @@ func TestUpdateUser(t *testing.T) {
 	err = json.Unmarshal(body, &updatedUser)
 	require.NoError(t, err)
 	verifyRole(t, updatedUser, scim.AdminRole)
+
+	// Create a user with a SubID that doesn't match the provider.
+	// Update attempt should fail.
+	err = udb.InsertUser(userCtx, &tables.User{
+		UserID: "US101",
+		SubID:  "SubID101",
+		Email:  "user101@org1.io",
+	})
+	require.NoError(t, err)
+	code, body = tc.Patch(baseURL+"/scim/Users/US101", body)
+	require.Equal(tc.t, http.StatusNotFound, code, "body: %s", string(body))
 }
