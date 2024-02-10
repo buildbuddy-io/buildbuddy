@@ -1040,7 +1040,6 @@ func TestWriteCancelBeforeCommit(t *testing.T) {
 				require.Equal(t, rn.GetDigest().GetHash(), d2.GetHash())
 			} else {
 				require.Error(t, commitErr, "context canceled")
-
 			}
 
 			err = pc.Stop()
