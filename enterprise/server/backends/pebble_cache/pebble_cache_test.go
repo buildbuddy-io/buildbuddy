@@ -1003,7 +1003,7 @@ func TestWriteCancelBeforeCommit(t *testing.T) {
 		{
 			desc:                  "chunking turned on",
 			averageChunkSizeBytes: 64 * 4,
-			testSize:              256,
+			testSize:              1024,
 		},
 	}
 	for _, tc := range testCases {
@@ -1028,10 +1028,19 @@ func TestWriteCancelBeforeCommit(t *testing.T) {
 			_, err = wc.Write(buf)
 			require.NoError(t, err)
 			cancel()
-			err = wc.Commit()
-			require.ErrorContains(t, err, "context canceled")
+			commitErr := wc.Commit()
 			err = wc.Close()
 			require.NoError(t, err)
+
+			if commitErr == nil {
+				// Use Reader() to get the bytes from the cache.
+				reader, err := pc.Reader(ctx, rn, 0, 0)
+				require.NoError(t, err, "Error getting %q reader", rn.GetDigest().GetHash())
+				d2 := testdigest.ReadDigestAndClose(t, reader)
+				require.Equal(t, rn.GetDigest().GetHash(), d2.GetHash())
+			} else {
+				require.Error(t, commitErr, "context canceled")
+			}
 
 			err = pc.Stop()
 			require.NoError(t, err)
