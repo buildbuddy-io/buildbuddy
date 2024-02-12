@@ -57,14 +57,6 @@ var (
 	encryptOldKeys       = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
 )
 
-var (
-	// Capabilities that are allowed to be assigned to user-owned API keys.
-	userAPIKeyCapabilitiesMask = capabilities.ToInt([]akpb.ApiKey_Capability{
-		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
-		akpb.ApiKey_CAS_WRITE_CAPABILITY,
-	})
-)
-
 type apiKeyGroupCacheEntry struct {
 	data         interfaces.APIKeyGroup
 	expiresAfter time.Time
@@ -664,7 +656,7 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 
 		// Additionally, respect our list of capabilities that can be assigned
 		// to user-level keys.
-		if requestedCapabilities&userAPIKeyCapabilitiesMask != requestedCapabilities {
+		if requestedCapabilities&capabilities.UserAPIKeyCapabilitiesMask != requestedCapabilities {
 			return status.PermissionDeniedError("the requested API key capabilities are not allowed for user-level keys")
 		}
 

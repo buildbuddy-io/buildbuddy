@@ -23,6 +23,13 @@ var (
 	AnonymousUserCapabilities = DefaultAuthenticatedUserCapabilities
 	// AnonymousUserCapabilitiesMask is the mask form of AnonymousUserCapabilities.
 	AnonymousUserCapabilitiesMask = ToInt(AnonymousUserCapabilities)
+
+	// UserAPIKeyCapabilitiesMask defines the capabilities that are allowed to
+	// be assigned to user-owned API keys.
+	UserAPIKeyCapabilitiesMask = ToInt([]akpb.ApiKey_Capability{
+		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+	})
 )
 
 func FromInt(m int32) []akpb.ApiKey_Capability {
@@ -41,6 +48,10 @@ func ToInt(caps []akpb.ApiKey_Capability) int32 {
 		m |= int32(c)
 	}
 	return m
+}
+
+func ApplyMask(caps []akpb.ApiKey_Capability, mask int32) []akpb.ApiKey_Capability {
+	return FromInt(ToInt(caps) & mask)
 }
 
 func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capability) (bool, error) {
