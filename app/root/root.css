@@ -83,7 +83,7 @@ button {
   font-size: 24px;
   z-index: 2;
   position: relative;
-  background-color: rgba(38, 50, 56, 1);
+  background-color: #212121;
   color: #fff;
 }
 
@@ -168,7 +168,7 @@ button {
   position: absolute;
   top: 46px;
   right: 8px;
-  background-color: rgba(38, 50, 56, 1);
+  background-color: #212121;
   color: #fff;
   padding: 8px 32px 32px 32px;
   border-bottom-left-radius: 8px;
@@ -323,7 +323,7 @@ svg.icon.orange {
 
 .org-button {
   float: right;
-  background-color: rgba(38, 50, 56, 1);
+  background-color: #212121;
   padding: 8px 16px;
   border-radius: 32px;
   margin-top: -6px;
@@ -365,7 +365,7 @@ svg.icon.orange {
 }
 
 .tab.selected {
-  background: rgba(38, 50, 56, 1);
+  background: #212121;
   color: #fff;
 }
 
@@ -512,7 +512,7 @@ body {
 }
 
 .card.dark {
-  background-color: #222;
+  background-color: #212121;
   color: #fff;
 }
 
@@ -618,7 +618,7 @@ body {
 .card .more {
   margin-top: 16px;
   font-weight: 600;
-  color: #263238;
+  color: #212121;
   cursor: pointer;
   user-select: none;
 }
@@ -871,7 +871,7 @@ code .comment {
 }
 
 .setup .downloads a {
-  background-color: #263238;
+  background-color: #212121;
   color: #fff;
   padding: 7px 16px;
   margin-right: 8px;
@@ -980,7 +980,7 @@ code .comment {
 }
 
 .role-badge.CI_RUNNER {
-  background: #263238;
+  background: #212121;
   color: white;
 }
 
@@ -991,7 +991,7 @@ code .comment {
 .empty-state .button {
   width: 100%;
   padding: 24px 64px;
-  background-color: #263238;
+  background-color: #212121;
   color: #fff;
   font-size: 16px;
   font-weight: 600;
@@ -1011,7 +1011,7 @@ code .comment {
 .load-more {
   width: 100%;
   padding: 24px 0;
-  background-color: #263238;
+  background-color: #212121;
   color: #fff;
   font-size: 16px;
   font-weight: 600;
@@ -1336,7 +1336,7 @@ code .comment {
 .invocation-command-line-title {
   font-weight: 700;
   font-size: 18px;
-  color: #222;
+  color: #212121;
   margin-bottom: 16px;
 }
 
@@ -1356,7 +1356,7 @@ code .comment {
 }
 
 .invocation-option-value {
-  color: #222;
+  color: #212121;
 }
 
 .invocation-option-dash,
@@ -1444,8 +1444,8 @@ code .comment {
 .login-buttons .google-button,
 .login-buttons .github-button {
   background-color: #fff;
-  color: #424242;
-  border: 3px solid #424242;
+  color: #212121;
+  border: 3px solid #212121;
 }
 
 .login-buttons .login-button:hover,
@@ -1472,7 +1472,7 @@ code .comment {
 }
 
 .login-interstitial {
-  background-color: rgba(38, 50, 56, 1);
+  background-color: #212121;
   min-height: calc(100vh - 200px);
 }
 
@@ -1682,14 +1682,14 @@ code .comment {
 
 .dense .tab.selected {
   background-color: transparent;
-  color: #455a64;
+  color: #616161;
   position: relative;
 }
 
 .dense .tab.selected:after {
   display: block;
   content: " ";
-  background-color: #455a64;
+  background-color: #616161;
   height: 4px;
   position: absolute;
   bottom: 0;
@@ -2082,11 +2082,11 @@ code .comment {
 }
 
 .loading.loading-dark {
-  background: #263238;
+  background: #212121;
 }
 
 .loading.loading-dark-terminal {
-  background: #222;
+  background: #212121;
 }
 
 .loading.loading-dark:before,

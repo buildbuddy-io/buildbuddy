@@ -14,7 +14,7 @@
 .rdrDateDisplayItem {
   border-radius: 4px;
   background-color: rgb(255, 255, 255);
-  box-shadow: 0 1px 2px 0 rgba(35, 57, 66, 0.21);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.21);
   border: 1px solid transparent;
 }
 
@@ -30,7 +30,7 @@
 }
 
 .rdrDateDisplayItem input::placeholder {
-  color: #90a4ae;
+  color: #bdbdbd;
 }
 
 .rdrDateDisplayItemActive {
