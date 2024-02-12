@@ -99,6 +99,10 @@ func (tc *testClient) Put(url string, body []byte) (int, []byte) {
 	return tc.do(http.MethodPut, url, body)
 }
 
+func (tc *testClient) Delete(url string) (int, []byte) {
+	return tc.do(http.MethodDelete, url, nil)
+}
+
 func verifyRole(t *testing.T, ur scim.UserResource, expectedRole string) {
 	require.Equal(t, expectedRole, ur.Role)
 	require.Len(t, ur.Roles, 1)
@@ -431,6 +435,12 @@ func TestDeleteUser(t *testing.T) {
 		Email:  "user103@org1.io",
 	})
 	require.NoError(t, err)
+	err = udb.InsertUser(userCtx, &tables.User{
+		UserID: "US104",
+		SubID:  "SubID104",
+		Email:  "user104@org1.io",
+	})
+	require.NoError(t, err)
 
 	ss := scim.NewSCIMServer(env)
 	mux := http.NewServeMux()
@@ -507,6 +517,16 @@ func TestDeleteUser(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, updatedUser.Active)
 		_, err = udb.GetUserByID(userCtx, "US103")
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err))
+	}
+
+	// Delete user US104 using a DELETE request.
+	{
+		code, body := tc.Delete(baseURL + "/scim/Users/US104")
+		require.Equal(tc.t, http.StatusNoContent, code, "body: %s", string(body))
+		require.NoError(t, err)
+		_, err = udb.GetUserByID(userCtx, "US104")
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err))
 	}
