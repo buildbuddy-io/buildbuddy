@@ -52,9 +52,7 @@ actions:
         -//enterprise/server/raft/store:all
         -//enterprise/server/remote_execution/commandutil:all
         -//enterprise/server/remote_execution/runner:all
-        -//enterprise/server/test/integration/ci_runner:all
-        -//enterprise/server/test/integration/remote_execution:all
-        -//enterprise/server/test/integration/workflow:all
+        -//enterprise/server/test/integration/...
   - name: Benchmark
     container_image: ubuntu-20.04
     triggers:
