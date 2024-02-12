@@ -218,12 +218,12 @@
   position: absolute;
   z-index: 1;
   background: white;
-  border: 2px solid #263238;
+  border: 2px solid #212121;
 }
 
 .tap .commit-link:hover::after {
-  background: #607d8b;
-  border-color: #607d8b;
+  background: #9e9e9e;
+  border-color: #9e9e9e;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 

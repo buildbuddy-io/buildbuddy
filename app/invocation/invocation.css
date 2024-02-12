@@ -84,7 +84,7 @@
 .invocation-action-card .text-link {
   font-weight: 600;
   text-decoration: underline;
-  color: #263238;
+  color: #212121;
 }
 
 .invocation-targets-card .targets-table {
@@ -149,7 +149,7 @@
   display: flex;
   gap: 8px;
   font-weight: 600;
-  color: #263238;
+  color: #212121;
 }
 
 .invocation-targets-card .root-cause-badge {
@@ -523,7 +523,7 @@
 .action-title {
   font-weight: 700;
   font-size: 18px;
-  color: #222;
+  color: #212121;
   margin-bottom: 16px;
 }
 
@@ -534,7 +534,7 @@
 .action-section {
   display: flex;
   margin-bottom: 16px;
-  color: #222;
+  color: #212121;
 }
 
 .action-section > div {
@@ -677,7 +677,7 @@
 }
 
 .upload-color-swatch {
-  background-color: #607d8b;
+  background-color: #3f51b5;
 }
 
 .cache-hit-color-swatch {
@@ -872,7 +872,7 @@
 
 .base-button:hover .comparison-buffer-illustration,
 .comparison-buffer-illustration.buffered {
-  --illustration-color: #263238;
+  --illustration-color: #212121;
 }
 
 .comparison-buffer-icon {
@@ -948,7 +948,7 @@
 
 .metadata-title {
   font-weight: 600;
-  color: #222;
+  color: #212121;
   margin-bottom: 2px;
 }
 
@@ -973,7 +973,7 @@
 }
 
 .prop-name {
-  color: #222;
+  color: #212121;
   font-weight: 600;
 }
 
@@ -1036,7 +1036,7 @@ svg.invocation-query-graph {
 
 svg.invocation-query-graph .nodes {
   fill: #fff;
-  stroke: #263238;
+  stroke: #212121;
   stroke-width: 4px;
 }
 svg.invocation-query-graph .nodes text {
@@ -1044,8 +1044,8 @@ svg.invocation-query-graph .nodes text {
 }
 
 svg.invocation-query-graph path {
-  stroke: #263238;
-  fill: #263238;
+  stroke: #212121;
+  fill: #212121;
   stroke-width: 2px;
 }
 
@@ -1093,7 +1093,7 @@ svg.invocation-query-graph .nodes rect {
 .invocation-query-graph-summary-card .summary-numeric-value {
   font-weight: 600;
   min-width: 48px;
-  color: #424242;
+  color: #212121;
   text-align: right;
 }
 
@@ -1132,7 +1132,7 @@ svg.invocation-query-graph .nodes rect {
   --status-color: #03a9f4;
 }
 .child-invocation-card:is(.status-queued, .status-not-run) {
-  --status-color: #9e9e9e;
+  --status-color: #3f51b5;
 }
 
 .child-invocation-card {

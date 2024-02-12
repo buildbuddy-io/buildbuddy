@@ -259,7 +259,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const events: TimelineEvent[] = [
       {
         name: "Queued",
-        color: "#607D8B",
+        color: "#3F51B5",
         timestamp: metadata?.queuedTimestamp,
       },
       {

@@ -80,7 +80,7 @@ html[data-theme="dark"] .menu {
 }
 
 .aa-Form:focus-within {
-  box-shadow: rgba(38, 50, 56, 0.1) 0 0 0 2px, inset rgba(38, 50, 56, 0.1) 0 0 0 2px !important;
+  box-shadow: rgba(0, 0, 0, 0.1) 0 0 0 2px, inset rgba(0, 0, 0, 0.1) 0 0 0 2px !important;
 }
 
 .dsla-search-wrapper {
@@ -221,7 +221,7 @@ html[data-theme="dark"] .menu {
 }
 
 .theme-doc-sidebar-menu.menu__list .menu__list .menu__link {
-  color: #455a64;
+  color: #616161;
   padding-left: 16px;
   margin-right: 16px;
 }

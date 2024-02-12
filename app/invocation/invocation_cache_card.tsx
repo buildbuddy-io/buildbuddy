@@ -95,7 +95,7 @@ export default class CacheCardComponent extends React.Component<Props> {
                           +cacheStat.totalDownloadSizeBytes,
                           "#03A9F4",
                           +cacheStat.totalUploadSizeBytes,
-                          "#607D8B"
+                          "#3F51B5"
                         )}
                         <div>
                           {this.renderVolumeChartLabel(
@@ -118,7 +118,7 @@ export default class CacheCardComponent extends React.Component<Props> {
                       <div className="cache-title">Throughput</div>
                       <div className="cache-subtitle">Upload / download speed (time-weighted avg)</div>
                       <div className="cache-chart">
-                        {this.drawChart(downloadThroughput, "#03A9F4", uploadThroughput, "#607D8B")}
+                        {this.drawChart(downloadThroughput, "#03A9F4", uploadThroughput, "#3F51B5")}
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch download-color-swatch"></span>

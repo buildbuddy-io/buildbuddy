@@ -34,7 +34,7 @@ html[data-theme="dark"] .markdown a {
 }
 
 .docusaurus-highlight-code-line {
-  background-color: #37474f;
+  background-color: #424242;
   display: block;
   margin: 0 calc(-1 * var(--ifm-pre-padding));
   padding: 0 var(--ifm-pre-padding);

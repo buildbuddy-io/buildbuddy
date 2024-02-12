@@ -1,5 +1,5 @@
 .footer--dark {
-  --ifm-footer-background-color: #263238;
+  --ifm-footer-background-color: #212121;
   --ifm-footer-link-color: rgba(255, 255, 255, 0.5);
   --ifm-footer-link-hover-color: rgba(255, 255, 255, 0.8);
   font-weight: 600;

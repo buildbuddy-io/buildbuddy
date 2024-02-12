@@ -25,10 +25,7 @@ function Index() {
                 their builds.
               </div>
               <div className={styles.price}>Free</div>
-              <a
-                style={{ backgroundColor: "#607D8B", border: "0", color: "#fff" }}
-                className={common.button}
-                href="https://app.buildbuddy.io">
+              <a className={`${common.button} ${common.buttonPrimary}`} href="https://app.buildbuddy.io">
                 Get Started for Free
               </a>
               <div className={styles.priceTierFeatures}>
@@ -79,7 +76,10 @@ function Index() {
                 Empowering companies with custom Bazel solutions tailored to the unique requirements of their business.
               </div>
               <div className={styles.price}>Suited for your business</div>
-              <a className={`${common.button} ${common.buttonPrimary}`} href="/request-quote">
+              <a
+                style={{ backgroundColor: "transparent", border: "2px solid #212121", color: "#212121" }}
+                className={`${common.button} ${common.buttonPrimary}`}
+                href="/request-quote">
                 Request a Quote
               </a>
               <div className={styles.priceTierFeatures}>

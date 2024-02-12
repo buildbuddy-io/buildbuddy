@@ -20,7 +20,7 @@
 }
 
 .filled-button {
-  background-color: #263238;
+  background-color: #212121;
   color: #fff;
 }
 
@@ -33,7 +33,7 @@
 }
 
 .filled-button:hover {
-  background-color: #455a64;
+  background-color: #616161;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   transition: 100ms;
 }

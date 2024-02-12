@@ -248,8 +248,8 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
                   // Disable textbox inputs, like "days from today", or "days until today".
                   inputRanges={[]}
                   editableDateInputs
-                  color="#263238"
-                  rangeColors={["#263238"]}
+                  color="#212121"
+                  rangeColors={["#212121"]}
                   startDatePlaceholder="Start date"
                   endDatePlaceholder="End date"
                 />
