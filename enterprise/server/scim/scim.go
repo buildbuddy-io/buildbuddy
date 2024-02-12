@@ -222,6 +222,10 @@ func (s *SCIMServer) handleRequest(w http.ResponseWriter, r *http.Request, handl
 		w.Write([]byte(err.Error()))
 		return
 	}
+	if val == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	out, err := json.Marshal(val)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -648,5 +652,9 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 }
 
 func (s *SCIMServer) deleteUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
-	return nil, status.UnimplementedError("delete not supported")
+	id := path.Base(r.URL.Path)
+	if err := s.env.GetUserDB().DeleteUser(ctx, id); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
