@@ -1135,11 +1135,14 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 		// user-owned keys (for now, we only support setting cache capabilities
 		// on user-owned keys)
 		{Name: "Admin_OrgAdmin_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}, OK: false},
-		// TODO(bduffany): Figure out how these capabilities should work. For
-		// now, we just fail if they are assigned by these (role, capability)
-		// combinations. See http://go/b/3091#issuecomment-1932266337
-		{Name: "Writer_ACWrite_Fail", Role: role.Writer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
+		// Readers and writers should be able to assign any capabilities
+		// within the max limits allowed by their role.
+		{Name: "Writer_NoCapabilities_OK", Role: role.Writer, Capabilities: nil, OK: true},
+		{Name: "Writer_CASWrite_OK", Role: role.Writer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: true},
+		{Name: "Writer_ACWrite_OK", Role: role.Writer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: true},
+		{Name: "Reader_NoCapabilities_OK", Role: role.Reader, Capabilities: nil, OK: true},
 		{Name: "Reader_CASWrite_Fail", Role: role.Reader, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: false},
+		{Name: "Reader_ACWrite_Fail", Role: role.Reader, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			ctx := context.Background()

@@ -56,11 +56,6 @@ var (
 	defaultAPIKeyCapabilities = []akpb.ApiKey_Capability{
 		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
 	}
-
-	// Capabilities assigned to user-owned API keys.
-	userAPIKeyCapabilities = []akpb.ApiKey_Capability{
-		akpb.ApiKey_CAS_WRITE_CAPABILITY,
-	}
 )
 
 func singleUserGroup(u *tables.User) (*tables.Group, error) {
