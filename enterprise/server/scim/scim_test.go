@@ -343,6 +343,10 @@ func TestCreateUser(t *testing.T) {
 		require.Equal(t, "user500@org1.io", ur.UserName)
 		verifyRole(t, ur, scim.DeveloperRole)
 		require.True(t, ur.Active)
+
+		u, err := udb.GetUserByID(userCtx, createdUser.ID)
+		require.NoError(t, err)
+		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/user500@org1.io", u.SubID)
 	}
 
 	// Create admin user.

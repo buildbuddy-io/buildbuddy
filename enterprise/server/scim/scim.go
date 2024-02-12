@@ -453,7 +453,7 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
-	entityURL := build_buddy_url.WithPath("saml/metadata?slug=" + g.URLIdentifier)
+	entityURL := build_buddy_url.WithPath("saml/metadata").String() + "?slug=" + g.URLIdentifier
 	u := &tables.User{
 		UserID:    pk,
 		SubID:     fmt.Sprintf("%s/%s", entityURL, ur.UserName),
