@@ -7,8 +7,8 @@ import (
 	"slices"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -270,9 +270,7 @@ func authorizeServerAdmin(ctx context.Context, env environment.Env) error {
 		return status.PermissionDeniedError("permission denied")
 	}
 	for _, m := range u.GetGroupMemberships() {
-		// TODO(bduffany): check ORG_ADMIN capability once
-		// https://github.com/buildbuddy-io/buildbuddy/pull/5856 is in.
-		if m.GroupID == serverAdminGID && m.Role == role.Admin {
+		if m.GroupID == serverAdminGID && (capabilities.ToInt(m.Capabilities)&int32(akpb.ApiKey_ORG_ADMIN_CAPABILITY) != 0) {
 			return nil
 		}
 	}
