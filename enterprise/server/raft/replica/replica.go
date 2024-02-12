@@ -1185,12 +1185,6 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 			UpdateAtime: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_FindSplitPoint:
-		r, err := sm.findSplitPoint()
-		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
-			FindSplitPoint: r,
-		}
-		rsp.Status = statusProto(err)
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}
@@ -1230,6 +1224,12 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 		r, err := sm.find(db, value.Find)
 		rsp.Value = &rfpb.ResponseUnion_Find{
 			Find: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_FindSplitPoint:
+		r, err := sm.findSplitPoint()
+		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
+			FindSplitPoint: r,
 		}
 		rsp.Status = statusProto(err)
 	default:

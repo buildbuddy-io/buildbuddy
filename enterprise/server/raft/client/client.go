@@ -247,3 +247,15 @@ func SyncProposeLocalBatchNoRsp(ctx context.Context, nodehost *dragonboat.NodeHo
 	}
 	return rspBatch.AnyError()
 }
+
+func SyncReadLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
+	batch, err := builder.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := SyncReadLocal(ctx, nodehost, shardID, batch)
+	if err != nil {
+		return nil, err
+	}
+	return rbuilder.NewBatchResponseFromProto(rsp), nil
+}
