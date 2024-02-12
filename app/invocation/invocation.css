@@ -677,7 +677,7 @@
 }
 
 .upload-color-swatch {
-  background-color: #3F51B5;
+  background-color: #3f51b5;
 }
 
 .cache-hit-color-swatch {
@@ -1132,7 +1132,7 @@ svg.invocation-query-graph .nodes rect {
   --status-color: #03a9f4;
 }
 .child-invocation-card:is(.status-queued, .status-not-run) {
-  --status-color: #3F51B5;
+  --status-color: #3f51b5;
 }
 
 .child-invocation-card {
