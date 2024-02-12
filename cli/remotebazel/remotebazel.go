@@ -55,19 +55,17 @@ const (
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
 	defaultRemoteExecutionURL  = "remote.buildbuddy.io"
-	defaultRemoteResultsURL    = "https://app.buildbuddy.io/invocation/"
 )
 
 var (
 	remoteFlagset = flag.NewFlagSet("remote", flag.ContinueOnError)
 
-	execOs           = remoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
-	execArch         = remoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
-	containerImage   = remoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
-	envInput         = bbflag.New(remoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
-	remoteRunner     = remoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
-	remoteResultsUrl = remoteFlagset.String("remote_results_url", defaultRemoteResultsURL, "The Buildbuddy URL logs for the complete remote run should be streamed to.")
-	timeout          = remoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
+	execOs         = remoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
+	execArch       = remoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
+	containerImage = remoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
+	envInput       = bbflag.New(remoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
+	remoteRunner   = remoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
+	timeout        = remoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
 
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
@@ -568,7 +566,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	iid := rsp.GetInvocationId()
-	log.Printf("\nStreaming remote bazel logs to: %s/%s", *remoteResultsUrl, iid)
 
 	// If the remote bazel process is canceled or killed, cancel the remote run
 	sigChan := make(chan os.Signal)
