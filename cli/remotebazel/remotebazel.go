@@ -566,6 +566,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	iid := rsp.GetInvocationId()
+	log.Debugf("Invocation ID: %s", iid)
 
 	// If the remote bazel process is canceled or killed, cancel the remote run
 	sigChan := make(chan os.Signal)
@@ -671,11 +672,6 @@ func HandleRemoteBazel(args []string) (int, error) {
 		os.RemoveAll(tempDir)
 	}()
 
-	runner := *remoteRunner
-	if !strings.HasPrefix(runner, "grpc") {
-		runner = "grpcs://" + runner
-	}
-
 	_, bazelArgs, execArgs, err := setup.Setup(args, tempDir)
 	if err != nil {
 		return 1, status.WrapError(err, "bazel setup")
@@ -692,8 +688,8 @@ func HandleRemoteBazel(args []string) (int, error) {
 	// Ensure all bazel remote runs use the remote cache.
 	// The goal is to keep remote workloads close to our servers, so use the same
 	// app backend as the remote runner.
-	bazelArgs = append(bazelArgs, "--bes_backend="+runner)
-	bazelArgs = append(bazelArgs, "--remote_cache="+runner)
+	bazelArgs = append(bazelArgs, "--bes_backend="+*remoteRunner)
+	bazelArgs = append(bazelArgs, "--remote_cache="+*remoteRunner)
 
 	ctx := context.Background()
 	repoConfig, err := Config(".")
@@ -704,6 +700,11 @@ func HandleRemoteBazel(args []string) (int, error) {
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	if err != nil {
 		return 1, status.WrapError(err, "finding workspace")
+	}
+
+	runner := *remoteRunner
+	if !strings.HasPrefix(runner, "grpc") {
+		runner = "grpcs://" + runner
 	}
 
 	return Run(ctx, RunOpts{
