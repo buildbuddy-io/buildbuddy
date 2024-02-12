@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -572,12 +573,33 @@ func (d *UserDB) updateUserRole(ctx context.Context, tx interfaces.DB, userID st
 	if role.Role(ug.Role) == newRole {
 		return nil
 	}
+	maxCapabilitiesForNewRole, err := role.ToCapabilities(newRole)
+	if err != nil {
+		return err
+	}
 	err = tx.NewQuery(ctx, "userdb_update_user_role").Raw(`
-					UPDATE "UserGroups"
-					SET role = ?
-					WHERE user_user_id = ? AND group_group_id = ?
-				`, newRole, userID, groupID,
+		UPDATE "UserGroups"
+		SET role = ?
+		WHERE user_user_id = ? AND group_group_id = ?
+	`, newRole, userID, groupID,
 	).Exec().Error
+	if err != nil {
+		return err
+	}
+	// Update capabilities to reflect the new role.
+	//
+	// In this query, there is an edge case to handle: we need to augment the
+	// existing capabilities with an explicit CAS_WRITE capability if it was
+	// previously implicitly allowed via CACHE_WRITE.
+	//
+	// More concretely, the expression `((capabilities & 1) << 2)` evaluates to
+	// CAS_WRITE if the user currently has CACHE_WRITE, otherwise 0. We then OR
+	// this with the user's current capabilities.
+	err = tx.NewQuery(ctx, "userdb_update_user_role_api_key_capabilities").Raw(`
+		UPDATE "APIKeys"
+		SET capabilities = (capabilities | ((capabilities & 1) << 2)) & ?
+		WHERE user_id = ? AND group_id = ?
+	`, capabilities.ToInt(maxCapabilitiesForNewRole), userID, groupID).Exec().Error
 	if err != nil {
 		return err
 	}
