@@ -15,10 +15,7 @@ gossip:
   join: ["127.0.0.1:9201", "127.0.0.1:9202", "127.0.0.1:9203"]
 auth:
   enable_anonymous_usage: true
-  oauth_providers:
-    - issuer_url: "https://accounts.google.com"
-      client_id: "${BB_DEV_OAUTH_CLIENT_ID}"
-      client_secret: "${BB_DEV_OAUTH_CLIENT_SECRET}"
+  enable_self_auth: true
 github:
   client_id: "${BB_DEV_GITHUB_CLIENT_ID}"
   client_secret: "${BB_DEV_GITHUB_CLIENT_SECRET}"
