@@ -318,11 +318,9 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	}
 
 	selectedGroupID := ""
-	selectedGroupRole := role.None
 	selectedGroupAccess := uspb.SelectedGroup_DENIED
 	if g := selectedGroup(ctx, req.GetRequestContext().GetGroupId(), tu.Groups); g != nil {
 		selectedGroupID = g.Group.GroupID
-		selectedGroupRole = role.Role(g.Role)
 		selectedGroupAccess = uspb.SelectedGroup_ALLOWED
 		if irs := s.env.GetIPRulesService(); irs != nil {
 			err := irs.AuthorizeGroup(ctx, g.Group.GroupID)
@@ -333,19 +331,11 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 			}
 		}
 	}
-	allowedRPCs := capabilities_filter.RoleIndependentRPCs()
-	if selectedGroupRole&role.Admin > 0 {
-		allowedRPCs = append(allowedRPCs, capabilities_filter.GroupAdminOnlyRPCs()...)
-	}
-	if selectedGroupRole&(role.Admin|role.Developer) > 0 {
-		allowedRPCs = append(allowedRPCs, capabilities_filter.GroupDeveloperRPCs()...)
-	}
 
 	subdomainGroupID := ""
 	if serverAdminGID := s.env.GetAuthenticator().AdminGroupID(); serverAdminGID != "" {
 		for _, gr := range tu.Groups {
 			if gr.Group.GroupID == serverAdminGID && gr.Role == uint32(role.Admin) {
-				allowedRPCs = append(allowedRPCs, capabilities_filter.ServerAdminOnlyRPCs()...)
 				gid, err := s.getGroupIDForSubdomain(ctx)
 				if err != nil && !status.IsNotFoundError(err) {
 					return nil, err
@@ -367,7 +357,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 			GroupId: selectedGroupID,
 			Access:  selectedGroupAccess,
 		},
-		AllowedRpc:       allowedRPCs,
+		AllowedRpc:       capabilities_filter.AllowedRPCs(ctx, s.env, selectedGroupID),
 		GithubLinked:     tu.GithubToken != "",
 		SubdomainGroupId: subdomainGroupID,
 		IsImpersonating:  u.IsImpersonating(),

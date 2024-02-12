@@ -4,24 +4,23 @@ import (
 	"context"
 	"flag"
 	"path"
+	"slices"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-)
 
-const (
-	globalAdminGroupID = "admin"
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 )
 
 var (
 	adminOnlyCreateGroup = flag.Bool("app.admin_only_create_group", false, "If true, only admins of an existing group can create a new groups.")
 
-	// RoleIndependentRPCs do not require a particular group role for auth. They
-	// may rely on other forms of authorization if appropriate.
-	roleIndependentRPCs = []string{
+	// unfilteredRPCs are always allowed by the capabilities filter.
+	// They may rely on other auth checks within the RPC implementation
+	// if appropriate.
+	unfilteredRPCs = []string{
 		// RPCs that happen pre-login and don't require group membership.
 		"GetUser",
 		"CreateUser",
@@ -76,9 +75,9 @@ var (
 		"GetGithubPullRequestDetails",
 	}
 
-	// DeveloperRPCs can be called only by developers or admins of the selected
-	// group.
-	groupDeveloperRPCs = []string{
+	// groupMemberRPCs can only be called when logged in as a member of
+	// the selected group, irrespective of capabilities.
+	groupMemberRPCs = []string{
 		// Invocation history and historical data for the org
 		"SearchInvocation",
 		"GetInvocationStat",
@@ -183,28 +182,54 @@ var (
 	}
 )
 
-func RoleIndependentRPCs() []string {
-	r := roleIndependentRPCs
+// AllowedRPCs returns the complete list of RPCs that are allowed for the given
+// request context and selected group ID.
+func AllowedRPCs(ctx context.Context, env environment.Env, groupID string) []string {
+	var out []string
+	out = append(out, getUnfilteredRPCs()...)
+
+	if err := authorizeServerAdmin(ctx, env); err == nil {
+		out = append(out, serverAdminOnlyRPCs...)
+	}
+
+	if groupID != "" {
+		userGroupCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, env, groupID)
+		if err == nil {
+			if slices.Contains(userGroupCapabilities, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+				out = append(out, getGroupAdminOnlyRPCs()...)
+			}
+			out = append(out, groupMemberRPCs...)
+		}
+	}
+
+	return out
+}
+
+// AllRPCsForTestOnly returns all RPC names known to the capabilities filter.
+// For testing only.
+func AllRPCsForTestOnly() []string {
+	var out []string
+	out = append(out, getUnfilteredRPCs()...)
+	out = append(out, groupMemberRPCs...)
+	out = append(out, getGroupAdminOnlyRPCs()...)
+	out = append(out, serverAdminOnlyRPCs...)
+	return out
+}
+
+func getUnfilteredRPCs() []string {
+	r := unfilteredRPCs
 	if !*adminOnlyCreateGroup {
 		r = append(r, "CreateGroup")
 	}
 	return r
 }
 
-func GroupDeveloperRPCs() []string {
-	return groupDeveloperRPCs
-}
-
-func GroupAdminOnlyRPCs() []string {
+func getGroupAdminOnlyRPCs() []string {
 	r := groupAdminOnlyRPCs
 	if *adminOnlyCreateGroup {
 		r = append(r, "CreateGroup")
 	}
 	return r
-}
-
-func ServerAdminOnlyRPCs() []string {
-	return serverAdminOnlyRPCs
 }
 
 // AuthorizeRPC applies a coarse-grained authorization check on an RPC to ensure
@@ -217,57 +242,40 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 	// accessed via protolet or gRPC.
 	rpcName = path.Base(rpcName)
 
-	if stringSliceContains(RoleIndependentRPCs(), rpcName) {
-		return nil
+	var groupID string
+	u, err := perms.AuthenticatedUser(ctx, env)
+	if err == nil {
+		groupID = u.GetGroupID()
 	}
 
+	if !slices.Contains(AllowedRPCs(ctx, env, groupID), rpcName) {
+		return status.PermissionDeniedError("permission denied")
+	}
+
+	return nil
+}
+
+func authorizeServerAdmin(ctx context.Context, env environment.Env) error {
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err != nil {
 		return err
 	}
 
-	if stringSliceContains(u.GetAllowedGroups(), globalAdminGroupID) {
+	// If impersonation is in effect, it implies the user is an admin.
+	// Can't check group membership because impersonation modifies
+	// group information.
+	if u.IsImpersonating() {
 		return nil
 	}
 
-	if stringSliceContains(ServerAdminOnlyRPCs(), rpcName) {
-		// If impersonation is in effect, it implies the user is an admin.
-		// Can't check group membership because impersonation modifies
-		// group information.
-		if u.IsImpersonating() {
+	serverAdminGID := env.GetAuthenticator().AdminGroupID()
+	if serverAdminGID == "" {
+		return status.PermissionDeniedError("permission denied")
+	}
+	for _, m := range u.GetGroupMemberships() {
+		if m.GroupID == serverAdminGID && (capabilities.ToInt(m.Capabilities)&int32(akpb.ApiKey_ORG_ADMIN_CAPABILITY) != 0) {
 			return nil
 		}
-
-		serverAdminGID := env.GetAuthenticator().AdminGroupID()
-		if serverAdminGID == "" {
-			return status.PermissionDeniedError("Permission Denied.")
-		}
-		for _, m := range u.GetGroupMemberships() {
-			if m.GroupID == serverAdminGID && m.Role == role.Admin {
-				return nil
-			}
-		}
-		return status.PermissionDeniedError("Permission denied.")
 	}
-
-	groupID := u.GetGroupID()
-	if groupID == "" {
-		return status.UnauthenticatedError("Could not determine authenticated group ID from request")
-	}
-
-	allowedRoles := role.Admin | role.Developer
-	if stringSliceContains(GroupAdminOnlyRPCs(), rpcName) {
-		allowedRoles = role.Admin
-	}
-
-	return authutil.AuthorizeGroupRole(u, groupID, allowedRoles)
-}
-
-func stringSliceContains(slice []string, val string) bool {
-	for _, v := range slice {
-		if val == v {
-			return true
-		}
-	}
-	return false
+	return status.PermissionDeniedError("Permission denied.")
 }

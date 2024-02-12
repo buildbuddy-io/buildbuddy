@@ -6,10 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/capabilities_filter",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:api_key_go_proto",
         "//server/environment",
-        "//server/util/authutil",
+        "//server/util/capabilities",
         "//server/util/perms",
-        "//server/util/role",
         "//server/util/status",
     ],
 )
@@ -20,9 +20,12 @@ go_test(
     srcs = ["capabilities_filter_test.go"],
     deps = [
         ":capabilities_filter",
+        "//proto:api_key_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:context_go_proto",
         "//proto/api/v1:api_v1_go_proto",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
     ],
 )
