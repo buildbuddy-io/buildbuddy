@@ -83,9 +83,6 @@ func ForAuthenticatedUserGroup(ctx context.Context, env environment.Env, groupID
 	}
 	u, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {
-			return DefaultAuthenticatedUserCapabilities, nil
-		}
 		return nil, err
 	}
 	for _, gm := range u.GetGroupMemberships() {

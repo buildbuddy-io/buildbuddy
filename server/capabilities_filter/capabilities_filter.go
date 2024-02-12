@@ -183,27 +183,24 @@ var (
 )
 
 // AllowedRPCs returns the complete list of RPCs that are allowed for the given
-// request context.
-func AllowedRPCs(ctx context.Context, env environment.Env) []string {
+// request context and selected group ID.
+func AllowedRPCs(ctx context.Context, env environment.Env, groupID string) []string {
 	var out []string
 	out = append(out, getUnfilteredRPCs()...)
-
-	u, err := perms.AuthenticatedUser(ctx, env)
-	if err != nil {
-		// If auth fails, the user cannot call RPCs that are restricted to
-		// group members or admins.
-		return out
-	}
 
 	if err := authorizeServerAdmin(ctx, env); err == nil {
 		out = append(out, serverAdminOnlyRPCs...)
 	}
 
-	if u.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
-		out = append(out, getGroupAdminOnlyRPCs()...)
+	if groupID != "" {
+		userGroupCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, env, groupID)
+		if err == nil {
+			if slices.Contains(userGroupCapabilities, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+				out = append(out, getGroupAdminOnlyRPCs()...)
+			}
+			out = append(out, groupMemberRPCs...)
+		}
 	}
-
-	out = append(out, groupMemberRPCs...)
 
 	return out
 }
@@ -245,7 +242,13 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 	// accessed via protolet or gRPC.
 	rpcName = path.Base(rpcName)
 
-	if !slices.Contains(AllowedRPCs(ctx, env), rpcName) {
+	var groupID string
+	u, err := perms.AuthenticatedUser(ctx, env)
+	if err == nil {
+		groupID = u.GetGroupID()
+	}
+
+	if !slices.Contains(AllowedRPCs(ctx, env, groupID), rpcName) {
 		return status.PermissionDeniedError("permission denied")
 	}
 

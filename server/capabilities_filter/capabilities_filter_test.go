@@ -143,7 +143,7 @@ func TestAllowedRPCs(t *testing.T) {
 			}
 
 			authErr := capabilities_filter.AuthorizeRPC(ctx, env, test.RPC)
-			allowedRPCs := capabilities_filter.AllowedRPCs(ctx, env)
+			allowedRPCs := capabilities_filter.AllowedRPCs(ctx, env, "GR1")
 
 			if test.Allowed {
 				assert.NoError(t, authErr)
