@@ -17,6 +17,7 @@
   align-self: center;
   display: inline-flex;
   align-items: center;
+  outline: 2px solid transparent;
 }
 
 .filled-button {
