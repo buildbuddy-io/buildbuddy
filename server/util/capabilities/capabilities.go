@@ -73,3 +73,25 @@ func ForAuthenticatedUser(ctx context.Context, env environment.Env) ([]akpb.ApiK
 	}
 	return u.GetCapabilities(), nil
 }
+
+// ForAuthenticatedUserGroup returns the authenticated user's capabilities
+// within the given group ID.
+func ForAuthenticatedUserGroup(ctx context.Context, env environment.Env, groupID string) ([]akpb.ApiKey_Capability, error) {
+	auth := env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.UnimplementedError("Auth is not configured")
+	}
+	u, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {
+			return DefaultAuthenticatedUserCapabilities, nil
+		}
+		return nil, err
+	}
+	for _, gm := range u.GetGroupMemberships() {
+		if gm.GroupID == groupID {
+			return gm.Capabilities, nil
+		}
+	}
+	return nil, status.PermissionDeniedError("you are not a member of the requested organization")
+}

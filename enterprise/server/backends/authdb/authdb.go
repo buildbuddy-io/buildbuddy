@@ -648,29 +648,17 @@ func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx interfaces
 	return d.createAPIKey(ctx, tx, ak)
 }
 
-// Returns whether the given capabilities list contains any capabilities that
-// requires Admin role in order to assign. We are opinionated here and let
-// developers read and write to CAS; other capabilities require Admin role.
-func hasAdminOnlyCapabilities(capabilities []akpb.ApiKey_Capability) bool {
-	for _, c := range capabilities {
-		if c != akpb.ApiKey_CAS_WRITE_CAPABILITY {
-			return true
-		}
-	}
-	return false
-}
-
 func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, groupID string, caps []akpb.ApiKey_Capability) error {
+	userCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, groupID)
+	if err != nil {
+		return err
+	}
+
 	if userID != "" {
 		// Capabilities assigned to the user-level key should not exceed the
 		// capabilities of the currently authenticated user.
-		u, err := perms.AuthenticatedUser(ctx, d.env)
-		if err != nil {
-			return err
-		}
 		requestedCapabilities := capabilities.ToInt(caps)
-		userCapabilities := capabilities.ToInt(u.GetCapabilities())
-		if requestedCapabilities&userCapabilities != requestedCapabilities {
+		if requestedCapabilities&capabilities.ToInt(userCapabilities) != requestedCapabilities {
 			return status.PermissionDeniedError("user does not have permission to assign these API key capabilities")
 		}
 
@@ -679,9 +667,7 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 		if requestedCapabilities&userAPIKeyCapabilitiesMask != requestedCapabilities {
 			return status.PermissionDeniedError("the requested API key capabilities are not allowed for user-level keys")
 		}
-	}
 
-	if !hasAdminOnlyCapabilities(caps) {
 		return nil
 	}
 	return d.authorizeGroupAdminRole(ctx, groupID)
