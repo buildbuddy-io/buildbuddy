@@ -8,7 +8,7 @@
   flex-shrink: 0;
 }
 
-.tap .empty-state a {
+.tap .empty-state a:not(.button) {
   text-decoration: underline;
 }
 

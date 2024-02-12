@@ -20,6 +20,7 @@ import {
   AlarmClock,
   AlertTriangle,
   Check,
+  ChevronRight,
   ChevronsRight,
   Clock,
   Hammer,
@@ -529,7 +530,7 @@ export default class TapComponent extends React.Component<Props, State> {
               <p>Check out the Build Metadata Guide below for more information on configuring these.</p>
               <p>
                 <a className="button" target="_blank" href="https://buildbuddy.io/docs/guide-metadata">
-                  View the Build Metadata Guide
+                  Build Metadata Guide <ChevronRight />
                 </a>
               </p>
             </div>
