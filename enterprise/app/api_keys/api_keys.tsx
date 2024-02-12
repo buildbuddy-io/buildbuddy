@@ -260,7 +260,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     ]);
   }
 
-  private onSelectSCIM(onChange: (name: string, value: any) => any) {
+  private onSelectOrgAdmin(onChange: (name: string, value: any) => any) {
     onChange("capability", [api_key.ApiKey.Capability.ORG_ADMIN_CAPABILITY]);
   }
 
@@ -369,13 +369,13 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 </div>
               )}
               {/* User-owned keys cannot be used for SCIM. */}
-              {capabilities.config.scimKeyCreationEnabled && !this.props.userOwnedOnly && (
+              {capabilities.config.orgAdminApiKeyCreationEnabled && !this.props.userOwnedOnly && (
                 <div className="field-container">
                   <label className="checkbox-row">
                     <input
                       type="radio"
-                      onChange={this.onSelectSCIM.bind(this, onChange)}
-                      checked={isSCIMKey(request)}
+                      onChange={this.onSelectOrgAdmin.bind(this, onChange)}
+                      checked={isOrgAdminKey(request)}
                       disabled={!this.canChangeCapabilities()}
                     />
                     <span>
@@ -570,7 +570,7 @@ function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
   ]);
 }
 
-function isSCIMKey<T extends ApiKeyFields>(apiKey: T | null) {
+function isOrgAdminKey<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.ORG_ADMIN_CAPABILITY]);
 }
 
@@ -586,8 +586,8 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities = "CAS-only";
   } else if (isExecutorKey(apiKey)) {
     capabilities = "Executor";
-  } else if (isSCIMKey(apiKey)) {
-    capabilities = "SCIM";
+  } else if (isOrgAdminKey(apiKey)) {
+    capabilities = "Org admin";
   }
   if (apiKey.visibleToDevelopers) {
     capabilities += " [D]";
