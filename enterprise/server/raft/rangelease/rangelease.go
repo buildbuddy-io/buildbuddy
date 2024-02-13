@@ -270,20 +270,20 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 		if l.leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
 			// Only start the renew-goroutine for time-based
 			// leases which need periodic renewal.
-			go l.keepLeaseAlive(context.TODO())
+			go l.keepLeaseAlive(context.TODO(), l.quitLease)
 		}
 	}
 	return l.leaseRecord, nil
 }
 
-func (l *Lease) keepLeaseAlive(ctx context.Context) {
+func (l *Lease) keepLeaseAlive(ctx context.Context, quit chan struct{}) {
 	for {
 		l.mu.Lock()
 		timeUntilRenewal := l.timeUntilLeaseRenewal
 		l.mu.Unlock()
 
 		select {
-		case <-l.quitLease:
+		case <-quit:
 			return
 		case <-time.After(timeUntilRenewal):
 			l.ensureValidLease(ctx, true /*forceRenewal*/)

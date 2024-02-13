@@ -1119,7 +1119,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	}
 
 	// Find Split Point.
-	fsp := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
+	fsp := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}).SetHeader(req.GetHeader())
 	fspRsp, err := client.SyncReadLocalBatch(ctx, s.nodeHost, shardID, fsp)
 	if err != nil {
 		return nil, status.InternalErrorf("find split point err: %s", err)
