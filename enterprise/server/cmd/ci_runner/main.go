@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/analysis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
@@ -248,6 +249,7 @@ type buildEventReporter struct {
 	apiKey     string
 	bep        *build_event_publisher.Publisher
 	uploader   *bes_artifacts.Uploader
+	commenter  *analysis.Commenter
 	log        *invocationLog
 
 	invocationID          string
@@ -870,6 +872,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	}
 
 	uploader := ar.reporter.uploader
+	commenter := ar.reporter.commenter
 	// Log upload results at the end of all Bazel commands.
 	defer func() {
 		if uploader == nil {
@@ -888,6 +891,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				"Uploaded artifact %s/%s (%s) in %s",
 				u.NamedSetID, u.Name,
 				units.HumanSize(float64(u.Digest.SizeBytes)), u.Duration)
+		}
+		err = commenter.Wait()
+		if err != nil {
+			ar.reporter.Printf("Failed to post comments to GitHub: %s", err)
 		}
 	}()
 
@@ -1076,6 +1083,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
 		if err := ar.reporter.FlushProgress(); err != nil {
 			break
+		}
+
+		// Kick off a background process to make comments.
+		if commenter != nil {
+			commenter.PostComments(ctx, artifactsDir)
 		}
 	}
 	return nil

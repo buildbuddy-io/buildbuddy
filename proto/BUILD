@@ -694,6 +694,11 @@ proto_library(
     ],
 )
 
+proto_library(
+    name = "analysis_proto",
+    srcs = ["analysis.proto"],
+)
+
 # Go proto rules below here
 go_proto_library(
     name = "prometheus_client_go_proto",
@@ -1649,6 +1654,15 @@ go_proto_library(
         ":index_go_proto",
         ":search_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "analysis_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/analysis",
+    proto = ":analysis_proto",
 )
 
 # TypeScript proto rules below here

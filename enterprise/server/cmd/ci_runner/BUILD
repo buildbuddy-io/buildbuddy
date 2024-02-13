@@ -13,6 +13,7 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     deps = [
+        "//enterprise/server/analysis",
         "//enterprise/server/bes_artifacts",
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/clientidentity",
