@@ -192,7 +192,6 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		Domain:                                 build_buddy_url.Domain(),
 		IpRulesEnabled:                         *ipRulesUIEnabled,
 		Regions:                                region.Protos(),
-		TraceViewerEnabled:                     *traceViewerEnabled,
 		PopupAuthEnabled:                       *popupAuthEnabled,
 		StreamingHttpEnabled:                   *streamingHTTPEnabled,
 		CodeReviewEnabled:                      *codeReviewEnabled,
