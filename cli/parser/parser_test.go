@@ -20,8 +20,10 @@ func init() {
 func TestParseBazelrc_Basic(t *testing.T) {
 	ws := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"WORKSPACE":                 "",
-		"import.bazelrc":            "",
+		"WORKSPACE": "",
+		"import.bazelrc": `
+common:import --build_metadata=IMPORTED_FLAG=1
+`,
 		"explicit_import_1.bazelrc": "--build_metadata=EXPLICIT_IMPORT_1=1",
 		"explicit_import_2.bazelrc": "--build_metadata=EXPLICIT_IMPORT_2=1",
 		".bazelrc": `
@@ -258,6 +260,23 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--build_metadata=VALID_COMMON_FLAG=2",
 				"--build_flag_1",
 				"--remote_download_minimal",
+			},
+		},
+		// Test parsing a config that should have been imported with
+		// try-import %workspace%/<import_name>.bazelrc
+		{
+			[]string{
+				"build",
+				"--config=import",
+			},
+			[]string{
+				"--startup_flag_1",
+				"--ignore_all_rc_files",
+				"build",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
+				"--build_flag_1",
+				"--build_metadata=IMPORTED_FLAG=1",
 			},
 		},
 	} {

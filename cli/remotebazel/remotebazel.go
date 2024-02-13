@@ -499,8 +499,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
-	log.Debugf("Requesting command execution on remote Bazel instance.")
-
 	instanceHash := sha256.New()
 	instanceHash.Write(uuid.NodeID())
 	instanceHash.Write([]byte(repoConfig.Root))
@@ -561,6 +559,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		req.Timeout = timeout.String()
 	}
 
+	log.Printf("\nWaiting for available remote runner...\n")
 	rsp, err := bbClient.Run(ctx, req)
 	if err != nil {
 		return 0, status.UnknownErrorf("error running bazel: %s", err)

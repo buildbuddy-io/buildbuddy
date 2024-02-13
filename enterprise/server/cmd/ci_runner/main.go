@@ -366,8 +366,10 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	}
 	if r.isWorkflow {
 		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}})
+		r.Printf("Streaming workflow logs to: %s", invocationURL(*invocationID))
 	} else {
 		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}})
+		r.Printf("Streaming remote runner logs to: %s", invocationURL(*invocationID))
 	}
 	if err := r.bep.Publish(startedEvent); err != nil {
 		return err
