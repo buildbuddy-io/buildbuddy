@@ -54,21 +54,6 @@ func DefaultPermissions(u interfaces.UserInfo) *UserGroupPerm {
 	}
 }
 
-// Deprecated.
-// We used to use this function to set group permissions prior to introducing
-// user personal keys. Currently, this is only used when we insert into Workflows
-// table (https://github.com/buildbuddy-io/buildbuddy/blob/v2.38.0/enterprise/server/workflow/service/service.go#L271)
-// and Workflows table itself is deprecated.
-//
-// Please use DefaultPermissions if possible.
-func DeprecatedGroupPermissions(groupID string) *UserGroupPerm {
-	return &UserGroupPerm{
-		UserID:  groupID,
-		GroupID: groupID,
-		Perms:   GROUP_READ | GROUP_WRITE,
-	}
-}
-
 func ToACLProto(userID *uidpb.UserId, groupID string, perms int32) *aclpb.ACL {
 	return &aclpb.ACL{
 		UserId:  userID,
