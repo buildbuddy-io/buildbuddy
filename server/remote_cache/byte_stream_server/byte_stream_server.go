@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"sync"
+	"time"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -19,11 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
+	"github.com/docker/go-units"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -362,8 +364,41 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		return err
 	}
 
-	var streamState *writeState
+	var mu sync.Mutex
+	bytesUploaded := 0
+	size := 0
+
+	go func() {
+		lastBytesUploaded := 0
+		lastUpdate := time.Now()
+		startTime := time.Now()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
+				break
+			}
+			mu.Lock()
+			throughput := float64(bytesUploaded) / time.Since(startTime).Seconds()
+			throughputDelta := float64(bytesUploaded-lastBytesUploaded) / time.Since(lastUpdate).Seconds()
+			progress := float64(0)
+			if size != 0 {
+				progress = float64(bytesUploaded) / float64(size)
+			}
+			log.Infof("Throughput: %s delta %s uploaded %s (%f)",
+				units.HumanSize(throughput),
+				units.HumanSize(throughputDelta),
+				units.HumanSize(float64(bytesUploaded)),
+				progress)
+			lastBytesUploaded = bytesUploaded
+			lastUpdate = time.Now()
+			mu.Unlock()
+		}
+	}()
+
 	bytesUploadedFromClient := 0
+	var streamState *writeState
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -374,6 +409,9 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		}
 
 		bytesUploadedFromClient += len(req.Data)
+		mu.Lock()
+		bytesUploaded = bytesUploadedFromClient
+		mu.Unlock()
 		if streamState == nil { // First message
 			if err := checkInitialPreconditions(req); err != nil {
 				return err
@@ -393,6 +431,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err != nil {
 				return err
 			}
+			size = int(streamState.resourceName.GetDigest().GetSizeBytes())
 			defer func() {
 				if err := streamState.Close(); err != nil {
 					log.Error(err.Error())

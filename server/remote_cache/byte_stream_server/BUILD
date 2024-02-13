@@ -23,6 +23,7 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
+        "@com_github_docker_go_units//:go-units",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
