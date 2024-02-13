@@ -1,0 +1,156 @@
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-weight: 400;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 14px;
+}
+
+#root {
+  position: relative;
+}
+
+.query-editor {
+  height: 160px;
+  overflow: hidden;
+  border-bottom: 1px solid #757575;
+}
+
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  background: #f5f5f5;
+}
+
+.search {
+  display: flex;
+  align-items: stretch;
+  padding: 2px;
+}
+
+.search-input {
+  padding: 2px 8px;
+}
+
+.mono {
+  font-family: monospace;
+  font-size: 10px;
+}
+
+.settings > :not(:last-child) {
+  border-right: 1px solid #bdbdbd;
+}
+
+.settings {
+  display: flex;
+}
+
+.settings .setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+}
+
+.settings .radio-setting-title {
+  font-weight: bold;
+}
+
+.settings :is(label, .setting-title) {
+  padding: 4px;
+  user-select: none;
+}
+
+.settings label {
+  background: #f5f5f5;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: 120ms ease-out;
+}
+
+.settings label:hover {
+  background: #e0e0e0;
+}
+
+.settings label:active {
+  background: #bbdefb;
+  border: 1px solid #1e88e5;
+  color: #0d47a1;
+  box-shadow: 0px 1px 1px inset rgba(0, 0, 0, 0.1);
+}
+
+.settings label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings input[type="radio"],
+.settings input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+  transform: translateY(-1px);
+}
+
+.log-row {
+  display: flex;
+  width: 100%;
+  border-bottom: 1px solid #eee;
+}
+
+.log-margin {
+  flex-shrink: 0;
+}
+
+.log-line {
+  padding: 1px;
+  display: flex;
+  align-items: start;
+  gap: 4px;
+  flex-grow: 1;
+  background: #eceff144;
+}
+
+.log-message {
+  word-break: break-all;
+}
+
+.log-level {
+  padding: 0 2px;
+  border-radius: 4px;
+  display: inline-flex;
+  min-width: 16px;
+  justify-content: center;
+}
+
+.duration-row {
+  width: 100%;
+  box-sizing: border-box;
+  /* display: flex; */
+  /* align-items: center; */
+  /* justify-content: center; */
+  padding: 8px;
+  /* color: #777; */
+  background: #e3f2fd;
+}
+
+.pod-name {
+  display: inline;
+  background: #eee;
+  border-radius: 2px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
