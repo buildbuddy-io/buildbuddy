@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -82,6 +83,7 @@ var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", f
 var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
+var overprivisionCPUs = flag.Int("executor.firecracker_overprivision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine.")
 var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 
 //go:embed guest_api_hash.sha256
@@ -425,8 +427,11 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 	savedState := state.GetContainerState().GetFirecrackerState()
 	if savedState == nil {
 		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
+		numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
+		numCPUs += int64(*overprivisionCPUs)
+		numCPUs = min(numCPUs, int64(runtime.NumCPU()))
 		vmConfig = &fcpb.VMConfiguration{
-			NumCpus:           int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
+			NumCpus:           numCPUs,
 			MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 			ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 			EnableNetworking:  true,
