@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -215,7 +216,7 @@ func (s *SecretService) DeleteSecret(ctx context.Context, req *skpb.DeleteSecret
 }
 
 func (s *SecretService) GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error) {
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
 

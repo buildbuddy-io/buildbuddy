@@ -13,10 +13,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/invocation_stat_service/config"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -548,7 +548,7 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 }
 
 func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendResponse, error) {
-	if err := perms.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 
@@ -914,7 +914,7 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 	if !i.isOLAPDBEnabled() {
 		return nil, status.UnimplementedError("Time series charts require using an OLAP DB, but none is configured.")
 	}
-	if err := perms.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 
@@ -959,7 +959,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	groupID := req.GetRequestContext().GetGroupId()
-	if err := perms.AuthorizeGroupAccessForStats(ctx, i.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, i.env, groupID); err != nil {
 		return nil, err
 	}
 
@@ -1207,7 +1207,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 	if !i.isOLAPDBEnabled() {
 		return nil, status.UnimplementedError("Time series charts require using an OLAP DB, but none is configured.")
 	}
-	if err := perms.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 

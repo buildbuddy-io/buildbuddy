@@ -719,7 +719,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 	if app == nil {
 		return nil, status.UnimplementedError("GitHub App is not configured")
 	}
-	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
 		return nil, err
 	}
 	gitRepository := &tables.GitRepository{}

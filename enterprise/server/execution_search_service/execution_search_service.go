@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
@@ -109,7 +110,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	if u.GetGroupID() == "" {
 		return nil, status.InvalidArgumentError("Failed to find user's group when searching executions.")
 	}
-	if err := perms.AuthorizeGroupAccessForStats(ctx, s.env, u.GetGroupID()); err != nil {
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, s.env, u.GetGroupID()); err != nil {
 		return nil, err
 	}
 
