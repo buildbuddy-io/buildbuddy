@@ -359,7 +359,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 
 		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
 		if err != nil {
-			log.Warningf("Failed to resolve page fault %s due to err %s", debugData.String(), err)
+			log.CtxWarningf(ctx, "Failed to resolve page fault %s due to err %s", debugData.String(), err)
 			return err
 		}
 
