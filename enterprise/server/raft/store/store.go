@@ -285,10 +285,9 @@ func (s *Store) AddEventListener() <-chan events.Event {
 	return ch
 }
 
+// Start starts a new grpc server which exposes an API that can be used to manage
+// ranges on this node.
 func (s *Store) Start() error {
-	// A grpcServer is run which is responsible for presenting a meta API
-	// to manage raft nodes on each host, as well as an API to shuffle data
-	// around between nodes, outside of raft.
 	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
 	s.grpcServer = grpc.NewServer(grpcOptions...)
 	reflection.Register(s.grpcServer)
@@ -614,7 +613,7 @@ func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeader
 	return &rfpb.TransferLeadershipResponse{}, nil
 }
 
-// Snapshots the cluster *on this node*. This is a local operation and does not
+// SnapshotCluster snapshots the cluster *on this node*. This is a local operation and does not
 // create a snapshot on other nodes that are members of this cluster.
 func (s *Store) SnapshotCluster(ctx context.Context, shardID uint64) error {
 	defer canary.Start("SnapshotCluster", 10*time.Second)()
@@ -726,6 +725,7 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	return rsp, nil
 }
 
+// RemoveData tries to remove all data associated with the specified node (shard, replica). It waits for the node (shard, replica) to be fully offloaded or the context is cancelled. This method should only be used after the node is deleted from its Raft cluster.
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
 	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		err := s.nodeHost.SyncRemoveData(ctx, req.GetShardId(), req.GetReplicaId())
@@ -740,6 +740,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	return &rfpb.RemoveDataResponse{}, nil
 }
 
+// SyncPropose makes a synchronous proposal (writes) on the Raft shard.
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
 	var shardID uint64
 	header := req.GetHeader()
@@ -769,6 +770,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	}, nil
 }
 
+// SyncRead performs a synchronous linearizable read on the specified Raft shard.
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
 	batch := req.GetBatch()
 	batch.Header = req.GetHeader()
