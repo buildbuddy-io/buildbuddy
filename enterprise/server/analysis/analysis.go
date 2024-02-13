@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -41,6 +42,7 @@ func (c *Commenter) PostComments(ctx context.Context, root string) error {
 	}
 	if (fileinfo.IsDir() || fileinfo.Size() > maxAnalysisFileSize) {
 		// Weird that someone did this, but whatever, let's just skip it.
+		// XXX: Log and quit, don't fail.
 		return status.InvalidArgumentError("F A I L U R E")
 	}
 
@@ -49,15 +51,18 @@ func (c *Commenter) PostComments(ctx context.Context, root string) error {
 		return err
 	}
 	analysis := &anpb.AnalysisResults{}
-	protojson.Unmarshal(a, analysis)
+	err = protojson.Unmarshal(a, analysis)
+	if err != nil {
+		return err
+	}
+	log.Printf("Results parsed from output: %+v", analysis)
 
 	// Okay! Time to post some comments.
-
-	// XXX: Do we have an event to publish to raw logs?
+	// TODO(jdhollen)
 	return nil
 }
 
 func (c *Commenter) Wait() error {
-	// XXX: 
+	// TODO(jdhollen) 
 	return nil
 }
