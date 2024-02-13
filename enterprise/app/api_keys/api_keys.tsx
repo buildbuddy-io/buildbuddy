@@ -107,10 +107,25 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 
   private defaultCapabilities(): api_key.ApiKey.Capability[] {
-    if (this.props.user.isGroupAdmin()) {
+    // For org-level keys, default to CACHE_WRITE.
+    if (!this.props.userOwnedOnly) {
       return [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY];
     }
-    return [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY];
+
+    // If the new roles are not yet enabled, default to just CAS_WRITE.
+    if (!capabilities.config.readerWriterRolesEnabled) {
+      return [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY];
+    }
+
+    // For user-owned keys, default to the highest allowed capability.
+    const allowList = this.props.user.selectedGroup.allowedUserApiKeyCapabilities ?? [];
+    if (allowList.includes(api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY)) {
+      return [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY];
+    }
+    if (allowList.includes(api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY)) {
+      return [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY];
+    }
+    return [];
   }
 
   // Creation modal
@@ -268,8 +283,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange("visibleToDevelopers", e.target.checked);
   }
 
-  private canChangeCapabilities(): boolean {
-    return this.props.user.isGroupAdmin();
+  private canSetCapabilities(caps: api_key.ApiKey.Capability[]): boolean {
+    // Org-level keys do not have capability restrictions.
+    if (!this.props.userOwnedOnly) return true;
+
+    // If the new roles are not yet enabled, only let admins change capabilities.
+    if (!capabilities.config.readerWriterRolesEnabled) {
+      return this.props.user.isGroupAdmin();
+    }
+
+    // For user-owned keys, use the allowlist to restrict capabilities.
+    const allowList = this.props.user.selectedGroup.allowedUserApiKeyCapabilities ?? [];
+    return caps.every((capability) => allowList.includes(capability));
   }
 
   private canEdit(): boolean {
@@ -315,22 +340,9 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <label className="checkbox-row">
                   <input
                     type="radio"
-                    onChange={this.onSelectReadWrite.bind(this, onChange)}
-                    checked={isReadWrite(request)}
-                    disabled={!this.canChangeCapabilities()}
-                  />
-                  <span>
-                    Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
-                  </span>
-                </label>
-              </div>
-              <div className="field-container">
-                <label className="checkbox-row">
-                  <input
-                    type="radio"
                     onChange={this.onSelectReadOnly.bind(this, onChange)}
                     checked={isReadOnly(request)}
-                    disabled={!this.canChangeCapabilities()}
+                    disabled={!this.canSetCapabilities([])}
                   />
                   <span>
                     Read-only key <span className="field-description">(disable all remote cache uploads)</span>
@@ -343,11 +355,24 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     type="radio"
                     onChange={this.onSelectCASOnly.bind(this, onChange)}
                     checked={isCASOnly(request)}
-                    disabled={!this.canChangeCapabilities()}
+                    disabled={!this.canSetCapabilities([api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY])}
                     debug-id="cas-only-radio-button"
                   />
                   <span>
                     CAS-only key <span className="field-description">(disable action cache uploads)</span>
+                  </span>
+                </label>
+              </div>
+              <div className="field-container">
+                <label className="checkbox-row">
+                  <input
+                    type="radio"
+                    onChange={this.onSelectReadWrite.bind(this, onChange)}
+                    checked={isReadWrite(request)}
+                    disabled={!this.canSetCapabilities([api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY])}
+                  />
+                  <span>
+                    Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
                   </span>
                 </label>
               </div>
@@ -360,7 +385,6 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                       type="radio"
                       onChange={this.onSelectExecutor.bind(this, onChange)}
                       checked={isExecutorKey(request)}
-                      disabled={!this.canChangeCapabilities()}
                     />
                     <span>
                       Executor key <span className="field-description">(for self-hosted executors)</span>
@@ -376,7 +400,6 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                       type="radio"
                       onChange={this.onSelectOrgAdmin.bind(this, onChange)}
                       checked={isOrgAdminKey(request)}
-                      disabled={!this.canChangeCapabilities()}
                     />
                     <span>
                       Org admin key <span className="field-description">(for external user management)</span>

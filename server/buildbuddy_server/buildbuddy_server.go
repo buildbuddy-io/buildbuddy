@@ -254,6 +254,11 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 		if err != nil {
 			return nil, err
 		}
+		userGroupCapabilities, err := role.ToCapabilities(role.Role(gr.Role))
+		if err != nil {
+			return nil, err
+		}
+		allowedUserAPIKeyCapabilities := capabilities.ApplyMask(userGroupCapabilities, capabilities.UserAPIKeyCapabilitiesMask)
 		groups = append(groups, &grpb.Group{
 			Id:                                g.GroupID,
 			Name:                              g.Name,
@@ -271,6 +276,7 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 			SuggestionPreference:              g.SuggestionPreference,
 			Url:                               getGroupUrl(&gr.Group),
 			ExternalUserManagement:            g.ExternalUserManagement,
+			AllowedUserApiKeyCapabilities:     allowedUserAPIKeyCapabilities,
 		})
 	}
 	return groups, nil
