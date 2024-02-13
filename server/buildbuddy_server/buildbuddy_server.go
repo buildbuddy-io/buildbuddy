@@ -384,7 +384,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	var group *tables.Group
 	if req.GetGroupId() != "" {
 		// Looking up by group ID is restricted to server admins.
-		u, err := perms.AuthenticatedUser(ctx, s.env)
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -983,7 +983,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 
 	var g *tables.Group
 	if subdomain.Enabled() {
-		u, err := perms.AuthenticatedUser(ctx, s.env)
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1209,7 +1209,7 @@ func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.Un
 	if udb == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	u, err := perms.AuthenticatedUser(ctx, s.env)
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}

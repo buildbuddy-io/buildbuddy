@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -1665,7 +1664,7 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			require.NoError(t, err)
 			// Re-authenticate with the new role
 			userCtx = authUserCtx(ctx, env, t, "US1")
-			u, err := perms.AuthenticatedUser(userCtx, env)
+			u, err := env.GetAuthenticator().AuthenticatedUser(userCtx)
 			require.NoError(t, err)
 
 			require.Equal(t, test.ExpectedCapabilities, u.GetCapabilities())

@@ -143,7 +143,7 @@ func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx interfaces.DB, 
 }
 
 func (d *UserDB) DeleteUserGitHubToken(ctx context.Context) error {
-	u, err := perms.AuthenticatedUser(ctx, d.env)
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (d *UserDB) DeleteUserGitHubToken(ctx context.Context) error {
 }
 
 func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {
-	u, err := perms.AuthenticatedUser(ctx, d.env)
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}
@@ -229,7 +229,7 @@ func (d *UserDB) validateURLIdentifier(ctx context.Context, groupID string, urlI
 }
 
 func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, error) {
-	u, err := perms.AuthenticatedUser(ctx, d.env)
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -298,7 +298,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx interfaces.DB, userID strin
 }
 
 func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (string, error) {
-	u, err := perms.AuthenticatedUser(ctx, d.env)
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -426,7 +426,7 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 }
 
 func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error) {
-	u, err := perms.AuthenticatedUser(ctx, d.env)
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -807,7 +807,7 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 		return nil, err
 	}
 
-	authUser, err := perms.AuthenticatedUser(ctx, d.env)
+	authUser, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}

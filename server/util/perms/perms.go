@@ -101,14 +101,6 @@ func FromACL(acl *aclpb.ACL) (int32, error) {
 	return p, nil
 }
 
-func AuthenticatedUser(ctx context.Context, env environment.Env) (interfaces.UserInfo, error) {
-	auth := env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Not implemented")
-	}
-	return auth.AuthenticatedUser(ctx)
-}
-
 func AuthorizeRead(u interfaces.UserInfo, acl *aclpb.ACL) error {
 	if u == nil {
 		return status.InvalidArgumentError("user cannot be nil.")
@@ -234,7 +226,7 @@ func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID stri
 	if groupID == "" {
 		return status.InvalidArgumentError("group ID is required")
 	}
-	user, err := AuthenticatedUser(ctx, env)
+	user, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}

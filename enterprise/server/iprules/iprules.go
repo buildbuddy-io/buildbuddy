@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -230,7 +229,7 @@ func (s *Service) authorize(ctx context.Context, groupID string) error {
 }
 
 func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
-	u, err := perms.AuthenticatedUser(ctx, s.env)
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}
@@ -251,7 +250,7 @@ func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
 }
 
 func (s *Service) Authorize(ctx context.Context) error {
-	u, err := perms.AuthenticatedUser(ctx, s.env)
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		// If auth failed we don't need to (and can't) apply IP rules.
 		return nil
@@ -306,7 +305,7 @@ func (s *Service) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) err
 }
 
 func (s *Service) checkAccess(ctx context.Context, groupID string) error {
-	u, err := perms.AuthenticatedUser(ctx, s.env)
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}

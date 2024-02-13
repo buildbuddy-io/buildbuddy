@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -823,7 +822,7 @@ func hashStrings(strs ...string) string {
 
 func groupID(ctx context.Context, env environment.Env) (string, error) {
 	var gid string
-	u, err := perms.AuthenticatedUser(ctx, env)
+	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err == nil {
 		gid = u.GetGroupID()
 	} else if err != nil && !authutil.IsAnonymousUserError(err) && !*container.DebugEnableAnonymousRecycling {

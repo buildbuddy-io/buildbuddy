@@ -48,7 +48,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
@@ -2630,7 +2629,7 @@ func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskSta
 	}
 
 	var groupID string
-	u, err := perms.AuthenticatedUser(ctx, c.env)
+	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err == nil {
 		groupID = u.GetGroupID()
 	}

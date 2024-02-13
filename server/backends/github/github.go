@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v43/github"
@@ -253,7 +252,7 @@ func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, red
 }
 
 func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	_, err := perms.AuthenticatedUser(r.Context(), c.env)
+	_, err := c.env.GetAuthenticator().AuthenticatedUser(r.Context())
 	if err != nil {
 		// If not logged in to the app (e.g. when installing directly from
 		// GitHub), redirect to the account creation flow.
@@ -330,7 +329,7 @@ func (c *OAuthHandler) requestAccessToken(r *http.Request, code string) error {
 	userID := getState(r, userIDCookieName)
 	groupID := getState(r, groupIDCookieName)
 
-	u, err := perms.AuthenticatedUser(ctx, c.env)
+	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}

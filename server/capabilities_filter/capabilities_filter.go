@@ -8,7 +8,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -243,7 +242,7 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 	rpcName = path.Base(rpcName)
 
 	var groupID string
-	u, err := perms.AuthenticatedUser(ctx, env)
+	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err == nil {
 		groupID = u.GetGroupID()
 	}
@@ -256,7 +255,7 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 }
 
 func authorizeServerAdmin(ctx context.Context, env environment.Env) error {
-	u, err := perms.AuthenticatedUser(ctx, env)
+	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}

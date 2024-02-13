@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
@@ -162,7 +161,7 @@ func (r *taskRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *
 
 		if maxedOutStr != "" {
 			var groupID string
-			u, err := perms.AuthenticatedUser(ctx, r.env)
+			u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
 			if err == nil {
 				groupID = u.GetGroupID()
 			}
