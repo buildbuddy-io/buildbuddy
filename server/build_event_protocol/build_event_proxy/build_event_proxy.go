@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -88,7 +89,7 @@ type asyncStreamProxy struct {
 	events chan *pepb.PublishBuildToolEventStreamRequest
 }
 
-func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ...grpc.CallOption) *asyncStreamProxy {
+func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ...grpc.CallOption) (*asyncStreamProxy, error) {
 	asp := &asyncStreamProxy{
 		ctx:    ctx,
 		events: make(chan *pepb.PublishBuildToolEventStreamRequest, *bufferSize),
@@ -96,7 +97,7 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 	stream, err := c.client.PublishBuildToolEventStream(ctx, opts...)
 	if err != nil {
 		log.Warningf("Error opening BES stream to proxy: %s", err.Error())
-		return nil
+		return nil, status.UnavailableErrorf("Error opening BES stream to proxy: %s", err.Error())
 	}
 	asp.PublishBuildEvent_PublishBuildToolEventStreamClient = stream
 	// Start a goroutine that will open the stream and pass along events.
@@ -117,7 +118,7 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 		}
 		stream.CloseSend()
 	}()
-	return asp
+	return asp, nil
 }
 
 func (asp *asyncStreamProxy) Send(req *pepb.PublishBuildToolEventStreamRequest) error {
@@ -141,5 +142,5 @@ func (asp *asyncStreamProxy) CloseSend() error {
 
 func (c *BuildEventProxyClient) PublishBuildToolEventStream(_ context.Context, opts ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
 	c.reconnectIfNecessary()
-	return c.newAsyncStreamProxy(c.rootCtx, opts...), nil
+	return c.newAsyncStreamProxy(c.rootCtx, opts...)
 }
