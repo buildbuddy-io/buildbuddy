@@ -1,6 +1,5 @@
 import React from "react";
 import SetupCodeComponent from "../docs/setup_code";
-import FlameChart from "../flame_chart/flame_chart";
 import { Profile, readProfile } from "../trace/trace_events";
 import rpcService, { FileEncoding } from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
@@ -307,11 +306,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     return (
       <>
-        {capabilities.config.traceViewerEnabled ? (
-          <TraceViewer profile={this.state.profile} />
-        ) : (
-          <FlameChart profile={this.state.profile} />
-        )}
+        <TraceViewer profile={this.state.profile} />
         <InvocationBreakdownCardComponent
           durationByNameMap={this.state.durationByNameMap}
           durationByCategoryMap={this.state.durationByCategoryMap}

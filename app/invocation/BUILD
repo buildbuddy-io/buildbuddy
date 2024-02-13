@@ -603,7 +603,6 @@ ts_library(
         "//app/components/button",
         "//app/docs:setup_code",
         "//app/errors:error_service",
-        "//app/flame_chart",
         "//app/format",
         "//app/invocation:invocation_breakdown_card",
         "//app/invocation:invocation_model",
