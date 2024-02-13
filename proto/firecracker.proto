@@ -58,6 +58,11 @@ message SnapshotKey {
   // Git ref associated with the snapshot. For workflows, this represents the
   // branch that was checked out when running the workflow.
   string ref = 5;
+
+  // If set, this key corresponds to a specific snapshot run.
+  // If not set, this key should fetch the newest snapshot matching the other
+  // parameters.
+  string snapshot_id = 6;
 }
 
 // Manifest represents a snapshot's VM configuration along with

@@ -617,10 +617,10 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			label := ""
 			if err != nil {
 				label = metrics.MissStatusLabel
-				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.SnapshotKeySet()), err)
+				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.SnapshotKeySet(), c.supportsRemoteSnapshots), err)
 			} else {
 				label = metrics.HitStatusLabel
-				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey()))
+				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey(), c.supportsRemoteSnapshots))
 			}
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
 				metrics.RecycleRunnerRequestStatusLabel: label,
@@ -911,7 +911,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 
 func (c *FirecrackerContainer) getVMMetadata() *repb.VMMetadata {
 	if c.snapshot == nil || c.snapshot.GetVMMetadata() == nil {
-		return &repb.VMMetadata{VmId: c.id}
+		return &repb.VMMetadata{
+			VmId:       c.id,
+			SnapshotId: c.id,
+		}
 	}
 	return c.snapshot.GetVMMetadata()
 }
@@ -923,6 +926,7 @@ func (c *FirecrackerContainer) getVMTask() *repb.VMMetadata_VMTask {
 		ExecutionId:           c.task.GetExecutionId(),
 		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
 		ExecuteResponseDigest: d,
+		SnapshotId:            c.id, // Unique ID pertaining to this execution run
 	}
 }
 
@@ -1017,6 +1021,17 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
+
+	// Set unique per-run identifier on the vm metadata so this exact snapshot
+	// run can be identified
+	if snap.GetVMMetadata() == nil {
+		md := &repb.VMMetadata{
+			VmId:       c.id,
+			SnapshotId: c.id,
+		}
+		snap.SetVMMetadata(md)
+	}
+	snap.GetVMMetadata().SnapshotId = c.id
 	c.snapshot = snap
 
 	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
@@ -2642,7 +2657,7 @@ func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {
 	if c.snapshot == nil {
 		return ""
 	}
-	return snaploader.KeyDebugString(ctx, c.env, c.snapshot.GetKey())
+	return snaploader.KeyDebugString(ctx, c.env, c.snapshot.GetKey(), c.supportsRemoteSnapshots)
 }
 
 func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {
