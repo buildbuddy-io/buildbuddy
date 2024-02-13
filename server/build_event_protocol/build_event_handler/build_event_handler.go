@@ -259,10 +259,7 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 			invocation.GetInvocationId())
 		return
 	}
-	jwt := ""
-	if auth := r.env.GetAuthenticator(); auth != nil {
-		jwt = auth.TrustedJWTFromAuthContext(ctx)
-	}
+	jwt := r.env.GetAuthenticator().TrustedJWTFromAuthContext(ctx)
 	req := &recordStatsTask{
 		invocationJWT: &invocationJWT{
 			id:      invocation.GetInvocationId(),
@@ -299,9 +296,7 @@ func (r *statsRecorder) Start() {
 }
 
 func (r *statsRecorder) lookupInvocation(ctx context.Context, ij *invocationJWT) (*tables.Invocation, error) {
-	if auth := r.env.GetAuthenticator(); auth != nil {
-		ctx = auth.AuthContextFromTrustedJWT(ctx, ij.jwt)
-	}
+	ctx = r.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, ij.jwt)
 	return r.env.GetInvocationDB().LookupInvocation(ctx, ij.id)
 }
 
@@ -436,10 +431,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		)
 	}
 
-	if auth := r.env.GetAuthenticator(); auth != nil {
-		ctx = auth.AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
-	}
-
+	ctx = r.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, task.invocationJWT.jwt)
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(50) // Max concurrency when copying files from cache->blobstore.
 	for _, uri := range task.persist.URIs {
@@ -554,9 +546,7 @@ func notifyWithTimeout(ctx context.Context, env environment.Env, t *notifyWebhoo
 	defer cancel()
 	// Run the webhook using the authenticated user from the build event stream.
 	ij := t.invocationJWT
-	if auth := env.GetAuthenticator(); auth != nil {
-		ctx = auth.AuthContextFromTrustedJWT(ctx, ij.jwt)
-	}
+	ctx = env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, ij.jwt)
 	return t.hook.NotifyComplete(ctx, t.invocation)
 }
 
@@ -655,9 +645,7 @@ func (w *webhookNotifier) Stop() {
 }
 
 func (w *webhookNotifier) lookupInvocation(ctx context.Context, ij *invocationJWT) (*inpb.Invocation, error) {
-	if auth := w.env.GetAuthenticator(); auth != nil {
-		ctx = auth.AuthContextFromTrustedJWT(ctx, ij.jwt)
-	}
+	ctx = w.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, ij.jwt)
 	inv, err := LookupInvocation(w.env, ctx, ij.id)
 	if err != nil {
 		return nil, err
@@ -872,11 +860,7 @@ func invocationStatusLabel(ti *tables.Invocation) string {
 }
 
 func (e *EventChannel) getGroupIDForMetrics() string {
-	auth := e.env.GetAuthenticator()
-	if auth == nil {
-		return ""
-	}
-	userInfo, err := auth.AuthenticatedUser(e.ctx)
+	userInfo, err := e.env.GetAuthenticator().AuthenticatedUser(e.ctx)
 	if err != nil {
 		return interfaces.AuthAnonymousUser
 	}
@@ -995,35 +979,34 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		e.hasReceivedEventWithOptions = true
 		log.CtxDebugf(e.ctx, "Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
-		if auth := e.env.GetAuthenticator(); auth != nil {
-			options, err := extractOptions(&bazelBuildEvent)
-			if err != nil {
-				return err
-			}
-			apiKey, err := auth.ParseAPIKeyFromString(options)
-			if err != nil {
-				return err
-			}
-			if apiKey != "" {
-				e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
-				authError := e.ctx.Value(interfaces.AuthContextUserErrorKey)
-				if authError != nil {
-					if err, ok := authError.(error); ok {
-						return err
-					}
-					return status.UnknownError(fmt.Sprintf("%v", authError))
-				}
-				if irs := e.env.GetIPRulesService(); irs != nil {
-					if err := irs.Authorize(e.ctx); err != nil {
-						return err
-					}
-				}
-				baseBBURL, err := subdomain.ReplaceURLSubdomain(e.ctx, e.env, build_buddy_url.String())
-				if err != nil {
+		options, err := extractOptions(&bazelBuildEvent)
+		if err != nil {
+			return err
+		}
+		auth := e.env.GetAuthenticator()
+		apiKey, err := auth.ParseAPIKeyFromString(options)
+		if err != nil {
+			return err
+		}
+		if apiKey != "" {
+			e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
+			authError := e.ctx.Value(interfaces.AuthContextUserErrorKey)
+			if authError != nil {
+				if err, ok := authError.(error); ok {
 					return err
 				}
-				e.statusReporter.SetBaseBuildBuddyURL(baseBBURL)
+				return status.UnknownError(fmt.Sprintf("%v", authError))
 			}
+			if irs := e.env.GetIPRulesService(); irs != nil {
+				if err := irs.Authorize(e.ctx); err != nil {
+					return err
+				}
+			}
+			baseBBURL, err := subdomain.ReplaceURLSubdomain(e.ctx, e.env, build_buddy_url.String())
+			if err != nil {
+				return err
+			}
+			e.statusReporter.SetBaseBuildBuddyURL(baseBBURL)
 		}
 
 		invocationUUID, err := uuid.StringToBytes(iid)
@@ -1173,12 +1156,11 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 const apiFacetsExpiration = 1 * time.Hour
 
 func (e *EventChannel) flushAPIFacets(iid string) error {
-	auth := e.env.GetAuthenticator()
-	if e.collector == nil || e.env.GetAPIService() == nil || !e.env.GetAPIService().CacheEnabled() || auth == nil {
+	if e.collector == nil || e.env.GetAPIService() == nil || !e.env.GetAPIService().CacheEnabled() {
 		return nil
 	}
 
-	userInfo, err := auth.AuthenticatedUser(e.ctx)
+	userInfo, err := e.env.GetAuthenticator().AuthenticatedUser(e.ctx)
 	if userInfo == nil || err != nil {
 		return nil
 	}
@@ -1197,12 +1179,11 @@ func (e *EventChannel) flushAPIFacets(iid string) error {
 }
 
 func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.BuildEvent) error {
-	auth := e.env.GetAuthenticator()
-	if e.collector == nil || e.env.GetAPIService() == nil || !e.env.GetAPIService().CacheEnabled() || auth == nil {
+	if e.collector == nil || e.env.GetAPIService() == nil || !e.env.GetAPIService().CacheEnabled() {
 		return nil
 	}
 
-	userInfo, err := auth.AuthenticatedUser(e.ctx)
+	userInfo, err := e.env.GetAuthenticator().AuthenticatedUser(e.ctx)
 	if userInfo == nil || err != nil {
 		return nil
 	}

@@ -383,11 +383,10 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
-	if auth := env.GetAuthenticator(); auth != nil {
-		mux.Handle("/login/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Login)))
-		mux.Handle("/auth/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Auth)))
-		mux.Handle("/logout/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Logout)))
-	}
+	auth := env.GetAuthenticator()
+	mux.Handle("/login/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Login)))
+	mux.Handle("/auth/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Auth)))
+	mux.Handle("/logout/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Logout)))
 
 	if err := github.Register(env); err != nil {
 		log.Fatalf("%v", err)

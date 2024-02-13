@@ -242,9 +242,6 @@ func (ws *workflowService) checkPreconditions(ctx context.Context) error {
 	if ws.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
-	if ws.env.GetAuthenticator() == nil {
-		return status.FailedPreconditionError("anonymous workflow access is not supported")
-	}
 	if _, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
 		return err
 	}
@@ -1294,9 +1291,6 @@ func (ws *workflowService) gitProviderForRequest(r *http.Request) (interfaces.Gi
 func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) error {
 	if ws.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
-	}
-	if ws.env.GetAuthenticator() == nil {
-		return status.FailedPreconditionError("anonymous workflow access is not supported")
 	}
 	if ws.env.GetRemoteExecutionClient() == nil {
 		return status.UnavailableError("Remote execution not configured.")

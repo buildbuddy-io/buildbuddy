@@ -561,13 +561,12 @@ func (c *GithubClient) fetchToken(ctx context.Context, ownerRepo string) error {
 		return nil
 	}
 
-	auth := c.env.GetAuthenticator()
 	dbHandle := c.env.GetDBHandle()
-	if auth == nil || dbHandle == nil {
+	if dbHandle == nil {
 		return nil
 	}
 
-	userInfo, err := auth.AuthenticatedUser(ctx)
+	userInfo, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if userInfo == nil || err != nil {
 		return nil
 	}

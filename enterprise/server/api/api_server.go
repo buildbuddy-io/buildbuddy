@@ -62,10 +62,6 @@ func NewAPIServer(env environment.Env) *APIServer {
 }
 
 func (s *APIServer) checkPreconditions(ctx context.Context) (interfaces.UserInfo, error) {
-	authenticator := s.env.GetAuthenticator()
-	if authenticator == nil {
-		return nil, status.FailedPreconditionErrorf("No authenticator configured")
-	}
 	return s.env.GetAuthenticator().AuthenticatedUser(ctx)
 }
 

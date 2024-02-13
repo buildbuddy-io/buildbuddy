@@ -833,10 +833,6 @@ func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*t
 }
 
 func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User, error) {
-	auth := d.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.InternalError("No auth configured on this BuildBuddy instance")
-	}
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -866,10 +862,6 @@ func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User
 }
 
 func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
-	auth := d.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.InternalError("No auth configured on this BuildBuddy instance")
-	}
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -920,10 +912,6 @@ func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (
 }
 
 func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) {
-	auth := d.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.InternalError("No auth configured on this BuildBuddy instance")
-	}
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err

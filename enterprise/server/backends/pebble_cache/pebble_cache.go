@@ -1388,11 +1388,7 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 }
 
 func (p *PebbleCache) userGroupID(ctx context.Context) string {
-	auth := p.env.GetAuthenticator()
-	if auth == nil {
-		return interfaces.AuthAnonymousUser
-	}
-	user, err := auth.AuthenticatedUser(ctx)
+	user, err := p.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return interfaces.AuthAnonymousUser
 	}
@@ -1410,11 +1406,7 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 }
 
 func (p *PebbleCache) encryptionEnabled(ctx context.Context) (bool, error) {
-	auth := p.env.GetAuthenticator()
-	if auth == nil {
-		return false, nil
-	}
-	u, err := auth.AuthenticatedUser(ctx)
+	u, err := p.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return false, nil
 	}

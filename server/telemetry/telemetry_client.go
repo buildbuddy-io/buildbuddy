@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
@@ -203,13 +204,12 @@ func getHostname() string {
 
 func getFeatures(env environment.Env) *telpb.TelemetryFeature {
 	cache := env.GetCache()
-	authenticator := env.GetAuthenticator()
 	api := env.GetAPIService()
-
+	_, isNullAuth := env.GetAuthenticator().(*nullauth.NullAuthenticator)
 	return &telpb.TelemetryFeature{
 		CacheEnabled: cache != nil,
 		RbeEnabled:   remote_execution_config.RemoteExecutionEnabled(),
 		ApiEnabled:   api != nil,
-		AuthEnabled:  authenticator != nil,
+		AuthEnabled:  !isNullAuth,
 	}
 }
