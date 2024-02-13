@@ -796,6 +796,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	if err := ws.setup(ctx); err != nil {
 		return status.WrapError(err, "failed to set up git repo")
 	}
+	// TODO: prevent this gc from blocking the BuildFinished event, but also
+	// make sure the cleanup logs make it into the workflow BES stream.
+	defer ws.cleanup(ctx)
+
 	action, err := getActionToRun()
 	if err != nil {
 		return status.WrapError(err, "failed to get action to run")
@@ -1529,6 +1533,14 @@ func (ws *workspace) setup(ctx context.Context) error {
 	return nil
 }
 
+// cleanup performs cleanup tasks after all workflow steps have completed,
+// regardless of status.
+func (ws *workspace) cleanup(ctx context.Context) error {
+	// Since we've disabled auto gc during fetch, do gc now.
+	_, _ = git(ctx, ws.log, "gc", "--auto")
+	return nil
+}
+
 func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamClient, patchURI string) error {
 	rn, err := digest.ParseDownloadResourceName(patchURI)
 	if err != nil {
@@ -1670,6 +1682,10 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"user.email", "ci-runner@buildbuddy.io"},
 		{"user.name", "BuildBuddy"},
 		{"advice.detachedHead", "false"},
+		// Disable background gc since it conflicts with bazel's directory
+		// scanning. Bazel (unfortunately) tries to scan files under .git and
+		// will fail if the object is concurrently deleted by gc.
+		{"gc.auto", "0"},
 	}
 	writeCommandSummary(ws.log, "Configuring repository...")
 	for _, kv := range cfg {
