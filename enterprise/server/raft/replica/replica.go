@@ -70,30 +70,8 @@ type IStore interface {
 	SnapshotCluster(ctx context.Context, shardID uint64) error
 }
 
-// IOnDiskStateMachine is the interface to be implemented by application's
-// state machine when the state machine state is always persisted on disks.
-// IOnDiskStateMachine basically matches the state machine type described
-// in the section 5.2 of the Raft thesis.
-//
-// For IOnDiskStateMachine types, concurrent access to the state machine is
-// supported. An IOnDiskStateMachine type allows its Update method to be
-// concurrently invoked when there are ongoing calls to the Lookup or the
-// SaveSnapshot method. Lookup is also allowed when the RecoverFromSnapshot or
-// the Close methods are being invoked. Invocations to the Update, Sync,
-// PrepareSnapshot, RecoverFromSnapshot and Close methods are guarded by the
-// system to ensure mutual exclusion.
-//
-// Once created, the Open method is immediately invoked to open and use the
-// persisted state on disk. This makes IOnDiskStateMachine different from
-// IStateMachine types which require the state machine state to be fully
-// reconstructed from saved snapshots and Raft logs.
-//
-// Applications that implement IOnDiskStateMachine are recommended to setup
-// periodic snapshotting with relatively short time intervals, that triggers
-// the state machine's metadata, usually only a few KBytes each, to be
-// periodically snapshotted and thus causes negligible overheads for the system.
-// It also provides opportunities for the system to signal Raft Log compactions
-// to free up disk spaces.
+// Replica implements the interface IOnDiskStateMachine. More details of
+// IOnDiskStateMachine can be found at https://pkg.go.dev/github.com/lni/dragonboat/v4/statemachine#IOnDiskStateMachine.
 type Replica struct {
 	leaser pebble.Leaser
 
@@ -1455,52 +1433,6 @@ func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
 
 }
 
-// Update updates the IOnDiskStateMachine instance. The input Entry slice
-// is a list of continuous proposed and committed commands from clients, they
-// are provided together as a batch so the IOnDiskStateMachine implementation
-// can choose to batch them and apply together to hide latency. Update returns
-// the input entry slice with the Result field of all its members set.
-//
-// The read only Index field of each input Entry instance is the Raft log
-// index of each entry, it is IOnDiskStateMachine's responsibility to
-// atomically persist the Index value together with the corresponding state
-// update.
-//
-// The Update method can choose to synchronize all of its in-core state with
-// that on disk. This can minimize the number of committed Raft entries that
-// need to be re-applied after reboot. Update can also choose to postpone such
-// synchronization until the Sync method is invoked, this approach produces
-// higher throughput during fault free running at the cost that some of the
-// most recent Raft entries not synchronized onto disks will have to be
-// re-applied after reboot.
-//
-// When the Update method does not synchronize its in-core state with that on
-// disk, the implementation must ensure that after a reboot there is no
-// applied entry in the State Machine more recent than any entry that was
-// lost during reboot. For example, consider a state machine with 3 applied
-// entries, let's assume their index values to be 1, 2 and 3. Once they have
-// been applied into the state machine without synchronizing the in-core state
-// with that on disk, it is okay to lose the data associated with the applied
-// entry 3, but it is strictly forbidden to have the data associated with the
-// applied entry 3 available in the state machine while the one with index
-// value 2 got lost during reboot.
-//
-// The Update method must be deterministic, meaning given the same initial
-// state of IOnDiskStateMachine and the same input sequence, it should reach
-// to the same updated state and outputs the same results. The input entry
-// slice should be the only input to this method. Reading from the system
-// clock, random number generator or other similar external data sources will
-// likely violate the deterministic requirement of the Update method.
-//
-// Concurrent calls to the Lookup method and the SaveSnapshot method are not
-// blocked when the state machine is being updated by the Update method.
-//
-// The IOnDiskStateMachine implementation should not keep a reference to the
-// input entry slice after return.
-//
-// Update returns an error when there is unrecoverable error when updating the
-// on disk state machine.
-
 func errorEntry(err error) dbsm.Result {
 	status := statusProto(err)
 	rspBuf, _ := proto.Marshal(status)
@@ -1604,6 +1536,51 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	return entry, nil
 }
 
+// Update updates the IOnDiskStateMachine instance. The input Entry slice
+// is a list of continuous proposed and committed commands from clients, they
+// are provided together as a batch so the IOnDiskStateMachine implementation
+// can choose to batch them and apply together to hide latency. Update returns
+// the input entry slice with the Result field of all its members set.
+//
+// The read only Index field of each input Entry instance is the Raft log
+// index of each entry, it is IOnDiskStateMachine's responsibility to
+// atomically persist the Index value together with the corresponding state
+// update.
+//
+// The Update method can choose to synchronize all of its in-core state with
+// that on disk. This can minimize the number of committed Raft entries that
+// need to be re-applied after reboot. Update can also choose to postpone such
+// synchronization until the Sync method is invoked, this approach produces
+// higher throughput during fault free running at the cost that some of the
+// most recent Raft entries not synchronized onto disks will have to be
+// re-applied after reboot.
+//
+// When the Update method does not synchronize its in-core state with that on
+// disk, the implementation must ensure that after a reboot there is no
+// applied entry in the State Machine more recent than any entry that was
+// lost during reboot. For example, consider a state machine with 3 applied
+// entries, let's assume their index values to be 1, 2 and 3. Once they have
+// been applied into the state machine without synchronizing the in-core state
+// with that on disk, it is okay to lose the data associated with the applied
+// entry 3, but it is strictly forbidden to have the data associated with the
+// applied entry 3 available in the state machine while the one with index
+// value 2 got lost during reboot.
+//
+// The Update method must be deterministic, meaning given the same initial
+// state of IOnDiskStateMachine and the same input sequence, it should reach
+// to the same updated state and outputs the same results. The input entry
+// slice should be the only input to this method. Reading from the system
+// clock, random number generator or other similar external data sources will
+// likely violate the deterministic requirement of the Update method.
+//
+// Concurrent calls to the Lookup method and the SaveSnapshot method are not
+// blocked when the state machine is being updated by the Update method.
+//
+// The IOnDiskStateMachine implementation should not keep a reference to the
+// input entry slice after return.
+//
+// Update returns an error when there is unrecoverable error when updating the
+// on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	defer canary.Start("replica.Update", time.Second)()
 	db, err := sm.leaser.DB()
@@ -2006,7 +1983,7 @@ func (sm *Replica) Close() error {
 	return nil
 }
 
-// CreateReplica creates an ondisk statemachine.
+// New creates a new Replica, an on-disk state machine.
 func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
 	return &Replica{
 		ShardID:             shardID,
