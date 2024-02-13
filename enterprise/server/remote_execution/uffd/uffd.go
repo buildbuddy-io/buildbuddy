@@ -353,7 +353,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 				alreadyMappedStr += alreadyMappedRange.String()
 			}
 			alreadyMappedStr += debugData.String()
-			log.Warningf("Attempted to map chunk start offset 0x%x multiple times: %s", chunkStartOffset, alreadyMappedStr)
+			log.CtxWarningf(ctx, "Attempted to map chunk start offset 0x%x multiple times: %s", chunkStartOffset, alreadyMappedStr)
 		}
 		h.mappedPageFaults[int64(chunkStartOffset)] = append(h.mappedPageFaults[int64(chunkStartOffset)], debugData)
 
