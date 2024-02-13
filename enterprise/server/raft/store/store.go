@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -1091,6 +1092,7 @@ func (s *Store) GetMembership(ctx context.Context, shardID uint64) ([]*rfpb.Repl
 }
 
 func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
+	startTime := time.Now()
 	leftRange := req.GetRange()
 	if leftRange == nil {
 		return nil, status.FailedPreconditionErrorf("no range provided to split: %+v", req)
@@ -1207,6 +1209,17 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	if err := s.sender.RunTxn(ctx, txn); err != nil {
 		return nil, err
 	}
+
+	// Increment RaftSplits counter.
+	metrics.RaftSplits.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+	}).Inc()
+
+	// Observe split duration.
+	metrics.RaftSplitDurationUs.With(prometheus.Labels{
+		metrics.RaftRangeIDLabel: strconv.Itoa(int(leftRange.GetRangeId())),
+	}).Observe(float64(time.Since(startTime).Microseconds()))
+
 	return &rfpb.SplitRangeResponse{
 		Left:  updatedLeftRange,
 		Right: newRightRange,

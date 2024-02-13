@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -470,6 +471,9 @@ func (ut *Tracker) eventListener(ctx context.Context) {
 
 		for rangeID, usage := range byRange {
 			if leased[rangeID] {
+				metrics.RaftBytes.With(prometheus.Labels{
+					metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+				}).Set(float64(usage.GetEstimatedDiskBytesUsed()))
 				ut.LocalUpdate(rangeID, usage)
 			} else {
 				ut.RemoveRange(rangeID)
