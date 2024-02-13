@@ -990,18 +990,20 @@ code .comment {
 
 .empty-state .button {
   width: 100%;
-  padding: 24px 64px;
-  background-color: #212121;
-  color: #fff;
+  padding: 16px 32px;
+  border: 2px solid #000;
   font-size: 16px;
   font-weight: 600;
-  border: 0;
-  border-radius: 8px;
+  border-radius: 64px;
   margin-bottom: 32px;
   cursor: pointer;
-  display: block;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
   box-sizing: border-box;
-  text-align: center;
+  line-height: 24px;
+  max-width: 560px;
 }
 
 .empty-state b {
