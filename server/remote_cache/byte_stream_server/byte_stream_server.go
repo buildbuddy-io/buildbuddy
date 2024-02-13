@@ -386,7 +386,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if size != 0 {
 				progress = float64(bytesUploaded) / float64(size)
 			}
-			log.Infof("Throughput: %s delta %s uploaded %s (%f)",
+			log.CtxInfof(ctx, "Throughput: %s delta %s uploaded %s (%f)",
 				units.HumanSize(throughput),
 				units.HumanSize(throughputDelta),
 				units.HumanSize(float64(bytesUploaded)),
