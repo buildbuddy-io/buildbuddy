@@ -1,7 +1,6 @@
 package scheduler_server
 
 import (
-	"container/ring"
 	"context"
 	"flag"
 	"fmt"
@@ -529,34 +528,6 @@ func toNodeInterfaces(nodes []*executionNode) []interfaces.ExecutionNode {
 		out = append(out, node)
 	}
 	return out
-}
-
-func toRankedNodeRing(nodes []interfaces.RankedExecutionNode) (*ring.Ring, error) {
-	nodeRing := ring.New(len(nodes))
-	for _, node := range nodes {
-		en, ok := node.GetExecutionNode().(*executionNode)
-		if !ok {
-			return nil, status.InternalError("failed to convert executionNode to interface; this should never happen")
-		}
-		nodeRing.Value = rankedExecutionNode{node: en, preferred: node.IsPreferred()}
-		nodeRing = nodeRing.Next()
-	}
-	return nodeRing, nil
-}
-
-// If the debug-executor-id platform property is set, filters the given nodes
-// to the nodes with that ID. The returned list may be empty.
-func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) []*executionNode {
-	id := platform.FindEffectiveValue(task, "debug-executor-id")
-	if id == "" {
-		return nodes
-	}
-	for _, n := range nodes {
-		if n.executorID == id {
-			return []*executionNode{n}
-		}
-	}
-	return nil
 }
 
 type nodePoolKey struct {
@@ -1726,37 +1697,33 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		}
 	}
 
-	nodes := nodeBalancer.GetNodes(opts.scheduleOnConnectedExecutors)
-	if len(nodes) == 0 {
-		return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
-	}
-	nodes = nodesThatFit(nodes, enqueueRequest.GetTaskSize())
-	if len(nodes) == 0 {
-		return status.UnavailableErrorf(
-			"No registered executors in pool %q with os %q with arch %q can fit a task with %d milli-cpu and %d bytes of memory.",
-			pool, os, arch,
-			enqueueRequest.GetTaskSize().GetEstimatedMilliCpu(),
-			enqueueRequest.GetTaskSize().GetEstimatedMemoryBytes())
-	}
-	nodes = filterToDebugExecutorID(nodes, task)
-	if len(nodes) == 0 {
-		return status.UnavailableErrorf("requested executor ID not found")
-	}
-	rankedNodes := s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(nodes))
-	nodeRing, err := toRankedNodeRing(rankedNodes)
-	if err != nil {
-		return err
-	}
-
-	// sleep to make TestScheduler_ExecutorRestartsDuringScheduling in
-	// //enterprise/server/test/integration/remote_execution:remote_execution_test
-	// fail.
-	time.Sleep(5 * time.Second)
-
 	attempts := 0
 	nonPreferredDelay := getNonPreferredSchedulingDelay(cmd)
 	delayable := enqueueRequest.GetDelay() == nil
-	for ; len(successfulReservations) < probeCount; nodeRing = nodeRing.Next() {
+	for len(successfulReservations) < probeCount {
+		// If the queue of ranked, candidate nodes is empty, refresh them.
+		// This is necessary to handle the fact that the set of available nodes
+		// may change between iterations of this loop.
+		if len(rankedNodes) == 0 {
+			allNodes := nodeBalancer.GetNodes(opts.scheduleOnConnectedExecutors)
+			if len(allNodes) == 0 {
+				return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
+			}
+			candidateNodes := nodesThatFit(allNodes, enqueueRequest.GetTaskSize())
+			if len(candidateNodes) == 0 {
+				return status.UnavailableErrorf(
+					"No registered executors in pool %q with os %q with arch %q can fit a task with %d milli-cpu and %d bytes of memory.",
+					pool, os, arch,
+					enqueueRequest.GetTaskSize().GetEstimatedMilliCpu(),
+					enqueueRequest.GetTaskSize().GetEstimatedMemoryBytes())
+			}
+			candidateNodes = filterToDebugExecutorID(candidateNodes, task)
+			if len(nodes) == 0 {
+				return status.UnavailableErrorf("requested executor ID not found")
+			}
+			rankedNodes = s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -1764,10 +1731,8 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			break
 		}
 
-		rankedNode, ok := nodeRing.Value.(rankedExecutionNode)
-		if !ok {
-			return status.InternalError("failed to convert nodeRing to executionNode; this should never happen")
-		}
+		rankedNode := rankedNodes[0]
+		rankedNodes = rankedNodes[1:]
 		attempts++
 		if opts.maxAttempts > 0 && attempts > opts.maxAttempts {
 			return status.ResourceExhaustedErrorf("could not enqueue task reservation to executor")
@@ -1778,18 +1743,18 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 		// Set the executor ID in case the node is owned by another scheduler, so
 		// that the scheduler can prefer this node for the probe.
-		enqueueRequest.ExecutorId = rankedNode.node.GetExecutorID()
+		enqueueRequest.ExecutorId = rankedNode.GetExecutionNode().GetExecutorID()
 		enqueueStart := time.Now()
-		if delayable && scheduledOnPreferredNode && !rankedNode.preferred && nonPreferredDelay > 0*time.Second {
+		if delayable && scheduledOnPreferredNode && !rankedNode.IsPreferred() && nonPreferredDelay > 0*time.Second {
 			enqueueRequest.Delay = durationpb.New(nonPreferredDelay)
 		} else if delayable {
 			enqueueRequest.Delay = nil
 		}
-		if s.enqueue(ctx, rankedNode.node, enqueueRequest, opts) {
-			if rankedNode.preferred {
+		if s.enqueue(ctx, rankedNode.GetExecutionNode().(*executionNode), enqueueRequest, opts) {
+			if rankedNode.IsPreferred() {
 				scheduledOnPreferredNode = true
 			}
-			successfulReservations = append(successfulReservations, successfulReservation(rankedNode.node, enqueueStart))
+			successfulReservations = append(successfulReservations, successfulReservation(rankedNode.GetExecutionNode().(*executionNode), enqueueStart))
 		}
 	}
 	return nil
