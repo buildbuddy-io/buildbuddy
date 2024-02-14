@@ -625,6 +625,8 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 
 	u.FirstName = ur.Name.GivenName
 	u.LastName = ur.Name.FamilyName
+	u.Email = ur.UserName
+	u.SubID = subIDForUserName(ur.UserName, g)
 	updatedUser, err := newUserResource(u, g)
 	if err != nil {
 		return nil, err

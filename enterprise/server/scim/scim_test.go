@@ -585,7 +585,8 @@ func TestUpdateUser(t *testing.T) {
 			GivenName:  "Givy",
 			FamilyName: "Famy",
 		},
-		Active: true,
+		Active:   true,
+		UserName: "puttest@example.domain",
 	}
 	body, err := json.Marshal(req)
 	require.NoError(t, err)
@@ -597,6 +598,7 @@ func TestUpdateUser(t *testing.T) {
 	require.True(t, updatedUser.Active)
 	require.Equal(t, "Givy", updatedUser.Name.GivenName)
 	require.Equal(t, "Famy", updatedUser.Name.FamilyName)
+	require.Equal(t, "puttest@example.domain", updatedUser.UserName)
 
 	// Look up updated user.
 	code, body = tc.Get(baseURL + "/scim/Users/US100")
@@ -607,7 +609,13 @@ func TestUpdateUser(t *testing.T) {
 	require.True(t, updatedUser.Active)
 	require.Equal(t, "Givy", updatedUser.Name.GivenName)
 	require.Equal(t, "Famy", updatedUser.Name.FamilyName)
+	require.Equal(t, "puttest@example.domain", updatedUser.UserName)
 	verifyRole(t, updatedUser, scim.DeveloperRole)
+
+	// Verify that SubID was updated to reflect the new email.
+	u, err := udb.GetUserByID(userCtx, updatedUser.ID)
+	require.NoError(t, err)
+	require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/puttest@example.domain", u.SubID)
 
 	// Update user using PATCH request.
 	patchReq := &scim.PatchResource{
@@ -655,7 +663,7 @@ func TestUpdateUser(t *testing.T) {
 	verifyRole(t, updatedUser, scim.DeveloperRole)
 
 	// Verify that SubID was updated to reflect the new email.
-	u, err := udb.GetUserByID(userCtx, updatedUser.ID)
+	u, err = udb.GetUserByID(userCtx, updatedUser.ID)
 	require.NoError(t, err)
 	require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/somenewemail@example.domain", u.SubID)
 
