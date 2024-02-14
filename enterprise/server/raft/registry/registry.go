@@ -64,7 +64,7 @@ type StaticRegistry struct {
 	targetGrpcs sync.Map // map of string => string
 }
 
-// NewNodeStaticRegistry returns a new StaticRegistry object.
+// NewStaticNodeRegistry returns a new StaticRegistry object.
 func NewStaticNodeRegistry(streamConnections uint64, v dbConfig.TargetValidator) *StaticRegistry {
 	n := &StaticRegistry{validate: v}
 	if streamConnections > 1 {
@@ -103,11 +103,12 @@ func (n *StaticRegistry) Remove(shardID uint64, replicaID uint64) {
 func (n *StaticRegistry) RemoveShard(shardID uint64) {
 }
 
+// ResolveRaft returns the raft address and the connection key of the specified node.
 func (n *StaticRegistry) Resolve(shardID uint64, replicaID uint64) (string, string, error) {
 	return n.ResolveRaft(shardID, replicaID)
 }
 
-// Resolve looks up the Addr of the specified node.
+// ResolveRaft returns the raft address and the connection key of the specified node.
 func (n *StaticRegistry) ResolveRaft(shardID uint64, replicaID uint64) (string, string, error) {
 	key := raftio.GetNodeInfo(shardID, replicaID)
 	if target, ok := n.nodeTargets.Load(key); ok {
@@ -119,6 +120,7 @@ func (n *StaticRegistry) ResolveRaft(shardID uint64, replicaID uint64) (string, 
 	return "", "", targetAddressUnknownError(shardID, replicaID)
 }
 
+// ResolveGRPC returns the gRPC address and the connection key of the specified node.
 func (n *StaticRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (string, string, error) {
 	key := raftio.GetNodeInfo(shardID, replicaID)
 	if target, ok := n.nodeTargets.Load(key); ok {
@@ -130,6 +132,8 @@ func (n *StaticRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (string, 
 	return "", "", targetAddressUnknownError(shardID, replicaID)
 }
 
+// ResolveNHID returns the NHID(node host ID) and the connection key of the
+// specified node.
 func (n *StaticRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, string, error) {
 	key := raftio.GetNodeInfo(shardID, replicaID)
 	if t, ok := n.nodeTargets.Load(key); ok {
@@ -139,6 +143,8 @@ func (n *StaticRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, 
 	return "", "", targetAddressUnknownError(shardID, replicaID)
 }
 
+// AddNode adds the raftAddress and/or grpcAddr for the specified target to the
+// registry.
 func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
 	if n.validate != nil && !n.validate(target) {
 		log.Errorf("invalid target %s", target)
@@ -238,6 +244,9 @@ func (d *DynamicNodeRegistry) handleEvent(event *serf.UserEvent) {
 	}
 }
 
+// handleQuery handles a registry query event. It looks up the NHID, the raft
+// address and the gRPC address for the node specified by the shard ID and the
+// replica ID.
 func (d *DynamicNodeRegistry) handleQuery(query *serf.Query) {
 	if query.Name != constants.RegistryQueryEvent {
 		return
@@ -305,6 +314,8 @@ func (d *DynamicNodeRegistry) pushUpdate(req *rfpb.RegistryPushRequest) {
 	}
 }
 
+// queryPeers looks up and adds one peer of the specified node to the registry
+// including the node info (shard ID and replica ID), NHID, and addresses.
 func (d *DynamicNodeRegistry) queryPeers(shardID uint64, replicaID uint64) {
 	req := &rfpb.RegistryQueryRequest{
 		ShardId:   shardID,
@@ -353,11 +364,12 @@ func (d *DynamicNodeRegistry) Remove(shardID uint64, replicaID uint64) {
 func (d *DynamicNodeRegistry) RemoveShard(shardID uint64) {
 }
 
+// ResolveRaft returns the raft address and the connection key of the specified node.
 func (d *DynamicNodeRegistry) Resolve(shardID uint64, replicaID uint64) (string, string, error) {
 	return d.ResolveRaft(shardID, replicaID)
 }
 
-// Resolve looks up the Addr of the specified node.
+// ResolveRaft returns the raft address and the connection key of the specified node.
 func (d *DynamicNodeRegistry) ResolveRaft(shardID uint64, replicaID uint64) (string, string, error) {
 	r, k, err := d.sReg.ResolveRaft(shardID, replicaID)
 	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
@@ -367,6 +379,7 @@ func (d *DynamicNodeRegistry) ResolveRaft(shardID uint64, replicaID uint64) (str
 	return r, k, err
 }
 
+// ResolveGRPC returns the gRPC address and the connection key of the specified node.
 func (d *DynamicNodeRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (string, string, error) {
 	g, k, err := d.sReg.ResolveGRPC(shardID, replicaID)
 	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
@@ -376,6 +389,8 @@ func (d *DynamicNodeRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (str
 	return g, k, err
 }
 
+// ResolveNHID returns the NHID(node host ID) and the connection key of the
+// specified node.
 func (d *DynamicNodeRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, string, error) {
 	n, k, err := d.sReg.ResolveNHID(shardID, replicaID)
 	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
@@ -385,6 +400,8 @@ func (d *DynamicNodeRegistry) ResolveNHID(shardID uint64, replicaID uint64) (str
 	return n, k, err
 }
 
+// AddNode adds the raftAddress and/or grpcAddr for the specified target to the
+// registry.
 func (d *DynamicNodeRegistry) AddNode(target, raftAddress, grpcAddress string) {
 	d.sReg.AddNode(target, raftAddress, grpcAddress)
 	d.pushUpdate(&rfpb.RegistryPushRequest{
