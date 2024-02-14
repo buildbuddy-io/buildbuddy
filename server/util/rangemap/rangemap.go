@@ -14,7 +14,8 @@ var (
 	RangeDoesNotExistError = errors.New("Range does not exist")
 )
 
-// Ranges are [inclusive,exclusive)
+// Range is a data structure that holds [start, end) (i.e. inclusive start and
+// exclusive end) and a value.
 type Range struct {
 	Start []byte
 	End   []byte
@@ -36,6 +37,8 @@ func (r *Range) Contains(key []byte) bool {
 	return contained
 }
 
+// RangeMap is an ordered map of ranges that supports add, remove, and look up
+// Ranges. The ranges in RangeMap are non-overlapping.
 type RangeMap struct {
 	ranges []*Range
 }
@@ -46,6 +49,8 @@ func New() *RangeMap {
 	}
 }
 
+// Add adds a range to RangeMap. Returns an error if the new range overlap with
+// existing ranges.
 func (rm *RangeMap) Add(start, end []byte, value interface{}) (*Range, error) {
 	insertIndex := sort.Search(len(rm.ranges), func(i int) bool {
 		//  0 if a==b, -1 if a < b, and +1 if a > b
@@ -79,6 +84,8 @@ func (rm *RangeMap) Add(start, end []byte, value interface{}) (*Range, error) {
 	return newRange, nil
 }
 
+// Remove removes a range with the specific start and end.
+// Returns RangeDoesNotExistError if the range is not found.
 func (rm *RangeMap) Remove(start, end []byte) error {
 	deleteIndex := -1
 	for i, r := range rm.ranges {
@@ -94,6 +101,8 @@ func (rm *RangeMap) Remove(start, end []byte) error {
 	return nil
 }
 
+// Get returns the range with the specific start and end. Returns nil if the
+// range is not found.
 func (rm *RangeMap) Get(start, end []byte) *Range {
 	if len(rm.ranges) == 0 {
 		return nil
@@ -122,6 +131,8 @@ func (rm *RangeMap) Get(start, end []byte) *Range {
 	return nil
 }
 
+// GetOverlapping returns a list of ranges overlapped with the specific start
+// and end.
 func (rm *RangeMap) GetOverlapping(start, end []byte) []*Range {
 	if len(rm.ranges) == 0 {
 		return nil
@@ -152,6 +163,8 @@ func (rm *RangeMap) GetOverlapping(start, end []byte) []*Range {
 	return rm.ranges[startIndex:endIndex]
 }
 
+// Lookup looks up the range containing the key and returns the value of the
+// range.
 func (rm *RangeMap) Lookup(key []byte) interface{} {
 	if len(rm.ranges) == 0 {
 		return nil
@@ -189,6 +202,7 @@ func (rm *RangeMap) String() string {
 	return buf
 }
 
+// Ranges returns a list of ordered ranges that the RangeMap contains.
 func (rm *RangeMap) Ranges() []*Range {
 	return rm.ranges
 }

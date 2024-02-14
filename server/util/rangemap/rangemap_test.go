@@ -17,24 +17,24 @@ func TestAddOrdering(t *testing.T) {
 
 	addRange("c", "d", 2)
 	addRange("a", "b", 1)
-	addRange("g", "h", 4)
-	addRange("m", "n", 7)
-	addRange("k", "l", 6)
-	addRange("e", "f", 3)
+	addRange("g", "h", 7)
+	addRange("m", "n", 4)
+	addRange("k", "l", 3)
+	addRange("e", "f", 6)
 	addRange("o", "pp", 8)
 	addRange("i", "j", 5)
 
 	ranges := r.Ranges()
 
 	require.Equal(t, 8, len(ranges))
-	require.Equal(t, ranges[0].Val, 1)
-	require.Equal(t, ranges[1].Val, 2)
-	require.Equal(t, ranges[2].Val, 3)
-	require.Equal(t, ranges[3].Val, 4)
-	require.Equal(t, ranges[4].Val, 5)
-	require.Equal(t, ranges[5].Val, 6)
-	require.Equal(t, ranges[6].Val, 7)
-	require.Equal(t, ranges[7].Val, 8)
+	require.Equal(t, ranges[0].Start, []byte("a"))
+	require.Equal(t, ranges[1].Start, []byte("c"))
+	require.Equal(t, ranges[2].Start, []byte("e"))
+	require.Equal(t, ranges[3].Start, []byte("g"))
+	require.Equal(t, ranges[4].Start, []byte("i"))
+	require.Equal(t, ranges[5].Start, []byte("k"))
+	require.Equal(t, ranges[6].Start, []byte("m"))
+	require.Equal(t, ranges[7].Start, []byte("o"))
 }
 
 func TestAddOverlapError(t *testing.T) {
@@ -158,6 +158,8 @@ func TestGet(t *testing.T) {
 	require.Equal(t, 1, r1.Val)
 	require.Equal(t, 2, r2.Val)
 	require.Nil(t, r.Get([]byte("ffff"), []byte("z")))
+	require.Nil(t, r.Get([]byte("aaad"), []byte("aaae")))
+	require.Nil(t, r.Get([]byte("aaae"), []byte("ffff")))
 }
 
 func TestGetOverlapping(t *testing.T) {
@@ -203,7 +205,7 @@ func TestRemove(t *testing.T) {
 	require.NoError(t, err)
 
 	err = r.Remove([]byte("a"), []byte("z"))
-	require.NotNil(t, err)
+	require.Error(t, err)
 
 	require.Equal(t, nil, r.Lookup([]byte("d")))
 }
