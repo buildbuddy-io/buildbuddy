@@ -16,10 +16,22 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && \
 # Install iproute2 ("ip" command) to configure networking on host.
 RUN apt-get update && apt-get install -y umoci iproute2 amazon-ecr-credential-helper
 
-# Install podman and skopeo
-RUN echo 'deb https://downloadcontent.opensuse.org/repositories/home:/alvistack/Debian_11/ /' >> /etc/apt/sources.list.d/home:alvistack.list && \
-    curl -fsSL https://download.opensuse.org/repositories/home:/alvistack/Debian_11/Release.key | gpg --dearmor >> /etc/apt/trusted.gpg.d/home_alvistack_debian11.gpg && \
-    apt-get update && apt-get -y upgrade && apt-get install -y podman=100:4.9.1-1 skopeo=100:1.13.3-1 && \
+# Install podman and skopeo. We install using a static archive stored in GCS to
+# avoid a hard dependency on the third-party debian repo where the packages are
+# hosted.
+#
+# To update podman, run create_podman_bundle.sh to generate a new static
+# archive, then update ARCHIVE as well as the sha256sum below.
+RUN mkdir /tmp/podman-install && \
+    cd /tmp/podman-install && \
+    ARCHIVE='podman-4.9.1.tar.gz' && \
+    curl -fsSL "https://storage.googleapis.com/buildbuddy-tools/binaries/podman-debian/$ARCHIVE" > "$ARCHIVE" && \
+    echo "2453353fb01e7a952408e5c0e4d8300d66c420db0d778d5af052a3fdd70aad49  $ARCHIVE" > podman.sum && \
+    sha256sum -c podman.sum && \
+    tar -xzvf "$ARCHIVE" && \
+    ./install.sh && \
+    cd / && \
+    rm -rf /tmp/podman-install && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy podman registries configuration.
