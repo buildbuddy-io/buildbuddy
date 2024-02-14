@@ -612,6 +612,7 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
+	log.CtxDebugf(ctx, "SCIM update user request: %s", string(req))
 	ur := UserResource{}
 	if err := json.Unmarshal(req, &ur); err != nil {
 		return nil, err
