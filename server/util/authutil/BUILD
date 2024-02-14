@@ -6,9 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/authutil",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:api_key_go_proto",
         "//server/interfaces",
         "//server/util/alert",
-        "//server/util/role",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//codes",

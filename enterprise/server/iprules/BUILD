@@ -21,7 +21,6 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/perms",
-        "//server/util/role",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
     ],

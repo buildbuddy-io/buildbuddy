@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -311,7 +310,7 @@ func (s *Service) checkAccess(ctx context.Context, groupID string) error {
 	if err != nil {
 		return err
 	}
-	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
 		return err
 	}
 	return nil
