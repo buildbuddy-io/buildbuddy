@@ -28,7 +28,7 @@ func main() {
 
 	flag.Parse()
 	if err := config.Load(); err != nil {
-		log.Fatalf("Error loading config from file: %s", err)
+		log.Fatalf("Oh no, error loading config from file: %s", err)
 	}
 
 	config.ReloadOnSIGHUP()

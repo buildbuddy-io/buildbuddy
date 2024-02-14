@@ -509,7 +509,7 @@ func main() {
 		if result, ok := err.(*actionResult); ok {
 			os.Exit(result.exitCode)
 		}
-		log.Errorf("%s", err)
+		log.Errorf("oh no: %s", err)
 		os.Exit(int(gstatus.Code(err)))
 	}
 }
