@@ -3,8 +3,6 @@ package analysis
 import (
 	"context"
 	"os"
-	"path/filepath"
-
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/encoding/protojson"
