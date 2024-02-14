@@ -12,6 +12,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
+// RangeCache is a synchronous map from ranges to their descriptors.
 type RangeCache struct {
 	rangeMu sync.RWMutex
 
@@ -64,10 +65,11 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 
 	r := rc.rangeMap.Get(start, end)
 	if r == nil {
+		overlappingRanges := rc.rangeMap.GetOverlapping(start, end)
 		// If this range overlaps, we'll check it against the overlapping
 		// ranges and possibly delete them or if they are newer, then we'll
 		// ignore this update.
-		for _, overlappingRange := range rc.rangeMap.GetOverlapping(start, end) {
+		for _, overlappingRange := range overlappingRanges {
 			lr, ok := overlappingRange.Val.(*lockingRangeDescriptor)
 			if !ok {
 				continue
@@ -81,7 +83,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 
 		// If we got here, all overlapping ranges are older, so we're gonna
 		// delete them and replace with the new one.
-		for _, overlappingRange := range rc.rangeMap.GetOverlapping(start, end) {
+		for _, overlappingRange := range overlappingRanges {
 			log.Debugf("Removing (outdated) overlapping range: [%q, %q)", overlappingRange.Start, overlappingRange.End)
 			rc.rangeMap.Remove(overlappingRange.Start, overlappingRange.End)
 		}
@@ -102,10 +104,15 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 	return nil
 }
 
+// UpdateRange updates the rangeDescriptor if its generation is later. Note that
+// it deletes all older overlapping ranges.
 func (rc *RangeCache) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 	return rc.updateRange(rangeDescriptor)
 }
 
+// SetPreferredReplica moves the given replica to the front for the given range
+// descriptor. It's an no-op when the given range is not in the cache or the given
+// replica is not included in the range descriptor's replica list.
 func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb.RangeDescriptor) {
 	rc.rangeMu.RLock()
 	defer rc.rangeMu.RUnlock()
@@ -139,6 +146,7 @@ func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb
 	lr.Update(newDescriptor)
 }
 
+// Get returns a RangeDescriptor that includes the given key within its range.
 func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	rc.rangeMu.RLock()
 	defer rc.rangeMu.RUnlock()
