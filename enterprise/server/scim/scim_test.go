@@ -654,6 +654,11 @@ func TestUpdateUser(t *testing.T) {
 	require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
 	verifyRole(t, updatedUser, scim.DeveloperRole)
 
+	// Verify that SubID was updated to reflect the new email.
+	u, err := udb.GetUserByID(userCtx, updatedUser.ID)
+	require.NoError(t, err)
+	require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/somenewemail@example.domain", u.SubID)
+
 	// Promote user to admin.
 	req.Role = scim.AdminRole
 	body, err = json.Marshal(req)
