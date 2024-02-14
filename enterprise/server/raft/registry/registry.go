@@ -132,7 +132,7 @@ func (n *StaticRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (string, 
 	return "", "", targetAddressUnknownError(shardID, replicaID)
 }
 
-// ResolveNHID returns the NHID(node host ID) and the connection key of the
+// ResolveNHID returns the NodeHost ID (NHID) and the connection key of the
 // specified node.
 func (n *StaticRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, string, error) {
 	key := raftio.GetNodeInfo(shardID, replicaID)
@@ -143,7 +143,7 @@ func (n *StaticRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, 
 	return "", "", targetAddressUnknownError(shardID, replicaID)
 }
 
-// AddNode adds the raftAddress and/or grpcAddr for the specified target to the
+// AddNode adds the raftAddress and grpcAddr for the specified target to the
 // registry.
 func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
 	if n.validate != nil && !n.validate(target) {
@@ -314,8 +314,8 @@ func (d *DynamicNodeRegistry) pushUpdate(req *rfpb.RegistryPushRequest) {
 	}
 }
 
-// queryPeers looks up and adds one peer of the specified node to the registry
-// including the node info (shard ID and replica ID), NHID, and addresses.
+// queryPeers queries the gossip network for node that hold the specified shardID
+// and replicaID. If any nodes are found, they are added to the static registry.
 func (d *DynamicNodeRegistry) queryPeers(shardID uint64, replicaID uint64) {
 	req := &rfpb.RegistryQueryRequest{
 		ShardId:   shardID,
@@ -341,6 +341,8 @@ func (d *DynamicNodeRegistry) queryPeers(shardID uint64, replicaID uint64) {
 		}
 		d.sReg.Add(shardID, replicaID, rsp.GetNhid())
 		d.sReg.AddNode(rsp.GetNhid(), rsp.GetRaftAddress(), rsp.GetGrpcAddress())
+		// Since only one nodehost can be identified by the specified shardID and
+		// replicaID. We can close the query after found one nodehost.
 		stream.Close()
 		return
 	}
@@ -389,7 +391,7 @@ func (d *DynamicNodeRegistry) ResolveGRPC(shardID uint64, replicaID uint64) (str
 	return g, k, err
 }
 
-// ResolveNHID returns the NHID(node host ID) and the connection key of the
+// ResolveNHID returns the NodeHost ID (NHID) and the connection key of the
 // specified node.
 func (d *DynamicNodeRegistry) ResolveNHID(shardID uint64, replicaID uint64) (string, string, error) {
 	n, k, err := d.sReg.ResolveNHID(shardID, replicaID)
@@ -400,7 +402,7 @@ func (d *DynamicNodeRegistry) ResolveNHID(shardID uint64, replicaID uint64) (str
 	return n, k, err
 }
 
-// AddNode adds the raftAddress and/or grpcAddr for the specified target to the
+// AddNode adds the raftAddress and grpcAddr for the specified target to the
 // registry.
 func (d *DynamicNodeRegistry) AddNode(target, raftAddress, grpcAddress string) {
 	d.sReg.AddNode(target, raftAddress, grpcAddress)
