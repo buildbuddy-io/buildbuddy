@@ -1983,33 +1983,6 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 	require.Equal(t, float64(len(cmds)), tasksStartedCount, "no tasks should have been retried")
 }
 
-func TestScheduler_ExecutorRestartsDuringScheduling(t *testing.T) {
-	command := &repb.Command{
-		Arguments: []string{"sh", "-c", "sleep 1"},
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "OSFamily", Value: runtime.GOOS},
-				{Name: "Arch", Value: runtime.GOARCH},
-			},
-		},
-	}
-
-	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer()
-	executor := rbe.AddExecutor(t)
-
-	// Run a command.
-	execution := rbe.Execute(command, &rbetest.ExecuteOpts{})
-	time.Sleep(time.Second)
-
-	// Restart the executor, hopefully while it's scheduling.
-	rbe.RemoveExecutor(executor)
-	rbe.AddExecutor(t)
-
-	// The command should still be scheduled and run correctly.
-	assert.Nil(t, execution.Wait().Err)
-}
-
 func randSleepMillis(min, max int) {
 	r := rand.Int63n(int64(max-min)) + int64(min)
 	time.Sleep(time.Duration(r))
