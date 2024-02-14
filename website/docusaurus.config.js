@@ -118,11 +118,47 @@ module.exports = {
             { label: "Remote Cache", href: "/remote-cache" },
             { label: "Workflows", href: "/workflows" },
             { label: "BuildBuddy CLI", href: "/cli" },
-            { label: "Plugin Library", href: "/plugins" },
-            // {label: "Cloud", href: "/cloud"},
-            // {label: "Open Source", href: "/open-source"},
-            // {label: "Enterprise", href: "/enterpise"},
           ],
+        },
+        // TODO(siggisim): Make pages for these
+        // {
+        //   href: "/solutions",
+        //   target: "_self",
+        //   label: "Solutions",
+        //   position: "left",
+        //   type: "dropdown",
+        //   items: [
+        //     { label: "Cloud", href: "/cloud" },
+        //     { label: "Open Source", href: "/open-source" },
+        //     { label: "Enterprise", href: "/enterprise" },
+        //     { label: "iOS", href: "/cli" },
+        //   ],
+        // },
+        {
+          label: "Resources",
+          position: "left",
+          type: "dropdown",
+          items: [
+            { label: "Blog", href: "/blog" },
+            { label: "GitHub", href: "https://github.com/buildbuddy-io/buildbuddy" },
+            { label: "Community", href: "http://community.buildbuddy.io/" },
+            { label: "Security", href: "/security" },
+            { label: "Plugins", href: "/plugins" },
+            { label: "Team", href: "/team" },
+            // TODO(siggisim): Make pages for these.
+            // { label: "Guides", href: "/guides" },
+            // { label: "Module Registry", href: "/module-registry" },
+            // { label: "Templates", href: "/templates" },
+            // { label: "Bazel", href: "/bazel/" },
+            // { label: "Help Center", href: "/help/" },
+            // { label: "Customers", href: "/customers/" },
+          ],
+        },
+        {
+          href: "/docs/introduction/",
+          activeBasePath: "/docs/",
+          label: "Docs",
+          position: "left",
         },
         {
           href: "/pricing",
@@ -131,21 +167,9 @@ module.exports = {
           position: "left",
         },
         {
-          href: "https://github.com/buildbuddy-io/buildbuddy",
-          target: "_blank",
-          label: "GitHub",
-          position: "left",
-        },
-        {
-          href: "/blog/",
-          activeBasePath: "/blog/",
-          label: "Blog",
-          position: "left",
-        },
-        {
-          href: "/docs/introduction/",
-          activeBasePath: "/docs/",
-          label: "Docs",
+          href: "/contact",
+          target: "_self",
+          label: "Contact",
           position: "right",
         },
         {
@@ -154,11 +178,10 @@ module.exports = {
           label: "Login",
           position: "right",
         },
-
         {
           href: "https://app.buildbuddy.io/",
           target: "_self",
-          label: "Get Started",
+          label: "Sign up",
           position: "right",
           className: "sign-up",
         },
@@ -193,12 +216,32 @@ module.exports = {
               target: "_self",
             },
             {
+              label: "Workflows",
+              href: "/workflows",
+              target: "_self",
+            },
+            {
+              label: "CLI",
+              href: "/cli",
+              target: "_self",
+            },
+            {
               label: "Get Started",
               href: "https://app.buildbuddy.io",
               target: "_self",
             },
             {
-              label: "Documentation",
+              label: "Login",
+              href: "https://app.buildbuddy.io/",
+              target: "_self",
+            },
+          ],
+        },
+        {
+          title: "Resources",
+          items: [
+            {
+              label: "Docs",
               href: "/docs/introduction/",
               target: "_self",
             },
@@ -208,18 +251,23 @@ module.exports = {
               target: "_self",
             },
             {
-              label: "Login",
-              href: "https://app.buildbuddy.io/",
+              label: "Blog",
+              href: "/blog/",
               target: "_self",
             },
             {
-              label: "Privacy Policy",
-              href: "/privacy",
+              label: "Security",
+              href: "/security",
               target: "_self",
             },
             {
-              label: "Terms of Service",
-              href: "/terms",
+              label: "Plugins",
+              href: "/plugins",
+              target: "_self",
+            },
+            {
+              label: "API",
+              href: "/docs/enterprise-api",
               target: "_self",
             },
           ],
@@ -227,15 +275,6 @@ module.exports = {
         {
           title: "Company",
           items: [
-            {
-              label: "Blog",
-              href: "/blog/",
-              target: "_self",
-            },
-            {
-              label: "Report an Issue",
-              href: "https://github.com/buildbuddy-io/buildbuddy/issues/new",
-            },
             {
               label: "Contact Us",
               href: "/contact",
@@ -251,24 +290,18 @@ module.exports = {
               href: "/careers",
               target: "_self",
             },
-          ],
-        },
-        {
-          title: "Security",
-          items: [
             {
-              label: "Security Overview",
-              href: "/security",
+              label: "Report an Issue",
+              href: "https://github.com/buildbuddy-io/buildbuddy/issues/new",
+            },
+            {
+              label: "Privacy Policy",
+              href: "/privacy",
               target: "_self",
             },
             {
-              label: "Security Updates",
-              href: "/security-updates",
-              target: "_self",
-            },
-            {
-              label: "Report a Vulnerability",
-              href: "/security-vulnerability-report",
+              label: "Terms of Service",
+              href: "/terms",
               target: "_self",
             },
           ],
