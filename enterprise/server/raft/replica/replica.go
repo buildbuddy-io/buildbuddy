@@ -1577,9 +1577,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 		}
 	}
 
-	// BatchCMDResponse.MarshalVT() is slower than standard marshal(). See
-	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
-	rspBuf, err := proto.MarshalOld(batchRsp)
+	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
 		return entry, err
 	}
@@ -1672,7 +1670,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	rspBuf, err := proto.MarshalOld(batchRsp)
+	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
 		return nil, err
 	}
