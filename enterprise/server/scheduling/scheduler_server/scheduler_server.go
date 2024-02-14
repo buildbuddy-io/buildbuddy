@@ -1748,6 +1748,11 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		return err
 	}
 
+	// sleep to make TestScheduler_ExecutorRestartsDuringScheduling in
+	// //enterprise/server/test/integration/remote_execution:remote_execution_test
+	// fail.
+	time.Sleep(5 * time.Second)
+
 	attempts := 0
 	nonPreferredDelay := getNonPreferredSchedulingDelay(cmd)
 	delayable := enqueueRequest.GetDelay() == nil
