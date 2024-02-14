@@ -1022,7 +1022,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Kick off a background process to make comments.
 		ar.reporter.log.Printf("jdh Checking about commenting")
 		if commenter != nil {
+			ar.reporter.log.Printf("jdh Yes")
 			commenter.PostComments(ctx, artifactsDir, ar.reporter.log)
+		} else {
+			ar.reporter.log.Printf("jdh No")
 		}
 
 		// If this is a successfully "bazel run" invocation from which we are extracting run information via
