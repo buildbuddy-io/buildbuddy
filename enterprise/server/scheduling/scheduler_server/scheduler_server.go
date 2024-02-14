@@ -1698,7 +1698,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	}
 
 	attempts := 0
-	var rankedNodes []*rankedExecutionNode
+	var rankedNodes []interfaces.RankedExecutionNode
 	nonPreferredDelay := getNonPreferredSchedulingDelay(cmd)
 	delayable := enqueueRequest.GetDelay() == nil
 	for len(successfulReservations) < probeCount {

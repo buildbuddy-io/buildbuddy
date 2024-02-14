@@ -17,7 +17,6 @@ go_test(
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",
-        "//enterprise/server/scheduling/priority_task_scheduler",
         "//enterprise/server/scheduling/scheduler_server",
         "//enterprise/server/tasksize",
         "//enterprise/server/test/integration/remote_execution/rbetest",
