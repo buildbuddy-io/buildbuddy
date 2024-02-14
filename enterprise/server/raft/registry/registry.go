@@ -364,7 +364,7 @@ func (d *DynamicNodeRegistry) Remove(shardID uint64, replicaID uint64) {
 func (d *DynamicNodeRegistry) RemoveShard(shardID uint64) {
 }
 
-// ResolveRaft returns the raft address and the connection key of the specified node.
+// Resolve returns the raft address and the connection key of the specified node.
 func (d *DynamicNodeRegistry) Resolve(shardID uint64, replicaID uint64) (string, string, error) {
 	return d.ResolveRaft(shardID, replicaID)
 }
