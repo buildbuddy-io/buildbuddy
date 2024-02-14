@@ -72,14 +72,18 @@ export class AuthService {
   }
 
   // sets a cookie with a default age of 1 year.
-  setCookie(name: string, value: string, { maxAge = 31536000 } = {}) {
+  setCookie(name: string, value: string, { maxAge = 31536000, domain = ""} = {}) {
     let cookie = `${name}=${value}; path=/;`;
     if (maxAge > 0) {
       cookie += ` max-age=${maxAge};`;
     }
-    if (capabilities.config.subdomainsEnabled) {
+    if (domain) {
+      cookie += ` domain=${domain};`;
+    }
+    else if (capabilities.config.subdomainsEnabled) {
       cookie += ` domain=${capabilities.config.domain};`;
     }
+    console.log(`setting cookie ${cookie}`)
     document.cookie = cookie;
   }
 
@@ -224,13 +228,21 @@ export class AuthService {
   async enterImpersonationMode(query: string, { redirectUrl = "" }: { redirectUrl?: string } = {}) {
     const request = grp.GetGroupRequest.create(query.startsWith("GR") ? { groupId: query } : { urlIdentifier: query });
     const response = await rpc_service.service.getGroup(request);
-    this.setCookie(IMPERSONATING_GROUP_ID_COOKIE, response.id, { maxAge: 0 });
 
     // If we have an explicit redirect URL, navigate there directly.
     if (redirectUrl) {
       window.location.href = redirectUrl;
       return;
     }
+
+    let domain = "";
+    if (capabilities.config.subdomainsEnabled && new URL(response.url).hostname != window.location.hostname) {
+      domain = new URL(response.url).hostname
+    } else {
+      domain = window.location.hostname
+    }
+    console.log(`setting cookie domain to ${domain}`)
+    this.setCookie(IMPERSONATING_GROUP_ID_COOKIE, response.id, { maxAge: 0, domain: domain });
 
     // If the new group is on a different subdomain then we have to use a redirect.
     if (capabilities.config.subdomainsEnabled && new URL(response.url).hostname != window.location.hostname) {
