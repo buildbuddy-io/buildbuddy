@@ -430,6 +430,10 @@ func roleUpdateRequest(userID string, userRole role.Role) ([]*grpb.UpdateGroupUs
 	}}, nil
 }
 
+func subIDForUserName(userName string, g *tables.Group) string {
+	return fmt.Sprintf("%s/%s", build_buddy_url.WithPath("saml/metadata").String()+"?slug="+g.URLIdentifier, userName)
+}
+
 func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -453,10 +457,9 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
-	entityURL := build_buddy_url.WithPath("saml/metadata").String() + "?slug=" + g.URLIdentifier
 	u := &tables.User{
 		UserID:    pk,
-		SubID:     fmt.Sprintf("%s/%s", entityURL, ur.UserName),
+		SubID:     subIDForUserName(ur.UserName, g),
 		FirstName: ur.Name.GivenName,
 		LastName:  ur.Name.FamilyName,
 		Email:     ur.UserName,
@@ -537,6 +540,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 				return status.InvalidArgumentErrorf("expected string attribute for username but got %T", value)
 			}
 			u.Email = v
+			u.SubID = subIDForUserName(v, g)
 		default:
 			return status.InvalidArgumentErrorf("unsupported attribute %q", name)
 		}
