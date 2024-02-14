@@ -27,7 +27,11 @@ const (
 type Commenter struct {
 }
 
-func (c *Commenter) PostComments(ctx context.Context, root string) error {
+type logger interface {
+	Printf(format string, vals ...interface{})
+}
+
+func (c *Commenter) PostComments(ctx context.Context, root string, loggy logger) error {
 	log.Printf("jdh Posting comments")
 	analysisFilepath, err := filepath.Rel(root, analaysisFilename)
 	if (err != nil) {

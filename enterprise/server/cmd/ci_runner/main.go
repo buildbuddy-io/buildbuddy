@@ -1020,9 +1020,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
 		// Kick off a background process to make comments.
-		log.Printf("jdh Checking about commenting")
+		ar.reporter.log.Printf("jdh Checking about commenting")
 		if commenter != nil {
-			commenter.PostComments(ctx, artifactsDir)
+			commenter.PostComments(ctx, artifactsDir, ar.reporter.log)
 		}
 
 		// If this is a successfully "bazel run" invocation from which we are extracting run information via
