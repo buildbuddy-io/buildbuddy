@@ -2,7 +2,6 @@ package analysis
 
 import (
 	"context"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -32,15 +31,15 @@ type logger interface {
 }
 
 func (c *Commenter) PostComments(ctx context.Context, root string, loggy logger) error {
-	log.Printf("jdh Posting comments")
+	loggy.Printf("jdh Posting comments")
 	analysisFilepath, err := filepath.Rel(root, analaysisFilename)
 	if (err != nil) {
-		log.Printf("jdh Rel failed: %+v", err)
+		loggy.Printf("jdh Rel failed: %+v", err)
 		return err
 	}
 	fileinfo, err := os.Stat(analysisFilepath)
 	if (err != nil) {
-		log.Printf("jdh Fileinfo stat failed: %+v", err)
+		loggy.Printf("jdh Fileinfo stat failed: %+v", err)
 		return err
 	}
 	if (fileinfo.IsDir() || fileinfo.Size() > maxAnalysisFileSize) {
@@ -51,16 +50,16 @@ func (c *Commenter) PostComments(ctx context.Context, root string, loggy logger)
 
 	a, err := os.ReadFile(analysisFilepath)
 	if err != nil {
-		log.Printf("jdh readfile failed: %+v", err)
+		loggy.Printf("jdh readfile failed: %+v", err)
 		return err
 	}
 	analysis := &anpb.AnalysisResults{}
 	err = protojson.Unmarshal(a, analysis)
 	if err != nil {
-		log.Printf("jdh Unmarshal failed: %+v", err)
+		loggy.Printf("jdh Unmarshal failed: %+v", err)
 		return err
 	}
-	log.Printf("jdh Results parsed from output: %+v", analysis)
+	loggy.Printf("jdh Results parsed from output: %+v", analysis)
 
 	// Okay! Time to post some comments.
 	// TODO(jdhollen)
