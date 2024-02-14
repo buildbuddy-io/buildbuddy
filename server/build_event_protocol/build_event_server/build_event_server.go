@@ -193,7 +193,7 @@ func postProcessStream(ctx context.Context, channel interfaces.BuildEventChannel
 	// don't want to ack *anything*. This forces the client to retransmit
 	// everything all at once, which means we don't need to worry about
 	// cross-server consistency of messages in an invocation.
-	sort.Sort(sort.IntSlice(acks))
+	sort.Ints(acks)
 
 	expectedSeqNo := int64(1)
 	if channel != nil {
