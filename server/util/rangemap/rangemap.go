@@ -131,7 +131,7 @@ func (rm *RangeMap) Get(start, end []byte) *Range {
 	return nil
 }
 
-// GetOverlapping returns a list of ranges overlapped witht the specific start
+// GetOverlapping returns a list of ranges overlapped with the specific start
 // and end.
 func (rm *RangeMap) GetOverlapping(start, end []byte) []*Range {
 	if len(rm.ranges) == 0 {
