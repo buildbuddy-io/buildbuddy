@@ -108,11 +108,6 @@ type UserInfo interface {
 	GetGroupMemberships() []*GroupMembership
 	// GetCapabilities returns the user's capabilities.
 	GetCapabilities() []akpb.ApiKey_Capability
-	// IsAdmin returns whether this user is a global administrator, meaning
-	// they can access data across groups. This is not to be confused with the
-	// concept of group admin, which grants full access only within a single
-	// group.
-	IsAdmin() bool
 	HasCapability(akpb.ApiKey_Capability) bool
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool

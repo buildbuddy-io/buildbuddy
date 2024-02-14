@@ -82,15 +82,6 @@ func (c *Claims) GetCapabilities() []akpb.ApiKey_Capability {
 	return c.Capabilities
 }
 
-func (c *Claims) IsAdmin() bool {
-	for _, groupID := range c.AllowedGroups {
-		if groupID == "admin" {
-			return true
-		}
-	}
-	return false
-}
-
 func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
 	for _, cc := range c.Capabilities {
 		if cap&cc > 0 {
