@@ -59,7 +59,9 @@ func run() (exitCode int, err error) {
 	log.Debugf("env: USE_BAZEL_VERSION=%s", os.Getenv("USE_BAZEL_VERSION"))
 	log.Debugf("env: BB_USE_BAZEL_VERSION=%s", os.Getenv("BB_USE_BAZEL_VERSION"))
 
-	bazelisk.ResolveVersion()
+	if _, err := bazelisk.ResolveVersion(); err != nil {
+		log.Printf("Failed to resolve bazel version: %s", err)
+	}
 
 	err = rlimit.MaxRLimit()
 	if err != nil {
