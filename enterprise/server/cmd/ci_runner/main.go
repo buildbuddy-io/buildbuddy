@@ -285,7 +285,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, commenter: &analysis.Commenter{}, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
