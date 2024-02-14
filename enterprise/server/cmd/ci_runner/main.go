@@ -1019,6 +1019,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		if uploader != nil {
 			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
+		// Kick off a background process to make comments.
+		log.Printf("jdh Checking about commenting")
+		if commenter != nil {
+			commenter.PostComments(ctx, artifactsDir)
+		}
 
 		// If this is a successfully "bazel run" invocation from which we are extracting run information via
 		// --script_path, go ahead and extract run information from the script and send it via the event stream.
@@ -1085,10 +1090,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			break
 		}
 
-		// Kick off a background process to make comments.
-		if commenter != nil {
-			commenter.PostComments(ctx, artifactsDir)
-		}
 	}
 	return nil
 }
