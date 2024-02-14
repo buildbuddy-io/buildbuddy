@@ -504,7 +504,7 @@ func PullImage(ctx context.Context, client *dockerclient.Client, image string, c
 	if err := cmd.Run(); err != nil {
 		return wrapDockerErr(
 			err,
-			fmt.Sprintf("docker pull %q: %s -- stderr:\n%s", image, err, string(stderr.Bytes())),
+			fmt.Sprintf("docker pull %q: %s -- stderr:\n%s", image, err, stderr.String()),
 		)
 	}
 	return nil

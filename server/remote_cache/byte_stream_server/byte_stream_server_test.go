@@ -173,7 +173,7 @@ func TestRPCRead(t *testing.T) {
 			t.Errorf("got %v; want %v", gotErr, tc.wantError)
 			//			continue
 		}
-		got := string(buf.Bytes())
+		got := buf.String()
 		if got != tc.wantData[tc.offset:] {
 			t.Errorf("got %.100s; want %.100s", got, tc.wantData)
 		}
@@ -251,7 +251,7 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 	var buf bytes.Buffer
 	err = readBlob(ctx, bsClient, instanceNameDigest, &buf, 0)
 	require.NoError(t, err)
-	require.Equal(t, blob, string(buf.Bytes()))
+	require.Equal(t, blob, buf.String())
 }
 
 func TestRPCWriteAndReadCompressed(t *testing.T) {
