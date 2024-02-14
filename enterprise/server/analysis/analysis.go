@@ -32,11 +32,7 @@ type logger interface {
 
 func (c *Commenter) PostComments(ctx context.Context, root string, loggy logger) error {
 	loggy.Printf("jdh Posting comments")
-	analysisFilepath, err := filepath.Rel(root, analaysisFilename)
-	if (err != nil) {
-		loggy.Printf("jdh Rel failed: %+v", err)
-		return err
-	}
+	analysisFilepath := root + "/" + analaysisFilename
 	fileinfo, err := os.Stat(analysisFilepath)
 	if (err != nil) {
 		loggy.Printf("jdh Fileinfo stat failed: %+v", err)
