@@ -245,7 +245,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	md.ExecutionStartTimestamp = timestamppb.Now()
 	maxDuration := infiniteDuration
 	if currentDeadline, ok := ctx.Deadline(); ok {
-		maxDuration = currentDeadline.Sub(time.Now())
+		maxDuration = time.Until(currentDeadline)
 	}
 	execDuration, err := parseTimeout(task.GetAction().Timeout, maxDuration)
 	if err != nil {

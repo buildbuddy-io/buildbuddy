@@ -75,7 +75,7 @@ func timeoutFromContext(ctx context.Context) (time.Duration, bool) {
 	if !ok {
 		return 0, false
 	}
-	return deadline.Sub(time.Now()), true
+	return time.Until(deadline), true
 }
 
 func timeoutHTTPClient(ctx context.Context, protoTimeout *durationpb.Duration) *http.Client {

@@ -39,7 +39,7 @@ func ExtendContextForFinalization(parent context.Context, timeout time.Duration)
 	// If the original context already had a deadline, ensure that the given timeout
 	// doesn't result in a new deadline that's even shorter.
 	if originalDeadline, ok := parent.Deadline(); ok {
-		remainingTime := originalDeadline.Sub(time.Now())
+		remainingTime := time.Until(originalDeadline)
 		if remainingTime > timeout {
 			timeout = remainingTime
 		}

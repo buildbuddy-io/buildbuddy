@@ -233,7 +233,7 @@ func (l *Lease) renewLease(ctx context.Context) error {
 	// epoch based range leases.
 	if l.leaseRecord != nil && l.leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
 		expiration := time.Unix(0, l.leaseRecord.GetReplicaExpiration().GetExpiration())
-		timeUntilExpiry := expiration.Sub(time.Now())
+		timeUntilExpiry := time.Until(expiration)
 		l.timeUntilLeaseRenewal = timeUntilExpiry - l.gracePeriod
 	}
 	return nil
@@ -310,7 +310,7 @@ func (l *Lease) string(rd *rfpb.RangeDescriptor, lr *rfpb.RangeLeaseRecord) stri
 	if nl := lr.GetNodeLiveness(); nl != nil {
 		return fmt.Sprintf("%s [node epoch: %d]", leaseName, nl.GetEpoch())
 	}
-	lifetime := time.Unix(0, lr.GetReplicaExpiration().GetExpiration()).Sub(time.Now())
+	lifetime := time.Until(time.Unix(0, lr.GetReplicaExpiration().GetExpiration()))
 	return fmt.Sprintf("%s [expires in: %s]", leaseName, lifetime)
 }
 
