@@ -32,30 +32,35 @@ type Commenter struct {
 }
 
 func (c *Commenter) PostComments(ctx context.Context, root string) error {
+	log.Printf("jdh Posting comments")
 	analysisFilepath, err := filepath.Rel(root, analaysisFilename)
 	if (err != nil) {
+		log.Printf("jdh Rel failed: %+v", err)
 		return err
 	}
 	fileinfo, err := os.Stat(analysisFilepath)
 	if (err != nil) {
+		log.Printf("jdh Fileinfo stat failed: %+v", err)
 		return err
 	}
 	if (fileinfo.IsDir() || fileinfo.Size() > maxAnalysisFileSize) {
 		// Weird that someone did this, but whatever, let's just skip it.
 		// XXX: Log and quit, don't fail.
-		return status.InvalidArgumentError("F A I L U R E")
+		return status.InvalidArgumentError("jdh F A I L U R E")
 	}
 
 	a, err := os.ReadFile(analysisFilepath)
 	if err != nil {
+		log.Printf("jdh readfile failed: %+v", err)
 		return err
 	}
 	analysis := &anpb.AnalysisResults{}
 	err = protojson.Unmarshal(a, analysis)
 	if err != nil {
+		log.Printf("jdh Unmarshal failed: %+v", err)
 		return err
 	}
-	log.Printf("Results parsed from output: %+v", analysis)
+	log.Printf("jdh Results parsed from output: %+v", analysis)
 
 	// Okay! Time to post some comments.
 	// TODO(jdhollen)
