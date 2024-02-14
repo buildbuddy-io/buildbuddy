@@ -18,10 +18,10 @@ const (
 	// approximately equal to the longest execution queue times.
 	queuedExecutionTTL = 10 * time.Minute
 
-	// TTL for action-merging data about claimed executions. This is set to
-	// twice the length of `remote_execution.lease_duration` to give a short
-	// grace period in the event of missed leases.
-	claimedExecutionTTL = 20 * time.Second
+	// Default TTL for action-merging data about claimed executions. This is
+	// set to twice the length of `remote_execution.lease_duration` to give a
+	// short grace period in the event of missed leases.
+	DefaultClaimedExecutionTTL = 20 * time.Second
 )
 
 var (
@@ -76,7 +76,7 @@ func RecordQueuedExecution(ctx context.Context, rdb redis.UniversalClient, execu
 }
 
 // This function records a claimed execution in Redis.
-func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, executionID string) error {
+func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, executionID string, ttl time.Duration) error {
 	if !*enableActionMerging {
 		return nil
 	}
@@ -93,8 +93,8 @@ func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, exec
 	}
 
 	pipe := rdb.TxPipeline()
-	pipe.Set(ctx, forwardKey, executionID, claimedExecutionTTL)
-	pipe.Set(ctx, reverseKey, forwardKey, claimedExecutionTTL)
+	pipe.Set(ctx, forwardKey, executionID, ttl)
+	pipe.Set(ctx, reverseKey, forwardKey, ttl)
 	_, err = pipe.Exec(ctx)
 	return err
 }

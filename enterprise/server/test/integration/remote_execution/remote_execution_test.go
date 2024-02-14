@@ -1727,9 +1727,13 @@ func TestActionMerging(t *testing.T) {
 }
 
 func TestActionMerging_LongTask(t *testing.T) {
+	flags.Set(t, "remote_execution.lease_duration", 100*time.Millisecond)
 	rbe := rbetest.NewRBETestEnv(t)
-
-	rbe.AddBuildBuddyServer()
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
+		SchedulerServerOptions: scheduler_server.Options{
+			ActionMergingLeaseTTLOverride: 250 * time.Millisecond,
+		},
+	})
 	rbe.AddExecutor(t)
 
 	platform := &repb.Platform{
@@ -1747,7 +1751,7 @@ func TestActionMerging_LongTask(t *testing.T) {
 	WaitForPendingExecution(rbe.GetRedisClient(), op1)
 
 	// Wait long enough for the first action-merging state to have expired.
-	time.Sleep(21 * time.Second)
+	time.Sleep(350 * time.Millisecond)
 
 	// Ensure actions are still merged against the running original execution.
 	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
@@ -1757,7 +1761,11 @@ func TestActionMerging_LongTask(t *testing.T) {
 
 func TestActionMerging_ClaimingAppDies(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-	app := rbe.AddBuildBuddyServer()
+	app := rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
+		SchedulerServerOptions: scheduler_server.Options{
+			ActionMergingLeaseTTLOverride: time.Millisecond,
+		},
+	})
 	rbe.AddExecutor(t)
 
 	cmd := &repb.Command{
@@ -1781,7 +1789,7 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 	rbe.RemoveBuildBuddyServer(app)
 
 	// Sleep long enough for the action-merging data to timeout of Redis.
-	time.Sleep(21 * time.Second)
+	time.Sleep(5 * time.Millisecond)
 
 	// Confirm that subsequent actions are not merged against the orphaned
 	// execution.
