@@ -82,11 +82,11 @@ func AnonymousUserErrorf(format string, args ...any) error {
 }
 
 // IsAnonymousUserError can be used to check whether an error returned by
-// functions which return the authenticated user (such as AuthenticatedUser or
-// AuthenticateSelectedGroupID) is due to an anonymous user accessing the
-// service. This is useful for allowing anonymous users to proceed, in cases
-// where anonymous usage is explicitly enabled in the app config, and we support
-// anonymous usage for the part of the service where this is used.
+// functions which return the authenticated user (such as AuthenticatedUser) is
+// due to an anonymous user accessing the service. This is useful for allowing
+// anonymous users to proceed, in cases where anonymous usage is explicitly
+// enabled in the app config, and we support anonymous usage for the part of the
+// service where this is used.
 func IsAnonymousUserError(err error) bool {
 	for _, detail := range gstatus.Convert(err).Proto().GetDetails() {
 		info := &errdetails.ErrorInfo{}

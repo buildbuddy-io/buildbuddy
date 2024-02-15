@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
@@ -194,7 +193,7 @@ func (ut *tracker) emitMetrics(groupID string, uc *tables.UsageCounts) {
 }
 
 func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc *tables.UsageCounts) error {
-	groupID, err := perms.AuthenticatedGroupID(ctx, ut.env)
+	u, err := ut.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		if authutil.IsAnonymousUserError(err) && ut.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
 			// Don't track anonymous usage for now.
@@ -202,6 +201,7 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 		}
 		return err
 	}
+	groupID := u.GetGroupID()
 
 	counts, err := countsToMap(uc)
 	if err != nil {

@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:acl_go_proto",
-        "//proto:context_go_proto",
         "//proto:user_id_go_proto",
         "//server/environment",
         "//server/interfaces",

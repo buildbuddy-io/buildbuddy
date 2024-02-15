@@ -19,7 +19,6 @@ go_library(
         "//server/util/authutil",
         "//server/util/db",
         "//server/util/log",
-        "//server/util/perms",
         "//server/util/status",
         "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",
