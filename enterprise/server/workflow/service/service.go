@@ -44,7 +44,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/prometheus/client_golang/prometheus"
@@ -682,7 +681,7 @@ func (ws *workflowService) checkCleanWorkflowPermissions(ctx context.Context, wf
 	if !g.RestrictCleanWorkflowRunsToAdmins {
 		return nil
 	}
-	return authutil.AuthorizeGroupRole(u, wf.GroupID, role.Admin)
+	return authutil.AuthorizeOrgAdmin(u, wf.GroupID)
 }
 
 // To run workflow in a clean container, update the instance name suffix

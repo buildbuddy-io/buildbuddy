@@ -30,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
@@ -338,7 +337,7 @@ func (a *GitHubApp) linkInstallation(ctx context.Context, installation *github.I
 	if err != nil {
 		return err
 	}
-	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
 		return err
 	}
 	tu, err := a.env.GetUserDB().GetUser(ctx)
@@ -407,7 +406,7 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 		if err != nil {
 			return err
 		}
-		if err := authutil.AuthorizeGroupRole(u, ti.GroupID, role.Admin); err != nil {
+		if err := authutil.AuthorizeOrgAdmin(u, ti.GroupID); err != nil {
 			return err
 		}
 		return tx.NewQuery(ctx, "githubapp_unlink_installation").Raw(`

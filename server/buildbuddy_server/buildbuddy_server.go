@@ -392,7 +392,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		if adminGroupID == "" {
 			return nil, status.PermissionDeniedError("Access denied")
 		}
-		if err := authutil.AuthorizeGroupRole(u, adminGroupID, role.Admin); err != nil {
+		if err := authutil.AuthorizeOrgAdmin(u, adminGroupID); err != nil {
 			return nil, err
 		}
 		g, err := userDB.GetGroupByID(ctx, req.GetGroupId())

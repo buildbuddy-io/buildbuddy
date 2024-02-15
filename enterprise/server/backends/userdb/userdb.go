@@ -161,7 +161,7 @@ func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) er
 	if err != nil {
 		return err
 	}
-	return authutil.AuthorizeGroupRole(u, groupID, role.Admin)
+	return authutil.AuthorizeOrgAdmin(u, groupID)
 }
 
 func isInOwnedDomainBlocklist(email string) bool {
@@ -249,7 +249,7 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 		return "", err
 	}
 
-	err = authutil.AuthorizeGroupRole(u, u.GetGroupID(), role.Admin)
+	err = authutil.AuthorizeOrgAdmin(u, u.GetGroupID())
 
 	// We can continue if one of the following is true:
 	// 1) doesn't have an existing group
@@ -334,7 +334,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 		}
 
 		groupID = g.GroupID
-		if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+		if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
 			return err
 		}
 
@@ -812,7 +812,7 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 		return nil, err
 	}
 	for _, g := range user.Groups {
-		if err := authutil.AuthorizeGroupRole(authUser, g.Group.GroupID, role.Admin); err == nil {
+		if err := authutil.AuthorizeOrgAdmin(authUser, g.Group.GroupID); err == nil {
 			return user, nil
 		}
 	}

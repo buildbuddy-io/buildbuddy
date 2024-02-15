@@ -18,7 +18,6 @@ go_library(
         "//server/util/proto",
         "//server/util/query_builder",
         "//server/util/random",
-        "//server/util/role",
         "//server/util/status",
         "@org_golang_google_protobuf//reflect/protoreflect",
         "@org_golang_google_protobuf//types/known/timestamppb",
