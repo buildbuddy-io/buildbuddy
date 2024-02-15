@@ -49,7 +49,6 @@ go_library(
         "//server/util/disk",
         "//server/util/log",
         "//server/util/networking",
-        "//server/util/perms",
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_armon_circbuf//:circbuf",

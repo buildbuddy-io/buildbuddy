@@ -168,7 +168,7 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 		return nil, err
 	}
 	if ti.Perms&perms.OTHERS_READ == 0 {
-		u, err := perms.AuthenticatedUser(ctx, d.env)
+		u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 		if err != nil {
 			return nil, err
 		}

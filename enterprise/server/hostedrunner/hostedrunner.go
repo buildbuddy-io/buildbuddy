@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
@@ -218,7 +217,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 }
 
 func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
-	u, err := perms.AuthenticatedUser(ctx, r.env)
+	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}

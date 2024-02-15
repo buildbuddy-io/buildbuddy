@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"go.opentelemetry.io/otel/attribute"
@@ -292,7 +291,7 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 // same token is always returned.
 func NewImageCacheToken(ctx context.Context, env environment.Env, creds oci.Credentials, imageRef string) (interfaces.ImageCacheToken, error) {
 	groupID := ""
-	u, err := perms.AuthenticatedUser(ctx, env)
+	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		if !authutil.IsAnonymousUserError(err) {
 			return interfaces.ImageCacheToken{}, err

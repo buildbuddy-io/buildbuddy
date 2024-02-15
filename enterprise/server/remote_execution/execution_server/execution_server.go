@@ -495,7 +495,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser
-	if user, err := perms.AuthenticatedUser(ctx, s.env); err == nil {
+	if user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		taskGroupID = user.GetGroupID()
 	}
 

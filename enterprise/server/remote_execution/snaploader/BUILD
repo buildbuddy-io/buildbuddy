@@ -20,7 +20,6 @@ go_library(
         "//server/util/authutil",
         "//server/util/hash",
         "//server/util/log",
-        "//server/util/perms",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/tracing",

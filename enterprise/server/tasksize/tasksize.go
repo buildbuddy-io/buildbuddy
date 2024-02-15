@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
@@ -275,7 +274,7 @@ func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string,
 }
 
 func (s *taskSizer) groupKey(ctx context.Context) (string, error) {
-	u, err := perms.AuthenticatedUser(ctx, s.env)
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		if authutil.IsAnonymousUserError(err) && s.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
 			return "ANON", nil

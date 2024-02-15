@@ -432,7 +432,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context) (*wfpb.GetWorkflows
 		return nil, err
 	}
 
-	u, err := perms.AuthenticatedUser(ctx, ws.env)
+	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -490,7 +490,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	// Authenticate
-	user, err := perms.AuthenticatedUser(ctx, ws.env)
+	user, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -672,7 +672,7 @@ func (ws *workflowService) GetLegacyWorkflowIDForGitRepository(groupID string, r
 }
 
 func (ws *workflowService) checkCleanWorkflowPermissions(ctx context.Context, wf *tables.Workflow) error {
-	u, err := perms.AuthenticatedUser(ctx, ws.env)
+	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}

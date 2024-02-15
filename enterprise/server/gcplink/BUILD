@@ -15,7 +15,6 @@ go_library(
         "//server/environment",
         "//server/real_environment",
         "//server/util/cookie",
-        "//server/util/perms",
         "//server/util/random",
         "//server/util/request_context",
         "//server/util/status",
