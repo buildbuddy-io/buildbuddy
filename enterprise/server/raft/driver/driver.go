@@ -217,6 +217,8 @@ func (cm *ClusterMap) MeanProposeQPS() float64 {
 	return float64(totalProposeQPS) / float64(numNodes)
 }
 
+// Driver represents a placement driver, which is responsible for managing
+// clusters: balance load data automatically across nodes and regions.
 type Driver struct {
 	store         rfspb.ApiServer
 	gossipManager interfaces.GossipService
@@ -267,7 +269,7 @@ func (d *Driver) Start() error {
 		return d.manageClustersLoop(gctx)
 	})
 
-	log.Debugf("Driver started")
+	log.Debug("Driver started")
 	return nil
 }
 
@@ -285,7 +287,7 @@ func (d *Driver) Stop() error {
 		d.eg.Wait()
 	}
 
-	log.Debugf("Driver stopped")
+	log.Debug("Driver stopped")
 	return nil
 }
 
