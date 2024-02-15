@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 )
 
 type fileResolver struct {
@@ -29,7 +29,7 @@ func (r *fileResolver) Open(name string) (fs.File, error) {
 		}
 	}
 
-	runfilePath, err := runfiles.Rlocation(name)
+	runfilePath, err := bazelgo.Runfile(name)
 	if err != nil {
 		return nil, err
 	}

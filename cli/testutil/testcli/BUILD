@@ -7,9 +7,6 @@ go_library(
     data = ["//cli/cmd/bb"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli",
     visibility = ["//visibility:public"],
-    x_defs = {
-        "bbRunfilePath": "$(rlocationpath //cli/cmd/bb)",
-    },
     deps = [
         "//cli/storage",
         "//server/testutil/testbazel",

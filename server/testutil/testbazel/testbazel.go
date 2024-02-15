@@ -13,25 +13,23 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+)
+
+const (
+	// Version is the bazel version of the embedded test bazel binary.
+	Version = "5.3.2"
+
+	// BazelBinaryPath specifies the path to the bazel binary used for
+	// invocations. Must match the path in the build rule.
+	BazelBinaryPath = "server/util/bazel/bazel-" + Version
+
+	// installBasePath is the path to the pre-extracted Bazel installation
+	// relative to the runfiles dir.
+	installBasePath = "server/util/bazel/bazel-" + Version + "_install"
 )
 
 var (
-	// Version is the bazel version of the embedded test bazel binary.
-	//
-	// Injected via x_defs.
-	Version string
-	// BazelBinaryPath specifies the path to the bazel binary used for
-	// invocations. Must match the path in the build rule.
-	//
-	// Injected via x_defs.
-	BazelBinaryPath string
-	// InstallBasePath is the path to the pre-extracted Bazel installation
-	// relative to the runfiles dir.
-	//
-	// Injected via x_defs.
-	installBasePath string
-
 	initOnce sync.Once
 )
 
@@ -40,7 +38,7 @@ func BinaryPath(t *testing.T) string {
 	// Write an entrypoint script that runs bazel with --install_base.
 	entrypoint := filepath.Join(os.Getenv("TEST_TMPDIR"), "bazel-"+Version+"_test_entrypoint.sh")
 	initOnce.Do(func() {
-		path, err := runfiles.Rlocation(BazelBinaryPath)
+		path, err := bazelgo.Runfile(BazelBinaryPath)
 		require.NoError(t, err, "look up bazel binary path")
 		installBase := initInstallBase(t)
 		script := "#!/usr/bin/env sh\n"
@@ -52,7 +50,7 @@ func BinaryPath(t *testing.T) string {
 }
 
 func initInstallBase(t *testing.T) string {
-	path, err := runfiles.Rlocation(installBasePath)
+	path, err := bazelgo.Runfile(installBasePath)
 	require.NoError(t, err)
 	// Make a physical copy of the install dir (if it's symlinked via bazel
 	// sandboxing) and set file mtimes to be in the future so that bazel sees it

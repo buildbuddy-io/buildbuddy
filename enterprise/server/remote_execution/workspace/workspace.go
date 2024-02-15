@@ -31,8 +31,6 @@ import (
 )
 
 var (
-	// set by x_defs in BUILD file
-	ciRunnerRunfilePath string
 	// WorkspaceMarkedForRemovalError is returned from workspace operations
 	// whenever Remove was previously called on the workspace.
 	WorkspaceMarkedForRemovalError = status.UnavailableError("workspace is marked for removal")
@@ -190,7 +188,7 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	// TODO(bduffany): Consider doing a fastcopy here instead of a normal copy.
 	// The CI runner binary may be on a different device than the runner workspace
 	// so we'd have to put it somewhere on the same device before fastcopying.
-	srcFile, err := ci_runner_bundle.Get().Open(ciRunnerRunfilePath)
+	srcFile, err := ci_runner_bundle.Get().Open("enterprise/server/cmd/ci_runner/buildbuddy_ci_runner")
 	if err != nil {
 		return err
 	}
