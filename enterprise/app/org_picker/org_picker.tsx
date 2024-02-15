@@ -7,6 +7,8 @@ import router from "../../../app/router/router";
 interface Props {
   user?: User;
   floating?: boolean;
+  forceCollapse?: boolean;
+  onClick?: (expanded: boolean) => void;
 }
 interface State {
   profileExpanded: boolean;
@@ -32,6 +34,9 @@ export default class OrgPicker extends React.Component<Props, State> {
   }
 
   handleProfileClicked() {
+    if (this.props.onClick) {
+      this.props.onClick(!this.state.profileExpanded);
+    }
     this.setState({ profileExpanded: !this.state.profileExpanded });
   }
 
@@ -52,14 +57,13 @@ export default class OrgPicker extends React.Component<Props, State> {
       );
     }
 
+    let expanded = this.state.profileExpanded && !this.props.forceCollapse;
     let name = this.props.user?.displayUser?.name?.full || this.props.user?.displayUser?.email;
     return (
       <div
-        className={`org-picker-container ${this.state.profileExpanded ? "expanded" : ""} ${
-          this.props.floating ? "floating" : ""
-        }`}
+        className={`org-picker-container ${expanded ? "expanded" : ""} ${this.props.floating ? "floating" : ""}`}
         debug-id="org-picker">
-        {this.state.profileExpanded && (
+        {expanded && (
           <div className="org-picker-expanded-profile">
             <div className="org-picker">
               <div className="org-picker-header">Organization</div>
@@ -114,7 +118,7 @@ export default class OrgPicker extends React.Component<Props, State> {
                 <div className="org-picker-profile-org">{this.props.user?.selectedGroupName()}</div>
               )}
             </div>
-            {this.state.profileExpanded ? (
+            {expanded ? (
               <ChevronDown className="icon org-picker-profile-arrow" />
             ) : (
               <ChevronUp className="icon org-picker-profile-arrow" />
