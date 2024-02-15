@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -196,32 +195,31 @@ func GetPermissionsCheckClauses(ctx context.Context, env environment.Env, q *que
 	o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), OTHERS_READ)
 
 	hasUser := false
-	if auth := env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil {
-			hasUser = true
-			if u.GetUserID() != "" {
-				groupArgs := []interface{}{
-					GROUP_READ,
-				}
-				groupParams := make([]string, 0)
-				for _, groupID := range u.GetAllowedGroups() {
-					groupArgs = append(groupArgs, groupID)
-					groupParams = append(groupParams, "?")
-				}
-				groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
-				groupQueryStr := fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id IN %s)", tablePrefix, tablePrefix, groupParamString)
-				o.AddOr(groupQueryStr, groupArgs...)
-				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %suser_id = ?)", tablePrefix, tablePrefix), OWNER_READ, u.GetUserID())
-			} else if u.GetGroupID() != "" {
-				groupArgs := []interface{}{
-					GROUP_READ,
-					u.GetGroupID(),
-				}
-				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id = ?)", tablePrefix, tablePrefix), groupArgs...)
+	auth := env.GetAuthenticator()
+	if u, err := auth.AuthenticatedUser(ctx); err == nil {
+		hasUser = true
+		if u.GetUserID() != "" {
+			groupArgs := []interface{}{
+				GROUP_READ,
 			}
-			if u.IsAdmin() {
-				o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), ALL)
+			groupParams := make([]string, 0)
+			for _, groupID := range u.GetAllowedGroups() {
+				groupArgs = append(groupArgs, groupID)
+				groupParams = append(groupParams, "?")
 			}
+			groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
+			groupQueryStr := fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id IN %s)", tablePrefix, tablePrefix, groupParamString)
+			o.AddOr(groupQueryStr, groupArgs...)
+			o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %suser_id = ?)", tablePrefix, tablePrefix), OWNER_READ, u.GetUserID())
+		} else if u.GetGroupID() != "" {
+			groupArgs := []interface{}{
+				GROUP_READ,
+				u.GetGroupID(),
+			}
+			o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id = ?)", tablePrefix, tablePrefix), groupArgs...)
+		}
+		if u.IsAdmin() {
+			o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), ALL)
 		}
 	}
 
@@ -258,48 +256,10 @@ func AuthorizeGroupAccessForStats(ctx context.Context, env environment.Env, grou
 	return nil
 }
 
-// AuthenticateSelectedGroupID returns the group ID selected by the user in the
-// UI (determined via the proto request context), returning an error if the user
-// does not have access to the selected group.
-func AuthenticateSelectedGroupID(ctx context.Context, env environment.Env, protoCtx *ctxpb.RequestContext) (string, error) {
-	if protoCtx == nil {
-		return "", status.InvalidArgumentError("request_context field is required")
-	}
-	groupID := protoCtx.GetGroupId()
-	if groupID == "" {
-		return "", status.InvalidArgumentError("request_context.group_id field is required")
-	}
-	if err := AuthorizeGroupAccess(ctx, env, groupID); err != nil {
-		return "", err
-	}
-	return groupID, nil
-}
-
-// AuthenticatedGroupID returns the authenticated group ID from the given
-// context. This is preferred for API requests, since the group ID can be
-// determined directly from the API key. UI requests should instead use
-// `AuthenticateSelectedGroupID`, since the API key is not available, and the
-// user's selected group ID needs to be taken into account.
-func AuthenticatedGroupID(ctx context.Context, env environment.Env) (string, error) {
-	u, err := AuthenticatedUser(ctx, env)
-	if err != nil {
-		return "", err
-	}
-	groupID := u.GetGroupID()
-	if groupID == "" {
-		return "", status.FailedPreconditionError("Authenticated user does not have an associated group ID")
-	}
-	return groupID, nil
-}
-
 // ForAuthenticatedGroup returns GROUP_READ|GROUP_WRITE permissions for authenticated groups,
 // or OTHERS_READ for anonymous users.
 func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroupPerm, error) {
 	auth := env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Auth is not configured")
-	}
-
 	u, err := auth.AuthenticatedUser(ctx)
 	if err != nil || u.GetGroupID() == "" {
 		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {

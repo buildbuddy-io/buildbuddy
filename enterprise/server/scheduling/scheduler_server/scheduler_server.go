@@ -252,15 +252,10 @@ func (h *executorHandle) authorize(ctx context.Context) (string, error) {
 	if !h.requireAuthorization {
 		return "", nil
 	}
-
-	auth := h.env.GetAuthenticator()
-	if auth == nil {
-		return "", status.FailedPreconditionError("executor authorization required, but authenticator is not set")
-	}
 	// We intentionally use AuthenticateGRPCRequest instead of AuthenticatedUser to ensure that we refresh the
 	// credentials to handle the case where the API key is deleted (or capabilities are updated) after the stream was
 	// created.
-	user, err := auth.AuthenticateGRPCRequest(ctx)
+	user, err := h.env.GetAuthenticator().AuthenticateGRPCRequest(ctx)
 	if err != nil {
 		return "", err
 	}

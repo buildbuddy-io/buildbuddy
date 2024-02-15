@@ -10,6 +10,7 @@ go_library(
         "//server/backends/blobstore",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
+        "//server/nullauth",
         "//server/remote_execution/config",
         "//server/util/grpc_client",
         "//server/util/log",

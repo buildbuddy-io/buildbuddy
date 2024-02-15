@@ -288,11 +288,7 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 }
 
 func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
-	auth := rc.env.GetAuthenticator()
-	if auth == nil {
-		return interfaces.AuthAnonymousUser, DefaultPartitionID, nil
-	}
-	user, err := auth.AuthenticatedUser(ctx)
+	user, err := rc.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return interfaces.AuthAnonymousUser, DefaultPartitionID, nil
 	}

@@ -248,10 +248,8 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 
 	invocationIDs := []string{}
 	iidMatches := invocationIDPattern.FindAllStringSubmatch(output, -1)
-	if iidMatches != nil {
-		for _, m := range iidMatches {
-			invocationIDs = append(invocationIDs, m[1])
-		}
+	for _, m := range iidMatches {
+		invocationIDs = append(invocationIDs, m[1])
 	}
 	return &result{
 		Output:        output,

@@ -307,11 +307,7 @@ func (c *DiskCache) IsV2Layout() bool {
 }
 
 func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string) (*partition, error) {
-	auth := c.env.GetAuthenticator()
-	if auth == nil {
-		return c.defaultPartition, nil
-	}
-	user, err := auth.AuthenticatedUser(ctx)
+	user, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return c.defaultPartition, nil
 	}

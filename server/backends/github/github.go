@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v43/github"
 )
@@ -351,7 +350,7 @@ func (c *OAuthHandler) requestAccessToken(r *http.Request, code string) error {
 
 	// Associate the token with the org (legacy OAuth app only).
 	if groupID != "" && c.GroupLinkEnabled {
-		if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+		if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
 			return status.WrapError(err, "failed to link GitHub account: role not authorized")
 		}
 		log.Infof("Linking GitHub account for group %s", groupID)
@@ -561,13 +560,12 @@ func (c *GithubClient) fetchToken(ctx context.Context, ownerRepo string) error {
 		return nil
 	}
 
-	auth := c.env.GetAuthenticator()
 	dbHandle := c.env.GetDBHandle()
-	if auth == nil || dbHandle == nil {
+	if dbHandle == nil {
 		return nil
 	}
 
-	userInfo, err := auth.AuthenticatedUser(ctx)
+	userInfo, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if userInfo == nil || err != nil {
 		return nil
 	}
