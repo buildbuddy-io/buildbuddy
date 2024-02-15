@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 )
 
 const (
@@ -33,7 +33,7 @@ type Server struct {
 }
 
 func runfile(t *testing.T, path string) string {
-	resolvedPath, err := runfiles.Rlocation(path)
+	resolvedPath, err := bazelgo.Runfile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func runfile(t *testing.T, path string) string {
 }
 
 type Opts struct {
-	BinaryRunfilePath     string
+	BinaryPath            string
 	Args                  []string
 	HTTPPort              int
 	HealthCheckServerType string
@@ -53,7 +53,7 @@ func Run(t *testing.T, opts *Opts) *Server {
 		healthCheckServerType: opts.HealthCheckServerType,
 	}
 
-	cmd := exec.Command(runfile(t, opts.BinaryRunfilePath), opts.Args...)
+	cmd := exec.Command(runfile(t, opts.BinaryPath), opts.Args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {

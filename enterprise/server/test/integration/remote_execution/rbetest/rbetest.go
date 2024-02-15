@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
@@ -83,16 +83,14 @@ import (
 )
 
 const (
-	testCommandBinaryName = "testcommand"
+	testCommandBinaryRunfilePath = "enterprise/server/test/integration/remote_execution/command/testcommand_/testcommand"
+	testCommandBinaryName        = "testcommand"
 
 	// We are currently not testing non-default instances, but we should at some point.
 	defaultInstanceName = ""
 
 	defaultWaitTimeout = 60 * time.Second
 )
-
-// set by x_defs in BUILD file
-var testCommandBinaryRunfilePath string
 
 func init() {
 	// Set umask to match the executor process.
@@ -203,7 +201,7 @@ func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest 
 }
 
 func (r *Env) setupRootDirectoryWithTestCommandBinary(ctx context.Context) *repb.Digest {
-	rfp, err := runfiles.Rlocation(testCommandBinaryRunfilePath)
+	rfp, err := bazel.Runfile(testCommandBinaryRunfilePath)
 	if err != nil {
 		assert.FailNow(r.t, "unable to find test binary in runfiles", err.Error())
 	}
