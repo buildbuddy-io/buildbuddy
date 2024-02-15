@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "role",
@@ -9,5 +9,15 @@ go_library(
         "//proto:api_key_go_proto",
         "//proto:group_go_proto",
         "//server/util/status",
+    ],
+)
+
+go_test(
+    name = "role_test",
+    srcs = ["role_test.go"],
+    deps = [
+        ":role",
+        "//proto:group_go_proto",
+        "@com_github_stretchr_testify//require",
     ],
 )

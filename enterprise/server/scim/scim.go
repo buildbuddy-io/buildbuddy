@@ -34,9 +34,6 @@ var (
 const (
 	usersPath = "/scim/Users"
 
-	AdminRole     = "admin"
-	DeveloperRole = "developer"
-
 	ListResponseSchema  = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 	UserResourceSchema  = "urn:ietf:params:scim:schemas:core:2.0:User"
 	PatchResourceSchema = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
@@ -84,12 +81,8 @@ func newUserResource(u *tables.User, authGroup *tables.Group) (*UserResource, er
 	userRole := ""
 	for _, g := range u.Groups {
 		if g.Group.GroupID == authGroup.GroupID {
-			switch role.Role(g.Role) {
-			case role.Developer:
-				userRole = DeveloperRole
-			case role.Admin:
-				userRole = AdminRole
-			default:
+			userRole = role.Role(g.Role).String()
+			if userRole == "" {
 				return nil, status.InternalErrorf("unhandled role: %d", g.Role)
 			}
 		}
@@ -406,17 +399,10 @@ func mapRole(ur *UserResource) (role.Role, error) {
 			roleName = ur.Roles[0].Value
 		}
 	}
-
-	switch roleName {
-	case "":
+	if roleName == "" {
 		return role.Default, nil
-	case DeveloperRole:
-		return role.Developer, nil
-	case AdminRole:
-		return role.Admin, nil
-	default:
-		return 0, status.InvalidArgumentErrorf("invalid role %q", roleName)
 	}
+	return role.Parse(roleName)
 }
 
 func roleUpdateRequest(userID string, userRole role.Role) ([]*grpb.UpdateGroupUsersRequest_Update, error) {

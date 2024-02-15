@@ -36,6 +36,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testhttp",
+        "//server/util/role",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
     ],
