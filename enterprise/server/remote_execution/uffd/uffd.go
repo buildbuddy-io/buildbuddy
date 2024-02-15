@@ -347,20 +347,21 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			InvalidBytesAtChunkStart: int64(invalidBytesAtChunkStart),
 			InvalidBytesAtChunkEnd:   invalidBytesAtChunkEnd,
 		}
-		if alreadyMappedRanges, alreadyMapped := h.mappedPageFaults[int64(chunkStartOffset)]; alreadyMapped {
-			alreadyMappedStr := ""
-			for _, alreadyMappedRange := range alreadyMappedRanges {
-				alreadyMappedStr += alreadyMappedRange.String()
-			}
-			alreadyMappedStr += debugData.String()
-			log.CtxWarningf(ctx, "Attempted to map chunk start offset 0x%x multiple times: %s", chunkStartOffset, alreadyMappedStr)
-		}
 		h.mappedPageFaults[int64(chunkStartOffset)] = append(h.mappedPageFaults[int64(chunkStartOffset)], debugData)
 
 		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
 		if err != nil {
-			log.CtxWarningf(ctx, "Failed to resolve page fault %s due to err %s", debugData.String(), err)
-			return err
+			// If error is due to the page already being mapped, ignore.
+			if err != unix.EEXIST {
+				mappedRangesForChunk := h.mappedPageFaults[int64(chunkStartOffset)]
+				mappedRangesStr := ""
+				for _, r := range mappedRangesForChunk {
+					mappedRangesStr += r.String()
+				}
+
+				log.CtxWarningf(ctx, "Failed to resolve page fault %s due to err %s\nMapped ranges for chunk: %s", debugData.String(), err, mappedRangesStr)
+				return err
+			}
 		}
 
 		// After memory has been copied to the VM, unmap the chunk to save memory
