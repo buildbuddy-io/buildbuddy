@@ -120,11 +120,7 @@ func ApplyToQuery(timestampField string, t *tppb.PaginationToken, q *query_build
 }
 
 func GetTargetHistory(ctx context.Context, env environment.Env, req *trpb.GetTargetHistoryRequest) (*trpb.GetTargetHistoryResponse, error) {
-	auth := env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Not Implemented")
-	}
-	_, err := auth.AuthenticatedUser(ctx)
+	_, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}

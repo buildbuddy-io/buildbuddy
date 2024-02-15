@@ -196,32 +196,31 @@ func GetPermissionsCheckClauses(ctx context.Context, env environment.Env, q *que
 	o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), OTHERS_READ)
 
 	hasUser := false
-	if auth := env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil {
-			hasUser = true
-			if u.GetUserID() != "" {
-				groupArgs := []interface{}{
-					GROUP_READ,
-				}
-				groupParams := make([]string, 0)
-				for _, groupID := range u.GetAllowedGroups() {
-					groupArgs = append(groupArgs, groupID)
-					groupParams = append(groupParams, "?")
-				}
-				groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
-				groupQueryStr := fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id IN %s)", tablePrefix, tablePrefix, groupParamString)
-				o.AddOr(groupQueryStr, groupArgs...)
-				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %suser_id = ?)", tablePrefix, tablePrefix), OWNER_READ, u.GetUserID())
-			} else if u.GetGroupID() != "" {
-				groupArgs := []interface{}{
-					GROUP_READ,
-					u.GetGroupID(),
-				}
-				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id = ?)", tablePrefix, tablePrefix), groupArgs...)
+	auth := env.GetAuthenticator()
+	if u, err := auth.AuthenticatedUser(ctx); err == nil {
+		hasUser = true
+		if u.GetUserID() != "" {
+			groupArgs := []interface{}{
+				GROUP_READ,
 			}
-			if u.IsAdmin() {
-				o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), ALL)
+			groupParams := make([]string, 0)
+			for _, groupID := range u.GetAllowedGroups() {
+				groupArgs = append(groupArgs, groupID)
+				groupParams = append(groupParams, "?")
 			}
+			groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
+			groupQueryStr := fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id IN %s)", tablePrefix, tablePrefix, groupParamString)
+			o.AddOr(groupQueryStr, groupArgs...)
+			o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %suser_id = ?)", tablePrefix, tablePrefix), OWNER_READ, u.GetUserID())
+		} else if u.GetGroupID() != "" {
+			groupArgs := []interface{}{
+				GROUP_READ,
+				u.GetGroupID(),
+			}
+			o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id = ?)", tablePrefix, tablePrefix), groupArgs...)
+		}
+		if u.IsAdmin() {
+			o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), ALL)
 		}
 	}
 
@@ -296,10 +295,6 @@ func AuthenticatedGroupID(ctx context.Context, env environment.Env) (string, err
 // or OTHERS_READ for anonymous users.
 func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroupPerm, error) {
 	auth := env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Auth is not configured")
-	}
-
 	u, err := auth.AuthenticatedUser(ctx)
 	if err != nil || u.GetGroupID() == "" {
 		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {

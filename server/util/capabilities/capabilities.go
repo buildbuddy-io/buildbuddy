@@ -72,9 +72,6 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 
 func ForAuthenticatedUser(ctx context.Context, env environment.Env) ([]akpb.ApiKey_Capability, error) {
 	auth := env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Auth is not configured")
-	}
 	u, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
 		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {
@@ -88,11 +85,7 @@ func ForAuthenticatedUser(ctx context.Context, env environment.Env) ([]akpb.ApiK
 // ForAuthenticatedUserGroup returns the authenticated user's capabilities
 // within the given group ID.
 func ForAuthenticatedUserGroup(ctx context.Context, env environment.Env, groupID string) ([]akpb.ApiKey_Capability, error) {
-	auth := env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Auth is not configured")
-	}
-	u, err := auth.AuthenticatedUser(ctx)
+	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
