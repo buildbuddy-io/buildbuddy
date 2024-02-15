@@ -245,7 +245,13 @@ export default class SidebarComponent extends React.Component<Props, State> {
             )}
           </div>
         </div>
-        <OrgPicker user={this.props.user} />
+        <OrgPicker
+          user={this.props.user}
+          forceCollapse={!expanded}
+          onClick={(profileExpanded) => {
+            this.setState({ profileExpanded: profileExpanded });
+          }}
+        />
       </div>
     );
   }
