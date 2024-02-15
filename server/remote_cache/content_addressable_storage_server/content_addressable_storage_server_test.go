@@ -631,12 +631,10 @@ func TestGetTreeCaching(t *testing.T) {
 func hasMissingDigestError(err error) bool {
 	st := gstatus.Convert(err)
 	for _, detail := range st.Details() {
-		switch detail.(type) {
+		switch detail := detail.(type) {
 		case *errdetails.PreconditionFailure:
-			if pf, ok := detail.(*errdetails.PreconditionFailure); ok {
-				if len(pf.Violations) > 0 && pf.Violations[0].GetType() == "MISSING" {
-					return true
-				}
+			if len(detail.Violations) > 0 && detail.Violations[0].GetType() == "MISSING" {
+				return true
 			}
 		}
 	}
