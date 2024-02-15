@@ -9,9 +9,6 @@ go_library(
         "//enterprise/server/cmd/executor",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor",
-    x_defs = {
-        "ExecutorRunfilePath": "$(rlocationpath //enterprise/server/cmd/executor)",
-    },
     deps = [
         "//server/testutil/testport",
         "//server/testutil/testserver",

@@ -7,9 +7,6 @@ go_library(
     srcs = ["workspace.go"],
     data = ["//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace",
-    x_defs = {
-        "ciRunnerRunfilePath": "$(rlocationpath //enterprise/server/cmd/ci_runner:buildbuddy_ci_runner)",
-    },
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
         "//enterprise/server/remote_execution/dirtools",

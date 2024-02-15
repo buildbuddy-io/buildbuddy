@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testserver"
 	"google.golang.org/grpc"
 
+	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -61,7 +61,7 @@ func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string
 	args = append(args, commandArgs...)
 
 	testserver.Run(t, &testserver.Opts{
-		BinaryRunfilePath:     commandPath,
+		BinaryPath:            commandPath,
 		Args:                  args,
 		HTTPPort:              app.HttpPort,
 		HealthCheckServerType: "buildbuddy-server",
@@ -136,7 +136,7 @@ func (a *App) ByteStreamClient(t *testing.T) bspb.ByteStreamClient {
 }
 
 func runfile(t *testing.T, path string) string {
-	resolvedPath, err := runfiles.Rlocation(path)
+	resolvedPath, err := bazelgo.Runfile(path)
 	if err != nil {
 		t.Fatal(err)
 	}

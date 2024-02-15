@@ -5,7 +5,7 @@ go_library(
     srcs = ["fileresolver.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/fileresolver",
     visibility = ["//visibility:public"],
-    deps = ["@io_bazel_rules_go//go/runfiles:go_default_library"],
+    deps = ["@io_bazel_rules_go//go/tools/bazel:go_default_library"],
 )
 
 go_test(

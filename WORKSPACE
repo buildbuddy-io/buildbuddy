@@ -19,11 +19,6 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_go",
-    patch_args = ["-p1"],
-    patches = [
-        # TODO(sluongng): remove this patch when we upgrade to v0.46.0
-        "//buildpatches:rules_go_x_defs_go_test.patch",
-    ],
     sha256 = "6734a719993b1ba4ebe9806e853864395a8d3968ad27f9dd759c196b3eb3abe8",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.45.1/rules_go-v0.45.1.zip",

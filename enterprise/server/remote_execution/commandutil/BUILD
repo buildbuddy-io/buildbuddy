@@ -38,12 +38,6 @@ go_test(
         "@io_bazel_rules_go//go/platform:windows": [],
         "//conditions:default": ["//enterprise/server/remote_execution/commandutil/test_binary"],
     }),
-    x_defs = select({
-        "@io_bazel_rules_go//go/platform:windows": {},
-        "//conditions:default": {
-            "testBinaryRunfilePath": "$(rlocationpath //enterprise/server/remote_execution/commandutil/test_binary)",
-        },
-    }),
     deps = [
         ":commandutil",
         "//proto:remote_execution_go_proto",

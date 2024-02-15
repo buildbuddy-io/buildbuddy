@@ -244,7 +244,7 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 
 	// Cancel all tasks early enough to allow containers and workspaces to be
 	// cleaned up.
-	delay := deadline.Sub(time.Now()) - *shutdownCleanupDuration
+	delay := time.Until(deadline) - *shutdownCleanupDuration
 	ctx, cancel := context.WithTimeout(ctx, delay)
 	defer cancel()
 

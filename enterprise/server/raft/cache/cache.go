@@ -94,9 +94,12 @@ type RaftCache struct {
 	fileStorer filestore.Store
 }
 
+// Create implements the interface NodeRegistryFactory and returns a
+// DynamicNodeRegistry.
+//
 // We need to provide a factory method that creates the DynamicNodeRegistry, and
 // hand this to the raft library when we set things up. When nodeHost is created
-// it will call this method to create the registry a and use it until nodehost
+// it will call this method to create the registry and use it until nodehost
 // close.
 func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
 	r := registry.NewDynamicNodeRegistry(rc.gossipManager, streamConnections, v)
@@ -144,6 +147,7 @@ func Register(env *real_environment.RealEnv) error {
 			return nil
 		},
 	)
+	env.GetHealthChecker().AddHealthCheck("raft_cache", rc)
 	return nil
 }
 
@@ -252,10 +256,12 @@ func (rc *RaftCache) Statusz(ctx context.Context) string {
 	return buf
 }
 
+// Check implements the Checker interface and is called by the health checker to
+// determine whether the service is ready to serve.
+// The service is ready to serve when it knows which nodes contain the meta range
+// and can contact those nodes. We test this by doing a SyncRead of the
+// initial cluster setup time key/val which is stored in the Meta Range.
 func (rc *RaftCache) Check(ctx context.Context) error {
-	// We are ready to serve when we know which nodes contain the meta range
-	// and can contact those nodes. We test this by doing a SyncRead of the
-	// initial cluster setup time key/val which is stored in the Meta Range.
 	select {
 	case <-rc.shutdown:
 		return status.FailedPreconditionError("node is shutdown")

@@ -82,7 +82,7 @@ func singleOpTimeout(ctx context.Context) time.Duration {
 	// complete.
 	const maxTimeout = time.Second
 	if deadline, ok := ctx.Deadline(); ok {
-		if dur := deadline.Sub(time.Now()); dur < maxTimeout {
+		if dur := time.Until(deadline); dur < maxTimeout {
 			return dur
 		}
 	}
