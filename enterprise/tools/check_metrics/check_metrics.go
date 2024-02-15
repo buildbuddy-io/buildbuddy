@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -125,7 +124,7 @@ func main() {
 
 						if !metric.Secondary || len(failedMetrics) >= spec.MaxSecondaryMetricFailureCount {
 							failedMetricsStr := strings.Join(failedMetrics, ", ")
-							return errors.New(fmt.Sprintf("Metrics unhealthy: %s", failedMetricsStr))
+							return fmt.Errorf("Metrics unhealthy: %s", failedMetricsStr)
 						}
 						return nil
 					}
