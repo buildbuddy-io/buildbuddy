@@ -27,6 +27,7 @@ go_test(
     deps = [
         ":vbd",
         "//server/testutil/testfs",
+        "//server/testutil/testmount",
         "@com_github_stretchr_testify//require",
     ],
 )

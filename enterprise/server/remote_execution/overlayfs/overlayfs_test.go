@@ -11,14 +11,16 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmount"
 	"github.com/docker/go-units"
 	"github.com/stretchr/testify/require"
 )
 
+func TestMain(m *testing.M) {
+	testmount.RunWithLimitedMountPermissions(m)
+}
+
 func TestOverlayWorkspace(t *testing.T) {
-	if os.Getuid() != 0 {
-		t.Skipf("test must run as root for mount() permissions")
-	}
 	tmp := testfs.MakeTempDir(t)
 	ws := testfs.MakeDirAll(t, tmp, "workspace")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
@@ -55,6 +57,7 @@ func TestOverlayWorkspace(t *testing.T) {
 	fileAOverlay, err := os.OpenFile(filepath.Join(ws, "a.txt"), os.O_RDWR|os.O_APPEND, 0)
 	require.NoError(t, err)
 	_, err = fileAOverlay.Write([]byte("-MODIFIED"))
+	require.NoError(t, err)
 	// Note, we have to close the overlayfs file handle before the overlayfs is
 	// removed in t.Cleanup() above, otherwise we get 'device or resource busy'
 	// when attempting to clean up the workspace.
@@ -119,6 +122,7 @@ func TestOverlayWorkspace(t *testing.T) {
 	// applying, since we should *replace* the file from the upper dir, not
 	// overwrite it.
 	_, err = f.Seek(0, io.SeekStart)
+	require.NoError(t, err)
 	b, err = io.ReadAll(f)
 	require.NoError(t, err)
 	require.Equal(t, "A", string(b))
@@ -135,10 +139,7 @@ func TestOverlayWorkspace(t *testing.T) {
 	require.Equal(t, "A-MODIFIED", string(b))
 }
 
-func BenchmarkOverlayfs(b *testing.B) {
-	if os.Getuid() != 0 {
-		b.Skipf("test must run as root for mount() permissions")
-	}
+func BenchmarkOverlayfsIO(b *testing.B) {
 	type testCase struct {
 		OverlayEnabled bool
 		FileSize       int64

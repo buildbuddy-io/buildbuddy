@@ -69,7 +69,9 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
-	enableOverlayfs           = flag.Bool("executor.enable_workspace_overlayfs", false, "Enable overlayfs for executor workspaces. This provides a stronger guarantee that the executor's local cache cannot be modified by actions. Only available on Linux, and requires the executor to have mount() permissions as well as the overlayfs kernel module to be enabled.")
+
+	overlayfsEnabled  = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs for executor workspaces. This provides a stronger guarantee that the executor's local cache cannot be modified by actions. Only available on Linux, and requires the executor to have mount() permissions as well as the overlayfs kernel module to be enabled.")
+	overlayfsAnonOnly = flag.Bool("executor.workspace.overlayfs_anonymous_only", false, "Restrict usage of overlayfs to unauthenticated requests only.")
 )
 
 const (
@@ -972,11 +974,20 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	if st == nil && state.GetContainerState() == nil {
 		return nil, status.FailedPreconditionError("either a task or saved container state is required to create a runner")
 	}
+	useOverlayfs := *overlayfsEnabled && props.WorkloadIsolationType != string(platform.FirecrackerContainerType)
+	if useOverlayfs && *overlayfsAnonOnly {
+		// If authenticated and overlayfs is only enabled for anonymous users,
+		// don't use overlayfs.
+		if _, err := p.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
+			useOverlayfs = false
+		}
+	}
+	log.CtxDebugf(ctx, "Using overlayfs: %t", useOverlayfs)
 	wsOpts := &workspace.Opts{
 		Preserve:        props.PreserveWorkspace,
 		CleanInputs:     props.CleanWorkspaceInputs,
 		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
-		UseOverlayfs:    *enableOverlayfs && props.WorkloadIsolationType != string(platform.FirecrackerContainerType),
+		UseOverlayfs:    useOverlayfs,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {

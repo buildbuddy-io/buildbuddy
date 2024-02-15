@@ -109,17 +109,17 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	}, nil
 }
 
-// Path returns the absolute path to the workspace root directory.
+// Path returns the absolute path to the workspace root directory, which should
+// be used as the action working directory. If overlayfs is enabled, this will
+// be the path where the overlayfs is mounted.
 func (ws *Workspace) Path() string {
 	return ws.rootDir
 }
 
-// lowerdir returns the lower layer of the workspace to which immutable inputs
-// are downloaded. Output files can also be found here after calling Apply(),
-// which applies the diff from the upperdir to the lowerdir.
-//
-// If overlayfs is not enabled then this just returns the workspace directory.
-func (ws *Workspace) lowerdir() string {
+// inputRoot returns the directory where inputs should be downloaded. For
+// overlayfs, this is the overlay lower directory. Otherwise, this behaves the
+// same as Path().
+func (ws *Workspace) inputRoot() string {
 	if ws.overlay == nil {
 		return ws.Path()
 	}
@@ -137,7 +137,7 @@ func (ws *Workspace) SetTask(ctx context.Context, task *repb.ExecutionTask) {
 		outputDirs = cmd.GetOutputDirectories()
 		outputPaths = append(cmd.GetOutputFiles(), cmd.GetOutputDirectories()...)
 	}
-	ws.dirHelper = dirtools.NewDirHelper(ws.lowerdir(), outputDirs, outputPaths, ws.dirPerms)
+	ws.dirHelper = dirtools.NewDirHelper(ws.inputRoot(), outputDirs, outputPaths, ws.dirPerms)
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -185,7 +185,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		opts.TrackTransfers = true
 	}
 	execReq := ws.task.GetExecuteRequest()
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), tree, ws.lowerdir(), opts)
+	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), tree, ws.inputRoot(), opts)
 	if err == nil {
 		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
 			return txInfo, err
@@ -278,11 +278,11 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	var txInfo *dirtools.TransferInfo
 	var stdoutDigest, stderrDigest *repb.Digest
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		// Errors uploading stderr/stdout are swallowed.
 		var err error
-		stdoutDigest, err = cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
+		stdoutDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to upload stdout: %s", err)
 		}
@@ -291,7 +291,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	eg.Go(func() error {
 		// Errors uploading stderr/stdout are swallowed.
 		var err error
-		stderrDigest, err = cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
+		stderrDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to upload stderr: %s", err)
 		}
@@ -309,12 +309,12 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			// upperdir here rather than copying.
 			recyclingEnabled := platform.IsTrue(platform.FindValue(ws.task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
 			opts := overlayfs.ApplyOpts{AllowRename: !recyclingEnabled}
-			if err := ws.overlay.Apply(ctx, opts); err != nil {
+			if err := ws.overlay.Apply(egCtx, opts); err != nil {
 				return status.WrapError(err, "apply overlay upperdir changes")
 			}
 		}
 		var err error
-		txInfo, err = dirtools.UploadTree(ctx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.lowerdir(), cmd, executeResponse.Result)
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.inputRoot(), cmd, executeResponse.Result)
 		return err
 	})
 	var logsMu sync.Mutex

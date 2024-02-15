@@ -26,7 +26,7 @@ func TestDockerWithOverlayfs_InputFilesAreImmutable(t *testing.T) {
 	}
 
 	flags.Set(t, "executor.docker_socket", "/var/run/docker.sock")
-	flags.Set(t, "executor.enable_workspace_overlayfs", true)
+	flags.Set(t, "executor.workspace.overlayfs_enabled", true)
 
 	tmpDir := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, tmpDir, map[string]string{
