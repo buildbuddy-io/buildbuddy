@@ -55,17 +55,26 @@ const (
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
 	defaultRemoteExecutionURL  = "remote.buildbuddy.io"
+
+	// overrideHeaderPrefix is a prefix used to override platform props via
+	// remote headers. The property name immediately follows the prefix in the
+	// header key, and the header value is used as the property value.
+	//
+	// Example header:
+	//     x-buildbuddy-platform.key: value
+	overrideHeaderPrefix = "x-buildbuddy-platform."
 )
 
 var (
 	remoteFlagset = flag.NewFlagSet("remote", flag.ContinueOnError)
 
-	execOs         = remoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
-	execArch       = remoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
-	containerImage = remoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
-	envInput       = bbflag.New(remoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
-	remoteRunner   = remoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
-	timeout        = remoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
+	execOs                = remoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
+	execArch              = remoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
+	containerImage        = remoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
+	envInput              = bbflag.New(remoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
+	remoteRunner          = remoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
+	timeout               = remoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
+	remoteHeaderOverrides = bbflag.New(remoteFlagset, "remote_header_override", []string{}, "Remote header overrides that will apply to the *ci runner execution*. Key-value pairs should be separated by '=' (Ex. --remote_header_override=NAME=VALUE). Can be specified more than once. NOTE: If you want to apply a remote header override to the bazel command that's run on the runner, just pass at the end of the command (Ex. bb remote build //... --x-buildbuddy-platform.OSFamily=linux).")
 
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
@@ -498,6 +507,17 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
+	for _, override := range *remoteHeaderOverrides {
+		keyValArr := strings.SplitN(override, "=", 2)
+		if len(keyValArr) != 2 {
+			log.Warnf("Invalid remote header override %s. Key value pairs must be separated by '='.", override)
+			continue
+		}
+		key := keyValArr[0]
+		val := keyValArr[1]
+
+		ctx = metadata.AppendToOutgoingContext(ctx, overrideHeaderPrefix+key, val)
+	}
 
 	instanceHash := sha256.New()
 	instanceHash.Write(uuid.NodeID())

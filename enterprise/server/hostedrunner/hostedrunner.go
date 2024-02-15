@@ -194,6 +194,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		})
 	}
 
+	platformPropOverrides := platform.RemoteHeaderOverrides(ctx)
+	if len(platformPropOverrides) > 0 {
+		cmd.Platform.Properties = append(cmd.Platform.Properties, platformPropOverrides...)
+	}
+
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, cmd)
 	if err != nil {
 		return nil, err
