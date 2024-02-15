@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 
@@ -341,7 +342,7 @@ func TestCreateUser(t *testing.T) {
 		require.Equal(t, "User", ur.Name.GivenName)
 		require.Equal(t, "Doe", ur.Name.FamilyName)
 		require.Equal(t, "user500@org1.io", ur.UserName)
-		verifyRole(t, ur, scim.DeveloperRole)
+		verifyRole(t, ur, role.Developer.String())
 		require.True(t, ur.Active)
 
 		u, err := udb.GetUserByID(userCtx, createdUser.ID)
@@ -354,7 +355,7 @@ func TestCreateUser(t *testing.T) {
 		newUser := &scim.UserResource{
 			Schemas:  []string{scim.UserResourceSchema},
 			UserName: "user501@org1.io",
-			Role:     scim.AdminRole,
+			Role:     role.Admin.String(),
 			Name: scim.NameResource{
 				GivenName:  "Foo",
 				FamilyName: "Bar",
@@ -378,7 +379,7 @@ func TestCreateUser(t *testing.T) {
 		require.Equal(t, "Foo", createdUser.Name.GivenName)
 		require.Equal(t, "Bar", createdUser.Name.FamilyName)
 		require.Equal(t, "user501@org1.io", createdUser.UserName)
-		verifyRole(t, createdUser, scim.AdminRole)
+		verifyRole(t, createdUser, role.Admin.String())
 		require.True(t, createdUser.Active)
 
 		code, body = tc.Get(baseURL + "/scim/Users/" + createdUser.ID)
@@ -392,7 +393,7 @@ func TestCreateUser(t *testing.T) {
 		require.Equal(t, "Foo", ur.Name.GivenName)
 		require.Equal(t, "Bar", ur.Name.FamilyName)
 		require.Equal(t, "user501@org1.io", ur.UserName)
-		verifyRole(t, ur, scim.AdminRole)
+		verifyRole(t, ur, role.Admin.String())
 		require.True(t, ur.Active)
 	}
 }
@@ -610,7 +611,7 @@ func TestUpdateUser(t *testing.T) {
 	require.Equal(t, "Givy", updatedUser.Name.GivenName)
 	require.Equal(t, "Famy", updatedUser.Name.FamilyName)
 	require.Equal(t, "puttest@example.domain", updatedUser.UserName)
-	verifyRole(t, updatedUser, scim.DeveloperRole)
+	verifyRole(t, updatedUser, role.Developer.String())
 
 	// Verify that SubID was updated to reflect the new email.
 	u, err := udb.GetUserByID(userCtx, updatedUser.ID)
@@ -660,7 +661,7 @@ func TestUpdateUser(t *testing.T) {
 	require.Equal(t, "Gov", updatedUser.Name.GivenName)
 	require.Equal(t, "Fam", updatedUser.Name.FamilyName)
 	require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
-	verifyRole(t, updatedUser, scim.DeveloperRole)
+	verifyRole(t, updatedUser, role.Developer.String())
 
 	// Verify that SubID was updated to reflect the new email.
 	u, err = udb.GetUserByID(userCtx, updatedUser.ID)
@@ -668,7 +669,7 @@ func TestUpdateUser(t *testing.T) {
 	require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/somenewemail@example.domain", u.SubID)
 
 	// Promote user to admin.
-	req.Role = scim.AdminRole
+	req.Role = role.Admin.String()
 	body, err = json.Marshal(req)
 	require.NoError(t, err)
 	code, _ = tc.Put(baseURL+"/scim/Users/US100", body)
@@ -680,7 +681,7 @@ func TestUpdateUser(t *testing.T) {
 	updatedUser = scim.UserResource{}
 	err = json.Unmarshal(body, &updatedUser)
 	require.NoError(t, err)
-	verifyRole(t, updatedUser, scim.AdminRole)
+	verifyRole(t, updatedUser, role.Admin.String())
 
 	// If role is not set, it should default to Developer.
 	req.Role = ""
@@ -695,7 +696,7 @@ func TestUpdateUser(t *testing.T) {
 	updatedUser = scim.UserResource{}
 	err = json.Unmarshal(body, &updatedUser)
 	require.NoError(t, err)
-	verifyRole(t, updatedUser, scim.DeveloperRole)
+	verifyRole(t, updatedUser, role.Developer.String())
 
 	// Promote user to Admin using patch request.
 	patchReq = &scim.PatchResource{
@@ -703,7 +704,7 @@ func TestUpdateUser(t *testing.T) {
 			{
 				Op:    "replace",
 				Path:  scim.RoleAttribute,
-				Value: scim.AdminRole,
+				Value: role.Admin.String(),
 			},
 		},
 		Schemas: []string{scim.PatchResourceSchema},
@@ -719,5 +720,5 @@ func TestUpdateUser(t *testing.T) {
 	updatedUser = scim.UserResource{}
 	err = json.Unmarshal(body, &updatedUser)
 	require.NoError(t, err)
-	verifyRole(t, updatedUser, scim.AdminRole)
+	verifyRole(t, updatedUser, role.Admin.String())
 }

@@ -36,10 +36,50 @@ const (
 	// DefaultRole is the role assigned to users when joining a group they did
 	// not create.
 	Default = Developer
+
+	developerString = "developer"
+	adminString     = "admin"
+	writerString    = "writer"
+	readerString    = "reader"
 )
 
 // Role represents a user's role within a group.
 type Role uint32
+
+func (r Role) String() string {
+	// Note: these role strings should not be changed - they are exchanged
+	// as part of the SCIM API.
+	switch r {
+	case Developer:
+		return developerString
+	case Admin:
+		return adminString
+	case Writer:
+		return writerString
+	case Reader:
+		return readerString
+	default:
+		return ""
+	}
+}
+
+// Parse parses a role from string. It accepts only the values returned by
+// r.String(). Parsing empty string (role.None) or any other invalid string
+// returns an InvalidArgument error.
+func Parse(s string) (Role, error) {
+	switch s {
+	case developerString:
+		return Developer, nil
+	case adminString:
+		return Admin, nil
+	case writerString:
+		return Writer, nil
+	case readerString:
+		return Reader, nil
+	default:
+		return 0, status.InvalidArgumentErrorf("invalid role %q", s)
+	}
+}
 
 func ToProto(role Role) (grpb.Group_Role, error) {
 	if role&Admin == Admin {
