@@ -21,9 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// set by x_defs in BUILD file
-var testBinaryRunfilePath string
-
 func TestRun_NormalExit_NoError(t *testing.T) {
 	ctx := context.Background()
 
@@ -211,7 +208,7 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 		// Spawn a nested process inside the shell which becomes its own process group leader.
 		// Using a go binary here because sh does not have a straightforward
 		// way to make the setpgid system call.
-		testfs.RunfilePath(t, testBinaryRunfilePath),
+		testfs.RunfilePath(t, "enterprise/server/remote_execution/commandutil/test_binary/test_binary_/test_binary"),
 	}}
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()

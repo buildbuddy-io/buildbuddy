@@ -29,7 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -47,9 +47,6 @@ const (
 )
 
 var (
-	// set by x_defs in BUILD file
-	ciRunnerRunfilePath string
-
 	workspaceContentsWithBazelVersionAction = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
 		"buildbuddy.yaml": `
@@ -210,11 +207,11 @@ type result struct {
 }
 
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
-	binPath, err := runfiles.Rlocation(ciRunnerRunfilePath)
+	binPath, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
 	if err != nil {
 		t.Fatal(err)
 	}
-	bazelPath, err := runfiles.Rlocation(testbazel.BazelBinaryPath)
+	bazelPath, err := bazelgo.Runfile(testbazel.BazelBinaryPath)
 	if err != nil {
 		t.Fatal(err)
 	}

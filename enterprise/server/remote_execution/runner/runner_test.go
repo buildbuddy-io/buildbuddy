@@ -45,9 +45,6 @@ const (
 )
 
 var (
-	// set by x_defs in BUILD file
-	testworkerRunfilePath string
-
 	defaultCfg = &RunnerPoolOptions{
 		MaxRunnerCount:            *maxRunnerCount,
 		MaxRunnerDiskSizeBytes:    *maxRunnerDiskSizeBytes,
@@ -645,7 +642,7 @@ func TestRunnerPool_TaskSize(t *testing.T) {
 }
 
 func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ScheduledTask {
-	workerPath := testfs.RunfilePath(t, testworkerRunfilePath)
+	workerPath := testfs.RunfilePath(t, "enterprise/server/remote_execution/runner/testworker/testworker_/testworker")
 	task := &repb.ExecutionTask{
 		Command: &repb.Command{
 			Arguments: []string{

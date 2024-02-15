@@ -6,13 +6,7 @@ go_library(
     name = "rbetest",
     testonly = 1,
     srcs = ["rbetest.go"],
-    data = [
-        "//enterprise/server/test/integration/remote_execution/command:testcommand",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest",
-    x_defs = {
-        "testCommandBinaryRunfilePath": "$(rlocationpath //enterprise/server/test/integration/remote_execution/command:testcommand)",
-    },
     deps = [
         "//enterprise/server/backends/redis_execution_collector",
         "//enterprise/server/remote_execution/execution_server",
@@ -70,7 +64,7 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//go/runfiles:go_default_library",
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
