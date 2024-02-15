@@ -2833,7 +2833,7 @@ func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
 			// Empty GroupID
 		},
 		Digest: &repb.Digest{
-			Hash: string(buf.Bytes()),
+			Hash: buf.String(),
 		},
 		DigestFunction: repb.DigestFunction_SHA256,
 	})

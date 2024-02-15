@@ -1766,9 +1766,9 @@ func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError)
 	w := io.MultiWriter(out, &buf)
 	printCommandLine(out, "git", args...)
 	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, w); err != nil {
-		return "", &gitError{err, string(buf.Bytes())}
+		return "", &gitError{err, buf.String()}
 	}
-	output := string(buf.Bytes())
+	output := buf.String()
 	return strings.TrimSpace(output), nil
 }
 

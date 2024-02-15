@@ -64,7 +64,7 @@ func Invoke(ctx context.Context, bazelBinary string, workspaceDir string, subCom
 		}
 	}
 	return &InvocationResult{
-		Stdout:       string(stdout.Bytes()),
+		Stdout:       stdout.String(),
 		Stderr:       stderrHandler.stderrBuffer.String(),
 		InvocationID: stderrHandler.invocationID,
 		Error:        err,
