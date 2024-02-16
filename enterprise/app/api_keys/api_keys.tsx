@@ -508,12 +508,12 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <span>{describeCapabilities(key)}</span>
               </div>
               <ApiKeyField apiKey={key} />
-              {this.props.user.canCall("updateApiKey") && (
+              {this.props.user.canCall(this.props.userOwnedOnly ? "updateUserApiKey" : "updateApiKey") && (
                 <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
                   Edit
                 </OutlinedButton>
               )}
-              {this.props.user.canCall("deleteApiKey") && (
+              {this.props.user.canCall(this.props.userOwnedOnly ? "deleteUserApiKey" : "deleteApiKey") && (
                 <OutlinedButton onClick={this.onClickDelete.bind(this, key)} className="destructive">
                   Delete
                 </OutlinedButton>
