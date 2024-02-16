@@ -492,7 +492,7 @@ func (sm *Replica) acquireLocks(wb pebble.Batch, txid []byte) {
 	for len(batchReader) > 0 {
 		_, ukey, _, _ := batchReader.Next()
 		keyString := string(ukey)
-		sm.lockedKeys[keyString] = txid
+		sm.lockedKeys[keyString] = append(make([]byte, 0, len(txid)), txid...)
 	}
 }
 
@@ -535,6 +535,10 @@ func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest
 	for _, union := range batchReq.GetUnion() {
 		rsp := sm.handlePropose(txn, union)
 		if err := gstatus.FromProto(rsp.GetStatus()).Err(); err != nil {
+			// An "normal" error could be returned here if a cas()
+			// request finds a value it does not expect. In this
+			// case we want the transaction to fail (in the prepare
+			// step).
 			return nil, err
 		}
 		batchRsp.Union = append(batchRsp.Union, rsp)
