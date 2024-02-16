@@ -803,6 +803,9 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	q.AddWhereClause(`user_id IS NULL OR user_id = ''`)
 	q.AddWhereClause(`group_id = ?`, groupID)
 	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		// If we're not an admin, restrict to keys that have only been made
+		// visible to non-admins. Note: the visible_to_developers field means "visible to
+		// non-admins" now that we have reader/writer roles.
 		q.AddWhereClause("visible_to_developers = ?", true)
 	}
 	q.AddWhereClause(`impersonation = false`)
