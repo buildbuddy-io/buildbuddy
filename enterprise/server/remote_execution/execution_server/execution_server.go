@@ -316,6 +316,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 	var dbErr error
 	var existing tables.Execution
+	// TODO(zoey): This select seems unnecessary, should revisit it
 	if err := s.env.GetDBHandle().GORM(ctx, "execution_server_get_execution_for_update").Where(
 		"execution_id = ?", executionID).First(&existing).Error; err != nil {
 		dbErr = err

@@ -86,6 +86,7 @@ func (t *TelemetryServer) LogTelemetry(ctx context.Context, req *telpb.LogTeleme
 
 func (t *TelemetryServer) insertLogIfNotExists(ctx context.Context, telemetryLog *tables.TelemetryLog) error {
 	var existing tables.TelemetryLog
+	// TODO(zoey): this can be done in one query with an insert that does nothing on conflict
 	err := t.h.GORM(ctx, "telemetry_server_get_existing_log").Where(
 		"installation_uuid = ? AND instance_uuid = ? AND telemetry_log_uuid = ?",
 		telemetryLog.InstallationUUID, telemetryLog.InstanceUUID, telemetryLog.TelemetryLogUUID).First(&existing).Error
