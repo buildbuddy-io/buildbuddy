@@ -162,7 +162,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     if (this.isSingleFile() && bytestreamURL) {
       rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text", { zip }).then((result) => {
         let path = monaco.Uri.file(filename || "file");
-        this.editor?.setModel(monaco.editor.createModel(result, undefined, path));
+        this.editor?.setModel(monaco.editor.createModel(result, langFromPath(path.path), path));
       });
       return;
     }
@@ -382,7 +382,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     });
     let model = this.state.fullPathToModelMap.get(fullPath);
     if (!model) {
-      model = monaco.editor.createModel(fileContents, undefined, monaco.Uri.file(fullPath));
+      model = monaco.editor.createModel(fileContents, langFromPath(fullPath), monaco.Uri.file(fullPath));
       this.state.fullPathToModelMap.set(fullPath, model);
       this.updateState({ fullPathToModelMap: this.state.fullPathToModelMap });
     }
@@ -544,7 +544,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       let fileContents = "// Your code here";
       let model = this.state.fullPathToModelMap.get(fileName);
       if (!model) {
-        model = monaco.editor.createModel(fileContents, undefined, monaco.Uri.file(fileName));
+        model = monaco.editor.createModel(fileContents, langFromPath(fileName), monaco.Uri.file(fileName));
         this.state.fullPathToModelMap.set(fileName, model);
       }
       this.state.originalFileContents.set(fileName, "");
@@ -743,7 +743,7 @@ export default class CodeComponent extends React.Component<Props, State> {
         let uri = monaco.Uri.file(`${fullPath}-${sha}`);
         let latestModel = monaco.editor.getModel(uri);
         if (!latestModel) {
-          latestModel = monaco.editor.createModel(fileContents, undefined, uri);
+          latestModel = monaco.editor.createModel(fileContents, langFromPath(uri.path), uri);
         }
         let diffModel = { original: latestModel, modified: editedModel };
         this.diffEditor.setModel(diffModel);
@@ -1111,19 +1111,37 @@ function stateReviver(key: string, value: any) {
       return new Map(value.value);
     }
     if (value.dataType === "ModelMap") {
-      return new Map(value.value.map((e: any) => [e.key, monaco.editor.createModel(e.value, undefined, e.key)]));
+      return new Map(
+        value.value.map((e: any) => [e.key, monaco.editor.createModel(e.value, langFromPath(e.key), e.key)])
+      );
     }
     if (value.dataType === "DiffModelMap") {
       return new Map(
         value.value.map((e: any) => [
           e.key,
           {
-            original: monaco.editor.createModel(e.original, undefined, e.originalUri.path),
-            modified: monaco.editor.createModel(e.modified, undefined, e.modifiedUri.path),
+            original: monaco.editor.createModel(e.original, langFromPath(e.originalUri.path), e.originalUri.path),
+            modified: monaco.editor.createModel(e.modified, langFromPath(e.modifiedUri.path), e.modifiedUri.path),
           },
         ])
       );
     }
   }
   return value;
+}
+
+function langFromPath(path: string) {
+  if (!path) {
+    return undefined;
+  }
+  if (
+    path.endsWith(".bazel") ||
+    path.endsWith("WORKSPACE") ||
+    path.endsWith("BUILD") ||
+    path.endsWith("MODULE") ||
+    path.endsWith(".bzl")
+  ) {
+    return "python";
+  }
+  return undefined;
 }
