@@ -227,6 +227,7 @@ func (g *apiKeyGroup) GetEnforceIPRules() bool {
 
 func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
 	session.SessionID = sessionID
+	// TODO(zoey): this select seems unnecessary, revisit it.
 	var existing tables.Session
 	rq := d.h.NewQuery(ctx, "authdb_get_existing_session").Raw(`
 		SELECT * FROM "Sessions" WHERE session_id = ?
@@ -863,6 +864,7 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 }
 
 func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
+	// TODO (zoey): could make this one query
 	if key == nil {
 		return status.InvalidArgumentError("API key cannot be nil.")
 	}
@@ -896,6 +898,7 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 }
 
 func (d *AuthDB) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
+	// TODO (zoey): could make this one query
 	if _, err := d.authorizeAPIKeyWrite(ctx, d.h, apiKeyID); err != nil {
 		return err
 	}

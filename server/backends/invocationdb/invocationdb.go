@@ -131,24 +131,24 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 	if err != nil {
 		return err
 	}
-	var in tables.Invocation
-	if err := d.h.NewQuery(ctx, "invocationdb_get_invocation_for_update_acl").Raw(
-		`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
-		return err
-	}
-	var group tables.Group
-	if err := d.h.NewQuery(ctx, "invocationdb_get_group_for_update_acl").Raw(
-		`SELECT sharing_enabled FROM "Groups" WHERE group_id = ?`, in.GroupID).Take(&group); err != nil {
-		return err
-	}
-	if !group.SharingEnabled {
-		return status.PermissionDeniedError("Your organization does not allow this action.")
-	}
-
-	if err := perms.AuthorizeWrite(authenticatedUser, getACL(&in)); err != nil {
-		return err
-	}
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		var in tables.Invocation
+		if err := tx.NewQuery(ctx, "invocationdb_get_invocation_for_update_acl").Raw(
+			`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
+			return err
+		}
+		var group tables.Group
+		if err := tx.NewQuery(ctx, "invocationdb_get_group_for_update_acl").Raw(
+			`SELECT sharing_enabled FROM "Groups" WHERE group_id = ?`, in.GroupID).Take(&group); err != nil {
+			return err
+		}
+		if !group.SharingEnabled {
+			return status.PermissionDeniedError("Your organization does not allow this action.")
+		}
+
+		if err := perms.AuthorizeWrite(authenticatedUser, getACL(&in)); err != nil {
+			return err
+		}
 		if err := tx.NewQuery(ctx, "invocationdb_update_invocation_acl").Raw(
 			`UPDATE "Invocations" SET perms = ? WHERE invocation_id = ?`, p, invocationID).Exec().Error; err != nil {
 			return err
@@ -239,6 +239,7 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
 	var in tables.Invocation
+	// TODO(zoey): could make this one query
 	if err := d.h.NewQuery(ctx, "invocationdb_get_invocation_for_delete").Raw(
 		`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
 		return err
