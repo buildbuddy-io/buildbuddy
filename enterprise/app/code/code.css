@@ -9,11 +9,10 @@
 
 .code-menu {
   height: 60px;
-  border-bottom: 1px solid #fafafa;
+  border-bottom: 2px solid #fafafa;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 16px;
   box-sizing: border-box;
 }
@@ -24,7 +23,7 @@
   color: #888;
   font-family: monospace;
   flex-shrink: 0;
-  margin-right: 32px;
+  margin-right: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -32,7 +31,6 @@
 
 .code-menu-logo .logo {
   height: 24px;
-  margin-right: 4px;
 }
 
 .code-menu-logo .code-logo {
@@ -64,12 +62,24 @@
 }
 
 .code-menu-breadcrumbs {
-  font-size: 0.8em;
-  text-align: center;
+  font-size: 0.85em;
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.code-menu-breadcrumbs svg {
+  height: 12px;
+  width: 12px;
 }
 
 .code-menu-breadcrumbs-environment {
+  display: flex;
   font-weight: 600;
+  align-items: center;
+  gap: 4px;
 }
 
 .code-main {
@@ -81,7 +91,7 @@
 
 .code-sidebar {
   width: 200px;
-  border-right: 1px solid #fafafa;
+  border-right: 2px solid #fafafa;
   flex-shrink: 0;
   overflow: hidden;
   box-sizing: border-box;
@@ -102,7 +112,7 @@
 
 .code-sidebar-actions {
   padding: 16px;
-  border-top: 1px solid #fafafa;
+  border-top: 2px solid #fafafa;
 }
 
 .code-sidebar-actions button {
@@ -144,7 +154,7 @@
   max-height: 200px;
   overflow: scroll;
   flex-shrink: 0;
-  border-top: 1px solid #fafafa;
+  border-top: 2px solid #fafafa;
   padding: 16px;
 }
 
@@ -196,7 +206,7 @@
 }
 
 .minimap-decorations-layer {
-  border-left: 1px solid #fafafa;
+  border-left: 2px solid #fafafa;
 }
 
 .repo-previews-title {
