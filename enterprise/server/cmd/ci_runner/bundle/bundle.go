@@ -3,15 +3,19 @@ package bundle
 import (
 	"embed"
 	"io/fs"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 )
+
+const RunnerName = "buildbuddy_ci_runner"
 
 // NB: Include everything in bazel `embedsrcs` with `*`.
 //
-//go:embed *
+//go:embed buildbuddy_ci_runner
 var all embed.FS
 
-func Get() fs.FS {
-	return fileresolver.New(all, "enterprise/server/cmd/ci_runner")
+func OpenRunner() (fs.File, error) {
+	return all.Open(RunnerName)
+}
+
+func ReadRunner() ([]byte, error) {
+	return fs.ReadFile(all, RunnerName)
 }

@@ -180,7 +180,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 // AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
 // already exist.
 func (ws *Workspace) AddCIRunner(ctx context.Context) error {
-	destPath := path.Join(ws.Path(), "buildbuddy_ci_runner")
+	destPath := path.Join(ws.Path(), ci_runner_bundle.RunnerName)
 	exists, err := disk.FileExists(ctx, destPath)
 	if err != nil {
 		return err
@@ -191,7 +191,7 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	// TODO(bduffany): Consider doing a fastcopy here instead of a normal copy.
 	// The CI runner binary may be on a different device than the runner workspace
 	// so we'd have to put it somewhere on the same device before fastcopying.
-	srcFile, err := ci_runner_bundle.Get().Open("enterprise/server/cmd/ci_runner/buildbuddy_ci_runner")
+	srcFile, err := ci_runner_bundle.OpenRunner()
 	if err != nil {
 		return err
 	}

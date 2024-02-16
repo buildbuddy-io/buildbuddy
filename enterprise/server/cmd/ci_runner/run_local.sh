@@ -50,27 +50,22 @@ TEMPDIR=$(mktemp --dry-run | xargs dirname)
 : "${PERSISTENT:=true}"
 : "${BUILDBUDDY_API_KEY:=}"
 
-bazel build //enterprise/server/cmd/ci_runner:buildbuddy_ci_runner
-RUNNER_PATH="$PWD/bazel-bin/enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
-RUNNER_DATA_DIR="$TEMPDIR/buildbuddy_ci_runner_data"
-mkdir -p "$RUNNER_DATA_DIR"
-rm -f "$RUNNER_DATA_DIR/ci_runner"
-cp "$RUNNER_PATH" "$RUNNER_DATA_DIR/ci_runner"
-echo "Copied ci_runner to $RUNNER_DATA_DIR/ci_runner"
-
 mkdir -p "$CI_RUNNER_BAZEL_CACHE_DIR"
+
+# Build the ci_runner_image locally an load it into Docker daemon
+# as "bazel/enterprise/server/cmd/ci_runner:ci_runner_image"
+bazel run enterprise/server/cmd/ci_runner:ci_runner_image
 
 if ! docker inspect buildbuddy-ci-runner-local &>/dev/null; then
   # Initialize container
   docker run \
-    --volume "$RUNNER_DATA_DIR:/runner-data" \
     --volume "$CI_RUNNER_BAZEL_CACHE_DIR:/root/.cache/bazel" \
     --volume "$(dir_abspath "$REPO_PATH"):/root/mounted_repo" \
     --net host \
     --detach \
     --rm \
     --name buildbuddy-ci-runner-local \
-    gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0 \
+    bazel/enterprise/server/cmd/ci_runner:ci_runner_image \
     sleep infinity
 fi
 
