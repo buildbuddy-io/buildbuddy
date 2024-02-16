@@ -149,6 +149,8 @@ func execute(cmdArgs []string) error {
 		return err
 	}
 	log.Debugf("Uploaded inputs in %s", time.Since(stageStart))
+	actionStr, _ := digest.ResourceNameFromProto(arn).DownloadString()
+	log.Debugf("Uploaded action resource name: %s", actionStr)
 	stageStart = time.Now()
 	log.Debug("Starting /Execute request")
 	stream, err := rexec.Start(ctx, env, arn)
