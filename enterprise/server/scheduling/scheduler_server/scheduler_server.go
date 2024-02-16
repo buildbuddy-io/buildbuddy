@@ -1803,7 +1803,7 @@ func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, reques
 	}
 	_, err := node.handle.EnqueueTaskReservation(ctx, request)
 	if err != nil {
-		log.Infof("failed to enqueue task on connected executor: %s", err)
+		log.CtxInfof(ctx, "Failed to enqueue task on connected executor: %s", err)
 	}
 	return err == nil
 }
