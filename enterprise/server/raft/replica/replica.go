@@ -663,6 +663,7 @@ func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
 		if err := proto.Unmarshal(iter.Value(), batchReq); err != nil {
 			return err
 		}
+		sm.log.Warningf("txid: %q, batchReq: %+v", txid, batchReq)
 		if _, err := sm.loadTxnIntoMemory(txid, batchReq); err != nil {
 			return err
 		}
