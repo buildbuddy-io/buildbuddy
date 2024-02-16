@@ -8,7 +8,18 @@ import * as diff from "diff";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import { ArrowLeft, ArrowUpCircle, Code, Download, Key, Link, PlusCircle, Send, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUpCircle,
+  ChevronRight,
+  Code,
+  Download,
+  Key,
+  Link,
+  PlusCircle,
+  Send,
+  XCircle,
+} from "lucide-react";
 import Spinner from "../../../app/components/spinner/spinner";
 import { OutlinedButton, FilledButton } from "../../../app/components/button/button";
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
@@ -784,8 +795,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               </a>
             )}
             <a href="/">
-              <img alt="BuildBuddy Code" src="/image/logo_dark.svg" className="logo" /> Code{" "}
-              <Code className="icon code-logo" />
+              <img alt="BuildBuddy Code" src="/image/b_dark.svg" className="logo" />
             </a>
           </div>
           <div className="code-menu-breadcrumbs">
@@ -801,23 +811,31 @@ export default class CodeComponent extends React.Component<Props, State> {
                   <a target="_blank" href={`http://github.com/${this.currentOwner()}`}>
                     {this.currentOwner()}
                   </a>{" "}
-                  /{" "}
+                  <ChevronRight />
                   <a target="_blank" href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}`}>
                     {this.currentRepo()}
-                  </a>{" "}
-                  {/* <a href="#">master</a> / TODO: add branch to breadcrumb  */}@{" "}
-                  <a
-                    target="_blank"
-                    title={this.state.commitSHA}
-                    href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${
-                      this.state.commitSHA
-                    }`}>
-                    {this.state.commitSHA?.slice(0, 7)}
-                  </a>{" "}
-                  <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
-                    <ArrowUpCircle className="code-update-commit" />
-                  </span>{" "}
+                  </a>
                 </div>
+                <ChevronRight />
+                <a
+                  href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/tree/${
+                    this.state.repoResponse?.defaultBranch
+                  }`}>
+                  {this.state.repoResponse?.defaultBranch}
+                </a>
+                <ChevronRight />
+                <a
+                  target="_blank"
+                  title={this.state.commitSHA}
+                  href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${
+                    this.state.commitSHA
+                  }`}>
+                  {this.state.commitSHA?.slice(0, 7)}
+                </a>{" "}
+                <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
+                  <ArrowUpCircle className="code-update-commit" />
+                </span>{" "}
+                <ChevronRight />
                 <div className="code-menu-breadcrumbs-filename">
                   {this.currentPath() ? (
                     <>
