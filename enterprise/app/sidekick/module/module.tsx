@@ -2,7 +2,7 @@ import React from "react";
 import * as monaco from "monaco-editor";
 
 import { ArrowUp, GitCommit, Github, HistoryIcon, Star, Trash2 } from "lucide-react";
-import { compactDurationSec } from "../../../../app/format/format";
+import { roundedDurationSec } from "../../../../app/format/format";
 
 interface Props {
   editor: monaco.editor.IStandaloneCodeEditor;
@@ -306,7 +306,7 @@ const Module = (props: ModuleProps) => (
 
 export function since(date: string) {
   let diff = (Date.now() - new Date(date).getTime()) / 1000;
-  return compactDurationSec(diff);
+  return roundedDurationSec(diff);
 }
 
 export function popularity(a: any, b: any) {

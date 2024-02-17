@@ -59,6 +59,32 @@ export function durationSec(duration: number | Long) {
   return `${(milliseconds * 1000).toPrecision(3)}µs`;
 }
 
+export function roundedDurationSec(duration: number | Long) {
+  let seconds = +duration;
+  if (!seconds || seconds < 0) {
+    return "0s";
+  }
+  if (seconds >= 60 * 60 * 24 * 365) {
+    return `${Math.round(seconds / (60 * 60 * 24 * 365))} years`;
+  }
+  if (seconds >= 60 * 60 * 24 * 30) {
+    return `${Math.round(seconds / (60 * 60 * 24 * 30))} months`;
+  }
+  if (seconds >= 60 * 60 * 24 * 7) {
+    return `${Math.round(seconds / (60 * 60 * 24 * 7))} weeks`;
+  }
+  if (seconds >= 60 * 60 * 24) {
+    return `${Math.round(seconds / (60 * 60 * 24))} days`;
+  }
+  if (seconds >= 60 * 60) {
+    return `${Math.round(seconds / (60 * 60))} hours`;
+  }
+  if (seconds >= 60) {
+    return `${Math.round(seconds / 60)} minutes`;
+  }
+  return `${Math.round(seconds)} seconds`;
+}
+
 export function cpuSavingsSec(duration: number | Long) {
   let seconds = +duration;
   if (!seconds || seconds < 0) {
@@ -361,6 +387,7 @@ export function enumLabel(e: string) {
 export default {
   compactDurationSec,
   durationSec,
+  roundedDurationSec,
   durationMillis,
   durationUsec,
   sentenceCase,
