@@ -42,11 +42,6 @@ type runnerService struct {
 }
 
 func New(env environment.Env) (*runnerService, error) {
-	f, err := ci_runner_bundle.OpenRunner()
-	if err != nil {
-		return nil, status.FailedPreconditionErrorf("could not open runner binary runfile: %s", err)
-	}
-	defer f.Close()
 	return &runnerService{
 		env: env,
 	}, nil
@@ -75,11 +70,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	binaryBlob, err := ci_runner_bundle.ReadRunner()
-	if err != nil {
-		return nil, err
-	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, binaryBlob)
+	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, ci_runner_bundle.CiRunnerBytes)
 	if err != nil {
 		return nil, err
 	}

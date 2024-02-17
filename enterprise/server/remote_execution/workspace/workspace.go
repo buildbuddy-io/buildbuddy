@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -188,21 +187,7 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	if exists {
 		return nil
 	}
-	// TODO(bduffany): Consider doing a fastcopy here instead of a normal copy.
-	// The CI runner binary may be on a different device than the runner workspace
-	// so we'd have to put it somewhere on the same device before fastcopying.
-	srcFile, err := ci_runner_bundle.OpenRunner()
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-	destFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0555)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-	_, err = io.Copy(destFile, srcFile)
-	return err
+	return os.WriteFile(destPath, ci_runner_bundle.CiRunnerBytes, 0o555)
 }
 
 func (ws *Workspace) AddActionsRunner(ctx context.Context) error {
