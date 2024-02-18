@@ -1567,6 +1567,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.5.1",
     )
     go_repository(
+        name = "com_github_gabriel_vasile_mimetype",
+        importpath = "github.com/gabriel-vasile/mimetype",
+        sum = "h1:in2uUcidCuFcDKtdcBxlR0rJ1+fsokWf+uqxgUFjbI0=",
+        version = "v1.4.3",
+    )
+    go_repository(
         name = "com_github_garyburd_redigo",
         importpath = "github.com/garyburd/redigo",
         sum = "h1:LofdAjjjqCSXMwLGgOgnE+rdPuvX9DxCqaHwKy7i/ko=",
