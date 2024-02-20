@@ -333,6 +333,13 @@ func (s *CommandLineSchema) CommandSupportsOpt(opt string) bool {
 				return true
 			}
 		}
+		// Check for starlark flags, which won't be listed in the schema that we
+		// parsed from "bazel help" output. All bazel commands support starlark
+		// flags like "--@repo//path:name=value". Even non-build commands like
+		// "bazel info" support these, but just ignore them.
+		if strings.Contains(opt, ":") || strings.Contains(opt, "/") {
+			return true
+		}
 		return false
 	} else if strings.HasPrefix(opt, "-") {
 		// Short-form arg
