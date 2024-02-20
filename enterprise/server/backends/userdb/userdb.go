@@ -794,8 +794,11 @@ func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
 func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, error) {
 	var user *tables.User
 	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		var err error
-		user, err = d.getUser(ctx, tx, id)
+		u, err := d.getUser(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		user = u
 		return err
 	})
 	if err != nil {
@@ -817,8 +820,11 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error) {
 	var user *tables.User
 	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		var err error
-		user, err = d.getUser(ctx, tx, id)
+		u, err := d.getUser(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		user = u
 		return err
 	})
 	return user, err
