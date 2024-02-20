@@ -5,18 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -31,8 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/lni/dragonboat/v4"
-	"github.com/lni/dragonboat/v4/raftio"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -40,7 +34,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
-	dbConfig "github.com/lni/dragonboat/v4/config"
 )
 
 var (
@@ -80,11 +73,7 @@ type RaftCache struct {
 	registry      registry.NodeRegistry
 	gossipManager interfaces.GossipService
 
-	nodeHost       *dragonboat.NodeHost
 	store          *store.Store
-	apiClient      *client.APIClient
-	rangeCache     *rangecache.RangeCache
-	sender         *sender.Sender
 	clusterStarter *bringup.ClusterStarter
 	driver         *driver.Driver
 
@@ -92,20 +81,6 @@ type RaftCache struct {
 	shutdownOnce *sync.Once
 
 	fileStorer filestore.Store
-}
-
-// Create implements the interface NodeRegistryFactory and returns a
-// DynamicNodeRegistry.
-//
-// We need to provide a factory method that creates the DynamicNodeRegistry, and
-// hand this to the raft library when we set things up. When nodeHost is created
-// it will call this method to create the registry and use it until nodehost
-// close.
-func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-	r := registry.NewDynamicNodeRegistry(rc.gossipManager, streamConnections, v)
-	rc.registry = r
-	r.AddNode(nhid, rc.raftAddress, rc.grpcAddress)
-	return r, nil
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -155,7 +130,6 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc := &RaftCache{
 		env:          env,
 		conf:         conf,
-		rangeCache:   rangecache.New(),
 		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
 		fileStorer:   filestore.New(),
@@ -179,39 +153,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	}
 	rc.gossipManager = env.GetGossipService()
 
-	// A NodeHost is basically a single node (think 'computer') that can be
-	// a member of raft clusters. This nodehost is configured with a dynamic
-	// NodeRegistryFactory that allows raft to resolve other nodehosts that
-	// may have changed IP addresses after restart, but still contain the
-	// same data they did previously.
-	//
-	// Because not all nodes are members of every raft cluster, we contact
-	// nodes maintaining the meta range, who broadcast their presence, and
-	// use the metarange to find which other clusters / nodes contain which
-	// keys. The rangeCache is where this information is cached, and the
-	// sender interface is what makes it simple to address data across the
-	// cluster.
-	raftListener := listener.NewRaftListener()
-	nhc := dbConfig.NodeHostConfig{
-		WALDir:         filepath.Join(conf.RootDir, "wal"),
-		NodeHostDir:    filepath.Join(conf.RootDir, "nodehost"),
-		RTTMillisecond: 10,
-		RaftAddress:    rc.raftAddress,
-		Expert: dbConfig.ExpertConfig{
-			NodeRegistryFactory: rc,
-		},
-		RaftEventListener:   raftListener,
-		SystemEventListener: raftListener,
-	}
-	nodeHost, err := dragonboat.NewNodeHost(nhc)
-	if err != nil {
-		return nil, err
-	}
-	rc.nodeHost = nodeHost
-
-	rc.apiClient = client.NewAPIClient(env, rc.nodeHost.ID())
-	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
-	store, err := store.New(rc.env, conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, raftListener, rc.apiClient, rc.grpcAddress, rc.conf.Partitions)
+	store, err := store.New(rc.env, conf.RootDir, rc.raftAddress, rc.grpcAddress, rc.conf.Partitions)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +164,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	rc.clusterStarter = bringup.New(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager, rc.apiClient)
+	rc.clusterStarter = bringup.New(rc.grpcAddress, rc.gossipManager, rc.store)
 	if err := rc.clusterStarter.InitializeClusters(); err != nil {
 		return nil, err
 	}
@@ -256,6 +198,10 @@ func (rc *RaftCache) Statusz(ctx context.Context) string {
 	return buf
 }
 
+func (rc *RaftCache) sender() *sender.Sender {
+	return rc.store.Sender()
+}
+
 // Check implements the Checker interface and is called by the health checker to
 // determine whether the service is ready to serve.
 // The service is ready to serve when it knows which nodes contain the meta range
@@ -284,7 +230,7 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return rc.sender.Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	return rc.sender().Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		_, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Header: h,
 			Batch:  readReq,
@@ -355,7 +301,7 @@ func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompres
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := rc.sender.SyncRead(ctx, fileMetadataKey, req, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
+	rsp, err := rc.sender().SyncRead(ctx, fileMetadataKey, req, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err
 	}
@@ -411,7 +357,7 @@ func (rc *RaftCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfac
 		if err != nil {
 			return err
 		}
-		writeRsp, err := rc.sender.SyncPropose(ctx, fileMetadataKey, req)
+		writeRsp, err := rc.sender().SyncPropose(ctx, fileMetadataKey, req)
 		if err != nil {
 			return err
 		}
@@ -425,7 +371,6 @@ func (rc *RaftCache) Stop() error {
 		close(rc.shutdown)
 		rc.driver.Stop()
 		rc.store.Stop(context.Background())
-		rc.nodeHost.Close()
 		rc.gossipManager.Leave()
 		rc.gossipManager.Shutdown()
 	})
@@ -466,7 +411,7 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 		return nil, err
 	}
 
-	rsps, err := rc.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.FindRequest{
@@ -534,7 +479,7 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNam
 		return nil, err
 	}
 
-	rsps, err := rc.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.GetRequest{
