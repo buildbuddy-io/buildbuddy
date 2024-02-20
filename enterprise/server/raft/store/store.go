@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
@@ -41,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4"
+	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -50,6 +53,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
@@ -77,8 +81,9 @@ type Store struct {
 	db     pebble.IPebbleDB
 	leaser pebble.Leaser
 
-	rangeMu    sync.RWMutex
-	openRanges map[uint64]*rfpb.RangeDescriptor
+	configuredClusters int
+	rangeMu            sync.RWMutex
+	openRanges         map[uint64]*rfpb.RangeDescriptor
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -97,7 +102,52 @@ type Store struct {
 	egCancel context.CancelFunc
 }
 
-func New(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
+// We need to provide a factory method that creates the DynamicNodeRegistry, and
+// hand this to the raft library when we set things up. When nodeHost is created
+// it will call this method to create the registry and use it until nodehost
+// close.
+type registryHolder struct {
+	raftAddr string
+	grpcAddr string
+	g        interfaces.GossipService
+	r        registry.NodeRegistry
+}
+
+func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
+	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v)
+	rc.r = r
+	r.AddNode(nhid, rc.raftAddr, rc.grpcAddr)
+	return r, nil
+}
+
+func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions []disk.Partition) (*Store, error) {
+	rangeCache := rangecache.New()
+	raftListener := listener.NewRaftListener()
+	gossipManager := env.GetGossipService()
+	regHolder := &registryHolder{raftAddress, grpcAddr, gossipManager, nil}
+	nhc := dbConfig.NodeHostConfig{
+		WALDir:         filepath.Join(rootDir, "wal"),
+		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
+		RTTMillisecond: 10,
+		RaftAddress:    raftAddress,
+		Expert: dbConfig.ExpertConfig{
+			NodeRegistryFactory: regHolder,
+		},
+		RaftEventListener:   raftListener,
+		SystemEventListener: raftListener,
+	}
+	nodeHost, err := dragonboat.NewNodeHost(nhc)
+	if err != nil {
+		return nil, err
+	}
+	registry := regHolder.r
+	apiClient := client.NewAPIClient(env, nodeHost.ID())
+	sender := sender.New(rangeCache, registry, apiClient)
+
+	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions)
+}
+
+func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
 	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
@@ -137,6 +187,20 @@ func New(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gos
 	}
 	s.db = db
 	s.leaser = pebble.NewDBLeaser(db)
+
+	// rejoin configured clusters
+	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	for _, logInfo := range nodeHostInfo.LogInfo {
+		if nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
+			s.log.Infof("Had info for cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
+			r := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
+			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, r); err != nil {
+				return nil, err
+			}
+			s.configuredClusters++
+			s.log.Infof("Recreated cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
+		}
+	}
 
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
 	if err != nil {
@@ -348,8 +412,9 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.liveness.Release()
 		s.eg.Wait()
 	}
-
 	s.log.Info("Store: waitgroups finished")
+	s.nodeHost.Close()
+
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
@@ -574,6 +639,26 @@ func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMac
 
 func (s *Store) Sender() *sender.Sender {
 	return s.sender
+}
+
+func (s *Store) APIClient() *client.APIClient {
+	return s.apiClient
+}
+
+func (s *Store) ConfiguredClusters() int {
+	return s.configuredClusters
+}
+
+func (s *Store) NodeHost() *dragonboat.NodeHost {
+	return s.nodeHost
+}
+
+func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
+	return &rfpb.NodeDescriptor{
+		Nhid:        s.nodeHost.ID(),
+		RaftAddress: s.nodeHost.RaftAddress(),
+		GrpcAddress: s.grpcAddr,
+	}
 }
 
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
@@ -1050,18 +1135,6 @@ func (s *Store) updateTags() error {
 	storeTags[constants.StoreUsageTag] = base64.StdEncoding.EncodeToString(buf)
 	err = s.gossipManager.SetTags(storeTags)
 	return err
-}
-
-func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
-	return &rfpb.NodeDescriptor{
-		Nhid:        s.nodeHost.ID(),
-		RaftAddress: s.nodeHost.RaftAddress(),
-		GrpcAddress: s.grpcAddr,
-	}
-}
-
-func (s *Store) NodeHost() *dragonboat.NodeHost {
-	return s.nodeHost
 }
 
 func (s *Store) GetMembership(ctx context.Context, shardID uint64) ([]*rfpb.ReplicaDescriptor, error) {

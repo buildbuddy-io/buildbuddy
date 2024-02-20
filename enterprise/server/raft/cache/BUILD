@@ -8,13 +8,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache",
     deps = [
         "//enterprise/server/raft/bringup",
-        "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/driver",
         "//enterprise/server/raft/filestore",
-        "//enterprise/server/raft/listener",
         "//enterprise/server/raft/logger",
-        "//enterprise/server/raft/rangecache",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/registry",
         "//enterprise/server/raft/sender",
@@ -34,9 +31,6 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
-        "@com_github_lni_dragonboat_v4//:dragonboat",
-        "@com_github_lni_dragonboat_v4//config",
-        "@com_github_lni_dragonboat_v4//raftio",
     ],
 )
 

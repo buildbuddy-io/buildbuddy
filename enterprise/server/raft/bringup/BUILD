@@ -8,7 +8,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup",
     deps = [
         "//enterprise/server/raft/client",
-        "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
@@ -19,7 +18,6 @@ go_library(
         "//server/util/status",
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v4//:dragonboat",
-        "@com_github_lni_dragonboat_v4//statemachine",
         "@org_golang_x_sync//errgroup",
     ],
 )
