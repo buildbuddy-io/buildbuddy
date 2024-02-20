@@ -78,7 +78,7 @@ func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore) *Clu
 
 func (cs *ClusterStarter) markBringupComplete() {
 	cs.doneOnce.Do(func() {
-		cs.log.Infof("Bringup is complete!")
+		cs.log.Info("Bringup is complete!")
 		close(cs.doneSetup)
 	})
 }
