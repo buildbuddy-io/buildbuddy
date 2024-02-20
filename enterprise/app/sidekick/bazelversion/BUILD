@@ -8,6 +8,7 @@ ts_library(
     name = "bazelversion",
     srcs = ["bazelversion.tsx"],
     deps = [
+        "//app/components/select",
         "@npm//@types/react",
         "@npm//monaco-editor",
         "@npm//react",

@@ -1,6 +1,5 @@
 import React from "react";
 import * as monaco from "monaco-editor";
-import Checkbox from "../../../../app/components/checkbox/checkbox";
 import Select, { Option } from "../../../../app/components/select/select";
 
 interface Props {
@@ -25,7 +24,7 @@ export default class BazelVersionSidekick extends React.Component<Props, State> 
         <h1>Bazel Version</h1>
         <Select
           value={this.props.editor.getModel()?.getValue().trim()}
-          onChange={(e) => {
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
             this.props.editor?.executeEdits(
               null,
               [
