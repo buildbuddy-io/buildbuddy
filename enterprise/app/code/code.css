@@ -329,3 +329,10 @@
 .codeCoverageMiss {
   background-color: #ef9a9a;
 }
+
+.code-editor .sidekick {
+  border-left: 2px solid #fafafa;
+  width: calc(40vw);
+  padding: 8px 16px;
+  overflow-y: auto;
+}

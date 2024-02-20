@@ -36,6 +36,7 @@ import Modal from "../../../app/components/modal/modal";
 import { parseLcov } from "../../../app/util/lcov";
 import { github } from "../../../proto/github_ts_proto";
 import Long from "long";
+import ModuleSidekick from "../sidekick/module/module";
 
 interface Props {
   user: User;
@@ -1005,6 +1006,9 @@ export default class CodeComponent extends React.Component<Props, State> {
               </div>
             )}
           </div>
+          {this.editor && (this.currentPath()?.endsWith("MODULE.bazel") || this.currentPath()?.endsWith("MODULE")) && (
+            <ModuleSidekick editor={this.editor} />
+          )}
         </div>
         <Modal isOpen={this.state.reviewRequestModalVisible} onRequestClose={this.handleCloseReviewModal.bind(this)}>
           <Dialog className="code-request-review-dialog">
