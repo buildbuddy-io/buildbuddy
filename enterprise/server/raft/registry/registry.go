@@ -151,18 +151,10 @@ func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
 		return
 	}
 	if raftAddress != "" {
-		r, ok := n.targetRafts.LoadOrStore(target, raftAddress)
-		if ok && r.(string) != raftAddress {
-			log.Errorf("inconsistent raft for %s:%s", r, target)
-			return
-		}
+		n.targetRafts.Store(target, raftAddress)
 	}
 	if grpcAddress != "" {
-		g, ok := n.targetGrpcs.LoadOrStore(target, grpcAddress)
-		if ok && g.(string) != grpcAddress {
-			log.Errorf("inconsistent grpc for %s:%s", g, target)
-			return
-		}
+		n.targetGrpcs.Store(target, grpcAddress)
 	}
 }
 
