@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
@@ -544,37 +543,35 @@ func fetchTargetsFromPrimaryDB(ctx context.Context, env environment.Env, q *quer
 		Status        int32
 	}
 
-	err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		rq := tx.NewQuery(ctx, "target_get_target_history").Raw(queryStr, args...)
-		return db.ScanEach(rq, func(ctx context.Context, row *target) error {
-			targetID := fmt.Sprintf("%d", row.TargetID)
-			if _, ok := seenTargets[targetID]; !ok {
-				seenTargets[targetID] = struct{}{}
-				targets = append(targets, &trpb.TargetMetadata{
-					Id:         targetID,
-					Label:      row.Label,
-					RuleType:   row.RuleType,
-					TargetType: cmpb.TargetType(row.TargetType),
-					TestSize:   cmpb.TestSize(row.TestSize),
-				})
-			}
-
-			statuses[targetID] = append(statuses[targetID], &trpb.TargetStatus{
-				InvocationId: row.InvocationID,
-				CommitSha:    row.CommitSHA,
-				Status:       convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
-				Timing: &cmpb.Timing{
-					StartTime: timestamppb.New(time.UnixMicro(row.StartTimeUsec)),
-					Duration:  durationpb.New(time.Microsecond * time.Duration(row.DurationUsec)),
-				},
-				InvocationCreatedAtUsec: row.CreatedAtUsec,
+	rq := env.GetDBHandle().NewQuery(ctx, "target_get_target_history").Raw(queryStr, args...)
+	err := db.ScanEach(rq, func(ctx context.Context, row *target) error {
+		targetID := fmt.Sprintf("%d", row.TargetID)
+		if _, ok := seenTargets[targetID]; !ok {
+			seenTargets[targetID] = struct{}{}
+			targets = append(targets, &trpb.TargetMetadata{
+				Id:         targetID,
+				Label:      row.Label,
+				RuleType:   row.RuleType,
+				TargetType: cmpb.TargetType(row.TargetType),
+				TestSize:   cmpb.TestSize(row.TestSize),
 			})
-			created_at_usec := commitTimestamps[row.CommitSHA]
-			if row.CreatedAtUsec > created_at_usec {
-				commitTimestamps[row.CommitSHA] = row.CreatedAtUsec
-			}
-			return nil
+		}
+
+		statuses[targetID] = append(statuses[targetID], &trpb.TargetStatus{
+			InvocationId: row.InvocationID,
+			CommitSha:    row.CommitSHA,
+			Status:       convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
+			Timing: &cmpb.Timing{
+				StartTime: timestamppb.New(time.UnixMicro(row.StartTimeUsec)),
+				Duration:  durationpb.New(time.Microsecond * time.Duration(row.DurationUsec)),
+			},
+			InvocationCreatedAtUsec: row.CreatedAtUsec,
 		})
+		created_at_usec := commitTimestamps[row.CommitSHA]
+		if row.CreatedAtUsec > created_at_usec {
+			commitTimestamps[row.CommitSHA] = row.CreatedAtUsec
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err

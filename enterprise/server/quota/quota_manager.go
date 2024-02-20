@@ -105,6 +105,7 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 	}
 	ctx := env.GetServerContext()
 	config := make(map[string]*namespaceConfig)
+	// TODO(zoey): use JOIN for this
 	err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		q := query_builder.NewQuery(`SELECT * FROM "QuotaBuckets"`)
 		if namespace != "" {

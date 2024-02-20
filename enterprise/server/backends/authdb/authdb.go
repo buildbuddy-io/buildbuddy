@@ -357,25 +357,30 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
-		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
-		keyClauses := query_builder.OrClauses{}
-		if !*encryptOldKeys {
-			keyClauses.AddOr("ak.value = ?", apiKey)
+	qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
+	keyClauses := query_builder.OrClauses{}
+	if !*encryptOldKeys {
+		keyClauses.AddOr("ak.value = ?", apiKey)
+	}
+	if d.apiKeyEncryptionKey != nil {
+		encryptedAPIKey, err := d.encryptAPIKey(apiKey)
+		if err != nil {
+			return nil, err
 		}
-		if d.apiKeyEncryptionKey != nil {
-			encryptedAPIKey, err := d.encryptAPIKey(apiKey)
-			if err != nil {
-				return err
-			}
-			keyClauses.AddOr("ak.encrypted_value = ?", encryptedAPIKey)
-		}
-		keyQuery, keyArgs := keyClauses.Build()
-		qb.AddWhereClause(keyQuery, keyArgs...)
-		q, args := qb.Build()
-		rq := tx.NewQuery(ctx, "authdb_get_api_key_group_by_key").Raw(q, args...)
-		return rq.Take(akg)
-	})
+		keyClauses.AddOr("ak.encrypted_value = ?", encryptedAPIKey)
+	}
+	keyQuery, keyArgs := keyClauses.Build()
+	qb.AddWhereClause(keyQuery, keyArgs...)
+	q, args := qb.Build()
+
+	err := d.h.NewQueryWithOpts(
+		ctx,
+		"authdb_get_api_key_group_by_key",
+		db.Opts().WithStaleReads(),
+	).Raw(
+		q, args...,
+	).Take(akg)
+
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			if d.apiKeyGroupCache != nil {
@@ -405,13 +410,19 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		}
 	}
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
-		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
-		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
-		q, args := qb.Build()
-		rq := tx.NewQuery(ctx, "authdb_get_api_key_group_by_id").Raw(q, args...)
-		return rq.Take(akg)
-	})
+	qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
+	qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
+	q, args := qb.Build()
+
+	err := d.h.NewQueryWithOpts(
+		ctx,
+		"authdb_get_api_key_group_by_id",
+		db.Opts().WithStaleReads(),
+	).Raw(
+		q,
+		args...,
+	).Take(akg)
+
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidAPIKey(apiKeyID))
@@ -426,6 +437,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
 	user := &tables.User{}
+	// TODO(zoey): switch this to JOIN
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
 		rq := tx.NewQuery(ctx, "authdb_lookup_user_from_subid").Raw(
 			`SELECT * FROM "Users" WHERE sub_id = ? ORDER BY user_id ASC`, subID)
@@ -719,11 +731,11 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 	return createdKey, nil
 }
 
-func (d *AuthDB) getAPIKey(ctx context.Context, tx interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
+func (d *AuthDB) getAPIKey(ctx context.Context, h interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID cannot be empty.")
 	}
-	rq := tx.NewQuery(ctx, "authdb_get_api_key_by_id").Raw(
+	rq := h.NewQuery(ctx, "authdb_get_api_key_by_id").Raw(
 		`SELECT * FROM "APIKeys" WHERE api_key_id = ? AND (expiry_usec = 0 OR expiry_usec > ?)`, apiKeyID, time.Now().UnixMicro())
 	key := &tables.APIKey{}
 	if err := rq.Take(key); err != nil {
@@ -825,7 +837,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	return keys, err
 }
 
-func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, tx interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
+func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID is required")
 	}
@@ -833,7 +845,7 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, tx interfaces.DB, api
 	if err != nil {
 		return nil, err
 	}
-	key, err := d.getAPIKey(ctx, tx, apiKeyID)
+	key, err := d.getAPIKey(ctx, h, apiKeyID)
 	if err != nil {
 		return nil, err
 	}

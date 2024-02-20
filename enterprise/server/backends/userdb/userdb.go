@@ -97,11 +97,11 @@ func (d *UserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Grou
 	return d.getGroupByID(ctx, d.h, groupID)
 }
 
-func (d *UserDB) getGroupByID(ctx context.Context, tx interfaces.DB, groupID string) (*tables.Group, error) {
+func (d *UserDB) getGroupByID(ctx context.Context, h interfaces.DB, groupID string) (*tables.Group, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	rq := tx.NewQuery(ctx, "userdb_get_group_by_id").Raw(
+	rq := h.NewQuery(ctx, "userdb_get_group_by_id").Raw(
 		`SELECT * FROM "Groups" AS g WHERE g.group_id = ?`, groupID)
 	group := &tables.Group{}
 	if err := rq.Take(group); err != nil {
@@ -114,23 +114,18 @@ func (d *UserDB) getGroupByID(ctx context.Context, tx interfaces.DB, groupID str
 }
 
 func (d *UserDB) GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error) {
-	var group *tables.Group
-	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		g, err := d.getGroupByURLIdentifier(ctx, tx, urlIdentifier)
-		if err != nil {
-			return err
-		}
-		group = g
-		return nil
-	})
+	group, err := d.getGroupByURLIdentifier(ctx, d.h, urlIdentifier)
+	if err != nil {
+		return nil, err
+	}
 	return group, err
 }
 
-func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx interfaces.DB, urlIdentifier string) (*tables.Group, error) {
+func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, h interfaces.DB, urlIdentifier string) (*tables.Group, error) {
 	if urlIdentifier == "" {
 		return nil, status.InvalidArgumentError("URL identifier cannot be empty.")
 	}
-	rq := tx.NewQuery(ctx, "userdb_get_group_by_identifier").Raw(
+	rq := h.NewQuery(ctx, "userdb_get_group_by_identifier").Raw(
 		`SELECT * FROM "Groups" AS g WHERE g.url_identifier = ?`, urlIdentifier)
 	group := &tables.Group{}
 	if err := rq.Take(group); err != nil {
@@ -173,11 +168,14 @@ func isInOwnedDomainBlocklist(email string) bool {
 	return false
 }
 
-func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx interfaces.DB, domain string) (*tables.Group, error) {
+func (d *UserDB) getDomainOwnerGroup(ctx context.Context, h interfaces.DB, domain string) (*tables.Group, error) {
 	tg := &tables.Group{}
-	rq := tx.NewQuery(ctx, "userdb_get_domain_owner_group").Raw(
-		`SELECT * FROM "Groups" as g WHERE g.owned_domain = ?`, domain)
-	err := rq.Take(tg)
+
+	err := h.NewQuery(ctx, "userdb_get_domain_owner_group").Raw(
+		`SELECT * FROM "Groups" as g WHERE g.owned_domain = ?`,
+		domain,
+	).Take(tg)
+
 	if db.IsRecordNotFound(err) {
 		return nil, nil
 	} else if err != nil {
@@ -186,9 +184,9 @@ func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx interfaces.DB, doma
 	return tg, nil
 }
 
-func getUserGroup(ctx context.Context, tx interfaces.DB, userID string, groupID string) (*tables.UserGroup, error) {
+func getUserGroup(ctx context.Context, h interfaces.DB, userID string, groupID string) (*tables.UserGroup, error) {
 	userGroup := &tables.UserGroup{}
-	rq := tx.NewQuery(ctx, "userdb_get_user_group").Raw(
+	rq := h.NewQuery(ctx, "userdb_get_user_group").Raw(
 		`SELECT * FROM "UserGroups" AS ug WHERE ug.user_user_id = ? AND ug.group_group_id = ?`, userID, groupID)
 	if err := rq.Take(userGroup); err != nil {
 		if db.IsRecordNotFound(err) {
@@ -837,6 +835,7 @@ func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User
 	if err != nil {
 		return nil, err
 	}
+	// TODO(zoey): switch this to JOIN
 	rq := d.h.NewQuery(ctx, "userdb_get_user_by_email").Raw(`
 		SELECT * 
 		FROM "Users" u 
@@ -877,16 +876,17 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	return user, err
 }
 
-func fillUserGroups(ctx context.Context, tx interfaces.DB, user *tables.User) error {
-	q := `
-		SELECT g.*, ug.role
-		FROM "Groups" as g
-		JOIN "UserGroups" as ug
-		ON g.group_id = ug.group_group_id
-		WHERE ug.user_user_id = ? AND ug.membership_status = ?
-	`
-	rq := tx.NewQuery(ctx, "userdb_get_user_groups").Raw(
-		q, user.UserID, int32(grpb.GroupMembershipStatus_MEMBER))
+func fillUserGroups(ctx context.Context, h interfaces.DB, user *tables.User) error {
+	rq := h.NewQuery(ctx, "userdb_get_user_groups").Raw(`
+			SELECT g.*, ug.role
+			FROM "Groups" as g
+			JOIN "UserGroups" as ug
+			ON g.group_id = ug.group_group_id
+			WHERE ug.user_user_id = ? AND ug.membership_status = ?
+		`,
+		user.UserID,
+		int32(grpb.GroupMembershipStatus_MEMBER),
+	)
 	gs, err := db.ScanAll(rq, &tables.GroupRole{})
 	if err != nil {
 		return err
@@ -896,10 +896,13 @@ func fillUserGroups(ctx context.Context, tx interfaces.DB, user *tables.User) er
 }
 
 func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (*tables.User, error) {
+	// TODO(zoey): switch this to JOIN
 	user := &tables.User{}
-	rq := tx.NewQuery(ctx, "userdb_get_user").Raw(
-		`SELECT * FROM "Users" WHERE user_id = ?`, userID)
-	if err := rq.Take(user); err != nil {
+	err := tx.NewQuery(ctx, "userdb_get_user").Raw(
+		`SELECT * FROM "Users" WHERE user_id = ?`,
+		userID,
+	).Take(user)
+	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.NotFoundError("user not found")
 		}
@@ -920,28 +923,28 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 		return nil, status.PermissionDeniedError("Authenticated user does not have permissions to impersonate a user.")
 	}
 	user := &tables.User{}
-	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		rq := tx.NewQuery(ctx, "userdb_impersonation_get_user").Raw(
-			`SELECT * FROM "Users" WHERE user_id = ?`, u.GetUserID())
-		if err := rq.Take(user); err != nil {
-			return err
-		}
-		rq = tx.NewQuery(ctx, "userdb_impersonation_get_group").Raw(`
+	err = d.h.NewQuery(ctx, "userdb_impersonation_get_user").Raw(
+		`SELECT * FROM "Users" WHERE user_id = ?`,
+		u.GetUserID(),
+	).Take(user)
+	if err != nil {
+		return nil, err
+	}
+	gr := &tables.GroupRole{}
+	err = d.h.NewQuery(ctx, "userdb_impersonation_get_group").Raw(`
 			SELECT *
 			FROM "Groups"
 			WHERE group_id = ?
-		`, u.GetGroupID())
-		gr := &tables.GroupRole{}
-		err := rq.Take(gr)
-		if err != nil {
-			return err
-		}
-		// Grant admin role within the impersonated group.
-		gr.Role = uint32(role.Admin)
-		user.Groups = []*tables.GroupRole{gr}
-		return nil
-	})
-	return user, err
+		`,
+		u.GetGroupID(),
+	).Take(gr)
+	if err != nil {
+		return nil, err
+	}
+	// Grant admin role within the impersonated group.
+	gr.Role = uint32(role.Admin)
+	user.Groups = []*tables.GroupRole{gr}
+	return user, nil
 }
 
 func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {

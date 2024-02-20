@@ -465,31 +465,19 @@ func isTestCommand(command string) bool {
 	return command == "test" || command == "coverage"
 }
 
-func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL string, tx interfaces.DB) ([]*tables.Target, error) {
+func readRepoTargets(ctx context.Context, env environment.Env, repoURL string) ([]*tables.Target, error) {
+	if env.GetDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+	var err error
 	q := query_builder.NewQuery(`SELECT * FROM "Targets" as t`)
 	q = q.AddWhereClause(`t.repo_url = ?`, repoURL)
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()
-	rq := tx.NewQuery(ctx, "target_tracker_get_targets_by_url").Raw(queryStr, args...)
+	rq := env.GetDBHandle().NewQuery(ctx, "target_tracker_get_targets_by_url").Raw(queryStr, args...)
 	rsp, err := db.ScanAll(rq, &tables.Target{})
-	if err != nil {
-		return nil, err
-	}
-	return rsp, nil
-}
-
-func readRepoTargets(ctx context.Context, env environment.Env, repoURL string) ([]*tables.Target, error) {
-	if env.GetDBHandle() == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-	var err error
-	rsp := make([]*tables.Target, 0)
-	err = env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		rsp, err = readRepoTargetsWithTx(ctx, env, repoURL, tx)
-		return err
-	})
 	if err != nil {
 		return nil, err
 	}
