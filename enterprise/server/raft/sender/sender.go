@@ -189,7 +189,7 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 			}
 		}
 		if status.IsUnavailableError(err) {
-			//try a different replica if the current replica is not available.
+			// try a different replica if the current replica is not available.
 			continue
 		}
 		return 0, err
