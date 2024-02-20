@@ -16,6 +16,7 @@ const (
 	dataPrefix     = "dat:"
 	filenamePrefix = "fil:"
 	trigramPrefix  = "tri:"
+	ngramPrefix    = "gra:"
 	namehashPrefix = "nam:"
 )
 
@@ -111,4 +112,8 @@ func trigramKey(key string) []byte {
 
 func namehashKey(key string) []byte {
 	return makeKey(namehashPrefix, key)
+}
+
+func ngramKey(key string) []byte {
+	return makeKey(ngramPrefix, key)
 }

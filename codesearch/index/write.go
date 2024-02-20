@@ -1,22 +1,274 @@
 package index
 
 import (
+	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 	"os"
+	"regexp"
 	"runtime"
+	"sort"
 	"sync"
 	"unsafe"
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/sstable"
+	"github.com/cockroachdb/pebble/vfs"
+	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+const (
+	textField = iota
+)
+
+type Token interface {
+	Field() int32
+	Ngram() []byte
+}
+
+type Tokenizer interface {
+	Reset(io.ByteReader)
+	Next() (Token, error)
+}
+
+type ByteToken []byte
+
+func (b ByteToken) Field() int32 {
+	f := int32(0)
+	for i := 0; i < 4; i++ {
+		f = ((f << 8) | int32(b[i]))
+	}
+	return f
+}
+func (b ByteToken) Ngram() []byte {
+	return b[4:]
+}
+func (b ByteToken) String() string {
+	return fmt.Sprintf("fieldID: %d, ngram: %q", b.Field(), b.Ngram())
+}
+
+func newByteToken(fieldID int32, ngram []byte) ByteToken {
+	buf := make([]byte, len(ngram)+4)
+
+	// Pack the int32 fileID into the first bytes of buf.
+	buf[0] = byte((fieldID >> 24) & 255)
+	buf[1] = byte((fieldID >> 16) & 255)
+	buf[2] = byte((fieldID >> 8) & 255)
+	buf[3] = byte(fieldID & 255)
+
+	// Copy the ngram itself into buf.
+	copy(buf[4:], ngram)
+	return ByteToken(buf)
+}
+
+type TrigramTokenizer struct {
+	fieldID int32
+	r       io.ByteReader
+
+	trigrams *sparse.Set
+	buf      []byte
+
+	n  int64
+	tv uint32
+}
+
+func NewTrigramTokenizer(fieldID int32) *TrigramTokenizer {
+	return &TrigramTokenizer{
+		trigrams: sparse.NewSet(1 << 24),
+		buf:      make([]byte, 16384),
+		fieldID:  fieldID,
+	}
+}
+
+func (tt *TrigramTokenizer) Reset(r io.ByteReader) {
+	tt.r = r
+	tt.trigrams.Reset()
+	tt.buf = tt.buf[:0]
+	tt.n = 0
+	tt.tv = 0
+}
+
+func (tt *TrigramTokenizer) Next() (Token, error) {
+	for {
+		c, err := tt.r.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		tt.tv = (tt.tv << 8) & (1<<24 - 1)
+		tt.tv |= uint32(c)
+		if !validUTF8((tt.tv>>8)&0xFF, tt.tv&0xFF) {
+			return nil, status.FailedPreconditionError("invalid utf8")
+		}
+		if tt.n++; tt.n < 3 {
+			continue
+		}
+
+		alreadySeen := tt.trigrams.Has(tt.tv)
+		if !alreadySeen && tt.tv != 1<<24-1 {
+			tt.trigrams.Add(tt.tv)
+			return newByteToken(tt.fieldID, trigramToBytes(tt.tv)), nil
+		}
+	}
+}
+
+type SimpleIndexWriter struct {
+	db *pebble.DB
+
+	tokenizer    *TrigramTokenizer
+	postingLists map[string][]uint32
+}
+
+var skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*$`)
+
+func CreateSimple(db *pebble.DB) (*SimpleIndexWriter, error) {
+	return &SimpleIndexWriter{
+		db:           db,
+		tokenizer:    NewTrigramTokenizer(textField),
+		postingLists: make(map[string][]uint32, npost),
+	}, nil
+}
+
+func (s *SimpleIndexWriter) AddFile(name string) error {
+	// Open the file and read all contents to memory.
+	f, err := os.Open(name)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	buf, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+
+	// Compute the digest of the file.
+	h := sha256.New()
+	n, err := h.Write(buf)
+	if err != nil {
+		return err
+	}
+	d := &repb.Digest{
+		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
+		SizeBytes: int64(n),
+	}
+	return s.AddFileByDigest(name, d, buf)
+}
+
+func (s *SimpleIndexWriter) AddFileByDigest(name string, digest *repb.Digest, contents []byte) error {
+	if len(contents) > maxFileLen {
+		log.Printf("%s: too long, ignoring\n", name)
+		return nil
+	}
+	r := bytes.NewReader(contents)
+	mtype, err := mimetype.DetectReader(r)
+	if err == nil && skipMime.MatchString(mtype.String()) {
+		log.Printf("Skipping %q, mime type: %q", name, mtype.String())
+		return nil
+	}
+	r.Seek(0, 0)
+
+	// Compute docid (first bytes from digest)
+	hexBytes, err := hex.DecodeString(digest.GetHash())
+	if err != nil {
+		return err
+	}
+	docid := bytesToUint32(hexBytes[:4])
+
+	// Write a pointer from digest -> filename
+	if err := s.db.Set(filenameKey(digest.GetHash()), []byte(name), pebble.NoSync); err != nil {
+		return err
+	}
+	// Write a pointer from digest -> file contents
+	if err := s.db.Set(dataKey(digest.GetHash()), contents, pebble.NoSync); err != nil {
+		return err
+	}
+	// Write a pointer from hash(name) => digest
+	if err := s.db.Set(namehashKey(hashString(name)), []byte(digest.GetHash()), pebble.NoSync); err != nil {
+		return err
+	}
+
+	addToken := func(tok Token) {
+		ngram := string(tok.Ngram())
+		s.postingLists[ngram] = append(s.postingLists[ngram], docid)
+	}
+
+	// Tokenize the file contents
+	s.tokenizer.Reset(bufio.NewReader(r))
+	for {
+		tok, err := s.tokenizer.Next()
+		if err != nil {
+			break
+		}
+		addToken(tok)
+	}
+
+	// // Tokenize the file name as well.
+	// s.tokenizer.Reset(bufio.NewReader(bytes.NewReader([]byte(name))))
+	// for {
+	// 	tok, err := s.tokenizer.Next()
+	// 	if err != nil {
+	// 		break
+	// 	}
+	//      addToken(tok)
+	// }
+	return nil
+}
+
+func (s *SimpleIndexWriter) Flush() error {
+	mu := sync.Mutex{}
+	batch := s.db.NewBatch()
+	flushBatch := func() error {
+		if batch.Empty() {
+			return nil
+		}
+		if err := batch.Commit(pebble.Sync); err != nil {
+			return err
+		}
+		log.Printf("flushed batch")
+		batch = s.db.NewBatch()
+		return nil
+	}
+
+	eg := new(errgroup.Group)
+	eg.SetLimit(runtime.GOMAXPROCS(0))
+	writeDocIDs := func(key []byte, ids []uint32) error {
+		buf := new(bytes.Buffer)
+		pl := roaring.BitmapOf(ids...)
+		if _, err := pl.WriteTo(buf); err != nil {
+			return err
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if err := batch.Set(key, buf.Bytes(), nil); err != nil {
+			return err
+		}
+		if batch.Len() >= 100*1e6 {
+			if err := flushBatch(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for ngram, docIDs := range s.postingLists {
+		writeDocIDs(ngramKey(ngram), docIDs)
+	}
+	return flushBatch()
+}
+
+// indexer should:
+//   - create appropriate tokenizers based on the document's fields
+//     -
+//
 // An mmapData is mmap'ed read-only data from a file.
 type mmapData struct {
 	f *os.File
@@ -39,6 +291,10 @@ type IndexWriter struct {
 
 	repoID    []byte // TODO(tylerw): set this via API instead of hacky
 	segmentID string
+
+	// NEW INDEXER BELOW HERE:
+	tokenizer    *TrigramTokenizer
+	postingLists map[string][]uint32
 }
 
 // Tuning constants for detecting text files.
@@ -81,6 +337,10 @@ func Create(db *pebble.DB) (*IndexWriter, error) {
 		post:      make([]postEntry, 0, npost),
 		inbuf:     make([]byte, 16384),
 		segmentID: sID.String(),
+
+		// NEW BELOW HERE
+		tokenizer:    NewTrigramTokenizer(textField),
+		postingLists: make(map[string][]uint32, npost),
 	}, nil
 }
 
@@ -162,15 +422,11 @@ func (iw *IndexWriter) Add(name string, f io.ReadSeeker) error {
 			return nil
 		}
 		if n > maxFileLen {
-			if iw.LogSkip {
-				log.Printf("%s: too long, ignoring\n", name)
-			}
+			log.Printf("%s: too long, ignoring\n", name)
 			return nil
 		}
 		if linelen++; linelen > maxLineLen {
-			if iw.LogSkip {
-				log.Printf("%s: very long lines, ignoring\n", name)
-			}
+			log.Printf("%s: very long lines, ignoring\n", name)
 			return nil
 		}
 		if c == '\n' {
@@ -219,15 +475,58 @@ func (iw *IndexWriter) Add(name string, f io.ReadSeeker) error {
 	}
 
 	iw.filesProcessed += 1
-	log.Printf("iw.filesProcessed: %d", iw.filesProcessed)
+	//log.Printf("iw.filesProcessed: %d", iw.filesProcessed)
 	return nil
 }
 
 func (iw *IndexWriter) Flush() error {
+	if err := iw.flushEntries(); err != nil {
+		return err
+	}
 	iw.mergePost()
 	if err := iw.db.Flush(); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (iw *IndexWriter) flushEntries() error {
+	log.Printf("flush entries called")
+	entries := make([]string, 0, len(iw.postingLists))
+	for ngram := range iw.postingLists {
+		entries = append(entries, ngram)
+	}
+	sort.Strings(entries)
+	log.Printf("There are %d entries", len(entries))
+	w, err := os.CreateTemp("", "csearch-index-sst")
+	if err != nil {
+		return err
+	}
+	tmpName := w.Name()
+	w.Close()
+
+	f, err := vfs.Default.Create(tmpName)
+	if err != nil {
+		return err
+	}
+	plCount := 0
+	sst := sstable.NewWriter(f, sstable.WriterOptions{TableFormat: sstable.TableFormatLevelDB})
+	for _, ngram := range entries {
+		ids := iw.postingLists[ngram]
+		pl := roaring.BitmapOf(ids...)
+		buf := new(bytes.Buffer)
+		if _, err := pl.WriteTo(buf); err != nil {
+			return err
+		}
+		if err := sst.Set(ngramKey(ngram), buf.Bytes()); err != nil {
+			return err
+		}
+		plCount++
+	}
+	if err := sst.Close(); err != nil {
+		return err
+	}
+	log.Printf("wrote %d posting lists to sst: %q", plCount, tmpName)
 	return nil
 }
 
@@ -252,7 +551,7 @@ func (iw *IndexWriter) flushPost() error {
 		}
 		return fmt.Errorf("short write writing %s", w.Name())
 	}
-
+	log.Printf("Wrote %d intermediate posting lists", len(iw.post))
 	iw.post = iw.post[:0]
 	w.Seek(0, 0)
 	iw.postFile = append(iw.postFile, w)
@@ -299,6 +598,7 @@ func (iw *IndexWriter) mergePost() error {
 		mu.Lock()
 		defer mu.Unlock()
 
+		//log.Printf("OLD %q -> %+v", string(key), ids)
 		if err := batch.Set(key, buf.Bytes(), nil); err != nil {
 			return err
 		}
@@ -326,7 +626,8 @@ func (iw *IndexWriter) mergePost() error {
 		}
 		eg.Go(func() error {
 			triString := trigramToString(trigram)
-			triKey := append(trigramKey(triString), []byte(":"+iw.segmentID)...)
+			//triKey := append(trigramKey(triString), []byte(":"+iw.segmentID)...)
+			triKey := []byte(triString)
 			return writeDocIDs(triKey, docIDs)
 		})
 

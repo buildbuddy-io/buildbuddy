@@ -128,11 +128,10 @@ func main() {
 	}
 
 	var ix indexWriter
-	i, err := index.Create(db)
+	i, err := index.CreateSimple(db)
 	if err != nil {
 		log.Fatal(err)
 	}
-	i.Verbose = *verboseFlag
 	ix = i
 
 	for _, arg := range args {

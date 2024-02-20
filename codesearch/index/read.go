@@ -120,8 +120,8 @@ func (ix *Index) PostingList(trigram uint32) ([]uint32, error) {
 func (ix *Index) postingListBM(trigram uint32, restrict *roaring.Bitmap) (*roaring.Bitmap, error) {
 	triString := trigramToString(trigram)
 	iter := ix.db.NewIter(&pebble.IterOptions{
-		LowerBound: trigramKey(triString),
-		UpperBound: trigramKey(triString + string('\xff')),
+		LowerBound: ngramKey(triString),
+		UpperBound: ngramKey(triString + string('\xff')),
 	})
 	defer iter.Close()
 
