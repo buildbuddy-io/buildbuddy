@@ -783,6 +783,10 @@ func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
 	return c.snapshotKeySet.CloneVT()
 }
 
+func (c *FirecrackerContainer) SnapshotID() string {
+	return c.id
+}
+
 // State returns the container state to be persisted to disk so that this
 // container can be reconstructed from the state on disk after an executor
 // restart.
