@@ -188,6 +188,10 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 				break
 			}
 		}
+		if status.IsUnavailableError(err) {
+			// try a different replica if the current replica is not available.
+			continue
+		}
 		return 0, err
 	}
 	return 0, status.OutOfRangeErrorf("No replicas available in range: %d", rd.GetRangeId())
