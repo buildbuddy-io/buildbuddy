@@ -48,14 +48,41 @@ export default class ModuleSidekick extends React.Component<Props, State> {
   }
 
   add(m: Module) {
-    let selectedRange = this.props.editor.getSelection()!;
-    let insertionRange = new monaco.Selection(selectedRange.endLineNumber + 1, 0, selectedRange.endLineNumber + 1, 0);
+    let snippet = m.module_snippet?.trim() + "\n" || "unknown";
+    let selectedRange = this.props.editor.getSelection() || new monaco.Selection(0, 0, 0, 0);
+    // By default, replace the selected range.
+    let insertionRange = selectedRange;
+
+    // We're dealing with a point selection.
+    if (selectedRange.collapseToStart().equalsRange(selectedRange)) {
+      let currentLine = selectedRange.endLineNumber;
+      let newLine = currentLine + 1;
+
+      // If if we're on a blank line, insert it there.
+      if (this.props.editor.getModel()?.getLineMaxColumn(currentLine) == 1) {
+        insertionRange = new monaco.Selection(currentLine, 0, currentLine, 0);
+      } else {
+        // If we're not on a blank line, insert it on the next line.
+        insertionRange = new monaco.Selection(newLine, 0, newLine, 0);
+        // If the next line doesn't exist yet, add it.
+        if (newLine > (this.props.editor.getModel()?.getLineCount() || 0)) {
+          snippet = "\n" + snippet;
+        }
+      }
+    }
+
+    // Apply the edits
     this.props.editor.executeEdits(null, [
       {
         range: insertionRange,
-        text: m.module_snippet?.trim() + "\n" || "unknown",
+        text: snippet,
+        forceMoveMarkers: true,
       },
     ]);
+    // Make the edit undo-able
+    this.props.editor.pushUndoStop();
+    // Refocus the editor (since the edit likely came from a button click).
+    this.props.editor.focus();
   }
 
   remove(m: RegExpMatchArray | null) {
