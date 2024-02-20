@@ -102,10 +102,8 @@ type Store struct {
 	egCancel context.CancelFunc
 }
 
-// We need to provide a factory method that creates the DynamicNodeRegistry, and
-// hand this to the raft library when we set things up. When nodeHost is created
-// it will call this method to create the registry and use it until nodehost
-// close.
+// registryHolder implements NodeRegistryFactory. When nodeHost is created, it
+// will call this method to create the registry and use it until nodehost close.
 type registryHolder struct {
 	raftAddr string
 	grpcAddr string
