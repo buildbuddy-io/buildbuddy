@@ -65,7 +65,7 @@ When creating new API keys, you can check the box that says **Read-only key (dis
 
 When creating API keys to link your self-hosted executors to your organization (if using **Bring Your Own Runners**), you'll need to check the box that says **Executor key (for self-hosted executors)**.
 
-## User-owned keys
+## Personal API keys
 
 In addition to organization-level API keys, BuildBuddy also supports
 user-owned API keys, which associate builds with both the user that owns
@@ -74,11 +74,13 @@ the key, as well as the organization in which the key was created.
 Authentication and authorization for user-owned keys works mostly the same
 as organization-level keys, with the following differences:
 
-- Users with Developer role within the organization cannot customize API
-  key permissions on any user-owned keys that they create. Keys created by
-  Developer users are granted permissions to read and write to the
-  content-addressable store (CAS), and read-only permissions for the
-  action cache (AC).
+- The permissions that can be assigned to personal API keys are restricted
+  according to the user's role within the associated organization. API
+  keys cannot be assigned permissions that are not granted to the user
+  based on their role. If a user's role changes, any existing personal API
+  keys are updated to remove any permissions that are no longer allowed by
+  their new role. See [User roles](#user-roles) for a list of available
+  roles and associated permissions.
 - User-level keys are deleted automatically when a user is removed from
   the organization. It may take up to 5 minutes for the API key deletion
   to take effect.
@@ -114,3 +116,35 @@ try-import %workspace%/user.bazelrc
 # file: user.bazelrc
 build --remote_header=x-buildbuddy-api-key=<USER_API_KEY>
 ```
+
+## User roles
+
+Users within a BuildBuddy organization are assigned a **role** which
+restricts their permissions within the organization.
+
+The available roles and permissions are:
+
+- **Admin**:
+  - Manage organization users, organization settings, workflows, and usage data
+  - Read and write to Content-Addressable Storage (CAS)
+  - Read and write to Action Cache (AC)
+- **Writer**:
+  - Read and write to Content-Addressable Storage (CAS)
+  - Read and write to Action Cache (AC)
+- **Developer**:
+  - Read and write to Content-Addressable Storage (CAS)
+  - Read from Action Cache (AC)
+- **Reader**:
+  - Read from Content-Addressable Storage (CAS)
+  - Read from Action Cache (AC)
+
+## Managing users within an organization
+
+To remove users from an organization or change a user's role within the
+organization:
+
+1. Select your desired organization using the organization picker in the
+   sidebar.
+1. Click the **Settings** item in the sidebar.
+1. Click the **Members** tab in settings.
+1. Use the available controls to edit or remove users.
