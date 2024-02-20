@@ -141,7 +141,7 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
                   )
                   .map((child) => (
                     <TargetLogCardComponent
-                      contents={child.textContent ?? ""}
+                      contents={reconstructEscapeSequences(child.textContent ?? "")}
                       title={`${testSuite.getAttribute("name")} ${child.tagName}`}
                       dark={this.props.dark}
                     />
@@ -151,4 +151,17 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
       </span>
     );
   }
+}
+
+/**
+ * Attempts to reconstruct some types of ANSI escape sequences that may have
+ * been lost due to Bazel stripping them out:
+ * https://github.com/bazelbuild/bazel/blob/2a2def82ba5f86d96ba49d4ae9dc7878f9329214/tools/test/generate-xml.sh#L31-L36
+ *
+ * Specifically, Bazel replaces things like "\x1b[33m" with "?[33m" because
+ * "\x1b" is not a valid UTF-8 byte. We attempt to restore the lost "\x1b" byte
+ * here, because we are capable of rendering it.
+ */
+function reconstructEscapeSequences(text: string): string {
+  return text.replaceAll(/\?\[((;|\d)*)m/g, "\x1b[$1m");
 }
