@@ -298,7 +298,7 @@ a.menu__link.menu__link--active.menu__link--sublist {
   gap: 4px;
 }
 
-@media(max-width: 996px) {
+@media (max-width: 996px) {
   .navbar__item.dropdown {
     display: none;
   }
