@@ -102,7 +102,7 @@ type Store struct {
 	egCancel context.CancelFunc
 }
 
-// registryHolder implements NodeRegistryFactory. WWhen nodeHost is created, it
+// registryHolder implements NodeRegistryFactory. When nodeHost is created, it
 // will call this method to create the registry and use it until nodehost close.
 type registryHolder struct {
 	raftAddr string
