@@ -60,7 +60,7 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
-	githubapi "github.com/google/go-github/v43/github"
+	githubapi "github.com/google/go-github/v59/github"
 	guuid "github.com/google/uuid"
 	gstatus "google.golang.org/grpc/status"
 )

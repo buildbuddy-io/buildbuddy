@@ -42,7 +42,7 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "//server/util/subdomain",
-        "@com_github_google_go_github_v43//github",
+        "@com_github_google_go_github_v59//github",
         "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",

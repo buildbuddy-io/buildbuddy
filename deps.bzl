@@ -628,12 +628,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20230611145640-acc696258285",
     )
     go_repository(
-        name = "com_github_bradleyfalzon_ghinstallation_v2",
-        importpath = "github.com/bradleyfalzon/ghinstallation/v2",
-        sum = "h1:tXKVfhE7FcSkhkv0UwkLvPDeZ4kz6OXd0PKPlFqf81M=",
-        version = "v2.0.4",
-    )
-    go_repository(
         name = "com_github_breml_bidichk",
         importpath = "github.com/breml/bidichk",
         sum = "h1:qe6ggxpTfA8E75hdjWPZ581sY3a2lnl0IRxLQFelECI=",
@@ -2281,16 +2275,10 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v27.0.4",
     )
     go_repository(
-        name = "com_github_google_go_github_v41",
-        importpath = "github.com/google/go-github/v41",
-        sum = "h1:HseJrM2JFf2vfiZJ8anY2hqBjdfY1Vlj/K27ueww4gg=",
-        version = "v41.0.0",
-    )
-    go_repository(
-        name = "com_github_google_go_github_v43",
-        importpath = "github.com/google/go-github/v43",
-        sum = "h1:y+GL7LIsAIF2NZlJ46ZoC/D1W1ivZasT0lnWHMYPZ+U=",
-        version = "v43.0.0",
+        name = "com_github_google_go_github_v59",
+        importpath = "github.com/google/go-github/v59",
+        sum = "h1:7h6bgpF5as0YQLLkEiVqpgtJqjimMYhBkD4jT5aN3VA=",
+        version = "v59.0.0",
     )
     go_repository(
         name = "com_github_google_go_pkcs11",

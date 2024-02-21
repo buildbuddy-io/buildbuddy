@@ -16,6 +16,6 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
-        "@com_github_google_go_github_v43//github",
+        "@com_github_google_go_github_v59//github",
     ],
 )
