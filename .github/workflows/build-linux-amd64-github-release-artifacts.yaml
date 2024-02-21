@@ -1,4 +1,4 @@
-name: "Build Linux Github Release Artifacts"
+name: "Build Linux amd64 Github Release Artifacts"
 
 on:
   workflow_dispatch:
