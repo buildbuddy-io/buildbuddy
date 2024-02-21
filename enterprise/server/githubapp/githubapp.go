@@ -38,7 +38,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/golang-jwt/jwt"
-	"github.com/google/go-github/v43/github"
+	"github.com/google/go-github/v59/github"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 
@@ -1396,7 +1396,7 @@ func (a *GitHubApp) CreateGithubCommit(ctx context.Context, req *ghpb.CreateGith
 	for _, p := range req.Parents {
 		commit.Parents = append(commit.Parents, &github.Commit{SHA: &p})
 	}
-	c, _, err := client.Git.CreateCommit(ctx, req.Owner, req.Repo, commit)
+	c, _, err := client.Git.CreateCommit(ctx, req.Owner, req.Repo, commit, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1502,7 +1502,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	var files []*github.CommitFile
 
 	eg.Go(func() error {
-		p, err := a.cachedPullRequests(gCtx, client, req.Owner, req.Repo, int(req.Pull), issue.GetUpdatedAt())
+		p, err := a.cachedPullRequests(gCtx, client, req.Owner, req.Repo, int(req.Pull), issue.GetUpdatedAt().Time)
 		if err != nil {
 			return err
 		}
@@ -1674,7 +1674,7 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 			return nil, status.FailedPreconditionErrorf("invalid github url: %q", *i.URL)
 		}
 		eg.Go(func() error {
-			pr, err := a.cachedPullRequests(gCtx, client, urlParts[4], urlParts[5], i.GetNumber(), i.GetUpdatedAt())
+			pr, err := a.cachedPullRequests(gCtx, client, urlParts[4], urlParts[5], i.GetNumber(), i.GetUpdatedAt().Time)
 			if err != nil {
 				return err
 			}
@@ -1698,7 +1698,7 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 			return nil
 		})
 		eg.Go(func() error {
-			reviews, err := a.cachedReviews(gCtx, client, urlParts[4], urlParts[5], i.GetNumber(), i.GetUpdatedAt())
+			reviews, err := a.cachedReviews(gCtx, client, urlParts[4], urlParts[5], i.GetNumber(), i.GetUpdatedAt().Time)
 			if err != nil {
 				return err
 			}

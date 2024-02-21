@@ -25,7 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/go-github/v43/github"
+	"github.com/google/go-github/v59/github"
 )
 
 var (
@@ -546,7 +546,10 @@ func (c *GithubClient) fetchToken(ctx context.Context, ownerRepo string) error {
 	}
 	if installationToken != nil {
 		c.tokenValue = installationToken.GetToken()
-		c.tokenExpiration = installationToken.ExpiresAt
+		if installationToken.ExpiresAt != nil {
+			t := installationToken.ExpiresAt.Time
+			c.tokenExpiration = &t
+		}
 		return nil
 	}
 
