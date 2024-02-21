@@ -103,7 +103,6 @@ func TestDiscoveryDifferentSecretKeys(t *testing.T) {
 		break
 	case <-sawNode1:
 		t.Fatalf("Timed out waiting for nodes to discover each other via gossip")
-
 	}
 }
 
