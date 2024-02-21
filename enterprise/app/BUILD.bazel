@@ -56,6 +56,7 @@ genrule(
         "//enterprise/app/workflows:workflows.css",
         "//enterprise/app/review:review.css",
         "//enterprise/app/sidebar:sidebar.css",
+        "//enterprise/app/sidekick/bazelrc:bazelrc.css",
         "//enterprise/app/sidekick/bazelversion:bazelversion.css",
         "//enterprise/app/sidekick/module:module.css",
         "//enterprise/app/tap:tap.css",
