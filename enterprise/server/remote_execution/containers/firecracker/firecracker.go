@@ -1328,14 +1328,18 @@ func nonCmdExit(ctx context.Context, err error) *interfaces.CommandResult {
 func (c *FirecrackerContainer) newID(ctx context.Context) error {
 	vmIdxMu.Lock()
 	defer vmIdxMu.Unlock()
-	u, err := uuid.NewRandom()
+	u1, err := uuid.NewRandom()
+	if err != nil {
+		return err
+	}
+	u2, err := uuid.NewRandom()
 	if err != nil {
 		return err
 	}
 	vmIdx += 1
-	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u.String(), vmIdx)
-	c.id = u.String()
-	c.snapshotID = u.String()
+	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u1.String(), vmIdx)
+	c.id = u1.String()
+	c.snapshotID = u2.String()
 	c.vmIdx = vmIdx
 
 	if vmIdx > maxVMSPerHost {
