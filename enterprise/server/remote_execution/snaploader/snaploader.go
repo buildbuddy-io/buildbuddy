@@ -107,9 +107,12 @@ func getEnv(task *repb.ExecutionTask, name string) string {
 
 // LocalManifestKey returns the key for the local snapshot manifest.
 //
+// If snapshotId is set, this is for a specific run of a snapshot.
+// If snapshotId is not set, this is for the most recent version of the snapshot.
+//
 // Because we always want runners to use the newest manifest/snapshot, this
 // doesn't actually create a digest of the manifest contents. It just takes a
-// hash of shared properties, for which the snapshot should be shared
+// hash of shared properties, for which the snapshot should be shared.
 //
 // Note: filecache does not have explicit group AC partitioning unlike
 // remote cache, so we need to manually hash in the group ID as part of the
@@ -122,12 +125,15 @@ func LocalManifestKey(gid string, s *fcpb.SnapshotKey) (*repb.Digest, error) {
 	// Note: .manifest is not a real file that we ever create on disk, it's
 	// effectively just part of the cache key used to locate the manifest.
 	return &repb.Digest{
-		Hash:      hashStrings(gid, kd.GetHash(), ".manifest"),
+		Hash:      hashStrings(gid, kd.GetHash(), s.SnapshotId, ".manifest"),
 		SizeBytes: 1, /*=arbitrary size*/
 	}, nil
 }
 
 // RemoteManifestKey returns the key for the remote snapshot manifest.
+//
+// If snapshotId is set, this is for a specific run of a snapshot.
+// If snapshotId is not set, this is for the most recent version of the snapshot.
 func RemoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 	kd, err := digest.ComputeForMessage(s, repb.DigestFunction_SHA256)
 	if err != nil {
@@ -136,22 +142,27 @@ func RemoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 	// Note: .manifest is not a real file that we ever create on disk, it's
 	// effectively just part of the cache key used to locate the manifest.
 	return &repb.Digest{
-		Hash:      hashStrings(kd.GetHash(), ".manifest"),
+		Hash:      hashStrings(kd.GetHash(), s.SnapshotId, ".manifest"),
 		SizeBytes: 1, /*=arbitrary size*/
 	}, nil
 }
 
-func KeyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey) string {
-	d, err := RemoteManifestKey(s)
+func KeyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey, remote bool) string {
+	gid, err := groupID(ctx, env)
+	if err != nil {
+		gid = fmt.Sprintf("<error: %s>", err)
+	}
+	var d *repb.Digest
+	if remote {
+		d, err = RemoteManifestKey(s)
+	} else {
+		d, err = LocalManifestKey(gid, s)
+	}
 	var dStr string
 	if err != nil {
 		dStr = fmt.Sprintf("<error: %s>", err)
 	} else {
 		dStr = digest.String(d)
-	}
-	gid, err := groupID(ctx, env)
-	if err != nil {
-		gid = fmt.Sprintf("<error: %s>", err)
 	}
 	jb, err := protojson.Marshal(s)
 	if err != nil {
@@ -160,10 +171,10 @@ func KeyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKe
 	return fmt.Sprintf(`{"group_id": %q, "instance_name": %q, "key_digest": %q, "key": %s}`, gid, s.InstanceName, dStr, string(jb))
 }
 
-func KeysetDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKeySet) string {
-	keySetStr := KeyDebugString(ctx, env, s.GetBranchKey())
+func KeysetDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKeySet, remote bool) string {
+	keySetStr := KeyDebugString(ctx, env, s.GetBranchKey(), remote)
 	for _, key := range s.FallbackKeys {
-		keySetStr += fmt.Sprintf(", %s", KeyDebugString(ctx, env, key))
+		keySetStr += fmt.Sprintf(", %s", KeyDebugString(ctx, env, key, remote))
 	}
 	return keySetStr
 }
@@ -190,6 +201,10 @@ func (s *Snapshot) GetKey() *fcpb.SnapshotKey {
 
 func (s *Snapshot) GetVMMetadata() *repb.VMMetadata {
 	return s.manifest.GetVmMetadata()
+}
+
+func (s *Snapshot) SetVMMetadata(md *repb.VMMetadata) {
+	s.manifest.VmMetadata = md
 }
 
 func (s *Snapshot) GetVMConfiguration() *fcpb.VMConfiguration {
@@ -326,11 +341,11 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
 func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
-	d, err := RemoteManifestKey(key)
+	manifestKey, err := RemoteManifestKey(key)
 	if err != nil {
 		return nil, err
 	}
-	rn := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	rn := digest.NewResourceName(manifestKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if err != nil {
 		return nil, err
@@ -588,6 +603,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		return err
 	}
 	if *snaputil.EnableRemoteSnapshotSharing && !*snaputil.RemoteSnapshotReadonly && opts.Remote {
+		// Cache master snapshot manifest
 		d, err := RemoteManifestKey(key)
 		if err != nil {
 			return err
@@ -596,7 +612,26 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar); err != nil {
 			return err
 		}
-		log.CtxInfof(ctx, "Cached remote snapshot manifest %s", KeyDebugString(ctx, l.env, key))
+		log.CtxInfof(ctx, "Cached master remote snapshot manifest %s", KeyDebugString(ctx, l.env, key, true /*remote*/))
+
+		// Cache snapshot manifest for this specific snapshot ID
+		if opts.VMMetadata.GetSnapshotId() != "" {
+			snapshotID := opts.VMMetadata.SnapshotId
+			snapshotSpecificKey := key.CloneVT()
+			snapshotSpecificKey.SnapshotId = snapshotID
+			snapshotSpecificManifestKey, err := RemoteManifestKey(snapshotSpecificKey)
+			if err != nil {
+				log.Warningf("Failed to generate snapshot specific remote manifest key for snapshot ID %s: %s", snapshotID, err)
+				return nil
+			}
+			snapshotSpecificAcDigest := digest.NewResourceName(snapshotSpecificManifestKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+			if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), snapshotSpecificAcDigest, ar); err != nil {
+				log.Warningf("Failed to cache remote snapshot specific manifest for snapshot ID %s: %s", snapshotID, err)
+				return nil
+			}
+			log.CtxInfof(ctx, "Cached remote snapshot manifest for snapshot ID %s: %s", snapshotID, KeyDebugString(ctx, l.env, snapshotSpecificKey, true /*remote*/))
+		}
+
 		return nil
 	}
 
@@ -609,12 +644,35 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		return err
 	}
 	manifestNode := &repb.FileNode{Digest: d}
-	_, localCacheErr := l.env.GetFileCache().Write(ctx, manifestNode, b)
-	return localCacheErr
+	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
+		return err
+	}
+	log.CtxInfof(ctx, "Cached master local snapshot manifest %s", KeyDebugString(ctx, l.env, key, false /*remote*/))
+
+	// Cache snapshot manifest for this specific snapshot ID
+	if opts.VMMetadata.GetSnapshotId() != "" {
+		snapshotID := opts.VMMetadata.GetSnapshotId()
+		snapshotSpecificKey := key.CloneVT()
+		snapshotSpecificKey.SnapshotId = snapshotID
+
+		snapshotSpecificManifestKey, err := LocalManifestKey(gid, key)
+		if err != nil {
+			log.Warningf("Failed to generate snapshot specific local manifest key for snapshot ID %s: %s", snapshotID, err)
+			return nil
+		}
+
+		snapshotSpecificManifestNode := &repb.FileNode{Digest: snapshotSpecificManifestKey}
+		if _, err := l.env.GetFileCache().Write(ctx, snapshotSpecificManifestNode, b); err != nil {
+			log.Warningf("Failed to cache local snapshot specific manifest for snapshot ID %s: %s", snapshotID, err)
+			return nil
+		}
+
+		log.CtxInfof(ctx, "Cached local snapshot manifest for snapshot ID %s: %s", snapshotID, KeyDebugString(ctx, l.env, snapshotSpecificKey, false /*remote*/))
+	}
+
+	return nil
 }
 
-// TODO(Maggie): We can delete this with remote snapshot sharing because
-// ActionResult validation will check this
 func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *fcpb.SnapshotManifest) error {
 	for _, f := range manifest.GetFiles() {
 		if !l.env.GetFileCache().ContainsFile(ctx, f) {

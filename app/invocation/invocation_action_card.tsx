@@ -573,6 +573,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                         }
                                       </TextLink>
                                     </div>
+                                    <div className="metadata-title">VM resumed from snapshot ID</div>
+                                    <div className="metadata-detail">
+                                      {this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask.snapshotId}
+                                    </div>
+                                  </>
+                                )}
+                                {this.state.actionResult.executionMetadata.vmMetadata.snapshotId && (
+                                  <>
+                                    <div className="metadata-title">Saved to snapshot ID</div>
+                                    <div className="metadata-detail">
+                                      {this.state.actionResult.executionMetadata.vmMetadata.snapshotId}
+                                    </div>
                                   </>
                                 )}
                               </>
