@@ -557,14 +557,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 <div className="metadata-detail">
                                   {this.state.actionResult.executionMetadata.vmMetadata.vmId}
                                 </div>
-                                {this.state.actionResult.executionMetadata.vmMetadata.snapshotId && (
-                                  <>
-                                    <div className="metadata-title">Snapshot ID</div>
-                                    <div className="metadata-detail">
-                                      {this.state.actionResult.executionMetadata.vmMetadata.snapshotId}
-                                    </div>
-                                  </>
-                                )}
                                 {this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask && (
                                   <>
                                     <div className="metadata-title">VM resumed from invocation</div>
@@ -580,6 +572,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                             .invocationId
                                         }
                                       </TextLink>
+                                    </div>
+                                    <div className="metadata-title">VM resumed from snapshot ID</div>
+                                    <div className="metadata-detail">
+                                      {this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask.snapshotId}
+                                    </div>
+                                  </>
+                                )}
+                                {this.state.actionResult.executionMetadata.vmMetadata.snapshotId && (
+                                  <>
+                                    <div className="metadata-title">Saved to snapshot ID</div>
+                                    <div className="metadata-detail">
+                                      {this.state.actionResult.executionMetadata.vmMetadata.snapshotId}
                                     </div>
                                   </>
                                 )}

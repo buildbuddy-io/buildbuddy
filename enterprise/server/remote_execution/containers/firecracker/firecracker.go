@@ -458,9 +458,10 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
 type FirecrackerContainer struct {
-	id     string // a random GUID, unique per-run of firecracker
-	vmIdx  int    // the index of this vm on the host machine
-	loader *snaploader.FileCacheLoader
+	id         string // a random GUID, unique per-run of firecracker
+	snapshotID string // a random GUID, unique per-run of firecracker
+	vmIdx      int    // the index of this vm on the host machine
+	loader     *snaploader.FileCacheLoader
 
 	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
@@ -784,7 +785,7 @@ func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
 }
 
 func (c *FirecrackerContainer) SnapshotID() string {
-	return c.id
+	return c.snapshotID
 }
 
 // State returns the container state to be persisted to disk so that this
@@ -917,7 +918,7 @@ func (c *FirecrackerContainer) getVMMetadata() *repb.VMMetadata {
 	if c.snapshot == nil || c.snapshot.GetVMMetadata() == nil {
 		return &repb.VMMetadata{
 			VmId:       c.id,
-			SnapshotId: c.id,
+			SnapshotId: c.snapshotID,
 		}
 	}
 	return c.snapshot.GetVMMetadata()
@@ -930,7 +931,7 @@ func (c *FirecrackerContainer) getVMTask() *repb.VMMetadata_VMTask {
 		ExecutionId:           c.task.GetExecutionId(),
 		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
 		ExecuteResponseDigest: d,
-		SnapshotId:            c.id, // Unique ID pertaining to this execution run
+		SnapshotId:            c.snapshotID, // Unique ID pertaining to this execution run
 	}
 }
 
@@ -1030,12 +1031,11 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	// run can be identified
 	if snap.GetVMMetadata() == nil {
 		md := &repb.VMMetadata{
-			VmId:       c.id,
-			SnapshotId: c.id,
+			VmId: c.id,
 		}
 		snap.SetVMMetadata(md)
 	}
-	snap.GetVMMetadata().SnapshotId = c.id
+	snap.GetVMMetadata().SnapshotId = c.snapshotID
 	c.snapshot = snap
 
 	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
@@ -1331,6 +1331,7 @@ func (c *FirecrackerContainer) newID(ctx context.Context) error {
 	vmIdx += 1
 	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u.String(), vmIdx)
 	c.id = u.String()
+	c.snapshotID = u.String()
 	c.vmIdx = vmIdx
 
 	if vmIdx > maxVMSPerHost {
