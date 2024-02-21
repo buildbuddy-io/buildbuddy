@@ -2,6 +2,7 @@ package vbd_test
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"math/rand"
 	"os"
@@ -46,6 +47,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestVBD(t *testing.T) {
+	ctx := context.Background()
 	root := testfs.MakeTempDir(t)
 
 	// Set up backing file
@@ -63,7 +65,7 @@ func TestVBD(t *testing.T) {
 	require.NoError(t, err)
 	dir, err := os.MkdirTemp(root, "mount-*")
 	require.NoError(t, err)
-	err = v.Mount(dir)
+	err = v.Mount(ctx, dir)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := v.Unmount()

@@ -1293,7 +1293,7 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 			return err
 		}
 		mountPath := filepath.Join(c.getChroot(), workspaceDriveID+vbdMountDirSuffix)
-		if err := d.Mount(mountPath); err != nil {
+		if err := d.Mount(c.vmCtx, mountPath); err != nil {
 			return status.WrapError(err, "mount workspace VBD")
 		}
 		c.workspaceVBD = d
@@ -1742,7 +1742,7 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 			return nil, err
 		}
 		mountPath := filepath.Join(c.getChroot(), driveID+vbdMountDirSuffix)
-		if err := d.Mount(mountPath); err != nil {
+		if err := d.Mount(c.vmCtx, mountPath); err != nil {
 			return nil, err
 		}
 		log.CtxDebugf(ctx, "Mounted %s VBD FUSE filesystem to %s", driveID, mountPath)
