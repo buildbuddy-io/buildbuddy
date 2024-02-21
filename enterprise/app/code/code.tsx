@@ -38,6 +38,7 @@ import { github } from "../../../proto/github_ts_proto";
 import Long from "long";
 import ModuleSidekick from "../sidekick/module/module";
 import BazelVersionSidekick from "../sidekick/bazelversion/bazelversion";
+import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
 
 interface Props {
   user: User;
@@ -1013,6 +1014,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           {this.editor && this.currentPath()?.endsWith(".bazelversion") && (
             <BazelVersionSidekick editor={this.editor} />
           )}
+          {this.editor && this.currentPath()?.endsWith(".bazelrc") && <BazelrcSidekick editor={this.editor} />}
         </div>
         <Modal isOpen={this.state.reviewRequestModalVisible} onRequestClose={this.handleCloseReviewModal.bind(this)}>
           <Dialog className="code-request-review-dialog">
