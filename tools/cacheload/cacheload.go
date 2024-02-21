@@ -47,7 +47,7 @@ var (
 	readBatch       = flag.Bool("read_batch", false, "Whether to use BatchReadBlobs for reads.")
 	writeCompressed = flag.Bool("write_compressed", false, "Whether to write compressed blobs.")
 	recycleRate     = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
-	timeout         = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
+	timeout         = flag.Duration("timeout", 60*time.Second, "Use this timeout as the context timeout for rpc calls")
 	keepGoing       = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
 	listen          = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	monitoringPort  = flag.Int("monitoring_port", 0, "The port to listen for monitoring traffic on")
