@@ -42,6 +42,8 @@ const (
 	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:8cf614fc4695789bea8321446402e7d6f84f6be09b8d39ec93caa508fa3e3cfc"
 	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:271e5e3704d861159c75b8dd6713dbe5a12272ec8ee73d17f89ed7be8026553f"
 
+	Ubuntu20_04GitHubActionsImage = "gcr.io/flame-public/rbe-ubuntu20-04-github-actions@sha256:2a3b50fa1aafcb8446c94ab5707270f92fa91abd64a0e049312d4a086d0abb1c"
+
 	// overrideHeaderPrefix is a prefix used to override platform props via
 	// remote headers. The property name immediately follows the prefix in the
 	// header key, and the header value is used as the property value.
@@ -617,10 +619,14 @@ func DefaultImage() string {
 	return *defaultImage
 }
 
-// The CI runner is used to run bazel remotely. It is used for workflows and remote
-// bazel
-func IsCIRunner(cmdArgs []string) bool {
-	if len(cmdArgs) > 0 && cmdArgs[0] == "./buildbuddy_ci_runner" {
+// IsCICommand returns whether the given command is either a BuildBuddy workflow
+// or a GitHub Actions runner task. These commands are longer-running and may
+// themselves invoke bazel.
+func IsCICommand(cmd *repb.Command) bool {
+	if len(cmd.GetArguments()) > 0 && cmd.GetArguments()[0] == "./buildbuddy_ci_runner" {
+		return true
+	}
+	if FindValue(cmd.GetPlatform(), "github-actions-runner-labels") != "" {
 		return true
 	}
 	return false
