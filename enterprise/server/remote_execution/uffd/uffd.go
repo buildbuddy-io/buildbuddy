@@ -351,17 +351,14 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 
 		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
 		if err != nil {
-			// If error is due to the page already being mapped, ignore.
-			if err != unix.EEXIST {
-				mappedRangesForChunk := h.mappedPageFaults[int64(chunkStartOffset)]
-				mappedRangesStr := ""
-				for _, r := range mappedRangesForChunk {
-					mappedRangesStr += r.String()
-				}
-
-				log.CtxWarningf(ctx, "Failed to resolve page fault %s due to err %s\nMapped ranges for chunk: %s", debugData.String(), err, mappedRangesStr)
-				return err
+			mappedRangesForChunk := h.mappedPageFaults[int64(chunkStartOffset)]
+			mappedRangesStr := ""
+			for _, r := range mappedRangesForChunk {
+				mappedRangesStr += r.String()
 			}
+
+			log.CtxWarningf(ctx, "Failed to resolve page fault %s due to err %s\nMapped ranges for chunk: %s", debugData.String(), err, mappedRangesStr)
+			return err
 		}
 
 		// After memory has been copied to the VM, unmap the chunk to save memory
@@ -386,6 +383,10 @@ func resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint
 	}
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
 	if errno != 0 {
+		// If error is due to the page already being mapped, ignore.
+		if errno == unix.EEXIST {
+			return 0, nil
+		}
 		return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)
 	}
 	return int64(copyData.Copy), nil
