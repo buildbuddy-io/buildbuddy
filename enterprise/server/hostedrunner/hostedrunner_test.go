@@ -1,13 +1,14 @@
-package rexec_test
+package hostedrunner
 
 import (
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-func TestSortAndDedupePlatformProperties(t *testing.T) {
+func TestNormalizePlatform(t *testing.T) {
 	tests := map[string]struct {
 		input          []*repb.Platform_Property
 		expectedOutput []*repb.Platform_Property
@@ -61,7 +62,7 @@ func TestSortAndDedupePlatformProperties(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			o := rexec.SortAndDedupePlatformProperties(tc.input)
+			o := normalizePlatform(tc.input)
 			require.Equal(t, tc.expectedOutput, o)
 		})
 	}

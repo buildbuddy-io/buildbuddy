@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "rexec",
@@ -18,15 +18,5 @@ go_library(
         "@org_golang_google_grpc//status",
         "@org_golang_x_exp//maps",
         "@org_golang_x_sync//errgroup",
-    ],
-)
-
-go_test(
-    name = "rexec_test",
-    srcs = ["rexec_test.go"],
-    deps = [
-        ":rexec",
-        "//proto:remote_execution_go_proto",
-        "@com_github_stretchr_testify//require",
     ],
 )

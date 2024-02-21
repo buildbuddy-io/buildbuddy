@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,9 +22,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
+	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -72,6 +73,7 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 // createAction creates and uploads an action that will trigger the CI runner
 // to checkout the specified repo and execute the specified bazel action,
 // uploading any logs to an invcocation page with the specified ID.
+// TODO(Maggie): Refactor this function to use rexec.Prepare
 func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, invocationID string) (*repb.Digest, error) {
 	cache := r.env.GetCache()
 	if cache == nil {
@@ -196,7 +198,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	cmd.Platform.Properties = append(cmd.Platform.Properties, req.GetExecProperties()...)
-	cmd.Platform.Properties = rexec.SortAndDedupePlatformProperties(cmd.Platform.Properties)
+	cmd.Platform.Properties = normalizePlatform(cmd.Platform.Properties)
 
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, cmd)
 	if err != nil {
@@ -380,4 +382,23 @@ func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariab
 	}
 	return platform.WithRemoteHeaderOverride(
 		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
+}
+
+// normalizePlatform sorts platform properties alphabetically by name.
+// If the same name is specified more than once, the last one wins.
+func normalizePlatform(props []*repb.Platform_Property) []*repb.Platform_Property {
+	sort.Slice(props, func(i, j int) bool {
+		if props[i].Name == props[j].Name {
+			// If there are multiple entries with the same name, sort them
+			// so the later entry in the input slice is first in the sorted list
+			// because slices.CompactFunc selects the first entry if there
+			// are duplicates
+			return j < i
+		}
+		return props[i].Name < props[j].Name
+	})
+	props = slices.CompactFunc(props, func(i, j *repb.Platform_Property) bool {
+		return i.Name == j.Name
+	})
+	return props
 }

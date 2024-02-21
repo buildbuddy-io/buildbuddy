@@ -4,7 +4,6 @@ package rexec
 import (
 	"bytes"
 	"context"
-	"slices"
 	"sort"
 	"strings"
 
@@ -62,25 +61,6 @@ func MakePlatform(pairs ...string) (*repb.Platform, error) {
 		})
 	}
 	return p, nil
-}
-
-// SortAndDedupePlatformProperties Sort platform properties alphabetically by name.
-// If the same name is specified more than once, the last one wins.
-func SortAndDedupePlatformProperties(props []*repb.Platform_Property) []*repb.Platform_Property {
-	sort.Slice(props, func(i, j int) bool {
-		if props[i].Name == props[j].Name {
-			// If there are multiple entries with the same name, sort them
-			// so the later entry in the input slice is first in the sorted list
-			// because slices.CompactFunc selects the first entry if there
-			// are duplicates
-			return j < i
-		}
-		return props[i].Name < props[j].Name
-	})
-	props = slices.CompactFunc(props, func(i, j *repb.Platform_Property) bool {
-		return i.Name == j.Name
-	})
-	return props
 }
 
 // parsePairs parses a list of "NAME=VALUE" pairs into a map. If the same NAME
