@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/hashicorp/serf/serf"
 	"github.com/stretchr/testify/require"
 )
@@ -67,6 +68,41 @@ func TestDiscovery(t *testing.T) {
 		t.Fatalf("Timed out waiting for nodes to discover each other via gossip")
 	case <-sawNode1:
 		break
+	}
+}
+
+func TestDiscoveryDifferentSecretKeys(t *testing.T) {
+	node1Addr := localAddr(t)
+	node2Addr := localAddr(t)
+
+	flags.Set(t, "gossip.secret_key", "8765432187654321")
+	node1 := newGossipManager(t, node1Addr, []string{node2Addr}, &testBroker{})
+	defer node1.Shutdown()
+
+	sawNode1 := make(chan struct{})
+	doneChecking := false
+	eventCB := func(eventType serf.EventType, event serf.Event) {
+		if memberEvent, ok := event.(serf.MemberEvent); ok {
+			for _, member := range memberEvent.Members {
+				if !doneChecking {
+					if fmt.Sprintf("%s:%d", member.Addr, member.Port) == node1Addr {
+						doneChecking = true
+						close(sawNode1)
+					}
+				}
+			}
+		}
+	}
+
+	flags.Set(t, "gossip.secret_key", "1234567812345678")
+	node2 := newGossipManager(t, localAddr(t), []string{node1Addr}, &testBroker{onEvent: eventCB})
+	defer node2.Shutdown()
+
+	select {
+	case <-time.After(1 * time.Second):
+		break
+	case <-sawNode1:
+		t.Fatalf("Timed out waiting for nodes to discover each other via gossip")
 	}
 }
 
