@@ -32,12 +32,12 @@ import (
 
 	stdFlag "flag"
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
-	_ "github.com/buildbuddy-io/buildbuddy/server/gossip"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	_ "github.com/buildbuddy-io/buildbuddy/server/gossip"
 )
 
 var (
