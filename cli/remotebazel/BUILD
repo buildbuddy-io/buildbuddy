@@ -24,6 +24,7 @@ go_library(
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
+        "//server/util/rexec",
         "//server/util/status",
         "@com_github_alecaivazis_survey_v2//:survey",
         "@com_github_go_git_go_git_v5//:go-git",

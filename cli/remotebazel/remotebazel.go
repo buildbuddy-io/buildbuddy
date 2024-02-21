@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -539,17 +540,9 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		envVars[envVar] = val
 	}
 
-	execProps := make(map[string]string, 0)
-	for _, prop := range *execPropsFlag {
-		keyValArr := strings.SplitN(prop, "=", 2)
-		if len(keyValArr) != 2 {
-			log.Warnf("Invalid exec property %s. Key value pairs must be separated by '='.", prop)
-			continue
-		}
-		key := keyValArr[0]
-		val := keyValArr[1]
-
-		execProps[key] = val
+	platform, err := rexec.MakePlatform(*execPropsFlag...)
+	if err != nil {
+		return 0, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
 	}
 
 	req := &rnpb.RunRequest{
@@ -566,7 +559,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		Arch:               reqArch,
 		ContainerImage:     *containerImage,
 		Env:                envVars,
-		ExecProperties:     execProps,
+		ExecProperties:     platform.Properties,
 	}
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 

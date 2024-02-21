@@ -96,7 +96,8 @@ message RunRequest {
   string timeout = 12;
 
   // Exec properties to apply to the run request.
-  map<string, string> exec_properties = 13;
+  repeated build.bazel.remote.execution.v2.Platform.Property exec_properties =
+      13;
 }
 
 message RunResponse {

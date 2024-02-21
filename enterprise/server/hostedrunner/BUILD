@@ -24,6 +24,7 @@ go_library(
         "//server/util/git",
         "//server/util/log",
         "//server/util/prefix",
+        "//server/util/rexec",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto//googleapis/longrunning",

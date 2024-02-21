@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/longrunning"
@@ -194,12 +195,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		})
 	}
 
-	for k, v := range req.GetExecProperties() {
-		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
-			Name:  k,
-			Value: v,
-		})
-	}
+	cmd.Platform.Properties = append(cmd.Platform.Properties, req.GetExecProperties()...)
+	cmd.Platform.Properties = rexec.SortAndDedupePlatformProperties(cmd.Platform.Properties)
 
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, cmd)
 	if err != nil {
