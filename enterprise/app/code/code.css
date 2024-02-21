@@ -336,3 +336,21 @@
   padding: 8px 16px;
   overflow-y: auto;
 }
+
+.code-editor .context-menu {
+  position: absolute;
+  z-index: 2;
+  background-color: #fff;
+  padding: 8px 0;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px #0000000f, 0 1px 1px -0.5px #0000000f, 0 3px 3px -1.5px #0000000f, 0 6px 6px -3px #0000000f;
+}
+
+.code-editor .context-menu div {
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.code-editor .context-menu div:hover {
+  background-color: #fafafa;
+}
