@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -23,17 +24,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 
+	stdFlag "flag"
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	_ "github.com/buildbuddy-io/buildbuddy/server/gossip"
 )
 
 var (
@@ -43,6 +47,12 @@ var (
 	clearCacheOnStartup = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
 	partitions          = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
 	partitionMappings   = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
+
+	// TODO(tylerw): remove after dev.
+	// Store raft content in a subdirectory with the same name as the gossip
+	// key, so that we can easily start fresh in dev by just changing the
+	// gossip key.
+	subdir = types.Alias[string](stdFlag.CommandLine, "gossip.secret_key")
 )
 
 const (
@@ -103,8 +113,15 @@ func Register(env *real_environment.RealEnv) error {
 		})
 	}
 
+	if *clearCacheOnStartup {
+		log.Warningf("Clearing cache dir %q on startup!", *rootDirectory)
+		if err := os.RemoveAll(*rootDirectory); err != nil {
+			return err
+		}
+	}
+
 	rcConfig := &Config{
-		RootDir:           *rootDirectory,
+		RootDir:           filepath.Join(*rootDirectory, *subdir),
 		HTTPAddr:          *httpAddr,
 		GRPCAddr:          *gRPCAddr,
 		Partitions:        ps,
@@ -135,12 +152,6 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		fileStorer:   filestore.New(),
 	}
 
-	if *clearCacheOnStartup {
-		log.Warningf("Clearing cache on startup!")
-		if err := os.RemoveAll(conf.RootDir); err != nil {
-			return nil, err
-		}
-	}
 	if err := disk.EnsureDirectoryExists(conf.RootDir); err != nil {
 		return nil, err
 	}
