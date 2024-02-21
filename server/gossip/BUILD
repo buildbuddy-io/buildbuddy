@@ -28,6 +28,7 @@ go_test(
         ":gossip",
         "//server/interfaces",
         "//server/testutil/testport",
+        "//server/util/testing/flags",
         "@com_github_hashicorp_serf//serf",
         "@com_github_stretchr_testify//require",
     ],
