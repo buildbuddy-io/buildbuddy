@@ -32,13 +32,6 @@ const (
 //   - Creates empty dirs "${path}.work" and "${path}.upper" for the overlay
 //     work and upper dirs, respectively.
 //   - Creates an overlayfs mount at "${path}".
-//
-// The symlink is mainly just for compatibility with our existing executor code,
-// which currently has some hard dependencies on the absolute path to the
-// workspace. Depending on whether we're running an action or hardlinking action
-// outputs to filecache, we may want the workspace path to either reference the
-// mount dir or one of the backing storage dirs. The symlink can be used to
-// "rewire" the absolute path to any of these dirs.
 func Convert(ctx context.Context, path string, opts Opts) (*Overlay, error) {
 	_, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -119,7 +112,7 @@ func (o *Overlay) Apply(ctx context.Context, opts ApplyOpts) error {
 		// If a dir exists in upperdir, just make sure it exists as a dir in
 		// lowerdir too.
 		if entry.IsDir() {
-			if err := forceDir(lowerPath, o.opts.DirPerms); err != nil {
+			if err := forceMkdir(lowerPath, o.opts.DirPerms); err != nil {
 				return status.WrapError(err, "make dir")
 			}
 			return nil
@@ -176,7 +169,7 @@ func (o *Overlay) Apply(ctx context.Context, opts ApplyOpts) error {
 	return nil
 }
 
-func forceDir(path string, perm fs.FileMode) error {
+func forceMkdir(path string, perm fs.FileMode) error {
 	err := os.MkdirAll(path, perm)
 	if err == nil {
 		return nil

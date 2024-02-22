@@ -1,3 +1,8 @@
+// Package overlayfs provides copy-on-write support for action workspaces using
+// overlayfs.
+//
+// This package is Linux-only. All functions on non-Linux platforms return
+// Unimplemented errors.
 package overlayfs
 
 import (
@@ -6,16 +11,21 @@ import (
 
 // Overlay represents a mounted overlayfs.
 type Overlay struct {
-	// MountDir contains the actual overlayfs mount. This is the path exposed
-	// to actions.
+	// MountDir is the path to the directory where the overlayfs is mounted.
+	// This path is exposed to actions.
 	MountDir string
-	// UpperDir contains files that were copied up from the lowerdir due to
-	// writes, as well as opaque files (special files indicating deletion).
+
+	// UpperDir is the path to the directory which contains entries copied up
+	// from the lowerdir due to writes, as well as opaque files (special files
+	// indicating deletion).
 	UpperDir string
-	// LowerDir contains the workspace files which cannot be modified by
-	// actions.
+
+	// LowerDir is the path to the directory containing the workspace files.
+	// This is not exposed to actions.
 	LowerDir string
-	// WorkDir contains temporary files used by the overlayfs driver.
+
+	// WorkDir is the path to the directory containing temporary files used by
+	// the overlayfs driver.
 	WorkDir string
 
 	opts Opts
