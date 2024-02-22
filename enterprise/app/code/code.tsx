@@ -132,6 +132,17 @@ export default class CodeComponent extends React.Component<Props, State> {
     if (this.state.repoResponse || this.isSingleFile()) {
       this.fetchInitialContent();
     }
+
+    document.onkeydown = (e) => {
+      switch (e.keyCode) {
+        case 70: // Meta + F
+          if (!e.metaKey) break;
+          this.editor?.focus();
+          this.editor?.trigger("find", "editor.actions.findWithArgs", { searchString: "" });
+          e.preventDefault();
+          break;
+      }
+    };
   }
 
   fetchInitialContent() {
