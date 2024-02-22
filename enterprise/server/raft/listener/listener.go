@@ -3,6 +3,7 @@ package listener
 import (
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4/raftio"
 )
 
@@ -41,6 +42,7 @@ func (rl *RaftListener) AddLeaderChangeListener() <-chan raftio.LeaderInfo {
 // raft library when the leader is updated. It passes the updated leader info
 // to leaderChangeListeners.
 func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
+	log.Debugf("leader updated: %+v", info)
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	rl.lastLeaderInfo = &info
