@@ -141,6 +141,9 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 }
 
 func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCache bool) (*rfpb.RangeDescriptor, error) {
+	if len(key) == 0 {
+		return nil, status.FailedPreconditionError("A non-nil key is required")
+	}
 	rangeDescriptor := s.rangeCache.Get(key)
 	if rangeDescriptor == nil || skipCache {
 		rd, err := s.fetchRangeDescriptorFromMetaRange(ctx, key)
