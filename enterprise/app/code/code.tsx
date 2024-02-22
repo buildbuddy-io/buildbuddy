@@ -8,18 +8,7 @@ import * as diff from "diff";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import {
-  ArrowLeft,
-  ArrowUpCircle,
-  ChevronRight,
-  Code,
-  Download,
-  Key,
-  Link,
-  PlusCircle,
-  Send,
-  XCircle,
-} from "lucide-react";
+import { ArrowLeft, ArrowUpCircle, ChevronRight, Download, Key, Link, PlusCircle, Send, XCircle } from "lucide-react";
 import Spinner from "../../../app/components/spinner/spinner";
 import { OutlinedButton, FilledButton } from "../../../app/components/button/button";
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
@@ -69,6 +58,11 @@ interface State {
   updatingPR: boolean;
   reviewRequestModalVisible: boolean;
   isBuilding: boolean;
+
+  contextMenuX?: number;
+  contextMenuY?: number;
+  contextMenuFullPath?: string;
+  contextMenuFile?: github.TreeNode;
 }
 
 const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
@@ -542,7 +536,12 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   handleNewFileClicked() {
-    let fileName = prompt("File name:");
+    let fileName = prompt(
+      "File name:",
+      (this.state.contextMenuFile?.type == "tree"
+        ? this.state.contextMenuFullPath
+        : this.state.contextMenuFullPath?.substring(0, this.state.contextMenuFullPath?.lastIndexOf("/"))) + "/"
+    );
     if (fileName) {
       let fileContents = "// Your code here";
       let model = this.state.fullPathToModelMap.get(fileName);
@@ -789,7 +788,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       (i) => i.login == this.currentOwner()
     );
     return (
-      <div className="code-editor">
+      <div className="code-editor" onClick={() => this.setState({ contextMenuFile: undefined })}>
         <div className="code-menu">
           <div className="code-menu-logo">
             {this.isSingleFile() && (
@@ -922,31 +921,33 @@ export default class CodeComponent extends React.Component<Props, State> {
             <div className="code-sidebar">
               <div className="code-sidebar-tree">
                 {this.state.treeResponse &&
-                  this.state.treeResponse.nodes
-                    .sort(compareNodes)
-                    .map((node) => (
-                      <SidebarNodeComponent
-                        node={node}
-                        treeShaToExpanded={this.state.treeShaToExpanded}
-                        treeShaToChildrenMap={this.state.treeShaToChildrenMap}
-                        handleFileClicked={this.handleFileClicked.bind(this)}
-                        fullPath={node.path}
-                      />
-                    ))}
+                  this.state.treeResponse.nodes.sort(compareNodes).map((node) => (
+                    <SidebarNodeComponent
+                      node={node}
+                      treeShaToExpanded={this.state.treeShaToExpanded}
+                      treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                      handleFileClicked={this.handleFileClicked.bind(this)}
+                      fullPath={node.path}
+                      handleContextMenu={(node, fullPath, event) => {
+                        this.setState({
+                          contextMenuX: event.pageX,
+                          contextMenuY: event.pageY,
+                          contextMenuFile: node,
+                          contextMenuFullPath: fullPath,
+                        });
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                    />
+                  ))}
               </div>
-              <div className="code-sidebar-actions">
-                {!this.props.user.githubLinked && (
+              {!this.props.user.githubLinked && (
+                <div className="code-sidebar-actions">
                   <button onClick={this.handleGitHubClicked.bind(this)}>
                     <Link className="icon" /> Link GitHub
                   </button>
-                )}
-                <button onClick={this.handleNewFileClicked.bind(this)}>
-                  <PlusCircle className="icon green" /> New
-                </button>
-                <button onClick={() => this.handleDeleteClicked("")}>
-                  <XCircle className="icon red" /> Delete
-                </button>
-              </div>
+                </div>
+              )}
             </div>
           )}
           <div className="code-container">
@@ -1016,6 +1017,19 @@ export default class CodeComponent extends React.Component<Props, State> {
           )}
           {this.editor && this.currentPath()?.endsWith(".bazelrc") && <BazelrcSidekick editor={this.editor} />}
         </div>
+        {this.state.contextMenuFile && (
+          <div className="context-menu-container">
+            <div
+              className="context-menu"
+              onClick={() => this.setState({ contextMenuFile: undefined })}
+              style={{ top: this.state.contextMenuY, left: this.state.contextMenuX }}>
+              <div onClick={() => this.handleNewFileClicked()}>New file</div>
+              {/* TODO <div>New folder</div> */}
+              {/* TODO <div>Rename</div> */}
+              <div onClick={() => this.handleDeleteClicked(this.state.contextMenuFile?.path || "")}>Delete</div>
+            </div>
+          </div>
+        )}
         <Modal isOpen={this.state.reviewRequestModalVisible} onRequestClose={this.handleCloseReviewModal.bind(this)}>
           <Dialog className="code-request-review-dialog">
             <DialogHeader>

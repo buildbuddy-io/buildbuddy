@@ -1,12 +1,14 @@
 import { ChevronDown, ChevronRight, File } from "lucide-react";
 import React from "react";
+import { github } from "../../../proto/github_ts_proto";
 
 interface SidebarNodeProps {
   fullPath: string;
-  node: any;
+  node: github.TreeNode;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, any[]>;
-  handleFileClicked: any;
+  handleFileClicked: (node: github.TreeNode, path: string) => void;
+  handleContextMenu: (node: github.TreeNode, path: string, event: React.MouseEvent) => void;
   depth?: number;
 }
 
@@ -19,7 +21,10 @@ export default class SidebarNodeComponent extends React.Component<SidebarNodePro
       fileIcon = <File className="icon" />;
     }
     return (
-      <div className={`code-sidebar-node depth-${depth}`} style={{ "--depth": depth } as any}>
+      <div
+        className={`code-sidebar-node depth-${depth}`}
+        style={{ "--depth": depth } as any}
+        onContextMenu={(e) => this.props.handleContextMenu(this.props.node, this.props.fullPath, e)}>
         <div
           className="code-sidebar-node-row"
           onClick={() => this.props.handleFileClicked(this.props.node, this.props.fullPath)}
@@ -37,6 +42,7 @@ export default class SidebarNodeComponent extends React.Component<SidebarNodePro
                 treeShaToChildrenMap={this.props.treeShaToChildrenMap}
                 handleFileClicked={this.props.handleFileClicked}
                 fullPath={this.props.fullPath + "/" + child.path}
+                handleContextMenu={this.props.handleContextMenu}
               />
             ))}
           </div>

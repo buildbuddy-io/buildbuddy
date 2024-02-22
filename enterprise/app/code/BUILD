@@ -86,6 +86,7 @@ ts_library(
     name = "code_sidebar_node",
     srcs = ["code_sidebar_node.tsx"],
     deps = [
+        "//proto:github_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
