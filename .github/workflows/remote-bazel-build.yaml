@@ -31,7 +31,7 @@ jobs:
 
       - name: Test
         run: |
-          bb --verbose=1 remote test //... \
+          bb remote test //... \
             --config=linux-workflows --config=race \
             --remote_executor=grpcs://buildbuddy.buildbuddy.io \
             --test_tag_filters=-performance,-webdriver,-docker,-bare \
