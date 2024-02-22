@@ -123,7 +123,7 @@ common:deflake-go --test_arg=-test.failfast
 # Configuration used for Linux workflows
 common:linux-workflows --config=remote-shared
 common:linux-workflows --config=workflows
-common:linux-workflows --config=buildbuddy_remote_executor
+common:linux-workflows --remote_executor=grpcs://buildbuddy.buildbuddy.io
 common:linux-workflows --build_metadata=TAGS=linux-workflow
 
 # Configuration used for Mac workflows
