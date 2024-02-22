@@ -148,7 +148,7 @@ export async function updatePullRequest({
         owner: state.fork,
         repo,
         sha: state.latestCommitSha,
-        head: `${head}`,
+        head: `refs/heads/${head}`,
         force: true,
       })
     );

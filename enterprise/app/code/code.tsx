@@ -28,6 +28,7 @@ import Long from "long";
 import ModuleSidekick from "../sidekick/module/module";
 import BazelVersionSidekick from "../sidekick/bazelversion/bazelversion";
 import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
+import error_service from "../../../app/errors/error_service";
 
 interface Props {
   user: User;
@@ -478,7 +479,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     });
   }
 
-  async handleReviewClicked() {
+  handleReviewClicked() {
     if (!this.props.user.githubLinked) {
       this.handleGitHubClicked();
       return;
@@ -490,7 +491,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       ([key, value]) => this.state.pathToIncludeChanges.get(key) // Only include checked changes
     );
 
-    let response = await createPullRequest({
+    createPullRequest({
       owner: this.currentOwner(),
       repo: this.currentRepo(),
       title: this.state.prTitle,
@@ -504,19 +505,24 @@ export default class CodeComponent extends React.Component<Props, State> {
           commit: this.state.prBody,
         },
       ],
-    });
-
-    this.updateState({
-      requestingReview: false,
-      reviewRequestModalVisible: false,
-      prLink: response.url,
-      prNumber: response.pullNumber,
-      prBranch: response.ref,
-    });
-
-    window.open(response.url, "_blank");
-
-    console.log(response);
+    })
+      .then((response) => {
+        this.updateState({
+          requestingReview: false,
+          reviewRequestModalVisible: false,
+          prLink: response.url,
+          prNumber: response.pullNumber,
+          prBranch: response.ref,
+        });
+        window.open(response.url, "_blank");
+        console.log(response);
+      })
+      .catch((e) => {
+        error_service.handleError(e);
+        this.updateState({
+          requestingReview: false,
+        });
+      });
   }
 
   handleChangeClicked(fullPath: string) {
@@ -600,10 +606,16 @@ export default class CodeComponent extends React.Component<Props, State> {
           commit: `Update ${filenames}`,
         },
       ],
-    }).then(() => {
-      this.updateState({ updatingPR: false });
-      window.open(this.state.prLink, "_blank");
-    });
+    })
+      .then(() => {
+        window.open(this.state.prLink, "_blank");
+      })
+      .catch((e) => {
+        error_service.handleError(e);
+      })
+      .finally(() => {
+        this.updateState({ updatingPR: false });
+      });
   }
 
   handleClearPRClicked() {
@@ -626,6 +638,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       .then(() => {
         window.open(this.state.prLink, "_blank");
         this.handleClearPRClicked();
+        this.handleUpdateCommitSha(() => {});
       });
   }
 
@@ -647,7 +660,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           head: this.state.repoResponse?.defaultBranch,
         })
       )
-      .then((response) => {
+      .then(async (response) => {
         console.log(response);
         let newCommits = response.aheadBy;
         let newSha = response.commits.pop()?.sha;
@@ -663,9 +676,27 @@ export default class CodeComponent extends React.Component<Props, State> {
         let conflictCount = 0;
         for (let file of response.files) {
           if (this.state.changes.has(file.name)) {
+            let response = await rpcService.service.getGithubContent(
+              new github.GetGithubContentRequest({
+                owner: this.currentOwner(),
+                repo: this.currentRepo(),
+                path: this.currentPath(),
+                ref: newSha,
+              })
+            );
+            let newFileContent = textDecoder.decode(response.content);
+            this.state.originalFileContents.set(file.name, newFileContent);
+            if (newFileContent == this.state.changes.get(file.name)) {
+              this.state.changes.delete(file.name);
+              continue;
+            }
             this.state.mergeConflicts.set(file.name, file.sha);
             conflictCount++;
           }
+        }
+
+        if (conflictCount == 0 && this.state.prBranch) {
+          this.handleClearPRClicked();
         }
 
         rpcService.service
@@ -843,9 +874,9 @@ export default class CodeComponent extends React.Component<Props, State> {
                 <ChevronRight />
                 <a
                   href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/tree/${
-                    this.state.repoResponse?.defaultBranch
+                    this.state.prBranch || this.state.repoResponse?.defaultBranch
                   }`}>
-                  {this.state.repoResponse?.defaultBranch}
+                  {this.state.prBranch || this.state.repoResponse?.defaultBranch}
                 </a>
                 <ChevronRight />
                 <a
