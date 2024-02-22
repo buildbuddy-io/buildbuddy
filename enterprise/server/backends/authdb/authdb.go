@@ -234,7 +234,9 @@ func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string
 			`, sessionID)
 	if err := rq.Take(&existing); err != nil {
 		if db.IsRecordNotFound(err) {
-			return d.h.NewQuery(ctx, "authdb_create_session").Create(session)
+			return d.h.Transaction(ctx, func(tx interfaces.DB) error {
+				return tx.NewQuery(ctx, "authdb_create_session").Create(session)
+			})
 		}
 		return err
 	}
