@@ -21,8 +21,8 @@ func NewRaftListener() *RaftListener {
 	}
 }
 
-// Returns a channel and associated close function. raftio.LeaderInfo updates
-// will be published on the channel when callbacks are received by the library.
+// AddLeaderChangeListener returns a channel where updates to raftio.LeaderInfo
+// will be published when callbacks are received by the library.
 // Listeners *must not block* or they risk dropping updates.
 func (rl *RaftListener) AddLeaderChangeListener() <-chan raftio.LeaderInfo {
 	rl.mu.Lock()
@@ -37,6 +37,9 @@ func (rl *RaftListener) AddLeaderChangeListener() <-chan raftio.LeaderInfo {
 	return ch
 }
 
+// LeaderUpdated implements IRaftEventListener interface and is called by the
+// raft library when the leader is updated. It passes the updated leader info
+// to leaderChangeListeners.
 func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
