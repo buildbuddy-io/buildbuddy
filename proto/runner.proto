@@ -94,6 +94,10 @@ message RunRequest {
 
   // Max time before run should be canceled automatically.
   string timeout = 12;
+
+  // Exec properties to apply to the run request.
+  repeated build.bazel.remote.execution.v2.Platform.Property exec_properties =
+      13;
 }
 
 message RunResponse {

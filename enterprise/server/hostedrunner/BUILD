@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -29,5 +29,16 @@ go_library(
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_x_exp//slices",
+    ],
+)
+
+go_test(
+    name = "hostedrunner_test",
+    srcs = ["hostedrunner_test.go"],
+    embed = [":hostedrunner"],
+    deps = [
+        "//proto:remote_execution_go_proto",
+        "@com_github_stretchr_testify//require",
     ],
 )
