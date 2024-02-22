@@ -45,6 +45,7 @@ interface State {
   fullPathToModelMap: Map<string, monaco.editor.ITextModel>;
   fullPathToDiffModelMap: Map<string, monaco.editor.IDiffEditorModel>;
   originalFileContents: Map<string, string>;
+  /** Map of file path to patch contents, or null if the file is being deleted. */
   changes: Map<string, string | null>;
   mergeConflicts: Map<string, string>;
   pathToIncludeChanges: Map<string, boolean>;
