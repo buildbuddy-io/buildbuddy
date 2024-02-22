@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -236,20 +235,15 @@ func main() {
 	}
 	eg, gctx := errgroup.WithContext(ctx)
 
-	numWriters := int(1 + (*writeQPS / 100))
-	numReaders := int(1 + (*readQPS / 100))
-
-	writtenDigests := make(chan *repb.Digest, 10000)
-	readsPerWrite := int(math.Ceil(float64(*readQPS) / float64(*writeQPS)))
-
+	writtenDigests := make(chan *repb.Digest, 1_000_000)
 	writeQPSCounter := qps.NewCounter(*qpsAvgWindow)
 	defer writeQPSCounter.Stop()
 	readQPSCounter := qps.NewCounter(*qpsAvgWindow)
 	defer readQPSCounter.Stop()
 
-	writeLimiter := rate.NewLimiter(rate.Limit(*writeQPS), 1)
-	readLimiter := rate.NewLimiter(rate.Limit(*readQPS), 1)
+	readsPerWrite := int(math.Ceil(float64(*readQPS) / float64(*writeQPS)))
 
+	// Periodically print read and write QPS.
 	eg.Go(func() error {
 		for {
 			select {
@@ -261,71 +255,86 @@ func main() {
 		}
 	})
 
-	for i := 0; i < numWriters; i++ {
+	writeOnce := func() {
 		eg.Go(func() error {
-			for {
-				if err := writeLimiter.Wait(gctx); err != nil {
-					return err
-				}
-				ctx, cancel := context.WithTimeout(gctx, *timeout)
-				d, err := writeBlob(ctx, bsClient)
-				cancel()
-				if err != nil {
-					log.Errorf("Write err: %s", err)
-					if *keepGoing {
-						return nil
-					}
-					return err
-				}
-				writeQPSCounter.Inc()
-
-				if *readQPS == 0 {
-					continue
-				}
-
-				select {
-				case writtenDigests <- d:
-					break
-				default:
-					log.Warningf("Digest Q is full, maybe increase read QPS")
-				}
-			}
-		})
-	}
-
-	for i := 0; i < numReaders; i++ {
-		eg.Go(func() error {
-			for {
-				var d *repb.Digest
-				select {
-				case d = <-writtenDigests:
-					break
-				case <-gctx.Done():
+			ctx, cancel := context.WithTimeout(gctx, *timeout)
+			d, err := writeBlob(ctx, bsClient)
+			cancel()
+			if err != nil {
+				log.Errorf("Write err: %s", err)
+				if *keepGoing {
 					return nil
 				}
+				return err
+			}
+			writeQPSCounter.Inc()
 
+			if *readQPS > 0 {
 				for i := 0; i < readsPerWrite; i++ {
-					if err := readLimiter.Wait(gctx); err != nil {
-						return err
+					select {
+					case writtenDigests <- d:
+						break
+					default:
 					}
-					ctx, cancel := context.WithTimeout(gctx, *timeout)
-					err := readBlob(ctx, bsClient, casClient, d)
-					cancel()
-					if err != nil {
-						log.Errorf("Read err: %s", err)
-						if *keepGoing {
-							continue
-						}
-						return err
-					}
-					readQPSCounter.Inc()
-				}
-				if rand.Intn(10) < int(*recycleRate*10) {
-					writtenDigests <- d
 				}
 			}
+			return nil
 		})
 	}
+
+	eg.Go(func() error {
+		ticker := time.NewTicker(time.Second / time.Duration(*writeQPS))
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				writeOnce()
+			case <-gctx.Done():
+				return nil
+			}
+		}
+	})
+
+	readOnce := func() {
+		eg.Go(func() error {
+			var d *repb.Digest
+			select {
+			case d = <-writtenDigests:
+				break
+			case <-gctx.Done():
+				return nil
+			}
+
+			ctx, cancel := context.WithTimeout(gctx, *timeout)
+			err := readBlob(ctx, bsClient, casClient, d)
+			cancel()
+			if err != nil {
+				log.Errorf("Read err: %s", err)
+				if *keepGoing {
+					return nil
+				}
+				return err
+			}
+			readQPSCounter.Inc()
+			if rand.Intn(10) < int(*recycleRate*10) {
+				writtenDigests <- d
+			}
+			return nil
+		})
+	}
+
+	eg.Go(func() error {
+		ticker := time.NewTicker(time.Second / time.Duration(*readQPS))
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				readOnce()
+			case <-gctx.Done():
+				return nil
+			}
+		}
+	})
 
 	if err := eg.Wait(); err != nil {
 		log.Fatalf("Error during run: %s", err)
