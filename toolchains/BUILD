@@ -36,3 +36,9 @@ toolchain(
     toolchain = "@buildbuddy_toolchain//:ubuntu_local_cc_toolchain",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
+
+toolchain(
+    name = "musl_toolchain",
+    toolchain = "@musl_toolchains//:musl_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
