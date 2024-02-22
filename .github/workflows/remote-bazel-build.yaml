@@ -1,0 +1,38 @@
+name: Remote bazel tests (prod)
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    if: "!contains(github.event.head_commit.message, 'ci skip')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          # Fetch all branches so we can checkout the master branch
+          fetch-depth: 0
+
+      - name: Download bb cli
+        run: |
+          cli/install.sh
+
+      - name: Setup git env
+        run: |
+          # The cli reads the local git branches in order to determine the default branch
+          # Briefly checkout the master branch so it can find it
+          git checkout master
+          git checkout -
+
+      - name: Test
+        run: |
+          bb remote test //... \
+            --config=linux-workflows --config=race \
+            --remote_executor=grpcs://buildbuddy.buildbuddy.io \
+            --test_tag_filters=-performance,-webdriver,-docker,-bare \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
