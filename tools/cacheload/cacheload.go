@@ -235,7 +235,7 @@ func main() {
 	}
 	eg, gctx := errgroup.WithContext(ctx)
 
-	writtenDigests := make(chan *repb.Digest, 1000000)
+	writtenDigests := make(chan *repb.Digest, 1_000_000)
 	writeQPSCounter := qps.NewCounter(*qpsAvgWindow)
 	defer writeQPSCounter.Stop()
 	readQPSCounter := qps.NewCounter(*qpsAvgWindow)
