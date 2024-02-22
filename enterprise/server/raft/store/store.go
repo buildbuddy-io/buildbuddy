@@ -72,7 +72,6 @@ type Store struct {
 	gossipManager interfaces.GossipService
 	sender        *sender.Sender
 	registry      registry.NodeRegistry
-	listener      *listener.RaftListener
 	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
@@ -159,7 +158,6 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		gossipManager: gossipManager,
 		sender:        sender,
 		registry:      registry,
-		listener:      listener,
 		apiClient:     apiClient,
 		liveness:      nodeLiveness,
 		log:           nhLog,
