@@ -1182,11 +1182,17 @@ func protoToGithubTree(node *ghpb.TreeNode) *github.TreeEntry {
 			Content: &content,
 		}
 	}
-	return &github.TreeEntry{
+
+	entry := &github.TreeEntry{
 		Path: &node.Path,
-		SHA:  &node.Sha,
 		Mode: &node.Mode,
 	}
+
+	if node.Sha != "" {
+		entry.SHA = &node.Sha
+	}
+
+	return entry
 }
 
 func (a *GitHubApp) CreateGithubTree(ctx context.Context, req *ghpb.CreateGithubTreeRequest) (*ghpb.CreateGithubTreeResponse, error) {

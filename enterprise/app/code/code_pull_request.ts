@@ -325,7 +325,7 @@ export type Options = {
 
 export type Changes = {
   files?: {
-    [path: string]: string | File | UpdateFunction;
+    [path: string]: string | File | UpdateFunction | null;
   };
   emptyCommit?: boolean | string;
   commit: string;

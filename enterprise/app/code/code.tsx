@@ -45,7 +45,8 @@ interface State {
   fullPathToModelMap: Map<string, monaco.editor.ITextModel>;
   fullPathToDiffModelMap: Map<string, monaco.editor.IDiffEditorModel>;
   originalFileContents: Map<string, string>;
-  changes: Map<string, string>;
+  /** Map of file path to patch contents, or null if the file is being deleted. */
+  changes: Map<string, string | null>;
   mergeConflicts: Map<string, string>;
   pathToIncludeChanges: Map<string, boolean>;
   prLink: string;
@@ -323,10 +324,8 @@ export default class CodeComponent extends React.Component<Props, State> {
       });
   }
 
-  // TODO(siggisim): Support deleting files
   // TODO(siggisim): Support moving files around
   // TODO(siggisim): Support renaming files
-  // TODO(siggisim): Support right click file context menus
   // TODO(siggisim): Support tabs
   handleFileClicked(node: github.TreeNode, fullPath: string) {
     if (node.type === "tree") {
@@ -500,7 +499,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       changes: [
         {
           files: Object.fromEntries(
-            filteredEntries.map(([key, value]) => [key, { content: textEncoder.encode(value) }])
+            filteredEntries.map(([key, value]) => (value ? [key, { content: textEncoder.encode(value) }] : [key, null]))
           ),
           commit: this.state.prBody,
         },
@@ -521,6 +520,9 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   handleChangeClicked(fullPath: string) {
+    if (this.state.changes.get(fullPath) === null) {
+      return;
+    }
     this.navigateToPath(fullPath);
     this.editor?.setModel(this.state.fullPathToModelMap.get(fullPath) || null);
   }
@@ -530,9 +532,9 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({ pathToIncludeChanges: this.state.pathToIncludeChanges });
   }
 
-  // TODO(siggisim): Implement delete
   handleDeleteClicked(fullPath: string) {
-    alert("Delete not yet implemented!");
+    this.state.changes.set(fullPath, null);
+    this.updateState({ changes: this.state.changes });
   }
 
   handleNewFileClicked() {
@@ -593,7 +595,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       changes: [
         {
           files: Object.fromEntries(
-            filteredEntries.map(([key, value]) => [key, { content: textEncoder.encode(value) }])
+            filteredEntries.map(([key, value]) => (value ? [key, { content: textEncoder.encode(value) }] : [key, null]))
           ),
           commit: `Update ${filenames}`,
         },
@@ -985,6 +987,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                       type="checkbox"
                     />{" "}
                     {fullPath}
+                    {this.state.changes.get(fullPath) === null && <> (deleted)</>}
                     {this.state.mergeConflicts.has(fullPath) && fullPath != this.currentPath() && (
                       <span
                         className="code-revert-button"
@@ -1026,7 +1029,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               <div onClick={() => this.handleNewFileClicked()}>New file</div>
               {/* TODO <div>New folder</div> */}
               {/* TODO <div>Rename</div> */}
-              <div onClick={() => this.handleDeleteClicked(this.state.contextMenuFile?.path || "")}>Delete</div>
+              <div onClick={() => this.handleDeleteClicked(this.state.contextMenuFullPath || "")}>Delete</div>
             </div>
           </div>
         )}
