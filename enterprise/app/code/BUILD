@@ -17,6 +17,7 @@ ts_library(
         "//app/components/dialog",
         "//app/components/modal",
         "//app/components/spinner",
+        "//app/errors:error_service",
         "//app/service:rpc_service",
         "//app/util:lcov",
         "//enterprise/app/code:code_build_button",
