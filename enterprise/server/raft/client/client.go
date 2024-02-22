@@ -83,7 +83,8 @@ func singleOpTimeout(ctx context.Context) time.Duration {
 	const maxTimeout = time.Second
 	if deadline, ok := ctx.Deadline(); ok {
 		if dur := time.Until(deadline); dur < maxTimeout {
-			return dur
+			// ensure that the returned duration / constants.RTTMillisecond > 0.
+			return dur + constants.RTTMillisecond
 		}
 	}
 	return maxTimeout

@@ -126,7 +126,7 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(rootDir, "wal"),
 		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
-		RTTMillisecond: 10,
+		RTTMillisecond: constants.RTTMillisecond,
 		RaftAddress:    raftAddress,
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: regHolder,
