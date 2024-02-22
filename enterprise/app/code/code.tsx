@@ -540,9 +540,9 @@ export default class CodeComponent extends React.Component<Props, State> {
   handleNewFileClicked() {
     let fileName = prompt(
       "File name:",
-      (this.state.contextMenuFile?.type == "tree"
-        ? this.state.contextMenuFullPath
-        : this.state.contextMenuFullPath?.substring(0, this.state.contextMenuFullPath?.lastIndexOf("/"))) + "/"
+      (this.state.contextMenuFile?.type != "tree"
+        ? this.state.contextMenuFullPath?.substring(0, this.state.contextMenuFullPath?.lastIndexOf("/"))
+        : this.state.contextMenuFullPath) + "/"
     );
     if (fileName) {
       let fileContents = "// Your code here";
@@ -764,6 +764,26 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({ reviewRequestModalVisible: false });
   }
 
+  clearContextMenu() {
+    this.setState({
+      contextMenuX: undefined,
+      contextMenuY: undefined,
+      contextMenuFile: undefined,
+      contextMenuFullPath: undefined,
+    });
+  }
+
+  handleContextMenu(node: github.TreeNode | undefined, fullPath: string, event: React.MouseEvent) {
+    this.setState({
+      contextMenuX: event.pageX,
+      contextMenuY: event.pageY,
+      contextMenuFile: node,
+      contextMenuFullPath: fullPath,
+    });
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   updateState(newState: Partial<State>, callback?: VoidFunction) {
     this.setState(newState as State, () => {
       this.saveState();
@@ -790,7 +810,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       (i) => i.login == this.currentOwner()
     );
     return (
-      <div className="code-editor" onClick={() => this.setState({ contextMenuFile: undefined })}>
+      <div className="code-editor" onClick={this.clearContextMenu.bind(this)}>
         <div className="code-menu">
           <div className="code-menu-logo">
             {this.isSingleFile() && (
@@ -921,27 +941,20 @@ export default class CodeComponent extends React.Component<Props, State> {
         <div className="code-main">
           {!this.isSingleFile() && (
             <div className="code-sidebar">
-              <div className="code-sidebar-tree">
+              <div className="code-sidebar-tree" onContextMenu={(e) => this.handleContextMenu(undefined, "/", e)}>
                 {this.state.treeResponse &&
-                  this.state.treeResponse.nodes.sort(compareNodes).map((node) => (
-                    <SidebarNodeComponent
-                      node={node}
-                      treeShaToExpanded={this.state.treeShaToExpanded}
-                      treeShaToChildrenMap={this.state.treeShaToChildrenMap}
-                      handleFileClicked={this.handleFileClicked.bind(this)}
-                      fullPath={node.path}
-                      handleContextMenu={(node, fullPath, event) => {
-                        this.setState({
-                          contextMenuX: event.pageX,
-                          contextMenuY: event.pageY,
-                          contextMenuFile: node,
-                          contextMenuFullPath: fullPath,
-                        });
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                    />
-                  ))}
+                  this.state.treeResponse.nodes
+                    .sort(compareNodes)
+                    .map((node) => (
+                      <SidebarNodeComponent
+                        node={node}
+                        treeShaToExpanded={this.state.treeShaToExpanded}
+                        treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                        handleFileClicked={this.handleFileClicked.bind(this)}
+                        fullPath={node.path}
+                        handleContextMenu={this.handleContextMenu.bind(this)}
+                      />
+                    ))}
               </div>
               {!this.props.user.githubLinked && (
                 <div className="code-sidebar-actions">
@@ -1020,11 +1033,11 @@ export default class CodeComponent extends React.Component<Props, State> {
           )}
           {this.editor && this.currentPath()?.endsWith(".bazelrc") && <BazelrcSidekick editor={this.editor} />}
         </div>
-        {this.state.contextMenuFile && (
+        {this.state.contextMenuFullPath && (
           <div className="context-menu-container">
             <div
               className="context-menu"
-              onClick={() => this.setState({ contextMenuFile: undefined })}
+              onClick={this.clearContextMenu.bind(this)}
               style={{ top: this.state.contextMenuY, left: this.state.contextMenuX }}>
               <div onClick={() => this.handleNewFileClicked()}>New file</div>
               {/* TODO <div>New folder</div> */}
