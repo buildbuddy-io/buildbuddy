@@ -665,7 +665,7 @@ export default class CodeComponent extends React.Component<Props, State> {
         console.log(response);
         let newCommits = response.aheadBy;
         let newSha = response.commits.pop()?.sha;
-        if (newCommits == new Long(0)) {
+        if (Number(newCommits) == 0) {
           if (callback) {
             callback(0);
           } else {
