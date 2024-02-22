@@ -101,7 +101,7 @@ func (lk *LeaseKeeper) Stop() {
 		return
 	}
 
-	lk.log.Infof("Leasekeeper shutdown started")
+	lk.log.Info("Leasekeeper shutdown started")
 	now := time.Now()
 	defer func() {
 		lk.log.Infof("Leasekeeper shutdown finished in %s", time.Since(now))
@@ -281,11 +281,7 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	if len(rd.GetReplicas()) == 0 {
 		return
 	}
-	var shard shardID
-	for _, rep := range rd.GetReplicas() {
-		shard = shardID(rep.GetShardId())
-		break
-	}
+	shard := shardID(rd.GetReplicas()[0].GetShardId())
 	laI, _ := lk.leases.LoadOrStore(shard, lk.newLeaseAgent(rd, r))
 
 	// When a range is added via AddRange(), the raft leader may already
@@ -320,11 +316,7 @@ func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica)
 	if len(rd.GetReplicas()) == 0 {
 		return
 	}
-	var shard shardID
-	for _, rep := range rd.GetReplicas() {
-		shard = shardID(rep.GetShardId())
-		break
-	}
+	shard := shardID(rd.GetReplicas()[0].GetShardId())
 
 	lk.mu.Lock()
 	lk.open[shard] = false
