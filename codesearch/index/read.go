@@ -8,6 +8,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
 )
 
@@ -120,15 +121,15 @@ func (ix *Index) PostingList(trigram uint32) ([]uint32, error) {
 func (ix *Index) postingListBM(trigram uint32, restrict *roaring.Bitmap) (*roaring.Bitmap, error) {
 	triString := trigramToString(trigram)
 	iter := ix.db.NewIter(&pebble.IterOptions{
-		LowerBound: ngramKey(triString),
-		UpperBound: ngramKey(triString + string('\xff')),
+		LowerBound: ngramKey(triString, 2),
+		UpperBound: ngramKey(triString+string('\xff'), 2),
 	})
 	defer iter.Close()
 
 	resultSet := roaring.New()
 	postingList := roaring.New()
 	for iter.First(); iter.Valid(); iter.Next() {
-		//log.Printf("query %q matched key %q", triString, iter.Key())
+		log.Printf("query %q matched key %q", triString, iter.Key())
 		if _, err := postingList.ReadFrom(bytes.NewReader(iter.Value())); err != nil {
 			return nil, err
 		}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"strconv"
 
 	"github.com/cockroachdb/pebble"
 )
@@ -114,6 +115,15 @@ func namehashKey(key string) []byte {
 	return makeKey(namehashPrefix, key)
 }
 
-func ngramKey(key string) []byte {
-	return makeKey(ngramPrefix, key)
+func ngramKey(key string, fieldNumber int) []byte {
+	// TODO(tylerw): move field to after key?
+	// all ngrams for a field should be grouped together so
+	// gra:abc:1:12345
+	// gra:abc:1:45678
+	// gra:abc:2:12344
+	// gra:abc:2:45678
+	// gra:def:1:12344
+	// gra:def:1:45678
+	// ... etc ...
+	return makeKey(ngramPrefix, strconv.Itoa(fieldNumber)+":"+key)
 }
