@@ -540,6 +540,7 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   handleDeleteClicked(fullPath: string) {
     this.state.changes.set(fullPath, null);
+    this.state.pathToIncludeChanges.set(fullPath, true);
     this.updateState({ changes: this.state.changes });
   }
 
