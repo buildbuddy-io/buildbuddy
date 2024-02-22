@@ -695,7 +695,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           }
         }
 
-        if (conflictCount == 0 && this.state.prBranch) {
+        if (this.state.changes.size == 0 && this.state.prBranch) {
           this.handleClearPRClicked();
         }
 
