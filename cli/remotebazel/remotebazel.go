@@ -777,7 +777,12 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 	// Remove all cli flags from the arg list
 	argsRemoteFlagsRemoved := args[:bazelCmdIdx]
 	remoteFlagset.VisitAll(func(f *flag.Flag) {
-		_, argsRemoteFlagsRemoved = arg.Pop(argsRemoteFlagsRemoved, f.Name)
+		// Certain flags with slice values can be passed multiple times.
+		// Remove all instances.
+		flagVal := "start"
+		for flagVal != "" {
+			flagVal, argsRemoteFlagsRemoved = arg.Pop(argsRemoteFlagsRemoved, f.Name)
+		}
 	})
 
 	// Add back in the bazel command and any subsequent flags
