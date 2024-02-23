@@ -31,8 +31,8 @@ jobs:
 
       - name: Test
         run: |
-          bb remote test //... \
+          bb remote --remote_runner="grpcs://app.buildbuddy.dev" test //... \
             --config=linux-workflows --config=race \
-            --remote_executor=grpcs://buildbuddy.buildbuddy.io \
+            --remote_executor=grpcs://buildbuddy.buildbuddy.dev \
             --test_tag_filters=-performance,-webdriver,-docker,-bare \
-            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_DEV_API_KEY }}

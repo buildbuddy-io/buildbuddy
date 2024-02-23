@@ -55,6 +55,7 @@ func SnapshotKeySet(task *repb.ExecutionTask, configurationHash, runnerID string
 	if err != nil {
 		return nil, status.WrapErrorf(err, "failed to compute platform hash")
 	}
+	log.Debugf("For platform hash %s, platform is %v", pd.GetHash(), task.GetCommand().GetPlatform())
 
 	branchRef, fallbackRefs := gitRefs(task)
 	keys := &fcpb.SnapshotKeySet{
