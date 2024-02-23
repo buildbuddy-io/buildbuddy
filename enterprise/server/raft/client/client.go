@@ -82,7 +82,11 @@ func singleOpTimeout(ctx context.Context) time.Duration {
 	// complete.
 	const maxTimeout = time.Second
 	if deadline, ok := ctx.Deadline(); ok {
-		if dur := time.Until(deadline); dur < maxTimeout {
+		dur := time.Until(deadline)
+		if dur <= 0 {
+			return dur
+		}
+		if dur < maxTimeout {
 			// ensure that the returned duration / constants.RTTMillisecond > 0.
 			return dur + constants.RTTMillisecond
 		}
@@ -110,7 +114,12 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 			break
 		}
 
-		opCtx, cancel := context.WithTimeout(ctx, singleOpTimeout(ctx))
+		timeout := singleOpTimeout(ctx)
+		if timeout <= 0 {
+			// The deadline has already passed.
+			continue
+		}
+		opCtx, cancel := context.WithTimeout(ctx, timeout)
 		err := nhf(opCtx)
 		cancel()
 
