@@ -110,11 +110,11 @@ func (l *Lease) GetRangeDescriptor() *rfpb.RangeDescriptor {
 
 func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
 	if rl == nil {
-		return status.FailedPreconditionErrorf("Invalid rangeLease: nil")
+		return status.FailedPreconditionError("Invalid rangeLease: nil")
 	}
 
 	if !proto.Equal(l.replica.GetRangeLease(), rl) {
-		return status.FailedPreconditionErrorf("rangeLease does not match replica")
+		return status.FailedPreconditionError("rangeLease does not match replica")
 	}
 
 	// This is a node epoch based lease, so check node and epoch.
