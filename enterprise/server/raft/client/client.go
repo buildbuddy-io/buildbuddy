@@ -116,7 +116,7 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 
 		timeout := singleOpTimeout(ctx)
 		if timeout <= 0 {
-			// The deadline has already approached.
+			// The deadline has already passed.
 			continue
 		}
 		opCtx, cancel := context.WithTimeout(ctx, timeout)
