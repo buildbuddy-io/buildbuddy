@@ -471,7 +471,7 @@ func (r *taskRunner) RemoveInBackground() {
 	// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 	go func() {
 		if err := r.RemoveWithTimeout(context.Background()); err != nil {
-			log.Errorf("Failed to remove runner: %s", err)
+			log.Errorf("Failed to remove runner %s: %s", r.String(), err)
 		}
 	}()
 }
