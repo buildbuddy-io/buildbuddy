@@ -249,6 +249,9 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
 		sep.setRepoUrl(url, priority)
 	}
+	if url, ok := envVarMap["GIT_REPOSITORY_URL"]; ok && url != "" {
+		sep.setRepoUrl(url, priority)
+	}
 	if url, ok := envVarMap["GIT_URL"]; ok && url != "" {
 		sep.setRepoUrl(url, priority)
 	}
@@ -267,6 +270,9 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 	if branch, ok := envVarMap["TRAVIS_BRANCH"]; ok && branch != "" {
 		sep.setBranchName(branch, priority)
 	}
+	if branch, ok := envVarMap["BITRISE_GIT_BRANCH"]; ok && branch != "" {
+		sep.setBranchName(branch, priority)
+	}
 	if branch, ok := envVarMap["GIT_BRANCH"]; ok && branch != "" {
 		sep.setBranchName(branch, priority)
 	}
@@ -283,6 +289,9 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 		sep.setBranchName(branch, priority)
 	}
 	if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
+		sep.setCommitSha(sha, priority)
+	}
+	if sha, ok := envVarMap["BITRISE_GIT_COMMIT"]; ok && sha != "" {
 		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["GIT_COMMIT"]; ok && sha != "" {
