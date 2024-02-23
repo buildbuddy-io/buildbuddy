@@ -3,7 +3,6 @@ package remotebazel
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
@@ -35,7 +34,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
 
@@ -501,10 +499,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
-	instanceHash := sha256.New()
-	instanceHash.Write(uuid.NodeID())
-	instanceHash.Write([]byte(repoConfig.Root))
-
 	reqOS := runtime.GOOS
 	if *execOs != "" {
 		reqOS = *execOs
@@ -553,13 +547,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			CommitSha: repoConfig.CommitSHA,
 			Branch:    repoConfig.Ref,
 		},
-		SessionAffinityKey: fmt.Sprintf("%x", instanceHash.Sum(nil)),
-		BazelCommand:       strings.Join(bazelArgs, " "),
-		Os:                 reqOS,
-		Arch:               reqArch,
-		ContainerImage:     *containerImage,
-		Env:                envVars,
-		ExecProperties:     platform.Properties,
+		BazelCommand:   strings.Join(bazelArgs, " "),
+		Os:             reqOS,
+		Arch:           reqArch,
+		ContainerImage: *containerImage,
+		Env:            envVars,
+		ExecProperties: platform.Properties,
 	}
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
