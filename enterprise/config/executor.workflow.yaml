@@ -1,0 +1,19 @@
+#Run with:
+#bazel run //enterprise/server/cmd/executor -- --config_file=enterprise/config/executor.workflow.yaml
+monitoring_port: 9091
+executor:
+  root_directory: "/tmp/${USER}_remote_build"
+  local_cache_directory: "/tmp/${USER}_filecache"
+  docker_inherit_user_ids: true
+  app_target: "grpc://localhost:1985"
+  local_cache_size_bytes: 10000000000 # 10GB
+  default_isolation_type: "firecracker"
+  enable_firecracker: true
+  firecracker_mount_workspace_file: false
+  firecracker_enable_vbd: true
+  firecracker_enable_uffd: true
+  firecracker_enable_merged_rootfs: true
+  enable_local_snapshot_sharing: true
+  enable_remote_snapshot_sharing: true
+debug_stream_command_outputs: true
+debug_enable_anonymous_runner_recycling: true
