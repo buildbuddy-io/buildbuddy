@@ -372,8 +372,8 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 	}
 
 	if props.EstimatedComputeUnits > 0 {
-		cpuEstimate = props.EstimatedComputeUnits * ComputeUnitsToMilliCPU
-		memEstimate = props.EstimatedComputeUnits * ComputeUnitsToRAMBytes
+		cpuEstimate = int64(props.EstimatedComputeUnits * ComputeUnitsToMilliCPU)
+		memEstimate = int64(props.EstimatedComputeUnits * ComputeUnitsToRAMBytes)
 	}
 	if props.EstimatedMilliCPU > 0 {
 		cpuEstimate = props.EstimatedMilliCPU

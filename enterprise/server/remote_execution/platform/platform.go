@@ -131,7 +131,7 @@ type Properties struct {
 	OS                        string
 	Arch                      string
 	Pool                      string
-	EstimatedComputeUnits     int64
+	EstimatedComputeUnits     float64
 	EstimatedMilliCPU         int64
 	EstimatedMemoryBytes      int64
 	EstimatedFreeDiskBytes    int64
@@ -255,7 +255,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
-		EstimatedComputeUnits:     int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
+		EstimatedComputeUnits:     float64Prop(m, EstimatedComputeUnitsPropertyName, 0),
 		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
 		EstimatedFreeDiskBytes:    iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
@@ -523,6 +523,19 @@ func int64Prop(props map[string]string, name string, defaultValue int64) int64 {
 		return defaultValue
 	}
 	return i
+}
+
+func float64Prop(props map[string]string, name string, defaultValue float64) float64 {
+	val := props[strings.ToLower(name)]
+	if val == "" {
+		return defaultValue
+	}
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		log.Warningf("Could not parse platform property %q as float64: %s", name, err)
+		return defaultValue
+	}
+	return f
 }
 
 func iecBytesProp(props map[string]string, name string, defaultValue int64) int64 {
