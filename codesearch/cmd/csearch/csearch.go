@@ -66,6 +66,26 @@ var (
 	matches bool
 )
 
+type IndexReader interface {
+	PostingQuery(q *query.Query) ([]uint32, error)
+	Name(fileid uint32) (string, error)
+	Contents(fileid uint32) ([]byte, error)
+}
+
+type indexAdapter struct {
+	*index.Reader
+}
+func (a *indexAdapter) Name(docid uint32) (string, error) {
+	buf, err := a.Reader.GetStoredFieldValue(docid, 1)
+	if err != nil {
+		return "", err
+	}
+	return string(buf), nil
+}
+func (a *indexAdapter) Contents(docid uint32) ([]byte, error) {
+	return a.Reader.GetStoredFieldValue(docid, 2)
+}
+
 func indexDir() string {
 	f := os.Getenv("CSEARCHINDEX2")
 	if f != "" {
@@ -79,7 +99,7 @@ func indexDir() string {
 	return filepath.Clean(home + "/.csindex")
 }
 
-func runQuery(ix *index.Index, q *query.Query, fre *regexp.Regexp) []uint32 {
+func runQuery(ix IndexReader, q *query.Query, fre *regexp.Regexp) []uint32 {
 	var post []uint32
 	var err error
 	if *bruteFlag {
@@ -169,8 +189,7 @@ func Main() {
 		log.Fatal(err)
 	}
 
-	ix := index.Open(db)
-	ix.Verbose = *verboseFlag
+	ix := &indexAdapter{index.NewReader(db, "repo")}
 
 	post2 := runQuery(ix, q, fre)
 

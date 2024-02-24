@@ -7,13 +7,16 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"regexp"
 	"runtime"
 	"sync"
 
 	"github.com/RoaringBitmap/roaring"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/uuid"
@@ -60,7 +63,7 @@ func NewWriter(db *pebble.DB, repo string) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	subLog := log.NamedSubLogger(fmt.Sprintf("%s - %s", repo, id.String()))
+	subLog := log.NamedSubLogger(fmt.Sprintf("writer:%s (%s)", repo, id.String()))
 	return &Writer{
 		db:                db,
 		log:               subLog,
@@ -149,6 +152,10 @@ func (d mapDocument) Fields() []int {
 	return keys
 }
 
+func docidKey(repo string, docID uint32) []byte {
+	return []byte(fmt.Sprintf("%s:did:%d", repo, docID))
+}
+
 func (w *Writer) storedFieldKey(docID uint32, fieldID int) []byte {
 	return []byte(fmt.Sprintf("%s:doc:%d:%d", w.repo, docID, fieldID))
 }
@@ -164,6 +171,9 @@ func (w *Writer) AddDocument(doc Document) error {
 			w.fieldPostingLists[fid] = make(postingLists, 0)
 		}
 		postingLists := w.fieldPostingLists[fid]
+
+		// Always store the docid.
+		w.batch.Set(docidKey(w.repo, doc.ID()), uint32ToBytes(doc.ID()), nil)
 
 		// TODO(tylerw): lookup the tokenizer to use for this field. It
 		// may not always be tritokenizer.
@@ -185,6 +195,7 @@ func (w *Writer) AddDocument(doc Document) error {
 	return nil
 }
 
+// TODO(tylerw): move this up to cindex.
 func (w *Writer) AddFileByDigest(name string, digest *repb.Digest, contents []byte) error {
 	if len(contents) > maxFileLen {
 		w.log.Infof("%s: too long, ignoring\n", name)
@@ -256,4 +267,190 @@ func (w *Writer) Flush() error {
 		}
 	}
 	return flushBatch()
+}
+
+type Reader struct {
+	db  pebble.Reader
+	log log.Logger
+
+	repo string
+}
+
+func NewReader(db pebble.Reader, repo string) *Reader {
+	subLog := log.NamedSubLogger(fmt.Sprintf("reader-%s", repo))
+	return &Reader{
+		db:   db,
+		log:  subLog,
+		repo: repo,
+	}
+}
+
+func (r *Reader) allIndexedFiles() ([]uint32, error) {
+	iter := r.db.NewIter(&pebble.IterOptions{
+		LowerBound: docidKey(r.repo, 0),
+		UpperBound: docidKey(r.repo, math.MaxUint32),
+	})
+	defer iter.Close()
+	found := make([]uint32, 0)
+	for iter.First(); iter.Valid(); iter.Next() {
+		log.Printf("allindexedFiles %q", iter.Key())
+		docid := bytesToUint32(iter.Value())
+		found = append(found, docid)
+	}
+	return found, nil
+}
+
+func (r *Reader) storedFieldKey(docID uint32, fieldID int) []byte {
+	return []byte(fmt.Sprintf("%s:doc:%d:%d", r.repo, docID, fieldID))
+}
+
+func (r *Reader) GetStoredFieldValue(docid uint32, fieldID int) ([]byte, error) {
+	buf, closer, err := r.db.Get(r.storedFieldKey(docid, fieldID))
+	if err == pebble.ErrNotFound {
+		return nil, status.NotFoundErrorf("doc %d (field %d) not found", docid, fieldID)
+	}
+	defer closer.Close()
+	rbuf := make([]byte, len(buf))
+	copy(rbuf, buf)
+	return rbuf, nil
+}
+
+func (r *Reader) postingListBM(ngram []byte, restrict *roaring.Bitmap) (*roaring.Bitmap, error) {
+	minKey := []byte(fmt.Sprintf("%s:gra:%s", r.repo, ngram))
+	maxKey := append(minKey, byte('\xff'))
+	iter := r.db.NewIter(&pebble.IterOptions{
+		LowerBound: minKey,
+		UpperBound: maxKey,
+	})
+	defer iter.Close()
+
+	resultSet := roaring.New()
+	postingList := roaring.New()
+	for iter.First(); iter.Valid(); iter.Next() {
+		r.log.Infof("query %q matched key %q", ngram, iter.Key())
+		if _, err := postingList.ReadFrom(bytes.NewReader(iter.Value())); err != nil {
+			return nil, err
+		}
+		resultSet = roaring.Or(resultSet, postingList)
+		postingList.Clear()
+	}
+	if !restrict.IsEmpty() {
+		resultSet.And(restrict)
+	}
+	return resultSet, nil
+}
+
+func (r *Reader) PostingList(trigram uint32) ([]uint32, error) {
+	return r.postingList(trigram, nil)
+}
+
+func (r *Reader) postingList(trigram uint32, restrict []uint32) ([]uint32, error) {
+	bm, err := r.postingListBM(trigramToBytes(trigram), roaring.BitmapOf(restrict...))
+	if err != nil {
+		return nil, err
+	}
+	return bm.ToArray(), nil
+}
+
+func (r *Reader) PostingAnd(list []uint32, trigram uint32) ([]uint32, error) {
+	return r.postingAnd(list, trigram, nil)
+}
+
+func (r *Reader) postingAnd(list []uint32, trigram uint32, restrict []uint32) ([]uint32, error) {
+	bm, err := r.postingListBM(trigramToBytes(trigram), roaring.BitmapOf(restrict...))
+	if err != nil {
+		return nil, err
+	}
+	bm.And(roaring.BitmapOf(list...))
+	return bm.ToArray(), nil
+}
+
+func (r *Reader) PostingOr(list []uint32, trigram uint32) ([]uint32, error) {
+	return r.postingOr(list, trigram, nil)
+}
+
+func (r *Reader) postingOr(list []uint32, trigram uint32, restrict []uint32) ([]uint32, error) {
+	bm, err := r.postingListBM(trigramToBytes(trigram), roaring.BitmapOf(restrict...))
+	if err != nil {
+		return nil, err
+	}
+	bm.Or(roaring.BitmapOf(list...))
+	return bm.ToArray(), nil
+}
+
+func (r *Reader) PostingQuery(q *query.Query) ([]uint32, error) {
+	return r.postingQuery(q, nil)
+}
+
+// TODO(tylerw): move this to query??
+func (r *Reader) postingQuery(q *query.Query, restrict []uint32) (ret []uint32, err error) {
+	var list []uint32
+	switch q.Op {
+	case query.QNone:
+		// nothing
+	case query.QAll:
+		if restrict != nil {
+			return restrict, err
+		}
+		list, err = r.allIndexedFiles()
+	case query.QAnd:
+		for _, t := range q.Trigram {
+			tri := uint32(t[0])<<16 | uint32(t[1])<<8 | uint32(t[2])
+			if list == nil {
+				list, err = r.postingList(tri, restrict)
+			} else {
+				list, err = r.postingAnd(list, tri, restrict)
+			}
+			if len(list) == 0 {
+				return nil, err
+			}
+		}
+		for _, sub := range q.Sub {
+			if list == nil {
+				list = restrict
+			}
+			list, err = r.postingQuery(sub, list)
+			if len(list) == 0 {
+				return nil, err
+			}
+		}
+	case query.QOr:
+		for _, t := range q.Trigram {
+			tri := uint32(t[0])<<16 | uint32(t[1])<<8 | uint32(t[2])
+			if list == nil {
+				list, err = r.postingList(tri, restrict)
+			} else {
+				list, err = r.postingOr(list, tri, restrict)
+			}
+		}
+		for _, sub := range q.Sub {
+			l, err := r.postingQuery(sub, restrict)
+			if err != nil {
+				return nil, err
+			}
+			list = r.mergeOr(list, l)
+		}
+	}
+	return list, err
+}
+
+func (r *Reader) mergeOr(l1, l2 []uint32) []uint32 {
+	var l []uint32
+	i := 0
+	j := 0
+	for i < len(l1) || j < len(l2) {
+		switch {
+		case j == len(l2) || (i < len(l1) && l1[i] < l2[j]):
+			l = append(l, l1[i])
+			i++
+		case i == len(l1) || (j < len(l2) && l1[i] > l2[j]):
+			l = append(l, l2[j])
+			j++
+		case l1[i] == l2[j]:
+			l = append(l, l1[i])
+			i++
+			j++
+		}
+	}
+	return l
 }
