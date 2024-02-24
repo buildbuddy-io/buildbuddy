@@ -128,7 +128,7 @@ func main() {
 	}
 
 	var ix indexWriter
-	i, err := index.CreateSimple(db)
+	i, err := index.NewWriter(db, "repo")
 	if err != nil {
 		log.Fatal(err)
 	}
