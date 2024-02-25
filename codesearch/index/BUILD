@@ -13,11 +13,9 @@ go_library(
     deps = [
         "//codesearch/query",
         "//codesearch/sparse",
-        "//proto:remote_execution_go_proto",
         "//server/util/log",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
-        "@com_github_gabriel_vasile_mimetype//:mimetype",
         "@com_github_google_uuid//:uuid",
         "@com_github_roaringbitmap_roaring//:roaring",
         "@org_golang_x_sync//errgroup",

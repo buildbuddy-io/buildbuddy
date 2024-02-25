@@ -43,7 +43,6 @@ func uint32ToBytes(i uint32) []byte {
 	return buf
 }
 
-
 func printDB(db *pebble.DB) {
 	iter := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},

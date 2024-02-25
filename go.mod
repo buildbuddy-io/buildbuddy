@@ -58,6 +58,7 @@ require (
 	github.com/dop251/goja v0.0.0-20230626124041-ba8a63e79201
 	github.com/elastic/gosigar v0.14.2
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-00010101000000-000000000000
+	github.com/gabriel-vasile/mimetype v1.4.3
 	github.com/go-faker/faker/v4 v4.0.0-beta.3
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.11.5
@@ -213,7 +214,6 @@ require (
 	github.com/envoyproxy/protoc-gen-validate v1.0.2 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/getsentry/sentry-go v0.22.0 // indirect
 	github.com/go-chi/chi/v5 v5.0.7 // indirect
 	github.com/go-faster/city v1.0.1 // indirect

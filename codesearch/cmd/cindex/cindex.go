@@ -8,9 +8,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"io"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,12 +18,12 @@ import (
 	"runtime/pprof"
 	"sort"
 
-	"github.com/gabriel-vasile/mimetype"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
+	"github.com/gabriel-vasile/mimetype"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"	
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var usageMessage = `usage: cindex [-list] [-reset] [path...]
@@ -88,10 +88,10 @@ type namedField struct {
 	stored bool
 }
 
-func (f namedField) Type() index.FieldType  { return f.ftype }
-func (f namedField) Name() string     { return f.name }
-func (f namedField) Contents() []byte { return f.buf }
-func (f namedField) Stored() bool     { return f.stored }
+func (f namedField) Type() index.FieldType { return f.ftype }
+func (f namedField) Name() string          { return f.name }
+func (f namedField) Contents() []byte      { return f.buf }
+func (f namedField) Stored() bool          { return f.stored }
 func (f namedField) String() string {
 	var snippet string
 	if len(f.buf) < 10 {
@@ -103,11 +103,11 @@ func (f namedField) String() string {
 }
 
 type mapDocument struct {
-	id       uint32
+	id     uint32
 	fields map[string]namedField
 }
 
-func (d mapDocument) ID() uint32        { return d.id }
+func (d mapDocument) ID() uint32                    { return d.id }
 func (d mapDocument) Field(name string) index.Field { return d.fields[name] }
 func (d mapDocument) Fields() []string {
 	fieldNames := make([]string, 0, len(d.fields))
@@ -193,7 +193,7 @@ func (a *indexWriterAdaptor) AddFileByDigest(name string, digest *repb.Digest, c
 		id: docid,
 		fields: map[string]namedField{
 			"filename": namedField{index.TextField, "filename", []byte(name), true /*=stored*/},
-			"body": namedField{index.TextField, "body", contents, true /*=stored*/},
+			"body":     namedField{index.TextField, "body", contents, true /*=stored*/},
 		},
 	}
 	return a.AddDocument(doc)

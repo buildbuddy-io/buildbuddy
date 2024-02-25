@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const(
+const (
 	npost = 64 << 20 / 8 // 64 MB worth of post entries
 )
 
