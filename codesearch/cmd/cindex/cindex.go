@@ -5,17 +5,25 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"sort"
 
+	"github.com/gabriel-vasile/mimetype"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"	
 )
 
 var usageMessage = `usage: cindex [-list] [-reset] [path...]
@@ -61,6 +69,54 @@ var (
 	cpuProfile  = flag.String("cpuprofile", "", "write cpu profile to this file")
 )
 
+var skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*$`)
+
+// Tuning constants for detecting text files.
+// A file is assumed not to be a text file (and thus is not indexed)
+// if it contains an invalid UTF-8 sequences, if it is longer than maxFileLength
+// bytes, or if it contains more than maxTextTrigrams distinct trigrams.
+const (
+	maxFileLen      = 1 << 30
+	maxLineLen      = 2000
+	maxTextTrigrams = 20000
+)
+
+type namedField struct {
+	ftype  index.FieldType
+	name   string
+	buf    []byte
+	stored bool
+}
+
+func (f namedField) Type() index.FieldType  { return f.ftype }
+func (f namedField) Name() string     { return f.name }
+func (f namedField) Contents() []byte { return f.buf }
+func (f namedField) Stored() bool     { return f.stored }
+func (f namedField) String() string {
+	var snippet string
+	if len(f.buf) < 10 {
+		snippet = string(f.buf)
+	} else {
+		snippet = string(f.buf[:10])
+	}
+	return fmt.Sprintf("field<type: %v, name: %q, buf: %q>", f.ftype, f.name, snippet)
+}
+
+type mapDocument struct {
+	id       uint32
+	fields map[string]namedField
+}
+
+func (d mapDocument) ID() uint32        { return d.id }
+func (d mapDocument) Field(name string) index.Field { return d.fields[name] }
+func (d mapDocument) Fields() []string {
+	fieldNames := make([]string, 0, len(d.fields))
+	for name := range d.fields {
+		fieldNames = append(fieldNames, name)
+	}
+	return fieldNames
+}
+
 type indexReader interface {
 	Paths() []string
 	Close()
@@ -84,6 +140,65 @@ func indexDir() string {
 	return filepath.Clean(home + "/.csindex")
 }
 
+type indexWriterAdaptor struct {
+	*index.Writer
+}
+
+func (a *indexWriterAdaptor) AddFile(name string) error {
+	// Open the file and read all contents to memory.
+	f, err := os.Open(name)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	buf, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+
+	// Compute the digest of the file.
+	h := sha256.New()
+	n, err := h.Write(buf)
+	if err != nil {
+		return err
+	}
+	d := &repb.Digest{
+		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
+		SizeBytes: int64(n),
+	}
+	return a.AddFileByDigest(name, d, buf)
+}
+
+func (a *indexWriterAdaptor) AddFileByDigest(name string, digest *repb.Digest, contents []byte) error {
+	if len(contents) > maxFileLen {
+		log.Infof("%s: too long, ignoring\n", name)
+		return nil
+	}
+	r := bytes.NewReader(contents)
+	mtype, err := mimetype.DetectReader(r)
+	if err == nil && skipMime.MatchString(mtype.String()) {
+		log.Infof("%q: skipping (invalid mime type: %q)", name, mtype.String())
+		return nil
+	}
+	r.Seek(0, 0)
+
+	// Compute docid (first bytes from digest)
+	hexBytes, err := hex.DecodeString(digest.GetHash())
+	if err != nil {
+		return err
+	}
+	docid := index.BytesToUint32(hexBytes[:4])
+
+	doc := mapDocument{
+		id: docid,
+		fields: map[string]namedField{
+			"filename": namedField{index.TextField, "filename", []byte(name), true /*=stored*/},
+			"body": namedField{index.TextField, "body", contents, true /*=stored*/},
+		},
+	}
+	return a.AddDocument(doc)
+}
+
 func main() {
 	flag.Usage = usage
 	flag.Parse()
@@ -94,7 +209,7 @@ func main() {
 	if *cpuProfile != "" {
 		f, err := os.Create(*cpuProfile)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(err.Error())
 		}
 		defer f.Close()
 		pprof.StartCPUProfile(f)
@@ -124,15 +239,15 @@ func main() {
 
 	db, err := pebble.Open(indexDir(), &pebble.Options{})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 
 	var ix indexWriter
 	i, err := index.NewWriter(db, "repo")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
-	ix = i
+	ix = &indexWriterAdaptor{i}
 
 	for _, arg := range args {
 		log.Printf("index %s", arg)
@@ -152,7 +267,7 @@ func main() {
 			}
 			if info != nil && info.Mode()&os.ModeType == 0 {
 				if err := ix.AddFile(path); err != nil {
-					log.Fatal(err)
+					log.Fatal(err.Error())
 				}
 			}
 			return nil
@@ -160,7 +275,7 @@ func main() {
 	}
 	log.Printf("flush index")
 	if err := ix.Flush(); err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 
 	log.Printf("done")

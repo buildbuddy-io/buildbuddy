@@ -7,7 +7,10 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//codesearch/index",
+        "//proto:remote_execution_go_proto",
+        "//server/util/log",
         "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_gabriel_vasile_mimetype//:mimetype",
     ],
 )
 

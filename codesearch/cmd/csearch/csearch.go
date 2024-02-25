@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/regexp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
 )
 
@@ -51,12 +51,11 @@ func usage() {
 }
 
 var (
-	fFlag           = flag.String("f", "", "search only files with names matching this regexp")
-	iFlag           = flag.Bool("i", false, "case-insensitive search")
-	verboseFlag     = flag.Bool("verbose", false, "print extra information")
-	bruteFlag       = flag.Bool("brute", false, "brute force - search all files in index")
-	cpuProfile      = flag.String("cpuprofile", "", "write cpu profile to this file")
-	newStyleResults = flag.Bool("new_style_results", true, "if true; show new style results")
+	fFlag       = flag.String("f", "", "search only files with names matching this regexp")
+	iFlag       = flag.Bool("i", false, "case-insensitive search")
+	verboseFlag = flag.Bool("verbose", false, "print extra information")
+	bruteFlag   = flag.Bool("brute", false, "brute force - search all files in index")
+	cpuProfile  = flag.String("cpuprofile", "", "write cpu profile to this file")
 
 	listMatchesOnly = flag.Bool("l", false, "list matching files only")
 	matchCountsOnly = flag.Bool("c", false, "print match counts only")
@@ -75,15 +74,16 @@ type IndexReader interface {
 type indexAdapter struct {
 	*index.Reader
 }
+
 func (a *indexAdapter) Name(docid uint32) (string, error) {
-	buf, err := a.Reader.GetStoredFieldValue(docid, 1)
+	buf, err := a.Reader.GetStoredFieldValue(docid, "filename")
 	if err != nil {
 		return "", err
 	}
 	return string(buf), nil
 }
 func (a *indexAdapter) Contents(docid uint32) ([]byte, error) {
-	return a.Reader.GetStoredFieldValue(docid, 2)
+	return a.Reader.GetStoredFieldValue(docid, "body")
 }
 
 func indexDir() string {
@@ -108,7 +108,7 @@ func runQuery(ix IndexReader, q *query.Query, fre *regexp.Regexp) []uint32 {
 		post, err = ix.PostingQuery(q)
 	}
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 	if *verboseFlag {
 		log.Printf("post query identified %d possible files\n", len(post))
@@ -120,7 +120,7 @@ func runQuery(ix IndexReader, q *query.Query, fre *regexp.Regexp) []uint32 {
 		for _, fileid := range post {
 			name, err := ix.Name(fileid)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal(err.Error())
 			}
 			if fre.MatchString(name, true, true) < 0 {
 				continue
@@ -155,7 +155,7 @@ func Main() {
 	if *cpuProfile != "" {
 		f, err := os.Create(*cpuProfile)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(err.Error())
 		}
 		defer f.Close()
 		pprof.StartCPUProfile(f)
@@ -168,7 +168,7 @@ func Main() {
 	}
 	re, err := regexp.Compile(pat)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 	g.Regexp = re
 
@@ -176,7 +176,7 @@ func Main() {
 	if *fFlag != "" {
 		fre, err = regexp.Compile(*fFlag)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(err.Error())
 		}
 	}
 	q := query.RegexpQuery(re.Syntax)
@@ -186,7 +186,7 @@ func Main() {
 
 	db, err := pebble.Open(indexDir(), &pebble.Options{})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 
 	ix := &indexAdapter{index.NewReader(db, "repo")}
@@ -196,21 +196,17 @@ func Main() {
 	for _, fileid := range post2 {
 		name, err := ix.Name(fileid)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(err.Error())
 		}
 		buf, err := ix.Contents(fileid)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(err.Error())
 		}
-		if !*newStyleResults {
-			g.Reader(bytes.NewReader(buf), name)
-		} else {
-			res, err := g.MakeResult(bytes.NewReader(buf), name)
-			if err != nil {
-				log.Fatal(err)
-			}
-			fmt.Printf("%+v", res)
+		res, err := g.MakeResult(bytes.NewReader(buf), name)
+		if err != nil {
+			log.Fatal(err.Error())
 		}
+		fmt.Printf("%+v", res)
 	}
 
 	matches = g.Match

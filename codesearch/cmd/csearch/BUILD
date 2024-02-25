@@ -9,6 +9,7 @@ go_library(
         "//codesearch/index",
         "//codesearch/query",
         "//codesearch/regexp",
+        "//server/util/log",
         "@com_github_cockroachdb_pebble//:pebble",
     ],
 )

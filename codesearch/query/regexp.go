@@ -34,6 +34,20 @@ const (
 	QOr                  // At least one in Sub or Trigram must match
 )
 
+func (o QueryOp) String() string {
+	switch o {
+	case QAll:
+		return "QAll"
+	case QNone:
+		return "QNone"
+	case QAnd:
+		return "QAnd"
+	case QOr:
+		return "QOr"
+	}
+	return ""
+}
+
 var allQuery = &Query{Op: QAll}
 var noneQuery = &Query{Op: QNone}
 

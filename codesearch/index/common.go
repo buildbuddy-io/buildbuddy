@@ -43,9 +43,6 @@ func uint32ToBytes(i uint32) []byte {
 	return buf
 }
 
-func bytesToUint32(buf []byte) uint32 {
-	return binary.LittleEndian.Uint32(buf)
-}
 
 func printDB(db *pebble.DB) {
 	iter := db.NewIter(&pebble.IterOptions{

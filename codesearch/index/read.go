@@ -108,7 +108,7 @@ func (ix *Index) allIndexedFiles() ([]uint32, error) {
 		if err != nil {
 			return nil, err
 		}
-		fileid := bytesToUint32(hashSum[:4])
+		fileid := BytesToUint32(hashSum[:4])
 		found = append(found, fileid)
 	}
 	return found, nil

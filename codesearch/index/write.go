@@ -3,13 +3,9 @@ package index
 import (
 	"bufio"
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
+	"encoding/binary"
 	"fmt"
-	"io"
 	"math"
-	"os"
-	"regexp"
 	"runtime"
 	"sync"
 
@@ -18,31 +14,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
-	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-// Tuning constants for detecting text files.
-// A file is assumed not to be a text file (and thus is not indexed)
-// if it contains an invalid UTF-8 sequences, if it is longer than maxFileLength
-// bytes, or if it contains more than maxTextTrigrams distinct trigrams.
-const (
-	maxFileLen      = 1 << 30
-	maxLineLen      = 2000
-	maxTextTrigrams = 20000
-
+const(
 	npost = 64 << 20 / 8 // 64 MB worth of post entries
 )
 
-var skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*$`)
-
-type fieldType int32
+type FieldType int32
 
 const (
-	textField fieldType = iota
+	TextField FieldType = iota
 )
 
 type postingLists map[string][]uint32
@@ -54,7 +37,7 @@ type Writer struct {
 	repo              string
 	segmentID         uuid.UUID
 	tokenizer         *TrigramTokenizer
-	fieldPostingLists map[int]postingLists
+	fieldPostingLists map[string]postingLists
 	batch             *pebble.Batch
 }
 
@@ -69,39 +52,14 @@ func NewWriter(db *pebble.DB, repo string) (*Writer, error) {
 		log:               subLog,
 		repo:              repo,
 		segmentID:         id,
-		tokenizer:         NewTrigramTokenizer(textField),
-		fieldPostingLists: make(map[int]postingLists),
+		tokenizer:         NewTrigramTokenizer(TextField),
+		fieldPostingLists: make(map[string]postingLists),
 		batch:             db.NewBatch(),
 	}, nil
 }
 
-func (s *Writer) AddFile(name string) error {
-	// Open the file and read all contents to memory.
-	f, err := os.Open(name)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	buf, err := io.ReadAll(f)
-	if err != nil {
-		return err
-	}
-
-	// Compute the digest of the file.
-	h := sha256.New()
-	n, err := h.Write(buf)
-	if err != nil {
-		return err
-	}
-	d := &repb.Digest{
-		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
-		SizeBytes: int64(n),
-	}
-	return s.AddFileByDigest(name, d, buf)
-}
-
 type Field interface {
-	Type() fieldType
+	Type() FieldType
 	Name() string
 	Contents() []byte
 	Stored() bool
@@ -109,70 +67,36 @@ type Field interface {
 
 type Document interface {
 	ID() uint32
-	Fields() []int
-	Field(int) Field
+	Fields() []string
+	Field(string) Field
 	// TODO(tylerw): add Boost() float64
 }
 
-type namedField struct {
-	ftype  fieldType
-	name   string
-	buf    []byte
-	stored bool
-}
-
-func (f namedField) Type() fieldType  { return f.ftype }
-func (f namedField) Name() string     { return f.name }
-func (f namedField) Contents() []byte { return f.buf }
-func (f namedField) Stored() bool     { return f.stored }
-func (f namedField) String() string {
-	var snippet string
-	if len(f.buf) < 10 {
-		snippet = string(f.buf)
-	} else {
-		snippet = string(f.buf[:10])
-	}
-	return fmt.Sprintf("field<type: %v, name: %q, buf: %q>", f.ftype, f.name, snippet)
-}
-
-type mapDocument struct {
-	id       uint32
-	fieldMap map[int]namedField
-}
-
-func (d mapDocument) ID() uint32        { return d.id }
-func (d mapDocument) Field(k int) Field { return d.fieldMap[k] }
-func (d mapDocument) Fields() []int {
-	keys := make([]int, len(d.fieldMap))
-	i := 0
-	for k := range d.fieldMap {
-		keys[i] = k
-		i++
-	}
-	return keys
+func BytesToUint32(buf []byte) uint32 {
+	return binary.LittleEndian.Uint32(buf)
 }
 
 func docidKey(repo string, docID uint32) []byte {
 	return []byte(fmt.Sprintf("%s:did:%d", repo, docID))
 }
 
-func (w *Writer) storedFieldKey(docID uint32, fieldID int) []byte {
-	return []byte(fmt.Sprintf("%s:doc:%d:%d", w.repo, docID, fieldID))
+func (w *Writer) storedFieldKey(docID uint32, field string) []byte {
+	return []byte(fmt.Sprintf("%s:doc:%d:%s", w.repo, docID, field))
 }
 
-func (w *Writer) postingListKey(ngram string, fieldID int) []byte {
-	return []byte(fmt.Sprintf("%s:gra:%s:%d", w.repo, ngram, fieldID))
+func (w *Writer) postingListKey(ngram string, field string) []byte {
+	return []byte(fmt.Sprintf("%s:gra:%s:%s", w.repo, ngram, field))
 }
 
 func (w *Writer) AddDocument(doc Document) error {
-	for _, fid := range doc.Fields() {
-		field := doc.Field(fid)
-		if _, ok := w.fieldPostingLists[fid]; !ok {
-			w.fieldPostingLists[fid] = make(postingLists, 0)
+	for _, fieldName := range doc.Fields() {
+		field := doc.Field(fieldName)
+		if _, ok := w.fieldPostingLists[field.Name()]; !ok {
+			w.fieldPostingLists[field.Name()] = make(postingLists, 0)
 		}
-		postingLists := w.fieldPostingLists[fid]
+		postingLists := w.fieldPostingLists[field.Name()]
 
-		// Always store the docid.
+		// **Always store DocID.**
 		w.batch.Set(docidKey(w.repo, doc.ID()), uint32ToBytes(doc.ID()), nil)
 
 		// TODO(tylerw): lookup the tokenizer to use for this field. It
@@ -188,43 +112,11 @@ func (w *Writer) AddDocument(doc Document) error {
 		}
 
 		if field.Stored() {
-			storedFieldKey := w.storedFieldKey(doc.ID(), fid)
+			storedFieldKey := w.storedFieldKey(doc.ID(), field.Name())
 			w.batch.Set(storedFieldKey, field.Contents(), nil)
 		}
 	}
 	return nil
-}
-
-// TODO(tylerw): move this up to cindex.
-func (w *Writer) AddFileByDigest(name string, digest *repb.Digest, contents []byte) error {
-	if len(contents) > maxFileLen {
-		w.log.Infof("%s: too long, ignoring\n", name)
-		return nil
-	}
-	r := bytes.NewReader(contents)
-	mtype, err := mimetype.DetectReader(r)
-	if err == nil && skipMime.MatchString(mtype.String()) {
-		w.log.Infof("%q: skipping (invalid mime type: %q)", name, mtype.String())
-		return nil
-	}
-	r.Seek(0, 0)
-
-	// Compute docid (first bytes from digest)
-	hexBytes, err := hex.DecodeString(digest.GetHash())
-	if err != nil {
-		return err
-	}
-	docid := bytesToUint32(hexBytes[:4])
-
-	doc := mapDocument{
-		id: docid,
-		fieldMap: map[int]namedField{
-			1: namedField{textField, "filename", []byte(name), true /*=stored*/},
-			2: namedField{textField, "body", contents, true /*=stored*/},
-		},
-	}
-
-	return w.AddDocument(doc)
 }
 
 func (w *Writer) Flush() error {
@@ -261,9 +153,9 @@ func (w *Writer) Flush() error {
 		}
 		return nil
 	}
-	for fieldNumber, postingLists := range w.fieldPostingLists {
+	for fieldName, postingLists := range w.fieldPostingLists {
 		for ngram, docIDs := range postingLists {
-			writePLs(w.postingListKey(ngram, fieldNumber), docIDs)
+			writePLs(w.postingListKey(ngram, fieldName), docIDs)
 		}
 	}
 	return flushBatch()
@@ -293,21 +185,20 @@ func (r *Reader) allIndexedFiles() ([]uint32, error) {
 	defer iter.Close()
 	found := make([]uint32, 0)
 	for iter.First(); iter.Valid(); iter.Next() {
-		log.Printf("allindexedFiles %q", iter.Key())
-		docid := bytesToUint32(iter.Value())
+		docid := BytesToUint32(iter.Value())
 		found = append(found, docid)
 	}
 	return found, nil
 }
 
-func (r *Reader) storedFieldKey(docID uint32, fieldID int) []byte {
-	return []byte(fmt.Sprintf("%s:doc:%d:%d", r.repo, docID, fieldID))
+func (r *Reader) storedFieldKey(docID uint32, field string) []byte {
+	return []byte(fmt.Sprintf("%s:doc:%d:%s", r.repo, docID, field))
 }
 
-func (r *Reader) GetStoredFieldValue(docid uint32, fieldID int) ([]byte, error) {
-	buf, closer, err := r.db.Get(r.storedFieldKey(docid, fieldID))
+func (r *Reader) GetStoredFieldValue(docid uint32, field string) ([]byte, error) {
+	buf, closer, err := r.db.Get(r.storedFieldKey(docid, field))
 	if err == pebble.ErrNotFound {
-		return nil, status.NotFoundErrorf("doc %d (field %d) not found", docid, fieldID)
+		return nil, status.NotFoundErrorf("doc %d (field %q) not found", docid, field)
 	}
 	defer closer.Close()
 	rbuf := make([]byte, len(buf))
@@ -385,6 +276,7 @@ func (r *Reader) PostingQuery(q *query.Query) ([]uint32, error) {
 // TODO(tylerw): move this to query??
 func (r *Reader) postingQuery(q *query.Query, restrict []uint32) (ret []uint32, err error) {
 	var list []uint32
+	r.log.Infof("q.Op: %+v", q.Op)
 	switch q.Op {
 	case query.QNone:
 		// nothing
