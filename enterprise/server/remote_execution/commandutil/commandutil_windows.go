@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	putil "github.com/shirou/gopsutil/v3/process"
 )
 
@@ -91,7 +91,7 @@ func (p *process) postStart() error {
 	return proc.ResumeWithContext(context.TODO())
 }
 
-func (p *process) wait() (*espb.Rusage, error) {
+func (p *process) wait() (*repb.Rusage, error) {
 	defer close(p.terminated)
 	err := p.cmd.Wait()
 	return nil, err

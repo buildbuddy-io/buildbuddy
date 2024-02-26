@@ -11,49 +11,6 @@ import "proto/stat_filter.proto";
 
 package execution_stats;
 
-// Proto representation of the rusage struct used in the Linux/BSD getrusage()
-// system call.
-message Rusage {
-  // ru_utime: Amount of CPU time in seconds spent in userspace.
-  int64 user_cpu_time_usec = 1;
-
-  // ru_stime: Amount of CPU time in seconds spent in kernelspace.
-  int64 sys_cpu_time_usec = 2;
-
-  // ru_maxrss: Maximum amount of resident memory in bytes.
-  int64 max_resident_set_size_bytes = 3;
-
-  // ru_minflt: Page reclaims.
-  int64 page_reclaims = 4;
-
-  // ru_majflt: Page faults.
-  int64 page_faults = 5;
-
-  // ru_nswap: Number of swaps.
-  int64 swaps = 6;
-
-  // ru_inblock: Block input operations.
-  int64 block_input_operations = 7;
-
-  // ru_oublock: Block output operations.
-  int64 block_output_operations = 8;
-
-  // ru_msgsnd: Messages sent.
-  int64 messages_sent = 9;
-
-  // ru_msgrcv: Messages received.
-  int64 messages_received = 10;
-
-  // ru_nsignals: Signals received.
-  int64 signals_received = 11;
-
-  // ru_nvcsw: Voluntary context switches.
-  int64 voluntary_context_switches = 12;
-
-  // ru_nivcsw: Involuntary context switches.
-  int64 involuntary_context_switches = 13;
-}
-
 // TODO(http://go/b/1451): remove this; stats have been moved to
 // ExecutedActionMetadata. Next tag: 12
 message ExecutionSummary {

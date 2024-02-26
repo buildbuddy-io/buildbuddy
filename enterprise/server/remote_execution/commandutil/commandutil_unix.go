@@ -11,7 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 type process struct {
@@ -27,7 +27,7 @@ func (p *process) postStart() error {
 	return nil
 }
 
-func (p *process) wait() (*espb.Rusage, error) {
+func (p *process) wait() (*repb.Rusage, error) {
 	defer close(p.terminated)
 	err := p.cmd.Wait()
 	if p.cmd.ProcessState == nil {
@@ -37,7 +37,7 @@ func (p *process) wait() (*espb.Rusage, error) {
 	if !ok {
 		return nil, err
 	}
-	return &espb.Rusage{
+	return &repb.Rusage{
 		UserCpuTimeUsec:            rusage.Utime.Nano() / 1e3,
 		SysCpuTimeUsec:             rusage.Stime.Nano() / 1e3,
 		MaxResidentSetSizeBytes:    rusage.Maxrss,
