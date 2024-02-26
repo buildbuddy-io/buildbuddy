@@ -2173,6 +2173,13 @@ message IOStats {
   // The time taken to download the tree.
   int64 file_download_duration_usec = 3;
 
+  // Total number of inputs that were provisioned from the local cache rather
+  // than downloading from the remote cache.
+  int64 local_cache_hits = 7;
+
+  // Total time spent linking inputs from local cache, across all threads.
+  google.protobuf.Duration local_cache_duration = 8;
+
   // The number of files uploaded in this tree.
   int64 file_upload_count = 4;
 
