@@ -3122,6 +3122,6 @@
 }
 
 .monaco-editor .lines-content .core-guide {
-	position: absolute;
-	box-sizing: border-box;
+  position: absolute;
+  box-sizing: border-box;
 }
