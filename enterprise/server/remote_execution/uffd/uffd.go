@@ -8,11 +8,14 @@ import (
 	"net"
 	"os"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sys/unix"
 )
 
@@ -114,7 +117,8 @@ type Handler struct {
 	earlyTerminationReader *os.File
 	earlyTerminationWriter *os.File
 
-	mappedPageFaults map[int64][]PageFaultData
+	mappedPageFaults           map[int64][]PageFaultData
+	pageFaultTotalDurationUsec int64
 }
 
 func NewHandler() (*Handler, error) {
@@ -272,6 +276,8 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			return nil
 		}
 
+		start := time.Now()
+
 		// Receive a page fault notification
 		guestFaultingAddr, err := readFaultingAddress(uffd)
 		if err != nil {
@@ -366,7 +372,18 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		if err := memoryStore.UnmapChunk(int64(chunkStartOffset)); err != nil {
 			return err
 		}
+
+		h.pageFaultTotalDurationUsec += time.Since(start).Microseconds()
 	}
+}
+
+func (h *Handler) EmitSummaryMetrics(stage string) {
+	metrics.COWSnapshotPageFaultCount.With(prometheus.Labels{
+		metrics.Stage: stage,
+	}).Observe(float64(len(h.mappedPageFaults)))
+	metrics.COWSnapshotPageFaultTotalDurationUsec.With(prometheus.Labels{
+		metrics.Stage: stage,
+	}).Observe(float64(h.pageFaultTotalDurationUsec))
 }
 
 // resolvePageFault copies `size` bytes of memory from a `Src` address to the faulting region `Dst`

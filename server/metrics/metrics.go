@@ -1135,6 +1135,24 @@ var (
 		FileName,
 	})
 
+	COWSnapshotPageFaultCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_page_fault_count",
+		Help:      "For a snapshotted VM, number of page faults.",
+	}, []string{
+		Stage,
+	})
+
+	COWSnapshotPageFaultTotalDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_page_fault_total_duration_usec",
+		Help:      "For a snapshotted VM, total time spent fulfilling page faults.",
+	}, []string{
+		Stage,
+	})
+
 	COWSnapshotInitChunkDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",

@@ -2226,6 +2226,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	if c.memoryStore != nil {
 		c.memoryStore.EmitUsageMetrics("init")
 	}
+	if c.uffdHandler != nil {
+		c.uffdHandler.EmitSummaryMetrics("init")
+	}
 	if c.rootStore != nil {
 		c.rootStore.EmitUsageMetrics("init")
 	}
