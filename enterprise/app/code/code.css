@@ -390,7 +390,7 @@
   border-bottom: 2px solid #fafafa;
   border-left: 2px solid #fafafa;
   cursor: pointer;
-  font-size: .8em;
+  font-size: 0.8em;
   display: flex;
   align-items: center;
   color: #444;
@@ -419,10 +419,9 @@
 }
 
 .code-editor .code-viewer-tab svg:hover {
-  color: #B71C1C;
+  color: #b71c1c;
 }
 
 .code-editor .monaco-editor .view-overlays .current-line-exact {
   border: 2px solid #eee;
 }
-
