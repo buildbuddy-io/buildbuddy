@@ -341,36 +341,35 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 		return "", err
 	}
 
-	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		return tx.NewQuery(ctx, "userdb_update_group").Raw(`
-			UPDATE "Groups" SET
-				name = ?,
-				url_identifier = ?,
-				owned_domain = ?,
-				sharing_enabled = ?,
-				user_owned_keys_enabled = ?,
-				bot_suggestions_enabled = ?,
-				developer_org_creation_enabled = ?,
-				use_group_owned_executors = ?,
-				cache_encryption_enabled = ?,
-				suggestion_preference = ?,
-				restrict_clean_workflow_runs_to_admins = ?,
-				enforce_ip_rules = ?
-			WHERE group_id = ?`,
-			g.Name,
-			g.URLIdentifier,
-			g.OwnedDomain,
-			g.SharingEnabled,
-			g.UserOwnedKeysEnabled,
-			g.BotSuggestionsEnabled,
-			g.DeveloperOrgCreationEnabled,
-			g.UseGroupOwnedExecutors,
-			g.CacheEncryptionEnabled,
-			g.SuggestionPreference,
-			g.RestrictCleanWorkflowRunsToAdmins,
-			g.EnforceIPRules,
-			g.GroupID).Exec().Error
-	})
+	err = d.h.NewQuery(ctx, "userdb_update_group").Raw(`
+		UPDATE "Groups" SET
+			name = ?,
+			url_identifier = ?,
+			owned_domain = ?,
+			sharing_enabled = ?,
+			user_owned_keys_enabled = ?,
+			bot_suggestions_enabled = ?,
+			developer_org_creation_enabled = ?,
+			use_group_owned_executors = ?,
+			cache_encryption_enabled = ?,
+			suggestion_preference = ?,
+			restrict_clean_workflow_runs_to_admins = ?,
+			enforce_ip_rules = ?
+		WHERE group_id = ?`,
+		g.Name,
+		g.URLIdentifier,
+		g.OwnedDomain,
+		g.SharingEnabled,
+		g.UserOwnedKeysEnabled,
+		g.BotSuggestionsEnabled,
+		g.DeveloperOrgCreationEnabled,
+		g.UseGroupOwnedExecutors,
+		g.CacheEncryptionEnabled,
+		g.SuggestionPreference,
+		g.RestrictCleanWorkflowRunsToAdmins,
+		g.EnforceIPRules,
+		g.GroupID,
+	).Exec().Error
 	if err != nil {
 		return "", err
 	}
@@ -666,9 +665,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 		return err
 	}
 
-	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		return tx.GORM(ctx, "userdb_update_existing_group").Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
-	})
+	return d.h.GORM(ctx, "userdb_update_existing_group").Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
 }
 
 func (d *UserDB) getDefaultGroupConfig() *tables.Group {

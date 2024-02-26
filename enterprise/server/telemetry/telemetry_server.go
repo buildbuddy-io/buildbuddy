@@ -91,9 +91,7 @@ func (t *TelemetryServer) insertLogIfNotExists(ctx context.Context, telemetryLog
 		"installation_uuid = ? AND instance_uuid = ? AND telemetry_log_uuid = ?",
 		telemetryLog.InstallationUUID, telemetryLog.InstanceUUID, telemetryLog.TelemetryLogUUID).First(&existing).Error
 	if db.IsRecordNotFound(err) {
-		return t.h.Transaction(ctx, func(tx interfaces.DB) error {
-			return tx.NewQuery(ctx, "telemetry_server_create_log").Create(telemetryLog)
-		})
+		return t.h.NewQuery(ctx, "telemetry_server_create_log").Create(telemetryLog)
 	}
 	return err
 }
