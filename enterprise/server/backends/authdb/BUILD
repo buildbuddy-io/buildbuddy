@@ -25,6 +25,7 @@ go_library(
         "//server/util/status",
         "//server/util/subdomain",
         "@com_github_prometheus_client_golang//prometheus",
+        "@io_gorm_gorm//clause",
         "@org_golang_x_crypto//chacha20",
     ],
 )

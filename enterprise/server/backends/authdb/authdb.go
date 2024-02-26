@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/chacha20"
+	"gorm.io/gorm/clause"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -227,16 +228,12 @@ func (g *apiKeyGroup) GetEnforceIPRules() bool {
 
 func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
 	session.SessionID = sessionID
-	// TODO(zoey): this select seems unnecessary, revisit it.
-	var existing tables.Session
-	rq := d.h.NewQuery(ctx, "authdb_get_existing_session").Raw(`
-		SELECT * FROM "Sessions" WHERE session_id = ?
-			`, sessionID)
-	if err := rq.Take(&existing); err != nil {
-		if db.IsRecordNotFound(err) {
-			return d.h.NewQuery(ctx, "authdb_create_session").Create(session)
-		}
-		return err
+	// Note: this could be one query, but it's likely too complicated to be worth
+	// the slightly lower QPS.
+	if result := d.h.GORM(ctx, "authdb_create_session").Clauses(clause.OnConflict{DoNothing: true}).Create(session); result.Error != nil {
+		return result.Error
+	} else if result.RowsAffected != 0 {
+		return nil
 	}
 	return d.h.NewQuery(ctx, "authdb_update_session").Update(session)
 }
