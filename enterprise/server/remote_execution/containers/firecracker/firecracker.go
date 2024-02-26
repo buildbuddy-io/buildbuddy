@@ -2442,6 +2442,8 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
 
+	log.CtxInfof(ctx, "Pausing VM")
+
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return err
@@ -2552,6 +2554,8 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 	c.recycled = true
 	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
+
+	log.CtxInfof(ctx, "Unpausing VM")
 
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
 	return c.LoadSnapshot(ctx)
