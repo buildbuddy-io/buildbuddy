@@ -198,6 +198,21 @@
   overflow: clip;
 }
 
+.code-diff-viewer-item-path.deleted,
+.code-sidebar-node-name.deleted {
+  color: #f44336;
+  text-decoration: line-through;
+}
+
+.code-diff-viewer-item-path.added,
+.code-sidebar-node-name.added {
+  color: #4caf50;
+}
+
+.code-sidebar-node-name.changed {
+  color: #ff9800;
+}
+
 /* Monaco overrides */
 
 .minimap-shadow-visible,
