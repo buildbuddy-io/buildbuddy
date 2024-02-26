@@ -10,6 +10,8 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 )
 
 type process struct {
@@ -23,6 +25,33 @@ func (p *process) preStart() error {
 
 func (p *process) postStart() error {
 	return nil
+}
+
+func (p *process) wait() (*espb.Rusage, error) {
+	defer close(p.terminated)
+	err := p.cmd.Wait()
+	if p.cmd.ProcessState == nil {
+		return nil, err
+	}
+	rusage, ok := p.cmd.ProcessState.SysUsage().(*syscall.Rusage)
+	if !ok {
+		return nil, err
+	}
+	return &espb.Rusage{
+		UserCpuTimeUsec:            rusage.Utime.Nano() / 1e3,
+		SysCpuTimeUsec:             rusage.Stime.Nano() / 1e3,
+		MaxResidentSetSizeBytes:    rusage.Maxrss,
+		PageReclaims:               rusage.Minflt,
+		PageFaults:                 rusage.Majflt,
+		Swaps:                      rusage.Nswap,
+		BlockInputOperations:       rusage.Inblock,
+		BlockOutputOperations:      rusage.Oublock,
+		MessagesSent:               rusage.Msgsnd,
+		MessagesReceived:           rusage.Msgrcv,
+		SignalsReceived:            rusage.Nsignals,
+		VoluntaryContextSwitches:   rusage.Nvcsw,
+		InvoluntaryContextSwitches: rusage.Nivcsw,
+	}, err
 }
 
 // killProcessTree kills the given pid as well as any descendant processes.

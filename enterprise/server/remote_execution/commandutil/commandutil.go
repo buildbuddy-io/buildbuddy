@@ -190,11 +190,6 @@ func (p *process) monitor(statsListener procstats.Listener) chan *repb.UsageStat
 	return statsCh
 }
 
-func (p *process) wait() error {
-	defer close(p.terminated)
-	return p.cmd.Wait()
-}
-
 // RunWithProcessTreeCleanup runs the given command, ensuring that child
 // processes are killed if the command times out.
 //
@@ -218,8 +213,18 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, statsListener
 	}
 	statsCh := p.monitor(statsListener)
 
-	err = p.wait()
-	return <-statsCh, err
+	rusage, err := p.wait()
+	stats := <-statsCh
+	// If rusage reports higher CPU usage than what the stats poller reported,
+	// use that as the measured CPU. The poller doesn't know exactly when the
+	// process will exit, so it will miss some usage towards the end. Note,
+	// ideally we'd just use rusage in 100% of cases, but unlike the poller,
+	// rusage doesn't account for child processes and can sometimes underreport.
+	if stats != nil && rusage != nil {
+		rusageCPUMicros := rusage.GetUserCpuTimeUsec() + rusage.GetSysCpuTimeUsec()
+		stats.CpuNanos = max(stats.CpuNanos, rusageCPUMicros*1e3)
+	}
+	return stats, err
 }
 
 // ChildPids returns all *direct* child pids of a process identified by pid.
