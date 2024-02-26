@@ -20,7 +20,7 @@ jobs:
 
       - name: Download bb cli
         run: |
-          bazel build cli
+          cli/install.sh
 
       - name: Setup git env
         run: |
@@ -31,7 +31,7 @@ jobs:
 
       - name: Test
         run: |
-          $PWD/bazel-bin/cli/cmd/bb/bb_/bb remote test //... \
+          bb remote test //... \
             --config=linux-workflows --config=race \
             --remote_executor=grpcs://buildbuddy.buildbuddy.io \
             --test_tag_filters=-performance,-webdriver,-docker,-bare \
