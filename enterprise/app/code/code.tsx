@@ -47,6 +47,7 @@ interface State {
   fullPathToModelMap: Map<string, monaco.editor.ITextModel>;
   fullPathToDiffModelMap: Map<string, monaco.editor.IDiffEditorModel>;
   originalFileContents: Map<string, string>;
+  tabs: Map<string, string>;
   /** Map of file path to patch contents, or null if the file is being deleted. */
   changes: Map<string, string | null>;
   temporaryFiles: Map<string, github.TreeNode[]>;
@@ -89,6 +90,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     fullPathToModelMap: new Map<string, monaco.editor.ITextModel>(),
     fullPathToDiffModelMap: new Map<string, monaco.editor.IDiffEditorModel>(),
     originalFileContents: new Map<string, string>(),
+    tabs: new Map<string, string>(),
     changes: new Map<string, string>(),
     temporaryFiles: new Map<string, github.TreeNode[]>(),
     mergeConflicts: new Map<string, string>(),
@@ -188,7 +190,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     if (this.isSingleFile() && bytestreamURL) {
       rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text", { zip }).then((result) => {
         let path = monaco.Uri.file(filename || "file");
-        this.editor?.setModel(monaco.editor.createModel(result, langFromPath(path.path), path));
+        this.setModel(path.path, monaco.editor.createModel(result, langFromPath(path.path), path));
       });
       return;
     }
@@ -360,7 +362,7 @@ export default class CodeComponent extends React.Component<Props, State> {
         this.state.treeShaToChildrenMap.set(node.sha, []);
       } else {
         this.navigateToPath(fullPath);
-        this.editor?.setModel(this.state.fullPathToModelMap.get(fullPath) || null);
+        this.setModel(fullPath, this.state.fullPathToModelMap.get(fullPath));
       }
       this.updateState({});
       return;
@@ -423,8 +425,18 @@ export default class CodeComponent extends React.Component<Props, State> {
     return model;
   }
 
+  handleTabClicked(fullPath: string) {
+    this.navigateToPath(fullPath);
+    this.setModel(fullPath, this.state.fullPathToModelMap.get(fullPath));
+  }
+
   navigateToContent(fullPath: string, content: Uint8Array) {
-    this.editor?.setModel(this.ensureModelExists(fullPath, content));
+    this.setModel(fullPath, this.ensureModelExists(fullPath, content));
+  }
+
+  setModel(fullPath: string, model: monaco.editor.ITextModel | undefined) {
+    this.state.tabs.set(fullPath, fullPath);
+    this.editor?.setModel(model || null);
   }
 
   navigateToPath(path: string) {
@@ -571,7 +583,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       return;
     }
     this.navigateToPath(fullPath);
-    this.editor?.setModel(this.state.fullPathToModelMap.get(fullPath) || null);
+    this.setModel(fullPath, this.state.fullPathToModelMap.get(fullPath));
   }
 
   handleCheckboxClicked(fullPath: string) {
@@ -610,7 +622,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     }
     this.navigateToPath(path);
     this.updateState({}, () => {
-      this.editor?.setModel(model!);
+      this.setModel(path, model);
       this.handleContentChanged();
     });
   }
@@ -1147,6 +1159,22 @@ export default class CodeComponent extends React.Component<Props, State> {
             </div>
           )}
           <div className="code-container">
+            <div className="code-viewer-tabs">
+              {[...this.state.tabs.keys()].reverse().map((t) => (
+                <div
+                  className={`code-viewer-tab ${t == this.currentPath() ? "selected" : ""}`}
+                  onClick={this.handleTabClicked.bind(this, t)}>
+                  <span>{t.split("/").pop() || "Untitled"}</span>
+                  <XCircle
+                    onClick={(e) => {
+                      this.state.tabs.delete(t);
+                      this.setState({});
+                      e.stopPropagation();
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
             <div className="code-viewer-container">
               <div className={`code-viewer ${showDiffView ? "hidden-viewer" : ""}`} ref={this.codeViewer} />
               <div className={`diff-viewer ${showDiffView ? "" : "hidden-viewer"}`} ref={this.diffViewer} />
