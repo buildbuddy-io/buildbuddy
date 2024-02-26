@@ -10,10 +10,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"gorm.io/gorm/clause"
 
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -85,15 +85,7 @@ func (t *TelemetryServer) LogTelemetry(ctx context.Context, req *telpb.LogTeleme
 }
 
 func (t *TelemetryServer) insertLogIfNotExists(ctx context.Context, telemetryLog *tables.TelemetryLog) error {
-	var existing tables.TelemetryLog
-	// TODO(zoey): this can be done in one query with an insert that does nothing on conflict
-	err := t.h.GORM(ctx, "telemetry_server_get_existing_log").Where(
-		"installation_uuid = ? AND instance_uuid = ? AND telemetry_log_uuid = ?",
-		telemetryLog.InstallationUUID, telemetryLog.InstanceUUID, telemetryLog.TelemetryLogUUID).First(&existing).Error
-	if db.IsRecordNotFound(err) {
-		return t.h.NewQuery(ctx, "telemetry_server_create_log").Create(telemetryLog)
-	}
-	return err
+	return t.h.GORM(ctx, "telemetry_server_create_log").Clauses(clause.OnConflict{DoNothing: true}).Create(telemetryLog).Error
 }
 
 func recordFromLogProto(logProto *telpb.TelemetryLog) *tables.TelemetryLog {
