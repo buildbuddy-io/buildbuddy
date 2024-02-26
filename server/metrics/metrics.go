@@ -1135,6 +1135,37 @@ var (
 		FileName,
 	})
 
+	COWSnapshotInitChunkDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_init_chunk_duration_usec",
+		Help:      "For a COW snapshot, time to initialize one chunk.",
+	}, []string{
+		ChunkSource,
+	})
+
+	COWSnapshotChunkOperationTotalDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_chunk_operation_duration_usec",
+		Help:      "For a COW snapshot, cumulative time spent on an operation type.",
+	}, []string{
+		FileName,
+		EventName,
+		Stage,
+	})
+
+	COWSnapshotChunkOperationCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_chunk_operation_count",
+		Help:      "For a COW snapshot, number of times a chunk operation was executed.",
+	}, []string{
+		FileName,
+		EventName,
+		Stage,
+	})
+
 	MaxRecyclableResourceUsageEvent = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
