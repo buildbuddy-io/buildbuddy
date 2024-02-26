@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
@@ -194,6 +195,9 @@ func (c *COWStore) GetRelativeOffsetFromChunkStart(offset uintptr) uintptr {
 // the input offset, and the size of the chunk. Note that the returned chunk
 // size may not be equal to ChunkSizeBytes() if it's the last chunk in the file.
 func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uintptr, int64, error) {
+	_, span := tracing.StartSpan(c.ctx)
+	defer span.End()
+
 	chunkStartOffset := c.ChunkStartOffset(int64(offset))
 	chunkStartAddress, err := c.GetPageAddress(uintptr(chunkStartOffset), write)
 	if err != nil {
@@ -214,6 +218,9 @@ func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uint
 // performed so that the returned chunk can be written to without modifying
 // readonly chunks.
 func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
+	_, span := tracing.StartSpan(c.ctx)
+	defer span.End()
+
 	chunkStartOffset := c.ChunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
 
@@ -265,6 +272,9 @@ func (c *COWStore) ChunkStartOffset(off int64) int64 {
 }
 
 func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
+	_, span := tracing.StartSpan(c.ctx)
+	defer span.End()
+
 	if err := checkBounds("read", c.totalSizeBytes, p, off); err != nil {
 		return 0, err
 	}
@@ -295,6 +305,9 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffset int64, readSize int) error {
+	_, span := tracing.StartSpan(c.ctx)
+	defer span.End()
+
 	chunkUnlockFn := c.chunkLock.RLock(fmt.Sprintf("%d", chunkStartOffset))
 	defer chunkUnlockFn()
 
@@ -351,6 +364,9 @@ func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffse
 }
 
 func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
+	_, span := tracing.StartSpan(c.ctx)
+	defer span.End()
+
 	if err := checkBounds("write", c.totalSizeBytes, p, off); err != nil {
 		return 0, err
 	}
@@ -385,6 +401,9 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 }
 
 func (c *COWStore) writeToChunk(p []byte, writeRelativeOffset int64, chunkStartOffset int64, writeSize int) (int, error) {
+	_, span := tracing.StartSpan(c.ctx)
+	defer span.End()
+
 	chunkUnlockFn := c.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
 	defer chunkUnlockFn()
 
@@ -403,6 +422,9 @@ func (c *COWStore) writeToChunk(p []byte, writeRelativeOffset int64, chunkStartO
 }
 
 func (c *COWStore) Sync() error {
+	_, span := tracing.StartSpan(c.ctx)
+	defer span.End()
+
 	var lastErr error
 	// TODO: maybe parallelize
 	for offset, chunk := range c.chunks {
@@ -417,6 +439,9 @@ func (c *COWStore) Sync() error {
 }
 
 func (s *COWStore) Close() error {
+	_, span := tracing.StartSpan(s.ctx)
+	defer span.End()
+
 	// Close background goroutine eagerly fetching chunks
 	close(s.quitChan)
 	s.eagerFetchEg.Wait()
@@ -447,6 +472,9 @@ func (s *COWStore) Dirty(chunkOffset int64) bool {
 
 // UnmapChunk unmaps the chunk containing the input offset
 func (s *COWStore) UnmapChunk(offset int64) error {
+	_, span := tracing.StartSpan(s.ctx)
+	defer span.End()
+
 	chunkStartOffset := s.ChunkStartOffset(offset)
 	s.storeLock.RLock()
 	c := s.chunks[chunkStartOffset]
@@ -489,6 +517,9 @@ func (s *COWStore) Resize(newSize int64) (oldSize int64, err error) {
 // WriteFile creates a new file at the given path and writes all contents to the
 // file.
 func (s *COWStore) WriteFile(path string) error {
+	_, span := tracing.StartSpan(s.ctx)
+	defer span.End()
+
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0755)
 	if err != nil {
 		return status.WrapError(err, "create")
@@ -523,6 +554,9 @@ func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 }
 
 func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
+	_, span := tracing.StartSpan(s.ctx)
+	defer span.End()
+
 	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
 	defer chunkUnlockFn()
 
@@ -589,6 +623,9 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 // Writes a new dirty chunk containing all 0s for the given chunk index.
 // NOTE: This function should be executed atomically. Callers should manage locking
 func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newChunk *Mmap, err error) {
+	_, span := tracing.StartSpan(s.ctx)
+	defer span.End()
+
 	path := filepath.Join(s.dataDir, fmt.Sprintf("%d%s", offset, dirtySuffix))
 	fd, err := syscall.Open(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	if err != nil {
@@ -1015,6 +1052,9 @@ func mmapDataFromFd(fd, size int, fileNameLabel string) ([]byte, error) {
 
 // NOTE: This function should be executed atomically. Callers should manage locking
 func (m *Mmap) initMap() (err error) {
+	_, span := tracing.StartSpan(m.ctx)
+	defer span.End()
+
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
@@ -1052,6 +1092,9 @@ func (m *Mmap) Fetch() error {
 }
 
 func (m *Mmap) fetch(path string) error {
+	_, span := tracing.StartSpan(m.ctx)
+	defer span.End()
+
 	if m.fetched {
 		return nil
 	}
@@ -1068,6 +1111,9 @@ func (m *Mmap) fetch(path string) error {
 }
 
 func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
+	_, span := tracing.StartSpan(m.ctx)
+	defer span.End()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -1085,6 +1131,9 @@ func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
+	_, span := tracing.StartSpan(m.ctx)
+	defer span.End()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.initMap(); err != nil {
@@ -1110,6 +1159,9 @@ func (m *Mmap) Sync() error {
 // Unmap unmaps the chunk without marking it closed.
 // It returns nil if the chunk is already unmapped.
 func (m *Mmap) Unmap() error {
+	_, span := tracing.StartSpan(m.ctx)
+	defer span.End()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -1141,6 +1193,9 @@ func (m *Mmap) unmap() (unmapped bool, err error) {
 }
 
 func (m *Mmap) Close() error {
+	_, span := tracing.StartSpan(m.ctx)
+	defer span.End()
+
 	m.mu.Lock()
 	alreadyClosed := m.closed
 	m.closed = true
@@ -1158,6 +1213,9 @@ func (m *Mmap) SizeBytes() (int64, error) {
 // StartAddress returns the address of the first mapped byte. If this is a lazy
 // mmap, calling this func will force an mmap if not already mapped.
 func (m *Mmap) StartAddress() (uintptr, error) {
+	_, span := tracing.StartSpan(m.ctx)
+	defer span.End()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.initMap(); err != nil {
@@ -1185,6 +1243,9 @@ func (m *Mmap) SetDigest(d *repb.Digest) {
 }
 
 func (m *Mmap) Digest() (*repb.Digest, error) {
+	_, span := tracing.StartSpan(m.ctx)
+	defer span.End()
+
 	if d := m.safeReadLazyDigest(); d != nil {
 		return d, nil
 	}
