@@ -394,6 +394,7 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 	if req.GetInstallationId() == 0 {
 		return nil, status.FailedPreconditionError("missing installation_id")
 	}
+	// TODO(zoey): Could make this one query
 	dbh := a.env.GetDBHandle()
 	err = dbh.Transaction(ctx, func(tx interfaces.DB) error {
 		var ti tables.GitHubAppInstallation

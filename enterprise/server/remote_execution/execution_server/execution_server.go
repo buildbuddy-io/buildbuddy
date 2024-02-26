@@ -314,15 +314,18 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	dbErr := s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		var existing tables.Execution
-		if err := tx.GORM(ctx, "execution_server_get_execution_for_update").Where(
-			"execution_id = ?", executionID).First(&existing).Error; err != nil {
-			return err
-		}
-		return tx.GORM(ctx, "execution_server_update_execution").Model(&existing).Where(
-			"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution).Error
-	})
+	var dbErr error
+	var existing tables.Execution
+	// TODO(zoey): This select seems unnecessary, should revisit it
+	if err := s.env.GetDBHandle().GORM(ctx, "execution_server_get_execution_for_update").Where(
+		"execution_id = ?", executionID).First(&existing).Error; err != nil {
+		dbErr = err
+	} else {
+		dbErr = s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+			return tx.GORM(ctx, "execution_server_update_execution").Model(&existing).Where(
+				"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution).Error
+		})
+	}
 
 	if stage == repb.ExecutionStage_COMPLETED {
 		if err := s.recordExecution(ctx, executionID); err != nil {

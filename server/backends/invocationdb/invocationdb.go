@@ -238,16 +238,17 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
+	var in tables.Invocation
+	// TODO(zoey): could make this one query
+	if err := d.h.NewQuery(ctx, "invocationdb_get_invocation_for_delete").Raw(
+		`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
+		return err
+	}
+	acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
+	if err := perms.AuthorizeWrite(authenticatedUser, acl); err != nil {
+		return err
+	}
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		var in tables.Invocation
-		if err := tx.NewQuery(ctx, "invocationdb_get_invocation_for_delete").Raw(
-			`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
-			return err
-		}
-		acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
-		if err := perms.AuthorizeWrite(authenticatedUser, acl); err != nil {
-			return err
-		}
 		return d.deleteInvocation(ctx, tx, invocationID)
 	})
 }

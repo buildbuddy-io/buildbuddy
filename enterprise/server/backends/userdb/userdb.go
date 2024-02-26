@@ -316,27 +316,33 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 	}
 
 	groupID := ""
-	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		if g.OwnedDomain != "" {
-			existingDomainOwnerGroup, err := d.getDomainOwnerGroup(ctx, tx, g.OwnedDomain)
-			if err != nil {
-				return err
-			}
-			if existingDomainOwnerGroup != nil && existingDomainOwnerGroup.GroupID != g.GroupID {
-				return status.InvalidArgumentError("There is already a group associated with this domain.")
-			}
+	if g.OwnedDomain != "" {
+		existingDomainOwnerGroup, err := d.getDomainOwnerGroup(ctx, d.h, g.OwnedDomain)
+		if err != nil {
+			return "", err
 		}
-		if g.GroupID == "" {
+		if existingDomainOwnerGroup != nil && existingDomainOwnerGroup.GroupID != g.GroupID {
+			return "", status.InvalidArgumentError("There is already a group associated with this domain.")
+		}
+	}
+	if g.GroupID == "" {
+		err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
 			groupID, err = d.createGroup(ctx, tx, u.GetUserID(), g)
 			return err
+		})
+		if err != nil {
+			return "", err
 		}
+		return groupID, nil
+	}
 
-		groupID = g.GroupID
-		if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
-			return err
-		}
+	groupID = g.GroupID
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		return "", err
+	}
 
-		res := tx.NewQuery(ctx, "userdb_update_group").Raw(`
+	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		return tx.NewQuery(ctx, "userdb_update_group").Raw(`
 			UPDATE "Groups" SET
 				name = ?,
 				url_identifier = ?,
@@ -363,13 +369,12 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			g.SuggestionPreference,
 			g.RestrictCleanWorkflowRunsToAdmins,
 			g.EnforceIPRules,
-			g.GroupID).Exec()
-		if res.Error != nil {
-			return res.Error
-		}
-		return nil
+			g.GroupID).Exec().Error
 	})
-	return groupID, err
+	if err != nil {
+		return "", err
+	}
+	return groupID, nil
 }
 
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {
@@ -644,11 +649,11 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 }
 
 func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
-	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		var existing tables.Group
-		if err := tx.GORM(ctx, "userdb_check_existing_group").Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
-				gc := d.getDefaultGroupConfig()
+	var existing tables.Group
+	if err := d.h.GORM(ctx, "userdb_check_existing_group").Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
+		if db.IsRecordNotFound(err) {
+			gc := d.getDefaultGroupConfig()
+			return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 				if err := tx.NewQuery(ctx, "userdb_create_default_group").Create(gc); err != nil {
 					return err
 				}
@@ -656,10 +661,12 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 					return err
 				}
 				return nil
-			}
-			return err
+			})
 		}
+		return err
+	}
 
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		return tx.GORM(ctx, "userdb_update_existing_group").Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
 	})
 }
