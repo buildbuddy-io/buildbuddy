@@ -354,7 +354,6 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   // TODO(siggisim): Support moving files around
-  // TODO(siggisim): Support tabs
   handleFileClicked(node: github.TreeNode, fullPath: string) {
     if (this.isNewFile(node)) {
       if (this.isDirectory(node)) {
@@ -1159,22 +1158,24 @@ export default class CodeComponent extends React.Component<Props, State> {
             </div>
           )}
           <div className="code-container">
-            <div className="code-viewer-tabs">
-              {[...this.state.tabs.keys()].reverse().map((t) => (
-                <div
-                  className={`code-viewer-tab ${t == this.currentPath() ? "selected" : ""}`}
-                  onClick={this.handleTabClicked.bind(this, t)}>
-                  <span>{t.split("/").pop() || "Untitled"}</span>
-                  <XCircle
-                    onClick={(e) => {
-                      this.state.tabs.delete(t);
-                      this.setState({});
-                      e.stopPropagation();
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
+            {!this.isSingleFile() && (
+              <div className="code-viewer-tabs">
+                {[...this.state.tabs.keys()].reverse().map((t) => (
+                  <div
+                    className={`code-viewer-tab ${t == this.currentPath() ? "selected" : ""}`}
+                    onClick={this.handleTabClicked.bind(this, t)}>
+                    <span>{t.split("/").pop() || "Untitled"}</span>
+                    <XCircle
+                      onClick={(e) => {
+                        this.state.tabs.delete(t);
+                        this.setState({});
+                        e.stopPropagation();
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="code-viewer-container">
               <div className={`code-viewer ${showDiffView ? "hidden-viewer" : ""}`} ref={this.codeViewer} />
               <div className={`diff-viewer ${showDiffView ? "" : "hidden-viewer"}`} ref={this.diffViewer} />
