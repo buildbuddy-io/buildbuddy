@@ -13,6 +13,7 @@ import TerminalComponent from "../terminal/terminal";
 import { parseDigest, parseActionDigest, digestToString } from "../util/cache";
 import UserPreferences from "../preferences/preferences";
 import alert_service from "../alert/alert_service";
+import { durationToMillis } from "../util/proto";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -623,6 +624,44 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                     MilliCPU:{" "}
                                     {this.state.actionResult.executionMetadata.estimatedTaskSize.estimatedMilliCpu}
                                   </div>
+                                </div>
+                              </>
+                            )}
+                            {this.state.actionResult.executionMetadata.ioStats && (
+                              <>
+                                <div className="metadata-title">IO stats</div>
+                                <div>
+                                  File download count:{" "}
+                                  {this.state.actionResult.executionMetadata.ioStats.fileDownloadCount ?? 0}
+                                </div>
+                                <div>
+                                  File download size:{" "}
+                                  {format.bytes(
+                                    this.state.actionResult.executionMetadata.ioStats.fileDownloadSizeBytes ?? 0
+                                  )}
+                                </div>
+                                <div>
+                                  Local file cache hits:{" "}
+                                  {this.state.actionResult.executionMetadata.ioStats.localCacheHits ?? 0}
+                                </div>
+                                <div>
+                                  Local file cache file creation time:{" "}
+                                  {format.durationMillis(
+                                    durationToMillis(
+                                      this.state.actionResult.executionMetadata.ioStats.localCacheDuration ?? {}
+                                    )
+                                  )}{" "}
+                                  (total across all threads)
+                                </div>
+                                <div>
+                                  File upload count:{" "}
+                                  {this.state.actionResult.executionMetadata.ioStats.fileUploadCount ?? 0}
+                                </div>
+                                <div>
+                                  File upload size:{" "}
+                                  {format.bytes(
+                                    this.state.actionResult.executionMetadata.ioStats.fileUploadSizeBytes ?? 0
+                                  )}
                                 </div>
                               </>
                             )}
