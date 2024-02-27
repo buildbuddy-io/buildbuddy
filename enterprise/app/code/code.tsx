@@ -118,6 +118,12 @@ export default class CodeComponent extends React.Component<Props, State> {
   fetchedInitialContent = false;
 
   componentWillMount() {
+    let githubUrl = this.props.search.get("github_url");
+    if (githubUrl) {
+      window.location.href = this.parseGithubUrl(githubUrl);
+      return;
+    }
+
     document.title = `Code | BuildBuddy`;
 
     this.fetchCode();
@@ -153,15 +159,47 @@ export default class CodeComponent extends React.Component<Props, State> {
     };
   }
 
+  parseGithubUrl(githubUrl: string) {
+    let match = githubUrl.match(
+      /^(https:\/\/github.com)?(\/)?(?<owner>[A-Za-z0-9_.-]+)?(\/(?<repo>[A-Za-z0-9_.-]+))?(\/(?<entity>[A-Za-z0-9_.-]+))?(\/(?<rest>.*))?/
+    )?.groups;
+
+    let destinationUrl = "/code/";
+    if (match?.owner) {
+      destinationUrl += match?.owner + "/";
+    }
+    if (match?.repo) {
+      destinationUrl += match?.repo + "/";
+    }
+    if (match?.entity == "tree" && match?.rest) {
+      let parts = match?.rest.split("/");
+      let branch = parts.shift();
+      destinationUrl += "?branch=" + branch;
+    } else if (match?.entity == "blob" && match?.rest) {
+      let parts = match?.rest.split("/");
+      let branch = parts.shift();
+      destinationUrl += parts.join("/") + "?branch=" + branch;
+    }
+    return destinationUrl;
+  }
+
   fetchContentForPath(path: string) {
     return rpcService.service.getGithubContent(
       new github.GetGithubContentRequest({
         owner: this.currentOwner(),
         repo: this.currentRepo(),
         path: path,
-        ref: this.state.commitSHA || this.state.repoResponse?.defaultBranch,
+        ref: this.getRef(),
       })
     );
+  }
+
+  getRef() {
+    return this.state.commitSHA || this.getBranch();
+  }
+
+  getBranch() {
+    return this.props.search.get("branch") || this.state.repoResponse?.defaultBranch;
   }
 
   fetchInitialContent() {
@@ -204,7 +242,7 @@ export default class CodeComponent extends React.Component<Props, State> {
             owner: this.currentOwner(),
             repo: this.currentRepo(),
             path: this.currentPath(),
-            ref: commit || this.state.commitSHA || this.state.repoResponse?.defaultBranch,
+            ref: commit || this.getRef(),
           })
         )
         .then((response) => {
@@ -280,7 +318,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   getStateCacheKey() {
-    return `${LOCAL_STORAGE_STATE_KEY}/${this.currentOwner()}/${this.currentRepo()}`;
+    return `${LOCAL_STORAGE_STATE_KEY}/${this.currentOwner()}/${this.currentRepo()}/${this.getBranch()}`;
   }
 
   componentWillUnmount() {
@@ -329,14 +367,13 @@ export default class CodeComponent extends React.Component<Props, State> {
       new github.GetGithubRepoRequest({ owner: this.currentOwner(), repo: this.currentRepo() })
     );
     console.log(repoResponse);
-    let commit = this.state.commitSHA || repoResponse.defaultBranch;
 
     rpcService.service
       .getGithubTree(
         new github.GetGithubTreeRequest({
           owner: this.currentOwner(),
           repo: this.currentRepo(),
-          ref: commit,
+          ref: this.getRef() || repoResponse.defaultBranch,
         })
       )
       .then((treeResponse) => {
@@ -436,6 +473,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   setModel(fullPath: string, model: monaco.editor.ITextModel | undefined) {
     this.state.tabs.set(fullPath, fullPath);
     this.editor?.setModel(model || null);
+    this.updateState({ tabs: this.state.tabs });
   }
 
   navigateToPath(path: string) {
@@ -489,7 +527,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   getRepoState() {
     let state = new runner.RunRequest.RepoState();
     state.commitSha = this.state.commitSHA;
-    state.branch = this.state.repoResponse?.defaultBranch!;
+    state.branch = this.getBranch()!;
     for (let path of this.state.changes.keys()) {
       state.patch.push(
         textEncoder.encode(
@@ -734,7 +772,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           owner: this.currentOwner(),
           repo: this.currentRepo(),
           base: this.state.commitSHA,
-          head: this.state.repoResponse?.defaultBranch,
+          head: this.getBranch(),
         })
       )
       .then(async (response) => {
@@ -923,7 +961,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   clearContextMenu() {
-    this.setState({
+    this.updateState({
       showContextMenu: false,
       contextMenuX: undefined,
       contextMenuY: undefined,
@@ -936,7 +974,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     if (this.isDirectory(node)) {
       this.state.fullPathToExpanded.set(fullPath, true);
     }
-    this.setState({
+    this.updateState({
       showContextMenu: true,
       contextMenuX: event.pageX,
       contextMenuY: event.pageY,
@@ -1029,13 +1067,17 @@ export default class CodeComponent extends React.Component<Props, State> {
                   </a>
                 </div>
                 <ChevronRight />
-                <a
-                  href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/tree/${
-                    this.state.prBranch || this.state.repoResponse?.defaultBranch
-                  }`}>
-                  {this.state.prBranch || this.state.repoResponse?.defaultBranch}
-                </a>
-                <ChevronRight />
+                {this.state.commitSHA != this.getBranch() && (
+                  <>
+                    <a
+                      href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/tree/${
+                        this.state.prBranch || this.getBranch()
+                      }`}>
+                      {this.state.prBranch || this.getBranch()}
+                    </a>
+                    <ChevronRight />
+                  </>
+                )}
                 <a
                   target="_blank"
                   title={this.state.commitSHA}
@@ -1168,7 +1210,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                     <XCircle
                       onClick={(e) => {
                         this.state.tabs.delete(t);
-                        this.setState({});
+                        this.updateState({});
                         e.stopPropagation();
                       }}
                     />
@@ -1285,7 +1327,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                     className="code-request-review-button"
                     onClick={() =>
                       window.open(applicableInstallation?.url + `/permissions/update`, "_blank") &&
-                      this.setState({ installationsResponse: undefined })
+                      this.updateState({ installationsResponse: undefined })
                     }>
                     <Key className="icon white" /> Permissions
                   </FilledButton>
