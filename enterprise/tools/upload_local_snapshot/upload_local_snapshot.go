@@ -15,12 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -29,14 +29,54 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-// This tool should be run on the executor with the desired local snapshot in
+// This tool should be run on the executor pod with the desired local snapshot in
 // its filecache. It will upload the local snapshot to the remote cache,
 // so it can be more easily inspected and run with vmstart, for example.
+//
+// Steps:
+// 1. SSH into the executor pod the local snapshot is on.
+//		a. From the action details page of the invocation link, find the executor host ID
+// 		b. Search for the executor host ID in the `Executors` tab
+//			- Likely will be under the "Shared Executors" group
+//		c. Grab the IP address of the executor
+// 		d. Find the pod name associated with that IP address
+//			- kubectl --namespace executor-prod get pods -o wide
+//			- Search for the IP
+// 		e. SSH into the pod
+//			-  kubectl --namespace=executor-prod exec -it executor-XXX /bin/bash
+//
+// 2. Clone the buildbuddy repo on the executor so you can use this tool
+//		a. git clone https://github.com/buildbuddy-io/buildbuddy.git
+//
+// 3. Download bazel to run this tool
+//		a. curl -Lo /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/releases/download/v1.15.0/bazelisk-linux-amd64
+//		b. chmod +x /usr/local/bin/bazelisk
+//
+// 4. Find the snapshot key JSON
+//		a. From the action  details page of the invocation link, find the snapshot ID
+//		b. Search for that in the logs. The logs should include the snapshot key JSON
+//
+// 5. Run this tool with bazel
+//		* You may need to build it with remote execution if the executor does not
+//		  have all the tools needed to build it
+//
+// Ex. bazelisk run //enterprise/tools/upload_local_snapshot \
+//		--config=remote \
+//		--remote_header=x-buildbuddy-api-key=XXX -- \    # This api key is for remote execution of the build
+//		--file_cache_dir="/buildbuddy/filecache/<executor_host_id>" \
+//		--api_key=YYY \		# This api key should correspond to the group that owns the snapshot
+//		--local_snapshot_key='XXX'
+//
+// ** Another option to run this tool (that reduces workload on the executor)
+// is to build the tool on a Linux machine with `--config=static` and use
+// `kubectl cp --namespace=executor-prod \
+// bazel-bin/enterprise/tools/upload_local_snapshot/upload_local_snapshot_/upload_local_snapshot \
+// executor-XXX:/tmp/upload_local_snapshot` to copy it to the executor
 
 var (
-	cacheTarget  = flag.String("cache_target", "grpcs://remote.buildbuddy.dev", "The remote cache target to upload the snapshot to.")
-	filecacheDir = flag.String("file_cache_dir", "/tmp/buildbuddy/filecache", "The local filecache dir on the executor")
-	apiKey       = flag.String("api_key", "", "The API key to use to interact with the remote cache.")
+	cacheTarget  = flag.String("cache_target", "grpcs://remote.buildbuddy.io", "The remote cache target to upload the snapshot to.")
+	filecacheDir = flag.String("file_cache_dir", "/buildbuddy/filecache", "The local filecache dir on the executor")
+	apiKey       = flag.String("api_key", "", "The API key of the owner of the snapshot. The snapshot will also be uploaded under this API key.")
 	// Note: this key can be copied and pasted from logs:
 	//
 	//  "INFO: Found snapshot for key {...}" // copy this JSON
@@ -65,28 +105,36 @@ func main() {
 	snapshotGroupID := inputKey.GroupID
 	snapshotInstanceName := inputKey.InstanceName
 
-	ctx := context.Background()
-	if *apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
-	}
 	env := getToolEnv()
 	loader, err := snaploader.New(env)
 	if err != nil {
 		log.Fatalf("Failed to init snaploader: %s", err)
+	}
+	ctx := context.Background()
+	ctxWithHackyClaims := ctx
+	if *apiKey != "" {
+		ctx = context.WithValue(ctx, "x-buildbuddy-api-key", *apiKey)
+
+		// The filecache reads the groupID from the claims on the context,
+		// so set that here. However this isn't a valid Claims object, so for
+		// API calls to the remote cache, you will not be able to use this context
+		ctxWithHackyClaims = claims.AuthContextFromClaims(ctx, &claims.Claims{
+			GroupID: snapshotGroupID,
+		}, nil)
 	}
 
 	localManifestKey, err := snaploader.LocalManifestKey(snapshotGroupID, key)
 	if err != nil {
 		log.Fatalf("Failed to generate local manifest key: %s", err)
 	}
-	localACResult, err := loader.GetLocalManifestACResult(ctx, localManifestKey)
+	localACResult, err := loader.GetLocalManifestACResult(ctxWithHackyClaims, localManifestKey)
 	if err != nil {
 		log.Fatalf("Failed to get local manifest ac result: %s", err)
 	}
 
-	allSnapshotDigests := getAllDigestsFromSnapshotManifest(ctx, loader, snapshotInstanceName, localACResult)
+	allSnapshotDigests := getAllDigestsFromSnapshotManifest(ctxWithHackyClaims, env, loader, snapshotInstanceName, localACResult)
 	missingDigestsRemoteCache := getMissingDigestsRemoteCache(ctx, env, snapshotInstanceName, allSnapshotDigests)
-	uploadDigestsRemoteCache(ctx, env, snapshotInstanceName, missingDigestsRemoteCache)
+	uploadDigestsRemoteCache(ctx, ctxWithHackyClaims, env, snapshotInstanceName, missingDigestsRemoteCache)
 	uploadManifestRemoteCache(ctx, env, key, localACResult, snapshotInstanceName)
 
 	// Sanity check that snapshot exists in remote cache
@@ -141,15 +189,10 @@ func parseSnapshotKeyJSON(in string) (*LocalSnapshotKey, *fcpb.SnapshotKey, erro
 	return k, pk, nil
 }
 
-func getAllDigestsFromSnapshotManifest(ctx context.Context, loader *snaploader.FileCacheLoader, remoteInstanceName string, localACResult *repb.ActionResult) []*repb.Digest {
+func getAllDigestsFromSnapshotManifest(ctxWithClaims context.Context, env environment.Env, loader *snaploader.FileCacheLoader, remoteInstanceName string, localACResult *repb.ActionResult) []*repb.Digest {
+	tmpDir := env.GetFileCache().TempDir()
+
 	digests := make([]*repb.Digest, 0)
-
-	tmpDir, err := os.MkdirTemp("", "upload-local-ss-*")
-	if err != nil {
-		log.Fatalf("Error making temp dir: %s", err.Error())
-	}
-	defer os.RemoveAll(tmpDir)
-
 	// Add digests for regular snapshot files
 	for _, file := range localACResult.OutputFiles {
 		digests = append(digests, file.GetDigest())
@@ -161,7 +204,7 @@ func getAllDigestsFromSnapshotManifest(ctx context.Context, loader *snaploader.F
 		digests = append(digests, chunkedFileMetadata.GetTreeDigest())
 
 		// Add digests for chunked file chunks
-		tree, err := loader.ChunkedFileTree(ctx, remoteInstanceName, chunkedFileMetadata, tmpDir, false /*remoteEnabled*/)
+		tree, err := loader.ChunkedFileTree(ctxWithClaims, remoteInstanceName, chunkedFileMetadata, tmpDir, false /*remoteEnabled*/)
 		if err != nil {
 			log.Fatalf("Failed to process chunked file tree: %s", err)
 		}
@@ -185,12 +228,8 @@ func getMissingDigestsRemoteCache(ctx context.Context, env environment.Env, remo
 	return res.MissingBlobDigests
 }
 
-func uploadDigestsRemoteCache(ctx context.Context, env environment.Env, remoteInstanceName string, digests []*repb.Digest) {
-	tmpDir, err := os.MkdirTemp("", "upload-local-ss-*")
-	if err != nil {
-		log.Fatalf("Error making temp dir: %s", err.Error())
-	}
-	defer os.RemoveAll(tmpDir)
+func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context, env environment.Env, remoteInstanceName string, digests []*repb.Digest) {
+	tmpDir := env.GetFileCache().TempDir()
 
 	for _, d := range digests {
 		upload := func() {
@@ -198,7 +237,7 @@ func uploadDigestsRemoteCache(ctx context.Context, env environment.Env, remoteIn
 			node := &repb.FileNode{
 				Digest: d,
 			}
-			inFC := env.GetFileCache().FastLinkFile(ctx, node, path)
+			inFC := env.GetFileCache().FastLinkFile(ctxWithClaims, node, path)
 			if !inFC {
 				log.Fatalf("Digest %s does not exist in the local file cache", d)
 			}
