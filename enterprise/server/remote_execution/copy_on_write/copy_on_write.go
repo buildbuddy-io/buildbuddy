@@ -74,7 +74,7 @@ func updateMmappedBytesMetric(delta int64, fileNameLabel string) {
 }
 
 type usageSummary struct {
-	totalCount        int
+	totalCount        int64
 	totalDurationUsec int64
 }
 
@@ -137,9 +137,7 @@ type COWStore struct {
 	eagerFetchEg    *errgroup.Group
 	quitChan        chan struct{}
 
-	// usageLock protects chunkOperationToUsageSummary
-	usageLock                    sync.Mutex
-	chunkOperationToUsageSummary map[string]usageSummary
+	chunkOperationToUsageSummary sync.Map // operation name -> usageSummary
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -181,7 +179,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 		eagerFetchStack:              eagerFetchStack,
 		eagerFetchEg:                 &errgroup.Group{},
 		quitChan:                     make(chan struct{}),
-		chunkOperationToUsageSummary: make(map[string]usageSummary, 0),
+		chunkOperationToUsageSummary: sync.Map{},
 	}
 
 	s.eagerFetchEg.Go(func() error {
@@ -722,43 +720,37 @@ func (s *COWStore) fetchChunk(offset int64) error {
 
 func (c *COWStore) updateUsageSummary(operation string, startTime time.Time) {
 	timeSpent := time.Since(startTime).Microseconds()
-	go func() {
-		c.usageLock.Lock()
-		defer c.usageLock.Unlock()
-		summary := usageSummary{}
-		if s, ok := c.chunkOperationToUsageSummary[operation]; ok {
-			summary = s
-		}
-		summary.totalCount++
-		summary.totalDurationUsec += timeSpent
-		c.chunkOperationToUsageSummary[operation] = summary
-	}()
+	summary := &usageSummary{}
+	if s, ok := c.chunkOperationToUsageSummary.Load(operation); ok {
+		summary = s.(*usageSummary)
+	}
+	atomic.AddInt64(&summary.totalCount, 1)
+	atomic.AddInt64(&summary.totalDurationUsec, timeSpent)
+	c.chunkOperationToUsageSummary.Store(operation, summary)
 }
 
 func (c *COWStore) EmitUsageMetrics(stage string) {
-	go func() {
-		c.usageLock.Lock()
-		defer c.usageLock.Unlock()
-
-		logStr := fmt.Sprintf("For stage %s, file %s usage data:", stage, c.name)
-		for op, summary := range c.chunkOperationToUsageSummary {
-			if summary.totalCount > 0 {
-				metrics.COWSnapshotChunkOperationTotalDurationUsec.With(prometheus.Labels{
-					metrics.FileName:  c.name,
-					metrics.EventName: op,
-					metrics.Stage:     stage,
-				}).Observe(float64(summary.totalDurationUsec))
-				metrics.COWSnapshotChunkOperationCount.With(prometheus.Labels{
-					metrics.FileName:  c.name,
-					metrics.EventName: op,
-					metrics.Stage:     stage,
-				}).Observe(float64(summary.totalCount))
-				logStr += fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v\n", op, summary.totalDurationUsec/1e3, summary.totalCount)
-			}
+	logStr := fmt.Sprintf("For stage %s, file %s usage data:", stage, c.name)
+	c.chunkOperationToUsageSummary.Range(func(o, s any) bool {
+		op := o.(string)
+		summary := s.(*usageSummary)
+		if summary.totalCount > 0 {
+			metrics.COWSnapshotChunkOperationTotalDurationUsec.With(prometheus.Labels{
+				metrics.FileName:  c.name,
+				metrics.EventName: op,
+				metrics.Stage:     stage,
+			}).Observe(float64(summary.totalDurationUsec))
+			metrics.COWSnapshotChunkOperationCount.With(prometheus.Labels{
+				metrics.FileName:  c.name,
+				metrics.EventName: op,
+				metrics.Stage:     stage,
+			}).Observe(float64(summary.totalCount))
+			logStr += fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v\n", op, summary.totalDurationUsec/1e3, summary.totalCount)
 		}
+		return true
+	})
 
-		log.CtxDebugf(c.ctx, logStr)
-	}()
+	log.CtxDebugf(c.ctx, logStr)
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
