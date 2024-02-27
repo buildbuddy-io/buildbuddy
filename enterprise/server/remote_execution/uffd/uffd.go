@@ -117,8 +117,8 @@ type Handler struct {
 	earlyTerminationReader *os.File
 	earlyTerminationWriter *os.File
 
-	mappedPageFaults           map[int64][]PageFaultData
-	pageFaultTotalDurationUsec int64
+	mappedPageFaults       map[int64][]PageFaultData
+	pageFaultTotalDuration time.Duration
 }
 
 func NewHandler() (*Handler, error) {
@@ -276,8 +276,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			return nil
 		}
 
-		start := time.Now()
-
 		// Receive a page fault notification
 		guestFaultingAddr, err := readFaultingAddress(uffd)
 		if err != nil {
@@ -355,7 +353,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 		h.mappedPageFaults[int64(chunkStartOffset)] = append(h.mappedPageFaults[int64(chunkStartOffset)], debugData)
 
-		_, err = resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
+		_, err = h.resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
 		if err != nil {
 			mappedRangesForChunk := h.mappedPageFaults[int64(chunkStartOffset)]
 			mappedRangesStr := ""
@@ -372,8 +370,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		if err := memoryStore.UnmapChunk(int64(chunkStartOffset)); err != nil {
 			return err
 		}
-
-		h.pageFaultTotalDurationUsec += time.Since(start).Microseconds()
 	}
 }
 
@@ -383,7 +379,7 @@ func (h *Handler) EmitSummaryMetrics(stage string) {
 	}).Observe(float64(len(h.mappedPageFaults)))
 	metrics.COWSnapshotPageFaultTotalDurationUsec.With(prometheus.Labels{
 		metrics.Stage: stage,
-	}).Observe(float64(h.pageFaultTotalDurationUsec))
+	}).Observe(float64(h.pageFaultTotalDuration.Microseconds()))
 }
 
 // resolvePageFault copies `size` bytes of memory from a `Src` address to the faulting region `Dst`
@@ -392,7 +388,12 @@ func (h *Handler) EmitSummaryMetrics(stage string) {
 // attempts to access unallocated memory, it triggers a page fault and hangs until it has been resolved)
 //
 // Returns the number of bytes copied
-func resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint64) (int64, error) {
+func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint64) (int64, error) {
+	start := time.Now()
+	defer func() {
+		h.pageFaultTotalDuration += time.Since(start)
+	}()
+
 	copyData := uffdioCopy{
 		Dst: faultingRegion,
 		Src: src,

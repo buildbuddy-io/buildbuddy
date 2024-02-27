@@ -74,8 +74,8 @@ func updateMmappedBytesMetric(delta int64, fileNameLabel string) {
 }
 
 type usageSummary struct {
-	totalCount        int
-	totalDurationUsec int64
+	totalCount    int
+	totalDuration time.Duration
 }
 
 // COWStore To enable copy-on-write support for a file, it can be split into
@@ -721,7 +721,7 @@ func (s *COWStore) fetchChunk(offset int64) error {
 }
 
 func (c *COWStore) updateUsageSummary(operation string, startTime time.Time) {
-	timeSpent := time.Since(startTime).Microseconds()
+	timeSpent := time.Since(startTime)
 	c.usageLock.Lock()
 	defer c.usageLock.Unlock()
 	summary := usageSummary{}
@@ -729,7 +729,7 @@ func (c *COWStore) updateUsageSummary(operation string, startTime time.Time) {
 		summary = s
 	}
 	summary.totalCount++
-	summary.totalDurationUsec += timeSpent
+	summary.totalDuration += timeSpent
 	c.chunkOperationToUsageSummary[operation] = summary
 }
 
@@ -744,13 +744,13 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 				metrics.FileName:  c.name,
 				metrics.EventName: op,
 				metrics.Stage:     stage,
-			}).Observe(float64(summary.totalDurationUsec))
+			}).Observe(float64(summary.totalDuration.Microseconds()))
 			metrics.COWSnapshotChunkOperationCount.With(prometheus.Labels{
 				metrics.FileName:  c.name,
 				metrics.EventName: op,
 				metrics.Stage:     stage,
 			}).Observe(float64(summary.totalCount))
-			logStr += fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v\n", op, summary.totalDurationUsec/1e3, summary.totalCount)
+			logStr += fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v}", op, summary.totalDuration.Milliseconds(), summary.totalCount)
 		}
 	}
 
