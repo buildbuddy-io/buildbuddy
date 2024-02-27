@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
+# This script wraps GitHub's runner, starting it with the one-time-use config
+# provided as the environment variable $RUNNER_ENCODED_JITCONFIG. It also
+# handles killing the runner if it does not accept a job within the configured
+# idle timeout, passed as $RUNNER_IDLE_TIMEOUT.
+# TODO(bduffany): rewrite this in Go
+
 # Turn on job control so that each background job starts in its own process
 # group, so we can clean up these jobs more easily.
 set -m
@@ -30,7 +36,7 @@ RUNNER_PID=$!
   if ! timeout "$RUNNER_IDLE_TIMEOUT" sh -c "
     tail -n+1 --follow \"$RUNNER_LOG\" 2>/dev/null | grep -q -m1 'Running job:'
   "; then
-    echo >&2 "Runner did not pick up job within ${IDLE_TIMEOUT}s; killing."
+    echo >&2 "Runner did not pick up job within ${RUNNER_IDLE_TIMEOUT}s; killing."
     kill -KILL -- -$RUNNER_PID
   fi
 ) &
