@@ -88,7 +88,7 @@ const (
 
 	// How long an ephemeral GitHub actions runner task should wait without
 	// being assigned a job before it terminates.
-	runnerIdleTimeout = 5 * time.Minute
+	runnerIdleTimeout = 30 * time.Second
 
 	// Max amount of time that a runner is allowed to run for until it is
 	// killed. This is just a safeguard for now; we eventually should remove it.
