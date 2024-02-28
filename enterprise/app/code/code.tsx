@@ -480,33 +480,11 @@ export default class CodeComponent extends React.Component<Props, State> {
     window.history.pushState(undefined, "", `/code/${this.currentOwner()}/${this.currentRepo()}/${path}`);
   }
 
-  getRemoteEndpoint() {
-    // TODO(siggisim): Support on-prem deployments.
-    if (window.location.origin.endsWith(".dev")) {
-      return "remote.buildbuddy.dev";
-    }
-    return "remote.buildbuddy.io";
-  }
-
-  getJobCount() {
-    return 200;
-  }
-
-  getContainerImage() {
-    return "docker://gcr.io/flame-public/rbe-ubuntu20-04-workflows:latest";
-  }
-
-  getBazelFlags() {
-    return `--remote_executor=${this.getRemoteEndpoint()} --bes_backend=${this.getRemoteEndpoint()} --bes_results_url=${
-      window.location.origin
-    }/invocation/ --jobs=${this.getJobCount()} --remote_default_exec_properties=container-image=${this.getContainerImage()}`;
-  }
-
   handleBuildClicked(args: string) {
     let request = new runner.RunRequest();
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.currentOwner()}/${this.currentRepo()}.git`;
-    request.bazelCommand = `${args} ${this.getBazelFlags()}`;
+    request.bazelCommand = args;
     request.repoState = this.getRepoState();
     request.async = true;
 
