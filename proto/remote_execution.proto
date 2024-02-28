@@ -2177,10 +2177,10 @@ message IOStats {
   // than downloading from the remote cache.
   int64 local_cache_hits = 7;
 
-  // Time spent linking inputs from local cache, totalled across all threads.
-  // For example, if 8 concurrent threads each spend 2ms of execution time
-  // hardlinking files, this will be 16ms.
-  google.protobuf.Duration local_cache_duration = 8;
+  // Wall time spent linking inputs from local cache. More precisely, this
+  // measures the duration between the start time of the first link operation to
+  // the end time of the last link operation.
+  google.protobuf.Duration local_cache_link_duration = 8;
 
   // The number of files uploaded in this tree.
   int64 file_upload_count = 4;
