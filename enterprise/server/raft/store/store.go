@@ -184,6 +184,21 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	s.db = db
 	s.leaser = pebble.NewDBLeaser(db)
 
+	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
+	s.grpcServer = grpc.NewServer(grpcOptions...)
+	reflection.Register(s.grpcServer)
+	grpc_prometheus.Register(s.grpcServer)
+	rfspb.RegisterApiServer(s.grpcServer, s)
+
+	lis, err := net.Listen("tcp", s.grpcAddr)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		log.Debugf("Store started to serve on listener %s", s.grpcAddr)
+		s.grpcServer.Serve(lis)
+	}()
+
 	// rejoin configured clusters
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
 	for _, logInfo := range nodeHostInfo.LogInfo {
@@ -348,20 +363,6 @@ func (s *Store) AddEventListener() <-chan events.Event {
 // Start starts a new grpc server which exposes an API that can be used to manage
 // ranges on this node.
 func (s *Store) Start() error {
-	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
-	s.grpcServer = grpc.NewServer(grpcOptions...)
-	reflection.Register(s.grpcServer)
-	grpc_prometheus.Register(s.grpcServer)
-	rfspb.RegisterApiServer(s.grpcServer, s)
-
-	lis, err := net.Listen("tcp", s.grpcAddr)
-	if err != nil {
-		return err
-	}
-	go func() {
-		s.grpcServer.Serve(lis)
-	}()
-
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	s.egCancel = cancelFunc
 
