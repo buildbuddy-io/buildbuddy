@@ -225,60 +225,62 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 }
 
 func TestSnapshotVersioning(t *testing.T) {
-	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	for _, remoteEnabled := range []bool{true, false} {
+		flags.Set(t, "executor.enable_remote_snapshot_sharing", remoteEnabled)
 
-	ctx := context.Background()
-	env := setupEnv(t)
-	loader, err := snaploader.New(env)
-	require.NoError(t, err)
-	workDir := testfs.MakeTempDir(t)
+		ctx := context.Background()
+		env := setupEnv(t)
+		loader, err := snaploader.New(env)
+		require.NoError(t, err)
+		workDir := testfs.MakeTempDir(t)
 
-	// Generate the master snapshot key - this should always point to the newest
-	// snapshot saved under this key
-	task := &repb.ExecutionTask{}
-	masterKey, err := snaploader.SnapshotKeySet(task, "config-hash", "")
-	require.NoError(t, err)
+		// Generate the master snapshot key - this should always point to the newest
+		// snapshot saved under this key
+		task := &repb.ExecutionTask{}
+		masterKey, err := snaploader.SnapshotKeySet(task, "config-hash", "")
+		require.NoError(t, err)
 
-	// Cache an initial snapshot for VM A
-	workDirA := testfs.MakeDirAll(t, workDir, "VM-A")
-	const chunkSize = 512 * 1024
-	const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
-	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
-	chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
-	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true)
-	require.NoError(t, err)
-	writeRandomRange(t, cowA)
-	cacheSnapshotOptsA := makeFakeSnapshot(t, workDirA, true, map[string]*copy_on_write.COWStore{
-		"scratchfs": cowA,
-	}, "snapshot-id-a")
-	err = loader.CacheSnapshot(ctx, masterKey.GetBranchKey(), cacheSnapshotOptsA)
-	require.NoError(t, err)
-	// Note: we'd normally close cowA here, but we keep it open so that
-	// mustUnpack() can verify the original contents.
+		// Cache an initial snapshot for VM A
+		workDirA := testfs.MakeDirAll(t, workDir, "VM-A")
+		const chunkSize = 512 * 1024
+		const fileSize = 13 + (chunkSize * 10) // ~5 MB total, with uneven size
+		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
+		chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
+		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true)
+		require.NoError(t, err)
+		writeRandomRange(t, cowA)
+		cacheSnapshotOptsA := makeFakeSnapshot(t, workDirA, true, map[string]*copy_on_write.COWStore{
+			"scratchfs": cowA,
+		}, "snapshot-id-a")
+		err = loader.CacheSnapshot(ctx, masterKey.GetBranchKey(), cacheSnapshotOptsA)
+		require.NoError(t, err)
+		// Note: we'd normally close cowA here, but we keep it open so that
+		// mustUnpack() can verify the original contents.
 
-	// Start VM B from the master snapshot key (should point to VM A), and cache it
-	workDirB := testfs.MakeDirAll(t, workDir, "VM-B")
-	unpackedB := mustUnpack(t, ctx, loader, masterKey, workDirB, cacheSnapshotOptsA)
-	cowB := unpackedB.ChunkedFiles["scratchfs"]
-	writeRandomRange(t, cowB)
-	cacheSnapshotOptsB := makeFakeSnapshot(t, workDirB, true, map[string]*copy_on_write.COWStore{
-		"scratchfs": cowB,
-	}, "snapshot-id-b")
-	err = loader.CacheSnapshot(ctx, masterKey.GetBranchKey(), cacheSnapshotOptsB)
-	require.NoError(t, err)
+		// Start VM B from the master snapshot key (should point to VM A), and cache it
+		workDirB := testfs.MakeDirAll(t, workDir, "VM-B")
+		unpackedB := mustUnpack(t, ctx, loader, masterKey, workDirB, cacheSnapshotOptsA)
+		cowB := unpackedB.ChunkedFiles["scratchfs"]
+		writeRandomRange(t, cowB)
+		cacheSnapshotOptsB := makeFakeSnapshot(t, workDirB, true, map[string]*copy_on_write.COWStore{
+			"scratchfs": cowB,
+		}, "snapshot-id-b")
+		err = loader.CacheSnapshot(ctx, masterKey.GetBranchKey(), cacheSnapshotOptsB)
+		require.NoError(t, err)
 
-	// Start VM C from the master snapshot key - should point to VM B
-	workDirC := testfs.MakeDirAll(t, workDir, "VM-C")
-	mustUnpack(t, ctx, loader, masterKey, workDirC, cacheSnapshotOptsB)
+		// Start VM C from the master snapshot key - should point to VM B
+		workDirC := testfs.MakeDirAll(t, workDir, "VM-C")
+		mustUnpack(t, ctx, loader, masterKey, workDirC, cacheSnapshotOptsB)
 
-	// Start VM D from a snapshot key for VM A - should be valid, even though
-	// the master key is pointing to VM B
-	keyA := masterKey.GetBranchKey()
-	keyA.SnapshotId = "snapshot-id-a"
-	workDirD := testfs.MakeDirAll(t, workDir, "VM-D")
-	mustUnpack(t, ctx, loader, &fcpb.SnapshotKeySet{
-		BranchKey: keyA,
-	}, workDirD, cacheSnapshotOptsA)
+		// Start VM D from a snapshot key for VM A - should be valid, even though
+		// the master key is pointing to VM B
+		keyA := masterKey.GetBranchKey()
+		keyA.SnapshotId = "snapshot-id-a"
+		workDirD := testfs.MakeDirAll(t, workDir, "VM-D")
+		mustUnpack(t, ctx, loader, &fcpb.SnapshotKeySet{
+			BranchKey: keyA,
+		}, workDirD, cacheSnapshotOptsA)
+	}
 }
 
 func TestRemoteSnapshotFetching(t *testing.T) {
