@@ -18,6 +18,8 @@ interface State {
 }
 
 export default class UsageComponent extends React.Component<UsageProps, State> {
+  // TODO: remove getDefaultTimePeriodString() after the server
+  // is updated to unconditionally send the current period
   state: State = { selectedPeriod: getDefaultTimePeriodString() };
   pendingRequest?: CancelablePromise<any>;
 
