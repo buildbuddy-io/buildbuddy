@@ -46,6 +46,7 @@ import (
 	"github.com/google/go-github/v59/github"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
@@ -273,6 +274,29 @@ func (a *GitHubApp) startGitHubActionsRunnerTask(ctx context.Context, event *git
 		return status.FailedPreconditionError("workflow job cannot be nil")
 	}
 
+	log.CtxInfof(ctx, "Starting ephemeral GitHub Actions runner execution for %s/%s", event.GetRepo().GetOwner().GetLogin(), event.GetRepo().GetName())
+
+	// Get an org API key for the installation. The user must have linked the
+	// installation to an org via the BuildBuddy UI, otherwise this will return
+	// NotFound.
+	installation := &tables.GitHubAppInstallation{}
+	err := a.env.GetDBHandle().NewQuery(ctx, "github_app_get_installation_for_workflow_job").Raw(`
+		SELECT *
+		FROM "GitHubAppInstallations"
+		WHERE installation_id = ?
+		AND owner = ?
+		`,
+		event.GetInstallation().GetID(),
+		event.GetRepo().GetOwner().GetLogin(),
+	).Take(installation)
+	if err != nil {
+		return status.WrapError(err, "lookup installation")
+	}
+	apiKey, err := a.env.GetAuthDB().GetAPIKeyForInternalUseOnly(ctx, installation.GroupID)
+	if err != nil {
+		return status.WrapError(err, "lookup API key")
+	}
+
 	// Get an installation client.
 	tok, err := a.createInstallationToken(ctx, event.GetInstallation().GetID())
 	if err != nil {
@@ -324,6 +348,8 @@ func (a *GitHubApp) startGitHubActionsRunnerTask(ctx context.Context, event *git
 			},
 		},
 	}
+	// Authenticate the execution as the org linked to the installation
+	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey.Value)
 	// Set jitconfig as env var via remote header to avoid storing it in CAS.
 	ctx = platform.WithRemoteHeaderOverride(
 		ctx, platform.EnvOverridesPropertyName,
