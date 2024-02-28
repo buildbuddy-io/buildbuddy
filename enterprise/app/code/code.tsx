@@ -493,7 +493,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   getContainerImage() {
-    return "docker://gcr.io/flame-public/buildbuddy-ci-runner:latest";
+    return "docker://gcr.io/flame-public/rbe-ubuntu20-04-workflows:latest";
   }
 
   getBazelFlags() {
