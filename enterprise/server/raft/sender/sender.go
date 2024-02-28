@@ -171,7 +171,7 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 		client, err := s.connectionForReplicaDescriptor(ctx, replica)
 		if err != nil {
 			if status.IsUnavailableError(err) {
-				log.Infof("tryReplicas: replica %+v is unavailable: %s", replica, err)
+				log.Debugf("tryReplicas: replica %+v is unavailable: %s", replica, err)
 				// try a different replica if the current replica is not available.
 				continue
 			}
@@ -190,14 +190,14 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 				log.Debugf("out of range: %s (skipping rangecache)", m)
 				return 0, err
 			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
-				log.Debugf("out of range: %s (skipping replica %d)", m, replica.GetReplicaId())
+				log.Debugf("out of range: %s (skipping replica %+v)", m, replica)
 				continue
 			default:
 				break
 			}
 		}
 		if status.IsUnavailableError(err) {
-			log.Infof("replica %+v is unavailable: %s", replica, err)
+			log.Debugf("replica %+v is unavailable: %s", replica, err)
 			// try a different replica if the current replica is not available.
 			continue
 		}
