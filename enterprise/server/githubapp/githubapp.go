@@ -69,9 +69,9 @@ var (
 	privateKey    = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
 	webhookSecret = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
 
-	actionsRunnerEnabled     = flag.Bool("github.app.workflows.runner_enabled", false, "Whether to enable the buildbuddy-hosted runner for GitHub actions.")
-	actionsRunnerExtraLabels = flag.Slice("github.app.workflows.runner_extra_labels", []string{}, "Extra labels to apply to the buildbuddy-hosted runner, in addition to 'buildbuddy' (ex: 'dev').")
-	actionsPoolName          = flag.String("github.app.workflows.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
+	actionsRunnerEnabled     = flag.Bool("github.app.actions.runner_enabled", false, "Whether to enable the buildbuddy-hosted runner for GitHub actions.")
+	actionsRunnerExtraLabels = flag.Slice("github.app.actions.runner_extra_labels", []string{}, "Extra labels to apply to the buildbuddy-hosted runner, in addition to 'buildbuddy' (ex: 'dev').")
+	actionsPoolName          = flag.String("github.app.actions.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
 
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
@@ -92,7 +92,7 @@ const (
 
 	// Max amount of time that a runner is allowed to run for until it is
 	// killed. This is just a safeguard for now; we eventually should remove it.
-	runnerTimeout = 8 * time.Hour
+	runnerTimeout = 1 * time.Hour
 )
 
 //go:embed runner.sh
@@ -209,13 +209,21 @@ func (a *GitHubApp) handleWebhookRequest(w http.ResponseWriter, req *http.Reques
 }
 
 func (a *GitHubApp) handleWebhookEvent(ctx context.Context, eventType string, event any) error {
+	// Delegate to the appropriate handler func based on event type.
 	switch event := event.(type) {
 	case *github.InstallationEvent:
 		return a.handleInstallationEvent(ctx, eventType, event)
 	case *github.WorkflowJobEvent:
 		return a.handleWorkflowJobEvent(ctx, eventType, event)
+	case *github.PushEvent:
+		return a.handlePushEvent(ctx, eventType, event)
+	case *github.PullRequestEvent:
+		return a.handlePullRequestEvent(ctx, eventType, event)
+	case *github.PullRequestReviewEvent:
+		return a.handlePullRequestReviewEvent(ctx, eventType, event)
 	default:
-		return a.handleBuildBuddyWorkflowEvent(ctx, eventType, event)
+		// Event type not yet handled
+		return nil
 	}
 }
 
@@ -257,10 +265,22 @@ func (a *GitHubApp) handleWorkflowJobEvent(ctx context.Context, eventType string
 			labels = event.WorkflowJob.Labels
 		}
 		if a.matchesRunnerLabels(labels) {
-			return a.startWorkflowJob(ctx, event)
+			return a.startGitHubActionsRunnerTask(ctx, event)
 		}
 	}
 	return nil
+}
+
+func (a *GitHubApp) handlePushEvent(ctx context.Context, eventType string, event *github.PushEvent) error {
+	return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
+}
+
+func (a *GitHubApp) handlePullRequestEvent(ctx context.Context, eventType string, event *github.PullRequestEvent) error {
+	return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
+}
+
+func (a *GitHubApp) handlePullRequestReviewEvent(ctx context.Context, eventType string, event *github.PullRequestReviewEvent) error {
+	return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
 }
 
 func (a *GitHubApp) matchesRunnerLabels(labels []string) bool {
@@ -272,7 +292,7 @@ func (a *GitHubApp) matchesRunnerLabels(labels []string) bool {
 	return true
 }
 
-func (a *GitHubApp) startWorkflowJob(ctx context.Context, event *github.WorkflowJobEvent) error {
+func (a *GitHubApp) startGitHubActionsRunnerTask(ctx context.Context, event *github.WorkflowJobEvent) error {
 	if event.WorkflowJob == nil {
 		return status.FailedPreconditionError("workflow job cannot be nil")
 	}
@@ -359,7 +379,7 @@ func (a *GitHubApp) startWorkflowJob(ctx context.Context, event *github.Workflow
 	return nil
 }
 
-func (a *GitHubApp) handleBuildBuddyWorkflowEvent(ctx context.Context, eventType string, event any) error {
+func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventType string, event any) error {
 	wd, err := gh_webhooks.ParseWebhookData(event)
 	if err != nil {
 		return err

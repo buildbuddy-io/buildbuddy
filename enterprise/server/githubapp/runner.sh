@@ -4,7 +4,10 @@ set -e
 # This script wraps GitHub's runner, starting it with the one-time-use config
 # provided as the environment variable $RUNNER_ENCODED_JITCONFIG. It also
 # handles killing the runner if it does not accept a job within the configured
-# idle timeout, passed as $RUNNER_IDLE_TIMEOUT.
+# idle timeout, passed as $RUNNER_IDLE_TIMEOUT. This prevents runner tasks from
+# waiting around forever in case the number of runners exceeds the number of
+# available jobs, for example if a workflow job is canceled.
+
 # TODO(bduffany): rewrite this in Go
 
 # Turn on job control so that each background job starts in its own process
