@@ -124,6 +124,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/terminal",
         "//app/util:cache",
+        "//app/util:proto",
         "//proto:grpc_code_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:timestamp_ts_proto",
