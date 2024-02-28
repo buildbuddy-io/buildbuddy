@@ -3125,3 +3125,7 @@
   position: absolute;
   box-sizing: border-box;
 }
+
+.monaco-editor .selected-text {
+  background-color: #b3e5fc;
+}
