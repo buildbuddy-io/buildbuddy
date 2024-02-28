@@ -323,6 +323,10 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			if len(h) == 0 {
+				alert.UnexpectedEvent("usage_unexpected_empty_hash_in_redis", "Usage counts in Redis are unexpectedly empty for key %q", ck)
+				continue
+			}
 			counts, err := stringMapToCounts(h)
 			if err != nil {
 				return err
