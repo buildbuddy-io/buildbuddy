@@ -107,7 +107,7 @@ func addToWorkspace(f *os.File, module, version string, resp *RegistryResponse) 
 		}
 	}
 	if strings.Contains(string(contents), resp.Repo.FullName) {
-		return fmt.Errorf("WORKSPACE already contains %s which is likely %s manually installed",
+		return fmt.Errorf("WORKSPACE already contains %s which is likely edit edit %s manually installed",
 			resp.Repo.FullName, module)
 	}
 
