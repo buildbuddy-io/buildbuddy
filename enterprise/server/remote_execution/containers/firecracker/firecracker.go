@@ -2222,6 +2222,20 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	}()
 
+	// Emit metrics to track time spent preparing VM to execute a command
+	if c.memoryStore != nil {
+		c.memoryStore.EmitUsageMetrics("init")
+	}
+	if c.uffdHandler != nil {
+		c.uffdHandler.EmitSummaryMetrics("init")
+	}
+	if c.rootStore != nil {
+		c.rootStore.EmitUsageMetrics("init")
+	}
+	if c.workspaceStore != nil {
+		c.workspaceStore.EmitUsageMetrics("init")
+	}
+
 	result = c.SendExecRequestToGuest(ctx, cmd, workDir, stdio)
 	close(execDone)
 
