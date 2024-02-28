@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -69,9 +68,9 @@ var (
 	privateKey    = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
 	webhookSecret = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
 
-	actionsRunnerEnabled     = flag.Bool("github.app.actions.runner_enabled", false, "Whether to enable the buildbuddy-hosted runner for GitHub actions.")
-	actionsRunnerExtraLabels = flag.Slice("github.app.actions.runner_extra_labels", []string{}, "Extra labels to apply to the buildbuddy-hosted runner, in addition to 'buildbuddy' (ex: 'dev').")
-	actionsPoolName          = flag.String("github.app.actions.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
+	actionsRunnerEnabled = flag.Bool("github.app.actions.runner_enabled", false, "Whether to enable the buildbuddy-hosted runner for GitHub actions.")
+	actionsRunnerLabel   = flag.String("github.app.actions.runner_label", "buildbuddy", "Label to apply to the actions runner. This is what 'runs-on' needs to be set to in GitHub workflow YAML in order to run on this BuildBuddy instance.")
+	actionsPoolName      = flag.String("github.app.actions.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
 
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
@@ -81,10 +80,6 @@ const (
 
 	// Max page size that GitHub allows for list requests.
 	githubMaxPageSize = 100
-
-	// Actions have to have this "runs-on" label in order to be run on
-	// BuildBuddy, in addition to actionsRunnerExtraLabels.
-	runnerPrimaryLabel = "buildbuddy"
 
 	// How long an ephemeral GitHub actions runner task should wait without
 	// being assigned a job before it terminates.
@@ -130,10 +125,6 @@ type GitHubApp struct {
 	// privateKey is the GitHub-issued private key for the app. It is used to
 	// create JWTs for authenticating with GitHub as the app itself.
 	privateKey *rsa.PrivateKey
-
-	// runnerLabels contains the set of labels that must be matched by a queued
-	// job in order to spawn a runner on BuildBuddy.
-	runnerLabels []string
 }
 
 // New returns a new GitHubApp handle.
@@ -161,15 +152,9 @@ func New(env environment.Env) (*GitHubApp, error) {
 		return nil, err
 	}
 
-	var runnerLabels []string
-	runnerLabels = append(runnerLabels, runnerPrimaryLabel)
-	runnerLabels = append(runnerLabels, *actionsRunnerExtraLabels...)
-	sort.Strings(runnerLabels)
-
 	app := &GitHubApp{
-		env:          env,
-		privateKey:   privateKey,
-		runnerLabels: runnerLabels,
+		env:        env,
+		privateKey: privateKey,
 	}
 	oauth := gh_oauth.NewOAuthHandler(env, *clientID, *clientSecret, oauthAppPath)
 	oauth.HandleInstall = app.handleInstall
@@ -264,7 +249,7 @@ func (a *GitHubApp) handleWorkflowJobEvent(ctx context.Context, eventType string
 		if event.WorkflowJob != nil {
 			labels = event.WorkflowJob.Labels
 		}
-		if a.matchesRunnerLabels(labels) {
+		if slices.Contains(labels, *actionsRunnerLabel) {
 			return a.startGitHubActionsRunnerTask(ctx, event)
 		}
 	}
@@ -281,15 +266,6 @@ func (a *GitHubApp) handlePullRequestEvent(ctx context.Context, eventType string
 
 func (a *GitHubApp) handlePullRequestReviewEvent(ctx context.Context, eventType string, event *github.PullRequestReviewEvent) error {
 	return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
-}
-
-func (a *GitHubApp) matchesRunnerLabels(labels []string) bool {
-	for _, label := range labels {
-		if !slices.Contains(a.runnerLabels, label) {
-			return false
-		}
-	}
-	return true
 }
 
 func (a *GitHubApp) startGitHubActionsRunnerTask(ctx context.Context, event *github.WorkflowJobEvent) error {
@@ -316,7 +292,7 @@ func (a *GitHubApp) startGitHubActionsRunnerTask(ctx context.Context, event *git
 	req := &github.GenerateJITConfigRequest{
 		Name:          runnerName,
 		RunnerGroupID: 1, // "default" group ID
-		Labels:        a.runnerLabels,
+		Labels:        []string{*actionsRunnerLabel},
 	}
 	jitRunnerConfig, res, err := client.Actions.GenerateRepoJITConfig(ctx, event.GetRepo().GetOwner().GetLogin(), event.GetRepo().GetName(), req)
 	if err := checkResponse(res, err); err != nil {
@@ -339,7 +315,7 @@ func (a *GitHubApp) startGitHubActionsRunnerTask(ctx context.Context, event *git
 				{Name: "dockerUser", Value: "buildbuddy"},
 				{Name: "EstimatedComputeUnits", Value: "3"},
 				{Name: "EstimatedFreeDiskBytes", Value: "20GB"},
-				{Name: "github-actions-runner-labels", Value: strings.Join(a.runnerLabels, ",")},
+				{Name: "github-actions-runner-labels", Value: *actionsRunnerLabel},
 				{Name: "init-dockerd", Value: "true"},
 				{Name: "Pool", Value: *actionsPoolName},
 				{Name: "recycle-runner", Value: "true"},
