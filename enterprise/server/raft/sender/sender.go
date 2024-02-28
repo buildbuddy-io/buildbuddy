@@ -170,6 +170,11 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 	for i, replica := range rd.GetReplicas() {
 		client, err := s.connectionForReplicaDescriptor(ctx, replica)
 		if err != nil {
+			if status.IsUnavailableError(err) {
+				log.Debugf("tryReplicas: replica %+v is unavailable: %s", replica, err)
+				// try a different replica if the current replica is not available.
+				continue
+			}
 			return 0, err
 		}
 		header := makeHeader(rd, i, mode)
@@ -185,13 +190,14 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 				log.Debugf("out of range: %s (skipping rangecache)", m)
 				return 0, err
 			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
-				log.Debugf("out of range: %s (skipping replica %d)", m, replica.GetReplicaId())
+				log.Debugf("out of range: %s (skipping replica %+v)", m, replica)
 				continue
 			default:
 				break
 			}
 		}
 		if status.IsUnavailableError(err) {
+			log.Debugf("replica %+v is unavailable: %s", replica, err)
 			// try a different replica if the current replica is not available.
 			continue
 		}
