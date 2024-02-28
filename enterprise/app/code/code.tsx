@@ -669,7 +669,11 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({});
   }
 
-  handleNewFileClicked(path: string) {
+  handleNewFileClicked(node: github.TreeNode, path: string) {
+    if (node.type != "tree") {
+      path = this.getParent(path);
+    }
+
     if (!this.state.temporaryFiles.has(path)) {
       this.state.temporaryFiles.set(path, []);
     }
@@ -677,7 +681,11 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({ temporaryFiles: this.state.temporaryFiles });
   }
 
-  handleNewFolderClicked(path: string) {
+  handleNewFolderClicked(node: github.TreeNode, path: string) {
+    if (node.type != "tree") {
+      path = this.getParent(path);
+    }
+
     if (!this.state.temporaryFiles.has(path)) {
       this.state.temporaryFiles.set(path, []);
     }
@@ -1299,8 +1307,16 @@ export default class CodeComponent extends React.Component<Props, State> {
               className="context-menu"
               onClick={this.clearContextMenu.bind(this)}
               style={{ top: this.state.contextMenuY, left: this.state.contextMenuX }}>
-              <div onClick={() => this.handleNewFileClicked(this.state.contextMenuFullPath!)}>New file</div>
-              <div onClick={() => this.handleNewFolderClicked(this.state.contextMenuFullPath!)}>New folder</div>
+              <div
+                onClick={() => this.handleNewFileClicked(this.state.contextMenuFile!, this.state.contextMenuFullPath!)}>
+                New file
+              </div>
+              <div
+                onClick={() =>
+                  this.handleNewFolderClicked(this.state.contextMenuFile!, this.state.contextMenuFullPath!)
+                }>
+                New folder
+              </div>
               <div onClick={() => this.handleRenameClicked(this.state.contextMenuFullPath!)}>Rename</div>
               <div
                 onClick={() => this.handleDeleteClicked(this.state.contextMenuFullPath!, this.state.contextMenuFile!)}>
