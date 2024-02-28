@@ -8,8 +8,8 @@ ts_library(
     name = "buildfile",
     srcs = ["buildfile.tsx"],
     deps = [
-        "//app/components/select",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//monaco-editor",
         "@npm//react",
         "@npm//tslib",
