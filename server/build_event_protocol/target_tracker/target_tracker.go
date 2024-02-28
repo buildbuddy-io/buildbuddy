@@ -495,16 +495,13 @@ func updateTargets(ctx context.Context, env environment.Env, targets []*tables.T
 		return status.FailedPreconditionError("database not configured")
 	}
 	for _, t := range targets {
-		// TODO(zoey): Could make this one query
-		var existing tables.Target
-		if err := env.GetDBHandle().GORM(ctx, "target_tracker_get_target").Where(
-			"target_id = ?", t.TargetID).First(&existing).Error; err != nil {
-			return err
+		result := env.GetDBHandle().GORM(ctx, "target_tracker_update_target").Where(
+			"target_id = ?", t.TargetID).Updates(t)
+		if result.Error != nil {
+			return result.Error
 		}
-		err := env.GetDBHandle().GORM(ctx, "target_tracker_update_target").Model(&existing).Where(
-			"target_id = ?", t.TargetID).Updates(t).Error
-		if err != nil {
-			return err
+		if result.RowsAffected == 0 {
+			return status.NotFoundErrorf("Failed to update target, no target exists with target_id %d", t.TargetID)
 		}
 	}
 	return nil
