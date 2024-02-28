@@ -38,22 +38,18 @@ type NodeHost interface {
 	StaleRead(shardID uint64, query interface{}) (interface{}, error)
 }
 
-type apiClientAndConn struct {
-	rfspb.ApiClient
-}
-
 type APIClient struct {
 	env     environment.Env
 	log     log.Logger
 	mu      sync.Mutex
-	clients map[string]*apiClientAndConn
+	clients map[string]*grpc_client.ClientConnPool
 }
 
 func NewAPIClient(env environment.Env, name string) *APIClient {
 	return &APIClient{
 		env:     env,
 		log:     log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", name)),
-		clients: make(map[string]*apiClientAndConn, 0),
+		clients: make(map[string]*grpc_client.ClientConnPool),
 	}
 }
 
@@ -61,15 +57,19 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if client, ok := c.clients[peer]; ok {
-		return client, nil
+		conn, err := client.GetReadyConnection()
+		if err != nil {
+			return nil, status.UnavailableErrorf("no connections to peer %q are ready", peer)
+		}
+		return rfspb.NewApiClient(conn), nil
 	}
+	log.Debugf("Creating new client for peer: %q", peer)
 	conn, err := grpc_client.DialSimple("grpc://" + peer)
 	if err != nil {
 		return nil, err
 	}
-	client := rfspb.NewApiClient(conn)
-	c.clients[peer] = &apiClientAndConn{ApiClient: client}
-	return client, nil
+	c.clients[peer] = conn
+	return rfspb.NewApiClient(conn), nil
 }
 
 func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, error) {

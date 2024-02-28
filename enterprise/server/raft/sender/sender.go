@@ -170,6 +170,11 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 	for i, replica := range rd.GetReplicas() {
 		client, err := s.connectionForReplicaDescriptor(ctx, replica)
 		if err != nil {
+			if status.IsUnavailableError(err) {
+				log.Infof("tryReplicas: replica %+v is unavailable: %s", replica, err)
+				// try a different replica if the current replica is not available.
+				continue
+			}
 			return 0, err
 		}
 		header := makeHeader(rd, i, mode)
@@ -192,6 +197,7 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 			}
 		}
 		if status.IsUnavailableError(err) {
+			log.Infof("replica %+v is unavailable: %s", replica, err)
 			// try a different replica if the current replica is not available.
 			continue
 		}
