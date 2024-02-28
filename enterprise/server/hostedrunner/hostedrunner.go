@@ -287,16 +287,19 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err != nil {
 		return nil, err
 	}
+	// Even for async requests, we must wait until the first operation has been
+	// returned from the stream to guarantee the context isn't canceled too early
+	// before the execution has been created
+	op, err := opStream.Recv()
+	if err != nil {
+		return nil, err
+	}
 
 	res := &rnpb.RunResponse{InvocationId: invocationID}
 	if req.GetAsync() {
 		return res, nil
 	}
 
-	op, err := opStream.Recv()
-	if err != nil {
-		return nil, err
-	}
 	executionID := op.GetName()
 	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
 		return nil, err
