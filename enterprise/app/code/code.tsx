@@ -28,6 +28,7 @@ import Long from "long";
 import ModuleSidekick from "../sidekick/module/module";
 import BazelVersionSidekick from "../sidekick/bazelversion/bazelversion";
 import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
+import BuildFileSidekick from "../sidekick/buildfile/buildfile";
 import error_service from "../../../app/errors/error_service";
 
 interface Props {
@@ -1273,6 +1274,9 @@ export default class CodeComponent extends React.Component<Props, State> {
           </div>
           {this.editor && (this.currentPath()?.endsWith("MODULE.bazel") || this.currentPath()?.endsWith("MODULE")) && (
             <ModuleSidekick editor={this.editor} />
+          )}
+          {this.editor && (this.currentPath()?.endsWith("BUILD.bazel") || this.currentPath()?.endsWith("BUILD")) && (
+            <BuildFileSidekick editor={this.editor} onBazelCommand={(c) => this.handleBuildClicked(c)} />
           )}
           {this.editor && this.currentPath()?.endsWith(".bazelversion") && (
             <BazelVersionSidekick editor={this.editor} />

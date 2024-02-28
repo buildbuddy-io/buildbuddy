@@ -1,0 +1,25 @@
+.buildfile-sidekick h1 {
+  margin-bottom: 16px;
+}
+
+.buildfile-command-group {
+  margin-bottom: 16px;
+}
+
+.buildfile-command-item {
+  cursor: pointer;
+  margin-bottom: 4px;
+  background-color: transparent;
+  display: flex;
+  gap: 4px;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 4px 8px;
+  align-items: center;
+}
+
+.buildfile-command-item svg {
+  color: #8bc34a;
+  width: 12px;
+  height: 12px;
+}
