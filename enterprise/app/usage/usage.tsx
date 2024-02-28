@@ -52,7 +52,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
 
   render() {
     const orgName = this.props.user?.selectedGroup.name;
-    // If selected period is not found, it's because the RPC is still pending.
+    // Selected period may not be found because of a pending or failed RPC.
     const selection = this.state.response?.usage.find((v) => v.period === this.state.selectedPeriod);
 
     return (
