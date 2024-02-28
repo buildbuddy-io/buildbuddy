@@ -288,7 +288,8 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	// Loop through usage periods starting from the oldest period
 	// that may exist in Redis (based on key expiration time) and looping up until
 	// we hit a period which is not yet "settled".
-	for p := ut.oldestWritablePeriod(); ut.isSettled(p); p = p.Next() {
+	oldestPeriod := ut.oldestWritablePeriod()
+	for p := oldestPeriod; ut.isSettled(p); p = p.Next() {
 		// Read collections (JSON-serialized Collection structs)
 		gk := collectionsRedisKey(p)
 		encodedCollections, err := ut.rdb.SMembers(ctx, gk).Result()
@@ -297,6 +298,10 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 		}
 		if len(encodedCollections) == 0 {
 			continue
+		}
+
+		if p.Equal(oldestPeriod) {
+			alert.UnexpectedEvent("usage_flush_not_keeping_up", "Flushing usage data that is close to redis TTL - some usage data may be lost")
 		}
 
 		for _, encodedCollection := range encodedCollections {
@@ -469,6 +474,10 @@ func parseCollectionPeriod(s string) (period, error) {
 	}
 	t := time.UnixMicro(usec)
 	return periodStartingAt(t), nil
+}
+
+func (c period) Equal(o period) bool {
+	return time.Time(c).Equal(time.Time(o))
 }
 
 func (c period) Start() time.Time {
