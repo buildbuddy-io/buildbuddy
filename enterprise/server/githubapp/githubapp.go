@@ -15,10 +15,15 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	_ "embed"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -30,8 +35,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -40,9 +47,11 @@ import (
 	"github.com/google/go-github/v59/github"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	gh_oauth "github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -60,6 +69,10 @@ var (
 	privateKey    = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
 	webhookSecret = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
 
+	actionsRunnerEnabled     = flag.Bool("github.app.actions.runner_enabled", false, "Whether to enable the buildbuddy-hosted runner for GitHub actions.")
+	actionsRunnerExtraLabels = flag.Slice("github.app.actions.runner_extra_labels", []string{}, "Extra labels to apply to the buildbuddy-hosted runner, in addition to 'buildbuddy' (ex: 'dev').")
+	actionsPoolName          = flag.String("github.app.actions.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
+
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
 
@@ -68,7 +81,22 @@ const (
 
 	// Max page size that GitHub allows for list requests.
 	githubMaxPageSize = 100
+
+	// Actions have to have this "runs-on" label in order to be run on
+	// BuildBuddy, in addition to actionsRunnerExtraLabels.
+	runnerPrimaryLabel = "buildbuddy"
+
+	// How long an ephemeral GitHub actions runner task should wait without
+	// being assigned a job before it terminates.
+	runnerIdleTimeout = 30 * time.Second
+
+	// Max amount of time that a runner is allowed to run for until it is
+	// killed. This is just a safeguard for now; we eventually should remove it.
+	runnerTimeout = 1 * time.Hour
 )
+
+//go:embed runner.sh
+var runnerScript string
 
 func Register(env *real_environment.RealEnv) error {
 	if !*enabled {
@@ -102,6 +130,10 @@ type GitHubApp struct {
 	// privateKey is the GitHub-issued private key for the app. It is used to
 	// create JWTs for authenticating with GitHub as the app itself.
 	privateKey *rsa.PrivateKey
+
+	// runnerLabels contains the set of labels that must be matched by a queued
+	// job in order to spawn a runner on BuildBuddy.
+	runnerLabels []string
 }
 
 // New returns a new GitHubApp handle.
@@ -129,9 +161,15 @@ func New(env environment.Env) (*GitHubApp, error) {
 		return nil, err
 	}
 
+	var runnerLabels []string
+	runnerLabels = append(runnerLabels, runnerPrimaryLabel)
+	runnerLabels = append(runnerLabels, *actionsRunnerExtraLabels...)
+	sort.Strings(runnerLabels)
+
 	app := &GitHubApp{
-		env:        env,
-		privateKey: privateKey,
+		env:          env,
+		privateKey:   privateKey,
+		runnerLabels: runnerLabels,
 	}
 	oauth := gh_oauth.NewOAuthHandler(env, *clientID, *clientSecret, oauthAppPath)
 	oauth.HandleInstall = app.handleInstall
@@ -171,11 +209,21 @@ func (a *GitHubApp) handleWebhookRequest(w http.ResponseWriter, req *http.Reques
 }
 
 func (a *GitHubApp) handleWebhookEvent(ctx context.Context, eventType string, event any) error {
+	// Delegate to the appropriate handler func based on event type.
 	switch event := event.(type) {
 	case *github.InstallationEvent:
 		return a.handleInstallationEvent(ctx, eventType, event)
+	case *github.WorkflowJobEvent:
+		return a.handleWorkflowJobEvent(ctx, eventType, event)
+	case *github.PushEvent:
+		return a.handlePushEvent(ctx, eventType, event)
+	case *github.PullRequestEvent:
+		return a.handlePullRequestEvent(ctx, eventType, event)
+	case *github.PullRequestReviewEvent:
+		return a.handlePullRequestReviewEvent(ctx, eventType, event)
 	default:
-		return a.handleWorkflowEvent(ctx, eventType, event)
+		// Event type not yet handled
+		return nil
 	}
 }
 
@@ -204,7 +252,134 @@ func (a *GitHubApp) handleInstallationEvent(ctx context.Context, eventType strin
 	return nil
 }
 
-func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, eventType string, event any) error {
+func (a *GitHubApp) handleWorkflowJobEvent(ctx context.Context, eventType string, event *github.WorkflowJobEvent) error {
+	if !*actionsRunnerEnabled {
+		return nil
+	}
+
+	// If this is a queued event, and one of the labels is "buildbuddy", then
+	// the user is requesting to run the job on one of BuildBuddy's runners.
+	if event.GetAction() == "queued" {
+		var labels []string
+		if event.WorkflowJob != nil {
+			labels = event.WorkflowJob.Labels
+		}
+		if a.matchesRunnerLabels(labels) {
+			return a.startGitHubActionsRunnerTask(ctx, event)
+		}
+	}
+	return nil
+}
+
+func (a *GitHubApp) handlePushEvent(ctx context.Context, eventType string, event *github.PushEvent) error {
+	return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
+}
+
+func (a *GitHubApp) handlePullRequestEvent(ctx context.Context, eventType string, event *github.PullRequestEvent) error {
+	return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
+}
+
+func (a *GitHubApp) handlePullRequestReviewEvent(ctx context.Context, eventType string, event *github.PullRequestReviewEvent) error {
+	return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
+}
+
+func (a *GitHubApp) matchesRunnerLabels(labels []string) bool {
+	for _, label := range labels {
+		if !slices.Contains(a.runnerLabels, label) {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *GitHubApp) startGitHubActionsRunnerTask(ctx context.Context, event *github.WorkflowJobEvent) error {
+	if event.WorkflowJob == nil {
+		return status.FailedPreconditionError("workflow job cannot be nil")
+	}
+
+	// Get an installation client.
+	tok, err := a.createInstallationToken(ctx, event.GetInstallation().GetID())
+	if err != nil {
+		return err
+	}
+	client, err := a.newAuthenticatedClient(ctx, tok.GetToken())
+	if err != nil {
+		return err
+	}
+	// Register a "just-in-time" runner config for the incoming queued job, with
+	// the same labels as the queued job. This lets us start a runner instance
+	// that is authorized to execute a single job within the repo.
+	//
+	// TODO: once https://github.com/actions/runner/issues/620 is fixed,
+	// restrict the runner to the exact job ID that was queued.
+	runnerName := uuid.New()
+	req := &github.GenerateJITConfigRequest{
+		Name:          runnerName,
+		RunnerGroupID: 1, // "default" group ID
+		Labels:        a.runnerLabels,
+	}
+	jitRunnerConfig, res, err := client.Actions.GenerateRepoJITConfig(ctx, event.GetRepo().GetOwner().GetLogin(), event.GetRepo().GetName(), req)
+	if err := checkResponse(res, err); err != nil {
+		return err
+	}
+	// Spawn an ephemeral runner action on RBE.
+	// See the runner script in ./runner.sh
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-ec", runnerScript},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "HOME", Value: "/home/buildbuddy"},
+			{Name: "PATH", Value: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
+			{Name: "RUNNER_IDLE_TIMEOUT", Value: fmt.Sprintf("%d", int(runnerIdleTimeout.Seconds()))},
+		},
+		Platform: &repb.Platform{
+			// TODO: make more of these configurable (via both the workflow YAML
+			// and flags)
+			Properties: []*repb.Platform_Property{
+				{Name: "container-image", Value: "docker://" + platform.Ubuntu20_04GitHubActionsImage},
+				{Name: "dockerUser", Value: "buildbuddy"},
+				{Name: "EstimatedComputeUnits", Value: "3"},
+				{Name: "EstimatedFreeDiskBytes", Value: "20GB"},
+				{Name: "github-actions-runner-labels", Value: strings.Join(a.runnerLabels, ",")},
+				{Name: "init-dockerd", Value: "true"},
+				{Name: "Pool", Value: *actionsPoolName},
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "runner-recycling-max-wait", Value: "3s"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
+			},
+		},
+	}
+	// Set jitconfig as env var via remote header to avoid storing it in CAS.
+	ctx = platform.WithRemoteHeaderOverride(
+		ctx, platform.EnvOverridesPropertyName,
+		"RUNNER_ENCODED_JITCONFIG="+jitRunnerConfig.GetEncodedJITConfig())
+
+	action := &repb.Action{
+		DoNotCache: true,
+		Timeout:    durationpb.New(runnerTimeout),
+	}
+	// TODO: respect GitRepository.instance_name_suffix, and allow manual cache
+	// busting via the UI by setting instance_name_suffix on the GitRepository
+	// row.
+	instanceName := ""
+	arn, err := rexec.Prepare(ctx, a.env, instanceName, repb.DigestFunction_SHA256, action, cmd, "" /*=inputRoot*/)
+	if err != nil {
+		return status.WrapError(err, "prepare runner action")
+	}
+	stream, err := rexec.Start(ctx, a.env, arn)
+	if err != nil {
+		return status.WrapError(err, "start runner execution")
+	}
+	op, err := stream.Recv()
+	if err != nil {
+		return status.WrapError(err, "wait for runner execution to be accepted")
+	}
+	log.CtxInfof(ctx, "Started ephemeral GitHub Actions runner execution %s", op.GetName())
+	// Note: we don't wait for execution here; the RBE system is responsible for
+	// driving the action to completion at this point.
+	return nil
+}
+
+func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventType string, event any) error {
 	wd, err := gh_webhooks.ParseWebhookData(event)
 	if err != nil {
 		return err

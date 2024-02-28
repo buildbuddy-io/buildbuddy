@@ -126,8 +126,7 @@ func isTaskMisconfigured(err error) bool {
 
 func isClientBazel(task *repb.ExecutionTask) bool {
 	// TODO(bduffany): Find a more reliable way to determine this.
-	args := task.GetCommand().GetArguments()
-	return !platform.IsCIRunner(args)
+	return !platform.IsCICommand(task.GetCommand())
 }
 
 func shouldRetry(task *repb.ExecutionTask, taskError error) bool {

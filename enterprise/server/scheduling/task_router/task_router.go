@@ -275,7 +275,7 @@ func (runnerRecycler) routingKey(params routingParams) (string, error) {
 	// For workflow tasks, route using GIT_BRANCH so that when re-running the
 	// workflow multiple times using the same branch, the runs are more likely
 	// to hit an executor with a warmer snapshot cache.
-	if platform.IsCIRunner(params.cmd.GetArguments()) {
+	if platform.IsCICommand(params.cmd) {
 		branch := ""
 		for _, envVar := range params.cmd.EnvironmentVariables {
 			if envVar.GetName() == "GIT_BRANCH" {
