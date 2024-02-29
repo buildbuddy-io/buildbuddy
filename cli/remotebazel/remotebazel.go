@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -206,33 +207,23 @@ func diffUntrackedFile(path string) (string, error) {
 func Config(path string) (*RepoConfig, error) {
 	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "open git repo")
 	}
 
 	remote, err := determineRemote(repo)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "determine remote")
 	}
 	if len(remote.Config().URLs) == 0 {
 		return nil, status.FailedPreconditionErrorf("remote %q does not have a fetch URL", remote.Config().Name)
 	}
 	fetchURL := remote.Config().URLs[0]
-
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
-	defaultBranchRef, err := determineDefaultBranch(repo)
+	branch, commit, err := getBaseBranchAndCommit(repo)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "get base branch and commit")
 	}
-
-	log.Debugf("Using base branch: %s", defaultBranchRef)
-
-	defaultBranchCommitHash, err := repo.ResolveRevision(plumbing.Revision(defaultBranchRef))
-	if err != nil {
-		return nil, status.UnknownErrorf("could not find commit hash for branch ref %q", defaultBranchRef)
-	}
-
-	log.Debugf("Using base branch commit hash: %s", defaultBranchCommitHash)
 
 	wt, err := repo.Worktree()
 	if err != nil {
@@ -242,13 +233,13 @@ func Config(path string) (*RepoConfig, error) {
 	repoConfig := &RepoConfig{
 		Root:      wt.Filesystem.Root(),
 		URL:       fetchURL,
-		CommitSHA: defaultBranchCommitHash.String(),
-		Ref:       defaultBranchRef,
+		CommitSHA: commit,
+		Ref:       branch,
 	}
 
-	patch, err := runGit("diff", defaultBranchCommitHash.String())
+	patch, err := runGit("diff", commit)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "git diff")
 	}
 	if patch != "" {
 		repoConfig.Patches = append(repoConfig.Patches, []byte(patch))
@@ -256,7 +247,7 @@ func Config(path string) (*RepoConfig, error) {
 
 	untrackedFiles, err := runGit("ls-files", "--others", "--exclude-standard")
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "get untracked files")
 	}
 	untrackedFiles = strings.Trim(untrackedFiles, "\n")
 	if untrackedFiles != "" {
@@ -266,13 +257,69 @@ func Config(path string) (*RepoConfig, error) {
 			}
 			patch, err := diffUntrackedFile(uf)
 			if err != nil {
-				return nil, err
+				return nil, status.WrapError(err, "diff untracked file")
 			}
 			repoConfig.Patches = append(repoConfig.Patches, []byte(patch))
 		}
 	}
 
 	return repoConfig, nil
+}
+
+// getBaseBranchAndCommit returns the git branch and commit that the remote run
+// should be based off
+func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string, err error) {
+	head, err := repo.Head()
+	if err != nil {
+		return "", "", status.WrapError(err, "get repo head")
+	}
+
+	currentBranch := head.Name().Short()
+	if !head.Name().IsBranch() {
+		// Handle detached head state
+		detachedHeadOutput, _ := runGit("branch")
+		regex := regexp.MustCompile(".*detached at ([^)]+).*")
+		matches := regex.FindStringSubmatch(detachedHeadOutput)
+		if len(matches) != 2 {
+			return "", "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
+		}
+		currentBranch = matches[1]
+	}
+
+	remoteBranchOutput, err := runGit("ls-remote", "origin", currentBranch)
+	if err != nil {
+		return "", "", status.WrapError(err, fmt.Sprintf("check if branch %s exists remotely", currentBranch))
+	}
+	currentBranchExistsRemotely := remoteBranchOutput != ""
+
+	currentCommitHash, err := runGit("rev-parse", "HEAD")
+	if err != nil {
+		return "", "", status.WrapError(err, "get current commit hash")
+	}
+	currentCommitHash = strings.TrimSuffix(currentCommitHash, "\n")
+
+	branch = currentBranch
+	commit = currentCommitHash
+	if !currentBranchExistsRemotely {
+		// If the current branch does not exist remotely, the remote runner will
+		// not be able to fetch it. In this case, use the default branch for the repo
+		defaultBranch, err := determineDefaultBranch(repo)
+		if err != nil {
+			return "", "", status.WrapError(err, "get default branch")
+		}
+		branch = defaultBranch
+
+		defaultBranchCommitHash, err := repo.ResolveRevision(plumbing.Revision(defaultBranch))
+		if err != nil {
+			return "", "", status.WrapError(err, "get default branch commit hash")
+		}
+		commit = defaultBranchCommitHash.String()
+	}
+
+	log.Debugf("Using base branch: %s", branch)
+	log.Debugf("Using base commit hash: %s", commit)
+
+	return branch, commit, nil
 }
 
 func getTermWidth() int {
