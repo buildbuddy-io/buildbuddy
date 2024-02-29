@@ -236,18 +236,41 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
-	var in tables.Invocation
-	// TODO(zoey): could make this one query
-	if err := d.h.NewQuery(ctx, "invocationdb_get_invocation_for_delete").Raw(
-		`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
-		return err
+	if authenticatedUser == nil {
+		return status.InvalidArgumentError("authenticatedUser cannot be nil.")
 	}
-	acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
-	if err := perms.AuthorizeWrite(authenticatedUser, acl); err != nil {
-		return err
-	}
+	u := *authenticatedUser
+
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		return d.deleteInvocation(ctx, tx, invocationID)
+		result := tx.NewQuery(ctx, "invocationdb_delete_invocation_with_perms_check").Raw(`
+			DELETE FROM "Invocations"
+			WHERE invocation_id = ?
+				AND (
+					(perms & ? <> 0 AND user_id = ?) OR
+					(perms & ? <> 0 AND group_id IN ?)
+				)
+			`,
+			invocationID,
+			perms.OWNER_WRITE,
+			u.GetUserID(),
+			perms.GROUP_WRITE,
+			u.GetAllowedGroups(),
+		).Exec()
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return status.NotFoundErrorf("No invocation with id %s exists that user %s has write permissions on.", invocationID, u.GetUserID())
+		}
+		if err := tx.NewQuery(ctx, "invocationdb_delete_executions").Raw(
+			`DELETE FROM "Executions" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
+			return err
+		}
+		if err := tx.NewQuery(ctx, "invocationdb_delete_execution_links").Raw(
+			`DELETE FROM "InvocationExecutions" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
+			return err
+		}
+		return nil
 	})
 }
 
