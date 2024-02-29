@@ -102,6 +102,8 @@ ts_library(
         "//app/components/select",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/icons:github",
+        "//app/icons:google",
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",

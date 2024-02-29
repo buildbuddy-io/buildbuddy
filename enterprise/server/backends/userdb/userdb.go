@@ -495,7 +495,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	users := make([]*grpb.GetGroupUsersResponse_GroupUser, 0)
 
 	q := query_builder.NewQuery(`
-			SELECT u.user_id, u.email, u.first_name, u.last_name, ug.membership_status, ug.role
+			SELECT u.user_id, u.email, u.first_name, u.last_name, u.sub_id, ug.membership_status, ug.role
 			FROM "Users" AS u JOIN "UserGroups" AS ug ON u.user_id = ug.user_user_id`)
 	q = q.AddWhereClause(`ug.group_group_id = ?`, groupID)
 
@@ -518,7 +518,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 		user := &tables.User{}
 		var groupRole uint32
 		err := row.Scan(
-			&user.UserID, &user.Email, &user.FirstName, &user.LastName,
+			&user.UserID, &user.Email, &user.FirstName, &user.LastName, &user.SubID,
 			&groupUser.GroupMembershipStatus, &groupRole,
 		)
 		if err != nil {
