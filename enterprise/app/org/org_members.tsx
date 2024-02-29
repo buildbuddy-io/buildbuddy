@@ -20,7 +20,9 @@ import { user_id } from "../../../proto/user_id_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
 import Banner from "../../../app/components/banner/banner";
 import capabilities from "../../../app/capabilities/capabilities";
-import { CheckCircle, XCircle } from "lucide-react";
+import { CheckCircle, Github, HelpCircle, ShieldCheck, UserCircle, XCircle } from "lucide-react";
+import { GoogleIcon } from "../../../app/icons/google";
+import { GithubIcon } from "../../../app/icons/github";
 
 export type OrgMembersProps = {
   user: User;
@@ -40,6 +42,21 @@ type State = {
   isRemoveModalVisible?: boolean;
   isRemoveLoading?: boolean;
 };
+
+function iconFromAccountType(accountType: user_id.AccountType | undefined) {
+  switch (accountType) {
+    case user_id.AccountType.GOOGLE:
+      return <GoogleIcon />;
+    case user_id.AccountType.GITHUB:
+      return <GithubIcon />;
+    case user_id.AccountType.SAML:
+      return <ShieldCheck />;
+    case user_id.AccountType.OIDC:
+      return <UserCircle />;
+    default:
+      return <HelpCircle />;
+  }
+}
 
 function getRoleLabel(role: grp.Group.Role): string {
   switch (role) {
@@ -233,7 +250,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         <div className="affected-users-list">
           {selectedMembers.map((member) => (
             <div className={`affected-users-list-item ${this.isLoggedInUser(member) ? "flagged-self-user" : ""}`}>
-              {member.user?.email || member.user?.name?.full}
+              {member?.user?.email || member?.user?.name?.full} {iconFromAccountType(member.user?.accountType)}
             </div>
           ))}
         </div>
@@ -353,7 +370,9 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
                   />
                 </div>
               )}
-              <div className="org-member-email">{member?.user?.email || member?.user?.name?.full}</div>
+              <div className="org-member-email">
+                {member?.user?.email || member?.user?.name?.full} {iconFromAccountType(member.user?.accountType)}
+              </div>
               <div className="org-member-role">{getRoleLabel(member?.role || 0)}</div>
             </div>
           ))}

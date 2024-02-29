@@ -22,4 +22,13 @@ message DisplayUser {
   Name name = 2;
   string profile_image_url = 3;
   string email = 4;
+  AccountType account_type = 5;
+}
+
+enum AccountType {
+  UNKNOWN_USER_TYPE = 0;
+  GOOGLE = 1;
+  GITHUB = 2;
+  SAML = 3;
+  OIDC = 4;
 }
