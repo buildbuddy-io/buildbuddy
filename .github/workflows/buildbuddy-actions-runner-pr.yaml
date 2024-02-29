@@ -52,6 +52,7 @@ jobs:
 
       - name: "Test"
         run: |
+          cd buildbuddy
           # Setting RUNNER_TRACKING_ID prevents the runner from
           # killing the bazel server at the end of the job.
           # See https://github.com/actions/runner/issues/598
