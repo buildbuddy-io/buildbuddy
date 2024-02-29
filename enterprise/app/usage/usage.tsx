@@ -1,10 +1,11 @@
 import React from "react";
 import errorService from "../../../app/errors/error_service";
-import rpcService from "../../../app/service/rpc_service";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
 import { usage } from "../../../proto/usage_ts_proto";
 import Select, { Option } from "../../../app/components/select/select";
 import { cpuSavingsSec, formatWithCommas, bytes as formatBytes } from "../../../app/format/format";
+import moment from "moment";
 
 export interface UsageProps {
   user?: User;
@@ -12,40 +13,49 @@ export interface UsageProps {
 
 interface State {
   response?: usage.GetUsageResponse;
-  selectedPeriod: usage.Usage;
+  selectedPeriod: string;
   loading?: boolean;
 }
 
 export default class UsageComponent extends React.Component<UsageProps, State> {
-  state: State = { selectedPeriod: usage.Usage.create({}) };
+  // TODO: remove getDefaultTimePeriodString() after the server
+  // is updated to unconditionally send the current period
+  state: State = { selectedPeriod: getDefaultTimePeriodString() };
+  pendingRequest?: CancelablePromise<any>;
 
   componentDidMount() {
     document.title = "Usage | BuildBuddy";
+    this.fetchUsageForPeriod(this.state.selectedPeriod);
+  }
 
+  private onChangePeriod(e: React.ChangeEvent<HTMLSelectElement>) {
+    const period = e.target.value;
+    this.setState({
+      selectedPeriod: period,
+    });
+    this.fetchUsageForPeriod(period);
+  }
+
+  private fetchUsageForPeriod(period: string) {
+    this.pendingRequest?.cancel();
     this.setState({ loading: true });
+
     rpcService.service
-      .getUsage(new usage.GetUsageRequest())
+      .getUsage(new usage.GetUsageRequest({ usagePeriod: period }))
       .then((response) => {
         if (response.usage.length === 0) {
           throw new Error("Server did not return usage data.");
         }
-        this.setState({ response, selectedPeriod: response.usage[0] });
+        this.setState({ response, selectedPeriod: period });
       })
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }
 
-  private onChangePeriod(e: React.ChangeEvent<HTMLSelectElement>) {
-    const selectedPeriod = e.target.value;
-    this.setState({
-      // Value comes directly from the response, it's a bug if we don't find it.
-      selectedPeriod: this.state.response?.usage.find((v) => v.period === selectedPeriod) || usage.Usage.create({}),
-    });
-  }
-
   render() {
     const orgName = this.props.user?.selectedGroup.name;
-    const period = this.state.selectedPeriod;
+    // Selected period may not be found because of a pending or failed RPC.
+    const selection = this.state.response?.usage.find((v) => v.period === this.state.selectedPeriod);
 
     return (
       <div className="usage-page">
@@ -53,7 +63,6 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
           <div className="usage-header">
             <div className="usage-title">Usage</div>
           </div>
-          {this.state.loading && <div className="loading" />}
           {this.state.response && (
             <div className="card usage-card">
               <div className="content">
@@ -61,44 +70,48 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   <div>
                     {orgName && <div className="org-name">{orgName}</div>}
                     <div className="selected-period-label">
-                      BuildBuddy usage for <span className="usage-period">{period.period} (UTC)</span>
+                      BuildBuddy usage for <span className="usage-period">{this.state.selectedPeriod} (UTC)</span>
                     </div>
                   </div>
                   <Select title="Usage period" onChange={this.onChangePeriod.bind(this)}>
-                    {this.state.response.usage.map((usage, i) => (
-                      <Option key={usage.period} value={usage.period}>
-                        {usage.period}
+                    {this.state.response.availableUsagePeriods.map((period, i) => (
+                      <Option key={period} value={period}>
+                        {period}
                         {i === 0 ? " (Current period)" : ""}
                       </Option>
                     ))}
                   </Select>
                 </div>
-                <div className="usage-period-table">
-                  <div className="usage-resource-name">Invocations</div>
-                  <div className="usage-value">{formatWithCommas(period.invocations)}</div>
-                  <div className="usage-resource-name">Action cache hits</div>
-                  <div className="usage-value">{formatWithCommas(period.actionCacheHits)}</div>
-                  <div className="usage-resource-name">Cached build minutes</div>
-                  <div className="usage-value">{formatMinutes(Number(period.totalCachedActionExecUsec))}</div>
-                  <div className="usage-resource-name">Content addressable storage cache hits</div>
-                  <div className="usage-value">{formatWithCommas(period.casCacheHits)}</div>
-                  <div className="usage-resource-name">Total bytes downloaded from cache</div>
-                  <div className="usage-value" title={formatWithCommas(period.totalDownloadSizeBytes)}>
-                    {formatBytes(period.totalDownloadSizeBytes)}
-                  </div>
-                  {/*
+                {this.state.loading && <div className="loading" />}
+                {!this.state.loading && !selection && <span>Failed to load usage data.</span>}
+                {!this.state.loading && selection && (
+                  <div className="usage-period-table">
+                    <div className="usage-resource-name">Invocations</div>
+                    <div className="usage-value">{formatWithCommas(selection.invocations)}</div>
+                    <div className="usage-resource-name">Action cache hits</div>
+                    <div className="usage-value">{formatWithCommas(selection.actionCacheHits)}</div>
+                    <div className="usage-resource-name">Cached build minutes</div>
+                    <div className="usage-value">{formatMinutes(Number(selection.totalCachedActionExecUsec))}</div>
+                    <div className="usage-resource-name">Content addressable storage cache hits</div>
+                    <div className="usage-value">{formatWithCommas(selection.casCacheHits)}</div>
+                    <div className="usage-resource-name">Total bytes downloaded from cache</div>
+                    <div className="usage-value" title={formatWithCommas(selection.totalDownloadSizeBytes)}>
+                      {formatBytes(selection.totalDownloadSizeBytes)}
+                    </div>
+                    {/*
                   <div className="usage-resource-name">Total bytes uploaded from cache</div>
-                  <div className="usage-value" title={formatWithCommas(period.totalUploadSizeBytes)}>
+                  <div className="usage-value" title={formatWithCommas(selection.totalUploadSizeBytes)}>
                     {formatBytes(period.totalUploadSizeBytes)}
                   </div>
 				    */}
-                  <div className="usage-resource-name">Linux remote execution duration</div>
-                  <div className="usage-value">{formatMinutes(Number(period.linuxExecutionDurationUsec))}</div>
-                  {/*
+                    <div className="usage-resource-name">Linux remote execution duration</div>
+                    <div className="usage-value">{formatMinutes(Number(selection.linuxExecutionDurationUsec))}</div>
+                    {/*
                   <div className="usage-resource-name">Saved CPU Time</div>
-                  <div className="usage-value">{cpuSavingsSec(Number(period.totalCachedActionExecUsec))}</div>
+                  <div className="usage-value">{cpuSavingsSec(Number(selection.totalCachedActionExecUsec))}</div>
 				    */}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -106,6 +119,10 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
       </div>
     );
   }
+}
+
+function getDefaultTimePeriodString(): string {
+  return moment.utc().format("YYYY-MM");
 }
 
 function formatMinutes(usec: number): string {
