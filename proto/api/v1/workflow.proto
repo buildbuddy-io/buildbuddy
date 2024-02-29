@@ -37,6 +37,8 @@ message ExecuteWorkflowRequest {
   // overrides will take precedence. Otherwise all env vars set in
   // buildbuddy.yaml will still apply.
   map<string, string> env = 7;
+  // If this is set in addition to a branch ref,
+  string commit_sha = 8;
 }
 
 message ExecuteWorkflowResponse {

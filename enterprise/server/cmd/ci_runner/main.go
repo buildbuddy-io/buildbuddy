@@ -137,12 +137,6 @@ var (
 	besResultsURL      = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
 	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches (for hosted bazel) or the remote instance name running the workflow action.")
 	triggerEvent       = flag.String("trigger_event", "", "Event type that triggered the action runner.")
-	pushedRepoURL      = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
-	pushedBranch       = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
-	prNumber           = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
-	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
-	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
-	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
 	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
@@ -152,6 +146,18 @@ var (
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 	gitCleanExclude    = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
 	envOverrideStr     = flag.String("env_overrides", "", "These env vars should take precedence over any set on the command or in buildbuddy.yaml.")
+
+	// At least one of either pushedRepoURL or targetRepoURL must be set
+	// At least one of pushedBranch, targetBranch, or commitSHA must be set
+	//    * If only one is set, that ref will be checked out
+	// 	  * If both pushedBranch and targetBranch are set, they will be merged
+	//	  * If
+	pushedRepoURL = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
+	pushedBranch  = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	targetRepoURL = flag.String("target_repo_url", "", "URL of the target repo.")
+	targetBranch  = flag.String("target_branch", "", "Branch to check action triggers against.")
+	commitSHA     = flag.String("commit_sha", "", "Commit SHA to report statuses for. If set, force checkout this commit.")
+	prNumber      = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -1518,8 +1524,14 @@ func (ws *workspace) setup(ctx context.Context) error {
 	if err := os.Chdir(repoDirName); err != nil {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
-	if err := ws.clone(ctx, *targetRepoURL); err != nil {
-		return err
+	if *targetRepoURL != "" {
+		if err := ws.clone(ctx, *targetRepoURL); err != nil {
+			return err
+		}
+	} else {
+		if err := ws.clone(ctx, *pushedRepoURL); err != nil {
+			return err
+		}
 	}
 	if err := ws.config(ctx); err != nil {
 		return err
@@ -1552,50 +1564,87 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 	return nil
 }
 
-func (ws *workspace) sync(ctx context.Context) error {
-	if *pushedBranch == "" && *targetBranch == "" {
-		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `target_branch` to be set")
-	}
-
-	// Fetch the pushed and target branches from their respective remotes.
+// fetchRefs fetches the refs needed for this remote run
+func (ws *workspace) fetchRefs(ctx context.Context) error {
 	// "base" here is referring to the repo on which the workflow is configured.
+	baseRefs := make([]string, 0)
+
 	// "fork" is referring to the forked repo, if the runner was triggered by a
-	// PR from a fork (forkBranches will be empty otherwise).
-	baseRefs := []string{}
+	// PR from a fork (forkRefs will be empty otherwise).
+	forkRefs := make([]string, 0)
+	isPushedBranchInFork := *pushedRepoURL != *targetRepoURL &&
+		*pushedRepoURL != "" &&
+		*targetRepoURL != ""
+
 	if *targetBranch != "" {
 		baseRefs = append(baseRefs, *targetBranch)
 	}
-	forkBranches := []string{}
+
 	// Add the pushed branch to the appropriate list corresponding to the remote
 	// to be fetched (base or fork).
 	if *pushedRepoURL != "" {
-		if isPushedBranchInFork := *pushedRepoURL != *targetRepoURL; isPushedBranchInFork {
-			forkBranches = append(forkBranches, *pushedBranch)
+		if isPushedBranchInFork {
+			forkRefs = append(forkRefs, *pushedBranch)
 		} else if *pushedBranch != *targetBranch {
 			baseRefs = append(baseRefs, *pushedBranch)
 		}
 	}
+
+	// Only fetch a commit sha if both pushed and target branch are empty
+	if *commitSHA != "" && *targetBranch == "" && *pushedBranch == "" {
+		if isPushedBranchInFork {
+			forkRefs = append(forkRefs, *commitSHA)
+		} else {
+			baseRefs = append(baseRefs, *commitSHA)
+		}
+	}
+
+	// Fetch refs from their respective remotes.
 	// TODO: Fetch from remotes in parallel
 	if err := ws.fetch(ctx, *targetRepoURL, baseRefs); err != nil {
 		return err
 	}
-	if err := ws.fetch(ctx, *pushedRepoURL, forkBranches); err != nil {
+	if err := ws.fetch(ctx, *pushedRepoURL, forkRefs); err != nil {
 		return err
 	}
+	return nil
+}
 
+// checkout checks out the ref that this remote run should run from
+func (ws *workspace) checkout(ctx context.Context) error {
 	checkoutRef := ""
 	checkoutLocalBranchName := ""
 	if *pushedRepoURL != "" {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
 		checkoutLocalBranchName = *pushedBranch
+	} else if *commitSHA != "" {
+		checkoutRef = *commitSHA
+		checkoutLocalBranchName = *commitSHA
 	} else {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		checkoutLocalBranchName = *targetBranch
 	}
 
-	// If a commit is set, use it
+	// If a commit is set, always use it
 	if *commitSHA != "" {
 		checkoutRef = *commitSHA
+	}
+
+	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
+	if _, err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ws *workspace) sync(ctx context.Context) error {
+	if *pushedBranch == "" && *targetBranch == "" && *commitSHA == "" {
+		return status.InvalidArgumentError("expected at least one of `pushed_branch`, `target_branch`, or `commit_sha` to be set")
+	}
+
+	err := ws.fetchRefs(ctx)
+	if err != nil {
+		return status.WrapError(err, "fetch refs")
 	}
 
 	// Clean up in case a previous workflow made a mess.
@@ -1612,9 +1661,8 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return err
 	}
 
-	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
-	if _, err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
-		return err
+	if err := ws.checkout(ctx); err != nil {
+		return status.WrapError(err, "checkout")
 	}
 
 	// If commit sha is not set, pull the sha that is checked out so that it can be used in Github Status reporting
