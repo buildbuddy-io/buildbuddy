@@ -24,6 +24,7 @@ go_library(
         "//server/util/qps",
         "//server/util/rangemap",
         "//server/util/status",
+        "@com_github_docker_go_units//:go-units",
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_rpc//status",
