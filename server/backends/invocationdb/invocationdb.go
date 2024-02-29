@@ -241,6 +241,35 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 	}
 	u := *authenticatedUser
 
+	if d.h.IsMysql() {
+		result := d.h.NewQuery(ctx, "invocationdb_delete_invocation_with_perms_check").Raw(`
+			DELETE i, ie, e
+			FROM "Invocations" AS i
+				LEFT JOIN "InvocationExecutions" AS ie
+					ON i.invocation_id = ie.invocation_id
+				LEFT JOIN "Executions" AS e
+					ON i.invocation_id = e.invocation_id
+			WHERE i.invocation_id = ?
+			AND (
+				(i.perms & ? <> 0 AND i.user_id = ?) OR
+				(i.perms & ? <> 0 AND i.group_id IN ?)
+			)
+			`,
+			invocationID,
+			perms.OWNER_WRITE,
+			u.GetUserID(),
+			perms.GROUP_WRITE,
+			u.GetAllowedGroups(),
+		).Exec()
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return status.NotFoundErrorf("No invocation with id %s exists that user %s has write permissions on.", invocationID, u.GetUserID())
+		}
+		return nil
+	}
+
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		result := tx.NewQuery(ctx, "invocationdb_delete_invocation_with_perms_check").Raw(`
 			DELETE FROM "Invocations"
@@ -275,6 +304,19 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 }
 
 func (d *InvocationDB) deleteInvocation(ctx context.Context, tx interfaces.DB, invocationID string) error {
+	if d.h.IsMysql() {
+		return tx.NewQuery(ctx, "invocationdb_delete_invocation_with_perms_check").Raw(`
+			DELETE i, ie, e
+			FROM "Invocations" AS i
+				LEFT JOIN "InvocationExecutions" AS ie
+					ON i.invocation_id = ie.invocation_id
+				LEFT JOIN "Executions" AS e
+					ON i.invocation_id = e.invocation_id
+			WHERE i.invocation_id = ?
+			`,
+			invocationID,
+		).Exec().Error
+	}
 	if err := tx.NewQuery(ctx, "invocationdb_delete_invocation").Raw(
 		`DELETE FROM "Invocations" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
 		return err

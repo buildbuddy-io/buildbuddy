@@ -957,6 +957,18 @@ func (h *DBHandle) SelectForUpdateModifier() string {
 	return "FOR UPDATE"
 }
 
+func (h *DBHandle) IsSqlite() bool {
+	return h.driver == sqliteDriver
+}
+
+func (h *DBHandle) IsMysql() bool {
+	return h.driver == mysqlDriver
+}
+
+func (h *DBHandle) IsPostgres() bool {
+	return h.driver == postgresDriver
+}
+
 func (h *DBHandle) NowFunc() time.Time {
 	return h.db.NowFunc()
 }

@@ -382,6 +382,9 @@ type DBHandle interface {
 	UTCMonthFromUsecTimestamp(fieldName string) string
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	SelectForUpdateModifier() string
+	IsSqlite() bool
+	IsMysql() bool
+	IsPostgres() bool
 	SetNowFunc(now func() time.Time)
 	IsDuplicateKeyError(err error) bool
 	IsDeadlockError(err error) bool
