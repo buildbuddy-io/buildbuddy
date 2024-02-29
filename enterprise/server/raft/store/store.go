@@ -398,6 +398,7 @@ func (s *Store) Start() error {
 }
 
 func (s *Store) Stop(ctx context.Context) error {
+	s.dropLeadershipForShutdown()
 	now := time.Now()
 	defer func() {
 		s.log.Infof("Store shutdown finished in %s", time.Since(now))
@@ -440,7 +441,8 @@ func (s *Store) dropLeadershipForShutdown() {
 	eg := errgroup.Group{}
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
 		clusterInfo := clusterInfo
-		if !clusterInfo.IsLeader {
+		if clusterInfo.LeaderID != clusterInfo.ReplicaID || clusterInfo.Term == 0 {
+			// skip if not the leader
 			continue
 		}
 
@@ -452,6 +454,7 @@ func (s *Store) dropLeadershipForShutdown() {
 				continue
 			}
 			eg.Go(func() error {
+				log.Debugf("request to transfer leadership of shard %d to replica %d from replica %d", clusterInfo.ShardID, replicaID, clusterInfo.ReplicaID)
 				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, replicaID); err != nil {
 					s.log.Warningf("Error transferring leadership: %s", err)
 				}
