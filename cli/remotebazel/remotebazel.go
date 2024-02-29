@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -176,17 +177,6 @@ func determineDefaultBranch(repo *git.Repository) (string, error) {
 	return "", status.NotFoundErrorf("could not determine default branch")
 }
 
-// currentBranch returns the branch that is currently checked out in the local
-// version of the git repo this tool is being run on
-func currentBranch(repo *git.Repository) (string, error) {
-	head, err := repo.Head()
-	if err != nil {
-		return "", status.UnknownErrorf("could not get repo head: %s", err)
-	}
-
-	return head.Name().Short(), nil
-}
-
 func runGit(args ...string) (string, error) {
 	stdout := bytes.Buffer{}
 	stderr := bytes.Buffer{}
@@ -279,22 +269,36 @@ func Config(path string) (*RepoConfig, error) {
 // getBaseBranchAndCommit returns the git branch and commit that the remote run
 // should be based off
 func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string, err error) {
-	currentBranchRef, err := currentBranch(repo)
+	head, err := repo.Head()
 	if err != nil {
-		return "", "", status.WrapError(err, "get current branch")
+		return "", "", status.WrapError(err, "get repo head")
 	}
+
+	currentBranch := head.Name().Short()
+	if !head.Name().IsBranch() {
+		// Handle detached head state
+		detachedHeadOutput, _ := runGit("branch")
+		regex := regexp.MustCompile(".*detached at ([^)]+).*")
+		matches := regex.FindStringSubmatch(detachedHeadOutput)
+		if len(matches) != 2 {
+			return "", "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
+		}
+		currentBranch = matches[1]
+	}
+
+	remoteBranchOutput, err := runGit("ls-remote", "origin", currentBranch)
+	if err != nil {
+		return "", "", status.WrapError(err, fmt.Sprintf("check if branch %s exists remotely", currentBranch))
+	}
+	currentBranchExistsRemotely := remoteBranchOutput != ""
+
 	currentCommitHash, err := runGit("rev-parse", "HEAD")
 	if err != nil {
 		return "", "", status.WrapError(err, "get current commit hash")
 	}
 	currentCommitHash = strings.TrimSuffix(currentCommitHash, "\n")
-	remoteBranchOutput, err := runGit("ls-remote", "--heads", "origin", fmt.Sprintf("refs/heads/%s", currentBranchRef))
-	if err != nil {
-		return "", "", status.WrapError(err, fmt.Sprintf("check if branch %s exists remotely", currentBranchRef))
-	}
-	currentBranchExistsRemotely := remoteBranchOutput != ""
 
-	branch = currentBranchRef
+	branch = currentBranch
 	commit = currentCommitHash
 	if !currentBranchExistsRemotely {
 		// If the current branch does not exist remotely, the remote runner will
