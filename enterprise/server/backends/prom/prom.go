@@ -269,6 +269,10 @@ func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[str
 			queryParams = append(queryParams, &promQueryParams{
 				metricName: config.sourceMetricName, sumByFields: config.LabelNames,
 			})
+		case dto.MetricType_COUNTER:
+			queryParams = append(queryParams, &promQueryParams{
+				metricName: config.sourceMetricName, sumByFields: config.LabelNames,
+			})
 		case dto.MetricType_HISTOGRAM:
 			queryParams = append(queryParams,
 				&promQueryParams{
