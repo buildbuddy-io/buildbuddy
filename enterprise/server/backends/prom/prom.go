@@ -346,12 +346,22 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 			family = proto.Clone(config.ExportedFamily).(*dto.MetricFamily)
 		}
 
-		if config.ExportedFamily.GetType() == dto.MetricType_GAUGE || config.ExportedFamily.GetType() == dto.MetricType_COUNTER {
+		if config.ExportedFamily.GetType() == dto.MetricType_COUNTER {
 			vector, ok := vectors[config.sourceMetricName]
 			if !ok {
 				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
 			}
 			metric, err := counterVecToMetrics(vector, config.LabelNames)
+			if err != nil {
+				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
+			}
+			family.Metric = append(family.GetMetric(), metric...)
+		} else if config.ExportedFamily.GetType() == dto.MetricType_GAUGE {
+			vector, ok := vectors[config.sourceMetricName]
+			if !ok {
+				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
+			}
+			metric, err := gaugeVecToMetrics(vector, config.LabelNames)
 			if err != nil {
 				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
 			}
@@ -405,6 +415,24 @@ func counterVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metri
 		sample := &dto.Metric{
 			Label: labelPairs,
 			Counter: &dto.Counter{
+				Value: proto.Float64(float64(promSample.Value)),
+			},
+		}
+		res = append(res, sample)
+	}
+	return res, nil
+}
+
+func gaugeVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric, error) {
+	res := make([]*dto.Metric, 0, len(vector))
+	for _, promSample := range vector {
+		labelPairs, err := makeLabelPairs(labelNames, promSample)
+		if err != nil {
+			return nil, err
+		}
+		sample := &dto.Metric{
+			Label: labelPairs,
+			Gauge: &dto.Gauge{
 				Value: proto.Float64(float64(promSample.Value)),
 			},
 		}
