@@ -30,6 +30,7 @@ import BazelVersionSidekick from "../sidekick/bazelversion/bazelversion";
 import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
 import BuildFileSidekick from "../sidekick/buildfile/buildfile";
 import error_service from "../../../app/errors/error_service";
+import { build } from "../../../proto/remote_execution_ts_proto";
 
 interface Props {
   user: User;
@@ -488,6 +489,9 @@ export default class CodeComponent extends React.Component<Props, State> {
     request.bazelCommand = args;
     request.repoState = this.getRepoState();
     request.async = true;
+    request.execProperties = [
+      new build.bazel.remote.execution.v2.Platform.Property({ name: "include-secrets", value: "true" }),
+    ];
 
     this.updateState({ isBuilding: true });
     rpcService.service

@@ -29,6 +29,7 @@ ts_library(
         "//enterprise/app/sidekick/buildfile",
         "//enterprise/app/sidekick/module",
         "//proto:github_ts_proto",
+        "//proto:remote_execution_ts_proto",
         "//proto:runner_ts_proto",
         "@npm//@types/diff",
         "@npm//@types/long",
