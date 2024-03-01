@@ -57,10 +57,8 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
           <div className="title">{title}</div>
           <div className="subtitle">{this.props.model.failedAction?.action?.label}</div>
           <div className="details">
-            <pre className="error-contents">
-              {description}
-              {this.state.stdErr && <div className="error-contents-important">{this.state.stdErr}</div>}
-            </pre>
+            <pre className="error-contents">{description}</pre>
+            {this.state.stdErr && <TerminalComponent value={this.state.stdErr} lightTheme />}
           </div>
         </div>
       </div>
