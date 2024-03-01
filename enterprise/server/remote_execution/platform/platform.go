@@ -607,16 +607,33 @@ func durationProp(props map[string]string, name string, defaultValue time.Durati
 	return d
 }
 
-// FindValue scans the platform properties for the given property name (ignoring
-// case) and returns the value of that property if it exists, otherwise "".
-func FindValue(platform *repb.Platform, name string) string {
+func findValue(platform *repb.Platform, name string) (value string, ok bool) {
 	name = strings.ToLower(name)
 	for _, prop := range platform.GetProperties() {
 		if prop.GetName() == name {
-			return strings.TrimSpace(prop.GetValue())
+			return strings.TrimSpace(prop.GetValue()), true
 		}
 	}
-	return ""
+	return "", false
+}
+
+// FindValue scans the platform properties for the given property name (ignoring
+// case) and returns the value of that property if it exists, otherwise "".
+func FindValue(platform *repb.Platform, name string) string {
+	value, _ := findValue(platform, name)
+	return value
+}
+
+// FindEffectiveValue returns the effective platform property value for the
+// given task. If a remote header override was set via
+// "x-buildbuddy-platform.<name>", then that value will be returned. Otherwise,
+// it returns the original platform property from the action proto.
+func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
+	override, ok := findValue(task.GetPlatformOverrides(), name)
+	if ok {
+		return override
+	}
+	return FindValue(task.GetCommand().GetPlatform(), name)
 }
 
 // IsTrue returns whether the given platform property value is truthy.

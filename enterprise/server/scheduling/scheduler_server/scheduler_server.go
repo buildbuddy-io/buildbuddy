@@ -537,6 +537,21 @@ func fromNodeInterfaces(nodes []interfaces.RankedExecutionNode) ([]*rankedExecut
 	return out, nil
 }
 
+// If the debug-executor-id platform property is set, filters the given nodes
+// to the nodes with that ID. The returned list may be empty.
+func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) []*executionNode {
+	id := platform.FindEffectiveValue(task, "debug-executor-id")
+	if id == "" {
+		return nodes
+	}
+	for _, n := range nodes {
+		if n.executorID == id {
+			return []*executionNode{n}
+		}
+	}
+	return nil
+}
+
 type nodePoolKey struct {
 	groupID string
 	os      string
@@ -1658,10 +1673,12 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			time.Since(startTime), strings.Join(successfulReservations, ", "))
 	}()
 
-	cmd, remoteInstanceName, err := extractRoutingProps(serializedTask)
-	if err != nil {
-		return err
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(serializedTask, task); err != nil {
+		return status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
+	cmd := task.GetCommand()
+	remoteInstanceName := task.GetExecuteRequest().GetInstanceName()
 
 	// Note: preferredNode may be nil if the executor ID isn't specified or if
 	// the executor is no longer connected.
@@ -1704,6 +1721,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 						pool, os, arch,
 						enqueueRequest.GetTaskSize().GetEstimatedMilliCpu(),
 						enqueueRequest.GetTaskSize().GetEstimatedMemoryBytes())
+				}
+				candidateNodes = filterToDebugExecutorID(candidateNodes, task)
+				if len(candidateNodes) == 0 {
+					return status.UnavailableErrorf("requested executor ID not found")
 				}
 				rankedNodes, err = fromNodeInterfaces(s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(candidateNodes)))
 				if err != nil {
@@ -2003,17 +2024,4 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		Executor:                    executors,
 		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
 	}, nil
-}
-
-// extractRoutingProps deserializes the given task and returns the properties
-// needed to route the task (command and remote instance name).
-func extractRoutingProps(serializedTask []byte) (*repb.Command, string, error) {
-	if serializedTask == nil {
-		return nil, "", nil
-	}
-	task := &repb.ExecutionTask{}
-	if err := proto.Unmarshal(serializedTask, task); err != nil {
-		return nil, "", status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
-	}
-	return task.GetCommand(), task.GetExecuteRequest().GetInstanceName(), nil
 }
