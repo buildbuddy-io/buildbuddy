@@ -319,7 +319,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   getStateCacheKey() {
-    return `${LOCAL_STORAGE_STATE_KEY}/${this.currentOwner()}/${this.currentRepo()}/${this.getBranch()}`;
+    return `${LOCAL_STORAGE_STATE_KEY}/${this.currentOwner()}/${this.currentRepo()}`;
   }
 
   componentWillUnmount() {
