@@ -27,6 +27,10 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
+const (
+	podNameLabel = "pod_name"
+)
+
 var (
 	address = flag.String("prometheus.address", "", "the address of the promethus HTTP API")
 
@@ -35,7 +39,7 @@ var (
 	MetricConfigs = []*MetricConfig{
 		{
 			sourceMetricName: "buildbuddy_remote_execution_queue_length",
-			LabelNames:       []string{},
+			LabelNames:       []string{podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_execution_queue_length"),
 				Help: proto.String("Number of actions currently waiting in the executor queue."),
@@ -45,7 +49,7 @@ var (
 		},
 		{
 			sourceMetricName: "buildbuddy_invocation_duration_usec_exported",
-			LabelNames:       []string{metrics.InvocationStatusLabel},
+			LabelNames:       []string{metrics.InvocationStatusLabel, podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_invocation_duration_usec"),
 				Help: proto.String("The total duration of each invocation, in **microseconds**."),
@@ -63,7 +67,7 @@ sum by (invocation_status) (rate(exported_buildbuddy_invocation_duration_usec_co
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_num_hits_exported",
-			LabelNames:       []string{metrics.CacheTypeLabel},
+			LabelNames:       []string{metrics.CacheTypeLabel, podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_num_hits"),
 				Help: proto.String("Number of cache hits."),
@@ -74,7 +78,7 @@ sum by (cache_type) (increase(exported_buildbuddy_remote_cache_num_hits[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_download_size_bytes_exported",
-			LabelNames:       []string{},
+			LabelNames:       []string{podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_download_size_bytes"),
 				Help: proto.String("Number of bytes downloaded from the remote cache."),
@@ -85,7 +89,7 @@ sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_upload_size_bytes_exported",
-			LabelNames:       []string{},
+			LabelNames:       []string{podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_upload_size_bytes"),
 				Help: proto.String("Number of bytes uploaded to the remote cache."),
