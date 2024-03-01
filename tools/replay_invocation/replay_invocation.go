@@ -1,22 +1,30 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"io"
+	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -24,6 +32,7 @@ import (
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -33,6 +42,9 @@ var (
 	apiKey        = flag.String("api_key", "", "The API key of the account that will own the replayed events")
 	// TODO: Figure out the latest attempt number automatically.
 	attemptNumber = flag.Int("attempt", 1, "Invocation attempt number.")
+
+	remoteCache  = flag.String("remote_cache", "", "Optional remote cache to copy BES file uploads to.")
+	sourceAPIKey = flag.String("source_api_key", "", "Source API key used to copy BES file uploads from, if not found in blobstore.")
 
 	metadataOverride arrayFlags
 
@@ -111,6 +123,27 @@ func main() {
 	}
 	invocationURL := *besResultsURL + streamID.GetInvocationId()
 	log.Infof("Replaying invocation; results will be available at %s", invocationURL)
+
+	srcCacheCtx := context.Background()
+	if *sourceAPIKey != "" {
+		srcCacheCtx = metadata.AppendToOutgoingContext(srcCacheCtx, "x-buildbuddy-api-key", *sourceAPIKey)
+	}
+	var bytestream bspb.ByteStreamClient
+	var remoteCacheHost string
+	if *remoteCache != "" {
+		conn, err := grpc_client.DialSimple(*remoteCache)
+		if err != nil {
+			log.Fatalf("Failed to dial %s: %s", *remoteCache, err)
+		}
+		defer conn.Close()
+		bytestream = bspb.NewByteStreamClient(conn)
+		u, err := url.Parse(*remoteCache)
+		if err != nil {
+			log.Fatalf("Failed to parse --remote_cache as URL: %s", err)
+		}
+		remoteCacheHost = u.Host
+	}
+
 	for {
 		msg, err := pr.ReadProto(ctx)
 		if err != nil {
@@ -152,6 +185,37 @@ func main() {
 				}
 				p.BuildMetadata.Metadata[parts[0]] = parts[1]
 			}
+		case *espb.BuildEvent_Action:
+			if stderrURI := p.Action.GetStderr().GetUri(); stderrURI != "" {
+				u, err := url.Parse(stderrURI)
+				if err != nil {
+					log.Errorf("Failed to parse bytestream URL: %s", err)
+				} else {
+					if err := uploadByteStreamFile(srcCacheCtx, ctx, bs, *invocationID, bytestream, u); err != nil {
+						log.Warningf("Failed to copy bytestream file to cache: %s", err)
+					} else {
+						u.Host = remoteCacheHost
+						p.Action.Stderr.File = &espb.File_Uri{Uri: u.String()}
+					}
+				}
+			}
+		case *espb.BuildEvent_NamedSetOfFiles:
+			for _, f := range p.NamedSetOfFiles.GetFiles() {
+				if f.GetUri() == "" {
+					continue
+				}
+				u, err := url.Parse(f.GetUri())
+				if err != nil {
+					log.Errorf("Failed to parse bytestream URL: %s", err)
+					continue
+				}
+				if err := uploadByteStreamFile(srcCacheCtx, ctx, bs, *invocationID, bytestream, u); err != nil {
+					log.Warningf("Failed to copy bytestream file to cache: %s", err)
+					continue
+				}
+				u.Host = remoteCacheHost
+				f.File = &espb.File_Uri{Uri: u.String()}
+			}
 		}
 		a := &anypb.Any{}
 		if err := a.MarshalFrom(buildEvent); err != nil {
@@ -182,4 +246,64 @@ func main() {
 		}
 	}
 	log.Infof("Done! Results should be visible at %s", invocationURL)
+}
+
+func uploadByteStreamFile(srcCtx context.Context, ctx context.Context, store interfaces.Blobstore, invocationID string, dst bspb.ByteStreamClient, u *url.URL) error {
+	bsPath := filepath.Join(invocationID, "artifacts", "cache", u.Path)
+	log.Infof("Copying blobstore://%s to %s", bsPath, *remoteCache)
+
+	rn, err := digest.ParseDownloadResourceName(u.Path)
+	if err != nil {
+		return err
+	}
+
+	if err := copyFromCache(srcCtx, ctx, rn, u, dst); err == nil {
+		return nil
+	}
+
+	b, err := store.ReadBlob(ctx, bsPath)
+	if err != nil {
+		return err
+	}
+	_, err = cachetools.UploadFromReader(ctx, dst, rn, bytes.NewReader(b))
+	return err
+}
+
+func copyFromCache(srcCtx context.Context, ctx context.Context, rn *digest.ResourceName, u *url.URL, dst bspb.ByteStreamClient) error {
+	target := "grpcs://" + u.Host
+	if strings.HasPrefix(u.Host, "localhost:") {
+		target = "grpc://" + u.Host
+	}
+	conn, err := dial(target)
+	if err != nil {
+		return err
+	}
+	src := bspb.NewByteStreamClient(conn)
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	go func() {
+		err := cachetools.GetBlob(srcCtx, src, rn, pw)
+		pw.CloseWithError(err)
+	}()
+	_, err = cachetools.UploadFromReader(ctx, dst, rn, pr)
+	return err
+}
+
+var (
+	connMu sync.Mutex
+	conn   = map[string]*grpc.ClientConn{}
+)
+
+func dial(target string) (*grpc.ClientConn, error) {
+	connMu.Lock()
+	defer connMu.Unlock()
+	if c := conn[target]; c != nil {
+		return c, nil
+	}
+	c, err := grpc_client.DialSimpleWithoutPooling(target)
+	if err != nil {
+		return nil, err
+	}
+	conn[target] = c
+	return c, nil
 }
