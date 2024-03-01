@@ -121,7 +121,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   componentWillMount() {
     let githubUrl = this.props.search.get("github_url");
     if (githubUrl) {
-      window.location.href = this.parseGithubUrl(githubUrl);
+      window.location.href = this.parseGithubUrl(githubUrl) + window.location.hash;
       return;
     }
 
@@ -214,6 +214,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     }
 
     window.addEventListener("resize", () => this.handleWindowResize());
+    window.addEventListener("hashchange", () => this.focusLineNumber());
 
     this.editor = monaco.editor.create(this.codeViewer.current!, {
       value: ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n"),
@@ -284,6 +285,8 @@ export default class CodeComponent extends React.Component<Props, State> {
         });
       }
 
+      this.focusLineNumber();
+
       if (this.state.mergeConflicts.has(this.currentPath())) {
         this.handleViewConflictClicked(
           this.currentPath(),
@@ -297,6 +300,15 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     this.editor.onDidChangeModelContent(() => {
       this.handleContentChanged();
+    });
+  }
+
+  focusLineNumber() {
+    let focusedLineNumber = window.location.hash.startsWith("#L") ? parseInt(window.location.hash.substr(2)) : 0;
+    setTimeout(() => {
+      this.editor?.setSelection(new monaco.Selection(focusedLineNumber, 0, focusedLineNumber, 0));
+      this.editor?.revealLinesInCenter(focusedLineNumber, focusedLineNumber);
+      this.editor?.focus();
     });
   }
 
