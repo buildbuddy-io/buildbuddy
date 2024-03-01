@@ -39,7 +39,7 @@ var (
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_execution_queue_length"),
 				Help: proto.String("Number of actions currently waiting in the executor queue."),
-				Type: dto.MetricType_GAUGE.Enum(),
+				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: "sum(exported_buildbuddy_remote_execution_queue_length)",
 		},
@@ -67,7 +67,7 @@ sum by (invocation_status) (rate(exported_buildbuddy_invocation_duration_usec_co
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_num_hits"),
 				Help: proto.String("Number of cache hits."),
-				Type: dto.MetricType_GAUGE.Enum(),
+				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of Hits as measured over the last week
 sum by (cache_type) (increase(exported_buildbuddy_remote_cache_num_hits[1w]))`,
@@ -78,7 +78,7 @@ sum by (cache_type) (increase(exported_buildbuddy_remote_cache_num_hits[1w]))`,
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_download_size_bytes"),
 				Help: proto.String("Number of bytes downloaded from the remote cache."),
-				Type: dto.MetricType_GAUGE.Enum(),
+				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of bytes downloaded as measured over the last week
 sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
@@ -89,7 +89,7 @@ sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_upload_size_bytes"),
 				Help: proto.String("Number of bytes uploaded to the remote cache."),
-				Type: dto.MetricType_GAUGE.Enum(),
+				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of bytes uploaded as measured over the last week
 sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))`,
@@ -111,7 +111,7 @@ sum by (os) (rate(exported_buildbuddy_remote_execution_duration_usec_sum[1w]))`,
 const (
 	redisMetricsKeyPrefix = "exportedMetrics"
 	// The version in redis cache, as part of the redis key.
-	version = "v2"
+	version = "v3"
 	// The time for the metrics to expire in redis.
 	metricsExpiration = 30*time.Second - 50*time.Millisecond
 
@@ -338,12 +338,12 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 			family = proto.Clone(config.ExportedFamily).(*dto.MetricFamily)
 		}
 
-		if config.ExportedFamily.GetType() == dto.MetricType_GAUGE {
+		if config.ExportedFamily.GetType() == dto.MetricType_COUNTER {
 			vector, ok := vectors[config.sourceMetricName]
 			if !ok {
 				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
 			}
-			metric, err := gaugeVecToMetrics(vector, config.LabelNames)
+			metric, err := counterVecToMetrics(vector, config.LabelNames)
 			if err != nil {
 				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
 			}
@@ -387,7 +387,7 @@ func makeLabelPairs(labelNames []string, sample *model.Sample) ([]*dto.LabelPair
 	return labelPairs, nil
 }
 
-func gaugeVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric, error) {
+func counterVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric, error) {
 	res := make([]*dto.Metric, 0, len(vector))
 	for _, promSample := range vector {
 		labelPairs, err := makeLabelPairs(labelNames, promSample)
@@ -396,7 +396,7 @@ func gaugeVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric,
 		}
 		sample := &dto.Metric{
 			Label: labelPairs,
-			Gauge: &dto.Gauge{
+			Counter: &dto.Counter{
 				Value: proto.Float64(float64(promSample.Value)),
 			},
 		}
