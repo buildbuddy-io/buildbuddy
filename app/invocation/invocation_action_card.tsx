@@ -68,6 +68,19 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
   }
 
+  componentDidUpdate(prevProps: Readonly<Props>, prevState: Readonly<State>, snapshot?: any): void {
+    if (prevProps.search.get("actionDigest") != this.props.search.get("actionDigest")) {
+      this.fetchAction();
+      if (!this.props.search.has("executeResponseDigest")) {
+        this.fetchActionResult();
+      }
+    }
+    if (prevProps.search.get("executeResponseDigest") != this.props.search.get("executeResponseDigest")) {
+      this.setState({ executeResponse: undefined });
+      this.fetchExecuteResponse();
+    }
+  }
+
   fetchAction() {
     this.setState({ loadingAction: true });
     const digestParam = this.props.search.get("actionDigest");
