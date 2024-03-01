@@ -213,8 +213,14 @@ func (r *Reader) GetStoredFieldValue(docID uint64, field string) ([]byte, error)
 	return rbuf, nil
 }
 
-func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap) (*roaring64.Bitmap, error) {
+// postingListBM looks up the set of docIDs matching the provided ngram.
+// If `field` is set to a non-empty value, matches are restricted to just the
+// specified field. Otherwise, all fields are searched.
+func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field string) (*roaring64.Bitmap, error) {
 	minKey := []byte(fmt.Sprintf("%s:gra:%s", r.repo, ngram))
+	if field != "" {
+		minKey = []byte(fmt.Sprintf("%s:gra:%s:%s", r.repo, ngram, field))
+	}
 	maxKey := append(minKey, byte('\xff'))
 	iter := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: minKey,
@@ -243,7 +249,7 @@ func (r *Reader) PostingList(trigram uint32) ([]uint64, error) {
 }
 
 func (r *Reader) postingList(trigram uint32, restrict []uint64) ([]uint64, error) {
-	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...))
+	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...), "")
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +261,7 @@ func (r *Reader) PostingAnd(list []uint64, trigram uint32) ([]uint64, error) {
 }
 
 func (r *Reader) postingAnd(list []uint64, trigram uint32, restrict []uint64) ([]uint64, error) {
-	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...))
+	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...), "")
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +274,7 @@ func (r *Reader) PostingOr(list []uint64, trigram uint32) ([]uint64, error) {
 }
 
 func (r *Reader) postingOr(list []uint64, trigram uint32, restrict []uint64) ([]uint64, error) {
-	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...))
+	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...), "")
 	if err != nil {
 		return nil, err
 	}
