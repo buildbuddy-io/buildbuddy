@@ -1957,7 +1957,7 @@
   font-size: 12px;
   display: flex;
 }
-.monaco-editor .find-widget>.button.codicon-widget-close {
+.monaco-editor .find-widget > .button.codicon-widget-close {
   position: absolute;
   right: 4px;
   top: 5px;
