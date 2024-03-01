@@ -145,6 +145,9 @@ type Batch interface {
 	// Empty returns true if the batch is empty, and false otherwise.
 	Empty() bool
 
+	// Returns the current size of the batch.
+	Len() int
+
 	Reader() pebble.BatchReader
 
 	Reset()
@@ -252,6 +255,10 @@ func (ib *instrumentedBatch) Count() uint32 {
 
 func (ib *instrumentedBatch) Empty() bool {
 	return ib.batch.Empty()
+}
+
+func (ib *instrumentedBatch) Len() int {
+	return ib.batch.Len()
 }
 
 func (ib *instrumentedBatch) NewIter(o *pebble.IterOptions) Iterator {

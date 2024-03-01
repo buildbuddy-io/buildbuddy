@@ -1837,7 +1837,6 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 	defer wb.Close()
 
 	readBuf := bufio.NewReader(r)
-	batchSize := 0
 	for {
 		r, count, err := readDataFromReader(readBuf)
 		if err != nil {
@@ -1864,17 +1863,15 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		if err := wb.Set(kv.Key, kv.Value, nil); err != nil {
 			return err
 		}
-		batchSize += n
-		if batchSize > 1*gb {
+		if wb.Len() > 1*gb {
 			// Pebble panics when the batch is greater than ~4GB (or 2GB on 32-bit systems)
-			log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(batchSize)))
+			log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
 			if err = flushBatch(wb); err != nil {
 				return err
 			}
-			batchSize = 0
 		}
 	}
-	log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(batchSize)))
+	log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
 	return flushBatch(wb)
 }
 
