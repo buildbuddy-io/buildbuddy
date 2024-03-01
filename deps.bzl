@@ -4470,6 +4470,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.3.1",
     )
     go_repository(
+        name = "com_github_shanna_sexp",
+        importpath = "github.com/shanna/sexp",
+        sum = "h1:BM7Y+zIoYgAFIPItr43j97CgGHvYPXC/LUM7Qju1pxY=",
+        version = "v0.0.0-20160415044023-96df2549bc85",
+    )
+    go_repository(
         name = "com_github_shazow_go_diff",
         importpath = "github.com/shazow/go-diff",
         sum = "h1:W65qqJCIOVP4jpqPQ0YvHYKwcMEMVWIzWC5iNQQfBTU=",
