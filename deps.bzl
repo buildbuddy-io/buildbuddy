@@ -543,8 +543,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bits_and_blooms_bitset",
         importpath = "github.com/bits-and-blooms/bitset",
-        sum = "h1:Kn4yilvwNtMACtf1eYDlG8H77R07mZSPbMjLyS07ChA=",
-        version = "v1.2.0",
+        sum = "h1:U/q1fAF7xXRhFCrhROzIfffYnu+dlS38vCZtmFVPHmA=",
+        version = "v1.12.0",
+    )
+    go_repository(
+        name = "com_github_bits_and_blooms_bloom_v3",
+        importpath = "github.com/bits-and-blooms/bloom/v3",
+        sum = "h1:dTU0OVLJSoOhz9m68FTXMFfA39nR8U/nTCs1zb26mOI=",
+        version = "v3.6.0",
     )
     go_repository(
         name = "com_github_bkaradzic_go_lz4",
@@ -3850,6 +3856,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.5.0",
     )
     go_repository(
+        name = "com_github_mschoch_smat",
+        importpath = "github.com/mschoch/smat",
+        sum = "h1:8imxQsjDm8yFEAVBe7azKmKSgzSkZXDuKkSq9374khM=",
+        version = "v0.2.0",
+    )
+    go_repository(
         name = "com_github_muesli_reflow",
         importpath = "github.com/muesli/reflow",
         sum = "h1:IFsN6K9NfGtjeggFP+68I4chLZV2yIKsXJFNZ+eWh6s=",
@@ -4302,6 +4314,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.2.0",
     )
     go_repository(
+        name = "com_github_roaringbitmap_roaring",
+        importpath = "github.com/RoaringBitmap/roaring",
+        sum = "h1:lwKhr90/j0jVXJyh5X+vQN1VVn77rQFfYnh6RDRGCcE=",
+        version = "v1.9.0",
+    )
+    go_repository(
         name = "com_github_rogpeppe_fastuuid",
         importpath = "github.com/rogpeppe/fastuuid",
         sum = "h1:Ppwyp6VYCF1nvBTXL3trRso7mXMlRrw9ooo375wvi2s=",
@@ -4751,6 +4769,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/tv42/httpunix",
         sum = "h1:u6SKchux2yDvFQnDHS3lPnIRmfVJ5Sxy3ao2SIdysLQ=",
         version = "v0.0.0-20191220191345-2ba4b9c3382c",
+    )
+    go_repository(
+        name = "com_github_twmb_murmur3",
+        importpath = "github.com/twmb/murmur3",
+        sum = "h1:mqrRot1BRxm+Yct+vavLMou2/iJt0tNVTTC0QoIjaZg=",
+        version = "v1.1.6",
     )
     go_repository(
         name = "com_github_ugorji_go",

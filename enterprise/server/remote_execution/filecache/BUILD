@@ -4,20 +4,32 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "filecache",
-    srcs = ["filecache.go"],
+    srcs = [
+        "filecache.go",
+        "filecache_proxy.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache",
     deps = [
+        "//enterprise/server/util/cacheproxy",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/metrics",
+        "//server/remote_cache/digest",
         "//server/util/claims",
         "//server/util/disk",
         "//server/util/fastcopy",
+        "//server/util/hash",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/random",
         "//server/util/status",
+        "@com_github_bits_and_blooms_bloom_v3//:bloom",
+        "@com_github_hashicorp_serf//serf",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

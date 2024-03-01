@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -61,6 +62,7 @@ var (
 	executorMedadataDirectory = flag.String("executor.metadata_directory", "", "Location where executor host_id and other metadata is stored. Defaults to executor.local_cache_directory/../")
 	localCacheDirectory       = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
 	localCacheSizeBytes       = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
+	localCacheServingAddr     = flag.String("executor.local_cache_serving_addr", "", "If set; enable local cache sharing via gossip. Gossip must also be enabled!")
 	startupWarmupMaxWaitSecs  = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
 
 	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
@@ -153,6 +155,10 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 		log.Fatalf(err.Error())
 	}
 
+	if err := gossip.Register(realEnv); err != nil {
+		log.Fatalf(err.Error())
+	}
+
 	// Identify ourselves as an executor client in gRPC requests to the app.
 	usageutil.SetClientType("executor")
 
@@ -161,8 +167,19 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	if !*disableLocalCache {
 		fcDir := filepath.Join(*localCacheDirectory, getExecutorHostID())
 		log.Infof("Enabling filecache in %q (size %d bytes)", fcDir, *localCacheSizeBytes)
-		if fc, err := filecache.NewFileCache(fcDir, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
-			realEnv.SetFileCache(fc)
+		fc, err := filecache.NewFileCache(fcDir, *localCacheSizeBytes, *deleteFileCacheOnStartup)
+		if err != nil {
+			log.Fatalf(err.Error())
+		}
+
+		realEnv.SetFileCache(fc)
+		if *localCacheServingAddr != "" {
+			log.Infof("Enabling filecache sharing on address: %q", *localCacheServingAddr)
+			fcp, err := filecache.NewProxy(realEnv, fc, *localCacheServingAddr)
+			if err != nil {
+				log.Fatalf(err.Error())
+			}
+			realEnv.SetFileCache(fcp)
 		}
 	}
 

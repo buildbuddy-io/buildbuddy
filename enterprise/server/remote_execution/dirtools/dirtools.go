@@ -240,7 +240,7 @@ func (f *fileToUpload) OutputFile(rootDir string) *repb.OutputFile {
 	return &repb.OutputFile{
 		Path:         trimPathPrefix(f.fullFilePath, rootDir),
 		Digest:       f.resourceName.GetDigest(),
-		IsExecutable: f.info.Mode()&0111 != 0,
+		IsExecutable: f.info.Mode()&0100 != 0,
 	}
 }
 
@@ -248,7 +248,7 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 	return &repb.FileNode{
 		Name:         f.info.Name(),
 		Digest:       f.resourceName.GetDigest(),
-		IsExecutable: f.info.Mode()&0111 != 0,
+		IsExecutable: f.info.Mode()&0100 != 0,
 	}
 }
 

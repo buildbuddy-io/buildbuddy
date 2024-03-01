@@ -1164,6 +1164,11 @@ type LRU[V any] interface {
 
 	// Returns metrics about the status of the LRU.
 	Metrics() string
+
+	// Iterates across the LRU in order from most recently used to least
+	// recently used. Stops if false is returned or all items have been
+	// traversed.
+	Iter(func(value V) bool)
 }
 
 // DistributedLock provides a way to serialize access to a resource, where the

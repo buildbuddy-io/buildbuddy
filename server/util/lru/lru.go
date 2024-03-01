@@ -111,6 +111,14 @@ func (c *LRU[V]) Purge() {
 	c.evictList.Init()
 }
 
+func (c *LRU[V]) Iter(iterFn func(value V) bool) {
+	for e := c.evictList.Front(); e != nil; e = e.Next() {
+		if !iterFn(e.Value.(*Entry[V]).value) {
+			break
+		}
+	}
+}
+
 // Add adds a value to the cache. Returns true if the key was added.
 func (c *LRU[V]) Add(key string, value V) bool {
 	pk, ck, ok := c.keyHash(key)

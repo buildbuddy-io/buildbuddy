@@ -1,10 +1,12 @@
 package filecache
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -124,8 +126,8 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	}
 	c := &fileCache{
 		rootDir:     rootDir,
-		l:           l,
 		dirScanDone: make(chan struct{}),
+		l:           l,
 	}
 	if err := os.RemoveAll(c.TempDir()); err != nil {
 		return nil, status.WrapErrorf(err, "failed to clear filecache temp dir")
@@ -143,6 +145,11 @@ func (c *fileCache) TempDir() string {
 
 func (c *fileCache) filecachePath(key string) string {
 	return filepath.Join(c.rootDir, key)
+}
+
+func (c *fileCache) keyPath(fp string) string {
+	r := strings.TrimPrefix(fp, c.rootDir)
+	return strings.TrimPrefix(r, "/")
 }
 
 func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (string, *repb.FileNode, error) {
@@ -330,8 +337,12 @@ func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, erro
 	return os.ReadFile(tmp)
 }
 
-// Write atomically writes the given bytes to filecache.
 func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error) {
+	return c.writeFromReader(ctx, node, bytes.NewReader(b))
+}
+
+// Write atomically writes the given bytes to filecache.
+func (c *fileCache) writeFromReader(ctx context.Context, node *repb.FileNode, r io.Reader) (n int, err error) {
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
 		return 0, err
@@ -345,10 +356,13 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 			log.Warningf("Failed to remove filecache temp file: %s", err)
 		}
 	}()
-	n, err = f.Write(b)
-	if err != nil {
-		return n, err
+	if node.GetIsExecutable() {
+		f.Chmod(0755)
 	}
+	if n, err := io.Copy(f, r); err != nil {
+		return int(n), err
+	}
+	f.Close()
 	if err := c.AddFile(ctx, node, tmp); err != nil {
 		return 0, err
 	}

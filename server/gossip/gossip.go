@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 
 	"github.com/hashicorp/memberlist"
@@ -200,9 +199,6 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 func Register(env *real_environment.RealEnv) error {
 	if *listenAddr == "" {
 		return nil
-	}
-	if len(*join) == 0 {
-		return status.FailedPreconditionError("Gossip listen address specified but no join target set")
 	}
 	name := *nodeName
 	if name == "" {

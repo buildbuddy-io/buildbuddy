@@ -1,2 +1,3 @@
-app: bazel run enterprise/server -- --config_file=enterprise/config/buildbuddy.local.yaml
-exec: bazel run enterprise/server/cmd/executor:executor -- --monitoring_port=9091 --executor.docker_socket="" --executor.enable_firecracker=false
+app: bazel run enterprise/server -- --config_file=enterprise/config/buildbuddy.local.yaml --gossip.listen_addr=0.0.0.0:1991 --gossip.node_name=app --app.log_level=debug
+exec1: bazel run enterprise/server/cmd/executor:executor -- --monitoring_port=0 --executor.enable_firecracker=false --executor.local_cache_serving_addr=0.0.0.0:3453 --gossip.listen_addr=0.0.0.0:1992 --gossip.join=0.0.0.0:1991 --gossip.node_name=exec1 --app.log_level=debug --executor.local_cache_directory=/tmp/tylerw_exec1 --executor.enable_bare_runner=true
+exec2: bazel run enterprise/server/cmd/executor:executor -- --monitoring_port=0 --executor.enable_firecracker=false --executor.local_cache_serving_addr=0.0.0.0:3454 --gossip.listen_addr=0.0.0.0:1993 --gossip.join=0.0.0.0:1991 --gossip.node_name=exec2 --app.log_level=debug --executor.local_cache_directory=/tmp/tylerw_exec2 --executor.enable_bare_runner=true

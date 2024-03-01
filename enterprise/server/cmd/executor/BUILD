@@ -35,6 +35,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/config",
+        "//server/gossip",
         "//server/hostid",
         "//server/metrics",
         "//server/real_environment",
