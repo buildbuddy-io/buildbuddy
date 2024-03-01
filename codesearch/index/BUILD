@@ -4,8 +4,8 @@ go_library(
     name = "index",
     srcs = [
         "common.go",
+        "index.go",
         "token.go",
-        "write.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/index",
     visibility = ["//visibility:public"],
@@ -25,8 +25,8 @@ go_library(
 go_test(
     name = "index_test",
     srcs = [
+        "index_test.go",
         "read_test.go",
-        "write_test.go",
     ],
     embed = [":index"],
     deps = [
