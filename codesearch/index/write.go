@@ -9,12 +9,13 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/RoaringBitmap/roaring"
+	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/google/uuid"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -28,7 +29,7 @@ const (
 	TextField FieldType = iota
 )
 
-type postingLists map[string][]uint32
+type postingLists map[string][]uint64
 
 type Writer struct {
 	db  *pebble.DB
@@ -66,21 +67,27 @@ type Field interface {
 }
 
 type Document interface {
-	ID() uint32
+	ID() uint64
 	Fields() []string
 	Field(string) Field
 	// TODO(tylerw): add Boost() float64
 }
 
-func BytesToUint32(buf []byte) uint32 {
-	return binary.LittleEndian.Uint32(buf)
+func BytesToUint64(buf []byte) uint64 {
+	return binary.LittleEndian.Uint64(buf)
 }
 
-func docidKey(repo string, docID uint32) []byte {
+func Uint64ToBytes(i uint64) []byte {
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf, i)
+	return buf
+}
+
+func docidKey(repo string, docID uint64) []byte {
 	return []byte(fmt.Sprintf("%s:did:%d", repo, docID))
 }
 
-func (w *Writer) storedFieldKey(docID uint32, field string) []byte {
+func (w *Writer) storedFieldKey(docID uint64, field string) []byte {
 	return []byte(fmt.Sprintf("%s:doc:%d:%s", w.repo, docID, field))
 }
 
@@ -97,7 +104,7 @@ func (w *Writer) AddDocument(doc Document) error {
 		postingLists := w.fieldPostingLists[field.Name()]
 
 		// **Always store DocID.**
-		w.batch.Set(docidKey(w.repo, doc.ID()), uint32ToBytes(doc.ID()), nil)
+		w.batch.Set(docidKey(w.repo, doc.ID()), Uint64ToBytes(doc.ID()), nil)
 
 		// TODO(tylerw): lookup the tokenizer to use for this field. It
 		// may not always be tritokenizer.
@@ -134,9 +141,9 @@ func (w *Writer) Flush() error {
 	}
 	eg := new(errgroup.Group)
 	eg.SetLimit(runtime.GOMAXPROCS(0))
-	writePLs := func(key []byte, ids []uint32) error {
+	writePLs := func(key []byte, ids []uint64) error {
 		buf := new(bytes.Buffer)
-		pl := roaring.BitmapOf(ids...)
+		pl := roaring64.BitmapOf(ids...)
 		if _, err := pl.WriteTo(buf); err != nil {
 			return err
 		}
@@ -177,28 +184,28 @@ func NewReader(db pebble.Reader, repo string) *Reader {
 	}
 }
 
-func (r *Reader) allIndexedFiles() ([]uint32, error) {
+func (r *Reader) allIndexedFiles() ([]uint64, error) {
 	iter := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: docidKey(r.repo, 0),
-		UpperBound: docidKey(r.repo, math.MaxUint32),
+		UpperBound: docidKey(r.repo, math.MaxUint64),
 	})
 	defer iter.Close()
-	found := make([]uint32, 0)
+	found := make([]uint64, 0)
 	for iter.First(); iter.Valid(); iter.Next() {
-		docid := BytesToUint32(iter.Value())
+		docid := BytesToUint64(iter.Value())
 		found = append(found, docid)
 	}
 	return found, nil
 }
 
-func (r *Reader) storedFieldKey(docID uint32, field string) []byte {
+func (r *Reader) storedFieldKey(docID uint64, field string) []byte {
 	return []byte(fmt.Sprintf("%s:doc:%d:%s", r.repo, docID, field))
 }
 
-func (r *Reader) GetStoredFieldValue(docid uint32, field string) ([]byte, error) {
-	buf, closer, err := r.db.Get(r.storedFieldKey(docid, field))
+func (r *Reader) GetStoredFieldValue(docID uint64, field string) ([]byte, error) {
+	buf, closer, err := r.db.Get(r.storedFieldKey(docID, field))
 	if err == pebble.ErrNotFound {
-		return nil, status.NotFoundErrorf("doc %d (field %q) not found", docid, field)
+		return nil, status.NotFoundErrorf("doc %d (field %q) not found", docID, field)
 	}
 	defer closer.Close()
 	rbuf := make([]byte, len(buf))
@@ -206,7 +213,7 @@ func (r *Reader) GetStoredFieldValue(docid uint32, field string) ([]byte, error)
 	return rbuf, nil
 }
 
-func (r *Reader) postingListBM(ngram []byte, restrict *roaring.Bitmap) (*roaring.Bitmap, error) {
+func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap) (*roaring64.Bitmap, error) {
 	minKey := []byte(fmt.Sprintf("%s:gra:%s", r.repo, ngram))
 	maxKey := append(minKey, byte('\xff'))
 	iter := r.db.NewIter(&pebble.IterOptions{
@@ -215,14 +222,14 @@ func (r *Reader) postingListBM(ngram []byte, restrict *roaring.Bitmap) (*roaring
 	})
 	defer iter.Close()
 
-	resultSet := roaring.New()
-	postingList := roaring.New()
+	resultSet := roaring64.New()
+	postingList := roaring64.New()
 	for iter.First(); iter.Valid(); iter.Next() {
 		r.log.Infof("query %q matched key %q", ngram, iter.Key())
 		if _, err := postingList.ReadFrom(bytes.NewReader(iter.Value())); err != nil {
 			return nil, err
 		}
-		resultSet = roaring.Or(resultSet, postingList)
+		resultSet = roaring64.Or(resultSet, postingList)
 		postingList.Clear()
 	}
 	if !restrict.IsEmpty() {
@@ -231,51 +238,51 @@ func (r *Reader) postingListBM(ngram []byte, restrict *roaring.Bitmap) (*roaring
 	return resultSet, nil
 }
 
-func (r *Reader) PostingList(trigram uint32) ([]uint32, error) {
+func (r *Reader) PostingList(trigram uint32) ([]uint64, error) {
 	return r.postingList(trigram, nil)
 }
 
-func (r *Reader) postingList(trigram uint32, restrict []uint32) ([]uint32, error) {
-	bm, err := r.postingListBM(trigramToBytes(trigram), roaring.BitmapOf(restrict...))
+func (r *Reader) postingList(trigram uint32, restrict []uint64) ([]uint64, error) {
+	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...))
 	if err != nil {
 		return nil, err
 	}
 	return bm.ToArray(), nil
 }
 
-func (r *Reader) PostingAnd(list []uint32, trigram uint32) ([]uint32, error) {
+func (r *Reader) PostingAnd(list []uint64, trigram uint32) ([]uint64, error) {
 	return r.postingAnd(list, trigram, nil)
 }
 
-func (r *Reader) postingAnd(list []uint32, trigram uint32, restrict []uint32) ([]uint32, error) {
-	bm, err := r.postingListBM(trigramToBytes(trigram), roaring.BitmapOf(restrict...))
+func (r *Reader) postingAnd(list []uint64, trigram uint32, restrict []uint64) ([]uint64, error) {
+	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...))
 	if err != nil {
 		return nil, err
 	}
-	bm.And(roaring.BitmapOf(list...))
+	bm.And(roaring64.BitmapOf(list...))
 	return bm.ToArray(), nil
 }
 
-func (r *Reader) PostingOr(list []uint32, trigram uint32) ([]uint32, error) {
+func (r *Reader) PostingOr(list []uint64, trigram uint32) ([]uint64, error) {
 	return r.postingOr(list, trigram, nil)
 }
 
-func (r *Reader) postingOr(list []uint32, trigram uint32, restrict []uint32) ([]uint32, error) {
-	bm, err := r.postingListBM(trigramToBytes(trigram), roaring.BitmapOf(restrict...))
+func (r *Reader) postingOr(list []uint64, trigram uint32, restrict []uint64) ([]uint64, error) {
+	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...))
 	if err != nil {
 		return nil, err
 	}
-	bm.Or(roaring.BitmapOf(list...))
+	bm.Or(roaring64.BitmapOf(list...))
 	return bm.ToArray(), nil
 }
 
-func (r *Reader) PostingQuery(q *query.Query) ([]uint32, error) {
+func (r *Reader) PostingQuery(q *query.Query) ([]uint64, error) {
 	return r.postingQuery(q, nil)
 }
 
 // TODO(tylerw): move this to query??
-func (r *Reader) postingQuery(q *query.Query, restrict []uint32) (ret []uint32, err error) {
-	var list []uint32
+func (r *Reader) postingQuery(q *query.Query, restrict []uint64) (ret []uint64, err error) {
+	var list []uint64
 	r.log.Infof("q.Op: %+v", q.Op)
 	switch q.Op {
 	case query.QNone:
@@ -326,23 +333,8 @@ func (r *Reader) postingQuery(q *query.Query, restrict []uint32) (ret []uint32, 
 	return list, err
 }
 
-func (r *Reader) mergeOr(l1, l2 []uint32) []uint32 {
-	var l []uint32
-	i := 0
-	j := 0
-	for i < len(l1) || j < len(l2) {
-		switch {
-		case j == len(l2) || (i < len(l1) && l1[i] < l2[j]):
-			l = append(l, l1[i])
-			i++
-		case i == len(l1) || (j < len(l2) && l1[i] > l2[j]):
-			l = append(l, l2[j])
-			j++
-		case l1[i] == l2[j]:
-			l = append(l, l1[i])
-			i++
-			j++
-		}
-	}
-	return l
+func (r *Reader) mergeOr(l1, l2 []uint64) []uint64 {
+	l := append(l1, l2...)
+	slices.Sort(l)
+	return slices.Compact(l)
 }

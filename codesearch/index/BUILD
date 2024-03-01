@@ -4,7 +4,6 @@ go_library(
     name = "index",
     srcs = [
         "common.go",
-        "read.go",
         "token.go",
         "write.go",
     ],
@@ -17,7 +16,8 @@ go_library(
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_google_uuid//:uuid",
-        "@com_github_roaringbitmap_roaring//:roaring",
+        "@com_github_roaringbitmap_roaring//roaring64",
+        "@org_golang_x_exp//slices",
         "@org_golang_x_sync//errgroup",
     ],
 )

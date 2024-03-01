@@ -66,23 +66,23 @@ var (
 )
 
 type IndexReader interface {
-	PostingQuery(q *query.Query) ([]uint32, error)
-	Name(fileid uint32) (string, error)
-	Contents(fileid uint32) ([]byte, error)
+	PostingQuery(q *query.Query) ([]uint64, error)
+	Name(fileid uint64) (string, error)
+	Contents(fileid uint64) ([]byte, error)
 }
 
 type indexAdapter struct {
 	*index.Reader
 }
 
-func (a *indexAdapter) Name(docid uint32) (string, error) {
+func (a *indexAdapter) Name(docid uint64) (string, error) {
 	buf, err := a.Reader.GetStoredFieldValue(docid, "filename")
 	if err != nil {
 		return "", err
 	}
 	return string(buf), nil
 }
-func (a *indexAdapter) Contents(docid uint32) ([]byte, error) {
+func (a *indexAdapter) Contents(docid uint64) ([]byte, error) {
 	return a.Reader.GetStoredFieldValue(docid, "body")
 }
 
@@ -99,8 +99,8 @@ func indexDir() string {
 	return filepath.Clean(home + "/.csindex")
 }
 
-func runQuery(ix IndexReader, q *query.Query, fre *regexp.Regexp) []uint32 {
-	var post []uint32
+func runQuery(ix IndexReader, q *query.Query, fre *regexp.Regexp) []uint64 {
+	var post []uint64
 	var err error
 	if *bruteFlag {
 		post, err = ix.PostingQuery(&query.Query{Op: query.QAll})
@@ -115,7 +115,7 @@ func runQuery(ix IndexReader, q *query.Query, fre *regexp.Regexp) []uint32 {
 	}
 
 	if fre != nil {
-		fnames := make([]uint32, 0, len(post))
+		fnames := make([]uint64, 0, len(post))
 
 		for _, fileid := range post {
 			name, err := ix.Name(fileid)

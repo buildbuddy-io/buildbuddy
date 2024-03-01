@@ -103,11 +103,11 @@ func (f namedField) String() string {
 }
 
 type mapDocument struct {
-	id     uint32
+	id     uint64
 	fields map[string]namedField
 }
 
-func (d mapDocument) ID() uint32                    { return d.id }
+func (d mapDocument) ID() uint64                    { return d.id }
 func (d mapDocument) Field(name string) index.Field { return d.fields[name] }
 func (d mapDocument) Fields() []string {
 	fieldNames := make([]string, 0, len(d.fields))
@@ -187,10 +187,9 @@ func (a *indexWriterAdaptor) AddFileByDigest(name string, digest *repb.Digest, c
 	if err != nil {
 		return err
 	}
-	docid := index.BytesToUint32(hexBytes[:4])
 
 	doc := mapDocument{
-		id: docid,
+		id: index.BytesToUint64(hexBytes[:8]),
 		fields: map[string]namedField{
 			"filename": namedField{index.TextField, "filename", []byte(name), true /*=stored*/},
 			"body":     namedField{index.TextField, "body", contents, true /*=stored*/},
