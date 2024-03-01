@@ -43,9 +43,9 @@ var (
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_execution_queue_length"),
 				Help: proto.String("Number of actions currently waiting in the executor queue."),
-				Type: dto.MetricType_COUNTER.Enum(),
+				Type: dto.MetricType_GAUGE.Enum(),
 			},
-			Examples: "sum(exported_buildbuddy_remote_execution_queue_length)",
+			Examples: "sum by(pod_name) (exported_buildbuddy_remote_execution_queue_length)",
 		},
 		{
 			sourceMetricName: "buildbuddy_invocation_duration_usec_exported",
@@ -346,7 +346,7 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 			family = proto.Clone(config.ExportedFamily).(*dto.MetricFamily)
 		}
 
-		if config.ExportedFamily.GetType() == dto.MetricType_COUNTER {
+		if config.ExportedFamily.GetType() == dto.MetricType_GAUGE || config.ExportedFamily.GetType() == dto.MetricType_COUNTER {
 			vector, ok := vectors[config.sourceMetricName]
 			if !ok {
 				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
