@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//codesearch/query",
         "//codesearch/sparse",
+        "//codesearch/types",
         "//server/util/log",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",

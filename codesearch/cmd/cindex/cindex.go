@@ -19,6 +19,7 @@ import (
 	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
 	"github.com/gabriel-vasile/mimetype"
@@ -80,42 +81,6 @@ const (
 	maxLineLen      = 2000
 	maxTextTrigrams = 20000
 )
-
-type namedField struct {
-	ftype  index.FieldType
-	name   string
-	buf    []byte
-	stored bool
-}
-
-func (f namedField) Type() index.FieldType { return f.ftype }
-func (f namedField) Name() string          { return f.name }
-func (f namedField) Contents() []byte      { return f.buf }
-func (f namedField) Stored() bool          { return f.stored }
-func (f namedField) String() string {
-	var snippet string
-	if len(f.buf) < 10 {
-		snippet = string(f.buf)
-	} else {
-		snippet = string(f.buf[:10])
-	}
-	return fmt.Sprintf("field<type: %v, name: %q, buf: %q>", f.ftype, f.name, snippet)
-}
-
-type mapDocument struct {
-	id     uint64
-	fields map[string]namedField
-}
-
-func (d mapDocument) ID() uint64                    { return d.id }
-func (d mapDocument) Field(name string) index.Field { return d.fields[name] }
-func (d mapDocument) Fields() []string {
-	fieldNames := make([]string, 0, len(d.fields))
-	for name := range d.fields {
-		fieldNames = append(fieldNames, name)
-	}
-	return fieldNames
-}
 
 type indexReader interface {
 	Paths() []string
@@ -188,13 +153,13 @@ func (a *indexWriterAdaptor) AddFileByDigest(name string, digest *repb.Digest, c
 		return err
 	}
 
-	doc := mapDocument{
-		id: index.BytesToUint64(hexBytes[:8]),
-		fields: map[string]namedField{
-			"filename": namedField{index.TextField, "filename", []byte(name), true /*=stored*/},
-			"body":     namedField{index.TextField, "body", contents, true /*=stored*/},
+	doc := types.NewMapDocument(
+		index.BytesToUint64(hexBytes[:8]),
+		map[string]types.NamedField{
+			"filename": types.NewNamedField(types.TextField, "filename", []byte(name), true /*=stored*/),
+			"body":     types.NewNamedField(types.TextField, "body", contents, true /*=stored*/),
 		},
-	}
+	)
 	return a.AddDocument(doc)
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
@@ -23,11 +24,6 @@ const (
 	npost = 64 << 20 / 8 // 64 MB worth of post entries
 )
 
-type FieldType int32
-
-const (
-	TextField FieldType = iota
-)
 
 type postingLists map[string][]uint64
 
@@ -53,24 +49,10 @@ func NewWriter(db *pebble.DB, repo string) (*Writer, error) {
 		log:               subLog,
 		repo:              repo,
 		segmentID:         id,
-		tokenizer:         NewTrigramTokenizer(TextField),
+		tokenizer:         NewTrigramTokenizer(types.TextField),
 		fieldPostingLists: make(map[string]postingLists),
 		batch:             db.NewBatch(),
 	}, nil
-}
-
-type Field interface {
-	Type() FieldType
-	Name() string
-	Contents() []byte
-	Stored() bool
-}
-
-type Document interface {
-	ID() uint64
-	Fields() []string
-	Field(string) Field
-	// TODO(tylerw): add Boost() float64
 }
 
 func BytesToUint64(buf []byte) uint64 {
@@ -95,7 +77,7 @@ func (w *Writer) postingListKey(ngram string, field string) []byte {
 	return []byte(fmt.Sprintf("%s:gra:%s:%s", w.repo, ngram, field))
 }
 
-func (w *Writer) AddDocument(doc Document) error {
+func (w *Writer) AddDocument(doc types.Document) error {
 	for _, fieldName := range doc.Fields() {
 		field := doc.Field(fieldName)
 		if _, ok := w.fieldPostingLists[field.Name()]; !ok {

@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//codesearch/index",
+        "//codesearch/types",
         "//proto:remote_execution_go_proto",
         "//server/util/log",
         "@com_github_cockroachdb_pebble//:pebble",
