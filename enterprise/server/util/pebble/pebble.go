@@ -142,6 +142,12 @@ type Batch interface {
 	// operations with the except of LogData increment this count.
 	Count() uint32
 
+	// Empty returns true if the batch is empty, and false otherwise.
+	Empty() bool
+
+	// Returns the current size of the batch.
+	Len() int
+
 	Reader() pebble.BatchReader
 
 	Reset()
@@ -245,6 +251,14 @@ func (ib *instrumentedBatch) Commit(o *pebble.WriteOptions) error {
 
 func (ib *instrumentedBatch) Count() uint32 {
 	return ib.batch.Count()
+}
+
+func (ib *instrumentedBatch) Empty() bool {
+	return ib.batch.Empty()
+}
+
+func (ib *instrumentedBatch) Len() int {
+	return ib.batch.Len()
 }
 
 func (ib *instrumentedBatch) NewIter(o *pebble.IterOptions) Iterator {

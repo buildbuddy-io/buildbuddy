@@ -30,6 +30,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -44,6 +46,7 @@ const (
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
+	gb               = 1 << 30
 )
 
 var (
@@ -1818,6 +1821,17 @@ func (sm *Replica) saveRangeLocalData(w io.Writer, snap *pebble.Snapshot) error 
 	return nil
 }
 
+func flushBatch(wb pebble.Batch) error {
+	if wb.Empty() {
+		return nil
+	}
+	if err := wb.Commit(pebble.Sync); err != nil {
+		return err
+	}
+	wb.Reset()
+	return nil
+}
+
 func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
 	wb := db.NewBatch()
 	defer wb.Close()
@@ -1849,11 +1863,16 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		if err := wb.Set(kv.Key, kv.Value, nil); err != nil {
 			return err
 		}
+		if wb.Len() > 1*gb {
+			// Pebble panics when the batch is greater than ~4GB (or 2GB on 32-bit systems)
+			log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
+			if err = flushBatch(wb); err != nil {
+				return err
+			}
+		}
 	}
-	if err := db.Apply(wb, pebble.Sync); err != nil {
-		return err
-	}
-	return nil
+	log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
+	return flushBatch(wb)
 }
 
 // SaveSnapshot saves the point in time state of the IOnDiskStateMachine
