@@ -139,6 +139,7 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 		return &interfaces.WebhookData{
 			EventName:               webhook_data.EventName.Push,
 			PushedRepoURL:           v["Repo.CloneURL"],
+			PushedRef:               v["HeadCommit.ID"],
 			PushedBranch:            branch,
 			SHA:                     v["HeadCommit.ID"],
 			TargetRepoURL:           v["Repo.CloneURL"],
@@ -203,6 +204,7 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 	return &interfaces.WebhookData{
 		EventName:               webhook_data.EventName.PullRequest,
 		PushedRepoURL:           v["PullRequest.Head.Repo.CloneURL"],
+		PushedRef:               v["PullRequest.Head.SHA"],
 		PushedBranch:            v["PullRequest.Head.Ref"],
 		SHA:                     v["PullRequest.Head.SHA"],
 		TargetRepoURL:           v["PullRequest.Base.Repo.CloneURL"],

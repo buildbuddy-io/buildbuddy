@@ -476,14 +476,8 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if req.GetPushedRepoUrl() == "" {
 		return nil, status.InvalidArgumentError("Missing pushed_repo_url")
 	}
-	if req.GetPushedBranch() == "" {
-		return nil, status.InvalidArgumentError("Missing pushed_branch")
-	}
-	if req.GetTargetRepoUrl() == "" {
-		return nil, status.InvalidArgumentError("Missing target_repo_url")
-	}
-	if req.GetTargetBranch() == "" {
-		return nil, status.InvalidArgumentError("Missing target_branch")
+	if req.GetPushedRef() == "" && req.GetPushedBranch() == "" {
+		return nil, status.InvalidArgumentError("Missing pushed_ref")
 	}
 
 	// Authenticate
@@ -514,9 +508,14 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	// TODO: Refactor to avoid using this WebhookData struct in the case of manual
 	// workflow execution, since there are no webhooks involved when executing a
 	// workflow manually.
+	pushedRef := req.GetPushedRef()
+	if pushedRef == "" {
+		pushedRef = req.GetPushedBranch()
+	}
 	wd := &interfaces.WebhookData{
 		PushedRepoURL:     req.GetPushedRepoUrl(),
 		PushedBranch:      req.GetPushedBranch(),
+		PushedRef:         pushedRef,
 		TargetRepoURL:     req.GetTargetRepoUrl(),
 		TargetBranch:      req.GetTargetBranch(),
 		SHA:               req.GetCommitSha(),
@@ -1186,6 +1185,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--remote_instance_name=" + instanceName,
 		"--commit_sha=" + wd.SHA,
 		"--pushed_repo_url=" + wd.PushedRepoURL,
+		"--pushed_ref=" + wd.PushedRef,
 		"--pushed_branch=" + wd.PushedBranch,
 		"--pull_request_number=" + fmt.Sprintf("%d", wd.PullRequestNumber),
 		"--target_repo_url=" + wd.TargetRepoURL,

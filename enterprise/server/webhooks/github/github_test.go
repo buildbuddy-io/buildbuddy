@@ -32,6 +32,7 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 	assert.Equal(t, &interfaces.WebhookData{
 		EventName:               "push",
 		PushedRepoURL:           "https://github.com/test/hello_bb_ci.git",
+		PushedRef:               "258044d28288d5f6f1c5928b0e22580296fec666",
 		PushedBranch:            "main",
 		SHA:                     "258044d28288d5f6f1c5928b0e22580296fec666",
 		TargetRepoURL:           "https://github.com/test/hello_bb_ci.git",
@@ -50,6 +51,7 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 	assert.Equal(t, &interfaces.WebhookData{
 		EventName:               "pull_request",
 		PushedRepoURL:           "https://github.com/test/hello_bb_ci.git",
+		PushedRef:               "21006e203e433034cd4d82859d28d3bc1dbdf9f7",
 		PushedBranch:            "pr-1613157046",
 		SHA:                     "21006e203e433034cd4d82859d28d3bc1dbdf9f7",
 		TargetRepoURL:           "https://github.com/test/hello_bb_ci.git",
@@ -70,6 +72,7 @@ func TestParseRequest_ValidPullRequestReviewEvent_Success(t *testing.T) {
 	assert.Equal(t, &interfaces.WebhookData{
 		EventName:               "pull_request",
 		PushedRepoURL:           "https://github.com/test2/bb-workflows-test.git",
+		PushedRef:               "7d27db5443e48541a49693422c3b30fe6e8e3e9f",
 		PushedBranch:            "pr-test",
 		SHA:                     "7d27db5443e48541a49693422c3b30fe6e8e3e9f",
 		TargetRepoURL:           "https://github.com/test/bb-workflows-test.git",

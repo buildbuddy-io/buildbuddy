@@ -338,7 +338,7 @@ func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *t
 		"--action_name=Show bazel version",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
@@ -409,7 +409,7 @@ func TestCIRunner_Push_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsTo
 		"--action_name=Test all targets",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
@@ -448,7 +448,7 @@ func TestCIRunner_Push_ReusedWorkspaceWithBazelVersionAction_CanReuseWorkspace(t
 		"--action_name=Show bazel version",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
@@ -487,7 +487,7 @@ func TestCIRunner_Push_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 		"--action_name=Show bazel version",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
@@ -540,7 +540,7 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 		"--action_name=Test",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
-		"--pushed_branch=feature",
+		"--pushed_ref=feature",
 		"--commit_sha=" + commitSHA,
 		"--target_repo_url=file://" + targetRepoPath,
 		"--target_branch=master",
@@ -597,7 +597,7 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 		"--action_name=Test",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
-		"--pushed_branch=feature",
+		"--pushed_ref=feature",
 		"--commit_sha=" + commitSHA,
 		"--target_repo_url=file://" + targetRepoPath,
 		"--target_branch=master",
@@ -638,6 +638,7 @@ func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 		"--action_name=Show bazel version",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
+		"--pushed_ref=" + commitSHA,
 		"--pushed_branch=feature",
 		"--commit_sha=" + commitSHA,
 		"--target_repo_url=file://" + targetRepoPath,
@@ -702,7 +703,7 @@ func TestCIRunner_IgnoresInvalidFlags(t *testing.T) {
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 }
 
-func TestRunAction_RespectsCommitSha(t *testing.T) {
+func TestRunAction_CommitShaRef(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
 
@@ -718,7 +719,7 @@ func TestRunAction_RespectsCommitSha(t *testing.T) {
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
 	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
-	runnerFlagsCommit1 := append(baselineRunnerFlags, "--commit_sha="+initialCommitSHA)
+	runnerFlagsCommit1 := append(baselineRunnerFlags, "--commit_sha="+initialCommitSHA, "--pushed_ref="+initialCommitSHA)
 
 	result := invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
 	checkRunnerResult(t, result)
@@ -742,7 +743,7 @@ actions:
 	assert.Contains(t, result.Output, "args: {{ Hello world }}")
 
 	// When invoked with the new commit sha, should contain the modified print statement
-	runnerFlagsCommit2 := append(baselineRunnerFlags, "--commit_sha="+newCommitSha)
+	runnerFlagsCommit2 := append(baselineRunnerFlags, "--commit_sha="+newCommitSha, "--pushed_ref="+newCommitSha)
 	result = invokeRunner(t, runnerFlagsCommit2, []string{}, wsPath)
 	checkRunnerResult(t, result)
 	assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
@@ -771,7 +772,7 @@ func TestRunAction_PushedRepoOnly(t *testing.T) {
 		"--action_name=Print args",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
@@ -798,7 +799,7 @@ func TestEnvExpansion(t *testing.T) {
 		"--action_name=Test env expansion",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
@@ -843,7 +844,7 @@ actions:
 		"--action_name=Check repo",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + targetRepoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + commitSHA,
 		"--target_repo_url=file://" + targetRepoPath,
 		"--target_branch=master",
@@ -889,7 +890,7 @@ actions:
 		"--action_name=Test",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + commitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
@@ -937,7 +938,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 	{
 		runnerFlags := []string{
 			"--pushed_repo_url=file://" + targetRepoPath,
-			"--pushed_branch=master",
+			"--pushed_ref=master",
 			"--target_repo_url=file://" + targetRepoPath,
 			"--target_branch=master",
 			"--cache_backend=" + app.GRPCAddress(),
@@ -963,7 +964,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 	{
 		runnerFlags := []string{
 			"--pushed_repo_url=file://" + targetRepoPath,
-			"--pushed_branch=master",
+			"--pushed_ref=master",
 			"--target_repo_url=file://" + targetRepoPath,
 			"--target_branch=master",
 			"--bazel_sub_command", "test --test_output=streamed --nocache_test_results //...",
@@ -992,7 +993,7 @@ func TestLocalEnvironmentalError(t *testing.T) {
 		"--action_name=Exit 36",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
@@ -1020,7 +1021,7 @@ func TestFailedGitSetup_StillPublishesBuildMetadata(t *testing.T) {
 		"--trigger_event=push",
 		// Use an invalid repo path so that the git repo setup fails.
 		"--pushed_repo_url=file://INVALID_REPO_PATH",
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://INVALID_REPO_PATH",
 		"--target_branch=master",
@@ -1083,7 +1084,7 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 		"--action_name=Test",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=pr-branch",
+		"--pushed_ref=pr-branch",
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
@@ -1140,7 +1141,7 @@ func TestArtifactUploads_GRPCLog(t *testing.T) {
 		"--action_name=Test",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
@@ -1213,7 +1214,7 @@ func TestArtifactUploads_JVMLog(t *testing.T) {
 		"--action_name=Test",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
