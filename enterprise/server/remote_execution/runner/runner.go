@@ -313,6 +313,11 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 			return err
 		}
 	}
+	if args := r.task.GetCommand().GetArguments(); len(args) > 0 && args[0] == "./buildbuddy_github_actions_runner" {
+		if err := r.Workspace.AddActionsRunner(ctx); err != nil {
+			return err
+		}
+	}
 	ioStats.FileDownloadCount = rxInfo.FileCount
 	ioStats.FileDownloadDurationUsec = rxInfo.TransferDuration.Microseconds()
 	ioStats.FileDownloadSizeBytes = rxInfo.BytesTransferred

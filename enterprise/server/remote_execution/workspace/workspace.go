@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 
+	_ "embed"
+
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -27,6 +29,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
+	gh_actions_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/github_actions_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -200,6 +203,10 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	defer destFile.Close()
 	_, err = io.Copy(destFile, srcFile)
 	return err
+}
+
+func (ws *Workspace) AddActionsRunner(ctx context.Context) error {
+	return os.WriteFile(filepath.Join(ws.Path(), "buildbuddy_github_actions_runner"), gh_actions_runner_bundle.RunnerBytes, 0555)
 }
 
 func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) error {
