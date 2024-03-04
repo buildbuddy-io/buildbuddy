@@ -1251,35 +1251,41 @@ func olderThanThreshold(t time.Time, threshold time.Duration) bool {
 }
 
 func (sm *Replica) processAccessTimeUpdates() {
-	batch := rbuilder.NewBatchBuilder()
+	var keys []*sender.KeyMeta
 
 	ctx := context.TODO()
 
 	var lastWrite time.Time
 	flush := func() {
-		if batch.Size() == 0 {
+		if len(keys) == 0 {
 			return
 		}
+		batch := rbuilder.NewBatchBuilder()
 
+		for _, k := range keys {
+			batch.Add(&rfpb.UpdateAtimeRequest{
+				Key:            k.Key,
+				AccessTimeUsec: k.Meta.(int64),
+			})
+		}
 		batchProto, err := batch.ToProto()
 		if err != nil {
 			sm.log.Warningf("could not generate atime update batch: %s", err)
 			return
 		}
 
-		err = sm.store.Sender().Run(ctx, nil, func(c rfspb.ApiClient, h *rfpb.Header) error {
-			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+		_, err = sm.store.Sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+			return c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Header: h,
 				Batch:  batchProto,
 			})
-			return err
 		})
 		if err != nil {
 			sm.log.Warningf("could not update atimes: %s", err)
 			return
 		}
 
-		batch = rbuilder.NewBatchBuilder()
+		keys = nil
 		lastWrite = time.Now()
 	}
 
@@ -1295,11 +1301,11 @@ func (sm *Replica) processAccessTimeUpdates() {
 	for {
 		select {
 		case accessTimeUpdate := <-sm.accesses:
-			batch.Add(&rfpb.UpdateAtimeRequest{
-				Key:            accessTimeUpdate.key,
-				AccessTimeUsec: time.Now().UnixMicro(),
+			keys = append(keys, &sender.KeyMeta{
+				Key:  accessTimeUpdate.key,
+				Meta: time.Now().UnixMicro(),
 			})
-			if batch.Size() >= *atimeWriteBatchSize {
+			if len(keys) >= *atimeWriteBatchSize {
 				flush()
 			}
 		case <-time.After(time.Second):
