@@ -530,6 +530,21 @@ func toNodeInterfaces(nodes []*executionNode) []interfaces.ExecutionNode {
 	return out
 }
 
+// If the debug-executor-id platform property is set, filters the given nodes
+// to the nodes with that ID. The returned list may be empty.
+func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) []*executionNode {
+	id := platform.FindEffectiveValue(task, "debug-executor-id")
+	if id == "" {
+		return nodes
+	}
+	for _, n := range nodes {
+		if n.executorID == id {
+			return []*executionNode{n}
+		}
+	}
+	return nil
+}
+
 type nodePoolKey struct {
 	groupID string
 	os      string
@@ -1719,7 +1734,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 					enqueueRequest.GetTaskSize().GetEstimatedMemoryBytes())
 			}
 			candidateNodes = filterToDebugExecutorID(candidateNodes, task)
-			if len(nodes) == 0 {
+			if len(candidateNodes) == 0 {
 				return status.UnavailableErrorf("requested executor ID not found")
 			}
 			rankedNodes = s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
