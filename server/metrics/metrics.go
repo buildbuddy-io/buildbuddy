@@ -1275,6 +1275,15 @@ var (
 		FileCacheRequestStatusLabel,
 	})
 
+	FileCacheProxyRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "file_cache_proxy_requests",
+		Help:      "Number of local executor file cache requests.",
+	}, []string{
+		FileCacheRequestStatusLabel,
+	})
+
 	FileCacheLastEvictionAgeUsec = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

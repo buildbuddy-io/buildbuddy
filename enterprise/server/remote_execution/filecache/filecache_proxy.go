@@ -10,12 +10,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/prototext"
+	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -175,12 +177,13 @@ func (p *fileCacheProxy) significantChange() bool {
 }
 
 func (p *fileCacheProxy) serializedBitmap() ([]byte, error) {
-	filter := bloom.NewWithEstimates(10_000_000, 0.01)
+	const filterLength = 1_000_000
+	filter := bloom.NewWithEstimates(filterLength, 0.01)
 	i := 0
 	
 	p.fileCache.lock.Lock()
 	p.fileCache.l.Iter(func(value *entry) bool {
-		if i >= 1_000_000 {
+		if i >= filterLength {
 			return false
 		}
 		fp := value.value
@@ -207,8 +210,6 @@ func (p *fileCacheProxy) announce(ctx context.Context) error {
 		select {
 		case <-ticker.C:
 			if !p.significantChange() {
-				log.Debugf("no significant change: size: %d, count: %d", p.lruSize, p.lruCount)
-				log.Debugf("peerHashFilters: %+v", p.peerHashFilters)
 				continue
 			}
 			bm, err := p.serializedBitmap()
@@ -317,9 +318,12 @@ func (p *fileCacheProxy) FastLinkFile(ctx context.Context, node *repb.FileNode, 
 		}
 	}
 
-	if ok := p.fileCache.FastLinkFile(ctx, node, outputPath); ok {
+	ok := p.fileCache.FastLinkFile(ctx, node, outputPath)
+	label := missMetricLabel
+	if ok {
+		label = hitMetricLabel
 		log.Errorf("BLOOM SHARING file %q!!!", k)
-		return ok
 	}
-	return false
+	metrics.FileCacheProxyRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: label}).Inc()
+	return ok
 }
