@@ -31,6 +31,7 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 	assert.Equal(t, &interfaces.WebhookData{
 		EventName:     "push",
 		PushedRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
+		PushedRef:     "f3307f36e35d1820c78b642cc8dfec6bf28a6230",
 		PushedBranch:  "main",
 		SHA:           "f3307f36e35d1820c78b642cc8dfec6bf28a6230",
 		TargetRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
@@ -47,6 +48,7 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 	assert.Equal(t, &interfaces.WebhookData{
 		EventName:     "pull_request",
 		PushedRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
+		PushedRef:     "a4822151d5d2",
 		PushedBranch:  "test-1614450472",
 		SHA:           "a4822151d5d2",
 		TargetRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
