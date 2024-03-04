@@ -15,11 +15,13 @@ def main():
         default="",
         help="Version to release, like '1.2.3'. By default, bumps the current patch version.",
     )
+    parser.add_argument('--update_docs', default=False, action='store_true', help="Whether to update the website docs.")
+    parser.add_argument('--auto', default=False, action='store_true', help="Whether to automatically push a new tag without waiting for user input")
     args = parser.parse_args()
     exit(_main(**vars(args)))
 
 
-def _main(version):
+def _main(version, update_docs, auto):
     # Fetch existing versions
     print("> Fetching tags...")
     p = sh("git fetch --tags")
@@ -54,12 +56,15 @@ def _main(version):
 
     # Print latest tag, for comparison
     print("> Latest tag:      %s" % latest_tag)
-    print("> Confirm new tag: %s (Enter = OK, Ctrl+C = cancel)" % tag)
-    try:
-        input()
-    except KeyboardInterrupt:
-        print()
-        return 1
+    if auto:
+        print("> Pushing new tag: %s" % tag)
+    else:
+        print("> Confirm new tag: %s (Enter = OK, Ctrl+C = cancel)" % tag)
+        try:
+            input()
+        except KeyboardInterrupt:
+            print()
+            return 1
 
     # Tag new version
     sh("git tag " + tag)
@@ -76,14 +81,9 @@ def _main(version):
     print("> Once the workflow has succeeded, publish the draft release here:")
     print("> https://github.com/buildbuddy-io/bazel/releases")
 
-    print("---")
-    print("> Run cli/update_docs.sh to update website docs? (Enter=OK, Cancel=Ctrl+C)")
-    try:
-        input()
-    except KeyboardInterrupt:
-        print()
-        return 1
-    subprocess.run(["cli/update_docs.sh", version])
+    if update_docs:
+        print("> Running cli/update_docs.sh to update the website docs")
+        subprocess.run(["cli/update_docs.sh", version])
 
 
 def sh(command, stream_stdout=True, **kwargs):
