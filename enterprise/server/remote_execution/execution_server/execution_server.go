@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -51,8 +52,6 @@ import (
 )
 
 const (
-	// TTL for keys used to track pending executions for action merging.
-	pendingExecutionTTL    = 8 * time.Hour
 	updateExecutionTimeout = 15 * time.Second
 
 	// When an action finishes, schedule the corresponding pubsub channel to
@@ -63,7 +62,6 @@ const (
 
 var (
 	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
-	enableActionMerging               = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -118,22 +116,6 @@ func redisKeyForMonitoredTaskStatusStream(taskID string) string {
 	// We choose taskID as the hash input for Redis sharding so that both the PubSub streams and task information for
 	// a single task is placed on the same shard.
 	return fmt.Sprintf("taskStatusStream/{%s}", taskID)
-}
-
-func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.ResourceName) (string, error) {
-	userPrefix, err := prefix.UserPrefixFromContext(ctx)
-	if err != nil {
-		return "", err
-	}
-	downloadString, err := adResource.DownloadString()
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("pendingExecution/%s%s", userPrefix, downloadString), nil
-}
-
-func redisKeyForPendingExecutionDigest(executionID string) string {
-	return fmt.Sprintf("pendingExecutionDigest/%s", executionID)
 }
 
 type ExecutionServer struct {
@@ -304,8 +286,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	if *enableActionMerging && stage == repb.ExecutionStage_COMPLETED {
-		if err := s.deletePendingExecution(ctx, executionID); err != nil {
+	if stage == repb.ExecutionStage_COMPLETED {
+		if err := action_merger.DeletePendingExecution(ctx, s.rdb, executionID); err != nil {
 			log.CtxWarningf(ctx, "could not delete pending execution %q: %s", executionID, err)
 		}
 	}
@@ -561,85 +543,18 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		SerializedTask: serializedTask,
 	}
 
-	if err := s.recordPendingExecution(ctx, executionID, r); err != nil {
-		log.CtxWarningf(ctx, "could not recording pending execution %q: %s", executionID, err)
+	if err := action_merger.RecordQueuedExecution(ctx, s.rdb, executionID, r); err != nil {
+		log.CtxWarningf(ctx, "could not record queued pending execution %q: %s", executionID, err)
 	}
 
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 		defer cancel()
-		_ = s.deletePendingExecution(ctx, executionID)
+		_ = action_merger.DeletePendingExecution(ctx, s.rdb, executionID)
 		return "", status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err)
 	}
 
 	return executionID, nil
-}
-
-// findExistingExecution looks for an identical action that is already pending
-// execution.
-func (s *ExecutionServer) findPendingExecution(ctx context.Context, adResource *digest.ResourceName) (string, error) {
-	executionIDKey, err := redisKeyForPendingExecutionID(ctx, adResource)
-	if err != nil {
-		return "", err
-	}
-	executionID, err := s.rdb.Get(ctx, executionIDKey).Result()
-	if err == redis.Nil {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-
-	// Validate that the reverse mapping exists as well. The reverse mapping is
-	// used to delete the pending task information when the task is done.
-	// Bail out if it doesn't exist.
-	err = s.rdb.Get(ctx, redisKeyForPendingExecutionDigest(executionID)).Err()
-	if err == redis.Nil {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	ok, err := s.env.GetSchedulerService().ExistsTask(ctx, executionID)
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		log.CtxWarningf(ctx, "Pending execution %q does not exist in the scheduler", executionID)
-		return "", nil
-	}
-	return executionID, nil
-}
-
-func (s *ExecutionServer) recordPendingExecution(ctx context.Context, executionID string, adResource *digest.ResourceName) error {
-	forwardKey, err := redisKeyForPendingExecutionID(ctx, adResource)
-	if err != nil {
-		return err
-	}
-	reverseKey := redisKeyForPendingExecutionDigest(executionID)
-	pipe := s.rdb.TxPipeline()
-	pipe.Set(ctx, forwardKey, executionID, pendingExecutionTTL)
-	pipe.Set(ctx, reverseKey, forwardKey, pendingExecutionTTL)
-	_, err = pipe.Exec(ctx)
-	return err
-}
-
-func (s *ExecutionServer) deletePendingExecution(ctx context.Context, executionID string) error {
-	pendingExecutionDigestKey := redisKeyForPendingExecutionDigest(executionID)
-	pendingExecutionKey, err := s.rdb.Get(ctx, pendingExecutionDigestKey).Result()
-	if err == redis.Nil {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if err := s.rdb.Del(ctx, pendingExecutionKey).Err(); err != nil {
-		log.CtxWarningf(ctx, "could not delete pending execution key %q: %s", pendingExecutionKey, err)
-	}
-	if err := s.rdb.Del(ctx, pendingExecutionDigestKey).Err(); err != nil {
-		log.CtxWarningf(ctx, "could not delete pending execution digest key %q: %s", pendingExecutionDigestKey, err)
-	}
-	return nil
 }
 
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
@@ -672,24 +587,22 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			return nil
 		}
 
-		if *enableActionMerging {
-			// Check if there's already an identical action pending execution.
-			// If so wait on the result of that execution instead of starting a new
-			// one.
-			ee, err := s.findPendingExecution(ctx, adInstanceDigest)
-			if err != nil {
-				log.CtxWarningf(ctx, "could not check for existing execution: %s", err)
-			}
-			if ee != "" {
-				ctx = log.EnrichContext(ctx, log.ExecutionIDKey, ee)
-				log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, downloadString, invocationID)
-				executionID = ee
-				tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
-				tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
-				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
-				if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
-					return err
-				}
+		// Check if there's already an identical action pending execution. If
+		// so, wait on the result of that execution instead of starting a new
+		// one.
+		ee, err := action_merger.FindPendingExecution(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest)
+		if err != nil {
+			log.CtxWarningf(ctx, "could not check for existing execution: %s", err)
+		}
+		if ee != "" {
+			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, ee)
+			log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, downloadString, invocationID)
+			executionID = ee
+			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
+			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
+			metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
+			if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
+				return err
 			}
 		}
 	}

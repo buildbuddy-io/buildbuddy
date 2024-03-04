@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -874,9 +875,10 @@ func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
 
 // Options for overriding server behavior needed for testing.
 type Options struct {
-	LocalPortOverride            int32
-	RequireExecutorAuthorization bool
-	Clock                        clockwork.Clock
+	LocalPortOverride             int32
+	RequireExecutorAuthorization  bool
+	Clock                         clockwork.Clock
+	ActionMergingLeaseTTLOverride time.Duration
 }
 
 type SchedulerServer struct {
@@ -898,6 +900,9 @@ type SchedulerServer struct {
 	requireExecutorAuthorization bool
 
 	enableRedisAvailabilityMonitoring bool
+
+	// TTL for LeaseTask action-merging Redis entries.
+	actionMergingLeaseTTL time.Duration
 
 	mu    sync.RWMutex
 	pools map[nodePoolKey]*nodePool
@@ -952,6 +957,11 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		clock = options.Clock
 	}
 
+	actionMergingLeaseTTL := action_merger.DefaultClaimedExecutionTTL
+	if options.ActionMergingLeaseTTLOverride > 0*time.Second {
+		actionMergingLeaseTTL = options.ActionMergingLeaseTTLOverride
+	}
+
 	s := &SchedulerServer{
 		env:                               env,
 		pools:                             make(map[nodePoolKey]*nodePool),
@@ -964,6 +974,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		requireExecutorAuthorization:      options.RequireExecutorAuthorization || (remote_execution_config.RemoteExecutionEnabled() && *requireExecutorAuthorization),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
 		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
+		actionMergingLeaseTTL:             actionMergingLeaseTTL,
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
 	return s, nil
@@ -1220,6 +1231,9 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 	if c, ok := r.(int64); !ok || c != 1 {
 		return status.NotFoundErrorf("unable to delete claimed task %s", taskID)
 	}
+
+	action_merger.DeletePendingExecution(ctx, s.rdb, taskID)
+
 	return nil
 }
 
@@ -1240,6 +1254,7 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reco
 		return status.NotFoundErrorf("unable to release task claim for task %s", taskID)
 	}
 	log.CtxDebugf(ctx, "Released task claim in Redis (reconnecting=%t)", reconnectToken != "")
+
 	return nil
 }
 
@@ -1613,6 +1628,15 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		if s.isShuttingDown() && reconnectToken != "" && claimed {
 			return status.UnavailableError("server is shutting down")
 		}
+
+		// If the task was successfully claimed, record action-merging state.
+		if claimed {
+			action_merger.RecordClaimedExecution(ctx, s.rdb, taskID, s.actionMergingLeaseTTL)
+			if err != nil {
+				log.CtxWarningf(ctx, "could not record claimed pending execution %q: %s", taskID, err)
+			}
+		}
+
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = s.clock.Now()
 		if err := stream.Send(rsp); err != nil {

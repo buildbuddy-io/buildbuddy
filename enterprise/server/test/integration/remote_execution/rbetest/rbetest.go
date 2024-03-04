@@ -64,6 +64,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -104,8 +105,7 @@ type Env struct {
 	rbeClient                     *rbeclient.Client
 	redisTarget                   string
 	rootDataDir                   string
-	buildBuddyServers             []*BuildBuddyServer
-	buildBuddyServerTargets       []string
+	buildBuddyServers             map[*BuildBuddyServer]struct{}
 	shutdownBuildBuddyServersOnce sync.Once
 	executors                     map[string]*Executor
 	testCommandController         *testCommandController
@@ -150,7 +150,15 @@ func (r *Env) GetActionResultStorageClient() repb.ActionCacheClient {
 }
 
 func (r *Env) GetOLAPDBHandle() *testolapdb.Handle {
-	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].olapDBHandle
+	servers := make([]*BuildBuddyServer, 0, len(r.buildBuddyServers))
+	for server := range r.buildBuddyServers {
+		servers = append(servers, server)
+	}
+	return servers[rand.Intn(len(servers))].olapDBHandle
+}
+
+func (r *Env) GetRedisClient() redis.UniversalClient {
+	return r.testEnv.GetDefaultRedisClient()
 }
 
 func (r *Env) ShutdownBuildBuddyServers() {
@@ -160,7 +168,7 @@ func (r *Env) ShutdownBuildBuddyServers() {
 func (r *Env) shutdownBuildBuddyServers() {
 	log.Info("Waiting for buildbuddy servers to shutdown")
 	var wg sync.WaitGroup
-	for _, app := range r.buildBuddyServers {
+	for app := range r.buildBuddyServers {
 		app := app
 		app.env.GetHealthChecker().Shutdown()
 		wg.Add(1)
@@ -256,16 +264,17 @@ func NewRBETestEnv(t *testing.T) *Env {
 	// func below), since test cleanup funcs are run in LIFO order.
 	rootDataDir := testfs.MakeTempDir(t)
 	rbe := &Env{
-		testEnv:     testEnv,
-		t:           t,
-		redisTarget: redisTarget,
-		executors:   make(map[string]*Executor),
-		envOpts:     envOpts,
-		UserID1:     userID,
-		GroupID1:    groupID,
-		APIKey1:     key.Value,
-		rootDataDir: rootDataDir,
-		AppProxy:    testgrpc.StartProxy(t, nil /*=director*/),
+		testEnv:           testEnv,
+		t:                 t,
+		redisTarget:       redisTarget,
+		buildBuddyServers: make(map[*BuildBuddyServer]struct{}),
+		executors:         make(map[string]*Executor),
+		envOpts:           envOpts,
+		UserID1:           userID,
+		GroupID1:          groupID,
+		APIKey1:           key.Value,
+		rootDataDir:       rootDataDir,
+		AppProxy:          testgrpc.StartProxy(t),
 	}
 	rbe.testCommandController = newTestCommandController(t, testEnv)
 	rbe.rbeClient = rbeclient.New(rbe)
@@ -683,11 +692,27 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 	env.SetInvocationDB(r.testEnv.GetInvocationDB())
 
 	server := newBuildBuddyServer(r.t, env, opts)
-	r.buildBuddyServers = append(r.buildBuddyServers, server)
-	r.buildBuddyServerTargets = append(r.buildBuddyServerTargets, server.GRPCAddress())
-	// Update the proxy to know about the new set of app targets.
-	r.AppProxy.Director = testgrpc.RandomDialer(r.buildBuddyServerTargets...)
+	r.buildBuddyServers[server] = struct{}{}
+	r.updateAppProxy()
 	return server
+}
+
+func (r *Env) RemoveBuildBuddyServer(server *BuildBuddyServer) {
+	server.env.GetHealthChecker().Shutdown()
+	server.env.GetHealthChecker().WaitForGracefulShutdown()
+	delete(r.buildBuddyServers, server)
+	r.updateAppProxy()
+}
+
+// Updates the app proxy to route requests to a random, running app.
+func (r *Env) updateAppProxy() {
+	targets := make([]string, 0, len(r.buildBuddyServers))
+	for server := range r.buildBuddyServers {
+		targets = append(targets, server.GRPCAddress())
+	}
+	r.AppProxy.SetDirector(testgrpc.RandomDialer(targets))
+	r.appProxyConn = r.AppProxy.Dial()
+	r.waitForExecutorRegistration()
 }
 
 // AddExecutorWithOptions brings up an executor with custom options.
