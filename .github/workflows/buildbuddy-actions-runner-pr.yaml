@@ -10,38 +10,14 @@ jobs:
     steps:
       - name: "Print debug info"
         run: |
-          set -x
+          echo "Bazel processes:"
           ps aux | grep bazel
+
+          echo "Environment:"
           env | grep -v JITCONFIG
 
-      # TODO: source buildbuddy gRPC targets from the app, and use customer-specific endpoints
-      # TODO: package this up into an importable action like "buildbuddy-io@setup"
-      - name: "Setup BuildBuddy"
-        run: |
-          # Set up a user-level bazelrc with good defaults for CI.
-          echo > ~/.bazelrc "
-
-          # Enable BuildBuddy BES by default.
-          build --bes_backend=grpcs://remote.buildbuddy.dev
-          build --bes_results_url=https://app.buildbuddy.dev/invocation/
-
-          # Configs for BuildBuddy endpoints.
-          build:buildbuddy_bes_backend --bes_backend=grpcs://remote.buildbuddy.dev
-          build:buildbuddy_bes_results_url --bes_results_url=https://app.buildbuddy.dev/invocation/
-          build:buildbuddy_remote_executor --remote_executor=grpcs://remote.buildbuddy.dev
-          build:buildbuddy_remote_cache --remote_cache=grpcs://remote.buildbuddy.dev
-          build:buildbuddy_experimental_remote_downloader --experimental_remote_downloader=grpcs://remote.buildbuddy.dev
-
-          # Disable commit status reporting since we're already publishing
-          # a status via the GitHub workflow.
-          build --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true
-
-          # Don't keep backend connections alive since this can result in broken
-          # BES streams that are difficult to recover from, even across multiple
-          # workflow job runs.
-          build --keep_backend_build_event_connections_alive=false
-
-          "
+          echo "Generated ~/.bazelrc:"
+          cat ~/.bazelrc
 
       # Note: actions/checkout supports syncing an existing repo, so this step
       # should do minimal work in the case where we're resuming from a snapshot.

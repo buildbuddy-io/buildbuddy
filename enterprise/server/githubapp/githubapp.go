@@ -22,6 +22,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -326,6 +330,11 @@ func (a *GitHubApp) startGitHubActionsRunnerTask(ctx context.Context, event *git
 			{Name: "HOME", Value: "/home/buildbuddy"},
 			{Name: "PATH", Value: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
 			{Name: "RUNNER_IDLE_TIMEOUT", Value: fmt.Sprintf("%d", int(runnerIdleTimeout.Seconds()))},
+			// TODO: use customer-specific endpoints?
+			{Name: "BUILDBUDDY_BES_BACKEND", Value: events_api_url.String()},
+			{Name: "BUILDBUDDY_BES_RESULTS_URL", Value: build_buddy_url.WithPath("/invocation/").String()},
+			{Name: "BUILDBUDDY_REMOTE_CACHE", Value: cache_api_url.String()},
+			{Name: "BUILDBUDDY_REMOTE_EXECUTOR", Value: remote_exec_api_url.String()},
 		},
 		Platform: &repb.Platform{
 			// TODO: make more of these configurable (via both the workflow YAML
