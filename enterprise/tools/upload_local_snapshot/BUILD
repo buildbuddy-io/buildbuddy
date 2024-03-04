@@ -29,10 +29,10 @@ go_library(
         "//server/util/claims",
         "//server/util/flagutil",
         "//server/util/grpc_client",
-        "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_x_sync//errgroup",
     ],
 )

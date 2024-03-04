@@ -83,7 +83,9 @@ var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 var overprivisionCPUs = flag.Int("executor.firecracker_overprivision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine.")
+
 var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
+var disableWorkspaceSync = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 
 //go:embed guest_api_hash.sha256
 var GuestAPIHash string
@@ -2581,6 +2583,10 @@ func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 // This is intended to be called just before Exec, so that the inputs to
 // the executed action will be made available to the VM.
 func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
+	if *disableWorkspaceSync {
+		return nil
+	}
+
 	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
