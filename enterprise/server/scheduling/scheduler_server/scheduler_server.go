@@ -1706,7 +1706,8 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			break
 		}
 		enqueueStart := time.Now()
-		if s.enqueue(ctx, preferredNode, enqueueRequest, opts) {
+		enqueued, _ := s.enqueue(ctx, preferredNode, enqueueRequest, opts)
+		if enqueued {
 			scheduledOnPreferredNode = true
 			successfulReservations = append(successfulReservations, successfulReservation(preferredNode, enqueueStart))
 		}
@@ -1766,7 +1767,11 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		} else if delayable {
 			enqueueRequest.Delay = nil
 		}
-		if s.enqueue(ctx, rankedNode.GetExecutionNode().(*executionNode), enqueueRequest, opts) {
+		enqueued, rpcErr := s.enqueue(ctx, rankedNode.GetExecutionNode().(*executionNode), enqueueRequest, opts)
+		if rpcErr != nil {
+			time.Sleep(schedulerEnqueueTaskReservationFailureSleep)
+		}
+		if enqueued {
 			if rankedNode.IsPreferred() {
 				scheduledOnPreferredNode = true
 			}
@@ -1803,9 +1808,12 @@ func successfulReservation(node *executionNode, enqueueStart time.Time) string {
 	return fmt.Sprintf("%s [%s]", node.String(), time.Since(enqueueStart).String())
 }
 
-func (s *SchedulerServer) enqueue(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest, opts enqueueTaskReservationOpts) bool {
+// Attempts to enqueue the provided task reservation, returning a boolean
+// indicating whether the enqueue was successful or not, and the RPC error
+// returned by the remote executor, if any.
+func (s *SchedulerServer) enqueue(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest, opts enqueueTaskReservationOpts) (bool, error) {
 	if opts.scheduleOnConnectedExecutors {
-		return enqueueOnConnectedExecutor(ctx, node, request)
+		return enqueueOnConnectedExecutor(ctx, node, request), nil
 	} else {
 		return s.enqueueOnRemoteExecutor(ctx, node, request)
 	}
@@ -1814,35 +1822,34 @@ func (s *SchedulerServer) enqueue(ctx context.Context, node *executionNode, requ
 func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) bool {
 	if node.handle == nil {
 		log.CtxErrorf(ctx, "nil handle for a local executor %q", node.GetExecutorID())
-		return false
+		return false // no sleep
 	}
 	_, err := node.handle.EnqueueTaskReservation(ctx, request)
 	if err != nil {
 		log.CtxInfof(ctx, "Failed to enqueue task on connected executor: %s", err)
 	}
-	return err == nil
+	return err == nil // no sleep
 }
 
-func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) bool {
+func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) (bool, error) {
 	if node.schedulerHostPort == "" {
 		log.CtxErrorf(ctx, "node %q has no scheduler host:port set", node.GetExecutorID())
-		return false
+		return false, nil
 	}
 
 	schedulerClient, err := s.schedulerClientCache.get(node.schedulerHostPort)
 	if err != nil {
 		log.CtxWarningf(ctx, "Could not get SchedulerClient for %q: %s", node.schedulerHostPort, err)
-		return false
+		return false, nil
 	}
 	rpcCtx, cancel := context.WithTimeout(ctx, schedulerEnqueueTaskReservationTimeout)
 	defer cancel()
 	_, err = schedulerClient.EnqueueTaskReservation(rpcCtx, request)
 	if err != nil {
 		log.CtxWarningf(ctx, "EnqueueTaskReservation via scheduler target %q failed: %s", node.schedulerHostPort, err)
-		time.Sleep(schedulerEnqueueTaskReservationFailureSleep)
-		return false
+		return false, err
 	}
-	return true
+	return true, nil
 }
 
 func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
