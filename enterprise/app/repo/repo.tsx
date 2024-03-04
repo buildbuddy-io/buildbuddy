@@ -271,6 +271,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       new workflow.ExecuteWorkflowRequest({
         pushedRepoUrl: repo,
         pushedBranch: "main",
+        pushedRef: "main",
         targetRepoUrl: repo,
         targetBranch: "main",
         visibility: "",

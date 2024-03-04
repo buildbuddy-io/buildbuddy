@@ -179,8 +179,13 @@ message ExecuteWorkflowRequest {
   // Ex. "https://github.com/some-user/acme"
   string pushed_repo_url = 6;
 
-  // Branch corresponding to the SHA to be checked out.
+  // Ref to check out.
+  string pushed_ref = 16;
+
+  // Branch name to report statuses to.
   // Ex. "cool-feature"
+  // Can differ from `pushed_ref` if you want to check out a commit sha
+  // but include the branch name in reporting.
   string pushed_branch = 7;
 
   // URL of the repo the commit will be merged into.

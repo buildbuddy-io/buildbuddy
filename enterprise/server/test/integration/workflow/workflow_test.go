@@ -143,6 +143,7 @@ func triggerWebhook(t *testing.T, gitProvider *testgit.FakeProvider, workflowSer
 	gitProvider.WebhookData = &interfaces.WebhookData{
 		EventName:     "push",
 		PushedRepoURL: repoURL,
+		PushedRef:     "master",
 		PushedBranch:  "master",
 		SHA:           commitSHA,
 		TargetRepoURL: repoURL,

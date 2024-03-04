@@ -526,14 +526,20 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	requestCtx := requestcontext.ProtoRequestContextFromContext(ctx)
 
 	wfID := wfs.GetLegacyWorkflowIDForGitRepository(user.GetGroupID(), req.GetRepoUrl())
+	branchName := req.GetReportingMetadata().GetBranch()
+	if branchName == "" {
+		branchName = req.GetRef()
+	}
 	r := &workflow.ExecuteWorkflowRequest{
 		RequestContext: requestCtx,
 		WorkflowId:     wfID,
 		ActionNames:    req.GetActionNames(),
 		PushedRepoUrl:  req.GetRepoUrl(),
-		PushedBranch:   req.GetRef(),
 		TargetRepoUrl:  req.GetRepoUrl(),
 		TargetBranch:   req.GetRef(),
+		PushedRef:      req.GetRef(),
+		PushedBranch:   branchName,
+		CommitSha:      req.GetReportingMetadata().GetCommitSha(),
 		Visibility:     req.GetVisibility(),
 		Async:          req.GetAsync(),
 		Env:            req.GetEnv(),

@@ -153,6 +153,7 @@ var (
 	// Flags to configure setting up git repo
 	triggerEvent    = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	pushedRepoURL   = flag.String("pushed_repo_url", "", "URL of the pushed repo. This is required.")
+	pushedRef       = flag.String("pushed_ref", "", "Git ref to check out.")
 	pushedBranch    = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
 	commitSHA       = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	targetRepoURL   = flag.String("target_repo_url", "", "If different from pushed_repo_url, indicates a fork (`pushed_repo_url`) is being merged into this repo.")
@@ -1616,8 +1617,9 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
-	if *pushedBranch == "" && *targetBranch == "" {
-		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `target_branch` to be set")
+	handleBackwardsCompatability()
+	if *pushedRef == "" {
+		return status.InvalidArgumentError("expected `pushed_ref` to be set")
 	}
 
 	if err := ws.fetchRefs(ctx); err != nil {
@@ -1670,7 +1672,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 			// one will just fail with the merge conflict error.
 			ws.setupError = status.FailedPreconditionErrorf(
 				"Merge conflict between branches %q and %q.\n\n%s",
-				*pushedBranch, *targetBranch, errMsg,
+				*pushedRef, *targetBranch, errMsg,
 			)
 		}
 	}
@@ -1691,6 +1693,17 @@ func (ws *workspace) sync(ctx context.Context) error {
 	return nil
 }
 
+func handleBackwardsCompatability() {
+	if *pushedRef != "" {
+		return
+	}
+	if *pushedBranch != "" {
+		pushedRef = pushedBranch
+	} else if *targetBranch != "" {
+		pushedRef = targetBranch
+	}
+}
+
 // fetchRefs fetches the pushed and target refs from their respective remotes
 func (ws *workspace) fetchRefs(ctx context.Context) error {
 	// "base" here is referring to the repo on which the workflow is configured.
@@ -1706,9 +1719,9 @@ func (ws *workspace) fetchRefs(ctx context.Context) error {
 	// to be fetched (base or fork).
 	isPushedBranchInFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
 	if isPushedBranchInFork {
-		forkBranches = append(forkBranches, *pushedBranch)
-	} else if *pushedBranch != *targetBranch {
-		baseRefs = append(baseRefs, *pushedBranch)
+		forkBranches = append(forkBranches, *pushedRef)
+	} else if *pushedRef != *targetBranch {
+		baseRefs = append(baseRefs, *pushedRef)
 	}
 
 	baseURL := *pushedRepoURL
@@ -1727,10 +1740,15 @@ func (ws *workspace) fetchRefs(ctx context.Context) error {
 
 // checkoutRef checks out a reference that the rest of the remote run should run off
 func (ws *workspace) checkoutRef(ctx context.Context) error {
-	checkoutLocalBranchName := *pushedBranch
-	checkoutRef := *commitSHA
-	if checkoutRef == "" {
-		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
+	checkoutRef := *pushedRef
+	checkoutLocalBranchName := *pushedRef
+
+	checkoutRefIsBranch := ws.isBranch(ctx, checkoutRef)
+	if checkoutRefIsBranch {
+		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), checkoutRef)
+	}
+	if *pushedBranch != "" {
+		checkoutLocalBranchName = *pushedBranch
 	}
 
 	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
@@ -1738,6 +1756,15 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (ws *workspace) isBranch(ctx context.Context, ref string) bool {
+	refOutput, err := git(ctx, ws.log, "show-ref", ref)
+	if err != nil {
+		// Command will fail if the ref is not a branch
+		return false
+	}
+	return refOutput != ""
 }
 
 func (ws *workspace) config(ctx context.Context) error {
@@ -1783,8 +1810,8 @@ func (ws *workspace) init(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []string) error {
-	if len(branches) == 0 {
+func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string) error {
+	if len(refs) == 0 {
 		return nil
 	}
 	authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
@@ -1815,7 +1842,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 		fetchArgs = append(fetchArgs, fmt.Sprintf("--depth=%d", *gitFetchDepth))
 	}
 	fetchArgs = append(fetchArgs, remoteName)
-	fetchArgs = append(fetchArgs, branches...)
+	fetchArgs = append(fetchArgs, refs...)
 	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
 		return err
 	}

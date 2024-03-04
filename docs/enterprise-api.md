@@ -788,11 +788,23 @@ rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
 ### Example cURL request
 
 ```bash
+# Execute workflow on main branch with env vars set
 curl -d '{
   "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
   "ref": "main",
   "action_names": ["Build and test (Mac M1)"],
   "env": {"USE_BAZEL_VERSION": "6.4.0"}
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/ExecuteWorkflow
+
+# Execute workflow on commit ABC on branch cool-feature
+curl -d '{
+  "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
+  "ref": "ABC",
+  "action_names": ["Build and test (Mac M1)"],
+  "reporting_metadata": {"branch": "cool-feature"}
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
 -H 'Content-Type: application/json' \
@@ -806,8 +818,9 @@ message ExecuteWorkflowRequest {
   // URL of the repo the workflow is running for
   // Ex. "https://github.com/some-user/acme"
   string repo_url = 1;
-  // Reference for where the workflow should be run (currently only branch names
-  // are supported) Ex. "cool-feature" or "main"
+  // Reference for where the workflow should be run (currently branch names and commit shas
+  // are supported). If a branch name, will pull the latest version of the branch.
+  // Ex. "cool-feature" or "main"
   string ref = 2;
 
   // OPTIONAL FIELDS
@@ -831,6 +844,17 @@ message ExecuteWorkflowRequest {
   // overrides will take precedence. Otherwise all env vars set in
   // buildbuddy.yaml will still apply.
   map<string, string> env = 7;
+
+  message ReportingMetadata {
+    string branch = 1;
+    string commit_sha = 2;
+  }
+  // Github statuses should be reported with these fields.
+  // Can differ from `ref` if you want to check out a commit sha but include
+  // the branch name in the reporting, or if you want to report statuses to
+  // a different commit_sha than the one checked out.
+  // If not set, fields will default to `ref`.
+  ReportingMetadata reporting_metadata = 8;
 }
 ```
 

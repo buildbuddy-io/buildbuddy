@@ -735,8 +735,13 @@ type WebhookData struct {
 	// Ex: "https://github.com/some-untrusted-user/acme-fork"
 	PushedRepoURL string
 
+	// PushedRef is the name of the ref in the pushed repo that triggered
+	// the event when pushed (can be a branch or commit sha).
+	PushedRef string
+
 	// PushedBranch is the name of the branch in the pushed repo that triggered
-	// the event when pushed.
+	// the event when pushed. Can be different from PushedRef if the ref is
+	// a commit sha associated with a branch.
 	// Ex: "my-cool-feature"
 	PushedBranch string
 
