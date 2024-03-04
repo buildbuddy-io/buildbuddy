@@ -27,6 +27,10 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
+const (
+	podNameLabel = "pod_name"
+)
+
 var (
 	address = flag.String("prometheus.address", "", "the address of the promethus HTTP API")
 
@@ -35,17 +39,17 @@ var (
 	MetricConfigs = []*MetricConfig{
 		{
 			sourceMetricName: "buildbuddy_remote_execution_queue_length",
-			LabelNames:       []string{},
+			LabelNames:       []string{podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_execution_queue_length"),
 				Help: proto.String("Number of actions currently waiting in the executor queue."),
 				Type: dto.MetricType_GAUGE.Enum(),
 			},
-			Examples: "sum(exported_buildbuddy_remote_execution_queue_length)",
+			Examples: "sum by(pod_name) (exported_buildbuddy_remote_execution_queue_length)",
 		},
 		{
 			sourceMetricName: "buildbuddy_invocation_duration_usec_exported",
-			LabelNames:       []string{metrics.InvocationStatusLabel},
+			LabelNames:       []string{metrics.InvocationStatusLabel, podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_invocation_duration_usec"),
 				Help: proto.String("The total duration of each invocation, in **microseconds**."),
@@ -63,33 +67,33 @@ sum by (invocation_status) (rate(exported_buildbuddy_invocation_duration_usec_co
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_num_hits_exported",
-			LabelNames:       []string{metrics.CacheTypeLabel},
+			LabelNames:       []string{metrics.CacheTypeLabel, podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_num_hits"),
 				Help: proto.String("Number of cache hits."),
-				Type: dto.MetricType_GAUGE.Enum(),
+				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of Hits as measured over the last week
 sum by (cache_type) (increase(exported_buildbuddy_remote_cache_num_hits[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_download_size_bytes_exported",
-			LabelNames:       []string{},
+			LabelNames:       []string{podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_download_size_bytes"),
 				Help: proto.String("Number of bytes downloaded from the remote cache."),
-				Type: dto.MetricType_GAUGE.Enum(),
+				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of bytes downloaded as measured over the last week
 sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_upload_size_bytes_exported",
-			LabelNames:       []string{},
+			LabelNames:       []string{podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_upload_size_bytes"),
 				Help: proto.String("Number of bytes uploaded to the remote cache."),
-				Type: dto.MetricType_GAUGE.Enum(),
+				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of bytes uploaded as measured over the last week
 sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))`,
@@ -111,7 +115,7 @@ sum by (os) (rate(exported_buildbuddy_remote_execution_duration_usec_sum[1w]))`,
 const (
 	redisMetricsKeyPrefix = "exportedMetrics"
 	// The version in redis cache, as part of the redis key.
-	version = "v2"
+	version = "v3"
 	// The time for the metrics to expire in redis.
 	metricsExpiration = 30*time.Second - 50*time.Millisecond
 
@@ -269,6 +273,10 @@ func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[str
 			queryParams = append(queryParams, &promQueryParams{
 				metricName: config.sourceMetricName, sumByFields: config.LabelNames,
 			})
+		case dto.MetricType_COUNTER:
+			queryParams = append(queryParams, &promQueryParams{
+				metricName: config.sourceMetricName, sumByFields: config.LabelNames,
+			})
 		case dto.MetricType_HISTOGRAM:
 			queryParams = append(queryParams,
 				&promQueryParams{
@@ -338,7 +346,17 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 			family = proto.Clone(config.ExportedFamily).(*dto.MetricFamily)
 		}
 
-		if config.ExportedFamily.GetType() == dto.MetricType_GAUGE {
+		if config.ExportedFamily.GetType() == dto.MetricType_COUNTER {
+			vector, ok := vectors[config.sourceMetricName]
+			if !ok {
+				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
+			}
+			metric, err := counterVecToMetrics(vector, config.LabelNames)
+			if err != nil {
+				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
+			}
+			family.Metric = append(family.GetMetric(), metric...)
+		} else if config.ExportedFamily.GetType() == dto.MetricType_GAUGE {
 			vector, ok := vectors[config.sourceMetricName]
 			if !ok {
 				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
@@ -385,6 +403,24 @@ func makeLabelPairs(labelNames []string, sample *model.Sample) ([]*dto.LabelPair
 		})
 	}
 	return labelPairs, nil
+}
+
+func counterVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric, error) {
+	res := make([]*dto.Metric, 0, len(vector))
+	for _, promSample := range vector {
+		labelPairs, err := makeLabelPairs(labelNames, promSample)
+		if err != nil {
+			return nil, err
+		}
+		sample := &dto.Metric{
+			Label: labelPairs,
+			Counter: &dto.Counter{
+				Value: proto.Float64(float64(promSample.Value)),
+			},
+		}
+		res = append(res, sample)
+	}
+	return res, nil
 }
 
 func gaugeVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric, error) {
