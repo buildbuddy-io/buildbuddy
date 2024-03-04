@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://www.google-analytics.com">
 <script>window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)},ga.l=+new Date,ga("create","UA-156160991-1","auto"),ga("send","pageview")</script>
 <script async src="https://www.google-analytics.com/analytics.js"></script><link rel="stylesheet" href="/assets/css/styles.e1160d2f.css">
-<script src="/assets/js/runtime~main.4a784d84.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.d060545f.js" defer="defer"></script>
 <script src="/assets/js/main.441f114b.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard" data-theme="light">
@@ -183,6 +183,102 @@ We recommend set the expiry date of the secret to 12 months.</li>
 <p>Users can be provisioned and deprovisioned within BuildBuddy by external auth providers using the SCIM API.</p>
 <p>First, create an API key that will be used for managing users on the organization settings page. Select &quot;Org admin key&quot;
 as the key type.</p>
+<h3 class="anchor anchorWithStickyNavbar_LWe7" id="okta">Okta<a href="#okta" class="hash-link" aria-label="Direct link to Okta" title="Direct link to Okta">​</a></h3>
+<ol>
+<li>
+<p>First, we will add a custom User attribute that will determine the role of the synced user.</p>
+<ol>
+<li>
+<p>Open the <code>Profile Editor</code> page in Okta.</p>
+</li>
+<li>
+<p>Select the <code>User (default)</code> profile.</p>
+</li>
+<li>
+<p>Add a new attribute with the following settings:</p>
+<p>Display name: <code>BuildBuddy role</code></p>
+<p>Variable name: <code>buildBuddyRole</code></p>
+</li>
+</ol>
+</li>
+<li>
+<p>Within Okta, open the BuildBuddy application that was created for SAML integration.</p>
+</li>
+<li>
+<p>Edit the <code>App Settings</code> on the <code>General Page</code>, enable <code>SCIM provisioning</code> and Save.</p>
+</li>
+<li>
+<p>Go to the <code>Provisioning</code> tab, click <code>Edit</code> and make the following changes:</p>
+<ol>
+<li>
+<p>For <code>SCIM connector base URL</code>, enter <code>https://app.buildbuddy.io/scim</code></p>
+</li>
+<li>
+<p>For <code>Unique identifier field for users </code>, enter <code>userName</code>.</p>
+</li>
+<li>
+<p>Under <code>Supported provisioning actions</code>, enable <code>Import New Users and Profile Updates</code>, <code>Push New Users</code> and <code>Push Profile Updates</code>.</p>
+</li>
+<li>
+<p>For <code>Authentication Mode</code>, select <code>HTTP Header</code> and enter the previously created API key as the <code>Token</code>.</p>
+</li>
+<li>
+<p>Click <code>Save</code></p>
+</li>
+</ol>
+</li>
+<li>
+<p>On the <code>Provisioning</code> tab, click <code>Edit</code> next to <code>Provisioning to App</code>.</p>
+<ol>
+<li>
+<p>Enable <code>Create Users</code>, <code>Update User Attributes</code> and <code>Deactivate Users</code>.</p>
+</li>
+<li>
+<p>Click <code>Save</code>.</p>
+</li>
+</ol>
+</li>
+<li>
+<p>Under <code>Attribute Mappings</code> perform the following changes:</p>
+<ol>
+<li>
+<p>Delete all mappings except <code>userName</code>, <code>givenName</code> and <code>familyName</code>.</p>
+</li>
+<li>
+<p>Click <code>Go to Profile Editor</code>, click <code>Add Attribute</code> and create an attribute with the following details:</p>
+<p>Display name: <code>Role</code></p>
+<p>Variable name: <code>role</code></p>
+<p>External name: <code>role</code></p>
+<p>External namespace: <code>urn:ietf:params:scim:schemas:core:2.0:User</code></p>
+</li>
+</ol>
+</li>
+<li>
+<p>Navigate back to the <code>Provisioning</code> page.</p>
+</li>
+<li>
+<p>Under <code>Attribute Mappings</code> do the following:</p>
+<ol>
+<li>
+<p>Click <code>Show Unmapped Attributes</code></p>
+</li>
+<li>
+<p>Find the <code>Role</code> attribute and click the edit icon.</p>
+</li>
+<li>
+<p>Under <code>Attribute value</code> select <code>Map from Okta Profile</code> and choose <code>buildBuddyRole</code> as the source attribute.</p>
+</li>
+<li>
+<p>For <code>Apply on</code>, select <code>Create and update</code></p>
+</li>
+<li>
+<p>Click <code>Save</code> to finish adding the attribute.</p>
+</li>
+</ol>
+</li>
+</ol>
+<p>By default, users that do not have the attribute field set will be created with the <code>developer</code> role.</p>
+<p>You can modify the attribute value in Okta if you wish to grant them a different role.</p>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="azure-ad--entra">Azure AD / Entra<a href="#azure-ad--entra" class="hash-link" aria-label="Direct link to Azure AD / Entra" title="Direct link to Azure AD / Entra">​</a></h3>
 <ol>
 <li>
@@ -260,6 +356,6 @@ as the key type.</p>
 </li>
 </ol>
 </li>
-</ol></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="theme-doc-footer-edit-meta-row row"><div class="col"><a href="https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/../docs/config-auth.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_Z9Sw" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_vwxv"><span class="theme-last-updated">Last updated<!-- --> on <b><time datetime="2024-03-04T20:10:14.000Z">Mar 4, 2024</time></b> by <b>Vadim Berezniker</b></span></div></div></footer></article><nav class="pagination-nav docusaurus-mt-lg" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/docs/config-ssl"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">SSL</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/docs/config-integrations"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">Integrations</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#oidc" class="table-of-contents__link toc-highlight">OIDC</a><ul><li><a href="#section" class="table-of-contents__link toc-highlight">Section</a></li><li><a href="#options" class="table-of-contents__link toc-highlight">Options</a></li><li><a href="#redirect-url" class="table-of-contents__link toc-highlight">Redirect URL</a></li><li><a href="#oidc-examples" class="table-of-contents__link toc-highlight">OIDC Examples</a></li></ul></li><li><a href="#saml-20" class="table-of-contents__link toc-highlight">SAML 2.0</a><ul><li><a href="#okta-saml-provider" class="table-of-contents__link toc-highlight">Okta SAML provider</a></li><li><a href="#azure-ad--entra-saml-provider" class="table-of-contents__link toc-highlight">Azure AD / Entra SAML provider</a></li><li><a href="#other-providers" class="table-of-contents__link toc-highlight">Other providers</a></li></ul></li><li><a href="#user-management-via-scim" class="table-of-contents__link toc-highlight">User management via SCIM</a><ul><li><a href="#azure-ad--entra" class="table-of-contents__link toc-highlight">Azure AD / Entra</a></li></ul></li></ul></div></div></div></div></main></div></div></div><footer class="footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="col footer__col"><div class="footer__title"></div><ul class="footer__items clean-list"><li class="footer__item"><a href="/"><img alt="BuildBuddy Logo" src="/img/logo_white.svg" width="281px" height="32px" class="footer-logo"></a></li></ul></div><div class="col footer__col"><div class="footer__title">Product</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" target="_self" href="/ui">Build &amp; Test UI</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/remote-execution">Remote Execution</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/remote-cache">Remote Cache</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/workflows">Workflows</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/cli">CLI</a></li><li class="footer__item"><a href="https://app.buildbuddy.io" target="_self" rel="noopener noreferrer" class="footer__link-item">Get Started<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li class="footer__item"><a href="https://app.buildbuddy.io/" target="_self" rel="noopener noreferrer" class="footer__link-item">Login<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li></ul></div><div class="col footer__col"><div class="footer__title">Resources</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" target="_self" href="/docs/introduction/">Docs</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/pricing">Pricing</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/blog/">Blog</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/security">Security</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/plugins">Plugins</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/docs/enterprise-api">API</a></li></ul></div><div class="col footer__col"><div class="footer__title">Company</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" target="_self" href="/contact">Contact Us</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/team">Team</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/careers">Careers</a></li><li class="footer__item"><a href="https://github.com/buildbuddy-io/buildbuddy/issues/new" target="_blank" rel="noopener noreferrer" class="footer__link-item">Report an Issue<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/privacy">Privacy Policy</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/terms">Terms of Service</a></li></ul></div><div class="col footer__col"><div class="footer__title">Connect</div><ul class="footer__items clean-list"><li class="footer__item"><a href="http://community.buildbuddy.io/" target="_blank" rel="noopener noreferrer" class="footer__link-item">Slack<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li class="footer__item"><a href="https://twitter.com/buildbuddy_io" target="_blank" rel="noopener noreferrer" class="footer__link-item">Twitter<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li class="footer__item"><a href="http://linkedin.com/company/buildbuddy" target="_blank" rel="noopener noreferrer" class="footer__link-item">LinkedIn<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li class="footer__item"><a href="https://github.com/buildbuddy-io" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">© 2024 Iteration, Inc.</div></div></div></footer></div>
+</ol></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="theme-doc-footer-edit-meta-row row"><div class="col"><a href="https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/../docs/config-auth.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_Z9Sw" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_vwxv"><span class="theme-last-updated">Last updated<!-- --> on <b><time datetime="2024-03-04T23:54:06.000Z">Mar 4, 2024</time></b> by <b>Vadim Berezniker</b></span></div></div></footer></article><nav class="pagination-nav docusaurus-mt-lg" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/docs/config-ssl"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">SSL</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/docs/config-integrations"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">Integrations</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#oidc" class="table-of-contents__link toc-highlight">OIDC</a><ul><li><a href="#section" class="table-of-contents__link toc-highlight">Section</a></li><li><a href="#options" class="table-of-contents__link toc-highlight">Options</a></li><li><a href="#redirect-url" class="table-of-contents__link toc-highlight">Redirect URL</a></li><li><a href="#oidc-examples" class="table-of-contents__link toc-highlight">OIDC Examples</a></li></ul></li><li><a href="#saml-20" class="table-of-contents__link toc-highlight">SAML 2.0</a><ul><li><a href="#okta-saml-provider" class="table-of-contents__link toc-highlight">Okta SAML provider</a></li><li><a href="#azure-ad--entra-saml-provider" class="table-of-contents__link toc-highlight">Azure AD / Entra SAML provider</a></li><li><a href="#other-providers" class="table-of-contents__link toc-highlight">Other providers</a></li></ul></li><li><a href="#user-management-via-scim" class="table-of-contents__link toc-highlight">User management via SCIM</a><ul><li><a href="#okta" class="table-of-contents__link toc-highlight">Okta</a></li><li><a href="#azure-ad--entra" class="table-of-contents__link toc-highlight">Azure AD / Entra</a></li></ul></li></ul></div></div></div></div></main></div></div></div><footer class="footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="col footer__col"><div class="footer__title"></div><ul class="footer__items clean-list"><li class="footer__item"><a href="/"><img alt="BuildBuddy Logo" src="/img/logo_white.svg" width="281px" height="32px" class="footer-logo"></a></li></ul></div><div class="col footer__col"><div class="footer__title">Product</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" target="_self" href="/ui">Build &amp; Test UI</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/remote-execution">Remote Execution</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/remote-cache">Remote Cache</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/workflows">Workflows</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/cli">CLI</a></li><li class="footer__item"><a href="https://app.buildbuddy.io" target="_self" rel="noopener noreferrer" class="footer__link-item">Get Started<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li class="footer__item"><a href="https://app.buildbuddy.io/" target="_self" rel="noopener noreferrer" class="footer__link-item">Login<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li></ul></div><div class="col footer__col"><div class="footer__title">Resources</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" target="_self" href="/docs/introduction/">Docs</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/pricing">Pricing</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/blog/">Blog</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/security">Security</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/plugins">Plugins</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/docs/enterprise-api">API</a></li></ul></div><div class="col footer__col"><div class="footer__title">Company</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" target="_self" href="/contact">Contact Us</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/team">Team</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/careers">Careers</a></li><li class="footer__item"><a href="https://github.com/buildbuddy-io/buildbuddy/issues/new" target="_blank" rel="noopener noreferrer" class="footer__link-item">Report an Issue<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/privacy">Privacy Policy</a></li><li class="footer__item"><a class="footer__link-item" target="_self" href="/terms">Terms of Service</a></li></ul></div><div class="col footer__col"><div class="footer__title">Connect</div><ul class="footer__items clean-list"><li class="footer__item"><a href="http://community.buildbuddy.io/" target="_blank" rel="noopener noreferrer" class="footer__link-item">Slack<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li class="footer__item"><a href="https://twitter.com/buildbuddy_io" target="_blank" rel="noopener noreferrer" class="footer__link-item">Twitter<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li class="footer__item"><a href="http://linkedin.com/company/buildbuddy" target="_blank" rel="noopener noreferrer" class="footer__link-item">LinkedIn<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li class="footer__item"><a href="https://github.com/buildbuddy-io" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">© 2024 Iteration, Inc.</div></div></div></footer></div>
 </body>
 </html>
