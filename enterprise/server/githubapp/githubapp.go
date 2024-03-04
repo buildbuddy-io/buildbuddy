@@ -20,8 +20,6 @@ import (
 	"sync"
 	"time"
 
-	_ "embed"
-
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -90,9 +88,6 @@ const (
 	// killed. This is just a safeguard for now; we eventually should remove it.
 	runnerTimeout = 1 * time.Hour
 )
-
-//go:embed runner.sh
-var runnerScript string
 
 func Register(env *real_environment.RealEnv) error {
 	if !*enabled {
@@ -322,10 +317,11 @@ func (a *GitHubApp) startGitHubActionsRunnerTask(ctx context.Context, event *git
 	if err := checkResponse(res, err); err != nil {
 		return err
 	}
-	// Spawn an ephemeral runner action on RBE.
-	// See the runner script in ./runner.sh
+	// Spawn an ephemeral runner action on RBE. Note, this
+	// ./buildbuddy_github_actions_runner binary is bundled with the executor
+	// and is specially provisioned.
 	cmd := &repb.Command{
-		Arguments: []string{"bash", "-ec", runnerScript},
+		Arguments: []string{"./buildbuddy_github_actions_runner"},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "HOME", Value: "/home/buildbuddy"},
 			{Name: "PATH", Value: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},

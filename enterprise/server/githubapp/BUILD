@@ -5,7 +5,6 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "githubapp",
     srcs = ["githubapp.go"],
-    embedsrcs = ["runner.sh"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp",
     deps = [
         "//enterprise/server/remote_execution/platform",
