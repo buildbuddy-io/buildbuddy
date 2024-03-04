@@ -181,3 +181,66 @@ SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS).
 - Make sure the `email` attribute is mapped to `user.email` (or equivalent).
 
 Once the app is created, share the **Identity Provider Metadata** URL with BuildBuddy support.
+
+## User management via SCIM
+
+Users can be provisioned and deprovisioned within BuildBuddy by external auth providers using the SCIM API.
+
+First, create an API key that will be used for managing users on the organization settings page. Select "Org admin key"
+as the key type.
+
+### Azure AD / Entra
+
+1. Within Entra, open the BuildBuddy application that was created for SAML integration.
+
+1. Go to the `Provisioning` page.
+
+1. Under the `Manage` section of side-bar, select `Provisioning`.
+
+1. Change `Provisioning Mode` to `Automatic`.
+
+1. Under `Admin Credentials`, enter the following information:
+
+   1. Tenant URL: `https://app.buildbuddy.io/scim`
+
+   1. Secret Token: Enter the value of the `Org admin key` that was created earlier.
+
+   1. Press `Save`
+
+1. After pressing `Save` in the previous step, you should see a new `Mappings` section. Under that section do the following:
+
+   1. Open `Provision Microsoft Entra ID Groups` and set `Enabled` to No as BuildBuddy does not support syncing groups. Save and return to the previous page.
+
+   1. Open `Provision Microsoft Entra ID Users` and make the following changes:
+
+      1. Delete all mappings except `userName`, `active`, `name.givenName` and `name.familyName`
+
+      1. Ensure the `userName` mapping matches the attribute that was configured for SAML login.
+
+         e.g. If SAML claims were configured to use `user.mail` then the `userName` mapping should also be set to `user.mail`.
+
+      1. Add an attribute for the application role:
+
+         Type: `expression`
+
+         Expression: `SingleAppRoleAssignment([appRoleAssignments])`
+
+         Target attribute: `roles[primary eq "True"].value`
+
+1. The last step is to configure the BuildBuddy specific roles:
+
+   1. From the main Entra page, open the `App registrations` page.
+
+   1. Click on the `BuildBuddy` application (you may need to select `All applications` to see it)
+
+   1. Go to the `App roles` page.
+
+   1. Delete the `Users` role.
+
+   1. Create a role for each BuildBuddy role to use.
+
+      The available roles are "admin", "developer", "writer", "reader".
+
+      The display name should exactly match one of the values listed above and the value can be anything.
+
+      When sending role information downstream, Entra only sends the role display name, ignoring the role value.
