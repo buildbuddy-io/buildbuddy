@@ -140,15 +140,17 @@ SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS).
 
 1. Find your organization's short name (slug) in your [BuildBuddy Organization Settings](https://app.buildbuddy.io/settings/) and replace instances of `<org-slug>` below with this value.
 
-2. Visit the [Entra portal page](https://entra.microsoft.com/), navigate to `Applications` -> `Enterprise applications`.
+1. Visit the [Entra portal page](https://entra.microsoft.com/), navigate to `Applications` -> `Enterprise applications`.
 
-3. Click `New application`.
+1. Click `New application`.
 
-4. Search for `Azure AD SAML Toolkit` and select it. Change the name to `BuildBuddy` and hit `Create`.
+1. Click `Create your own application`.
 
-5. In the newly created appliction view, navigate to `Single sign-on` and select `SAML`.
+1. Enter `BuildBuddy` for the name and hit `Create`.
 
-6. Click on `Edit` in the first section `Basic SAML Configuration`.
+1. In the newly created appliction view, navigate to `Single sign-on` and select `SAML`.
+
+1. Click on `Edit` in the first section `Basic SAML Configuration`.
 
    a. `Identified (Entity ID)` should be `https://app.buildbuddy.io/saml/metadata?slug=<org-slug>`.
 
@@ -158,7 +160,7 @@ SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS).
 
    d. Hit `Save` button.
 
-7. Click on `Edit` in the second section `Attributes & Claims`.
+1. Click on `Edit` in the second section `Attributes & Claims`.
 
    a. Select `Add new claim`.
 
@@ -168,7 +170,7 @@ SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS).
 
    d. Hit the `Save` button.
 
-8. In the 3rd section `SAML Certificates`, copy the `App Federation Metadata Url` and share it with BuildBuddy support.
+1. In the 3rd section `SAML Certificates`, copy the `App Federation Metadata Url` and share it with BuildBuddy support.
 
 ### Other providers
 
