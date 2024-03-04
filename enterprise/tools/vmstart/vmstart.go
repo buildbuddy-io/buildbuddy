@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -97,6 +98,7 @@ func getToolEnv() *real_environment.RealEnv {
 	re.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	re.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	re.SetActionCacheClient(repb.NewActionCacheClient(conn))
+	re.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousEnabled*/, ""))
 	re.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	return re
 }
@@ -157,6 +159,11 @@ func main() {
 	flagutil.SetValueForFlagName("executor.enable_local_snapshot_sharing", true, nil, false)
 	flagutil.SetValueForFlagName("executor.enable_remote_snapshot_sharing", true, nil, false)
 	flagutil.SetValueForFlagName("executor.remote_snapshot_readonly", true, nil, false)
+	if *remoteSnapshotKeyJSON != "" {
+		// If resuming from a remote snapshot, use the workspace from the
+		// snapshot instead of hot-swapping it with a local one.
+		flagutil.SetValueForFlagName("debug_disable_firecracker_workspace_sync", true, nil, false)
+	}
 
 	rand.Seed(time.Now().Unix())
 

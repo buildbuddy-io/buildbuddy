@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 
@@ -18,9 +20,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -75,7 +77,7 @@ import (
 
 var (
 	cacheTarget  = flag.String("cache_target", "grpcs://remote.buildbuddy.io", "The remote cache target to upload the snapshot to.")
-	filecacheDir = flag.String("file_cache_dir", "/buildbuddy/filecache", "The local filecache dir on the executor")
+	filecacheDir = flag.String("file_cache_dir", "", "The local filecache dir on the executor, including the executor host ID")
 	apiKey       = flag.String("api_key", "", "The API key of the owner of the snapshot. The snapshot will also be uploaded under this API key.")
 	// Note: this key can be copied and pasted from logs:
 	//
@@ -97,6 +99,9 @@ func main() {
 
 	if *localSnapshotKeyJSON == "" {
 		log.Fatalf("You must pass in a snapshot key")
+	}
+	if *filecacheDir == "" {
+		log.Fatalf(`Missing file cache dir, e.g. --file_cache_dir="/buildbuddy/filecache/abc-123"`)
 	}
 	inputKey, key, err := parseSnapshotKeyJSON(*localSnapshotKeyJSON)
 	if err != nil {
@@ -148,8 +153,7 @@ func main() {
 }
 
 func getToolEnv() *real_environment.RealEnv {
-	healthChecker := healthcheck.NewHealthChecker("upload-local-snapshot")
-	re := real_environment.NewRealEnv(healthChecker)
+	re := real_environment.NewBatchEnv()
 
 	// Set a large file cache size so this tool doesn't evict anything from
 	// the executor's filecache
@@ -231,31 +235,37 @@ func getMissingDigestsRemoteCache(ctx context.Context, env environment.Env, remo
 func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context, env environment.Env, remoteInstanceName string, digests []*repb.Digest) {
 	tmpDir := env.GetFileCache().TempDir()
 
+	var eg errgroup.Group
+	eg.SetLimit(8)
 	for _, d := range digests {
-		upload := func() {
-			path := filepath.Join(tmpDir, d.GetHash())
+		d := d
+		eg.Go(func() error {
+			path := filepath.Join(tmpDir, fmt.Sprintf("%s.%d.tmp", d.GetHash(), rand.Int()))
 			node := &repb.FileNode{
 				Digest: d,
 			}
 			inFC := env.GetFileCache().FastLinkFile(ctxWithClaims, node, path)
 			if !inFC {
-				log.Fatalf("Digest %s does not exist in the local file cache", d)
+				return status.InternalErrorf("digest %s does not exist in the local file cache", d)
 			}
+			defer os.Remove(path)
 
 			rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
 			rn.SetCompressor(repb.Compressor_ZSTD)
 			file, err := os.Open(path)
 			defer file.Close()
 			if err != nil {
-				log.Fatalf("Error opening file %s: %s", path, err)
+				return err
 			}
 			_, err = cachetools.UploadFromReader(ctx, env.GetByteStreamClient(), rn, file)
 			if err != nil {
-				log.Fatalf("Error uploading file to remote cache %s: %s", path, err)
+				return status.WrapErrorf(err, "upload %s", path)
 			}
-		}
-
-		upload()
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		log.Fatalf(err.Error())
 	}
 }
 
