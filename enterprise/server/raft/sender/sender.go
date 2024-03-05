@@ -224,7 +224,7 @@ func WithConsistencyMode(mode rfpb.Header_ConsistencyMode) Option {
 	}
 }
 
-// Run looks up the replicas that are responsible for the given key and executes
+// run looks up the replicas that are responsible for the given key and executes
 // fn for each replica until the function succeeds or returns an unretriable
 // error.
 //
@@ -234,7 +234,7 @@ func WithConsistencyMode(mode rfpb.Header_ConsistencyMode) Option {
 // cache and try the fn again with the new replica information. If the
 // fn succeeds with the new replicas, the range cache will be updated with
 // the new ownership information.
-func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc, mods ...Option) error {
+func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option) error {
 	opts := defaultOptions()
 	for _, mod := range mods {
 		mod(opts)
@@ -246,7 +246,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 	for retrier.Next() {
 		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
 		if err != nil {
-			log.Warningf("sender.Run error getting rd for %q: %s, %s, %+v", key, err, s.rangeCache.String(), s.rangeCache.Get(key))
+			log.Warningf("sender.run error getting rd for %q: %s, %s, %+v", key, err, s.rangeCache.String(), s.rangeCache.Get(key))
 			continue
 		}
 		i, err := s.tryReplicas(ctx, rangeDescriptor, fn, opts.ConsistencyMode)
@@ -263,7 +263,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 		}
 		lastError = err
 	}
-	return status.UnavailableErrorf("sender.Run retries exceeded for key: %q err: %s", key, lastError)
+	return status.UnavailableErrorf("sender.run retries exceeded for key: %q err: %s", key, lastError)
 }
 
 // KeyMeta contains a key with arbitrary data attached.
@@ -365,7 +365,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	var rsp *rfpb.SyncProposeResponse
 	customHeader := batchCmd.Header
-	err := s.Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	err := s.run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		if customHeader == nil {
 			batchCmd.Header = h
 		}
@@ -390,7 +390,7 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 
 func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest, mods ...Option) (*rfpb.BatchCmdResponse, error) {
 	var rsp *rfpb.SyncReadResponse
-	err := s.Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	err := s.run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Header: h,
 			Batch:  batchCmd,
