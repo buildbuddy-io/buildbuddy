@@ -290,6 +290,10 @@ func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Co
 }
 
 func ClaimsFromContext(ctx context.Context) (*Claims, error) {
+	// TODO(http://go/b/3144): remove the JWT parsing from this func. Auth
+	// interceptors should store UserInfo into the ctx, and this func should
+	// directly return the stored UserInfo.
+
 	// If the context already contains trusted Claims, return them directly
 	// instead of re-parsing the JWT (which is expensive).
 	if claims, ok := ctx.Value(contextClaimsKey).(*Claims); ok && claims != nil {
