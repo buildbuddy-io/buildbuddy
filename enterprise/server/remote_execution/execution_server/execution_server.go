@@ -292,15 +292,22 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	var dbErr error
-	var existing tables.Execution
-	// TODO(zoey): This select seems unnecessary, should revisit it
-	if err := s.env.GetDBHandle().GORM(ctx, "execution_server_get_execution_for_update").Where(
-		"execution_id = ?", executionID).First(&existing).Error; err != nil {
-		dbErr = err
-	} else {
-		dbErr = s.env.GetDBHandle().GORM(ctx, "execution_server_update_execution").Model(&existing).Where(
-			"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution).Error
+	result := s.env.GetDBHandle().GORM(ctx, "execution_server_update_execution").Where(
+		"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution)
+	dbErr := result.Error
+	if dbErr == nil && result.RowsAffected == 0 {
+		// We want to return an error if the execution simply doesn't exist, but
+		// we want to ignore any attempts to update a cancelled execution.
+		var count int64
+		err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_check_after_noop_update").Raw(`
+				SELECT COUNT(*) FROM "Executions" WHERE execution_id = ?
+			`,
+			executionID).Take(&count)
+		if err != nil {
+			dbErr = err
+		} else if count == 0 {
+			dbErr = status.NotFoundErrorf("Unable to update execution; no execution exists with id %s.", executionID)
+		}
 	}
 
 	if stage == repb.ExecutionStage_COMPLETED {
