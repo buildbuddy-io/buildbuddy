@@ -184,7 +184,6 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	s.db = db
 	s.leaser = pebble.NewDBLeaser(db)
 
-
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
 	if err != nil {
 		return nil, err
