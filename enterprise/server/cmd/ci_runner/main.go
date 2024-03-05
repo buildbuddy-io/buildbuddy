@@ -131,39 +131,41 @@ const (
 )
 
 var (
-	besBackend         = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
-	cacheBackend       = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
-	rbeBackend         = flag.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
-	besResultsURL      = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
-	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches (for hosted bazel) or the remote instance name running the workflow action.")
-	triggerEvent       = flag.String("trigger_event", "", "Event type that triggered the action runner.")
-	pushedRepoURL      = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
-	pushedBranch       = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
-	prNumber           = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
-	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
-	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
-	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
-	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
-	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
-	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
-	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
-	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
-	patchURIs          = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
-	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
-	gitCleanExclude    = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
-	envOverrideStr     = flag.String("env_overrides", "", "These env vars should take precedence over any set on the command or in buildbuddy.yaml.")
+	flagset = flag.NewFlagSet("ci_runner", flag.ContinueOnError)
 
-	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
+	besBackend         = flagset.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
+	cacheBackend       = flagset.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
+	rbeBackend         = flagset.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
+	besResultsURL      = flagset.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
+	remoteInstanceName = flagset.String("remote_instance_name", "", "Remote instance name used to retrieve patches (for hosted bazel) or the remote instance name running the workflow action.")
+	triggerEvent       = flagset.String("trigger_event", "", "Event type that triggered the action runner.")
+	pushedRepoURL      = flagset.String("pushed_repo_url", "", "URL of the pushed repo.")
+	pushedBranch       = flagset.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	prNumber           = flagset.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
+	commitSHA          = flagset.String("commit_sha", "", "Commit SHA to report statuses for.")
+	targetRepoURL      = flagset.String("target_repo_url", "", "URL of the target repo.")
+	targetBranch       = flagset.String("target_branch", "", "Branch to check action triggers against.")
+	workflowID         = flagset.String("workflow_id", "", "ID of the workflow associated with this CI run.")
+	actionName         = flagset.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
+	invocationID       = flagset.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	visibility         = flagset.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
+	bazelSubCommand    = flagset.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
+	patchURIs          = flag.New(flagset, "patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
+	recordRunMetadata  = flagset.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
+	gitCleanExclude    = flag.New(flagset, "git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
+	envOverrideStr     = flagset.String("env_overrides", "", "These env vars should take precedence over any set on the command or in buildbuddy.yaml.")
 
-	bazelCommand      = flag.String("bazel_command", "", "Bazel command to use.")
-	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
-	extraBazelArgs    = flag.String("extra_bazel_args", "", "Extra flags to pass to the bazel command. The value can include spaces and will be properly tokenized.")
-	debug             = flag.Bool("debug", false, "Print additional debug information in the action logs.")
+	shutdownAndExit = flagset.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
+
+	bazelCommand      = flagset.String("bazel_command", "", "Bazel command to use.")
+	bazelStartupFlags = flagset.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
+	extraBazelArgs    = flagset.String("extra_bazel_args", "", "Extra flags to pass to the bazel command. The value can include spaces and will be properly tokenized.")
+	debug             = flagset.Bool("debug", false, "Print additional debug information in the action logs.")
 
 	// Test-only flags
-	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
+	fallbackToCleanCheckout = flagset.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
-	credentialHelper = flag.Bool("credential_helper", false, "Run in git credential helper mode. For internal usage only.")
+	credentialHelper = flagset.Bool("credential_helper", false, "Run in git credential helper mode. For internal usage only.")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
@@ -515,7 +517,9 @@ func main() {
 }
 
 func run() error {
-	flag.Parse()
+	if err := parseFlags(); err != nil {
+		return err
+	}
 	if *credentialHelper {
 		return runCredentialHelper()
 	}
@@ -652,6 +656,27 @@ func run() error {
 	}
 	if result.exitCode != 0 {
 		return result // as error
+	}
+	return nil
+}
+
+// parseFlags should not fail when parsing an undefined flag.
+// This lets us add new flags to this script without breaking older executors
+// (on self-hosted executors, for example) that aren't expecting them when the
+// app server tries to send them.
+func parseFlags() error {
+	// Silence noisy output when parsing an unknown flag
+	flagset.Usage = func() {}
+	unparsedArgs := os.Args[1:]
+	for len(unparsedArgs) > 0 {
+		err := flagset.Parse(unparsedArgs)
+		// Ignore undefined flag errors. The flag package will automatically print
+		// a warning error message.
+		if err == nil || strings.Contains(err.Error(), "flag provided but not defined") {
+			unparsedArgs = flagset.Args()
+		} else {
+			return err
+		}
 	}
 	return nil
 }
