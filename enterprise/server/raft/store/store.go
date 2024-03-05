@@ -184,6 +184,12 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	s.db = db
 	s.leaser = pebble.NewDBLeaser(db)
 
+	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
+	if err != nil {
+		return nil, err
+	}
+	s.usages = usages
+
 	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
 	s.grpcServer = grpc.NewServer(grpcOptions...)
 	reflection.Register(s.grpcServer)
@@ -212,12 +218,6 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 			s.log.Infof("Recreated cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
 		}
 	}
-
-	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
-	if err != nil {
-		return nil, err
-	}
-	s.usages = usages
 
 	gossipManager.AddListener(s)
 	statusz.AddSection("raft_store", "Store", s)
