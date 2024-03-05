@@ -194,13 +194,6 @@ jobs:
     runs-on: ubuntu-20.04
     needs: [push-tag, sync-plugins, build-artifacts]
     steps:
-      - name: Checkout buildbuddy-io/bazel
-        uses: actions/checkout@v3
-        with:
-          repository: buildbuddy-io/bazel
-          path: bazel-fork
-          token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
-
       - name: Publish release
         run: |
           gh release edit {{ needs.push-tag.outputs.version }} --draft=false --repo=buildbuddy-io/bazel
