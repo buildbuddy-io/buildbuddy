@@ -231,6 +231,9 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 	if err != nil {
 		return "", err
 	}
+	if isInOwnedDomainBlocklist(g.OwnedDomain) {
+		return "", status.InvalidArgumentError("This domain is not allowed to be owned by any group.")
+	}
 	if g.URLIdentifier != "" {
 		valid, err := d.validateURLIdentifier(ctx, "", g.URLIdentifier)
 		if err != nil {
