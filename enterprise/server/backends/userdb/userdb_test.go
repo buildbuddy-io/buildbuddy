@@ -97,7 +97,7 @@ func takeOwnershipOfDomain(t *testing.T, ctx context.Context, env environment.En
 		gr.URLIdentifier = strings.ToLower(gr.GroupID + "-slug")
 	}
 	gr.OwnedDomain = strings.Split(tu.Email, "@")[1]
-	_, err = env.GetUserDB().InsertOrUpdateGroup(ctx, &gr)
+	_, err = env.GetUserDB().UpdateGroup(ctx, &gr)
 	require.NoError(t, err)
 }
 
@@ -121,7 +121,7 @@ func apiKeyValues(keys []*tables.APIKey) []string {
 }
 
 func setUserOwnedKeysEnabled(t *testing.T, ctx context.Context, env environment.Env, groupID string, enabled bool) {
-	// The InsertOrUpdate API requires an URL identifier, so look it up and
+	// The Update API requires an URL identifier, so look it up and
 	// preserve it if it exists, otherwise initialize.
 	// TODO: We should probably remove this requirement; it is inconvenient
 	// both for testing and when users want to tweak group settings in the UI.
@@ -138,7 +138,7 @@ func setUserOwnedKeysEnabled(t *testing.T, ctx context.Context, env environment.
 		UserOwnedKeysEnabled: enabled,
 		URLIdentifier:        url,
 	}
-	_, err = env.GetUserDB().InsertOrUpdateGroup(ctx, updates)
+	_, err = env.GetUserDB().UpdateGroup(ctx, updates)
 	require.NoError(t, err)
 }
 
@@ -332,7 +332,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 
 	// Attach a slug to GR1 (orgs don't get slugs when they are created as
 	// part of InsertUser).
-	orgGroupID, err := udb.InsertOrUpdateGroup(ctx1, &tables.Group{
+	orgGroupID, err := udb.UpdateGroup(ctx1, &tables.Group{
 		GroupID:       "GR1",
 		URLIdentifier: "gr1-slug",
 		OwnedDomain:   "org1.io",
@@ -428,7 +428,7 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t
 	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us2.Role, "second user added to the default group should have the default role")
 }
 
-func TestInsertOrUpdateGroup(t *testing.T) {
+func TestUpdateGroup(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
@@ -443,17 +443,17 @@ func TestInsertOrUpdateGroup(t *testing.T) {
 
 	g1Update := &tables.Group{GroupID: "GR1", URLIdentifier: "gr1"}
 
-	_, err := udb.InsertOrUpdateGroup(ctx, g1Update)
+	_, err := udb.UpdateGroup(ctx, g1Update)
 	require.Truef(
 		t, status.IsUnauthenticatedError(err),
 		"expected Unauthenticated error for update from anonymous user; got: %s", err)
 
-	_, err = udb.InsertOrUpdateGroup(ctx2, g1Update)
+	_, err = udb.UpdateGroup(ctx2, g1Update)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
 		"expected PermissionDenied error for update from US2; got: %s", err)
 
-	_, err = udb.InsertOrUpdateGroup(ctx1, g1Update)
+	_, err = udb.UpdateGroup(ctx1, g1Update)
 	require.NoError(t, err)
 }
 
