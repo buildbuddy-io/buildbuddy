@@ -15,6 +15,7 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
+        "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/status",
         "@com_github_elastic_gosigar//:gosigar",

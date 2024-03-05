@@ -1,6 +1,7 @@
 package vmexec
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -8,10 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
@@ -96,6 +99,26 @@ func clearARPCache() error {
 	return nil
 }
 
+func isWorkspaceMounted() (bool, error) {
+	f, err := os.Open("/proc/mounts")
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
+			continue
+		}
+		target := fields[1]
+		if target == workspaceMountPath {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeRequest) (*vmxpb.InitializeResponse, error) {
 	if req.GetClearArpCache() {
 		if err := clearARPCache(); err != nil {
@@ -120,15 +143,30 @@ func (x *execServer) Sync(ctx context.Context, req *vmxpb.SyncRequest) (*vmxpb.S
 
 func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWorkspaceRequest) (*vmxpb.UnmountWorkspaceResponse, error) {
 	if err := syscall.Unmount(workspaceMountPath, 0); err != nil {
+		log.Errorf("Failed to unmount workspace: %s", err)
 		return nil, status.InternalErrorf("unmount failed: %s", err)
 	}
+	log.Infof("Unmounted workspace from %s", workspaceMountPath)
 	return &vmxpb.UnmountWorkspaceResponse{}, nil
 }
 
 func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspaceRequest) (*vmxpb.MountWorkspaceResponse, error) {
+	// Make sure the workspace drive is not already mounted.
+	mounted, err := isWorkspaceMounted()
+	if err != nil {
+		log.Errorf("Failed to check if workspace is mounted: %s", err)
+		return nil, status.InternalErrorf("failed to check whether workspace is mounted: %s", err)
+	}
+	if mounted {
+		log.Errorf("Workspace is already mounted")
+		return nil, status.InternalErrorf("workspace is already mounted at %s", workspaceMountPath)
+	}
+
 	if err := syscall.Mount(x.workspaceDevice, workspaceMountPath, "ext4", syscall.MS_NOATIME, ""); err != nil {
+		log.Errorf("Failed to mount workspace: %s", err)
 		return nil, err
 	}
+	log.Infof("Mounted workspace %s to %s", x.workspaceDevice, workspaceMountPath)
 	return &vmxpb.MountWorkspaceResponse{}, nil
 }
 
@@ -158,7 +196,7 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 
-	log.Debugf("Running command in VM: %q", cmd.String())
+	log.Infof("Running command in VM: %q", cmd.String())
 	_, err := commandutil.RunWithProcessTreeCleanup(ctx, cmd, nil /*=statsListener*/)
 	exitCode, err := commandutil.ExitCode(ctx, cmd, err)
 	rsp := &vmxpb.ExecResponse{}
@@ -322,11 +360,40 @@ func newCommand(start *vmxpb.ExecRequest) (*command, error) {
 	}, nil
 }
 
+func logExecutableInfo(executable string) {
+	path, err := exec.LookPath(executable)
+	if err != nil {
+		log.Warningf("Failed to look up executable in $PATH: %s", err)
+		return
+	}
+
+	stat, err := os.Stat(path)
+	if err != nil {
+		log.Warningf("Failed to stat executable %s: %s", path, err)
+		return
+	}
+	digestStr := ""
+	d, err := digest.ComputeForFile(path, repb.DigestFunction_BLAKE3)
+	if err != nil {
+		log.Warningf("Failed to compute digest for executable %s: %s", path, err)
+	} else {
+		digestStr = digest.String(d)
+	}
+	log.Infof("Executable info: path=%q digest_blake3=%q mode=%q", path, digestStr, stat.Mode())
+}
+
+func (c *command) logErrorDiagnostics(err error) {
+	log.Warningf("Command terminated abnormally: %s", err)
+	if strings.Contains(err.Error(), "exec format error") && len(c.cmd.Args) > 0 {
+		logExecutableInfo(c.cmd.Args[0])
+	}
+}
+
 func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStreamedResponse, error) {
 	// TODO(tylerw): use syncfs or something better here.
 	defer unix.Sync()
 
-	log.Debugf("Running command in VM: %q", c.cmd.String())
+	log.Infof("Running command in VM: %q", c.cmd.String())
 	stdoutErrCh := make(chan error, 1)
 	go func() {
 		_, err := io.Copy(&stdoutWriter{msgs}, c.stdoutReader)
@@ -394,6 +461,9 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 	<-statsDone
 
 	exitCode, err := commandutil.ExitCode(ctx, c.cmd, err)
+	if err != nil {
+		c.logErrorDiagnostics(err)
+	}
 	rsp := &vmxpb.ExecResponse{
 		ExitCode: int32(exitCode),
 		Status:   gstatus.Convert(err).Proto(),
