@@ -2245,7 +2245,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer cancel()
 
 	// If FUSE is enabled then outputs are already in the workspace.
-	if c.fsLayout == nil {
+	if c.fsLayout == nil && !*disableWorkspaceSync {
 		// Command was successful, let's unpack the files back to our
 		// workspace directory now.
 		if err := c.pauseVM(ctx); err != nil {
