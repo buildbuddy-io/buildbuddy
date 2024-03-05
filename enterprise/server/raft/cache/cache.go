@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 
 	stdFlag "flag"
+
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -241,13 +242,8 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return rc.sender().Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		_, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
-			Header: h,
-			Batch:  readReq,
-		})
-		return err
-	})
+	_, err = rc.sender().SyncRead(ctx, key, readReq)
+	return err
 }
 
 func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {

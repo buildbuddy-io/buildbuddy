@@ -316,27 +316,25 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	}
 	rsp.WebhookRegistered = (providerWebhookID != "")
 
-	err = ws.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		workflowID, err := tables.PrimaryKeyForTable("Workflows")
-		if err != nil {
-			return status.InternalError(err.Error())
-		}
-		rsp.Id = workflowID
-		rsp.WebhookUrl = webhookURL
-		wf := &tables.Workflow{
-			WorkflowID:           workflowID,
-			UserID:               permissions.UserID,
-			GroupID:              permissions.GroupID,
-			Perms:                permissions.Perms,
-			Name:                 req.GetName(),
-			RepoURL:              repoURL,
-			Username:             username,
-			AccessToken:          accessToken,
-			WebhookID:            webhookID,
-			GitProviderWebhookID: providerWebhookID,
-		}
-		return tx.NewQuery(ctx, "workflow_service_insert_workflow").Create(wf)
-	})
+	workflowID, err := tables.PrimaryKeyForTable("Workflows")
+	if err != nil {
+		return nil, status.InternalError(err.Error())
+	}
+	rsp.Id = workflowID
+	rsp.WebhookUrl = webhookURL
+	wf := &tables.Workflow{
+		WorkflowID:           workflowID,
+		UserID:               permissions.UserID,
+		GroupID:              permissions.GroupID,
+		Perms:                permissions.Perms,
+		Name:                 req.GetName(),
+		RepoURL:              repoURL,
+		Username:             username,
+		AccessToken:          accessToken,
+		WebhookID:            webhookID,
+		GitProviderWebhookID: providerWebhookID,
+	}
+	err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_insert_workflow").Create(wf)
 	if err != nil {
 		return nil, err
 	}

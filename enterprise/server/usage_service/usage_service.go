@@ -4,6 +4,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -11,6 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
@@ -24,7 +29,8 @@ const (
 )
 
 type usageService struct {
-	env environment.Env
+	env   environment.Env
+	clock clockwork.Clock
 
 	// start is the earliest moment in time at which we're able to return usage
 	// data to the user. We return usage data from the start of the month
@@ -35,14 +41,15 @@ type usageService struct {
 // Registers the usage service if usage tracking is enabled
 func Register(env *real_environment.RealEnv) error {
 	if usage_config.UsageTrackingEnabled() {
-		env.SetUsageService(New(env))
+		env.SetUsageService(New(env, clockwork.NewRealClock()))
 	}
 	return nil
 }
 
-func New(env environment.Env) *usageService {
+func New(env environment.Env, clock clockwork.Clock) *usageService {
 	return &usageService{
 		env:   env,
+		clock: clock,
 		start: configuredUsageStartDate(),
 	}
 }
@@ -53,18 +60,38 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 		return nil, err
 	}
 
-	// Get the timestamp corresponding to the start of the current month in UTC,
-	// with a month offset so that we return the desired number of months of
-	// usage.
-	now := time.Now().UTC()
-	maxNumHistoricalMonths := maxNumMonthsOfUsageToReturn - 1
+	// Build up the list of available usage periods to return to the client. For
+	// now we just send the last 6 periods regardless of whether any usage data
+	// is available for those periods.
+	now := s.clock.Now().UTC()
+	var availableUsagePeriods []string
+	for i := 0; i < maxNumMonthsOfUsageToReturn; i++ {
+		p := getUsagePeriod(addCalendarMonths(now, -i))
+		availableUsagePeriods = append(availableUsagePeriods, p.String())
+	}
 
-	start := addCalendarMonths(startOfMonth(now), -maxNumHistoricalMonths)
-	// Limit the start date to the start of the month in which we began collecting
-	// usage data.
-	start = maxTime(start, startOfMonth(s.start))
+	var start, end time.Time
+	if req.GetUsagePeriod() != "" {
+		p, err := parseUsagePeriod(req.GetUsagePeriod())
+		if err != nil {
+			return nil, err
+		}
+		start = p.Start()
+		end = addCalendarMonths(start, 1)
+	} else {
+		// TODO(bduffany): after the next rollout, just return the current usage
+		// period if the usage_period field is empty, instead of the last 6.
 
-	end := addCalendarMonths(startOfMonth(now), 1)
+		// Get the timestamp corresponding to the start of the current month in UTC,
+		// with a month offset so that we return the desired number of months of
+		// usage.
+		maxNumHistoricalMonths := maxNumMonthsOfUsageToReturn - 1
+		start = addCalendarMonths(getUsagePeriod(now).Start(), -maxNumHistoricalMonths)
+		// Limit the start date to the start of the month in which we began collecting
+		// usage data.
+		start = maxTime(start, getUsagePeriod(s.start).Start())
+		end = addCalendarMonths(getUsagePeriod(now).Start(), 1)
+	}
 
 	usages, err := s.scanUsages(ctx, groupID, start, end)
 	if err != nil {
@@ -73,9 +100,11 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 
 	// Build the response list from scanned rows, inserting explicit zeroes for
 	// periods with no data.
-	rsp := &usagepb.GetUsageResponse{}
+	rsp := &usagepb.GetUsageResponse{
+		AvailableUsagePeriods: availableUsagePeriods,
+	}
 	for t := start; !(t.After(end) || t.Equal(end)); t = addCalendarMonths(t, 1) {
-		period := fmt.Sprintf("%d-%02d", t.Year(), t.Month())
+		period := getUsagePeriod(t).String()
 
 		if len(usages) > 0 && usages[0].Period == period {
 			rsp.Usage = append(rsp.Usage, usages[0])
@@ -87,11 +116,11 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	// Make sure we always return at least one month (to make the client simpler).
 	if len(rsp.Usage) == 0 {
 		rsp.Usage = append(rsp.Usage, &usagepb.Usage{
-			Period: fmt.Sprintf("%d-%02d", now.Year(), now.Month()),
+			Period: getUsagePeriod(now).String(),
 		})
 	}
 	// Return in reverse-chronological order.
-	reverseUsageSlice(rsp.Usage)
+	slices.Reverse(rsp.Usage)
 	return rsp, nil
 }
 
@@ -115,12 +144,38 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 	return db.ScanAll(rq, &usagepb.Usage{})
 }
 
-func startOfMonth(t time.Time) time.Time {
-	// Set day to 1 and time to 0:00:00.000
-	return time.Date(
-		t.Year(), t.Month(), 1, /*=day*/
-		0, 0, 0, 0, /*=hour,min,sec,nsec*/
-		t.Location())
+type usagePeriod struct {
+	year  int
+	month time.Month
+}
+
+func parseUsagePeriod(s string) (*usagePeriod, error) {
+	parts := strings.Split(s, "-")
+	if len(parts) != 2 {
+		return nil, status.InvalidArgumentError("invalid usage period")
+	}
+	y, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return nil, status.InvalidArgumentError("invalid usage period")
+	}
+	m, err := strconv.Atoi(parts[1])
+	if err != nil || m < 1 || m > 12 {
+		return nil, status.InvalidArgumentError("invalid usage period")
+	}
+	return &usagePeriod{year: y, month: time.Month(m)}, nil
+}
+
+func getUsagePeriod(t time.Time) *usagePeriod {
+	t = t.UTC()
+	return &usagePeriod{year: t.Year(), month: t.Month()}
+}
+
+func (u *usagePeriod) String() string {
+	return fmt.Sprintf("%d-%02d", u.year, u.month)
+}
+
+func (u *usagePeriod) Start() time.Time {
+	return time.Date(u.year, u.month, 1, 0, 0, 0, 0, time.UTC)
 }
 
 func addCalendarMonths(t time.Time, months int) time.Time {
@@ -131,13 +186,6 @@ func addCalendarMonths(t time.Time, months int) time.Time {
 		t.Year(), time.Month(int(t.Month())+months), t.Day(),
 		t.Hour(), t.Minute(), t.Second(), t.Nanosecond(),
 		t.Location())
-}
-
-func reverseUsageSlice(a []*usagepb.Usage) {
-	for i := 0; i < len(a)/2; i++ {
-		j := len(a) - i - 1
-		a[i], a[j] = a[j], a[i]
-	}
 }
 
 func configuredUsageStartDate() time.Time {

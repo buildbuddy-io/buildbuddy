@@ -1,23 +1,42 @@
 name: "release-cli"
 
 on:
-  push:
-    tags:
-      - "cli-v*"
+  pull_request_target:
+    types:
+      - closed
+    paths:
+      - "cli/**"
 
 jobs:
-  create-release:
+  push-tag:
+    if: github.event.pull_request.merged == true && !contains(github.event.pull_request.body, 'release skip')
     runs-on: ubuntu-20.04
-    if: "!contains(github.event.head_commit.message, 'release skip')"
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
-      - name: Get CLI version from tag
-        id: version
-        # Strip "cli-v" prefix from the tag to get the CLI version.
-        # e.g. cli-v1.2.3 sets VERSION to 1.2.3
-        run: echo "VERSION=${GITHUB_REF/refs\/tags\/cli-v/}" >> "$GITHUB_OUTPUT"
+      - name: Checkout /buildbuddy
+        uses: actions/checkout@v3
+        with:
+          # We need to fetch git tags to obtain the latest cli version tag.
+          fetch-depth: 0
 
+      - name: Push tag
+        run: |
+          git config --local user.email "github-actions-release-bot@users.noreply.github.com"
+          git config --local user.name "github-actions-release[bot]"
+          ./cli/release.py --auto
+
+      - name: Get CLI version
+        run: |
+          version=$(git tag -l 'cli-v*' --sort=creatordate |
+            perl -nle 'if (/^cli-v(\d+\.\d+\.\d+)$/) { print $1 }' |
+            tail -n1)
+          echo "VERSION=$version" >> "$GITHUB_OUTPUT"
+
+  create-release:
+    runs-on: ubuntu-20.04
+    needs: push-tag
+    steps:
       - name: Checkout buildbuddy-io/bazel
         uses: actions/checkout@v3
         with:
@@ -30,15 +49,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
         run: |
           set -x  # print executed commands
-          if gh release view ${{ steps.version.outputs.VERSION }} --repo=buildbuddy-io/bazel; then
-            echo "buildbuddy-io/bazel release ${{ steps.version.outputs.VERSION }} already exists."
+          if gh release view ${{ needs.push-tag.outputs.version }} --repo=buildbuddy-io/bazel; then
+            echo "buildbuddy-io/bazel release ${{ needs.push-tag.outputs.version }} already exists."
 
             # It's OK if the release already exists; the build-artifacts job will just overwrite
             # any existing artifacts.
             exit 0
           fi
 
-          TAG=${{ steps.version.outputs.VERSION }}
+          TAG=${{ needs.push-tag.outputs.version }}
 
           cd "${GITHUB_WORKSPACE}/bazel-fork"
           git fetch --all --tags
@@ -53,23 +72,24 @@ jobs:
 
   sync-plugins:
     runs-on: ubuntu-20.04
-    needs: create-release
+    needs: [push-tag, create-release]
     steps:
       - name: Checkout buildbuddy-io/buildbuddy
         uses: actions/checkout@v3
         with:
           path: buildbuddy
-          ref: cli-v${{ needs.create-release.outputs.VERSION }}
+
       - name: Checkout buildbuddy-io/plugins
         uses: actions/checkout@v3
         with:
           repository: buildbuddy-io/plugins
           path: plugins
           token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+
       - name: Sync plugins and push version tag
         env:
           GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
-          VERSION: ${{ needs.create-release.outputs.VERSION }}
+          VERSION: ${{ needs.push-tag.outputs.version }}
         run: |
           set -e
           cd "${GITHUB_WORKSPACE}/plugins"
@@ -118,7 +138,7 @@ jobs:
           - os: macos-13 # MacOS amd64 (Intel)
           - os: macos-13-xlarge # MacOS arm64 (M1)
     runs-on: ${{ matrix.os }}
-    needs: create-release
+    needs: [push-tag, create-release]
     steps:
       - name: Clean workspace
         run: |
@@ -145,7 +165,7 @@ jobs:
             OS=linux
           fi
           ARCH=$(uname -m)  # note: bazel naming convention is "x86_64", not "amd64"
-          VERSION=${{ needs.create-release.outputs.VERSION }}
+          VERSION=${{ needs.push-tag.outputs.version }}
 
           cd "${GITHUB_WORKSPACE}/buildbuddy"
           bazelisk build //cli/cmd/bb \
@@ -166,6 +186,14 @@ jobs:
           gh release upload \
             --repo buildbuddy-io/bazel \
             --clobber \
-            "${{ needs.create-release.outputs.VERSION }}" \
+            "${{ needs.push-tag.outputs.version }}" \
             "${{ steps.build.outputs.BINARY }}" \
             "${{ steps.build.outputs.BINARY }}.sha256"
+
+  publish-release:
+    runs-on: ubuntu-20.04
+    needs: [push-tag, sync-plugins, build-artifacts]
+    steps:
+      - name: Publish release
+        run: |
+          gh release edit {{ needs.push-tag.outputs.version }} --draft=false --repo=buildbuddy-io/bazel

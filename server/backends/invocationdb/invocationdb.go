@@ -111,12 +111,10 @@ func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocati
 	updated := false
 	var err error
 	for r := retry.DefaultWithContext(ctx); r.Next(); {
-		err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-			result := tx.GORM(ctx, "invocationdb_update_invocation").Where(
-				"invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
-			updated = result.RowsAffected > 0
-			return result.Error
-		})
+		result := d.h.GORM(ctx, "invocationdb_update_invocation").Where(
+			"invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
+		updated = result.RowsAffected > 0
+		err := result.Error
 		if d.h.IsDeadlockError(err) {
 			log.Warningf("Encountered deadlock when attempting to update invocation table for invocation %s, attempt %d of %d", ti.InvocationID, r.AttemptNumber(), r.MaxAttempts())
 			continue
@@ -238,16 +236,17 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
+	var in tables.Invocation
+	// TODO(zoey): could make this one query
+	if err := d.h.NewQuery(ctx, "invocationdb_get_invocation_for_delete").Raw(
+		`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
+		return err
+	}
+	acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
+	if err := perms.AuthorizeWrite(authenticatedUser, acl); err != nil {
+		return err
+	}
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		var in tables.Invocation
-		if err := tx.NewQuery(ctx, "invocationdb_get_invocation_for_delete").Raw(
-			`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
-			return err
-		}
-		acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
-		if err := perms.AuthorizeWrite(authenticatedUser, acl); err != nil {
-			return err
-		}
 		return d.deleteInvocation(ctx, tx, invocationID)
 	})
 }

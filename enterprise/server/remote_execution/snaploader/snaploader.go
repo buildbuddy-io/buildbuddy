@@ -655,7 +655,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		snapshotSpecificKey := key.CloneVT()
 		snapshotSpecificKey.SnapshotId = snapshotID
 
-		snapshotSpecificManifestKey, err := LocalManifestKey(gid, key)
+		snapshotSpecificManifestKey, err := LocalManifestKey(gid, snapshotSpecificKey)
 		if err != nil {
 			log.Warningf("Failed to generate snapshot specific local manifest key for snapshot ID %s: %s", snapshotID, err)
 			return nil
@@ -717,7 +717,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		}
 		chunks = append(chunks, c)
 	}
-	cow, err := copy_on_write.NewCOWStore(ctx, l.env, chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName, remoteEnabled)
+	cow, err := copy_on_write.NewCOWStore(ctx, l.env, file.GetName(), chunks, file.GetChunkSize(), file.GetSize(), dataDir, remoteInstanceName, remoteEnabled)
 	if err != nil {
 		return nil, err
 	}

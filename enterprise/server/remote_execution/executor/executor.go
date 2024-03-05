@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -40,6 +41,8 @@ var (
 	// just repeat the last state change message after every
 	// execProgressCallbackPeriod. If this is set to 0, it is disabled.
 	execProgressCallbackPeriod = flag.Duration("executor.task_progress_publish_interval", 60*time.Second, "How often tasks should publish progress updates to the app.")
+
+	slowTaskThreshold = flag.Duration("executor.slow_task_threshold", 1*time.Hour, "Warn about tasks that take longer than this threshold.")
 )
 
 const (
@@ -123,8 +126,7 @@ func isTaskMisconfigured(err error) bool {
 
 func isClientBazel(task *repb.ExecutionTask) bool {
 	// TODO(bduffany): Find a more reliable way to determine this.
-	args := task.GetCommand().GetArguments()
-	return !platform.IsCIRunner(args)
+	return !platform.IsCICommand(task.GetCommand())
 }
 
 func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
@@ -158,6 +160,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		actionMetrics.Error = err
 		actionMetrics.Report(ctx)
 	}()
+
+	if *slowTaskThreshold > 0 {
+		stop := canary.StartWithLateFn(*slowTaskThreshold, func(duration time.Duration) {
+			log.CtxInfof(ctx, "Task still running after %s", duration)
+		}, func(time.Duration) {})
+		defer stop()
+	}
 
 	task := st.ExecutionTask
 	req := task.GetExecuteRequest()

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
@@ -72,6 +73,11 @@ func updateMmappedBytesMetric(delta int64, fileNameLabel string) {
 		Set(float64(atomic.AddInt64(gaugeValPtr.(*int64), delta)))
 }
 
+type usageSummary struct {
+	totalCount    int
+	totalDuration time.Duration
+}
+
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
 // copied, and the write is then applied to the copy.
@@ -84,6 +90,7 @@ type COWStore struct {
 	ctx                context.Context
 	env                environment.Env
 	remoteInstanceName string
+	name               string
 
 	// Whether the store supports remote fetching/caching of artifacts
 	// in addition to local caching
@@ -129,12 +136,16 @@ type COWStore struct {
 	eagerFetchStack *boundedstack.BoundedStack[int64]
 	eagerFetchEg    *errgroup.Group
 	quitChan        chan struct{}
+
+	// usageLock protects chunkOperationToUsageSummary
+	usageLock                    sync.Mutex
+	chunkOperationToUsageSummary map[string]usageSummary
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (*COWStore, error) {
+func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (*COWStore, error) {
 	stat, err := os.Stat(dataDir)
 	if err != nil {
 		return nil, err
@@ -148,6 +159,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 		return nil, err
 	}
 	s := &COWStore{
+		name:               name,
 		ctx:                ctx,
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
@@ -162,13 +174,14 @@ func NewCOWStore(ctx context.Context, env environment.Env, chunks []*Mmap, chunk
 				return &b
 			},
 		},
-		zeroBuf:         make([]byte, chunkSizeBytes),
-		chunkSizeBytes:  chunkSizeBytes,
-		totalSizeBytes:  totalSizeBytes,
-		ioBlockSize:     int64(stat.Sys().(*syscall.Stat_t).Blksize),
-		eagerFetchStack: eagerFetchStack,
-		eagerFetchEg:    &errgroup.Group{},
-		quitChan:        make(chan struct{}),
+		zeroBuf:                      make([]byte, chunkSizeBytes),
+		chunkSizeBytes:               chunkSizeBytes,
+		totalSizeBytes:               totalSizeBytes,
+		ioBlockSize:                  int64(stat.Sys().(*syscall.Stat_t).Blksize),
+		eagerFetchStack:              eagerFetchStack,
+		eagerFetchEg:                 &errgroup.Group{},
+		quitChan:                     make(chan struct{}),
+		chunkOperationToUsageSummary: make(map[string]usageSummary, 0),
 	}
 
 	s.eagerFetchEg.Go(func() error {
@@ -214,6 +227,11 @@ func (c *COWStore) GetChunkStartAddressAndSize(offset uintptr, write bool) (uint
 // performed so that the returned chunk can be written to without modifying
 // readonly chunks.
 func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
+	startTime := time.Now()
+	defer func() {
+		c.updateUsageSummary("GetPageAddress", startTime)
+	}()
+
 	chunkStartOffset := c.ChunkStartOffset(int64(offset))
 	chunkRelativeAddress := offset - uintptr(chunkStartOffset)
 
@@ -307,6 +325,11 @@ func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffse
 		return nil
 	}
 
+	startTime := time.Now()
+	defer func() {
+		c.updateUsageSummary("ReadChunk", startTime)
+	}()
+
 	// chunkActualSize will be different than chunkCalculatedSize only
 	// if this chunk was the last chunk when we called Resize(). This is
 	// because Resize() does not actually resize the chunk itself - it
@@ -385,6 +408,11 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 }
 
 func (c *COWStore) writeToChunk(p []byte, writeRelativeOffset int64, chunkStartOffset int64, writeSize int) (int, error) {
+	startTime := time.Now()
+	defer func() {
+		c.updateUsageSummary("WriteToChunk", startTime)
+	}()
+
 	chunkUnlockFn := c.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
 	defer chunkUnlockFn()
 
@@ -403,6 +431,11 @@ func (c *COWStore) writeToChunk(p []byte, writeRelativeOffset int64, chunkStartO
 }
 
 func (c *COWStore) Sync() error {
+	startTime := time.Now()
+	defer func() {
+		c.updateUsageSummary("Sync", startTime)
+	}()
+
 	var lastErr error
 	// TODO: maybe parallelize
 	for offset, chunk := range c.chunks {
@@ -533,6 +566,11 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 		// Chunk is already dirty - no need to copy
 		return nil
 	}
+
+	startTime := time.Now()
+	defer func() {
+		s.updateUsageSummary("CopyChunkIfNotDirty", startTime)
+	}()
 
 	dstChunkSize := s.calculateChunkSize(chunkStartOffset)
 	src, dst, err := s.initDirtyChunk(chunkStartOffset, dstChunkSize)
@@ -680,6 +718,43 @@ func (s *COWStore) fetchChunk(offset int64) error {
 
 	// Fetch, but don't mmap (since it incurs extra memory usage).
 	return c.Fetch()
+}
+
+func (c *COWStore) updateUsageSummary(operation string, startTime time.Time) {
+	timeSpent := time.Since(startTime)
+	c.usageLock.Lock()
+	defer c.usageLock.Unlock()
+	summary := usageSummary{}
+	if s, ok := c.chunkOperationToUsageSummary[operation]; ok {
+		summary = s
+	}
+	summary.totalCount++
+	summary.totalDuration += timeSpent
+	c.chunkOperationToUsageSummary[operation] = summary
+}
+
+func (c *COWStore) EmitUsageMetrics(stage string) {
+	c.usageLock.Lock()
+	defer c.usageLock.Unlock()
+
+	logStr := fmt.Sprintf("For stage %s, file %s usage data:", stage, c.name)
+	for op, summary := range c.chunkOperationToUsageSummary {
+		if summary.totalCount > 0 {
+			metrics.COWSnapshotChunkOperationTotalDurationUsec.With(prometheus.Labels{
+				metrics.FileName:  c.name,
+				metrics.EventName: op,
+				metrics.Stage:     stage,
+			}).Observe(float64(summary.totalDuration.Microseconds()))
+			metrics.COWSnapshotChunkOperationCount.With(prometheus.Labels{
+				metrics.FileName:  c.name,
+				metrics.EventName: op,
+				metrics.Stage:     stage,
+			}).Observe(float64(summary.totalCount))
+			logStr += fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v}", op, summary.totalDuration.Milliseconds(), summary.totalCount)
+		}
+	}
+
+	log.CtxDebugf(c.ctx, logStr)
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -840,7 +915,8 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		return nil, err
 	}
 
-	return NewCOWStore(ctx, env, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
+	name := filepath.Base(filePath)
+	return NewCOWStore(ctx, env, name, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
 }
 
 func getFileDetails(filePath string) (totalSizeBytes int64, ioBlockSize int64, err error) {
@@ -1015,6 +1091,7 @@ func mmapDataFromFd(fd, size int, fileNameLabel string) ([]byte, error) {
 
 // NOTE: This function should be executed atomically. Callers should manage locking
 func (m *Mmap) initMap() (err error) {
+	start := time.Now()
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
@@ -1036,6 +1113,10 @@ func (m *Mmap) initMap() (err error) {
 	if m.lru != nil {
 		m.lru.Add(m)
 	}
+
+	metrics.COWSnapshotInitChunkDurationUsec.With(prometheus.Labels{
+		metrics.ChunkSource: m.source.String(),
+	}).Observe(float64(time.Since(start).Microseconds()))
 
 	return nil
 }

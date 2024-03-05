@@ -39,6 +39,7 @@ go_test(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_go_redis_redis_v8//:redis",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

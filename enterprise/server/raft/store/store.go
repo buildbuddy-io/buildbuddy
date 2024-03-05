@@ -72,7 +72,6 @@ type Store struct {
 	gossipManager interfaces.GossipService
 	sender        *sender.Sender
 	registry      registry.NodeRegistry
-	listener      *listener.RaftListener
 	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
@@ -159,7 +158,6 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		gossipManager: gossipManager,
 		sender:        sender,
 		registry:      registry,
-		listener:      listener,
 		apiClient:     apiClient,
 		liveness:      nodeLiveness,
 		log:           nhLog,
@@ -186,11 +184,27 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	s.db = db
 	s.leaser = pebble.NewDBLeaser(db)
 
+
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
 	if err != nil {
 		return nil, err
 	}
 	s.usages = usages
+
+	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
+	s.grpcServer = grpc.NewServer(grpcOptions...)
+	reflection.Register(s.grpcServer)
+	grpc_prometheus.Register(s.grpcServer)
+	rfspb.RegisterApiServer(s.grpcServer, s)
+
+	lis, err := net.Listen("tcp", s.grpcAddr)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		log.Debugf("Store started to serve on listener %s", s.grpcAddr)
+		s.grpcServer.Serve(lis)
+	}()
 
 	// rejoin configured clusters
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
@@ -350,20 +364,6 @@ func (s *Store) AddEventListener() <-chan events.Event {
 // Start starts a new grpc server which exposes an API that can be used to manage
 // ranges on this node.
 func (s *Store) Start() error {
-	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
-	s.grpcServer = grpc.NewServer(grpcOptions...)
-	reflection.Register(s.grpcServer)
-	grpc_prometheus.Register(s.grpcServer)
-	rfspb.RegisterApiServer(s.grpcServer, s)
-
-	lis, err := net.Listen("tcp", s.grpcAddr)
-	if err != nil {
-		return err
-	}
-	go func() {
-		s.grpcServer.Serve(lis)
-	}()
-
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	s.egCancel = cancelFunc
 
@@ -399,6 +399,7 @@ func (s *Store) Start() error {
 }
 
 func (s *Store) Stop(ctx context.Context) error {
+	s.dropLeadershipForShutdown()
 	now := time.Now()
 	defer func() {
 		s.log.Infof("Store shutdown finished in %s", time.Since(now))
@@ -441,7 +442,8 @@ func (s *Store) dropLeadershipForShutdown() {
 	eg := errgroup.Group{}
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
 		clusterInfo := clusterInfo
-		if !clusterInfo.IsLeader {
+		if clusterInfo.LeaderID != clusterInfo.ReplicaID || clusterInfo.Term == 0 {
+			// skip if not the leader
 			continue
 		}
 
@@ -453,6 +455,7 @@ func (s *Store) dropLeadershipForShutdown() {
 				continue
 			}
 			eg.Go(func() error {
+				log.Debugf("request to transfer leadership of shard %d to replica %d from replica %d", clusterInfo.ShardID, replicaID, clusterInfo.ReplicaID)
 				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, replicaID); err != nil {
 					s.log.Warningf("Error transferring leadership: %s", err)
 				}

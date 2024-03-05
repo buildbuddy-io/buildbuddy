@@ -30,6 +30,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -44,6 +46,7 @@ const (
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
+	gb               = 1 << 30
 )
 
 var (
@@ -1248,35 +1251,41 @@ func olderThanThreshold(t time.Time, threshold time.Duration) bool {
 }
 
 func (sm *Replica) processAccessTimeUpdates() {
-	batch := rbuilder.NewBatchBuilder()
+	var keys []*sender.KeyMeta
 
 	ctx := context.TODO()
 
 	var lastWrite time.Time
 	flush := func() {
-		if batch.Size() == 0 {
+		if len(keys) == 0 {
 			return
 		}
+		batch := rbuilder.NewBatchBuilder()
 
+		for _, k := range keys {
+			batch.Add(&rfpb.UpdateAtimeRequest{
+				Key:            k.Key,
+				AccessTimeUsec: k.Meta.(int64),
+			})
+		}
 		batchProto, err := batch.ToProto()
 		if err != nil {
 			sm.log.Warningf("could not generate atime update batch: %s", err)
 			return
 		}
 
-		err = sm.store.Sender().Run(ctx, nil, func(c rfspb.ApiClient, h *rfpb.Header) error {
-			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+		_, err = sm.store.Sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+			return c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Header: h,
 				Batch:  batchProto,
 			})
-			return err
 		})
 		if err != nil {
 			sm.log.Warningf("could not update atimes: %s", err)
 			return
 		}
 
-		batch = rbuilder.NewBatchBuilder()
+		keys = nil
 		lastWrite = time.Now()
 	}
 
@@ -1292,11 +1301,11 @@ func (sm *Replica) processAccessTimeUpdates() {
 	for {
 		select {
 		case accessTimeUpdate := <-sm.accesses:
-			batch.Add(&rfpb.UpdateAtimeRequest{
-				Key:            accessTimeUpdate.key,
-				AccessTimeUsec: time.Now().UnixMicro(),
+			keys = append(keys, &sender.KeyMeta{
+				Key:  accessTimeUpdate.key,
+				Meta: time.Now().UnixMicro(),
 			})
-			if batch.Size() >= *atimeWriteBatchSize {
+			if len(keys) >= *atimeWriteBatchSize {
 				flush()
 			}
 		case <-time.After(time.Second):
@@ -1818,6 +1827,17 @@ func (sm *Replica) saveRangeLocalData(w io.Writer, snap *pebble.Snapshot) error 
 	return nil
 }
 
+func flushBatch(wb pebble.Batch) error {
+	if wb.Empty() {
+		return nil
+	}
+	if err := wb.Commit(pebble.Sync); err != nil {
+		return err
+	}
+	wb.Reset()
+	return nil
+}
+
 func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
 	wb := db.NewBatch()
 	defer wb.Close()
@@ -1849,11 +1869,16 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		if err := wb.Set(kv.Key, kv.Value, nil); err != nil {
 			return err
 		}
+		if wb.Len() > 1*gb {
+			// Pebble panics when the batch is greater than ~4GB (or 2GB on 32-bit systems)
+			log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
+			if err = flushBatch(wb); err != nil {
+				return err
+			}
+		}
 	}
-	if err := db.Apply(wb, pebble.Sync); err != nil {
-		return err
-	}
-	return nil
+	log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
+	return flushBatch(wb)
 }
 
 // SaveSnapshot saves the point in time state of the IOnDiskStateMachine

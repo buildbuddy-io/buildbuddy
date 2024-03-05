@@ -24,6 +24,7 @@ go_library(
         "//proto:vmvfs_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/nullauth",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",

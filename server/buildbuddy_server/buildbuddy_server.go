@@ -540,7 +540,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	if group.SuggestionPreference == grpb.SuggestionPreference_UNKNOWN_SUGGESTION_PREFERENCE {
 		group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 	}
-	if _, err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
+	if _, err := userDB.UpdateGroup(ctx, group); err != nil {
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {

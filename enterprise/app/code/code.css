@@ -9,7 +9,6 @@
 
 .code-menu {
   height: 60px;
-  border-bottom: 2px solid #fafafa;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -91,7 +90,6 @@
 
 .code-sidebar {
   width: 200px;
-  border-right: 2px solid #fafafa;
   flex-shrink: 0;
   overflow: hidden;
   box-sizing: border-box;
@@ -135,6 +133,8 @@
   flex-grow: 1;
   display: flex;
   flex-direction: column;
+  width: calc(100vw - 200px);
+  min-width: 1px;
 }
 
 .code-viewer-container {
@@ -142,6 +142,7 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
+  border-left: 2px solid #fafafa;
 }
 
 .code-viewer {
@@ -155,6 +156,7 @@
   overflow: scroll;
   flex-shrink: 0;
   border-top: 2px solid #fafafa;
+  border-left: 2px solid #fafafa;
   padding: 16px;
 }
 
@@ -196,6 +198,21 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: clip;
+}
+
+.code-diff-viewer-item-path.deleted,
+.code-sidebar-node-name.deleted {
+  color: #f44336;
+  text-decoration: line-through;
+}
+
+.code-diff-viewer-item-path.added,
+.code-sidebar-node-name.added {
+  color: #4caf50;
+}
+
+.code-sidebar-node-name.changed {
+  color: #ff9800;
 }
 
 /* Monaco overrides */
@@ -335,6 +352,7 @@
   width: calc(40vw);
   padding: 8px 16px;
   overflow-y: auto;
+  min-width: 1px;
 }
 
 .code-editor .context-menu {
@@ -353,4 +371,57 @@
 
 .code-editor .context-menu div:hover {
   background-color: #fafafa;
+}
+
+.code-editor .code-viewer-tabs {
+  display: flex;
+  white-space: nowrap;
+  overflow-y: auto;
+  flex-shrink: 1;
+  background-color: #fafafa;
+  width: 100%;
+  border-top-left-radius: 8px;
+  min-height: 2px;
+}
+
+.code-editor .code-viewer-tab {
+  padding: 8px 4px 8px 16px;
+  border-top: 2px solid #fafafa;
+  border-bottom: 2px solid #fafafa;
+  border-left: 2px solid #fafafa;
+  cursor: pointer;
+  font-size: 0.8em;
+  display: flex;
+  align-items: center;
+  color: #444;
+  gap: 4px;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.code-editor .code-viewer-tab.selected {
+  border-bottom: 2px solid transparent;
+  background-color: #fff;
+  color: #000;
+}
+
+.code-editor .code-viewer-tab svg {
+  width: 12px;
+  height: 12px;
+  color: transparent;
+}
+.code-editor .code-viewer-tab:hover {
+  color: #000;
+}
+
+.code-editor .code-viewer-tab:hover svg {
+  color: #aaa;
+}
+
+.code-editor .code-viewer-tab svg:hover {
+  color: #b71c1c;
+}
+
+.code-editor .monaco-editor .view-overlays .current-line-exact {
+  border: 2px solid #eee;
 }

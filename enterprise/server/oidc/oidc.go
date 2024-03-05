@@ -571,8 +571,12 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 	}
 
 	if acceptJWT {
-		// Check if we're already authenticated from incoming headers.
-		return claims.ClaimsFromContext(ctx)
+		// Internal RPCs will be authenticated via JWT, not API key. Parse the
+		// JWT here if present.
+		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
+			return a.parseClaims(tokenString)
+		}
+		return nil, authutil.AnonymousUserError(authutil.UserNotFoundMsg)
 	}
 
 	return nil, authutil.AnonymousUserError("gRPC request is missing credentials.")

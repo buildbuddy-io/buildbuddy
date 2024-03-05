@@ -14,7 +14,9 @@ ts_library(
         "//app/format",
         "//app/service:rpc_service",
         "//proto:usage_ts_proto",
+        "@npm//@types/moment",
         "@npm//@types/react",
+        "@npm//moment",
         "@npm//react",
     ],
 )

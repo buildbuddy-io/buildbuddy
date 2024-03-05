@@ -42,6 +42,8 @@ const (
 	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:8cf614fc4695789bea8321446402e7d6f84f6be09b8d39ec93caa508fa3e3cfc"
 	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:271e5e3704d861159c75b8dd6713dbe5a12272ec8ee73d17f89ed7be8026553f"
 
+	Ubuntu20_04GitHubActionsImage = "gcr.io/flame-public/rbe-ubuntu20-04-github-actions@sha256:2a3b50fa1aafcb8446c94ab5707270f92fa91abd64a0e049312d4a086d0abb1c"
+
 	// overrideHeaderPrefix is a prefix used to override platform props via
 	// remote headers. The property name immediately follows the prefix in the
 	// header key, and the header value is used as the property value.
@@ -131,7 +133,7 @@ type Properties struct {
 	OS                        string
 	Arch                      string
 	Pool                      string
-	EstimatedComputeUnits     int64
+	EstimatedComputeUnits     float64
 	EstimatedMilliCPU         int64
 	EstimatedMemoryBytes      int64
 	EstimatedFreeDiskBytes    int64
@@ -255,7 +257,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
-		EstimatedComputeUnits:     int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
+		EstimatedComputeUnits:     float64Prop(m, EstimatedComputeUnitsPropertyName, 0),
 		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
 		EstimatedFreeDiskBytes:    iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
@@ -525,6 +527,19 @@ func int64Prop(props map[string]string, name string, defaultValue int64) int64 {
 	return i
 }
 
+func float64Prop(props map[string]string, name string, defaultValue float64) float64 {
+	val := props[strings.ToLower(name)]
+	if val == "" {
+		return defaultValue
+	}
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		log.Warningf("Could not parse platform property %q as float64: %s", name, err)
+		return defaultValue
+	}
+	return f
+}
+
 func iecBytesProp(props map[string]string, name string, defaultValue int64) int64 {
 	val := props[strings.ToLower(name)]
 	if val == "" {
@@ -592,16 +607,33 @@ func durationProp(props map[string]string, name string, defaultValue time.Durati
 	return d
 }
 
-// FindValue scans the platform properties for the given property name (ignoring
-// case) and returns the value of that property if it exists, otherwise "".
-func FindValue(platform *repb.Platform, name string) string {
+func findValue(platform *repb.Platform, name string) (value string, ok bool) {
 	name = strings.ToLower(name)
 	for _, prop := range platform.GetProperties() {
 		if prop.GetName() == name {
-			return strings.TrimSpace(prop.GetValue())
+			return strings.TrimSpace(prop.GetValue()), true
 		}
 	}
-	return ""
+	return "", false
+}
+
+// FindValue scans the platform properties for the given property name (ignoring
+// case) and returns the value of that property if it exists, otherwise "".
+func FindValue(platform *repb.Platform, name string) string {
+	value, _ := findValue(platform, name)
+	return value
+}
+
+// FindEffectiveValue returns the effective platform property value for the
+// given task. If a remote header override was set via
+// "x-buildbuddy-platform.<name>", then that value will be returned. Otherwise,
+// it returns the original platform property from the action proto.
+func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
+	override, ok := findValue(task.GetPlatformOverrides(), name)
+	if ok {
+		return override
+	}
+	return FindValue(task.GetCommand().GetPlatform(), name)
 }
 
 // IsTrue returns whether the given platform property value is truthy.
@@ -617,10 +649,14 @@ func DefaultImage() string {
 	return *defaultImage
 }
 
-// The CI runner is used to run bazel remotely. It is used for workflows and remote
-// bazel
-func IsCIRunner(cmdArgs []string) bool {
-	if len(cmdArgs) > 0 && cmdArgs[0] == "./buildbuddy_ci_runner" {
+// IsCICommand returns whether the given command is either a BuildBuddy workflow
+// or a GitHub Actions runner task. These commands are longer-running and may
+// themselves invoke bazel.
+func IsCICommand(cmd *repb.Command) bool {
+	if len(cmd.GetArguments()) > 0 && cmd.GetArguments()[0] == "./buildbuddy_ci_runner" {
+		return true
+	}
+	if FindValue(cmd.GetPlatform(), "github-actions-runner-labels") != "" {
 		return true
 	}
 	return false

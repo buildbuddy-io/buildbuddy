@@ -313,6 +313,11 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 			return err
 		}
 	}
+	if args := r.task.GetCommand().GetArguments(); len(args) > 0 && args[0] == "./buildbuddy_github_actions_runner" {
+		if err := r.Workspace.AddActionsRunner(ctx); err != nil {
+			return err
+		}
+	}
 	ioStats.FileDownloadCount = rxInfo.FileCount
 	ioStats.FileDownloadDurationUsec = rxInfo.TransferDuration.Microseconds()
 	ioStats.FileDownloadSizeBytes = rxInfo.BytesTransferred
@@ -471,7 +476,7 @@ func (r *taskRunner) RemoveInBackground() {
 	// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 	go func() {
 		if err := r.RemoveWithTimeout(context.Background()); err != nil {
-			log.Errorf("Failed to remove runner: %s", err)
+			log.Errorf("Failed to remove runner %s: %s", r.String(), err)
 		}
 	}()
 }

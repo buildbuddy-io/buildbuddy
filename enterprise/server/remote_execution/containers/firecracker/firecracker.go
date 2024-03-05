@@ -83,7 +83,9 @@ var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 var overprivisionCPUs = flag.Int("executor.firecracker_overprivision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine.")
+
 var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
+var disableWorkspaceSync = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 
 //go:embed guest_api_hash.sha256
 var GuestAPIHash string
@@ -104,7 +106,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "6"
+	GuestAPIVersion = "7"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -589,7 +591,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCIRunner(task.GetCommand().GetArguments()) || *forceRemoteSnapshotting)
+	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCICommand(task.GetCommand()) || *forceRemoteSnapshotting)
 
 	if opts.SavedState == nil {
 		c.vmConfig.DebugMode = *debugTerminal
@@ -2222,6 +2224,20 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	}()
 
+	// Emit metrics to track time spent preparing VM to execute a command
+	if c.memoryStore != nil {
+		c.memoryStore.EmitUsageMetrics("init")
+	}
+	if c.uffdHandler != nil {
+		c.uffdHandler.EmitSummaryMetrics("init")
+	}
+	if c.rootStore != nil {
+		c.rootStore.EmitUsageMetrics("init")
+	}
+	if c.workspaceStore != nil {
+		c.workspaceStore.EmitUsageMetrics("init")
+	}
+
 	result = c.SendExecRequestToGuest(ctx, cmd, workDir, stdio)
 	close(execDone)
 
@@ -2229,7 +2245,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer cancel()
 
 	// If FUSE is enabled then outputs are already in the workspace.
-	if c.fsLayout == nil {
+	if c.fsLayout == nil && !*disableWorkspaceSync {
 		// Command was successful, let's unpack the files back to our
 		// workspace directory now.
 		if err := c.pauseVM(ctx); err != nil {
@@ -2442,6 +2458,8 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
 
+	log.CtxInfof(ctx, "Pausing VM")
+
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return err
@@ -2553,6 +2571,8 @@ func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 	c.recycled = true
 	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
 
+	log.CtxInfof(ctx, "Unpausing VM")
+
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
 	return c.LoadSnapshot(ctx)
 }
@@ -2563,6 +2583,10 @@ func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 // This is intended to be called just before Exec, so that the inputs to
 // the executed action will be made available to the VM.
 func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
+	if *disableWorkspaceSync {
+		return nil
+	}
+
 	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {

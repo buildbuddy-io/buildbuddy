@@ -18,7 +18,14 @@ go_library(
         "//server/util/status",
         "@com_github_mitchellh_go_ps//:go-ps",
     ] + select({
+        "@io_bazel_rules_go//go/platform:darwin": [
+            "//proto:execution_stats_go_proto",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//proto:execution_stats_go_proto",
+        ],
         "@io_bazel_rules_go//go/platform:windows": [
+            "//proto:execution_stats_go_proto",
             "@com_github_shirou_gopsutil_v3//process",
             "@org_golang_x_sys//windows",
         ],

@@ -96,7 +96,7 @@ const (
 
 	// How long any given job can hold the usage lock for, before it expires
 	// and other jobs may try to acquire it.
-	redisUsageLockExpiry = 45 * time.Second
+	redisUsageLockExpiry = 50 * time.Second
 
 	// How often to wake up and attempt to flush usage data from Redis to the DB.
 	flushInterval = periodDuration
@@ -282,21 +282,35 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	// Don't run for longer than we have the Redis lock. This is mostly just to
 	// avoid situations where multiple apps are trying to write usage data to the
 	// DB at once while it is already under high load.
-	ctx, cancel := context.WithTimeout(ctx, redisUsageLockExpiry)
+	deadline := time.Now().Add(redisUsageLockExpiry)
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+
+	// Reserve some of the context duration for cleanup. If a DB flush succeeds,
+	// then we want to make sure we have a little more time to clean up the
+	// Redis data corresponding to the flushed row while we still have the Redis
+	// lock held.
+	redisCleanupCtx := ctx
+	ctx, cancel = context.WithDeadline(ctx, deadline.Add(-5*time.Second))
 	defer cancel()
 
 	// Loop through usage periods starting from the oldest period
 	// that may exist in Redis (based on key expiration time) and looping up until
 	// we hit a period which is not yet "settled".
-	for p := ut.oldestWritablePeriod(); ut.isSettled(p); p = p.Next() {
+	oldestPeriod := ut.oldestWritablePeriod()
+	for p := oldestPeriod; ut.isSettled(p); p = p.Next() {
 		// Read collections (JSON-serialized Collection structs)
-		gk := collectionsRedisKey(p)
-		encodedCollections, err := ut.rdb.SMembers(ctx, gk).Result()
+		collectionsKey := collectionsRedisKey(p)
+		encodedCollections, err := ut.rdb.SMembers(ctx, collectionsKey).Result()
 		if err != nil {
 			return err
 		}
 		if len(encodedCollections) == 0 {
 			continue
+		}
+
+		if p.Equal(oldestPeriod) {
+			alert.UnexpectedEvent("usage_flush_not_keeping_up", "Flushing usage data that is close to redis TTL - some usage data may be lost")
 		}
 
 		for _, encodedCollection := range encodedCollections {
@@ -318,10 +332,14 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 				return status.WrapError(err, "decode collection")
 			}
 			// Read usage counts from Redis
-			ck := countsRedisKey(p, encodedCollection)
-			h, err := ut.rdb.HGetAll(ctx, ck).Result()
+			countsKey := countsRedisKey(p, encodedCollection)
+			h, err := ut.rdb.HGetAll(ctx, countsKey).Result()
 			if err != nil {
 				return err
+			}
+			if len(h) == 0 {
+				alert.UnexpectedEvent("usage_unexpected_empty_hash_in_redis", "Usage counts in Redis are unexpectedly empty for key %q", countsKey)
+				continue
 			}
 			counts, err := stringMapToCounts(h)
 			if err != nil {
@@ -331,17 +349,14 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 			if err := ut.flushCounts(ctx, collection.GroupID, p, &collection.UsageLabels, counts); err != nil {
 				return err
 			}
-			// Clean up the counts from Redis. Don't delete the collection JSON
-			// content though, since those aren't specific to collection periods
-			// and they might still be needed. Instead, just let those expire.
-			if _, err := ut.rdb.Del(ctx, ck).Result(); err != nil {
+			// Remove the collection data from Redis now that it has been
+			// flushed to the DB.
+			pipe := ut.rdb.TxPipeline()
+			pipe.SRem(redisCleanupCtx, collectionsKey, encodedCollection)
+			pipe.Del(redisCleanupCtx, countsKey)
+			if _, err := pipe.Exec(redisCleanupCtx); err != nil {
 				return err
 			}
-		}
-
-		// Delete the Redis data for the groups.
-		if _, err := ut.rdb.Del(ctx, gk).Result(); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -469,6 +484,10 @@ func parseCollectionPeriod(s string) (period, error) {
 	}
 	t := time.UnixMicro(usec)
 	return periodStartingAt(t), nil
+}
+
+func (c period) Equal(o period) bool {
+	return time.Time(c).Equal(time.Time(o))
 }
 
 func (c period) Start() time.Time {

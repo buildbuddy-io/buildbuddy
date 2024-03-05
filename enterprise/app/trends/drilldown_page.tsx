@@ -169,6 +169,12 @@ const METRIC_OPTIONS: MetricOption[] = [
     }),
   },
   {
+    name: "Cached CPU time",
+    metric: stat_filter.Metric.create({
+      invocation: stat_filter.InvocationMetricType.TIME_SAVED_USEC_INVOCATION_METRIC,
+    }),
+  },
+  {
     name: "Execution queue time",
     metric: stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC }),
   },
@@ -251,6 +257,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     } else {
       switch (this.selectedMetric.metric.invocation) {
         case stat_filter.InvocationMetricType.DURATION_USEC_INVOCATION_METRIC:
+        case stat_filter.InvocationMetricType.TIME_SAVED_USEC_INVOCATION_METRIC:
           return (v / 1000000).toFixed(2) + "s";
         case stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SPEED_INVOCATION_METRIC:
         case stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SPEED_INVOCATION_METRIC:

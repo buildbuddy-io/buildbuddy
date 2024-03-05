@@ -1135,6 +1135,80 @@ var (
 		FileName,
 	})
 
+	COWSnapshotPageFaultCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_page_fault_count",
+		Buckets: []float64{
+			20,
+			50,
+			100,
+			250,
+			500,
+			1000,
+			2500,
+			5000,
+			10000,
+		},
+		Help: "For a snapshotted VM, number of page faults.",
+	}, []string{
+		Stage,
+	})
+
+	COWSnapshotPageFaultTotalDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_page_fault_total_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 10),
+		Help:      "For a snapshotted VM, total time spent fulfilling page faults.",
+	}, []string{
+		Stage,
+	})
+
+	COWSnapshotInitChunkDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_init_chunk_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 3*time.Minute, 10),
+		Help:      "For a COW snapshot, time to initialize one chunk.",
+	}, []string{
+		ChunkSource,
+	})
+
+	COWSnapshotChunkOperationTotalDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_chunk_operation_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 10),
+		Help:      "For a COW snapshot, cumulative time spent on an operation type.",
+	}, []string{
+		FileName,
+		EventName,
+		Stage,
+	})
+
+	COWSnapshotChunkOperationCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_chunk_operation_count",
+		Buckets: []float64{
+			20,
+			50,
+			100,
+			250,
+			500,
+			1000,
+			2500,
+			5000,
+			10000,
+		},
+		Help: "For a COW snapshot, number of times a chunk operation was executed.",
+	}, []string{
+		FileName,
+		EventName,
+		Stage,
+	})
+
 	MaxRecyclableResourceUsageEvent = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

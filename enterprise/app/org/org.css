@@ -298,6 +298,14 @@
 
 .org-members .org-member-email {
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.org-members .org-member-email svg {
+  width: 16px;
+  height: 16px;
 }
 
 .org-members .org-member-role {
@@ -360,6 +368,13 @@
 .org-members-edit-modal .affected-users-list-item {
   display: flex;
   padding: 8px;
+  gap: 8px;
+  align-items: center;
+}
+
+.org-members-edit-modal .affected-users-list-item svg {
+  width: 16px;
+  height: 16px;
 }
 
 .org-members-edit-modal .affected-users-list > :not(:last-child) {

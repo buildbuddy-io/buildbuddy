@@ -295,7 +295,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx interfaces.DB, userID strin
 	return groupID, nil
 }
 
-func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (string, error) {
+func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, error) {
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return "", err
@@ -316,60 +316,64 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 	}
 
 	groupID := ""
-	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		if g.OwnedDomain != "" {
-			existingDomainOwnerGroup, err := d.getDomainOwnerGroup(ctx, tx, g.OwnedDomain)
-			if err != nil {
-				return err
-			}
-			if existingDomainOwnerGroup != nil && existingDomainOwnerGroup.GroupID != g.GroupID {
-				return status.InvalidArgumentError("There is already a group associated with this domain.")
-			}
+	if g.OwnedDomain != "" {
+		existingDomainOwnerGroup, err := d.getDomainOwnerGroup(ctx, d.h, g.OwnedDomain)
+		if err != nil {
+			return "", err
 		}
-		if g.GroupID == "" {
+		if existingDomainOwnerGroup != nil && existingDomainOwnerGroup.GroupID != g.GroupID {
+			return "", status.InvalidArgumentError("There is already a group associated with this domain.")
+		}
+	}
+	if g.GroupID == "" {
+		err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
 			groupID, err = d.createGroup(ctx, tx, u.GetUserID(), g)
 			return err
+		})
+		if err != nil {
+			return "", err
 		}
+		return groupID, nil
+	}
 
-		groupID = g.GroupID
-		if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
-			return err
-		}
+	groupID = g.GroupID
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		return "", err
+	}
 
-		res := tx.NewQuery(ctx, "userdb_update_group").Raw(`
-			UPDATE "Groups" SET
-				name = ?,
-				url_identifier = ?,
-				owned_domain = ?,
-				sharing_enabled = ?,
-				user_owned_keys_enabled = ?,
-				bot_suggestions_enabled = ?,
-				developer_org_creation_enabled = ?,
-				use_group_owned_executors = ?,
-				cache_encryption_enabled = ?,
-				suggestion_preference = ?,
-				restrict_clean_workflow_runs_to_admins = ?,
-				enforce_ip_rules = ?
-			WHERE group_id = ?`,
-			g.Name,
-			g.URLIdentifier,
-			g.OwnedDomain,
-			g.SharingEnabled,
-			g.UserOwnedKeysEnabled,
-			g.BotSuggestionsEnabled,
-			g.DeveloperOrgCreationEnabled,
-			g.UseGroupOwnedExecutors,
-			g.CacheEncryptionEnabled,
-			g.SuggestionPreference,
-			g.RestrictCleanWorkflowRunsToAdmins,
-			g.EnforceIPRules,
-			g.GroupID).Exec()
-		if res.Error != nil {
-			return res.Error
-		}
-		return nil
-	})
-	return groupID, err
+	err = d.h.NewQuery(ctx, "userdb_update_group").Raw(`
+		UPDATE "Groups" SET
+			name = ?,
+			url_identifier = ?,
+			owned_domain = ?,
+			sharing_enabled = ?,
+			user_owned_keys_enabled = ?,
+			bot_suggestions_enabled = ?,
+			developer_org_creation_enabled = ?,
+			use_group_owned_executors = ?,
+			cache_encryption_enabled = ?,
+			suggestion_preference = ?,
+			restrict_clean_workflow_runs_to_admins = ?,
+			enforce_ip_rules = ?
+		WHERE group_id = ?`,
+		g.Name,
+		g.URLIdentifier,
+		g.OwnedDomain,
+		g.SharingEnabled,
+		g.UserOwnedKeysEnabled,
+		g.BotSuggestionsEnabled,
+		g.DeveloperOrgCreationEnabled,
+		g.UseGroupOwnedExecutors,
+		g.CacheEncryptionEnabled,
+		g.SuggestionPreference,
+		g.RestrictCleanWorkflowRunsToAdmins,
+		g.EnforceIPRules,
+		g.GroupID,
+	).Exec().Error
+	if err != nil {
+		return "", err
+	}
+	return groupID, nil
 }
 
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {
@@ -491,7 +495,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	users := make([]*grpb.GetGroupUsersResponse_GroupUser, 0)
 
 	q := query_builder.NewQuery(`
-			SELECT u.user_id, u.email, u.first_name, u.last_name, ug.membership_status, ug.role
+			SELECT u.user_id, u.email, u.first_name, u.last_name, u.sub_id, ug.membership_status, ug.role
 			FROM "Users" AS u JOIN "UserGroups" AS ug ON u.user_id = ug.user_user_id`)
 	q = q.AddWhereClause(`ug.group_group_id = ?`, groupID)
 
@@ -514,7 +518,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 		user := &tables.User{}
 		var groupRole uint32
 		err := row.Scan(
-			&user.UserID, &user.Email, &user.FirstName, &user.LastName,
+			&user.UserID, &user.Email, &user.FirstName, &user.LastName, &user.SubID,
 			&groupUser.GroupMembershipStatus, &groupRole,
 		)
 		if err != nil {
@@ -644,11 +648,11 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 }
 
 func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
-	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		var existing tables.Group
-		if err := tx.GORM(ctx, "userdb_check_existing_group").Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
-				gc := d.getDefaultGroupConfig()
+	var existing tables.Group
+	if err := d.h.GORM(ctx, "userdb_check_existing_group").Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
+		if db.IsRecordNotFound(err) {
+			gc := d.getDefaultGroupConfig()
+			return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 				if err := tx.NewQuery(ctx, "userdb_create_default_group").Create(gc); err != nil {
 					return err
 				}
@@ -656,12 +660,12 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 					return err
 				}
 				return nil
-			}
-			return err
+			})
 		}
+		return err
+	}
 
-		return tx.GORM(ctx, "userdb_update_existing_group").Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
-	})
+	return d.h.GORM(ctx, "userdb_update_existing_group").Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
 }
 
 func (d *UserDB) getDefaultGroupConfig() *tables.Group {

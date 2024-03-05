@@ -1953,9 +1953,14 @@
 }
 .monaco-editor .find-widget > .find-part,
 .monaco-editor .find-widget > .replace-part {
-  margin: 4px 0 0 17px;
+  margin: 3px 25px 0 17px;
   font-size: 12px;
   display: flex;
+}
+.monaco-editor .find-widget > .button.codicon-widget-close {
+  position: absolute;
+  right: 4px;
+  top: 5px;
 }
 .monaco-editor .find-widget > .find-part .monaco-inputbox,
 .monaco-editor .find-widget > .replace-part .monaco-inputbox {
@@ -3119,4 +3124,13 @@
 }
 .context-view .monaco-menu {
   min-width: 130px;
+}
+
+.monaco-editor .lines-content .core-guide {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.monaco-editor .selected-text {
+  background-color: #b3e5fc;
 }
