@@ -232,6 +232,32 @@ func TestGetUserByEmail(t *testing.T) {
 	require.True(t, status.IsFailedPreconditionError(err))
 }
 
+func TestOwnedDomainBlocklist(t *testing.T) {
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create a user
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx = authUserCtx(ctx, env, t, "US1")
+
+	// Create a new 'gmail' owned-domain group (should fail).
+	_, err := udb.CreateGroup(ctx, &tables.Group{
+		OwnedDomain: "gmail.com",
+	})
+	require.Error(t, err)
+
+	// Create a new 'org1.io' owned-domain group, (should work).
+	_, err = udb.CreateGroup(ctx, &tables.Group{
+		OwnedDomain: "org1.io",
+	})
+	require.NoError(t, err)
+
+	// Create a new 'gmail' group (should work).
+	_, err = udb.CreateGroup(ctx, &tables.Group{})
+	require.NoError(t, err)
+}
+
 func TestDeleteUserGitHubToken(t *testing.T) {
 	env := newTestEnv(t)
 	udb := env.GetUserDB()
