@@ -317,9 +317,11 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		// We want to return an error if the execution simply doesn't exist, but
 		// we want to ignore any attempts to update a cancelled execution.
 		var count int64
-		if err := s.env.GetDBHandle().GORM(
-			ctx,
-			"execution_server_check_after_noop_update").Model(execution).Where("execution_id = ?", executionID).Count(&count).Error; err != nil {
+		err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_check_after_noop_update").Raw(`
+				SELECT COUNT(*) FROM "Executions" WHERE execution_id = ?
+			`,
+			executionID).Take(&count)
+		if err != nil {
 			dbErr = err
 		} else if count == 0 {
 			dbErr = status.NotFoundErrorf("Unable to update execution; no execution exists with id %s.", executionID)
