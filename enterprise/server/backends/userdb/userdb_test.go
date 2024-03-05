@@ -238,7 +238,7 @@ func TestOwnedDomainBlocklist(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a user
-	createUser(t, ctx, env, "US1", "org1.io")
+	createUser(t, ctx, env, "US1", "gmail.com")
 	ctx = authUserCtx(ctx, env, t, "US1")
 
 	// Create a new 'gmail' owned-domain group (should fail).
