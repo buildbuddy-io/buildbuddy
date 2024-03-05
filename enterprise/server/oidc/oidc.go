@@ -576,6 +576,7 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
 			return a.parseClaims(tokenString)
 		}
+		return nil, authutil.AnonymousUserError(authutil.UserNotFoundMsg)
 	}
 
 	return nil, authutil.AnonymousUserError("gRPC request is missing credentials.")
