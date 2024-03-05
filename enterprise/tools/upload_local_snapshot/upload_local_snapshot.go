@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -118,7 +119,7 @@ func main() {
 	ctx := context.Background()
 	ctxWithHackyClaims := ctx
 	if *apiKey != "" {
-		ctx = context.WithValue(ctx, "x-buildbuddy-api-key", *apiKey)
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 
 		// The filecache reads the groupID from the claims on the context,
 		// so set that here. However this isn't a valid Claims object, so for
@@ -220,6 +221,7 @@ func getAllDigestsFromSnapshotManifest(ctxWithClaims context.Context, env enviro
 }
 
 func getMissingDigestsRemoteCache(ctx context.Context, env environment.Env, remoteInstanceName string, digests []*repb.Digest) []*repb.Digest {
+	log.Infof("Calling FindMissing with %d digests...", len(digests))
 	req := &repb.FindMissingBlobsRequest{
 		InstanceName:   remoteInstanceName,
 		BlobDigests:    digests,
@@ -229,6 +231,7 @@ func getMissingDigestsRemoteCache(ctx context.Context, env environment.Env, remo
 	if err != nil {
 		log.Fatalf("Error FindMissingBlobs: %s", err.Error())
 	}
+	log.Infof("FindMissing: will upload %d blobs to CAS", len(res.MissingBlobDigests))
 	return res.MissingBlobDigests
 }
 
@@ -240,6 +243,7 @@ func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context
 	for _, d := range digests {
 		d := d
 		eg.Go(func() error {
+			log.Infof("Uploading %s", d.GetHash())
 			path := filepath.Join(tmpDir, fmt.Sprintf("%s.%d.tmp", d.GetHash(), rand.Int()))
 			node := &repb.FileNode{
 				Digest: d,
@@ -261,6 +265,7 @@ func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context
 			if err != nil {
 				return status.WrapErrorf(err, "upload %s", path)
 			}
+			log.Infof("Uploaded %s", path)
 			return nil
 		})
 	}
@@ -278,4 +283,6 @@ func uploadManifestRemoteCache(ctx context.Context, env environment.Env, key *fc
 	if err := cachetools.UploadActionResult(ctx, env.GetActionCacheClient(), acDigest, localACResult); err != nil {
 		log.Fatalf("Error uploading manifest to remote cache: %s", err)
 	}
+
+	log.Infof("Uploaded manifest to AC (%s)", acDigest.GetDigest().GetHash())
 }
