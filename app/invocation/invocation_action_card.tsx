@@ -76,7 +76,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
       }
     }
     if (prevProps.search.get("executeResponseDigest") != this.props.search.get("executeResponseDigest")) {
-      this.setState({ executeResponse: undefined });
       this.fetchExecuteResponse();
     }
   }
@@ -160,6 +159,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchExecuteResponse() {
+    this.setState({ executeResponse: undefined });
     const digestParam = this.props.search.get("executeResponseDigest");
     if (!digestParam) {
       alert_service.error("Missing execute response digest in URL");
