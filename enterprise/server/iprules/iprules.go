@@ -365,7 +365,7 @@ func (s *Service) SetIPRuleConfig(ctx context.Context, req *irpb.SetRulesConfigR
 		return nil, err
 	}
 	g.EnforceIPRules = req.GetEnforceIpRules()
-	if _, err := s.env.GetUserDB().InsertOrUpdateGroup(ctx, g); err != nil {
+	if _, err := s.env.GetUserDB().UpdateGroup(ctx, g); err != nil {
 		return nil, err
 	}
 	return &irpb.SetRulesConfigResponse{}, nil

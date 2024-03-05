@@ -61,7 +61,7 @@ func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) string
 		gr.URLIdentifier = strings.ToLower(gr.GroupID + "-slug")
 	}
 	gr.OwnedDomain = strings.Split(tu.Email, "@")[1]
-	_, err = env.GetUserDB().InsertOrUpdateGroup(ctx, &gr)
+	_, err = env.GetUserDB().UpdateGroup(ctx, &gr)
 	require.NoError(t, err)
 
 	return apiKey.Value

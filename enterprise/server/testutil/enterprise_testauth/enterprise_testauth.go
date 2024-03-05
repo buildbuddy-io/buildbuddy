@@ -76,7 +76,7 @@ func CreateRandomGroups(t *testing.T, env environment.Env) []*tables.User {
 		gid := u.Groups[0].Group.GroupID
 
 		// Take ownership of the domain so that users are auto-added to it.
-		_, err = udb.InsertOrUpdateGroup(adminCtx, &tables.Group{
+		_, err = udb.UpdateGroup(adminCtx, &tables.Group{
 			GroupID:       gid,
 			URLIdentifier: fmt.Sprintf("slug-%d-%d", g, rand.Int63n(1e12)),
 			OwnedDomain:   domain,

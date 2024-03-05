@@ -299,7 +299,7 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 
 	// Now enable user-owned keys for the group.
 	g.UserOwnedKeysEnabled = true
-	_, err = env.GetUserDB().InsertOrUpdateGroup(adminCtx, g)
+	_, err = env.GetUserDB().UpdateGroup(adminCtx, g)
 	require.NoError(t, err)
 
 	// Should now be able to use the user-owned key.
