@@ -139,6 +139,12 @@ func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, wor
 		return existingPath, nil
 	}
 
+	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
+	start := time.Now()
+	defer func() {
+		log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
+	}()
+
 	// Dedupe image conversion operations, which are disk IO-heavy. Note, we
 	// convert the image in the background so that one client's ctx timeout does
 	// not affect other clients. We do apply a timeout to the background
