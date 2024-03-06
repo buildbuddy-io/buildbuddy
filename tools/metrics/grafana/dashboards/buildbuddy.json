@@ -4922,7 +4922,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "1/histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{cache_name=\"pebble_cache\"}[10m])) by (le))",
+              "expr": "1/histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[10m])) by (le))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -4934,7 +4934,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "1/histogram_quantile(0.5, sum(rate(buildbuddy_pebble_compression_ratio_bucket{cache_name=\"pebble_cache\"}[10m])) by (le))",
+              "expr": "1/histogram_quantile(0.5, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[10m])) by (le))",
               "hide": false,
               "instant": false,
               "legendFormat": "__auto",
@@ -4947,7 +4947,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "1/histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{cache_name=\"pebble_cache\"}[10m])) by (le))",
+              "expr": "1/histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[10m])) by (le))",
               "hide": false,
               "instant": false,
               "legendFormat": "__auto",
