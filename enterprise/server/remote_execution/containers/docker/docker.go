@@ -58,6 +58,7 @@ var (
 	dockerDevices           = flag.Slice("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
 	dockerVolumes           = flag.Slice("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
 	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
+	dockerRequestGPU        = flag.String("executor.docker_gpus", "", "If set to 'all', run docker containers with a device request for all GPUs.")
 )
 
 type Provider struct {
@@ -404,6 +405,14 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 		// If dockerInit platform prop is false/unspecified, then leave the Init
 		// option nil, which means "use dockerd configured settings"
 	}
+
+	deviceRequests := []dockercontainer.DeviceRequest{}
+	if *dockerRequestGPU == "all" {
+		deviceRequests = append(deviceRequests, dockercontainer.DeviceRequest{
+			Capabilities: [][]string{[]string{"gpu"}},
+		})
+	}
+
 	return &dockercontainer.HostConfig{
 		NetworkMode: networkMode,
 		Binds:       binds,
@@ -414,6 +423,7 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 			Ulimits: []*units.Ulimit{
 				{Name: "nofile", Soft: defaultDockerUlimit, Hard: defaultDockerUlimit},
 			},
+			DeviceRequests: deviceRequests,
 		},
 	}
 }
