@@ -1974,6 +1974,30 @@ var (
 		CompressionType,
 	})
 
+	// Taken together, CompressedBlobSize and DecompressedBlobSize allow
+	// determining the average overall compression ratio of items written to
+	// the cache. This is an alternative to CompressionRatio (above) which
+	// is skewed because it weights blobs of different sizes equally. These
+	// values only track the blob size of blobs *written* to the cache.
+	CompressedBlobSizeWrite = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "compressor",
+		Name:      "compressed_blob_size_write",
+		Help:      "The number of compressed bytes in all blobs",
+	}, []string{
+		CacheNameLabel,
+		CompressionType,
+	})
+	DecompressedBlobSizeWrite = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "compressor",
+		Name:      "decompressed_blob_size_write",
+		Help:      "The number of decompressed bytes in all blobs",
+	}, []string{
+		CacheNameLabel,
+		CompressionType,
+	})
+
 	// #### Examples
 	//
 	// ```promql

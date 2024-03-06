@@ -2259,6 +2259,12 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		return err
 	}
 
+	if md.GetFileRecord().GetCompressor() == repb.Compressor_ZSTD {
+		labels := prometheus.Labels{metrics.CacheNameLabel: p.name, metrics.CompressionType: "zstd"}
+		metrics.CompressedBlobSizeWrite.With(labels).Add(float64(md.GetStoredSizeBytes()))
+		metrics.DecompressedBlobSizeWrite.With(labels).Add(float64(md.GetFileRecord().GetDigest().GetSizeBytes()))
+	}
+
 	unlockFn := p.locker.Lock(key.LockID())
 	defer unlockFn()
 
