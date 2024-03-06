@@ -541,9 +541,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	defer cacheCancel(context.Canceled)
 	eg, gCtx := errgroup.WithContext(cacheCtx)
 	cacheTreeNode := func(d *repb.Digest, descendents []*capb.DirectoryWithDigest) {
-		treeCache := &capb.TreeCache{
-			Children: make([]*capb.DirectoryWithDigest, len(descendents)),
-		}
+		treeCache := capb.TreeCacheFromVTPool()
+		treeCache.Children = make([]*capb.DirectoryWithDigest, len(descendents))
 		copy(treeCache.Children, descendents)
 		treeCacheDigest := d.CloneVT()
 
@@ -553,6 +552,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				return nil
 			}
 			buf, err := proto.Marshal(treeCache)
+			treeCache.ReturnToVTPool()
 			if err != nil {
 				return err
 			}

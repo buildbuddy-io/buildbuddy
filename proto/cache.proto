@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package cache;
 
+import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
@@ -254,6 +255,7 @@ message DirectoryWithDigest {
 }
 
 message TreeCache {
+  option (vtproto.mempool) = true;
   repeated DirectoryWithDigest children = 1;
 }
 

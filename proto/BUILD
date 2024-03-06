@@ -106,6 +106,7 @@ proto_library(
         "@com_google_protobuf//:field_mask_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/rpc:status_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     ],
 )
 
@@ -1390,6 +1391,7 @@ go_proto_library(
         ":remote_execution_go_proto",
         ":resource_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
     ],
 )
 
@@ -2051,6 +2053,7 @@ ts_proto_library(
         ":remote_execution_ts_proto",
         ":resource_ts_proto",
         ":timestamp_ts_proto",
+        ":vtproto_ts_proto",
     ],
 )
 
