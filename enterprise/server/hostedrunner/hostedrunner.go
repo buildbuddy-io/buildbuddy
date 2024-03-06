@@ -133,11 +133,16 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--bes_backend=" + events_api_url.String(),
 		"--cache_backend=" + cache_api_url.String(),
 		"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
+		"--pushed_repo_url=" + repoURL.String(),
+		"--pushed_ref=" + req.GetRepoState().GetCommitSha(),
+		"--pushed_branch=" + req.GetRepoState().GetBranch(),
+		//TODO(Maggie): Can delete target repo fields after script have been updated
+		// to not require it
 		"--target_repo_url=" + repoURL.String(),
+		"--target_branch=" + req.GetRepoState().GetBranch(),
 		"--bazel_sub_command=" + req.GetBazelCommand(),
 		"--invocation_id=" + invocationID,
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
-		"--target_branch=" + req.GetRepoState().GetBranch(),
 	}
 	if len(string(envJson)) > 0 {
 		args = append(args, "--env_overrides="+string(envJson))

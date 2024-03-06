@@ -53,6 +53,7 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 		return &interfaces.WebhookData{
 			EventName:     webhook_data.EventName.Push,
 			PushedRepoURL: v["Repository.Links.HTML.Href"],
+			PushedRef:     v["Push.Changes.0.New.Target.Hash"],
 			PushedBranch:  branch,
 			TargetRepoURL: v["Repository.Links.HTML.Href"],
 			TargetBranch:  branch,
@@ -79,6 +80,7 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 		return &interfaces.WebhookData{
 			EventName:     webhook_data.EventName.PullRequest,
 			PushedRepoURL: v["PullRequest.Source.Repository.Links.HTML.Href"],
+			PushedRef:     v["PullRequest.Source.Commit.Hash"],
 			PushedBranch:  v["PullRequest.Source.Branch.Name"],
 			SHA:           v["PullRequest.Source.Commit.Hash"],
 			TargetRepoURL: v["PullRequest.Destination.Repository.Links.HTML.Href"],
