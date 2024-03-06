@@ -534,8 +534,8 @@ func TestGetTree(t *testing.T) {
 		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
 	}
 
-	child1Digest, child1Files := uploadDirWithFiles(2, 1)
-	child2Digest, child2Files := uploadDirWithFiles(2, 1)
+	child1Digest, child1Files := uploadDirWithFiles(4, 1)
+	child2Digest, child2Files := uploadDirWithFiles(4, 1)
 
 	// Upload a root directory containing both child directories.
 	rootDir := &repb.Directory{
