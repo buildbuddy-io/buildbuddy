@@ -9,11 +9,12 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/require"
 
@@ -34,32 +35,73 @@ const (
 )
 
 func Run(t *testing.T, args ...string) *app.App {
-	return RunWithConfig(t, DefaultAppConfig(t), DefaultConfig, args...)
+	return RunWithConfig(t, DefaultConfig, args...)
 }
 
-func RunWithConfig(t *testing.T, appConfig *app.App, configPath string, args ...string) *app.App {
-	redisTarget := testredis.Start(t).Target
-	commandArgs := []string{
+func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
+	return CreateCluster(t).RunAppWithConfig(configPath, args...)
+}
+
+type Cluster struct {
+	t     *testing.T
+	Redis *testredis.Handle
+	LB    *testgrpc.Proxy
+
+	mu   sync.Mutex // protects Apps
+	Apps []*app.App
+}
+
+// CreateCluster starts a cluster with a shared Redis instance.
+// Apps added to the cluster will share the same Redis instance.
+// Apps added to the cluster will also be automatically added as backend targets
+// for the load balancer (Cluster.LB).
+func CreateCluster(t *testing.T) *Cluster {
+	rdb := testredis.Start(t)
+	c := &Cluster{
+		t:     t,
+		Redis: rdb,
+	}
+	// Start a load balancer that routes randomly to any active apps (calling
+	// Shutdown(i) will remove app i from the LB).
+	proxy := testgrpc.StartProxy(t)
+	proxy.SetDirector(testgrpc.RandomDialerFunc(func() []string {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		var targets []string
+		for _, a := range c.Apps {
+			targets = append(targets, a.GRPCAddress())
+		}
+		return targets
+	}))
+	c.LB = proxy
+	return c
+}
+
+func (c *Cluster) RunApp(args ...string) *app.App {
+	return c.RunAppWithConfig(DefaultConfig, args...)
+}
+
+func (c *Cluster) RunAppWithConfig(configPath string, args ...string) *app.App {
+	args = append([]string{
 		"--app_directory=/enterprise/app",
-		"--app.default_redis_target=" + redisTarget,
+		"--app.default_redis_target=" + c.Redis.Target,
 		"--telemetry_port=-1",
-	}
-	commandArgs = append(commandArgs, args...)
-	return app.RunWithApp(
-		t,
-		appConfig,
-		/* commandPath= */ "enterprise/server/cmd/server/buildbuddy_/buildbuddy",
-		commandArgs,
-		/* configPath= */ configPath,
-	)
+	}, args...)
+	app := app.Run(
+		c.t, "enterprise/server/cmd/server/buildbuddy_/buildbuddy",
+		args, configPath)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Apps = append(c.Apps, app)
+	return app
 }
 
-func DefaultAppConfig(t *testing.T) *app.App {
-	return &app.App{
-		HttpPort:       testport.FindFree(t),
-		GRPCPort:       testport.FindFree(t),
-		MonitoringPort: testport.FindFree(t),
-	}
+func (c *Cluster) ShutdownApp(i int) {
+	a := c.Apps[i]
+	c.mu.Lock()
+	c.Apps = append(c.Apps[:i], c.Apps[i+1:]...)
+	c.mu.Unlock()
+	a.Server.Shutdown()
 }
 
 // remote represents a handle on a remote BuildBuddy enterprise server.

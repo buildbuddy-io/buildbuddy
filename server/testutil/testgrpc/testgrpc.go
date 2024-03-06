@@ -92,11 +92,13 @@ func (p *Proxy) Dial() *grpc.ClientConn {
 	return conn
 }
 
-// RandomDialer returns a Director that randomly picks one of the given targets.
-func RandomDialer(targets []string) Director {
+// RandomDialerFunc returns a Director that randomly picks one of the given
+// targets returned by the func. The func is called before each RPC.
+func RandomDialerFunc(fn func() []string) Director {
 	return func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
 		var cc *grpc.ClientConn
 		var err error
+		targets := fn()
 		r := rand.Intn(len(targets))
 		for i := 0; i < len(targets); i++ {
 			target := targets[(r+i)%len(targets)]
@@ -117,4 +119,9 @@ func RandomDialer(targets []string) Director {
 		}
 		return ctx, cc, nil
 	}
+}
+
+// RandomDialer returns a Director that randomly picks one of the given targets.
+func RandomDialer(targets ...string) Director {
+	return RandomDialerFunc(func() []string { return targets })
 }

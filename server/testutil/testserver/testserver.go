@@ -7,8 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 )
@@ -24,15 +27,17 @@ const (
 )
 
 type Server struct {
-	monitoringPort        int
-	healthCheckServerType string
-	mu                    sync.Mutex
-	exited                bool
+	t    testing.TB
+	opts *Opts
+	cmd  *exec.Cmd
+
+	mu     sync.Mutex
+	exited bool
 	// err is the error returned by `cmd.Wait()`.
 	err error
 }
 
-func runfile(t *testing.T, path string) string {
+func runfile(t testing.TB, path string) string {
 	resolvedPath, err := bazelgo.Runfile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -47,32 +52,42 @@ type Opts struct {
 	HealthCheckServerType string
 }
 
-func Run(t *testing.T, opts *Opts) *Server {
+func Run(t testing.TB, opts *Opts) *Server {
 	server := &Server{
-		monitoringPort:        opts.HTTPPort,
-		healthCheckServerType: opts.HealthCheckServerType,
+		t:    t,
+		opts: opts,
 	}
+	err := server.Start()
+	require.NoError(t, err)
+	server.WaitForReady()
+	return server
+}
 
-	cmd := exec.Command(runfile(t, opts.BinaryPath), opts.Args...)
+func (s *Server) Start() error {
+	t := s.t
+	cmd := exec.Command(runfile(t, s.opts.BinaryPath), s.opts.Args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	t.Cleanup(func() {
 		cmd.Process.Kill() // ignore errors
 	})
 	go func() {
 		err := cmd.Wait()
-		server.mu.Lock()
-		defer server.mu.Unlock()
-		server.exited = true
-		server.err = err
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.exited = true
+		s.err = err
 	}()
-	if err := server.waitForReady(); err != nil {
-		t.Fatal(err)
-	}
-	return server
+	s.cmd = cmd
+	return nil
+}
+
+// Shutdown begins graceful shutdown. It does not wait for shutdown to complete.
+func (s *Server) Shutdown() {
+	s.cmd.Process.Signal(syscall.SIGTERM)
 }
 
 func isOK(resp *http.Response) (bool, error) {
@@ -84,7 +99,7 @@ func isOK(resp *http.Response) (bool, error) {
 	return string(body) == "OK", nil
 }
 
-func (s *Server) waitForReady() error {
+func (s *Server) WaitForReady() error {
 	start := time.Now()
 	for {
 		s.mu.Lock()
@@ -94,7 +109,7 @@ func (s *Server) waitForReady() error {
 		if exited {
 			return fmt.Errorf("binary failed to start: %s", err)
 		}
-		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/readyz?server-type=%s", s.monitoringPort, s.healthCheckServerType))
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/readyz?server-type=%s", s.opts.HTTPPort, s.opts.HealthCheckServerType))
 		ok := false
 		if err == nil {
 			ok, err = isOK(resp)

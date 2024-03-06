@@ -5,5 +5,8 @@ go_library(
     srcs = ["testserver.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testserver",
     visibility = ["//visibility:public"],
-    deps = ["@io_bazel_rules_go//go/tools/bazel:go_default_library"],
+    deps = [
+        "@com_github_stretchr_testify//require",
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+    ],
 )

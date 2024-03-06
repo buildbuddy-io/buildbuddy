@@ -24,6 +24,8 @@ type App struct {
 	HttpPort       int
 	MonitoringPort int
 	GRPCPort       int
+	// Server handle. Can be used to restart the app.
+	Server *testserver.Server
 }
 
 // Run a local BuildBuddy server for the scope of the given test case.
@@ -36,11 +38,6 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 		GRPCPort:       testport.FindFree(t),
 		MonitoringPort: testport.FindFree(t),
 	}
-	return RunWithApp(t, app, commandPath, commandArgs, configFilePath)
-
-}
-
-func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string, configFilePath string) *App {
 	dataDir := testfs.MakeTempDir(t)
 	args := []string{
 		"--app.log_level=debug",
@@ -60,12 +57,13 @@ func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string
 	}
 	args = append(args, commandArgs...)
 
-	testserver.Run(t, &testserver.Opts{
+	server := testserver.Run(t, &testserver.Opts{
 		BinaryPath:            commandPath,
 		Args:                  args,
 		HTTPPort:              app.HttpPort,
 		HealthCheckServerType: "buildbuddy-server",
 	})
+	app.Server = server
 
 	return app
 }
