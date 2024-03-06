@@ -35,7 +35,6 @@ const (
 	maxFileSizeBytes = minFileSizeBytes + 10_000
 	numWrites        = 100
 	numReads         = numWrites * 10
-	doReads          = false
 	concurrency      = 100
 
 	shutdownDuringWrites = true
@@ -60,7 +59,7 @@ func TestDistributedCache(t *testing.T) {
 			"--cache.distributed_cache.replication_factor=3",
 			"--cache.distributed_cache.cluster_size=" + fmt.Sprint(clusterSize),
 			"--cache.distributed_cache.listen_addr=" + fmt.Sprintf("localhost:%d", distributedCachePorts[i]),
-			"--app.log_level=info", // DO NOT SUBMIT (switch to warn)
+			"--app.log_level=warn",
 			"--zone_override=test",
 		}
 		for _, port := range distributedCachePorts {
@@ -74,10 +73,6 @@ func TestDistributedCache(t *testing.T) {
 	}
 	wg.Wait()
 	log.Infof("Test: all servers are ready")
-
-	// Wait a little bit for all apps to discover each other.
-	// TODO: do this explicitly somehow?
-	time.Sleep(1000 * time.Millisecond)
 
 	conn := cluster.LB.Dial()
 	bsc := bspb.NewByteStreamClient(conn)
@@ -149,7 +144,7 @@ func TestDistributedCache(t *testing.T) {
 			return nil
 		})
 		if shutdownDuringReads && i == numReads/2 {
-			log.Infof("Test: completed read %d; shutting down app", i)
+			log.Infof("Test: completed read %d; shutting down random app", i)
 			cluster.ShutdownApp(rand.Intn(len(cluster.Apps)))
 		}
 	}
