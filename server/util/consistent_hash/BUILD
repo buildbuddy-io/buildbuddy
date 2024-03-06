@@ -17,8 +17,11 @@ go_test(
     srcs = ["consistent_hash_test.go"],
     deps = [
         ":consistent_hash",
+        "//proto:remote_execution_go_proto",
+        "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/random",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

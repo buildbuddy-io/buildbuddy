@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
@@ -34,9 +34,9 @@ import (
 )
 
 var (
-	cacheTarget  = flag.String("cache_target", "grpc://localhost:1985", "Cache target to connect to.")
-	writeQPS     = flag.Uint("write_qps", 100, "How many queries per second to attempt to write.")
-	readQPS      = flag.Uint("read_qps", 1000, "How many queries per second to attempt to read.")
+	cacheTarget  = flag.Slice("cache_target", []string{}, "Cache target(s) to connect to. Defaults to grpc://localhost:1985")
+	writeQPS     = flag.Int("write_qps", 100, "How many queries per second to attempt to write.")
+	readQPS      = flag.Int("read_qps", 1000, "How many queries per second to attempt to read.")
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 	qpsAvgWindow = flag.Duration("qps_avg_window", 5*time.Second, "QPS averaging window")
@@ -55,6 +55,8 @@ var (
 )
 
 const (
+	defaultCacheTarget = "grpc://localhost:1985"
+
 	byteStreamRead   = "google.bytestream.ByteStream/Read"
 	byteStreamWrite  = "google.bytestream.ByteStream/Write"
 	findMissingBlobs = "build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs"
@@ -188,6 +190,10 @@ func main() {
 	flag.Parse()
 	if err := log.Configure(); err != nil {
 		log.Fatalf("Failed to configure logging: %s", err)
+	}
+
+	if len(*cacheTarget) == 0 {
+		*cacheTarget = []string{defaultCacheTarget}
 	}
 
 	digestGenerator = digest.RandomGenerator(time.Now().Unix())

@@ -1,6 +1,8 @@
 package consistent_hash
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"hash/crc32"
 	"sort"
 	"strconv"
@@ -30,7 +32,18 @@ func NewConsistentHash() *ConsistentHash {
 	}
 }
 
+var UseSHA = true
+
 func (c *ConsistentHash) hashKey(key string) int {
+	if UseSHA {
+		sha256 := sha256.Sum256([]byte(key))
+		out := 0
+		for i := 0; i < 4; i++ {
+			out += int(sha256[i]) << (i * 8)
+		}
+		return out
+	}
+
 	return int(crc32.ChecksumIEEE([]byte(key)))
 }
 
@@ -61,6 +74,19 @@ func (c *ConsistentHash) Set(items ...string) error {
 	}
 	sort.Ints(c.keys)
 	return nil
+}
+
+func (c *ConsistentHash) DebugJSON() string {
+	b, _ := json.Marshal(&struct {
+		Keys  []int         `json:"keys"`
+		Ring  map[int]uint8 `json:"ring"`
+		Items []string      `json:"items"`
+	}{
+		Keys:  c.keys,
+		Ring:  c.ring,
+		Items: c.items,
+	})
+	return string(b)
 }
 
 // Get returns the single "item" responsible for the specified key.
