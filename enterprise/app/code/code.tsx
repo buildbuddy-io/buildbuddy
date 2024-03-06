@@ -1429,18 +1429,31 @@ function stateReviver(key: string, value: any) {
     }
     if (value.dataType === "ModelMap") {
       return new Map(
-        value.value.map((e: any) => [e.key, monaco.editor.createModel(e.value, langFromPath(e.key), e.key)])
+        value.value.map((e: { key: string; value: string }) => [
+          e.key,
+          monaco.editor.createModel(e.value, langFromPath(e.key), monaco.Uri.file(e.key)),
+        ])
       );
     }
     if (value.dataType === "DiffModelMap") {
       return new Map(
-        value.value.map((e: any) => [
-          e.key,
-          {
-            original: monaco.editor.createModel(e.original, langFromPath(e.originalUri.path), e.originalUri.path),
-            modified: monaco.editor.createModel(e.modified, langFromPath(e.modifiedUri.path), e.modifiedUri.path),
-          },
-        ])
+        value.value.map(
+          (e: { key: string; original: string; originalUri: string; modified: string; modifiedUri: string }) => [
+            e.key,
+            {
+              original: monaco.editor.createModel(
+                e.original,
+                langFromPath(e.originalUri),
+                monaco.Uri.file(e.originalUri)
+              ),
+              modified: monaco.editor.createModel(
+                e.modified,
+                langFromPath(e.modifiedUri),
+                monaco.Uri.file(e.modifiedUri)
+              ),
+            },
+          ]
+        )
       );
     }
   }
