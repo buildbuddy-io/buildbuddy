@@ -53,6 +53,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/bazel_request",
         "//server/util/compression",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/testing/flags",
         "@com_github_google_uuid//:uuid",

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"runtime"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
@@ -37,7 +39,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
+func runCASServer(ctx context.Context, env *testenv.TestEnv, t testing.TB) *grpc.ClientConn {
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {
 		t.Error(err)
@@ -437,7 +439,7 @@ func zstdDecompress(t *testing.T, b []byte) []byte {
 	return out
 }
 
-func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, instanceName string, depth, branchingFactor int) (*repb.Digest, []string) {
+func makeTree(ctx context.Context, t testing.TB, bsClient bspb.ByteStreamClient, instanceName string, depth, branchingFactor int) (*repb.Digest, []string) {
 	numFiles := int(math.Pow(float64(branchingFactor), float64(depth)))
 	fileNames := make([]string, 0, numFiles)
 	var leafNodes []*repb.DirectoryNode
@@ -483,7 +485,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 	return rootDigest, fileNames
 }
 
-func readTree(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, instanceName string, rootDigest *repb.Digest) []string {
+func readTree(ctx context.Context, t testing.TB, casClient repb.ContentAddressableStorageClient, instanceName string, rootDigest *repb.Digest) []string {
 	// Fetch the tree, and return contents.
 	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
 		InstanceName: instanceName,
@@ -691,4 +693,65 @@ func TestGetTreeMissingRoot(t *testing.T) {
 	_, err = stream.Recv()
 	require.Error(t, err)
 	require.True(t, hasMissingDigestError(err))
+}
+
+func BenchmarkGetTree(b *testing.B) {
+	*log.LogLevel = "error"
+	*log.IncludeShortFileName = true
+	log.Configure()
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(b)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		b.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, te, b)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	// Upload a dir containing fileCount files, and return the file
+	// names and directory digest.
+	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
+		return makeTree(ctx, b, bsClient, instanceName, depth, branchingFactor)
+	}
+
+	depths := []int{2, 4}
+	branchingFactors := []int{1, 2}
+
+	for _, d := range depths {
+		for _, f := range branchingFactors {
+			b.Run(fmt.Sprintf("depth-%d-branchingFactor-%d", d, f), func(b *testing.B) {
+				b.ReportAllocs()
+				b.ResetTimer()
+				b.StopTimer()
+				for n := 0; n < b.N; n++ {
+					child1Digest, _ := uploadDirWithFiles(d, f)
+					child2Digest, _ := uploadDirWithFiles(d, f)
+
+					// Upload a root directory containing both child directories.
+					rootDir := &repb.Directory{
+						Directories: []*repb.DirectoryNode{
+							&repb.DirectoryNode{
+								Name:   fmt.Sprintf("dir-%d-%d-%d-1", d, f, n),
+								Digest: child1Digest,
+							},
+							&repb.DirectoryNode{
+								Name:   fmt.Sprintf("dir-%d-%d-%d-2", d, f, n),
+								Digest: child2Digest,
+							},
+						},
+					}
+					rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
+					assert.NoError(b, err)
+
+					b.StartTimer()
+					out := readTree(ctx, b, casClient, instanceName, rootDigest)
+					b.StopTimer()
+					runtime.KeepAlive(out)
+				}
+			})
+		}
+	}
 }
