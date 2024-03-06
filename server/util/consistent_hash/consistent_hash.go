@@ -1,6 +1,8 @@
 package consistent_hash
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"hash/crc32"
 	"sort"
 	"strconv"
@@ -10,28 +12,44 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-const defaultNumReplicas = 100
+// HashFunction is the hash function used to map values to a location on the
+// consistent hash ring.
+type HashFunction func(string) int
+
+var (
+	// SHA256 is a consistent hash function that uses the first 8 bytes from the
+	// SHA256 checksum of the key, interpreted as a big-endian uint64.
+	SHA256 HashFunction = func(key string) int {
+		sum := sha256.Sum256([]byte(key))
+		return int(binary.BigEndian.Uint64(sum[:]))
+	}
+
+	// CRC32 is a consistent hash function based on the CRC32 checksum of the
+	// key. We are currently migrating away from this, since it can result in
+	// uneven load distribution.
+	CRC32 HashFunction = func(key string) int {
+		return int(crc32.ChecksumIEEE([]byte(key)))
+	}
+)
 
 type ConsistentHash struct {
 	ring        map[int]uint8
 	keys        []int
 	items       []string
 	numReplicas int
+	hashKey     HashFunction
 	mu          sync.RWMutex
 	replicaMu   sync.RWMutex
 }
 
-func NewConsistentHash() *ConsistentHash {
+func NewConsistentHash(hashFunction HashFunction, numReplicas int) *ConsistentHash {
 	return &ConsistentHash{
-		numReplicas: defaultNumReplicas,
+		numReplicas: numReplicas,
+		hashKey:     hashFunction,
 		keys:        make([]int, 0),
 		ring:        make(map[int]uint8, 0),
 		items:       make([]string, 0),
 	}
-}
-
-func (c *ConsistentHash) hashKey(key string) int {
-	return int(crc32.ChecksumIEEE([]byte(key)))
 }
 
 func (c *ConsistentHash) GetItems() []string {
