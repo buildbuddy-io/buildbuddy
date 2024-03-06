@@ -47,6 +47,9 @@ const (
 	// (40 bytes). So keeping around 100000 of these means an extra 10MB
 	// per peer.
 	maxHintedHandoffsPerPeer = 100000
+
+	// Number of copies of each peer on the consistent hash ring.
+	consistentHashNumReplicas = 100
 )
 
 type CacheConfig struct {
@@ -146,8 +149,8 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	if len(config.ExtraNodes) > 0 && len(config.Nodes) == 0 {
 		return nil, status.FailedPreconditionError("extra nodes may only be specified when all nodes are hardcoded.")
 	}
-	chash := consistent_hash.NewConsistentHash()
-	extraCHash := consistent_hash.NewConsistentHash()
+	chash := consistent_hash.NewConsistentHash(consistent_hash.CRC32, consistentHashNumReplicas)
+	extraCHash := consistent_hash.NewConsistentHash(consistent_hash.CRC32, consistentHashNumReplicas)
 	if config.RPCHeartbeatInterval == 0 {
 		config.RPCHeartbeatInterval = 1 * time.Second
 	}
