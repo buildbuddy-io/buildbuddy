@@ -20,5 +20,7 @@ go_test(
         "//server/util/log",
         "//server/util/random",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_x_exp//maps",
     ],
 )
