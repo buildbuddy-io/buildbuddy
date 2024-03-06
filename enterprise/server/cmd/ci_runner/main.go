@@ -515,7 +515,9 @@ func main() {
 }
 
 func run() error {
-	flag.Parse()
+	if err := parseFlags(); err != nil {
+		return err
+	}
 	if *credentialHelper {
 		return runCredentialHelper()
 	}
@@ -652,6 +654,30 @@ func run() error {
 	}
 	if result.exitCode != 0 {
 		return result // as error
+	}
+	return nil
+}
+
+// parseFlags should not fail when parsing an undefined flag.
+// This lets us add new flags to this script without breaking older executors
+// (on self-hosted executors, for example) that aren't expecting them when the
+// app server tries to send them.
+func parseFlags() error {
+	// Ignore errors when parsing an unknown flag
+	flagset := flag.CommandLine
+	flagset.Init(os.Args[0], flag.ContinueOnError)
+	flagset.Usage = func() {}
+
+	unparsedArgs := os.Args[1:]
+	for len(unparsedArgs) > 0 {
+		err := flagset.Parse(unparsedArgs)
+		// Ignore undefined flag errors. The flag package will automatically print
+		// a warning error message.
+		if err == nil || strings.Contains(err.Error(), "flag provided but not defined") {
+			unparsedArgs = flagset.Args()
+		} else {
+			return err
+		}
 	}
 	return nil
 }
