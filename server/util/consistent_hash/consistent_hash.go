@@ -47,11 +47,11 @@ type ConsistentHash struct {
 // ring. Ideally, the hash function produces random-looking outputs for distinct
 // inputs.
 //
-// numVnodes decides how many copies of each server replica to place on the
-// ring. See https://en.wikipedia.org/wiki/Consistent_hashing#Variance_reduction
-func NewConsistentHash(hashFunction HashFunction, numVnodes int) *ConsistentHash {
+// vnodes decides how many copies of each server replica to place on the ring.
+// See https://en.wikipedia.org/wiki/Consistent_hashing#Variance_reduction
+func NewConsistentHash(hashFunction HashFunction, vnodes int) *ConsistentHash {
 	return &ConsistentHash{
-		numVnodes: numVnodes,
+		numVnodes: vnodes,
 		hashKey:   hashFunction,
 		keys:      make([]int, 0),
 		ring:      make(map[int]uint8, 0),
