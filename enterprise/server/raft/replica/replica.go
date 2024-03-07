@@ -310,7 +310,7 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 			return wb.Set(key, val, nil /*ignored write options*/)
 		}
 		sm.rangeMu.RUnlock()
-		return status.OutOfRangeErrorf("range %s does not contain key %q", sm.mappedRange, string(key))
+		return status.OutOfRangeErrorf("%s: range %s does not contain key %q", constants.RangeNotCurrentMsg, sm.mappedRange, string(key))
 	}
 	sm.rangeMu.RUnlock()
 
