@@ -1042,7 +1042,6 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 			}
 			continue
 		}
-		log.Printf("Writing to peer %q", peer)
 		mwc.peerClosers[peer] = rwc
 	}
 	if len(mwc.peerClosers) < c.config.ReplicationFactor {
