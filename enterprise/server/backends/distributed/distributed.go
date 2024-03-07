@@ -147,7 +147,7 @@ func Register(env *real_environment.RealEnv) error {
 func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
 	// Check Preconditions: if newNodes are enabled, node list must have been manually specified.
 	if len(config.NewNodes) > 0 && len(config.Nodes) == 0 {
-		return nil, status.FailedPreconditionError("extra nodes may only be specified when all nodes are hardcoded.")
+		return nil, status.FailedPreconditionError("new nodes may only be specified when all nodes are hardcoded.")
 	}
 	chash := consistent_hash.NewConsistentHash(consistent_hash.CRC32, consistentHashNumReplicas)
 	extraCHash := consistent_hash.NewConsistentHash(consistent_hash.CRC32, consistentHashNumReplicas)
@@ -406,14 +406,14 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 			newPrimaryPeers := extendedPeerList[:c.config.ReplicationFactor]
 			newSecondaryPeers := extendedPeerList[c.config.ReplicationFactor:]
 
-			// If newNodes is set, we want to additionally attempt reads
-			// on the nodes where the data ~would~ be if the extra nodes
-			// were included in the full peer set.
+			// If newNodes is set, we want to first attempt reads on
+			// the nodes where the data ~would~ be if the new nodes
+			// were the primary peer set, but also read from the old
+			// set of peers.
 			//
-			// These extra reads allow us to move data to the new nodes
-			// and read it immediately, while falling back to the old data
-			// location if it's not found and backfilling to the new
-			// nodes.
+			// These extra reads allow us to move data to the new
+			// nodes and read it immediately, while falling back to
+			// the old data location if it's not found.
 			primaryPeers = dedupe(append(newPrimaryPeers, primaryPeers...))
 			secondaryPeers = dedupe(append(newSecondaryPeers, secondaryPeers...))
 		}
