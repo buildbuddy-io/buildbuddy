@@ -1463,7 +1463,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	// and the statemachine keeps progressing.
 	batchReq := &rfpb.BatchCmdRequest{}
 	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
-		return entry, err
+		return entry, status.InternalErrorf("failed to unmarshal entry.Cmd: %s", err)
 	}
 
 	sm.rangeMu.RLock()
@@ -1525,7 +1525,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 
 	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
-		return entry, err
+		return entry, status.InternalErrorf("failed to marshal batchRsp: %s", err)
 	}
 	entry.Result = dbsm.Result{
 		Value: uint64(len(entry.Cmd)),
@@ -1534,7 +1534,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	appliedIndex := uint64ToBytes(entry.Index)
 	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
 	if err := wb.Commit(pebble.NoSync); err != nil {
-		return entry, err
+		return entry, status.InternalErrorf("failed to commit batch: %s", err)
 	} else {
 		// If the batch commit was successful, update the replica's in-
 		// memory state.
@@ -1599,14 +1599,14 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	defer canary.Start("replica.Update", time.Second)()
 	db, err := sm.leaser.DB()
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("failed to get pebble DB from the leaser: %s", err)
 	}
 	defer db.Close()
 
 	for i, entry := range entries {
 		e, err := sm.singleUpdate(db, entry)
 		if err != nil {
-			return nil, err
+			return nil, status.InternalErrorf("failed to singleUpdate:%s", err)
 		}
 		entries[i] = e
 	}
