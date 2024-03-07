@@ -718,15 +718,15 @@ func BenchmarkGetTree(b *testing.B) {
 	}
 
 	depths := []int{2, 4}
-	branchingFactors := []int{1, 2}
+	branchingFactors := []int{1, 2, 3}
 
 	for _, d := range depths {
 		for _, f := range branchingFactors {
 			b.Run(fmt.Sprintf("depth-%d-branchingFactor-%d", d, f), func(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
-				b.StopTimer()
 				for n := 0; n < b.N; n++ {
+					b.StopTimer()
 					child1Digest, _ := uploadDirWithFiles(d, f)
 					child2Digest, _ := uploadDirWithFiles(d, f)
 
