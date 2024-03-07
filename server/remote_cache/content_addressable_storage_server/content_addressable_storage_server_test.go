@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"runtime"
 	"testing"
 	"time"
 
@@ -723,8 +722,7 @@ func BenchmarkGetTree(b *testing.B) {
 	for _, d := range depths {
 		for _, f := range branchingFactors {
 			b.Run(fmt.Sprintf("depth-%d-branchingFactor-%d", d, f), func(b *testing.B) {
-				b.ReportAllocs()
-				b.ResetTimer()
+				rootDigests := make([]*repb.Digest, 0, b.N)
 				for n := 0; n < b.N; n++ {
 					b.StopTimer()
 					child1Digest, _ := uploadDirWithFiles(d, f)
@@ -745,11 +743,13 @@ func BenchmarkGetTree(b *testing.B) {
 					}
 					rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
 					assert.NoError(b, err)
+					rootDigests = append(rootDigests, rootDigest)
+				}
 
-					b.StartTimer()
-					out := readTree(ctx, b, casClient, instanceName, rootDigest)
-					b.StopTimer()
-					runtime.KeepAlive(out)
+				b.ReportAllocs()
+				b.ResetTimer()
+				for n := 0; n < b.N; n++ {
+					_ = readTree(ctx, b, casClient, instanceName, rootDigests[n])
 				}
 			})
 		}
