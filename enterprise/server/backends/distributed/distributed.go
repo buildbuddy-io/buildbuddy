@@ -809,12 +809,13 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 			c.log.CtxDebugf(ctx, "Reader(%q) not found on peer %s", cacheproxy.ResourceIsolationString(rn), peer)
 			continue
 		}
+		c.log.CtxDebugf(ctx, "Reader(%q) error on peer %s: %s", cacheproxy.ResourceIsolationString(rn), peer, err)
 
 		// Some other error -- mark this peer as failed and try the next one.
 		ps.MarkPeerAsFailed(peer)
 
 	}
-	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to query metadata %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
+	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to read %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
