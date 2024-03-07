@@ -48,7 +48,6 @@ go_test(
         "//server/testutil/testport",
         "//server/util/compression",
         "//server/util/grpc_client",
-        "//server/util/log",
         "//server/util/prefix",
         "//server/util/proto",
         "//server/util/testing/flags",
