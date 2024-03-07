@@ -1606,6 +1606,174 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	}
 }
 
+func TestExtraNodesReadWrite(t *testing.T) {
+	flags.Set(t, "cache.distributed_cache.new_nodes_read_only", false)
+	flags.Set(t, "cache.distributed_cache.new_consistent_hash_function", "SHA256")
+	flags.Set(t, "cache.distributed_cache.new_consistent_hash_vnodes", 10000)
+
+	// Disable backfills so digests are not copied to the new peerset.
+	flags.Set(t, "cache.distributed_cache.enable_backfill", false)
+
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	numDigestsToWrite := 200
+
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	// Write some data.
+	written := make([]*rspb.ResourceName, 0)
+	for i := 0; i < numDigestsToWrite; i++ {
+		rn, buf := testdigest.RandomACResourceBuf(t, 100)
+		if err := dc1.Set(ctx, rn, buf); err != nil {
+			require.NoError(t, err)
+		}
+		written = append(written, rn)
+	}
+	// Reset log of caches 1,2,3 so we don't see the initial write ops.
+	memoryCache1.clearLog()
+	memoryCache2.clearLog()
+	memoryCache3.clearLog()
+
+	caches := []interfaces.Cache{dc1, dc2, dc3}
+
+	// Read the data we just wrote.
+	for i, rn := range written {
+		c, err := caches[i%len(caches)].Contains(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, c)
+	}
+
+	// Capture the original read operations (to compare against later).
+	originalReadOpsByPeer := make(map[string][]cacheOp, 0)
+	originalReadOpsByPeer[peer1] = append([]cacheOp{}, memoryCache1.ops...)
+	originalReadOpsByPeer[peer2] = append([]cacheOp{}, memoryCache2.ops...)
+	originalReadOpsByPeer[peer3] = append([]cacheOp{}, memoryCache3.ops...)
+
+	// Reset 1,2,3 again so all node op lists are empty.
+	memoryCache1.clearLog()
+	memoryCache2.clearLog()
+	memoryCache3.clearLog()
+
+	waitForShutdown(dc1)
+	waitForShutdown(dc2)
+	waitForShutdown(dc3)
+
+	// These nodes will be added in as "extra nodes", then the test
+	// will check that old data is still readable and new data is writeable.
+	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer5 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer6 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+
+	baseConfig = CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		NewNodes:           []string{peer1, peer2, peer3, peer4, peer5, peer6},
+		DisableLocalLookup: true,
+	}
+
+	config1 = baseConfig
+	config1.ListenAddr = peer1
+	dc1 = startNewDCache(t, env, config1, memoryCache1)
+
+	config2 = baseConfig
+	config2.ListenAddr = peer2
+	dc2 = startNewDCache(t, env, config2, memoryCache2)
+
+	config3 = baseConfig
+	config3.ListenAddr = peer3
+	dc3 = startNewDCache(t, env, config3, memoryCache3)
+
+	// Now bring up the new nodes
+	memoryCache4 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config4 := baseConfig
+	config4.ListenAddr = peer4
+	dc4 := startNewDCache(t, env, config4, memoryCache4)
+
+	memoryCache5 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config5 := baseConfig
+	config5.ListenAddr = peer5
+	dc5 := startNewDCache(t, env, config5, memoryCache5)
+
+	memoryCache6 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config6 := baseConfig
+	config6.ListenAddr = peer6
+	dc6 := startNewDCache(t, env, config6, memoryCache6)
+
+	caches = []interfaces.Cache{dc1, dc2, dc3, dc4, dc5, dc6}
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+	waitForReady(t, config4.ListenAddr)
+	waitForReady(t, config5.ListenAddr)
+	waitForReady(t, config6.ListenAddr)
+
+	// Read the data again from the same nodes we did originally.
+	for i, rn := range written {
+		c, err := caches[i%3].Contains(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, c)
+	}
+
+	// Capture the new read operations. They should be exactly the same as
+	// the old read operations, even in the presence of the new nodes.
+	newReadOpsByPeer := make(map[string][]cacheOp, 0)
+	newReadOpsByPeer[peer1] = append([]cacheOp{}, memoryCache1.ops...)
+	newReadOpsByPeer[peer2] = append([]cacheOp{}, memoryCache2.ops...)
+	newReadOpsByPeer[peer3] = append([]cacheOp{}, memoryCache3.ops...)
+
+	for _, peer := range []string{peer1, peer2, peer3} {
+		require.Equal(t, newReadOpsByPeer[peer], originalReadOpsByPeer[peer])
+		for i, oldOp := range originalReadOpsByPeer[peer] {
+			log.Printf("%q old: %s, new: %s", peer, oldOp, newReadOpsByPeer[peer][i])
+		}
+	}
+
+	for i := 0; i < numDigestsToWrite; i++ {
+		rn, buf := testdigest.RandomACResourceBuf(t, 100)
+		if err := caches[i%len(caches)].Set(ctx, rn, buf); err != nil {
+			require.NoError(t, err)
+		}
+		written = append(written, rn)
+	}
+
+	// Ensure that all digests (including newly written ones) are still
+	// found, no matter the node queried.
+	for i, rn := range written {
+		c, err := caches[i%len(caches)].Contains(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, c)
+	}
+}
+
 type Op int
 
 const (
