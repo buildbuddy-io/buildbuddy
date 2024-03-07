@@ -534,7 +534,7 @@ func TestGetTree(t *testing.T) {
 	}
 
 	child1Digest, child1Files := uploadDirWithFiles(4, 1)
-	child2Digest, child2Files := uploadDirWithFiles(4, 1)
+	child2Digest, child2Files := uploadDirWithFiles(2, 3)
 
 	// Upload a root directory containing both child directories.
 	rootDir := &repb.Directory{
