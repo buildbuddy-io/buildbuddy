@@ -24,6 +24,10 @@ QA_ROOT = os.environ.get(
     "QA_ROOT", os.path.join(os.path.expanduser("~"), "buildbuddy-qa")
 )
 
+API_KEY = os.environ.get(
+    "BB_API_KEY",
+)
+
 REPO_CONFIGS = [
     {
         "name": "buildbuddy",
@@ -31,9 +35,14 @@ REPO_CONFIGS = [
         "command": """
             bazel test //... \
                 --config=remote-dev \
+                --remote_executor=remote.buildbuddy.dev \
+                --remote_cache=remote.buildbuddy.dev \
+                --bes_backend=remote.buildbuddy.dev \
+                --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --flaky_test_attempts=3 \
-                --build_metadata=TAGS=dev-qa
-        """,
+                --build_metadata=TAGS=dev-qa \
+                --remote_header=x-buildbuddy-api-key={}
+        """.format(API_KEY),
     },
     {
         "name": "bazel-gazelle",
@@ -45,8 +54,14 @@ REPO_CONFIGS = [
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --remote_timeout=10m \
-                --build_metadata=TAGS=dev-qa
-        """,
+                --build_metadata=TAGS=dev-qa \
+                --noenable_bzlmod \
+                --extra_execution_platforms=@buildbuddy_toolchain//:platform \
+                --host_platform=@buildbuddy_toolchain//:platform \
+                --platforms=@buildbuddy_toolchain//:platform \
+                --crosstool_top=@buildbuddy_toolchain//:toolchain \
+                --remote_header=x-buildbuddy-api-key={}
+        """.format(API_KEY),
     },
     {
         "name": "abseil-cpp",
@@ -59,32 +74,14 @@ REPO_CONFIGS = [
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --remote_timeout=10m \
+                --build_metadata=TAGS=dev-qa \
+                --noenable_bzlmod \
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
                 --host_platform=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
                 --crosstool_top=@buildbuddy_toolchain//:toolchain \
-                --build_metadata=TAGS=dev-qa
-        """,
-    },
-    {
-        "name": "bazel",
-        "repo_url": "https://github.com/bazelbuild/bazel",
-        "command": """
-            bazel build //src/main/java/com/google/devtools/build/lib/... \
-                --remote_executor=remote.buildbuddy.dev \
-                --remote_cache=remote.buildbuddy.dev \
-                --bes_backend=remote.buildbuddy.dev \
-                --bes_results_url=https://app.buildbuddy.dev/invocation/ \
-                --remote_timeout=10m \
-                --extra_execution_platforms=@buildbuddy_toolchain//:platform \
-                --host_platform=@buildbuddy_toolchain//:platform \
-                --platforms=@buildbuddy_toolchain//:platform \
-                --crosstool_top=@buildbuddy_toolchain//:toolchain \
-                --noincompatible_disallow_empty_glob \
-                --java_runtime_version=remotejdk_17 \
-                --jobs=100 \
-                --build_metadata=TAGS=dev-qa
-        """,
+                --remote_header=x-buildbuddy-api-key={}
+        """.format(API_KEY),
     },
     {
         "name": "rules_python",
@@ -97,8 +94,13 @@ REPO_CONFIGS = [
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --remote_timeout=10m \
                 --jobs=100 \
-                --build_metadata=TAGS=dev-qa
-        """,
+                --build_metadata=TAGS=dev-qa \
+                --extra_execution_platforms=@buildbuddy_toolchain//:platform \
+                --host_platform=@buildbuddy_toolchain//:platform \
+                --platforms=@buildbuddy_toolchain//:platform \
+                --crosstool_top=@buildbuddy_toolchain//:toolchain \
+                --remote_header=x-buildbuddy-api-key={}
+        """.format(API_KEY),
     },
     {
         "name": "tensorflow",
@@ -112,25 +114,26 @@ REPO_CONFIGS = [
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --nogoogle_default_credentials \
-                --build_metadata=TAGS=dev-qa
-        """,
+                --build_metadata=TAGS=dev-qa \
+                --remote_header=x-buildbuddy-api-key={}
+        """.format(API_KEY),
     },
 ]
 
 BUILDBUDDY_TOOLCHAIN_SNIPPET = """
-http_archive (
+http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "e899f235b36cb901b678bd6f55c1229df23fcbc7921ac7a3585d29bff2bf9cfd",
-    strip_prefix = "buildbuddy-toolchain-fd351ca8f152d66fc97f9d98009e0ae000854e8f",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/fd351ca8f152d66fc97f9d98009e0ae000854e8f.tar.gz"],
+    sha256 = "e8ba5cf78c8a6268a08cf563c54d3d23a7edf288a16b39fadc8b8a27b2527155",
+    strip_prefix = "buildbuddy-toolchain-f52e991c46e4bb6c71320db3970c20ce088ce951",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/f52e991c46e4bb6c71320db3970c20ce088ce951.tar.gz"],
 )
+
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
 buildbuddy_deps()
 
 load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy", "UBUNTU20_04_IMAGE")
 buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)
 """
-
 
 def run_test(name, repo_url, command, clean_repos=False):
     command = " ".join(command.split())
@@ -147,7 +150,7 @@ def run_test(name, repo_url, command, clean_repos=False):
         cd ./{name}
 
         # Add buildbuddy rbe toolchain to WORKSPACE if it's not already in there
-        if ! grep -q "io_buildbuddy_buildbuddy_toolchain" "WORKSPACE" "WORKSPACE.bazel"; then
+        if ! grep -q "io_buildbuddy_buildbuddy_toolchain" "WORKSPACE"; then
             echo '{BUILDBUDDY_TOOLCHAIN_SNIPPET}' >> WORKSPACE
         fi
         set -x
@@ -170,7 +173,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(usage=USAGE)
     parser.add_argument(
         "--repos",
-        default="buildbuddy,bazel-gazelle,abseil-cpp,bazel,rules_python",
+        default="buildbuddy,bazel-gazelle,abseil-cpp,rules_python",
         help="Which repos to test.",
     )
     parser.add_argument(
@@ -197,6 +200,7 @@ if __name__ == "__main__":
     os.makedirs(QA_ROOT, exist_ok=True)
 
     results = []
+    success = True
     for repo in repos:
         (exit_code, invocation_url) = run_test(
             repo["name"],
@@ -211,8 +215,10 @@ if __name__ == "__main__":
                 "invocation_url": invocation_url,
             }
         )
-        if exit_code != 0 and not args.keep_going:
-            break
+        if exit_code != 0:
+            success = False
+            if not args.keep_going:
+                break
 
     if len(results) < len(repos):
         missing = repos[len(results) :]
@@ -230,3 +236,6 @@ if __name__ == "__main__":
         if result["exit_code"] != 0:
             status = f"FAILURE (exit code {exit_code})"
         print(f"- {result['name']}: {status} ({result['invocation_url']})")
+
+    if not success:
+        sys.exit(1)
