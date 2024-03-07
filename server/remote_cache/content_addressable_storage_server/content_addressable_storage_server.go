@@ -646,12 +646,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	rootDirWithDigest.Directory = rootDir
 	rootDirWithDigest.ResourceName = rootDirRN.ToProto()
 	allDirs, err := fetch(ctx, rootDirWithDigest, 0)
-	defer func() {
-		for _, dir := range allDirs {
-			dir.ReturnToVTPool()
-		}
-		rootDirWithDigest.ReturnToVTPool()
-	}()
 	if err != nil {
 		return err
 	}
@@ -674,6 +668,11 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		log.Warningf("Error populating tree cache: %s", err)
 	}
 
+	// We can only clean the directories up after the eg are finished
+	for _, dir := range allDirs {
+		dir.ReturnToVTPool()
+	}
+	rootDirWithDigest.ReturnToVTPool()
 	return nil
 }
 
