@@ -646,6 +646,12 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	rootDirWithDigest.Directory = rootDir
 	rootDirWithDigest.ResourceName = rootDirRN.ToProto()
 	allDirs, err := fetch(ctx, rootDirWithDigest, 0)
+	defer func() {
+		for _, dir := range allDirs {
+			dir.ReturnToVTPool()
+		}
+		rootDirWithDigest.ReturnToVTPool()
+	}()
 	if err != nil {
 		return err
 	}
@@ -668,11 +674,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		log.Warningf("Error populating tree cache: %s", err)
 	}
 
-	// clean up
-	for _, dir := range allDirs {
-		dir.ReturnToVTPool()
-	}
-	rootDirWithDigest.ReturnToVTPool()
 	return nil
 }
 
@@ -688,7 +689,7 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 	for _, child := range allDigests {
 		dir := child.Directory
 		rn := child.GetResourceName()
-		if len(dir.Directories) == 0 && len(dir.Files) == 0 && len(dir.Symlinks) == 0 {
+		if len(dir.GetDirectories()) == 0 && len(dir.GetFiles()) == 0 && len(dir.GetSymlinks()) == 0 {
 			log.Warningf("corrupted tree: empty dir: %+v, digest: %q", dir, rn.GetDigest().GetHash())
 			return false
 		}
