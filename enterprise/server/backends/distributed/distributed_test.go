@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -1430,11 +1432,15 @@ func TestExtraNodes(t *testing.T) {
 func TestExtraNodesReadOnly(t *testing.T) {
 	// Use new nodes for reads ONLY. No content should be written.
 	flags.Set(t, "cache.distributed_cache.new_nodes_read_only", true)
+	flags.Set(t, "cache.distributed_cache.new_consistent_hash_function", "SHA256")
+	flags.Set(t, "cache.distributed_cache.new_consistent_hash_vnodes", 10000)
+
 	// Disable backfills so digests are not copied to the new peerset.
 	flags.Set(t, "cache.distributed_cache.enable_backfill", false)
+
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
-	numDigestsToWrite := 100
+	numDigestsToWrite := 200
 
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -1447,50 +1453,58 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
-	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	dc1, err := NewDistributedCache(env, memoryCache1, config1, env.GetHealthChecker())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dc1.StartListening()
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
-	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	dc2, err := NewDistributedCache(env, memoryCache2, config2, env.GetHealthChecker())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dc2.StartListening()
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
-	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	dc3, err := NewDistributedCache(env, memoryCache3, config3, env.GetHealthChecker())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dc3.StartListening()
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
 
+	// Write some data.
 	written := make([]*rspb.ResourceName, 0)
 	for i := 0; i < numDigestsToWrite; i++ {
-		// Do a write - should be visible from all nodes
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := dc1.Set(ctx, rn, buf); err != nil {
 			require.NoError(t, err)
 		}
 		written = append(written, rn)
+	}
+	// Reset log of caches 1,2,3 so we don't see the initial write ops.
+	memoryCache1.clearLog()
+	memoryCache2.clearLog()
+	memoryCache3.clearLog()
 
-		c, err := dc3.Contains(ctx, rn)
+	caches := []interfaces.Cache{dc1, dc2, dc3}
+
+	// Read the data we just wrote.
+	for i, rn := range written {
+		c, err := caches[i%len(caches)].Contains(ctx, rn)
 		require.NoError(t, err)
 		require.True(t, c)
 	}
+
+	// Capture the original read operations (to compare against later).
+	originalReadOpsByPeer := make(map[string][]cacheOp, 0)
+	originalReadOpsByPeer[peer1] = append([]cacheOp{}, memoryCache1.ops...)
+	originalReadOpsByPeer[peer2] = append([]cacheOp{}, memoryCache2.ops...)
+	originalReadOpsByPeer[peer3] = append([]cacheOp{}, memoryCache3.ops...)
+
+	// Reset 1,2,3 again so all node op lists are empty.
+	memoryCache1.clearLog()
+	memoryCache2.clearLog()
+	memoryCache3.clearLog()
 
 	waitForShutdown(dc1)
 	waitForShutdown(dc2)
@@ -1511,55 +1525,33 @@ func TestExtraNodesReadOnly(t *testing.T) {
 
 	config1 = baseConfig
 	config1.ListenAddr = peer1
-	dc1, err = NewDistributedCache(env, memoryCache1, config1, env.GetHealthChecker())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dc1.StartListening()
+	dc1 = startNewDCache(t, env, config1, memoryCache1)
 
 	config2 = baseConfig
 	config2.ListenAddr = peer2
-	dc2, err = NewDistributedCache(env, memoryCache2, config2, env.GetHealthChecker())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dc2.StartListening()
+	dc2 = startNewDCache(t, env, config2, memoryCache2)
 
 	config3 = baseConfig
 	config3.ListenAddr = peer3
-	dc3, err = NewDistributedCache(env, memoryCache3, config3, env.GetHealthChecker())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dc3.StartListening()
+	dc3 = startNewDCache(t, env, config3, memoryCache3)
 
 	// Now bring up the new nodes
-	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache4 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
 	config4 := baseConfig
 	config4.ListenAddr = peer4
-	dc4, err := NewDistributedCache(env, memoryCache4, config4, env.GetHealthChecker())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dc4.StartListening()
+	dc4 := startNewDCache(t, env, config4, memoryCache4)
 
-	memoryCache5 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache5 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
 	config5 := baseConfig
 	config5.ListenAddr = peer5
-	dc5, err := NewDistributedCache(env, memoryCache5, config5, env.GetHealthChecker())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dc5.StartListening()
+	dc5 := startNewDCache(t, env, config5, memoryCache5)
 
-	memoryCache6 := newMemoryCache(t, singleCacheSizeBytes)
+	memoryCache6 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
 	config6 := baseConfig
 	config6.ListenAddr = peer6
-	dc6, err := NewDistributedCache(env, memoryCache6, config6, env.GetHealthChecker())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dc6.StartListening()
+	dc6 := startNewDCache(t, env, config6, memoryCache6)
+
+	caches = []interfaces.Cache{dc1, dc2, dc3, dc4, dc5, dc6}
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -1568,33 +1560,156 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	waitForReady(t, config5.ListenAddr)
 	waitForReady(t, config6.ListenAddr)
 
+	// Read the data again from the same nodes we did originally.
+	for i, rn := range written {
+		c, err := caches[i%3].Contains(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, c)
+	}
+
+	// Capture the new read operations. They should be exactly the same as
+	// the old read operations, even in the presence of the new nodes.
+	newReadOpsByPeer := make(map[string][]cacheOp, 0)
+	newReadOpsByPeer[peer1] = append([]cacheOp{}, memoryCache1.ops...)
+	newReadOpsByPeer[peer2] = append([]cacheOp{}, memoryCache2.ops...)
+	newReadOpsByPeer[peer3] = append([]cacheOp{}, memoryCache3.ops...)
+
+	for _, peer := range []string{peer1, peer2, peer3} {
+		require.Equal(t, newReadOpsByPeer[peer], originalReadOpsByPeer[peer])
+		for i, oldOp := range originalReadOpsByPeer[peer] {
+			log.Printf("%q old: %s, new: %s", peer, oldOp, newReadOpsByPeer[peer][i])
+		}
+	}
+
+	// Now write some new data. It should only be written to the old nodes
+	// because the newly added nodes are read-only.
 	for i := 0; i < numDigestsToWrite; i++ {
-		// Do a write - should be written to new nodes
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
-		if err := dc1.Set(ctx, rn, buf); err != nil {
+		if err := caches[i%len(caches)].Set(ctx, rn, buf); err != nil {
 			require.NoError(t, err)
 		}
 		written = append(written, rn)
 	}
 
-	for _, rn := range written {
-		c, err := dc1.Contains(ctx, rn)
+	// Ensure that no write operations happened on the internal memory
+	// caches of the newly added nodes, which should be read only.
+	require.Empty(t, memoryCache4.ops)
+	require.Empty(t, memoryCache5.ops)
+	require.Empty(t, memoryCache6.ops)
+
+	// Ensure that all digests (including newly written ones) are still
+	// found.
+	for i, rn := range written {
+		c, err := caches[i%len(caches)].Contains(ctx, rn)
 		require.NoError(t, err)
 		require.True(t, c)
-
-		c, err = dc6.Contains(ctx, rn)
-		require.NoError(t, err)
-		require.True(t, c)
-
-		c, err = memoryCache5.Contains(ctx, rn)
-		require.NoError(t, err)
-		require.False(t, c, rn)
 	}
+}
 
-	waitForShutdown(dc1)
-	waitForShutdown(dc2)
-	waitForShutdown(dc3)
-	waitForShutdown(dc4)
-	waitForShutdown(dc5)
-	waitForShutdown(dc6)
+type Op int
+
+const (
+	Read Op = iota
+	Write
+	Delete
+	Contains
+	Metadata
+)
+
+func (o Op) String() string {
+	switch o {
+	case Read:
+		return "READ"
+	case Write:
+		return "WRITE"
+	case Delete:
+		return "DELETE"
+	case Contains:
+		return "CONTAINS"
+	case Metadata:
+		return "METADATA"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+type cacheOp struct {
+	op Op
+	rn *rspb.ResourceName
+}
+
+func (o cacheOp) String() string {
+	return fmt.Sprintf("%s %s", o.op, o.rn.GetDigest().GetHash())
+}
+
+func traceCache(c interfaces.Cache) *tracedCache {
+	return &tracedCache{
+		Cache: c,
+		ops:   make([]cacheOp, 0),
+		mu:    &sync.Mutex{},
+	}
+}
+
+type tracedCache struct {
+	interfaces.Cache
+	ops []cacheOp
+	mu  *sync.Mutex
+}
+
+func (t *tracedCache) clearLog() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ops = t.ops[:0]
+}
+
+func (t *tracedCache) addOps(o Op, resourceNames ...*rspb.ResourceName) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, rn := range resourceNames {
+		t.ops = append(t.ops, cacheOp{o, rn})
+	}
+}
+func (t *tracedCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
+	t.addOps(Contains, r)
+	return t.Cache.Contains(ctx, r)
+}
+func (t *tracedCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
+	t.addOps(Metadata, r)
+	return t.Cache.Metadata(ctx, r)
+}
+func (t *tracedCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	t.addOps(Contains, resources...)
+	return t.Cache.FindMissing(ctx, resources)
+}
+func (t *tracedCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	t.addOps(Read, r)
+	return t.Cache.Get(ctx, r)
+}
+func (t *tracedCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	t.addOps(Read, resources...)
+	return t.Cache.GetMulti(ctx, resources)
+}
+func (t *tracedCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+	t.addOps(Write, r)
+	return t.Cache.Set(ctx, r, data)
+}
+func (t *tracedCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
+	resources := make([]*rspb.ResourceName, 0, len(kvs))
+	for rn := range kvs {
+		resources = append(resources, rn)
+	}
+	t.addOps(Write, resources...)
+	return t.Cache.SetMulti(ctx, kvs)
+}
+func (t *tracedCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
+	t.addOps(Delete, r)
+	return t.Cache.Delete(ctx, r)
+}
+func (t *tracedCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	t.addOps(Read, r)
+	return t.Cache.Reader(ctx, r, uncompressedOffset, limit)
+}
+func (t *tracedCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	t.addOps(Write, r)
+	return t.Cache.Writer(ctx, r)
 }
