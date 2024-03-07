@@ -724,7 +724,6 @@ func BenchmarkGetTree(b *testing.B) {
 			b.Run(fmt.Sprintf("depth-%d-branchingFactor-%d", d, f), func(b *testing.B) {
 				rootDigests := make([]*repb.Digest, 0, b.N)
 				for n := 0; n < b.N; n++ {
-					b.StopTimer()
 					child1Digest, _ := uploadDirWithFiles(d, f)
 					child2Digest, _ := uploadDirWithFiles(d, f)
 
@@ -746,8 +745,8 @@ func BenchmarkGetTree(b *testing.B) {
 					rootDigests = append(rootDigests, rootDigest)
 				}
 
-				b.ReportAllocs()
 				b.ResetTimer()
+				b.ReportAllocs()
 				for n := 0; n < b.N; n++ {
 					_ = readTree(ctx, b, casClient, instanceName, rootDigests[n])
 				}
