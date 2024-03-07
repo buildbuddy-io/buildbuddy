@@ -36,15 +36,15 @@ var (
 	groupName                    = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
 	nodes                        = flag.Slice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
 	consistentHashFunction       = flag.String("cache.distributed_cache.consistent_hash_function", "CRC32", "A consistent hash function to use when hashing data. CRC32 or SHA256")
-	consistentHashReplicas       = flag.Int("cache.distributed_cache.consistent_hash_replicas", 100, "The number of copies of each peer on the consistent hash ring")
+	consistentHashVNodes         = flag.Int("cache.distributed_cache.consistent_hash_vnodes", 100, "The number of copies (virtual nodes) of each peer on the consistent hash ring")
 	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 1, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
 	clusterSize                  = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
 	enableLocalWrites            = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
 	enableBackfill               = flag.Bool("cache.distributed_cache.enable_backfill", true, "If enabled, digests written to avoid unavailable nodes will be backfilled when those nodes return")
 	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", true, "If enabled, checks the local cache for compression support. If not set, distributed compression defaults to off.")
 	newNodes                     = flag.Slice("cache.distributed_cache.new_nodes", []string{}, "The new nodeset to add data too. Useful for migrations. ** Enterprise only **")
-	newConsistentHashFunction    = flag.String("cache.distributed_cache.new_consistent_hash_function", "SHA256", "A consistent hash function to use when hashing data. CRC32 or SHA256")
-	newConsistentHashReplicas    = flag.Int("cache.distributed_cache.new_consistent_hash_replicas", 10000, "The number of copies of each peer on the new consistent hash ring")
+	newConsistentHashFunction    = flag.String("cache.distributed_cache.new_consistent_hash_function", "CRC32", "A consistent hash function to use when hashing data. CRC32 or SHA256")
+	newConsistentHashVNodes      = flag.Int("cache.distributed_cache.new_consistent_hash_vnodes", 100, "The number of copies of each peer on the new consistent hash ring")
 	newNodesReadOnly             = flag.Bool("cache.distributed_cache.new_nodes_read_only", false, "If true, only attempt to read from the newNodes set; do not write to them yet")
 )
 
@@ -53,9 +53,6 @@ const (
 	// (40 bytes). So keeping around 100000 of these means an extra 10MB
 	// per peer.
 	maxHintedHandoffsPerPeer = 100000
-
-	// Number of copies of each peer on the consistent hash ring.
-	consistentHashNumReplicas = 100
 )
 
 type CacheConfig struct {
@@ -170,13 +167,13 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	if err != nil {
 		return nil, err
 	}
-	chash := consistent_hash.NewConsistentHash(hashFn, *consistentHashReplicas)
+	chash := consistent_hash.NewConsistentHash(hashFn, *consistentHashVNodes)
 
 	newHashFn, err := parseConsistentHash(*newConsistentHashFunction)
 	if err != nil {
 		return nil, err
 	}
-	extraCHash := consistent_hash.NewConsistentHash(newHashFn, *newConsistentHashReplicas)
+	extraCHash := consistent_hash.NewConsistentHash(newHashFn, *newConsistentHashVNodes)
 	if config.RPCHeartbeatInterval == 0 {
 		config.RPCHeartbeatInterval = 1 * time.Second
 	}
