@@ -248,6 +248,7 @@ message GetCacheMetadataResponse {
 
 // Used to cache GetTree responses.
 message DirectoryWithDigest {
+  option (vtproto.mempool) = true;
   reserved 2;
 
   build.bazel.remote.execution.v2.Directory directory = 1;

@@ -459,7 +459,11 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, re
 			log.Warningf("Found empty directory for digest: %s blob: [%+v]", d.GetHash(), blob)
 			return nil, status.NotFoundErrorf("Found empty directory for digest %s.", d.GetHash())
 		}
-		children = append(children, &capb.DirectoryWithDigest{Directory: subDir, ResourceName: rn})
+
+		dir := capb.DirectoryWithDigestFromVTPool()
+		dir.Directory = subDir
+		dir.ResourceName = rn
+		children = append(children, dir)
 	}
 	return children, nil
 }
@@ -638,10 +642,10 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return allDescendents, nil
 	}
 
-	allDirs, err := fetch(ctx, &capb.DirectoryWithDigest{
-		Directory:    rootDir,
-		ResourceName: rootDirRN.ToProto(),
-	}, 0)
+	rootDirWithDigest := capb.DirectoryWithDigestFromVTPool()
+	rootDirWithDigest.Directory = rootDir
+	rootDirWithDigest.ResourceName = rootDirRN.ToProto()
+	allDirs, err := fetch(ctx, rootDirWithDigest, 0)
 	if err != nil {
 		return err
 	}
@@ -663,6 +667,12 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if err := eg.Wait(); err != nil {
 		log.Warningf("Error populating tree cache: %s", err)
 	}
+
+	// clean up
+	for _, dir := range allDirs {
+		dir.ReturnToVTPool()
+	}
+	rootDirWithDigest.ReturnToVTPool()
 	return nil
 }
 
