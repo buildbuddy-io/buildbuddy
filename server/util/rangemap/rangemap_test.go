@@ -1,7 +1,9 @@
 package rangemap_test
 
 import (
+	"math"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/stretchr/testify/require"
@@ -257,4 +259,12 @@ func TestGetOverlappingMulti(t *testing.T) {
 	overlap2 := r.GetOverlapping([]byte("g"), []byte("z"))
 	require.Equal(t, 4, overlap2[0].Val)
 	require.Equal(t, 5, overlap2[1].Val)
+}
+
+func TestString(t *testing.T) {
+	r := rangemap.Range{
+		Start: []byte("a"),
+		End:   []byte{math.MaxUint8},
+	}
+	require.True(t, utf8.ValidString(r.String()))
 }
