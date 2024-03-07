@@ -552,7 +552,10 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				return nil
 			}
 			buf, err := proto.Marshal(treeCache)
-			//treeCache.ReturnToVTPool()
+			// Set the children to nil so that ReturnToVTPool don't reset all the
+			// children
+			treeCache.Children = nil
+			treeCache.ReturnToVTPool()
 			if err != nil {
 				return err
 			}
