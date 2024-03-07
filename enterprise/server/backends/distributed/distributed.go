@@ -35,11 +35,17 @@ var (
 	redisTarget                  = flag.String("cache.distributed_cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flag.Secret)
 	groupName                    = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
 	nodes                        = flag.Slice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
+	consistentHashFunction       = flag.String("cache.distributed_cache.consistent_hash_function", "CRC32", "A consistent hash function to use when hashing data. CRC32 or SHA256")
+	consistentHashReplicas       = flag.Int("cache.distributed_cache.consistent_hash_replicas", 100, "The number of copies of each peer on the consistent hash ring")
 	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 1, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
 	clusterSize                  = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
 	enableLocalWrites            = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
+	enableBackfill              = flag.Bool("cache.distributed_cache.enable_backfill", true, "If enabled, digests written to avoid unavailable nodes will be backfilled when those nodes return")
 	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", true, "If enabled, checks the local cache for compression support. If not set, distributed compression defaults to off.")
 	newNodes                     = flag.Slice("cache.distributed_cache.new_nodes", []string{}, "The new nodeset to add data too. Useful for migrations. ** Enterprise only **")
+	newConsistentHashFunction    = flag.String("cache.distributed_cache.new_consistent_hash_function", "SHA256", "A consistent hash function to use when hashing data. CRC32 or SHA256")
+	newConsistentHashReplicas    = flag.Int("cache.distributed_cache.new_consistent_hash_replicas", 10000, "The number of copies of each peer on the new consistent hash ring")
+	newNodesReadOnly             = flag.Bool("cache.distributed_cache.new_nodes_read_only", false, "If true, only attempt to read from the newNodes set; do not write to them yet")
 )
 
 const (
@@ -133,6 +139,17 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
+func parseConsistentHash(c string) (consistent_hash.HashFunction, error) {
+	switch c {
+	case "CRC32":
+		return consistent_hash.CRC32, nil
+	case "SHA256":
+		return consistent_hash.SHA256, nil
+	default:
+		return nil, status.InvalidArgumentErrorf("Unknown hash function: %s", c)
+	}
+}
+
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
 // in a HTTP API and announcing its presence over redis to other distributed
 // cache nodes. Together, these distributed caches each maintain a consistent
@@ -149,8 +166,17 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	if len(config.NewNodes) > 0 && len(config.Nodes) == 0 {
 		return nil, status.FailedPreconditionError("new nodes may only be specified when all nodes are hardcoded.")
 	}
-	chash := consistent_hash.NewConsistentHash(consistent_hash.CRC32, consistentHashNumReplicas)
-	extraCHash := consistent_hash.NewConsistentHash(consistent_hash.CRC32, consistentHashNumReplicas)
+	hashFn, err := parseConsistentHash(*consistentHashFunction)
+	if err != nil {
+		return nil, err
+	}
+	chash := consistent_hash.NewConsistentHash(hashFn, *consistentHashReplicas)
+
+	newHashFn, err := parseConsistentHash(*newConsistentHashFunction)
+	if err != nil {
+		return nil, err
+	}
+	extraCHash := consistent_hash.NewConsistentHash(newHashFn, *newConsistentHashReplicas)
 	if config.RPCHeartbeatInterval == 0 {
 		config.RPCHeartbeatInterval = 1 * time.Second
 	}
@@ -368,7 +394,7 @@ func (c *Cache) peerZone(peer string) (string, bool) {
 // this key. They should be tried in order.
 func (c *Cache) writePeers(d *repb.Digest) *peerset.PeerSet {
 	allPeers := c.consistentHash.GetAllReplicas(d.GetHash())
-	if len(c.config.NewNodes) > 0 {
+	if len(c.config.NewNodes) > 0 && !*newNodesReadOnly {
 		allPeers = c.extraConsistentHash.GetAllReplicas(d.GetHash())
 	}
 	return peerset.New(allPeers[:c.config.ReplicationFactor], allPeers[c.config.ReplicationFactor:])
@@ -561,6 +587,9 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (
 }
 
 func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*backfillOrder {
+	if !*enableBackfill {
+		return nil
+	}
 	source, targets := ps.GetBackfillTargets()
 	if len(targets) == 0 {
 		return nil
@@ -1013,6 +1042,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 			}
 			continue
 		}
+		log.Printf("Writing to peer %q", peer)
 		mwc.peerClosers[peer] = rwc
 	}
 	if len(mwc.peerClosers) < c.config.ReplicationFactor {
