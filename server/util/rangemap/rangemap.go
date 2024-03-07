@@ -24,7 +24,7 @@ type Range struct {
 }
 
 func (r *Range) String() string {
-	return fmt.Sprintf("[%s, %s)", string(r.Start), string(r.End))
+	return fmt.Sprintf("[%q, %q)", string(r.Start), string(r.End))
 }
 
 func (r *Range) Contains(key []byte) bool {
