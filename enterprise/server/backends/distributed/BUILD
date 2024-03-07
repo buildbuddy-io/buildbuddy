@@ -50,6 +50,7 @@ go_test(
         "//server/util/grpc_client",
         "//server/util/prefix",
         "//server/util/proto",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:go_default_library",
