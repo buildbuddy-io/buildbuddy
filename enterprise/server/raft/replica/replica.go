@@ -1606,7 +1606,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	for i, entry := range entries {
 		e, err := sm.singleUpdate(db, entry)
 		if err != nil {
-			return nil, status.InternalErrorf("failed to singleUpdate:%s", err)
+			return nil, status.InternalErrorf("failed to singleUpdate: %s", err)
 		}
 		entries[i] = e
 	}
