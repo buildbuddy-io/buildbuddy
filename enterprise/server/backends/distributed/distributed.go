@@ -39,7 +39,7 @@ var (
 	clusterSize                  = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
 	enableLocalWrites            = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
 	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", true, "If enabled, checks the local cache for compression support. If not set, distributed compression defaults to off.")
-	extraNodes                   = flag.Slice("cache.distributed_cache.extra_nodes", []string{}, "The hardcoded list of extra nodes to add data too. Useful for migrations. ** Enterprise only **")
+	newNodes                     = flag.Slice("cache.distributed_cache.new_nodes", []string{}, "The new nodeset to add data too. Useful for migrations. ** Enterprise only **")
 )
 
 const (
@@ -57,7 +57,7 @@ type CacheConfig struct {
 	ListenAddr                   string
 	GroupName                    string
 	Nodes                        []string
-	ExtraNodes                   []string
+	NewNodes                     []string
 	ReplicationFactor            int
 	ClusterSize                  int
 	RPCHeartbeatInterval         time.Duration
@@ -115,7 +115,7 @@ func Register(env *real_environment.RealEnv) error {
 		GroupName:                    *groupName,
 		ReplicationFactor:            *replicationFactor,
 		Nodes:                        *nodes,
-		ExtraNodes:                   *extraNodes,
+		NewNodes:                     *newNodes,
 		ClusterSize:                  *clusterSize,
 		EnableLocalWrites:            *enableLocalWrites,
 		EnableLocalCompressionLookup: *enableLocalCompressionLookup,
@@ -145,8 +145,8 @@ func Register(env *real_environment.RealEnv) error {
 //
 // be stored across unique caches.
 func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
-	// Check Preconditions: if extraNodes are enabled, node list must have been manually specified.
-	if len(config.ExtraNodes) > 0 && len(config.Nodes) == 0 {
+	// Check Preconditions: if newNodes are enabled, node list must have been manually specified.
+	if len(config.NewNodes) > 0 && len(config.Nodes) == 0 {
 		return nil, status.FailedPreconditionError("extra nodes may only be specified when all nodes are hardcoded.")
 	}
 	chash := consistent_hash.NewConsistentHash(consistent_hash.CRC32, consistentHashNumReplicas)
@@ -180,11 +180,8 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		// Nodes are hardcoded. Set them once and be done with it.
 		chash.Set(config.Nodes...)
 
-		if len(config.ExtraNodes) > 0 {
-			extendedNodeList := make([]string, len(config.Nodes))
-			copy(extendedNodeList, config.Nodes)
-			extendedNodeList = append(extendedNodeList, config.ExtraNodes...)
-			extraCHash.Set(extendedNodeList...)
+		if len(config.NewNodes) > 0 {
+			extraCHash.Set(config.NewNodes...)
 		}
 	} else {
 		// No nodes were hardcoded, use redis for discovery.
@@ -371,7 +368,7 @@ func (c *Cache) peerZone(peer string) (string, bool) {
 // this key. They should be tried in order.
 func (c *Cache) writePeers(d *repb.Digest) *peerset.PeerSet {
 	allPeers := c.consistentHash.GetAllReplicas(d.GetHash())
-	if len(c.config.ExtraNodes) > 0 {
+	if len(c.config.NewNodes) > 0 {
 		allPeers = c.extraConsistentHash.GetAllReplicas(d.GetHash())
 	}
 	return peerset.New(allPeers[:c.config.ReplicationFactor], allPeers[c.config.ReplicationFactor:])
@@ -402,14 +399,14 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 		secondaryPeers = peers[c.config.ReplicationFactor:]
 	}
 
-	if len(c.config.ExtraNodes) > 0 {
+	if len(c.config.NewNodes) > 0 {
 		extendedPeerList := c.extraConsistentHash.GetAllReplicas(d.GetHash())
 		// To prevent a panic if replication is misconfigured to be higher than extended peer count.
 		if len(extendedPeerList) >= c.config.ReplicationFactor {
-			allPrimaryPeers := extendedPeerList[:c.config.ReplicationFactor]
-			allSecondaryPeers := extendedPeerList[c.config.ReplicationFactor:]
+			newPrimaryPeers := extendedPeerList[:c.config.ReplicationFactor]
+			newSecondaryPeers := extendedPeerList[c.config.ReplicationFactor:]
 
-			// If extraNodes is set, we want to additionally attempt reads
+			// If newNodes is set, we want to additionally attempt reads
 			// on the nodes where the data ~would~ be if the extra nodes
 			// were included in the full peer set.
 			//
@@ -417,8 +414,8 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 			// and read it immediately, while falling back to the old data
 			// location if it's not found and backfilling to the new
 			// nodes.
-			primaryPeers = dedupe(append(allPrimaryPeers, primaryPeers...))
-			secondaryPeers = dedupe(append(allSecondaryPeers, secondaryPeers...))
+			primaryPeers = dedupe(append(newPrimaryPeers, primaryPeers...))
+			secondaryPeers = dedupe(append(newSecondaryPeers, secondaryPeers...))
 		}
 	}
 
