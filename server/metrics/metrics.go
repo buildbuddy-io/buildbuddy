@@ -2263,6 +2263,35 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheAtimeDeltaWhenRead = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_atime_delta_when_read",
+		Buckets: customDurationMsecBuckets([]time.Duration{
+			1 * time.Minute,
+			5 * time.Minute,
+			10 * time.Minute,
+			30 * time.Minute,
+			1 * time.Hour,
+			3 * time.Hour,
+			6 * time.Hour,
+			12 * time.Hour,
+			1 * day,
+			2 * day,
+			3 * day,
+			4 * day,
+			5 * day,
+			6 * day,
+			7 * day,
+			14 * day,
+			21 * day,
+		}),
+		Help: "Previous atime of items in the cache when they are read, in msec",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
 	PebbleCacheEvictionSamplesChanSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
