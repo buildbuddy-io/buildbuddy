@@ -1260,21 +1260,19 @@ func (sm *Replica) processAccessTimeUpdates() {
 		if len(keys) == 0 {
 			return
 		}
-		batch := rbuilder.NewBatchBuilder()
 
-		for _, k := range keys {
-			batch.Add(&rfpb.UpdateAtimeRequest{
-				Key:            k.Key,
-				AccessTimeUsec: k.Meta.(int64),
-			})
-		}
-		batchProto, err := batch.ToProto()
-		if err != nil {
-			sm.log.Warningf("could not generate atime update batch: %s", err)
-			return
-		}
-
-		_, err = sm.store.Sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+		_, err := sm.store.Sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+			batch := rbuilder.NewBatchBuilder()
+			for _, k := range keys {
+				batch.Add(&rfpb.UpdateAtimeRequest{
+					Key:            k.Key,
+					AccessTimeUsec: k.Meta.(int64),
+				})
+			}
+			batchProto, err := batch.ToProto()
+			if err != nil {
+				return nil, err
+			}
 			return c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Header: h,
 				Batch:  batchProto,
