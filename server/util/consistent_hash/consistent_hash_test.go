@@ -17,13 +17,13 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-// Number of replicas serving as a reasonable default for testing purposes.
-const numReplicas = 100
+// Number of vnodes serving as a reasonable default for testing purposes.
+const numVnodes = 100
 
 func TestNodesetOrderIndependence(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	assert := assert.New(t)
-	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numReplicas)
+	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numVnodes)
 
 	hosts := make([]string, 0)
 	for i := 0; i < 10; i++ {
@@ -59,7 +59,7 @@ func TestNodesetOrderIndependence(t *testing.T) {
 func TestGetAllReplicas(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	assert := assert.New(t)
-	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numReplicas)
+	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numVnodes)
 
 	hosts := make([]string, 0)
 	for i := 0; i < 10; i++ {
@@ -117,15 +117,15 @@ func BenchmarkGetAllReplicas(b *testing.B) {
 	for _, test := range []struct {
 		Name         string
 		HashFunction consistent_hash.HashFunction
-		NumReplicas  int
+		NumVnodes    int
 	}{
-		{Name: "CRC32/100_Replicas", HashFunction: consistent_hash.CRC32, NumReplicas: 100},
-		{Name: "SHA256/10000_Replicas", HashFunction: consistent_hash.SHA256, NumReplicas: 10000},
+		{Name: "CRC32/100_vnodes", HashFunction: consistent_hash.CRC32, NumVnodes: 100},
+		{Name: "SHA256/10000_vnodes", HashFunction: consistent_hash.SHA256, NumVnodes: 10000},
 	} {
 		b.Run(test.Name, func(b *testing.B) {
 			rand.Seed(time.Now().UnixNano())
 			assert := assert.New(b)
-			ch := consistent_hash.NewConsistentHash(test.HashFunction, test.NumReplicas)
+			ch := consistent_hash.NewConsistentHash(test.HashFunction, test.NumVnodes)
 
 			hosts := make([]string, 0)
 			for i := 0; i < 10; i++ {
