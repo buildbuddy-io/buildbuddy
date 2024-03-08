@@ -57,7 +57,8 @@ var (
 
 	privateImageStreamingEnabled = flag.Bool("executor.podman.enable_private_image_streaming", false, "If set and --executor.podman.enable_image_streaming is set, all private (authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 
-	pullTimeout = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
+	pullTimeout   = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
+	parallelPulls = flag.Int("executor.podman.parallel_pulls", 0, "The system-wide maximum number of image layers to be pulled from remote container registries simultaneously. If set to 0, no value is set and podman will use its default value.")
 
 	podmanRuntime       = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	podmanStorageDriver = flag.String("executor.podman.storage_driver", "overlay", "The podman storage driver to use.")
@@ -139,6 +140,20 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 	imageExistsCache, err := newImageExistsCache()
 	if err != nil {
 		return nil, err
+	}
+
+	if *parallelPulls < 0 {
+		return nil, status.InvalidArgumentErrorf("executor.podman.parallel_pulls must not be negative (was %d)", *parallelPulls)
+	} else if *parallelPulls > 0 {
+		containersConf := fmt.Sprintf(`
+[engine]
+image_parallel_copies = %d`, *parallelPulls)
+		if err := os.MkdirAll("/etc/containers", 0644); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile("/etc/containers/containers.conf", []byte(containersConf), 0644); err != nil {
+			return nil, status.UnavailableErrorf("could not write containers.conf: %s", err)
+		}
 	}
 
 	return &Provider{
