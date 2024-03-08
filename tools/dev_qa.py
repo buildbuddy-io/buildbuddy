@@ -23,15 +23,17 @@ Example:
 QA_ROOT = os.environ.get(
     "QA_ROOT", os.path.join(os.path.expanduser("~"), "buildbuddy-qa")
 )
-
 API_KEY = os.environ.get(
     "BB_API_KEY",
 )
 
+# NOTE: If you change these commit_shas, be sure to update dev-qa.yaml in
+# buildbuddy-internal
 REPO_CONFIGS = [
     {
         "name": "buildbuddy",
         "repo_url": "https://github.com/buildbuddy-io/buildbuddy",
+        "commit_sha": "3d001c946273dca873086b58170f35cfb0c06cbb",
         "command": """
             bazel test //... \
                 --config=remote-dev \
@@ -47,6 +49,7 @@ REPO_CONFIGS = [
     {
         "name": "bazel-gazelle",
         "repo_url": "https://github.com/bazelbuild/bazel-gazelle",
+        "commit_sha": "f44f85943a3f6bde872e2d39c5b552e21a797975",
         "command": """
             bazel build //... \
                 --remote_executor=remote.buildbuddy.dev \
@@ -66,6 +69,7 @@ REPO_CONFIGS = [
     {
         "name": "abseil-cpp",
         "repo_url": "https://github.com/abseil/abseil-cpp",
+        "commit_sha": "e968256406fd7898d7fde880e31e54b041d32a7e",
         "command": """
             bazel build //... \
                 --cxxopt="-std=c++14" \
@@ -83,9 +87,34 @@ REPO_CONFIGS = [
                 --remote_header=x-buildbuddy-api-key={}
         """.format(API_KEY),
     },
+    # NOTE: We are pinning to this commit sha for the bazel repo because it's
+    # before they fully migrated to bzlmod. Our toolchain has not been fully
+    # migrated to supporting bzlmod yet.
+    {
+        "name": "bazel",
+        "repo_url": "https://github.com/bazelbuild/bazel",
+        "commit_sha": "9df8c97f2fc532c966b612559430a5a248886d1b",
+        "command": """
+            bazel build //src/main/java/com/google/devtools/build/lib/... \
+                --remote_executor=remote.buildbuddy.dev \
+                --remote_cache=remote.buildbuddy.dev \
+                --bes_backend=remote.buildbuddy.dev \
+                --bes_results_url=https://app.buildbuddy.dev/invocation/ \
+                --remote_timeout=10m \
+                --extra_execution_platforms=@buildbuddy_toolchain//:platform \
+                --host_platform=@buildbuddy_toolchain//:platform \
+                --platforms=@buildbuddy_toolchain//:platform \
+                --crosstool_top=@buildbuddy_toolchain//:toolchain \
+                --noincompatible_disallow_empty_glob \
+                --java_runtime_version=remotejdk_17 \
+                --jobs=100 \
+                --build_metadata=TAGS=dev-qa
+        """,
+    },
     {
         "name": "rules_python",
         "repo_url": "https://github.com/bazelbuild/rules_python",
+        "commit_sha": "da10ac49efee1b02cbfa3b22a39e68bf3fe5bbe2",
         "command": """
             bazel build //... \
                 --remote_executor=remote.buildbuddy.dev \
@@ -105,6 +134,7 @@ REPO_CONFIGS = [
     {
         "name": "tensorflow",
         "repo_url": "https://github.com/tensorflow/tensorflow",
+        "commit_sha": "df75ddb32a31ba79b58679d833dfa1af478d04a8",
         "command": """
             bazel build tensorflow \
                 --config=rbe_linux_cpu \
@@ -135,7 +165,7 @@ load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy", "UBUNTU20_
 buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)
 """
 
-def run_test(name, repo_url, command, clean_repos=False):
+def run_test(name, repo_url, commit_sha, command, clean_repos=False):
     command = " ".join(command.split())
     invocation_id = str(uuid.uuid4())
 
@@ -148,11 +178,16 @@ def run_test(name, repo_url, command, clean_repos=False):
 
         ! [[ -e ./{name} ]] && git clone {repo_url} {name}
         cd ./{name}
+        git checkout {commit_sha}
 
         # Add buildbuddy rbe toolchain to WORKSPACE if it's not already in there
         if ! grep -q "io_buildbuddy_buildbuddy_toolchain" "WORKSPACE"; then
             echo '{BUILDBUDDY_TOOLCHAIN_SNIPPET}' >> WORKSPACE
         fi
+
+        # Pin to a specific bazel version
+        echo '7.0.2' > .bazelversion
+
         set -x
         bazel clean
         {command} --invocation_id={invocation_id}
@@ -205,6 +240,7 @@ if __name__ == "__main__":
         (exit_code, invocation_url) = run_test(
             repo["name"],
             repo["repo_url"],
+            repo["commit_sha"],
             repo["command"],
             clean_repos=args.clean_repos,
         )
