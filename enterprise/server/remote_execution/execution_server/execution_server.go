@@ -565,6 +565,8 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 }
 
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
+	fmt.Printf("{t: %d, event: EXECUTE, digest: %q}\n", time.Now().UnixNano(), req.GetActionDigest().GetHash())
+
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {

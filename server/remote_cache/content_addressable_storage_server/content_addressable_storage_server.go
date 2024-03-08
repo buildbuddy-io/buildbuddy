@@ -545,11 +545,12 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			Children: make([]*capb.DirectoryWithDigest, len(descendents)),
 		}
 		copy(treeCache.Children, descendents)
-		treeCacheDigest := d.CloneVT()
+		treeCacheDigest := d
 
 		eg.Go(func() error {
 			if !isComplete(treeCache.GetChildren()) {
 				// incomplete tree cache error will be logged by `isComplete`.
+				fmt.Printf("{t: %d, event: SET, status: incomplete, root_digest: %q, treecache_digest: %q}\n", time.Now().UnixNano(), digest.String(req.GetRootDigest()), digest.String(d))
 				return nil
 			}
 			buf, err := proto.Marshal(treeCache)
@@ -558,8 +559,10 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			}
 			treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()).ToProto()
 			if err := s.cache.Set(gCtx, treeCacheRN, buf); err == nil {
+				fmt.Printf("{t: %d, event: SET, status: OK, root_digest: %q, treecache_digest: %q}\n", time.Now().UnixNano(), digest.String(req.GetRootDigest()), digest.String(d))
 				metrics.TreeCacheSetCount.Inc()
 			} else {
+				fmt.Printf("{t: %d, event: SET, status: failed, root_digest: %q, treecache_digest: %q, message: %q}\n", time.Now().UnixNano(), digest.String(req.GetRootDigest()), digest.String(d), err.Error())
 				if context.Cause(gCtx) != nil && status.IsDeadlineExceededError(context.Cause(gCtx)) {
 					log.Infof("Could not set treeCache blob: %s", context.Cause(gCtx))
 				} else {
@@ -586,6 +589,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				treeCache := &capb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
 					if isComplete(treeCache.GetChildren()) {
+						fmt.Printf("{t: %d, event: HIT, level: %d, root_digest: %q, treecache_digest: %q}\n", time.Now().UnixNano(), level, digest.String(req.GetRootDigest()), digest.String(treeCacheDigest))
 						metrics.TreeCacheLookupCount.With(prometheus.Labels{metrics.TreeCacheLookupStatus: "hit"}).Inc()
 						return treeCache.GetChildren(), nil
 					} else {
@@ -593,6 +597,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 					}
 				}
 			} else if status.IsNotFoundError(err) {
+				fmt.Printf("{t: %d, event: MISS, level: %d, root_digest: %q, treecache_digest: %q}\n", time.Now().UnixNano(), level, digest.String(req.GetRootDigest()), digest.String(treeCacheDigest))
 				metrics.TreeCacheLookupCount.With(prometheus.Labels{metrics.TreeCacheLookupStatus: "miss"}).Inc()
 			}
 		}
@@ -629,7 +634,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 
-		if level > *minTreeCacheLevel && len(allDescendents) > *minTreeCacheDescendents && *enableTreeCaching {
+		if level >= *minTreeCacheLevel && len(allDescendents) >= *minTreeCacheDescendents && *enableTreeCaching {
 			cacheTreeNode(treeCacheDigest, allDescendents)
 		}
 		return allDescendents, nil
