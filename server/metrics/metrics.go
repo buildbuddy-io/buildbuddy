@@ -204,6 +204,10 @@ const (
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
 
+	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
+	// the root dir, and so on.
+	TreeCacheLookupLevel = "level"
+
 	// For firecracker remote execution runners, describes the snapshot
 	// sharing status (Ex. 'disabled' or 'local_sharing_enabled')
 	SnapshotSharingStatus = "snapshot_sharing_status"
@@ -674,6 +678,7 @@ var (
 		Help:      "Total number of TreeCache lookups.",
 	}, []string{
 		TreeCacheLookupStatus,
+		TreeCacheLookupLevel,
 	})
 
 	TreeCacheSetCount = promauto.NewCounter(prometheus.CounterOpts{
