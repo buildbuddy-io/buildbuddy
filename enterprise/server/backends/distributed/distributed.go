@@ -415,31 +415,30 @@ func dedupe(in []string) []string {
 // peers are returned in random order.
 func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	peers := c.consistentHash.GetAllReplicas(d.GetHash())
+
+	if len(c.config.NewNodes) > 0 {
+		newPeers := c.extraConsistentHash.GetAllReplicas(d.GetHash())
+		// While migrating to the new nodes, ensure that the original preferred
+		// peers become the fallback peers.
+		if len(peers) >= c.config.ReplicationFactor && len(newPeers) >= c.config.ReplicationFactor {
+			newPreferredPeers := newPeers[:c.config.ReplicationFactor]
+			newFallbackPeers := newPeers[c.config.ReplicationFactor:]
+			oldPreferredPeers := peers[:c.config.ReplicationFactor]
+			oldFallbackPeers := peers[c.config.ReplicationFactor:]
+			p := make([]string, 0, len(newPreferredPeers)+len(oldPreferredPeers)+len(newFallbackPeers)+len(oldFallbackPeers))
+			p = append(p, newPreferredPeers...)
+			p = append(p, oldPreferredPeers...)
+			p = append(p, newFallbackPeers...)
+			p = append(p, oldFallbackPeers...)
+			peers = dedupe(p)
+		}
+	}
+
 	var primaryPeers, secondaryPeers []string
 	// To prevent a panic if replication is misconfigured to be higher than peer count.
 	if len(peers) >= c.config.ReplicationFactor {
 		primaryPeers = peers[:c.config.ReplicationFactor]
 		secondaryPeers = peers[c.config.ReplicationFactor:]
-	}
-
-	if len(c.config.NewNodes) > 0 {
-		extendedPeerList := c.extraConsistentHash.GetAllReplicas(d.GetHash())
-		// To prevent a panic if replication is misconfigured to be higher than extended peer count.
-		if len(extendedPeerList) >= c.config.ReplicationFactor {
-			newPrimaryPeers := extendedPeerList[:c.config.ReplicationFactor]
-			newSecondaryPeers := extendedPeerList[c.config.ReplicationFactor:]
-
-			// If newNodes is set, we want to first attempt reads on
-			// the nodes where the data ~would~ be if the new nodes
-			// were the primary peer set, but also read from the old
-			// set of peers.
-			//
-			// These extra reads allow us to move data to the new
-			// nodes and read it immediately, while falling back to
-			// the old data location if it's not found.
-			primaryPeers = dedupe(append(newPrimaryPeers, primaryPeers...))
-			secondaryPeers = dedupe(append(newSecondaryPeers, secondaryPeers...))
-		}
 	}
 
 	sortVal := func(peer string) int {
