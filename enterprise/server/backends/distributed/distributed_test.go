@@ -12,10 +12,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -97,6 +99,7 @@ func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache,
 
 func TestBasicReadWrite(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
+	metrics.DistributedCachePeerLookups.Reset()
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -135,7 +138,8 @@ func TestBasicReadWrite(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	for i := 0; i < 100; i++ {
-		// Do a write, and ensure it was written to all nodes.
+		// Do a write, and ensure we can read it back from each node,
+		// both via the base cache and distributed cache for each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -146,7 +150,27 @@ func TestBasicReadWrite(t *testing.T) {
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
 	}
+
+	peerLookupMetrics := testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
+	assert.Equal(t, []testmetrics.HistogramValues{
+		{
+			Labels: map[string]string{
+				"op":     "Reader",
+				"status": "hit",
+			},
+			// For each of the 100 objects, we did a Read on all 3 distributed
+			// caches, which should have done only 1 lookup each (from the local
+			// cache).
+			Buckets: map[float64]uint64{1: 300},
+		},
+	}, peerLookupMetrics)
 }
 
 func TestReadWrite_Compression(t *testing.T) {
@@ -794,6 +818,7 @@ func TestMetadata(t *testing.T) {
 
 func TestFindMissing(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
+	metrics.DistributedCachePeerLookups.Reset()
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -844,7 +869,7 @@ func TestFindMissing(t *testing.T) {
 	// Generate some more digests, but don't write them to the cache.
 	resourcesNotWritten := make([]*rspb.ResourceName, 0)
 	digestsNotWritten := make([]*repb.Digest, 0)
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 70; i++ {
 		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 		resourcesNotWritten = append(resourcesNotWritten, rn)
 		digestsNotWritten = append(digestsNotWritten, rn.GetDigest())
@@ -862,6 +887,30 @@ func TestFindMissing(t *testing.T) {
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
+
+	peerLookupMetrics := testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
+	assert.Equal(t, []testmetrics.HistogramValues{
+		{
+			Labels: map[string]string{
+				"op":     "FindMissing",
+				"status": "hit",
+			},
+			// Each hit only requires 1 peer lookup, and we did 3 FindMissing
+			// calls (loop count above) * 100 hits for each call (number of
+			// digests written).
+			Buckets: map[float64]uint64{1: 300},
+		},
+		{
+			Labels: map[string]string{
+				"op":     "FindMissing",
+				"status": "miss",
+			},
+			// Each miss should result in 3 peer lookups (replication factor),
+			// and we did 3 FindMissing calls (loop count above) * 70 misses
+			// each (number of digests not written).
+			Buckets: map[float64]uint64{3: 210},
+		},
+	}, peerLookupMetrics)
 }
 
 func TestGetMulti(t *testing.T) {
