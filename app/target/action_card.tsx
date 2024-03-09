@@ -137,6 +137,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                   loading={this.state.loadingStderr}
                   value={this.state.stdErr || "Empty log"}
                   lightTheme={!this.props.dark}
+                  scrollTop
                 />
               )}
             </div>
