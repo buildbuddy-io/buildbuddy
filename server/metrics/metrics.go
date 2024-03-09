@@ -1170,16 +1170,6 @@ var (
 		Stage,
 	})
 
-	COWSnapshotInitChunkDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "firecracker",
-		Name:      "cow_snapshot_init_chunk_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 3*time.Minute, 10),
-		Help:      "For a COW snapshot, time to initialize one chunk.",
-	}, []string{
-		ChunkSource,
-	})
-
 	COWSnapshotChunkOperationTotalDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
