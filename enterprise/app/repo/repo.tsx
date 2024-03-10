@@ -317,6 +317,10 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     try {
       await this.linkInstallation();
       let repoResponse = await this.createOrUpdateRepo();
+      if (this.props.search.get("mode") == "code") {
+        window.location.href = "/code/" + repoResponse.repoUrl.replaceAll("https://github.com/", "");
+        return;
+      }
       router.setQueryParam("created", repoResponse.repoUrl);
       router.setQueryParam("name", this.state.repoName);
       this.setState({ repoResponse: repoResponse });

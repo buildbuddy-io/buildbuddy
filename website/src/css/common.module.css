@@ -20,7 +20,7 @@
 }
 
 .section.sectionDark {
-  background-color: #263238;
+  background-color: #212121;
   color: #fff;
 }
 
@@ -161,7 +161,7 @@
 }
 
 .button.buttonPrimary {
-  background-color: #263238;
+  background-color: #212121;
   color: #fff;
   border: 0;
 }
@@ -204,7 +204,7 @@
 }
 
 .button.buttonPrimary:disabled {
-  background-color: #607d8b;
+  background-color: #9e9e9e;
   color: #fff;
 }
 

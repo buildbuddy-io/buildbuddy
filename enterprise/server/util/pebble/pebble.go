@@ -142,6 +142,12 @@ type Batch interface {
 	// operations with the except of LogData increment this count.
 	Count() uint32
 
+	// Empty returns true if the batch is empty, and false otherwise.
+	Empty() bool
+
+	// Returns the current size of the batch.
+	Len() int
+
 	Reader() pebble.BatchReader
 
 	Reset()
@@ -245,6 +251,14 @@ func (ib *instrumentedBatch) Commit(o *pebble.WriteOptions) error {
 
 func (ib *instrumentedBatch) Count() uint32 {
 	return ib.batch.Count()
+}
+
+func (ib *instrumentedBatch) Empty() bool {
+	return ib.batch.Empty()
+}
+
+func (ib *instrumentedBatch) Len() int {
+	return ib.batch.Len()
 }
 
 func (ib *instrumentedBatch) NewIter(o *pebble.IterOptions) Iterator {
@@ -589,6 +603,24 @@ func GetCopy(b Reader, key []byte) ([]byte, error) {
 	val := make([]byte, len(buf))
 	copy(val, buf)
 	return val, nil
+}
+
+func GetProto(b Reader, key []byte, pb proto.Message) error {
+	buf, closer, err := b.Get(key)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return status.NotFoundErrorf("key %q not found", key)
+		}
+		return err
+	}
+	defer closer.Close()
+	if len(buf) == 0 {
+		return status.NotFoundErrorf("key %q not found (empty value)", key)
+	}
+	if err := proto.Unmarshal(buf, pb); err != nil {
+		return status.InternalErrorf("error parsing value for %q: %s", key, err)
+	}
+	return nil
 }
 
 func LookupProto(iter Iterator, key []byte, pb proto.Message) error {

@@ -26,6 +26,7 @@ var (
 	listenAddr = flag.String("gossip.listen_addr", "", "The address to listen for gossip traffic on. Ex. 'localhost:1991'")
 	join       = flag.Slice("gossip.join", []string{}, "The nodes to join/gossip with. Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
 	nodeName   = flag.String("gossip.node_name", "", "The gossip node's name. If empty will default to host_id.'")
+	secretKey  = flag.String("gossip.secret_key", "", "The value should be either 16, 24, or 32 bytes.")
 )
 
 // A GossipManager will listen (on `advertiseAddress`), connect to `seeds`,
@@ -231,6 +232,9 @@ func New(nodeName, listenAddress string, join []string) (*GossipManager, error) 
 	memberlistConfig.BindAddr = bindAddr
 	memberlistConfig.BindPort = bindPort
 	memberlistConfig.LogOutput = &logWriter{subLog}
+	if *secretKey != "" {
+		memberlistConfig.SecretKey = []byte(*secretKey)
+	}
 
 	serfConfig := serf.DefaultConfig()
 	serfConfig.NodeName = nodeName

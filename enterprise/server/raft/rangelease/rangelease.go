@@ -110,11 +110,11 @@ func (l *Lease) GetRangeDescriptor() *rfpb.RangeDescriptor {
 
 func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
 	if rl == nil {
-		return status.FailedPreconditionErrorf("Invalid rangeLease: nil")
+		return status.FailedPreconditionError("Invalid rangeLease: nil")
 	}
 
 	if !proto.Equal(l.replica.GetRangeLease(), rl) {
-		return status.FailedPreconditionErrorf("rangeLease does not match replica")
+		return status.FailedPreconditionError("rangeLease does not match replica")
 	}
 
 	// This is a node epoch based lease, so check node and epoch.
@@ -233,7 +233,7 @@ func (l *Lease) renewLease(ctx context.Context) error {
 	// epoch based range leases.
 	if l.leaseRecord != nil && l.leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
 		expiration := time.Unix(0, l.leaseRecord.GetReplicaExpiration().GetExpiration())
-		timeUntilExpiry := expiration.Sub(time.Now())
+		timeUntilExpiry := time.Until(expiration)
 		l.timeUntilLeaseRenewal = timeUntilExpiry - l.gracePeriod
 	}
 	return nil
@@ -270,20 +270,20 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 		if l.leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
 			// Only start the renew-goroutine for time-based
 			// leases which need periodic renewal.
-			go l.keepLeaseAlive(context.TODO())
+			go l.keepLeaseAlive(context.TODO(), l.quitLease)
 		}
 	}
 	return l.leaseRecord, nil
 }
 
-func (l *Lease) keepLeaseAlive(ctx context.Context) {
+func (l *Lease) keepLeaseAlive(ctx context.Context, quit chan struct{}) {
 	for {
 		l.mu.Lock()
 		timeUntilRenewal := l.timeUntilLeaseRenewal
 		l.mu.Unlock()
 
 		select {
-		case <-l.quitLease:
+		case <-quit:
 			return
 		case <-time.After(timeUntilRenewal):
 			l.ensureValidLease(ctx, true /*forceRenewal*/)
@@ -310,7 +310,7 @@ func (l *Lease) string(rd *rfpb.RangeDescriptor, lr *rfpb.RangeLeaseRecord) stri
 	if nl := lr.GetNodeLiveness(); nl != nil {
 		return fmt.Sprintf("%s [node epoch: %d]", leaseName, nl.GetEpoch())
 	}
-	lifetime := time.Unix(0, lr.GetReplicaExpiration().GetExpiration()).Sub(time.Now())
+	lifetime := time.Until(time.Unix(0, lr.GetReplicaExpiration().GetExpiration()))
 	return fmt.Sprintf("%s [expires in: %s]", leaseName, lifetime)
 }
 

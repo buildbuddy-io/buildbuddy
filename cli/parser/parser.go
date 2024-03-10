@@ -74,7 +74,7 @@ var (
 	bazelFlagHelpPattern = regexp.MustCompile(`` +
 		`^\s+--` + // Each flag help line begins with "  --"
 		`(?P<no>\[no\])?` + // then the optional string "[no]"
-		`(?P<name>\w+)\s+` + // then a flag name like "compilation_mode"
+		`(?P<name>\w+)\s*` + // then a flag name like "compilation_mode"
 		`(\[-(?P<short_name>\w+)\]\s+)?` + // then an optional short name like "[-c]"
 		`(\((?P<description>.*)\))?` + // then an optional description like "(some help text)"
 		`$`)
@@ -282,7 +282,7 @@ func parseHelpLine(line, topic string) *Option {
 		Name:      name,
 		ShortName: shortName,
 		Multi:     multi,
-		BoolLike:  no != "",
+		BoolLike:  no != "" || description == "",
 	}
 }
 
@@ -332,6 +332,13 @@ func (s *CommandLineSchema) CommandSupportsOpt(opt string) bool {
 			if _, ok := s.CommandOptions.ByName[strings.TrimPrefix(opt, "no")]; ok {
 				return true
 			}
+		}
+		// Check for starlark flags, which won't be listed in the schema that we
+		// parsed from "bazel help" output. All bazel commands support starlark
+		// flags like "--@repo//path:name=value". Even non-build commands like
+		// "bazel info" support these, but just ignore them.
+		if strings.Contains(opt, ":") || strings.Contains(opt, "/") {
+			return true
 		}
 		return false
 	} else if strings.HasPrefix(opt, "-") {

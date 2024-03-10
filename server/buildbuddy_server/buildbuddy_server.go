@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
+	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
@@ -25,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
-	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -167,11 +167,7 @@ func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.Searc
 }
 
 func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.UpdateInvocationRequest) (*inpb.UpdateInvocationResponse, error) {
-	auth := s.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Not Implemented")
-	}
-	authenticatedUser, err := auth.AuthenticatedUser(ctx)
+	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -187,11 +183,7 @@ func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.Updat
 }
 
 func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.DeleteInvocationRequest) (*inpb.DeleteInvocationResponse, error) {
-	auth := s.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Not Implemented")
-	}
-	authenticatedUser, err := auth.AuthenticatedUser(ctx)
+	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -254,6 +246,11 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 		if err != nil {
 			return nil, err
 		}
+		userGroupCapabilities, err := role.ToCapabilities(role.Role(gr.Role))
+		if err != nil {
+			return nil, err
+		}
+		allowedUserAPIKeyCapabilities := capabilities.ApplyMask(userGroupCapabilities, capabilities.UserAPIKeyCapabilitiesMask)
 		groups = append(groups, &grpb.Group{
 			Id:                                g.GroupID,
 			Name:                              g.Name,
@@ -271,6 +268,7 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 			SuggestionPreference:              g.SuggestionPreference,
 			Url:                               getGroupUrl(&gr.Group),
 			ExternalUserManagement:            g.ExternalUserManagement,
+			AllowedUserApiKeyCapabilities:     allowedUserAPIKeyCapabilities,
 		})
 	}
 	return groups, nil
@@ -300,10 +298,6 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 
-	auth := s.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.InternalError("No auth configured on this BuildBuddy instance")
-	}
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -318,11 +312,9 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	}
 
 	selectedGroupID := ""
-	selectedGroupRole := role.None
 	selectedGroupAccess := uspb.SelectedGroup_DENIED
 	if g := selectedGroup(ctx, req.GetRequestContext().GetGroupId(), tu.Groups); g != nil {
 		selectedGroupID = g.Group.GroupID
-		selectedGroupRole = role.Role(g.Role)
 		selectedGroupAccess = uspb.SelectedGroup_ALLOWED
 		if irs := s.env.GetIPRulesService(); irs != nil {
 			err := irs.AuthorizeGroup(ctx, g.Group.GroupID)
@@ -333,19 +325,11 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 			}
 		}
 	}
-	allowedRPCs := role_filter.RoleIndependentRPCs()
-	if selectedGroupRole&role.Admin > 0 {
-		allowedRPCs = append(allowedRPCs, role_filter.GroupAdminOnlyRPCs()...)
-	}
-	if selectedGroupRole&(role.Admin|role.Developer) > 0 {
-		allowedRPCs = append(allowedRPCs, role_filter.GroupDeveloperRPCs()...)
-	}
 
 	subdomainGroupID := ""
 	if serverAdminGID := s.env.GetAuthenticator().AdminGroupID(); serverAdminGID != "" {
 		for _, gr := range tu.Groups {
 			if gr.Group.GroupID == serverAdminGID && gr.Role == uint32(role.Admin) {
-				allowedRPCs = append(allowedRPCs, role_filter.ServerAdminOnlyRPCs()...)
 				gid, err := s.getGroupIDForSubdomain(ctx)
 				if err != nil && !status.IsNotFoundError(err) {
 					return nil, err
@@ -367,7 +351,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 			GroupId: selectedGroupID,
 			Access:  selectedGroupAccess,
 		},
-		AllowedRpc:       allowedRPCs,
+		AllowedRpc:       capabilities_filter.AllowedRPCs(ctx, s.env, selectedGroupID),
 		GithubLinked:     tu.GithubToken != "",
 		SubdomainGroupId: subdomainGroupID,
 		IsImpersonating:  u.IsImpersonating(),
@@ -375,13 +359,12 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 }
 
 func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserRequest) (*uspb.CreateUserResponse, error) {
-	auth := s.env.GetAuthenticator()
 	userDB := s.env.GetUserDB()
-	if auth == nil || userDB == nil {
+	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	tu := &tables.User{}
-	if err := auth.FillUser(ctx, tu); err != nil {
+	if err := s.env.GetAuthenticator().FillUser(ctx, tu); err != nil {
 		return nil, err
 	}
 	if err := userDB.InsertUser(ctx, tu); err != nil {
@@ -401,7 +384,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	var group *tables.Group
 	if req.GetGroupId() != "" {
 		// Looking up by group ID is restricted to server admins.
-		u, err := perms.AuthenticatedUser(ctx, s.env)
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -409,7 +392,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		if adminGroupID == "" {
 			return nil, status.PermissionDeniedError("Access denied")
 		}
-		if err := authutil.AuthorizeGroupRole(u, adminGroupID, role.Admin); err != nil {
+		if err := authutil.AuthorizeOrgAdmin(u, adminGroupID); err != nil {
 			return nil, err
 		}
 		g, err := userDB.GetGroupByID(ctx, req.GetGroupId())
@@ -518,9 +501,8 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 }
 
 func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGroupRequest) (*grpb.UpdateGroupResponse, error) {
-	auth := s.env.GetAuthenticator()
 	userDB := s.env.GetUserDB()
-	if auth == nil || userDB == nil {
+	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	var group *tables.Group
@@ -558,7 +540,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	if group.SuggestionPreference == grpb.SuggestionPreference_UNKNOWN_SUGGESTION_PREFERENCE {
 		group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 	}
-	if _, err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
+	if _, err := userDB.UpdateGroup(ctx, group); err != nil {
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
@@ -568,9 +550,8 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 }
 
 func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupRequest) (*grpb.JoinGroupResponse, error) {
-	auth := s.env.GetAuthenticator()
 	userDB := s.env.GetUserDB()
-	if auth == nil || userDB == nil {
+	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	if _, err := userDB.RequestToJoinGroup(ctx, req.GetId()); err != nil {
@@ -662,11 +643,7 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 }
 
 func (s *BuildBuddyServer) authorizeInvocationWrite(ctx context.Context, invocationID string) error {
-	auth := s.env.GetAuthenticator()
-	if auth == nil {
-		return status.UnimplementedError("Not Implemented")
-	}
-	authenticatedUser, err := auth.AuthenticatedUser(ctx)
+	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}
@@ -977,10 +954,6 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
-	auth := s.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Not Implemented")
-	}
 	authDB := s.env.GetAuthDB()
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
@@ -1010,7 +983,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 
 	var g *tables.Group
 	if subdomain.Enabled() {
-		u, err := perms.AuthenticatedUser(ctx, s.env)
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1207,11 +1180,7 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		// Set the workflow ID if it's not on the request
 		// Note: This will only work for workflows created with the github app integration and not the legacy approach
 		if req.GetWorkflowId() == "" {
-			auth := s.env.GetAuthenticator()
-			if auth == nil {
-				return nil, status.UnimplementedError("Not Implemented")
-			}
-			authenticatedUser, err := auth.AuthenticatedUser(ctx)
+			authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -1240,7 +1209,7 @@ func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.Un
 	if udb == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	u, err := perms.AuthenticatedUser(ctx, s.env)
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}

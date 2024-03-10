@@ -1,0 +1,45 @@
+# Run with:
+# bazel run //enterprise/server -- --config_file=enterprise/config/buildbuddy.workflow.yaml --config_secrets.provider=gcp --config_secrets.gcp.project_id=flame-build
+app:
+  no_default_user_group: true
+  create_group_per_user: true
+  add_user_to_domain_group: true
+  code_editor_enabled: true
+  default_redis_target: "localhost:6379"
+  enable_target_tracking: true
+  user_owned_keys_enabled: true
+  # NOTE: The workflow runner cannot communicate with the local app server via localhost
+  # because they have different network stacks. Instead you must find and hardcode
+  # the IP address of the machine the app server is running on
+  cache_api_url: "grpc://TODO:1985"
+  events_api_url: "grpc://TODO:1985"
+  remote_execution_api_url: "grpc://TODO:1985"
+database:
+  data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
+storage:
+  ttl_seconds: 86400 # One day in seconds.
+  disk:
+    root_directory: /tmp/${USER}_buildbuddy_enterprise
+  enable_chunked_event_logs: true
+  tempdir: /tmp/${USER}
+cache:
+  disk:
+    root_directory: /tmp/${USER}-buildbuddy-cache
+auth:
+  enable_anonymous_usage: true
+  enable_self_auth: true
+github:
+  client_id: "${BB_DEV_GITHUB_CLIENT_ID}"
+  client_secret: "${BB_DEV_GITHUB_CLIENT_SECRET}"
+  app:
+    enabled: true
+    public_link: "https://github.com/apps/buildbuddy-local"
+    id: "403600"
+    client_id: ${SECRET:BB_LOCAL_GITHUB_APP_CLIENT_ID}
+    client_secret: ${SECRET:BB_LOCAL_GITHUB_APP_CLIENT_SECRET}
+    webhook_secret: ${SECRET:BB_LOCAL_GITHUB_APP_WEBHOOK_SECRET}
+    private_key: ${SECRET:BB_LOCAL_GITHUB_APP_PRIVATE_KEY}
+remote_execution:
+  enable_remote_exec: true
+  enable_workflows: true
+  workflows_enable_firecracker: true

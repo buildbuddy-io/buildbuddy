@@ -9,8 +9,10 @@ import (
 	"syscall"
 	"unsafe"
 
-	putil "github.com/shirou/gopsutil/v3/process"
 	"golang.org/x/sys/windows"
+
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	putil "github.com/shirou/gopsutil/v3/process"
 )
 
 const (
@@ -87,6 +89,12 @@ func (p *process) postStart() error {
 		return fmt.Errorf("failed to get process: %w", err)
 	}
 	return proc.ResumeWithContext(context.TODO())
+}
+
+func (p *process) wait() (*espb.Rusage, error) {
+	defer close(p.terminated)
+	err := p.cmd.Wait()
+	return nil, err
 }
 
 // killProcessTree kills the given pid as well as any descendant processes.

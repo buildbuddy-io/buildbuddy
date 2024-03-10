@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -182,10 +181,8 @@ func (t *TargetTracker) testTargetsInAtLeastState(state targetState) bool {
 }
 
 func (t *TargetTracker) permissionsFromContext(ctx context.Context) (*perms.UserGroupPerm, error) {
-	if auth := t.env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
-			return perms.DefaultPermissions(u), nil
-		}
+	if u, err := t.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
+		return perms.DefaultPermissions(u), nil
 	}
 	return nil, status.UnauthenticatedError("Context did not contain auth information")
 }
@@ -467,31 +464,19 @@ func isTestCommand(command string) bool {
 	return command == "test" || command == "coverage"
 }
 
-func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL string, tx interfaces.DB) ([]*tables.Target, error) {
+func readRepoTargets(ctx context.Context, env environment.Env, repoURL string) ([]*tables.Target, error) {
+	if env.GetDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+	var err error
 	q := query_builder.NewQuery(`SELECT * FROM "Targets" as t`)
 	q = q.AddWhereClause(`t.repo_url = ?`, repoURL)
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()
-	rq := tx.NewQuery(ctx, "target_tracker_get_targets_by_url").Raw(queryStr, args...)
+	rq := env.GetDBHandle().NewQuery(ctx, "target_tracker_get_targets_by_url").Raw(queryStr, args...)
 	rsp, err := db.ScanAll(rq, &tables.Target{})
-	if err != nil {
-		return nil, err
-	}
-	return rsp, nil
-}
-
-func readRepoTargets(ctx context.Context, env environment.Env, repoURL string) ([]*tables.Target, error) {
-	if env.GetDBHandle() == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-	var err error
-	rsp := make([]*tables.Target, 0)
-	err = env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		rsp, err = readRepoTargetsWithTx(ctx, env, repoURL, tx)
-		return err
-	})
 	if err != nil {
 		return nil, err
 	}
@@ -510,15 +495,14 @@ func updateTargets(ctx context.Context, env environment.Env, targets []*tables.T
 		return status.FailedPreconditionError("database not configured")
 	}
 	for _, t := range targets {
-		err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-			var existing tables.Target
-			if err := tx.GORM(ctx, "target_tracker_get_target").Where(
-				"target_id = ?", t.TargetID).First(&existing).Error; err != nil {
-				return err
-			}
-			return tx.GORM(ctx, "target_tracker_update_target").Model(&existing).Where(
-				"target_id = ?", t.TargetID).Updates(t).Error
-		})
+		// TODO(zoey): Could make this one query
+		var existing tables.Target
+		if err := env.GetDBHandle().GORM(ctx, "target_tracker_get_target").Where(
+			"target_id = ?", t.TargetID).First(&existing).Error; err != nil {
+			return err
+		}
+		err := env.GetDBHandle().GORM(ctx, "target_tracker_update_target").Model(&existing).Where(
+			"target_id = ?", t.TargetID).Updates(t).Error
 		if err != nil {
 			return err
 		}
@@ -547,10 +531,8 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 			valueArgs = append(valueArgs, nowUsec)
 			valueArgs = append(valueArgs, nowUsec)
 		}
-		err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-			stmt := fmt.Sprintf(`INSERT INTO "Targets" (repo_url, target_id, user_id, group_id, perms, label, rule_type, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
-			return tx.NewQuery(ctx, "target_tracker_insert_targets").Raw(stmt, valueArgs...).Exec().Error
-		})
+		stmt := fmt.Sprintf(`INSERT INTO "Targets" (repo_url, target_id, user_id, group_id, perms, label, rule_type, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
+		err := env.GetDBHandle().NewQuery(ctx, "target_tracker_insert_targets").Raw(stmt, valueArgs...).Exec().Error
 		if err != nil {
 			return err
 		}
@@ -589,10 +571,8 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 			valueArgs = append(valueArgs, nowUsec)
 			valueArgs = append(valueArgs, nowUsec)
 		}
-		err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-			stmt := fmt.Sprintf(`INSERT INTO "TargetStatuses" (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
-			return tx.NewQuery(ctx, "target_tracker_insert_target_statuses").Raw(stmt, valueArgs...).Exec().Error
-		})
+		stmt := fmt.Sprintf(`INSERT INTO "TargetStatuses" (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
+		err := env.GetDBHandle().NewQuery(ctx, "target_tracker_insert_target_statuses").Raw(stmt, valueArgs...).Exec().Error
 		if err != nil {
 			return err
 		}

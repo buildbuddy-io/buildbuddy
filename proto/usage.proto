@@ -7,21 +7,25 @@ import "proto/context.proto";
 message GetUsageRequest {
   // Request context.
   context.RequestContext request_context = 1;
+
+  // The usage period to be fetched, as a UTC month in "YYYY-MM" format.
+  // If empty, the current usage period will be returned.
+  string usage_period = 2;
 }
 
 message GetUsageResponse {
   // Response context.
   context.ResponseContext response_context = 1;
 
-  // Usage numbers by UTC month, in reverse-chronological order (most
-  // recent usage period comes first in the list).
+  // Usage numbers for the requested UTC month.
   //
-  // Usage numbers will always be returned for the current period (even
-  // if the values are all 0).
-  //
-  // If historical data exists, the server may return historical data from some
-  // recent number of months (clients should handle any number of months).
+  // TODO(bduffany): make this non-repeated once the client and server are
+  // updated.
   repeated Usage usage = 2;
+
+  // The available usage periods that may be specified in a subsequent
+  // GetUsageRequest.
+  repeated string available_usage_periods = 3;
 }
 
 // Usage represents a count of BuildBuddy resources used for a particular time

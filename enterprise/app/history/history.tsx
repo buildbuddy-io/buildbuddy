@@ -20,7 +20,18 @@ import { ProtoFilterParams, getProtoFilterParams } from "../filter/filter_util";
 import Spinner from "../../../app/components/spinner/spinner";
 import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 import Long from "long";
-import { BarChart2, CheckCircle, Clock, GitBranch, GitCommit, Github, Hash, Percent, XCircle } from "lucide-react";
+import {
+  BarChart2,
+  CheckCircle,
+  ChevronRight,
+  Clock,
+  GitBranch,
+  GitCommit,
+  Github,
+  Hash,
+  Percent,
+  XCircle,
+} from "lucide-react";
 
 interface State {
   /**
@@ -752,7 +763,8 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   <br />
                   <br />
                   <a className="button" href="/docs/setup">
-                    Click here to get started
+                    <span>Quickstart Guide</span>
+                    <ChevronRight />
                   </a>
                 </p>
               </div>
@@ -770,7 +782,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   <br />
                   <br />
                   <a className="button" href="https://www.buildbuddy.io/docs/guide-metadata" target="_blank">
-                    View build metadata guide
+                    Build Metadata Guide <ChevronRight />
                   </a>
                 </p>
               </div>

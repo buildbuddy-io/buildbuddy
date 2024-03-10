@@ -17,11 +17,47 @@ func init() {
 	log.Configure("--verbose=1")
 }
 
-func TestParseBazelrc_Basic(t *testing.T) {
+func TestParseBazelrc_Simple(t *testing.T) {
+	for _, test := range []struct {
+		Name     string
+		Bazelrc  string
+		Args     []string
+		Expanded []string
+	}{
+		{
+			Name:    "ExpandStarlarkFlagsFromCommonConfig",
+			Bazelrc: "common --@io_bazel_rules_docker//transitions:enable=false",
+			Args:    []string{"build"},
+			Expanded: []string{
+				"--ignore_all_rc_files",
+				"build",
+				"--@io_bazel_rules_docker//transitions:enable=false",
+			},
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			ws := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, ws, map[string]string{
+				"WORKSPACE": "",
+				"BUILD":     "",
+				".bazelrc":  test.Bazelrc,
+			})
+
+			expandedArgs, err := expandConfigs(ws, test.Args, staticHelpFromTestData)
+
+			require.NoError(t, err, "error expanding %s", test.Args)
+			require.Equal(t, test.Expanded, expandedArgs)
+		})
+	}
+}
+
+func TestParseBazelrc_Complex(t *testing.T) {
 	ws := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"WORKSPACE":                 "",
-		"import.bazelrc":            "",
+		"WORKSPACE": "",
+		"import.bazelrc": `
+common:import --build_metadata=IMPORTED_FLAG=1
+`,
 		"explicit_import_1.bazelrc": "--build_metadata=EXPLICIT_IMPORT_1=1",
 		"explicit_import_2.bazelrc": "--build_metadata=EXPLICIT_IMPORT_2=1",
 		".bazelrc": `
@@ -60,6 +96,8 @@ build:workspace_status_with_space --workspace_status_command="bash workspace_sta
 
 common --noverbose_test_summary
 test --config=bar
+
+build:no_value_flag --remote_download_minimal
 
 import     %workspace%/import.bazelrc
 try-import %workspace%/NONEXISTENT.bazelrc
@@ -239,6 +277,40 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--build_metadata=VALID_COMMON_FLAG=2",
 				"--build_flag_1",
 				"--workspace_status_command=bash workspace_status.sh",
+			},
+		},
+		// Test parsing flags that do not require a value to be set, like
+		// --remote_download_minimal or --java_debug
+		{
+			[]string{
+				"build",
+				"--config=no_value_flag",
+			},
+			[]string{
+				"--startup_flag_1",
+				"--ignore_all_rc_files",
+				"build",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
+				"--build_flag_1",
+				"--remote_download_minimal",
+			},
+		},
+		// Test parsing a config that should have been imported with
+		// try-import %workspace%/<import_name>.bazelrc
+		{
+			[]string{
+				"build",
+				"--config=import",
+			},
+			[]string{
+				"--startup_flag_1",
+				"--ignore_all_rc_files",
+				"build",
+				"--build_metadata=VALID_COMMON_FLAG=1",
+				"--build_metadata=VALID_COMMON_FLAG=2",
+				"--build_flag_1",
+				"--build_metadata=IMPORTED_FLAG=1",
 			},
 		},
 	} {

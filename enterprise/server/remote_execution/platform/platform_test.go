@@ -160,14 +160,15 @@ func TestParse_EstimatedBCU(t *testing.T) {
 	for _, testCase := range []struct {
 		name          string
 		rawValue      string
-		expectedValue int64
+		expectedValue float64
 	}{
 		{"EstimatedComputeUnits", "", 0},
-		{"EstimatedComputeUnits", "NOT_AN_INT", 0},
+		{"EstimatedComputeUnits", "NOT_A_VALID_NUMBER", 0},
 		{"EstimatedComputeUnits", "0", 0},
 		{"EstimatedComputeUnits", "1", 1},
 		{"EstimatedComputeUnits", " 1 ", 1},
 		{"estimatedcomputeunits", "1", 1},
+		{"EstimatedComputeUnits", "0.5", 0.5},
 	} {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.name, Value: testCase.rawValue},

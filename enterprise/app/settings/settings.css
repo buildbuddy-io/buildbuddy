@@ -145,7 +145,7 @@
 }
 
 .settings .settings-tab-group {
-  --border: 1px solid #607d8b;
+  --border: 1px solid #9e9e9e;
 
   display: flex;
   flex-direction: column;

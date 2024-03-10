@@ -68,6 +68,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
   }
 
+  componentDidUpdate(prevProps: Readonly<Props>, prevState: Readonly<State>, snapshot?: any): void {
+    if (prevProps.search.get("actionDigest") != this.props.search.get("actionDigest")) {
+      this.fetchAction();
+      if (!this.props.search.has("executeResponseDigest")) {
+        this.fetchActionResult();
+      }
+    }
+    if (prevProps.search.get("executeResponseDigest") != this.props.search.get("executeResponseDigest")) {
+      this.fetchExecuteResponse();
+    }
+  }
+
   fetchAction() {
     this.setState({ loadingAction: true });
     const digestParam = this.props.search.get("actionDigest");
@@ -147,6 +159,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchExecuteResponse() {
+    this.setState({ executeResponse: undefined });
     const digestParam = this.props.search.get("executeResponseDigest");
     if (!digestParam) {
       alert_service.error("Missing execute response digest in URL");
@@ -259,7 +272,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const events: TimelineEvent[] = [
       {
         name: "Queued",
-        color: "#607D8B",
+        color: "#3F51B5",
         timestamp: metadata?.queuedTimestamp,
       },
       {
@@ -572,6 +585,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                             .invocationId
                                         }
                                       </TextLink>
+                                    </div>
+                                    <div className="metadata-title">VM resumed from snapshot ID</div>
+                                    <div className="metadata-detail">
+                                      {this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask.snapshotId}
+                                    </div>
+                                  </>
+                                )}
+                                {this.state.actionResult.executionMetadata.vmMetadata.snapshotId && (
+                                  <>
+                                    <div className="metadata-title">Saved to snapshot ID</div>
+                                    <div className="metadata-detail">
+                                      {this.state.actionResult.executionMetadata.vmMetadata.snapshotId}
                                     </div>
                                   </>
                                 )}

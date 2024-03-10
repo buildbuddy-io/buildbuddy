@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
@@ -40,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4"
+	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -49,6 +53,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
@@ -67,7 +72,6 @@ type Store struct {
 	gossipManager interfaces.GossipService
 	sender        *sender.Sender
 	registry      registry.NodeRegistry
-	listener      *listener.RaftListener
 	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
@@ -76,8 +80,9 @@ type Store struct {
 	db     pebble.IPebbleDB
 	leaser pebble.Leaser
 
-	rangeMu    sync.RWMutex
-	openRanges map[uint64]*rfpb.RangeDescriptor
+	configuredClusters int
+	rangeMu            sync.RWMutex
+	openRanges         map[uint64]*rfpb.RangeDescriptor
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -96,7 +101,50 @@ type Store struct {
 	egCancel context.CancelFunc
 }
 
-func New(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
+// registryHolder implements NodeRegistryFactory. When nodeHost is created, it
+// will call this method to create the registry and use it until nodehost close.
+type registryHolder struct {
+	raftAddr string
+	grpcAddr string
+	g        interfaces.GossipService
+	r        registry.NodeRegistry
+}
+
+func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
+	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v)
+	rc.r = r
+	r.AddNode(nhid, rc.raftAddr, rc.grpcAddr)
+	return r, nil
+}
+
+func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions []disk.Partition) (*Store, error) {
+	rangeCache := rangecache.New()
+	raftListener := listener.NewRaftListener()
+	gossipManager := env.GetGossipService()
+	regHolder := &registryHolder{raftAddress, grpcAddr, gossipManager, nil}
+	nhc := dbConfig.NodeHostConfig{
+		WALDir:         filepath.Join(rootDir, "wal"),
+		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
+		RTTMillisecond: constants.RTTMillisecond,
+		RaftAddress:    raftAddress,
+		Expert: dbConfig.ExpertConfig{
+			NodeRegistryFactory: regHolder,
+		},
+		RaftEventListener:   raftListener,
+		SystemEventListener: raftListener,
+	}
+	nodeHost, err := dragonboat.NewNodeHost(nhc)
+	if err != nil {
+		return nil, err
+	}
+	registry := regHolder.r
+	apiClient := client.NewAPIClient(env, nodeHost.ID())
+	sender := sender.New(rangeCache, registry, apiClient)
+
+	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions)
+}
+
+func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
 	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
@@ -110,7 +158,6 @@ func New(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gos
 		gossipManager: gossipManager,
 		sender:        sender,
 		registry:      registry,
-		listener:      listener,
 		apiClient:     apiClient,
 		liveness:      nodeLiveness,
 		log:           nhLog,
@@ -142,6 +189,35 @@ func New(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gos
 		return nil, err
 	}
 	s.usages = usages
+
+	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
+	s.grpcServer = grpc.NewServer(grpcOptions...)
+	reflection.Register(s.grpcServer)
+	grpc_prometheus.Register(s.grpcServer)
+	rfspb.RegisterApiServer(s.grpcServer, s)
+
+	lis, err := net.Listen("tcp", s.grpcAddr)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		log.Debugf("Store started to serve on listener %s", s.grpcAddr)
+		s.grpcServer.Serve(lis)
+	}()
+
+	// rejoin configured clusters
+	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	for _, logInfo := range nodeHostInfo.LogInfo {
+		if nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
+			s.log.Infof("Had info for cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
+			r := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
+			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, r); err != nil {
+				return nil, err
+			}
+			s.configuredClusters++
+			s.log.Infof("Recreated cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
+		}
+	}
 
 	gossipManager.AddListener(s)
 	statusz.AddSection("raft_store", "Store", s)
@@ -284,24 +360,9 @@ func (s *Store) AddEventListener() <-chan events.Event {
 	return ch
 }
 
+// Start starts a new grpc server which exposes an API that can be used to manage
+// ranges on this node.
 func (s *Store) Start() error {
-	// A grpcServer is run which is responsible for presenting a meta API
-	// to manage raft nodes on each host, as well as an API to shuffle data
-	// around between nodes, outside of raft.
-	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
-	s.grpcServer = grpc.NewServer(grpcOptions...)
-	reflection.Register(s.grpcServer)
-	grpc_prometheus.Register(s.grpcServer)
-	rfspb.RegisterApiServer(s.grpcServer, s)
-
-	lis, err := net.Listen("tcp", s.grpcAddr)
-	if err != nil {
-		return err
-	}
-	go func() {
-		s.grpcServer.Serve(lis)
-	}()
-
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	s.egCancel = cancelFunc
 
@@ -337,6 +398,7 @@ func (s *Store) Start() error {
 }
 
 func (s *Store) Stop(ctx context.Context) error {
+	s.dropLeadershipForShutdown()
 	now := time.Now()
 	defer func() {
 		s.log.Infof("Store shutdown finished in %s", time.Since(now))
@@ -348,8 +410,9 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.liveness.Release()
 		s.eg.Wait()
 	}
-
 	s.log.Info("Store: waitgroups finished")
+	s.nodeHost.Close()
+
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
@@ -378,7 +441,8 @@ func (s *Store) dropLeadershipForShutdown() {
 	eg := errgroup.Group{}
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
 		clusterInfo := clusterInfo
-		if !clusterInfo.IsLeader {
+		if clusterInfo.LeaderID != clusterInfo.ReplicaID || clusterInfo.Term == 0 {
+			// skip if not the leader
 			continue
 		}
 
@@ -390,6 +454,7 @@ func (s *Store) dropLeadershipForShutdown() {
 				continue
 			}
 			eg.Go(func() error {
+				log.Debugf("request to transfer leadership of shard %d to replica %d from replica %d", clusterInfo.ShardID, replicaID, clusterInfo.ReplicaID)
 				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, replicaID); err != nil {
 					s.log.Warningf("Error transferring leadership: %s", err)
 				}
@@ -576,6 +641,26 @@ func (s *Store) Sender() *sender.Sender {
 	return s.sender
 }
 
+func (s *Store) APIClient() *client.APIClient {
+	return s.apiClient
+}
+
+func (s *Store) ConfiguredClusters() int {
+	return s.configuredClusters
+}
+
+func (s *Store) NodeHost() *dragonboat.NodeHost {
+	return s.nodeHost
+}
+
+func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
+	return &rfpb.NodeDescriptor{
+		Nhid:        s.nodeHost.ID(),
+		RaftAddress: s.nodeHost.RaftAddress(),
+		GrpcAddress: s.grpcAddr,
+	}
+}
+
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
 	// This code will be called by all replicas in a range when
 	// doing a split, so we do not check for range leases here.
@@ -613,7 +698,7 @@ func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeader
 	return &rfpb.TransferLeadershipResponse{}, nil
 }
 
-// Snapshots the cluster *on this node*. This is a local operation and does not
+// SnapshotCluster snapshots the cluster *on this node*. This is a local operation and does not
 // create a snapshot on other nodes that are members of this cluster.
 func (s *Store) SnapshotCluster(ctx context.Context, shardID uint64) error {
 	defer canary.Start("SnapshotCluster", 10*time.Second)()
@@ -725,6 +810,7 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	return rsp, nil
 }
 
+// RemoveData tries to remove all data associated with the specified node (shard, replica). It waits for the node (shard, replica) to be fully offloaded or the context is cancelled. This method should only be used after the node is deleted from its Raft cluster.
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
 	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		err := s.nodeHost.SyncRemoveData(ctx, req.GetShardId(), req.GetReplicaId())
@@ -739,6 +825,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	return &rfpb.RemoveDataResponse{}, nil
 }
 
+// SyncPropose makes a synchronous proposal (writes) on the Raft shard.
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
 	var shardID uint64
 	header := req.GetHeader()
@@ -768,6 +855,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	}, nil
 }
 
+// SyncRead performs a synchronous linearizable read on the specified Raft shard.
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
 	batch := req.GetBatch()
 	batch.Header = req.GetHeader()
@@ -1049,18 +1137,6 @@ func (s *Store) updateTags() error {
 	return err
 }
 
-func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
-	return &rfpb.NodeDescriptor{
-		Nhid:        s.nodeHost.ID(),
-		RaftAddress: s.nodeHost.RaftAddress(),
-		GrpcAddress: s.grpcAddr,
-	}
-}
-
-func (s *Store) NodeHost() *dragonboat.NodeHost {
-	return s.nodeHost
-}
-
 func (s *Store) GetMembership(ctx context.Context, shardID uint64) ([]*rfpb.ReplicaDescriptor, error) {
 	var membership *dragonboat.Membership
 	var err error
@@ -1091,6 +1167,7 @@ func (s *Store) GetMembership(ctx context.Context, shardID uint64) ([]*rfpb.Repl
 }
 
 func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
+	startTime := time.Now()
 	leftRange := req.GetRange()
 	if leftRange == nil {
 		return nil, status.FailedPreconditionErrorf("no range provided to split: %+v", req)
@@ -1119,8 +1196,8 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	}
 
 	// Find Split Point.
-	fsp := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
-	fspRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, shardID, fsp)
+	fsp := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}).SetHeader(req.GetHeader())
+	fspRsp, err := client.SyncReadLocalBatch(ctx, s.nodeHost, shardID, fsp)
 	if err != nil {
 		return nil, status.InternalErrorf("find split point err: %s", err)
 	}
@@ -1207,6 +1284,17 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	if err := s.sender.RunTxn(ctx, txn); err != nil {
 		return nil, err
 	}
+
+	// Increment RaftSplits counter.
+	metrics.RaftSplits.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+	}).Inc()
+
+	// Observe split duration.
+	metrics.RaftSplitDurationUs.With(prometheus.Labels{
+		metrics.RaftRangeIDLabel: strconv.Itoa(int(leftRange.GetRangeId())),
+	}).Observe(float64(time.Since(startTime).Microseconds()))
+
 	return &rfpb.SplitRangeResponse{
 		Left:  updatedLeftRange,
 		Right: newRightRange,

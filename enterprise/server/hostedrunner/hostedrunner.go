@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,10 +21,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
+	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -72,6 +73,7 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 // createAction creates and uploads an action that will trigger the CI runner
 // to checkout the specified repo and execute the specified bazel action,
 // uploading any logs to an invcocation page with the specified ID.
+// TODO(Maggie): Refactor this function to use rexec.Prepare
 func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, invocationID string) (*repb.Digest, error) {
 	cache := r.env.GetCache()
 	if cache == nil {
@@ -195,6 +197,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		})
 	}
 
+	cmd.Platform.Properties = append(cmd.Platform.Properties, req.GetExecProperties()...)
+	cmd.Platform.Properties = normalizePlatform(cmd.Platform.Properties)
+
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, cmd)
 	if err != nil {
 		return nil, err
@@ -218,7 +223,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 }
 
 func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
-	u, err := perms.AuthenticatedUser(ctx, r.env)
+	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -282,16 +287,19 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err != nil {
 		return nil, err
 	}
+	// Even for async requests, we must wait until the first operation has been
+	// returned from the stream to guarantee the context isn't canceled too early
+	// before the execution has been created
+	op, err := opStream.Recv()
+	if err != nil {
+		return nil, err
+	}
 
 	res := &rnpb.RunResponse{InvocationId: invocationID}
 	if req.GetAsync() {
 		return res, nil
 	}
 
-	op, err := opStream.Recv()
-	if err != nil {
-		return nil, err
-	}
 	executionID := op.GetName()
 	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
 		return nil, err
@@ -377,4 +385,23 @@ func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariab
 	}
 	return platform.WithRemoteHeaderOverride(
 		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
+}
+
+// normalizePlatform sorts platform properties alphabetically by name.
+// If the same name is specified more than once, the last one wins.
+func normalizePlatform(props []*repb.Platform_Property) []*repb.Platform_Property {
+	sort.Slice(props, func(i, j int) bool {
+		if props[i].Name == props[j].Name {
+			// If there are multiple entries with the same name, sort them
+			// so the later entry in the input slice is first in the sorted list
+			// because slices.CompactFunc selects the first entry if there
+			// are duplicates
+			return j < i
+		}
+		return props[i].Name < props[j].Name
+	})
+	props = slices.CompactFunc(props, func(i, j *repb.Platform_Property) bool {
+		return i.Name == j.Name
+	})
+	return props
 }

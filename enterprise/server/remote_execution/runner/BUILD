@@ -58,7 +58,6 @@ go_library(
             "//enterprise/server/remote_execution/containers/firecracker",
             "//enterprise/server/remote_execution/containers/podman",
             "//proto:vfs_go_proto",
-            "//server/util/perms",
             "@org_golang_google_grpc//:go_default_library",
         ],
         "@io_bazel_rules_go//go/platform:windows": [

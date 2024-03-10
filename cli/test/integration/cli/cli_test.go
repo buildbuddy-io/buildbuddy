@@ -298,9 +298,16 @@ func TestTerminalOutput(t *testing.T) {
 func TestTargetPatternFile(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":       `sh_test(name = "nop", srcs = ["nop.sh"])`,
-		"nop.sh":      "",
-		"targets.txt": "//:nop",
+		".bazelrc": `
+test:pattern-file --target_pattern_file=targets.txt
+`,
+		"BUILD": `
+sh_test(name = "pass", srcs = ["pass.sh"])
+sh_test(name = "fail", srcs = ["fail.sh"])
+`,
+		"pass.sh":     "",
+		"fail.sh":     "exit 1",
+		"targets.txt": "//:pass",
 	})
 
 	_, err := testcli.CombinedOutput(testcli.Command(t, ws, "build", "--target_pattern_file=targets.txt"))
@@ -308,6 +315,13 @@ func TestTargetPatternFile(t *testing.T) {
 
 	_, err = testcli.CombinedOutput(testcli.Command(t, ws, "test", "--target_pattern_file=targets.txt"))
 	require.NoError(t, err)
+
+	_, err = testcli.CombinedOutput(testcli.Command(t, ws, "test", "--config=pattern-file"))
+	require.NoError(t, err)
+
+	// "test" should expand to "test //..." and the tests should fail.
+	_, err = testcli.CombinedOutput(testcli.Command(t, ws, "test"))
+	require.Error(t, err)
 }
 
 func TestQueryFile(t *testing.T) {

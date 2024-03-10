@@ -65,6 +65,24 @@ func TestParseRemoteCliFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "repeated remote cli flags",
+			inputArgs: []string{
+				"--env=key=val",
+				"--remote_runner=val",
+				"--env=key2=val2",
+				"build",
+				"//...",
+			},
+			expectedOutput: []string{
+				"build",
+				"//...",
+			},
+			expectedFlagValue: map[string]string{
+				"remote_runner": "val",
+				"env":           "key=val,key2=val2",
+			},
+		},
+		{
 			name: "no flags",
 			inputArgs: []string{
 				"build",

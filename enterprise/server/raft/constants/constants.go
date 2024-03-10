@@ -49,6 +49,8 @@ const (
 	UnsplittableMaxByte = systemMaxByte
 
 	EntryErrorValue = 0
+
+	RTTMillisecond = 10
 )
 
 const CASErrorMessage = "CAS expected value did not match"

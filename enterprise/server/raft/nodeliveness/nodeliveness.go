@@ -262,7 +262,7 @@ func (h *Liveness) renewLease() error {
 		// This means we set the lease succesfully.
 		h.setLastLivenessRecord(leaseRequest)
 		expiration := time.Unix(0, h.lastLivenessRecord.GetExpiration())
-		timeUntilExpiry := expiration.Sub(time.Now())
+		timeUntilExpiry := time.Until(expiration)
 		h.timeUntilLeaseRenewal = timeUntilExpiry - h.gracePeriod
 	} else if status.IsFailedPreconditionError(err) && strings.Contains(err.Error(), constants.CASErrorMessage) {
 		// This means another lease was active -- we should save it, so that
@@ -304,7 +304,7 @@ func (h *Liveness) string(replicaID []byte, llr *rfpb.NodeLivenessRecord) string
 	if err != nil {
 		return fmt.Sprintf("Liveness(%q): invalid (%s)", string(replicaID), err)
 	}
-	lifetime := time.Unix(0, llr.GetExpiration()).Sub(time.Now())
+	lifetime := time.Until(time.Unix(0, llr.GetExpiration()))
 	return fmt.Sprintf("Liveness(%q): [epoch: %d, expires in %s]", string(replicaID), llr.GetEpoch(), lifetime)
 }
 

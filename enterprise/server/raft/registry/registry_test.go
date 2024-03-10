@@ -46,14 +46,14 @@ func requireError(t testing.TB, dnr registry.NodeRegistry, shardID, replicaID ui
 	addr, key, err := dnr.Resolve(shardID, replicaID)
 	require.Equal(t, "", addr)
 	require.Equal(t, "", key)
-	require.NotNil(t, err)
-	require.Equal(t, err.Error(), expectedErr.Error())
+	require.NoError(t, err)
+	require.ErrorIs(t, err, expectedErr)
 
 	addr, key, err = dnr.ResolveGRPC(shardID, replicaID)
 	require.Equal(t, "", addr)
 	require.Equal(t, "", key)
-	require.NotNil(t, err)
-	require.Equal(t, err.Error(), expectedErr.Error())
+	require.NoError(t, err)
+	require.ErrorIs(t, err, expectedErr)
 }
 
 func TestStaticRegistryAdd(t *testing.T) {
@@ -70,6 +70,11 @@ func TestDynamicRegistryAdd(t *testing.T) {
 	dnr.Add(1, 1, "nhid-1")
 	dnr.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
 	requireResolves(t, dnr, 1, 1, "raftaddress:1", "grpcaddress:1")
+
+	// When the target changes addresses, the registry should resolve the target
+	// to the new address.
+	dnr.AddNode("nhid-1", "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, dnr, 1, 1, "raftaddress:2", "grpcaddress:2")
 }
 
 func TestDynamicRegistryResolution(t *testing.T) {

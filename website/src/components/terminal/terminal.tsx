@@ -112,7 +112,7 @@ function Question(props) {
 }
 
 function Detail(props) {
-  return <span style={{ color: "#9E9E9E" }}>{props.text || "ERROR:"}</span>;
+  return <span style={{ color: "#9e9e9e" }}>{props.text || "ERROR:"}</span>;
 }
 
 export { Term as default, Prompt, Info, Error, Question, Detail };

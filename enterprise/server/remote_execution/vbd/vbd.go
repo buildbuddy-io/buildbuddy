@@ -64,7 +64,7 @@ func (f *FS) SetFile(file BlockDevice) {
 
 // Mount mounts the FS to the given directory path.
 // It exposes a single file "store" which points to the backing store.
-func (f *FS) Mount(path string) error {
+func (f *FS) Mount(ctx context.Context, path string) error {
 	if f.mountPath != "" {
 		return status.InternalErrorf("vbd is already mounted")
 	}
@@ -115,7 +115,7 @@ func (f *FS) Mount(path string) error {
 
 	attr := fusefs.StableAttr{Mode: fuse.S_IFREG}
 	child := &Node{fs: f, file: f.store}
-	inode := f.root.NewPersistentInode(context.TODO(), child, attr)
+	inode := f.root.NewPersistentInode(ctx, child, attr)
 	f.root.AddChild(FileName, inode, false /*=overwrite*/)
 
 	return nil

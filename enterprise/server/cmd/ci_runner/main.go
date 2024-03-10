@@ -366,8 +366,10 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	}
 	if r.isWorkflow {
 		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}})
+		r.Printf("Streaming workflow logs to: %s", invocationURL(*invocationID))
 	} else {
 		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}})
+		r.Printf("Streaming remote runner logs to: %s", invocationURL(*invocationID))
 	}
 	if err := r.bep.Publish(startedEvent); err != nil {
 		return err
@@ -513,7 +515,9 @@ func main() {
 }
 
 func run() error {
-	flag.Parse()
+	if err := parseFlags(); err != nil {
+		return err
+	}
 	if *credentialHelper {
 		return runCredentialHelper()
 	}
@@ -650,6 +654,30 @@ func run() error {
 	}
 	if result.exitCode != 0 {
 		return result // as error
+	}
+	return nil
+}
+
+// parseFlags should not fail when parsing an undefined flag.
+// This lets us add new flags to this script without breaking older executors
+// (on self-hosted executors, for example) that aren't expecting them when the
+// app server tries to send them.
+func parseFlags() error {
+	// Ignore errors when parsing an unknown flag
+	flagset := flag.CommandLine
+	flagset.Init(os.Args[0], flag.ContinueOnError)
+	flagset.Usage = func() {}
+
+	unparsedArgs := os.Args[1:]
+	for len(unparsedArgs) > 0 {
+		err := flagset.Parse(unparsedArgs)
+		// Ignore undefined flag errors. The flag package will automatically print
+		// a warning error message.
+		if err == nil || strings.Contains(err.Error(), "flag provided but not defined") {
+			unparsedArgs = flagset.Args()
+		} else {
+			return err
+		}
 	}
 	return nil
 }
@@ -1764,9 +1792,9 @@ func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError)
 	w := io.MultiWriter(out, &buf)
 	printCommandLine(out, "git", args...)
 	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, w); err != nil {
-		return "", &gitError{err, string(buf.Bytes())}
+		return "", &gitError{err, buf.String()}
 	}
-	output := string(buf.Bytes())
+	output := buf.String()
 	return strings.TrimSpace(output), nil
 }
 

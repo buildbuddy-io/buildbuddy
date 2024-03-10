@@ -245,10 +245,8 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 
 	invocationIDs := []string{}
 	iidMatches := invocationIDPattern.FindAllStringSubmatch(output, -1)
-	if iidMatches != nil {
-		for _, m := range iidMatches {
-			invocationIDs = append(invocationIDs, m[1])
-		}
+	for _, m := range iidMatches {
+		invocationIDs = append(invocationIDs, m[1])
 	}
 	return &result{
 		Output:        output,
@@ -602,6 +600,35 @@ func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	}
 
 	run()
+}
+
+func TestCIRunner_IgnoresInvalidFlags(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Show bazel version",
+		"--trigger_event=push",
+		"--fake=blah",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+		"--fake2=blah",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+
+	runnerInvocation := singleInvocation(t, app, result)
+	// Since our workflow just runs `bazel version`, we should be able to see its
+	// output in the action logs.
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 }
 
 func TestRunAction_RespectsCommitSha(t *testing.T) {

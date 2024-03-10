@@ -107,10 +107,25 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 
   private defaultCapabilities(): api_key.ApiKey.Capability[] {
-    if (this.props.user.isGroupAdmin()) {
+    // For org-level keys, default to CACHE_WRITE.
+    if (!this.props.userOwnedOnly) {
       return [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY];
     }
-    return [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY];
+
+    // If the new roles are not yet enabled, default to just CAS_WRITE.
+    if (!capabilities.config.readerWriterRolesEnabled) {
+      return [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY];
+    }
+
+    // For user-owned keys, default to the highest allowed capability.
+    const allowList = this.props.user.selectedGroup.allowedUserApiKeyCapabilities ?? [];
+    if (allowList.includes(api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY)) {
+      return [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY];
+    }
+    if (allowList.includes(api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY)) {
+      return [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY];
+    }
+    return [];
   }
 
   // Creation modal
@@ -260,7 +275,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     ]);
   }
 
-  private onSelectSCIM(onChange: (name: string, value: any) => any) {
+  private onSelectOrgAdmin(onChange: (name: string, value: any) => any) {
     onChange("capability", [api_key.ApiKey.Capability.ORG_ADMIN_CAPABILITY]);
   }
 
@@ -268,8 +283,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange("visibleToDevelopers", e.target.checked);
   }
 
-  private canChangeCapabilities(): boolean {
-    return this.props.user.isGroupAdmin();
+  private canSetCapabilities(caps: api_key.ApiKey.Capability[]): boolean {
+    // Org-level keys do not have capability restrictions.
+    if (!this.props.userOwnedOnly) return true;
+
+    // If the new roles are not yet enabled, only let admins change capabilities.
+    if (!capabilities.config.readerWriterRolesEnabled) {
+      return this.props.user.isGroupAdmin();
+    }
+
+    // For user-owned keys, use the allowlist to restrict capabilities.
+    const allowList = this.props.user.selectedGroup.allowedUserApiKeyCapabilities ?? [];
+    return caps.every((capability) => allowList.includes(capability));
   }
 
   private canEdit(): boolean {
@@ -315,22 +340,9 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <label className="checkbox-row">
                   <input
                     type="radio"
-                    onChange={this.onSelectReadWrite.bind(this, onChange)}
-                    checked={isReadWrite(request)}
-                    disabled={!this.canChangeCapabilities()}
-                  />
-                  <span>
-                    Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
-                  </span>
-                </label>
-              </div>
-              <div className="field-container">
-                <label className="checkbox-row">
-                  <input
-                    type="radio"
                     onChange={this.onSelectReadOnly.bind(this, onChange)}
                     checked={isReadOnly(request)}
-                    disabled={!this.canChangeCapabilities()}
+                    disabled={!this.canSetCapabilities([])}
                   />
                   <span>
                     Read-only key <span className="field-description">(disable all remote cache uploads)</span>
@@ -343,11 +355,24 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     type="radio"
                     onChange={this.onSelectCASOnly.bind(this, onChange)}
                     checked={isCASOnly(request)}
-                    disabled={!this.canChangeCapabilities()}
+                    disabled={!this.canSetCapabilities([api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY])}
                     debug-id="cas-only-radio-button"
                   />
                   <span>
                     CAS-only key <span className="field-description">(disable action cache uploads)</span>
+                  </span>
+                </label>
+              </div>
+              <div className="field-container">
+                <label className="checkbox-row">
+                  <input
+                    type="radio"
+                    onChange={this.onSelectReadWrite.bind(this, onChange)}
+                    checked={isReadWrite(request)}
+                    disabled={!this.canSetCapabilities([api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY])}
+                  />
+                  <span>
+                    Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
                   </span>
                 </label>
               </div>
@@ -360,7 +385,6 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                       type="radio"
                       onChange={this.onSelectExecutor.bind(this, onChange)}
                       checked={isExecutorKey(request)}
-                      disabled={!this.canChangeCapabilities()}
                     />
                     <span>
                       Executor key <span className="field-description">(for self-hosted executors)</span>
@@ -369,14 +393,13 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 </div>
               )}
               {/* User-owned keys cannot be used for SCIM. */}
-              {capabilities.config.scimKeyCreationEnabled && !this.props.userOwnedOnly && (
+              {capabilities.config.orgAdminApiKeyCreationEnabled && !this.props.userOwnedOnly && (
                 <div className="field-container">
                   <label className="checkbox-row">
                     <input
                       type="radio"
-                      onChange={this.onSelectSCIM.bind(this, onChange)}
-                      checked={isSCIMKey(request)}
-                      disabled={!this.canChangeCapabilities()}
+                      onChange={this.onSelectOrgAdmin.bind(this, onChange)}
+                      checked={isOrgAdminKey(request)}
                     />
                     <span>
                       Org admin key <span className="field-description">(for external user management)</span>
@@ -394,7 +417,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                       checked={request.visibleToDevelopers}
                     />
                     <span>
-                      Visible to developers <span className="field-description">(users with the role Developer)</span>
+                      Visible to non-admins{" "}
+                      <span className="field-description">(org members with role other than Admin)</span>
                     </span>
                   </label>
                 </div>
@@ -481,16 +505,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   <span className="untitled-key">Untitled key</span>
                 )}
               </div>
-              <div className="api-key-capabilities">
+              <div
+                className="api-key-capabilities"
+                title={key.visibleToDevelopers ? "Visible to non-admin members of this organization" : undefined}>
                 <span>{describeCapabilities(key)}</span>
               </div>
               <ApiKeyField apiKey={key} />
-              {this.props.user.canCall("updateApiKey") && (
+              {this.props.user.canCall(this.props.userOwnedOnly ? "updateUserApiKey" : "updateApiKey") && (
                 <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
                   Edit
                 </OutlinedButton>
               )}
-              {this.props.user.canCall("deleteApiKey") && (
+              {this.props.user.canCall(this.props.userOwnedOnly ? "deleteUserApiKey" : "deleteApiKey") && (
                 <OutlinedButton onClick={this.onClickDelete.bind(this, key)} className="destructive">
                   Delete
                 </OutlinedButton>
@@ -570,7 +596,7 @@ function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
   ]);
 }
 
-function isSCIMKey<T extends ApiKeyFields>(apiKey: T | null) {
+function isOrgAdminKey<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.ORG_ADMIN_CAPABILITY]);
 }
 
@@ -586,11 +612,11 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities = "CAS-only";
   } else if (isExecutorKey(apiKey)) {
     capabilities = "Executor";
-  } else if (isSCIMKey(apiKey)) {
-    capabilities = "SCIM";
+  } else if (isOrgAdminKey(apiKey)) {
+    capabilities = "Org admin";
   }
   if (apiKey.visibleToDevelopers) {
-    capabilities += " [D]";
+    capabilities += " (*)";
   }
   return capabilities;
 }

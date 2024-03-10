@@ -20,24 +20,23 @@ import (
 	"github.com/lni/dragonboat/v4"
 	"golang.org/x/sync/errgroup"
 
-	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
-type ClusterStarter struct {
-	// The nodehost and function used to create
-	// on disk statemachines for new clusters.
-	nodeHost             *dragonboat.NodeHost
-	createStateMachineFn dbsm.CreateOnDiskStateMachineFunc
+type IStore interface {
+	ConfiguredClusters() int
+	APIClient() *client.APIClient
+	NodeHost() *dragonboat.NodeHost
+}
 
+type ClusterStarter struct {
+	store    IStore
 	grpcAddr string
 
 	// the set of hosts passed to the Join arg
 	listenAddr    string
 	join          []string
 	gossipManager interfaces.GossipService
-	apiClient     *client.APIClient
 
 	bootstrapped bool
 
@@ -50,20 +49,18 @@ type ClusterStarter struct {
 	log log.Logger
 }
 
-func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan interfaces.GossipService, apiClient *client.APIClient) *ClusterStarter {
+func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore) *ClusterStarter {
 	joinList := gossipMan.JoinList()
 	cs := &ClusterStarter{
-		nodeHost:             nodeHost,
-		createStateMachineFn: createStateMachineFn,
-		grpcAddr:             grpcAddr,
-		listenAddr:           gossipMan.ListenAddr(),
-		join:                 joinList,
-		gossipManager:        gossipMan,
-		apiClient:            apiClient,
-		bootstrapped:         false,
-		doneOnce:             sync.Once{},
-		doneSetup:            make(chan struct{}),
-		log:                  log.NamedSubLogger(nodeHost.ID()),
+		store:         store,
+		grpcAddr:      grpcAddr,
+		listenAddr:    gossipMan.ListenAddr(),
+		join:          joinList,
+		gossipManager: gossipMan,
+		bootstrapped:  false,
+		doneOnce:      sync.Once{},
+		doneSetup:     make(chan struct{}),
+		log:           log.NamedSubLogger(store.NodeHost().ID()),
 	}
 	sort.Strings(cs.join)
 
@@ -81,26 +78,9 @@ func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn db
 
 func (cs *ClusterStarter) markBringupComplete() {
 	cs.doneOnce.Do(func() {
-		cs.log.Infof("Bringup is complete on %s", cs.nodeHost.ID())
+		cs.log.Info("Bringup is complete!")
 		close(cs.doneSetup)
 	})
-}
-
-func (cs *ClusterStarter) rejoinConfiguredClusters() (int, error) {
-	nodeHostInfo := cs.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-	clustersAlreadyConfigured := 0
-	for _, logInfo := range nodeHostInfo.LogInfo {
-		if cs.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
-			cs.log.Infof("Had info for cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
-			r := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
-			if err := cs.nodeHost.StartOnDiskReplica(nil, false /*=join*/, cs.createStateMachineFn, r); err != nil {
-				return clustersAlreadyConfigured, err
-			}
-			clustersAlreadyConfigured += 1
-			cs.log.Infof("Recreated cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
-		}
-	}
-	return clustersAlreadyConfigured, nil
 }
 
 func getMyIPs() ([]net.IP, error) {
@@ -164,21 +144,11 @@ func (cs *ClusterStarter) matchesListenAddress(hostAndPort string) (bool, error)
 }
 
 func (cs *ClusterStarter) InitializeClusters() error {
-	// Attempt to rejoin any configured clusters. This looks at what is
-	// stored on disk and attempts to rejoin any clusters that this nodehost
-	// was previously a member of. If none were found, we'll attempt auto
-	// auto bringup below...
-	clustersAlreadyConfigured, err := cs.rejoinConfiguredClusters()
-	if err != nil {
-		cs.markBringupComplete()
-		return err
-	}
-
 	// Set a flag indicating if initial cluster bringup still needs to
 	// happen. If so, bringup will be triggered when all of the nodes
 	// in the Join list have announced themselves to us.
-	cs.bootstrapped = clustersAlreadyConfigured > 0
-	cs.log.Infof("%d clusters already configured. (bootstrapped: %t)", clustersAlreadyConfigured, cs.bootstrapped)
+	cs.bootstrapped = cs.store.ConfiguredClusters() > 0
+	cs.log.Infof("%d clusters already configured. (bootstrapped: %t)", cs.store.ConfiguredClusters(), cs.bootstrapped)
 
 	isBringupCoordinator, err := cs.matchesListenAddress(cs.join[0])
 	if err != nil {
@@ -225,6 +195,9 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 	if err != nil {
 		return err
 	}
+	nodeHost := cs.store.NodeHost()
+	apiClient := cs.store.APIClient()
+
 	bootstrapInfo := make(map[string]string, 0)
 	for nodeRsp := range rsp.ResponseCh() {
 		if nodeRsp.Payload == nil {
@@ -241,7 +214,7 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 		if len(bootstrapInfo) == len(cs.join) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			return SendStartShardRequests(ctx, cs.nodeHost, cs.apiClient, bootstrapInfo)
+			return SendStartShardRequests(ctx, nodeHost, apiClient, bootstrapInfo)
 		}
 	}
 	return status.FailedPreconditionErrorf("Unable to find other join nodes: %+s", bootstrapInfo)
@@ -255,7 +228,7 @@ func (cs *ClusterStarter) OnEvent(updateType serf.EventType, event serf.Event) {
 			return
 		}
 		rsp := &rfpb.BringupResponse{
-			Nhid:        cs.nodeHost.ID(),
+			Nhid:        cs.store.NodeHost().ID(),
 			GrpcAddress: cs.grpcAddr,
 		}
 		buf, err := proto.Marshal(rsp)

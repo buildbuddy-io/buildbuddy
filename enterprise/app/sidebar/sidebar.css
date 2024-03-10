@@ -1,7 +1,7 @@
 .sidebar {
   flex-shrink: 0;
   width: 280px;
-  background-color: #263238;
+  background-color: #212121;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -61,7 +61,7 @@
   font-weight: 600;
   display: flex;
   align-items: center;
-  color: #90a4ae;
+  color: #bdbdbd;
   white-space: nowrap;
   padding: 8px;
 }
@@ -83,7 +83,7 @@
   padding-right: 16px;
   width: 18px;
   height: 18px;
-  stroke: #90a4ae;
+  stroke: #bdbdbd;
   flex-shrink: 0;
 }
 
@@ -94,7 +94,7 @@
 
 .sidebar .sidebar-header:after {
   display: block;
-  background-color: #263238;
+  background-color: #212121;
   width: 164px;
   height: 40px;
   left: 50px;

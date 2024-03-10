@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -98,7 +97,7 @@ func takeOwnershipOfDomain(t *testing.T, ctx context.Context, env environment.En
 		gr.URLIdentifier = strings.ToLower(gr.GroupID + "-slug")
 	}
 	gr.OwnedDomain = strings.Split(tu.Email, "@")[1]
-	_, err = env.GetUserDB().InsertOrUpdateGroup(ctx, &gr)
+	_, err = env.GetUserDB().UpdateGroup(ctx, &gr)
 	require.NoError(t, err)
 }
 
@@ -122,7 +121,7 @@ func apiKeyValues(keys []*tables.APIKey) []string {
 }
 
 func setUserOwnedKeysEnabled(t *testing.T, ctx context.Context, env environment.Env, groupID string, enabled bool) {
-	// The InsertOrUpdate API requires an URL identifier, so look it up and
+	// The Update API requires an URL identifier, so look it up and
 	// preserve it if it exists, otherwise initialize.
 	// TODO: We should probably remove this requirement; it is inconvenient
 	// both for testing and when users want to tweak group settings in the UI.
@@ -139,7 +138,7 @@ func setUserOwnedKeysEnabled(t *testing.T, ctx context.Context, env environment.
 		UserOwnedKeysEnabled: enabled,
 		URLIdentifier:        url,
 	}
-	_, err = env.GetUserDB().InsertOrUpdateGroup(ctx, updates)
+	_, err = env.GetUserDB().UpdateGroup(ctx, updates)
 	require.NoError(t, err)
 }
 
@@ -231,6 +230,32 @@ func TestGetUserByEmail(t *testing.T) {
 	require.NoError(t, err)
 	_, err = udb.GetUserByEmail(userCtx, "user1@org1.io")
 	require.True(t, status.IsFailedPreconditionError(err))
+}
+
+func TestOwnedDomainBlocklist(t *testing.T) {
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create a user
+	createUser(t, ctx, env, "US1", "gmail.com")
+	ctx = authUserCtx(ctx, env, t, "US1")
+
+	// Create a new 'gmail' owned-domain group (should fail).
+	_, err := udb.CreateGroup(ctx, &tables.Group{
+		OwnedDomain: "gmail.com",
+	})
+	require.Error(t, err)
+
+	// Create a new 'org1.io' owned-domain group, (should work).
+	_, err = udb.CreateGroup(ctx, &tables.Group{
+		OwnedDomain: "org1.io",
+	})
+	require.NoError(t, err)
+
+	// Create a new 'gmail' group (should work).
+	_, err = udb.CreateGroup(ctx, &tables.Group{})
+	require.NoError(t, err)
 }
 
 func TestDeleteUserGitHubToken(t *testing.T) {
@@ -333,7 +358,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 
 	// Attach a slug to GR1 (orgs don't get slugs when they are created as
 	// part of InsertUser).
-	orgGroupID, err := udb.InsertOrUpdateGroup(ctx1, &tables.Group{
+	orgGroupID, err := udb.UpdateGroup(ctx1, &tables.Group{
 		GroupID:       "GR1",
 		URLIdentifier: "gr1-slug",
 		OwnedDomain:   "org1.io",
@@ -429,7 +454,7 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t
 	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us2.Role, "second user added to the default group should have the default role")
 }
 
-func TestInsertOrUpdateGroup(t *testing.T) {
+func TestUpdateGroup(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
@@ -444,17 +469,17 @@ func TestInsertOrUpdateGroup(t *testing.T) {
 
 	g1Update := &tables.Group{GroupID: "GR1", URLIdentifier: "gr1"}
 
-	_, err := udb.InsertOrUpdateGroup(ctx, g1Update)
+	_, err := udb.UpdateGroup(ctx, g1Update)
 	require.Truef(
 		t, status.IsUnauthenticatedError(err),
 		"expected Unauthenticated error for update from anonymous user; got: %s", err)
 
-	_, err = udb.InsertOrUpdateGroup(ctx2, g1Update)
+	_, err = udb.UpdateGroup(ctx2, g1Update)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
 		"expected PermissionDenied error for update from US2; got: %s", err)
 
-	_, err = udb.InsertOrUpdateGroup(ctx1, g1Update)
+	_, err = udb.UpdateGroup(ctx1, g1Update)
 	require.NoError(t, err)
 }
 
@@ -1118,6 +1143,46 @@ func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
 		err)
 }
 
+func TestUserOwnedKeys_ChangeRole_UpdatesCapabilities(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	adb := env.GetAuthDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+	err := udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US2"}, Role: grpb.Group_ADMIN_ROLE},
+	})
+	require.NoError(t, err)
+	us1Key, err := adb.CreateUserAPIKey(
+		ctx1, gr1.GroupID, "",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY})
+	require.NoError(t, err, "US1 should be able to create a user-owned key")
+
+	_, err = env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, us1Key.Value)
+	require.NoError(t, err, "US2 should be able to authenticate via their user-owned key")
+
+	// Now demote US2 to developer.
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId: &uidpb.UserId{Id: "US1"},
+		Role:   grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	akg, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, us1Key.Value)
+	require.NoError(t, err)
+	assert.Equal(t, capabilities.ToInt([]akpb.ApiKey_Capability{
+		// CACHE_WRITE should have been demoted to CAS_WRITE.
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+	}), akg.GetCapabilities())
+}
+
 func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 	for _, test := range []struct {
 		Name         string
@@ -1135,11 +1200,14 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 		// user-owned keys (for now, we only support setting cache capabilities
 		// on user-owned keys)
 		{Name: "Admin_OrgAdmin_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}, OK: false},
-		// TODO(bduffany): Figure out how these capabilities should work. For
-		// now, we just fail if they are assigned by these (role, capability)
-		// combinations. See http://go/b/3091#issuecomment-1932266337
-		{Name: "Writer_ACWrite_Fail", Role: role.Writer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
+		// Readers and writers should be able to assign any capabilities
+		// within the max limits allowed by their role.
+		{Name: "Writer_NoCapabilities_OK", Role: role.Writer, Capabilities: nil, OK: true},
+		{Name: "Writer_CASWrite_OK", Role: role.Writer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: true},
+		{Name: "Writer_ACWrite_OK", Role: role.Writer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: true},
+		{Name: "Reader_NoCapabilities_OK", Role: role.Reader, Capabilities: nil, OK: true},
 		{Name: "Reader_CASWrite_Fail", Role: role.Reader, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: false},
+		{Name: "Reader_ACWrite_Fail", Role: role.Reader, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			ctx := context.Background()
@@ -1622,7 +1690,7 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			require.NoError(t, err)
 			// Re-authenticate with the new role
 			userCtx = authUserCtx(ctx, env, t, "US1")
-			u, err := perms.AuthenticatedUser(userCtx, env)
+			u, err := env.GetAuthenticator().AuthenticatedUser(userCtx)
 			require.NoError(t, err)
 
 			require.Equal(t, test.ExpectedCapabilities, u.GetCapabilities())

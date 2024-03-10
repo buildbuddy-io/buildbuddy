@@ -21,11 +21,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/go-github/v43/github"
+	"github.com/google/go-github/v59/github"
 )
 
 var (
@@ -254,7 +252,7 @@ func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, red
 }
 
 func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	_, err := perms.AuthenticatedUser(r.Context(), c.env)
+	_, err := c.env.GetAuthenticator().AuthenticatedUser(r.Context())
 	if err != nil {
 		// If not logged in to the app (e.g. when installing directly from
 		// GitHub), redirect to the account creation flow.
@@ -331,7 +329,7 @@ func (c *OAuthHandler) requestAccessToken(r *http.Request, code string) error {
 	userID := getState(r, userIDCookieName)
 	groupID := getState(r, groupIDCookieName)
 
-	u, err := perms.AuthenticatedUser(ctx, c.env)
+	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}
@@ -351,7 +349,7 @@ func (c *OAuthHandler) requestAccessToken(r *http.Request, code string) error {
 
 	// Associate the token with the org (legacy OAuth app only).
 	if groupID != "" && c.GroupLinkEnabled {
-		if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+		if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
 			return status.WrapError(err, "failed to link GitHub account: role not authorized")
 		}
 		log.Infof("Linking GitHub account for group %s", groupID)
@@ -546,7 +544,10 @@ func (c *GithubClient) fetchToken(ctx context.Context, ownerRepo string) error {
 	}
 	if installationToken != nil {
 		c.tokenValue = installationToken.GetToken()
-		c.tokenExpiration = installationToken.ExpiresAt
+		if installationToken.ExpiresAt != nil {
+			t := installationToken.ExpiresAt.Time
+			c.tokenExpiration = &t
+		}
 		return nil
 	}
 
@@ -561,13 +562,12 @@ func (c *GithubClient) fetchToken(ctx context.Context, ownerRepo string) error {
 		return nil
 	}
 
-	auth := c.env.GetAuthenticator()
 	dbHandle := c.env.GetDBHandle()
-	if auth == nil || dbHandle == nil {
+	if dbHandle == nil {
 		return nil
 	}
 
-	userInfo, err := auth.AuthenticatedUser(ctx)
+	userInfo, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if userInfo == nil || err != nil {
 		return nil
 	}

@@ -3,7 +3,6 @@ package remotebazel
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -31,10 +31,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
 
@@ -66,6 +66,7 @@ var (
 	envInput       = bbflag.New(remoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
 	remoteRunner   = remoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
 	timeout        = remoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
+	execPropsFlag  = bbflag.New(remoteFlagset, "runner_exec_properties", []string{}, "Exec properties that will apply to the *ci runner execution*. Key-value pairs should be separated by '=' (Ex. --runner_exec_properties=NAME=VALUE). Can be specified more than once. NOTE: If you want to apply an exec property to the bazel command that's run on the runner, just pass at the end of the command (Ex. bb remote build //... --remote_default_exec_properties=OSFamily=linux).")
 
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
@@ -206,33 +207,23 @@ func diffUntrackedFile(path string) (string, error) {
 func Config(path string) (*RepoConfig, error) {
 	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "open git repo")
 	}
 
 	remote, err := determineRemote(repo)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "determine remote")
 	}
 	if len(remote.Config().URLs) == 0 {
 		return nil, status.FailedPreconditionErrorf("remote %q does not have a fetch URL", remote.Config().Name)
 	}
 	fetchURL := remote.Config().URLs[0]
-
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
-	defaultBranchRef, err := determineDefaultBranch(repo)
+	branch, commit, err := getBaseBranchAndCommit(repo)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "get base branch and commit")
 	}
-
-	log.Debugf("Using base branch: %s", defaultBranchRef)
-
-	defaultBranchCommitHash, err := repo.ResolveRevision(plumbing.Revision(defaultBranchRef))
-	if err != nil {
-		return nil, status.UnknownErrorf("could not find commit hash for branch ref %q", defaultBranchRef)
-	}
-
-	log.Debugf("Using base branch commit hash: %s", defaultBranchCommitHash)
 
 	wt, err := repo.Worktree()
 	if err != nil {
@@ -242,13 +233,13 @@ func Config(path string) (*RepoConfig, error) {
 	repoConfig := &RepoConfig{
 		Root:      wt.Filesystem.Root(),
 		URL:       fetchURL,
-		CommitSHA: defaultBranchCommitHash.String(),
-		Ref:       defaultBranchRef,
+		CommitSHA: commit,
+		Ref:       branch,
 	}
 
-	patch, err := runGit("diff", defaultBranchCommitHash.String())
+	patch, err := runGit("diff", commit)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "git diff")
 	}
 	if patch != "" {
 		repoConfig.Patches = append(repoConfig.Patches, []byte(patch))
@@ -256,7 +247,7 @@ func Config(path string) (*RepoConfig, error) {
 
 	untrackedFiles, err := runGit("ls-files", "--others", "--exclude-standard")
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "get untracked files")
 	}
 	untrackedFiles = strings.Trim(untrackedFiles, "\n")
 	if untrackedFiles != "" {
@@ -266,13 +257,69 @@ func Config(path string) (*RepoConfig, error) {
 			}
 			patch, err := diffUntrackedFile(uf)
 			if err != nil {
-				return nil, err
+				return nil, status.WrapError(err, "diff untracked file")
 			}
 			repoConfig.Patches = append(repoConfig.Patches, []byte(patch))
 		}
 	}
 
 	return repoConfig, nil
+}
+
+// getBaseBranchAndCommit returns the git branch and commit that the remote run
+// should be based off
+func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string, err error) {
+	head, err := repo.Head()
+	if err != nil {
+		return "", "", status.WrapError(err, "get repo head")
+	}
+
+	currentBranch := head.Name().Short()
+	if !head.Name().IsBranch() {
+		// Handle detached head state
+		detachedHeadOutput, _ := runGit("branch")
+		regex := regexp.MustCompile(".*detached at ([^)]+).*")
+		matches := regex.FindStringSubmatch(detachedHeadOutput)
+		if len(matches) != 2 {
+			return "", "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
+		}
+		currentBranch = matches[1]
+	}
+
+	remoteBranchOutput, err := runGit("ls-remote", "origin", currentBranch)
+	if err != nil {
+		return "", "", status.WrapError(err, fmt.Sprintf("check if branch %s exists remotely", currentBranch))
+	}
+	currentBranchExistsRemotely := remoteBranchOutput != ""
+
+	currentCommitHash, err := runGit("rev-parse", "HEAD")
+	if err != nil {
+		return "", "", status.WrapError(err, "get current commit hash")
+	}
+	currentCommitHash = strings.TrimSuffix(currentCommitHash, "\n")
+
+	branch = currentBranch
+	commit = currentCommitHash
+	if !currentBranchExistsRemotely {
+		// If the current branch does not exist remotely, the remote runner will
+		// not be able to fetch it. In this case, use the default branch for the repo
+		defaultBranch, err := determineDefaultBranch(repo)
+		if err != nil {
+			return "", "", status.WrapError(err, "get default branch")
+		}
+		branch = defaultBranch
+
+		defaultBranchCommitHash, err := repo.ResolveRevision(plumbing.Revision(defaultBranch))
+		if err != nil {
+			return "", "", status.WrapError(err, "get default branch commit hash")
+		}
+		commit = defaultBranchCommitHash.String()
+	}
+
+	log.Debugf("Using base branch: %s", branch)
+	log.Debugf("Using base commit hash: %s", commit)
+
+	return branch, commit, nil
 }
 
 func getTermWidth() int {
@@ -499,12 +546,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
-	log.Debugf("Requesting command execution on remote Bazel instance.")
-
-	instanceHash := sha256.New()
-	instanceHash.Write(uuid.NodeID())
-	instanceHash.Write([]byte(repoConfig.Root))
-
 	reqOS := runtime.GOOS
 	if *execOs != "" {
 		reqOS = *execOs
@@ -540,6 +581,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		envVars[envVar] = val
 	}
 
+	platform, err := rexec.MakePlatform(*execPropsFlag...)
+	if err != nil {
+		return 0, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
+	}
+
 	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
 			RepoUrl: repoConfig.URL,
@@ -548,12 +594,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			CommitSha: repoConfig.CommitSHA,
 			Branch:    repoConfig.Ref,
 		},
-		SessionAffinityKey: fmt.Sprintf("%x", instanceHash.Sum(nil)),
-		BazelCommand:       strings.Join(bazelArgs, " "),
-		Os:                 reqOS,
-		Arch:               reqArch,
-		ContainerImage:     *containerImage,
-		Env:                envVars,
+		BazelCommand:   strings.Join(bazelArgs, " "),
+		Os:             reqOS,
+		Arch:           reqArch,
+		ContainerImage: *containerImage,
+		Env:            envVars,
+		ExecProperties: platform.Properties,
 	}
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
@@ -561,6 +607,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		req.Timeout = timeout.String()
 	}
 
+	log.Printf("\nWaiting for available remote runner...\n")
 	rsp, err := bbClient.Run(ctx, req)
 	if err != nil {
 		return 0, status.UnknownErrorf("error running bazel: %s", err)
@@ -770,7 +817,12 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 	// Remove all cli flags from the arg list
 	argsRemoteFlagsRemoved := args[:bazelCmdIdx]
 	remoteFlagset.VisitAll(func(f *flag.Flag) {
-		_, argsRemoteFlagsRemoved = arg.Pop(argsRemoteFlagsRemoved, f.Name)
+		// Certain flags with slice values can be passed multiple times.
+		// Remove all instances.
+		flagVal := "start"
+		for flagVal != "" {
+			flagVal, argsRemoteFlagsRemoved = arg.Pop(argsRemoteFlagsRemoved, f.Name)
+		}
 	})
 
 	// Add back in the bazel command and any subsequent flags

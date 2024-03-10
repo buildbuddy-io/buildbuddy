@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -252,15 +253,10 @@ func (h *executorHandle) authorize(ctx context.Context) (string, error) {
 	if !h.requireAuthorization {
 		return "", nil
 	}
-
-	auth := h.env.GetAuthenticator()
-	if auth == nil {
-		return "", status.FailedPreconditionError("executor authorization required, but authenticator is not set")
-	}
 	// We intentionally use AuthenticateGRPCRequest instead of AuthenticatedUser to ensure that we refresh the
 	// credentials to handle the case where the API key is deleted (or capabilities are updated) after the stream was
 	// created.
-	user, err := auth.AuthenticateGRPCRequest(ctx)
+	user, err := h.env.GetAuthenticator().AuthenticateGRPCRequest(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -540,6 +536,21 @@ func fromNodeInterfaces(nodes []interfaces.RankedExecutionNode) ([]*rankedExecut
 		out = append(out, &rankedExecutionNode{node: en, preferred: node.IsPreferred()})
 	}
 	return out, nil
+}
+
+// If the debug-executor-id platform property is set, filters the given nodes
+// to the nodes with that ID. The returned list may be empty.
+func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) []*executionNode {
+	id := platform.FindEffectiveValue(task, "debug-executor-id")
+	if id == "" {
+		return nodes
+	}
+	for _, n := range nodes {
+		if n.executorID == id {
+			return []*executionNode{n}
+		}
+	}
+	return nil
 }
 
 type nodePoolKey struct {
@@ -864,9 +875,10 @@ func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
 
 // Options for overriding server behavior needed for testing.
 type Options struct {
-	LocalPortOverride            int32
-	RequireExecutorAuthorization bool
-	Clock                        clockwork.Clock
+	LocalPortOverride             int32
+	RequireExecutorAuthorization  bool
+	Clock                         clockwork.Clock
+	ActionMergingLeaseTTLOverride time.Duration
 }
 
 type SchedulerServer struct {
@@ -888,6 +900,9 @@ type SchedulerServer struct {
 	requireExecutorAuthorization bool
 
 	enableRedisAvailabilityMonitoring bool
+
+	// TTL for LeaseTask action-merging Redis entries.
+	actionMergingLeaseTTL time.Duration
 
 	mu    sync.RWMutex
 	pools map[nodePoolKey]*nodePool
@@ -942,6 +957,11 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		clock = options.Clock
 	}
 
+	actionMergingLeaseTTL := action_merger.DefaultClaimedExecutionTTL
+	if options.ActionMergingLeaseTTLOverride > 0*time.Second {
+		actionMergingLeaseTTL = options.ActionMergingLeaseTTLOverride
+	}
+
 	s := &SchedulerServer{
 		env:                               env,
 		pools:                             make(map[nodePoolKey]*nodePool),
@@ -954,6 +974,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		requireExecutorAuthorization:      options.RequireExecutorAuthorization || (remote_execution_config.RemoteExecutionEnabled() && *requireExecutorAuthorization),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
 		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
+		actionMergingLeaseTTL:             actionMergingLeaseTTL,
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
 	return s, nil
@@ -982,7 +1003,7 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 		return sharedPool, nil
 	}
 
-	user, err := perms.AuthenticatedUser(ctx, s.env)
+	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		if s.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
 			if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
@@ -1210,6 +1231,9 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 	if c, ok := r.(int64); !ok || c != 1 {
 		return status.NotFoundErrorf("unable to delete claimed task %s", taskID)
 	}
+
+	action_merger.DeletePendingExecution(ctx, s.rdb, taskID)
+
 	return nil
 }
 
@@ -1230,6 +1254,7 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reco
 		return status.NotFoundErrorf("unable to release task claim for task %s", taskID)
 	}
 	log.CtxDebugf(ctx, "Released task claim in Redis (reconnecting=%t)", reconnectToken != "")
+
 	return nil
 }
 
@@ -1603,6 +1628,15 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		if s.isShuttingDown() && reconnectToken != "" && claimed {
 			return status.UnavailableError("server is shutting down")
 		}
+
+		// If the task was successfully claimed, record action-merging state.
+		if claimed {
+			action_merger.RecordClaimedExecution(ctx, s.rdb, taskID, s.actionMergingLeaseTTL)
+			if err != nil {
+				log.CtxWarningf(ctx, "could not record claimed pending execution %q: %s", taskID, err)
+			}
+		}
+
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = s.clock.Now()
 		if err := stream.Send(rsp); err != nil {
@@ -1663,10 +1697,12 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			time.Since(startTime), strings.Join(successfulReservations, ", "))
 	}()
 
-	cmd, remoteInstanceName, err := extractRoutingProps(serializedTask)
-	if err != nil {
-		return err
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(serializedTask, task); err != nil {
+		return status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
+	cmd := task.GetCommand()
+	remoteInstanceName := task.GetExecuteRequest().GetInstanceName()
 
 	// Note: preferredNode may be nil if the executor ID isn't specified or if
 	// the executor is no longer connected.
@@ -1709,6 +1745,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 						pool, os, arch,
 						enqueueRequest.GetTaskSize().GetEstimatedMilliCpu(),
 						enqueueRequest.GetTaskSize().GetEstimatedMemoryBytes())
+				}
+				candidateNodes = filterToDebugExecutorID(candidateNodes, task)
+				if len(candidateNodes) == 0 {
+					return status.UnavailableErrorf("requested executor ID not found")
 				}
 				rankedNodes, err = fromNodeInterfaces(s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(candidateNodes)))
 				if err != nil {
@@ -1929,7 +1969,7 @@ func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueue
 }
 
 func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupID string) ([]*scpb.ExecutionNode, error) {
-	user, err := perms.AuthenticatedUser(ctx, s.env)
+	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1983,7 +2023,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		userOwnedExecutorsEnabled = false
 	}
 
-	u, err := perms.AuthenticatedUser(ctx, s.env)
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2008,17 +2048,4 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		Executor:                    executors,
 		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
 	}, nil
-}
-
-// extractRoutingProps deserializes the given task and returns the properties
-// needed to route the task (command and remote instance name).
-func extractRoutingProps(serializedTask []byte) (*repb.Command, string, error) {
-	if serializedTask == nil {
-		return nil, "", nil
-	}
-	task := &repb.ExecutionTask{}
-	if err := proto.Unmarshal(serializedTask, task); err != nil {
-		return nil, "", status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
-	}
-	return task.GetCommand(), task.GetExecuteRequest().GetInstanceName(), nil
 }

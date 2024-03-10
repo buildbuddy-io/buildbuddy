@@ -311,7 +311,22 @@ func (u *User) ToProto() *uspb.DisplayUser {
 		},
 		ProfileImageUrl: u.ImageURL,
 		Email:           u.Email,
+		AccountType:     subIDToAccountType(u.SubID),
 	}
+}
+
+func subIDToAccountType(s string) uspb.AccountType {
+	log.Printf(s)
+	if strings.HasPrefix(s, "https://accounts.google.com/") {
+		return uspb.AccountType_GOOGLE
+	}
+	if strings.HasPrefix(s, "https://app.buildbuddy.io/saml/") {
+		return uspb.AccountType_SAML
+	}
+	if strings.HasPrefix(s, "https://github.com/") {
+		return uspb.AccountType_GITHUB
+	}
+	return uspb.AccountType_OIDC
 }
 
 type Token struct {

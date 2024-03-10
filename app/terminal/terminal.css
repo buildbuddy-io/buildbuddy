@@ -1,6 +1,6 @@
 .terminal {
   --scrollbar-width: 8px;
-  background: #222;
+  background: #212121;
 }
 .terminal.light-terminal {
   background: #fafafa;
@@ -106,7 +106,7 @@
 }
 
 .terminal .terminal-action:not(.active) .icon {
-  stroke: #607d8b;
+  stroke: #9e9e9e;
 }
 .terminal.light-terminal .terminal-action:not(.active) .icon {
   stroke: #cfd8dc;
@@ -152,7 +152,7 @@
   color: white;
 }
 .terminal.light-terminal .terminal-line {
-  color: #222;
+  color: #212121;
 }
 
 /* Scrollbars */
@@ -269,7 +269,7 @@
 }
 
 .terminal .search-match {
-  background: #37474f;
+  background: #424242;
   color: white;
 }
 .terminal.light-terminal .search-match {
@@ -278,7 +278,7 @@
 }
 
 .terminal .active-search-match {
-  background: #546e7a;
+  background: #757575;
 }
 .terminal.light-terminal .active-search-match {
   background: #b0bec5;

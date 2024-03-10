@@ -21,6 +21,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/background",
+        "//server/util/canary",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/status",

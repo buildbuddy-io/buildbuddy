@@ -14,10 +14,8 @@ go_library(
         "//server/util/cookie",
         "//server/util/flag",
         "//server/util/log",
-        "//server/util/perms",
         "//server/util/random",
-        "//server/util/role",
         "//server/util/status",
-        "@com_github_google_go_github_v43//github",
+        "@com_github_google_go_github_v59//github",
     ],
 )

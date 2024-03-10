@@ -17,7 +17,7 @@ import (
 	"golang.org/x/oauth2"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
-	gh "github.com/google/go-github/v43/github"
+	gh "github.com/google/go-github/v59/github"
 )
 
 var (

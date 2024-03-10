@@ -177,7 +177,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               name={this.props.name}
               dataKey={this.props.extractValue}
               isAnimationActive={false}
-              fill="#607D8B">
+              fill="#8BC34A">
               {this.props.data.map((date, index) => (
                 <Cell
                   cursor={this.props.onBarClicked ? "pointer" : "default"}

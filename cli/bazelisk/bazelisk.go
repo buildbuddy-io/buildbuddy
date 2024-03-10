@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/bazelbuild/bazelisk/config"
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -39,7 +40,8 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 		return -1, fmt.Errorf("failed to set bazel version: %s", err)
 	}
 	gcs := &repositories.GCSRepo{}
-	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
+	bazeliskConf := core.MakeDefaultConfig()
+	gitHub := repositories.CreateGitHubRepo(bazeliskConf.Get("BAZELISK_GITHUB_TOKEN"))
 	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
 	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gcs, true)
 
@@ -149,15 +151,15 @@ func redirectStdio(w io.Writer, stdio **os.File) (close func(), err error) {
 	return close, nil
 }
 
-func createRepositories() *core.Repositories {
+func createRepositories(bazeliskConf config.Config) *core.Repositories {
 	gcs := &repositories.GCSRepo{}
-	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
+	gitHub := repositories.CreateGitHubRepo(bazeliskConf.Get("BAZELISK_GITHUB_TOKEN"))
 	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
 	return core.CreateRepositories(gcs, gcs, gitHub, gcs, gcs, true)
 }
 
-func getBazeliskHome() (string, error) {
-	bazeliskHome := core.GetEnvOrConfig("BAZELISK_HOME")
+func getBazeliskHome(bazeliskConf config.Config) (string, error) {
+	bazeliskHome := bazeliskConf.Get("BAZELISK_HOME")
 	if bazeliskHome != "" {
 		return bazeliskHome, nil
 	}
@@ -202,7 +204,8 @@ func ResolveVersion() (string, error) {
 	if filepath.IsAbs(rawVersion) {
 		return rawVersion, nil
 	}
-	bazeliskHome, err := getBazeliskHome()
+	bazeliskConf := core.MakeDefaultConfig()
+	bazeliskHome, err := getBazeliskHome(bazeliskConf)
 	if err != nil {
 		return "", err
 	}
@@ -231,8 +234,8 @@ func ResolveVersion() (string, error) {
 
 	// TODO: Support forks?
 	fork := ""
-	repos := createRepositories()
-	version, _, err := repos.ResolveVersion(bazeliskHome, fork, rawVersion)
+	repos := createRepositories(bazeliskConf)
+	version, _, err := repos.ResolveVersion(bazeliskHome, fork, rawVersion, bazeliskConf)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve bazel version %s: %s", version, err)
 	}

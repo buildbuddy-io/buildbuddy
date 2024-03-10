@@ -10,7 +10,7 @@ export const LINE_PLOTS_PANEL_HEIGHT = 360;
 
 export const TIMESTAMP_HEADER_SIZE = 16;
 export const TIMESTAMP_HEADER_COLOR = "rgba(236, 239, 241, 0.9)"; // "#ECEFF1" with alpha
-export const TIMESTAMP_FONT_COLOR = "#37474F";
+export const TIMESTAMP_FONT_COLOR = "#424242";
 export const TIMESTAMP_FONT_SIZE = "11px";
 
 export const GRIDLINE_IDEAL_GAP = 80;

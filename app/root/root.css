@@ -83,7 +83,7 @@ button {
   font-size: 24px;
   z-index: 2;
   position: relative;
-  background-color: rgba(38, 50, 56, 1);
+  background-color: #212121;
   color: #fff;
 }
 
@@ -168,7 +168,7 @@ button {
   position: absolute;
   top: 46px;
   right: 8px;
-  background-color: rgba(38, 50, 56, 1);
+  background-color: #212121;
   color: #fff;
   padding: 8px 32px 32px 32px;
   border-bottom-left-radius: 8px;
@@ -323,7 +323,7 @@ svg.icon.orange {
 
 .org-button {
   float: right;
-  background-color: rgba(38, 50, 56, 1);
+  background-color: #212121;
   padding: 8px 16px;
   border-radius: 32px;
   margin-top: -6px;
@@ -365,7 +365,7 @@ svg.icon.orange {
 }
 
 .tab.selected {
-  background: rgba(38, 50, 56, 1);
+  background: #212121;
   color: #fff;
 }
 
@@ -512,7 +512,7 @@ body {
 }
 
 .card.dark {
-  background-color: #222;
+  background-color: #212121;
   color: #fff;
 }
 
@@ -618,7 +618,7 @@ body {
 .card .more {
   margin-top: 16px;
   font-weight: 600;
-  color: #263238;
+  color: #212121;
   cursor: pointer;
   user-select: none;
 }
@@ -871,7 +871,7 @@ code .comment {
 }
 
 .setup .downloads a {
-  background-color: #263238;
+  background-color: #212121;
   color: #fff;
   padding: 7px 16px;
   margin-right: 8px;
@@ -980,7 +980,7 @@ code .comment {
 }
 
 .role-badge.CI_RUNNER {
-  background: #263238;
+  background: #212121;
   color: white;
 }
 
@@ -990,18 +990,20 @@ code .comment {
 
 .empty-state .button {
   width: 100%;
-  padding: 24px 64px;
-  background-color: #263238;
-  color: #fff;
+  padding: 16px 32px;
+  border: 2px solid #000;
   font-size: 16px;
   font-weight: 600;
-  border: 0;
-  border-radius: 8px;
+  border-radius: 64px;
   margin-bottom: 32px;
   cursor: pointer;
-  display: block;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
   box-sizing: border-box;
-  text-align: center;
+  line-height: 24px;
+  max-width: 560px;
 }
 
 .empty-state b {
@@ -1011,7 +1013,7 @@ code .comment {
 .load-more {
   width: 100%;
   padding: 24px 0;
-  background-color: #263238;
+  background-color: #212121;
   color: #fff;
   font-size: 16px;
   font-weight: 600;
@@ -1336,7 +1338,7 @@ code .comment {
 .invocation-command-line-title {
   font-weight: 700;
   font-size: 18px;
-  color: #222;
+  color: #212121;
   margin-bottom: 16px;
 }
 
@@ -1356,7 +1358,7 @@ code .comment {
 }
 
 .invocation-option-value {
-  color: #222;
+  color: #212121;
 }
 
 .invocation-option-dash,
@@ -1444,8 +1446,8 @@ code .comment {
 .login-buttons .google-button,
 .login-buttons .github-button {
   background-color: #fff;
-  color: #424242;
-  border: 3px solid #424242;
+  color: #212121;
+  border: 3px solid #212121;
 }
 
 .login-buttons .login-button:hover,
@@ -1472,7 +1474,7 @@ code .comment {
 }
 
 .login-interstitial {
-  background-color: rgba(38, 50, 56, 1);
+  background-color: #212121;
   min-height: calc(100vh - 200px);
 }
 
@@ -1682,14 +1684,14 @@ code .comment {
 
 .dense .tab.selected {
   background-color: transparent;
-  color: #455a64;
+  color: #616161;
   position: relative;
 }
 
 .dense .tab.selected:after {
   display: block;
   content: " ";
-  background-color: #455a64;
+  background-color: #616161;
   height: 4px;
   position: absolute;
   bottom: 0;
@@ -1823,206 +1825,6 @@ code .comment {
 
 /* Scrollbars */
 
-.horizontal-scroll-track {
-  position: absolute;
-  bottom: 0;
-  height: var(--scrollbar-width);
-  left: 0;
-  right: var(--scrollbar-width);
-  background: transparent;
-  overflow: hidden;
-}
-
-.horizontal-scroll-thumb {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  height: 100%;
-}
-
-.horizontal-scroll-thumb,
-.viewport::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.5);
-  border-radius: 2px;
-}
-
-.viewport::-webkit-scrollbar-corner {
-  background: rgba(0, 0, 0, 0.1);
-}
-
-.viewport::-webkit-scrollbar {
-  width: var(--scrollbar-width);
-}
-
-.horizontal-scroll-thumb:hover,
-.viewport::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.7);
-}
-
-.horizontal-scroll-thumb:active {
-  background: rgba(0, 0, 0, 1);
-}
-
-/** Flame chart */
-
-.flame-chart {
-  background: #f9f9f9;
-  position: relative;
-  width: 100%;
-  height: 900px;
-  margin: 24px 0;
-
-  border-radius: 4px 2px 4px;
-  overflow: hidden;
-
-  user-select: none;
-
-  --scrollbar-width: 14px;
-  --controls-padding: 8px;
-  --controls-height: 32px;
-}
-
-.flame-chart .flame-chart-sections {
-  padding-bottom: calc(2 * var(--controls-padding) + var(--controls-height));
-}
-
-.flame-chart-controls {
-  position: absolute;
-  bottom: var(--scrollbar-width);
-  right: var(--scrollbar-width);
-
-  height: var(--controls-height);
-  padding: 8px;
-
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.flame-chart-controls button {
-  width: var(--controls-height);
-  height: var(--controls-height);
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  background: rgba(220, 220, 220, 0.8);
-  backdrop-filter: blur(3px);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27), 0 1px 1px rgba(255, 255, 255, 0.1) inset;
-  border-radius: 2px;
-  transition: 80ms ease-out;
-
-  cursor: pointer;
-
-  border: none;
-  appearance: none;
-  -webkit-appearance: none;
-  outline: none;
-}
-
-.flame-chart-controls button:hover:not(:active) {
-  background: white;
-}
-
-.flame-chart-controls button:active {
-  box-shadow: 0 0 1px rgba(0, 0, 0, 0.5);
-}
-
-.flame-chart-hovered-block-info {
-  background: rgba(255, 255, 255, 0.8);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27);
-  white-space: nowrap;
-  padding: 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  backdrop-filter: blur(3px);
-}
-
-.flame-chart-hovered-block-info .data {
-  color: #000;
-}
-
-.flame-chart-hovered-block-info.no-block-hovered {
-  color: #888;
-}
-
-.flame-chart-hovered-block-info .hovered-block-title {
-  font-size: 13px;
-  font-weight: bold;
-  margin-bottom: -2px;
-}
-
-.flame-chart-hovered-block-info .hovered-block-details {
-  color: #888;
-}
-
-.flame-chart-hovered-block-info .duration {
-  font-size: 14px;
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid #eee;
-  margin-bottom: 4px;
-}
-
-.flame-chart-timestamp-header {
-  fill: rgba(220, 220, 220, 0.9);
-}
-
-.flame-chart-section {
-  border-bottom: 1px solid #ddd;
-  box-sizing: border-box;
-
-  box-shadow: 0 1px -3px rgba(0, 0, 0, 0.12) inset;
-}
-
-.flame-chart-section-header {
-  font-size: 13px;
-  font-weight: bold;
-  background: rgba(0, 0, 0, 0.05);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27);
-  padding-left: 8px;
-  /* NOTE: Height is set in JS */
-}
-
-.viewport::-webkit-scrollbar,
-.viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.flame-chart .viewport {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  position: relative;
-  overflow: scroll;
-  /* NOTE: Height is set in JS */
-}
-
-.flame-chart .tracks {
-  height: inherit;
-  min-width: 100%;
-  overflow: visible;
-}
-
-.flame-chart rect {
-  stroke-width: 1;
-  stroke: white;
-  vector-effect: non-scaling-stroke;
-}
-
-.flame-chart .transparent-rect {
-  stroke-width: 0;
-  vector-effect: non-scaling-stroke;
-  fill: transparent;
-}
-
-.flame-chart rect.hover {
-  opacity: 0.8;
-  cursor: pointer;
-}
-
 .root-main {
   display: flex;
   flex-direction: column;
@@ -2082,11 +1884,11 @@ code .comment {
 }
 
 .loading.loading-dark {
-  background: #263238;
+  background: #212121;
 }
 
 .loading.loading-dark-terminal {
-  background: #222;
+  background: #212121;
 }
 
 .loading.loading-dark:before,

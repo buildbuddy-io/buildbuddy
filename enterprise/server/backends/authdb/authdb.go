@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/prometheus/client_golang/prometheus"
@@ -55,14 +54,6 @@ var (
 	apiKeyEncryptionKey  = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flag.Secret)
 	encryptNewKeys       = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
 	encryptOldKeys       = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
-)
-
-var (
-	// Capabilities that are allowed to be assigned to user-owned API keys.
-	userAPIKeyCapabilitiesMask = capabilities.ToInt([]akpb.ApiKey_Capability{
-		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
-		akpb.ApiKey_CAS_WRITE_CAPABILITY,
-	})
 )
 
 type apiKeyGroupCacheEntry struct {
@@ -236,19 +227,18 @@ func (g *apiKeyGroup) GetEnforceIPRules() bool {
 
 func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
 	session.SessionID = sessionID
-	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		var existing tables.Session
-		rq := tx.NewQuery(ctx, "authdb_get_existing_session").Raw(`
-			SELECT * FROM "Sessions" WHERE session_id = ?
-        `, sessionID)
-		if err := rq.Take(&existing); err != nil {
-			if db.IsRecordNotFound(err) {
-				return tx.NewQuery(ctx, "authdb_create_session").Create(session)
-			}
-			return err
+	// TODO(zoey): this select seems unnecessary, revisit it.
+	var existing tables.Session
+	rq := d.h.NewQuery(ctx, "authdb_get_existing_session").Raw(`
+		SELECT * FROM "Sessions" WHERE session_id = ?
+			`, sessionID)
+	if err := rq.Take(&existing); err != nil {
+		if db.IsRecordNotFound(err) {
+			return d.h.NewQuery(ctx, "authdb_create_session").Create(session)
 		}
-		return tx.NewQuery(ctx, "authdb_update_session").Update(session)
-	})
+		return err
+	}
+	return d.h.NewQuery(ctx, "authdb_update_session").Update(session)
 }
 
 func (d *AuthDB) ReadSession(ctx context.Context, sessionID string) (*tables.Session, error) {
@@ -262,11 +252,8 @@ func (d *AuthDB) ReadSession(ctx context.Context, sessionID string) (*tables.Ses
 }
 
 func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
-	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		return tx.NewQuery(ctx, "authdb_delete_session").Raw(
-			`DELETE FROM "Sessions" WHERE session_id = ?`, sessionID).Exec().Error
-	})
-	return err
+	return d.h.NewQuery(ctx, "authdb_delete_session").Raw(
+		`DELETE FROM "Sessions" WHERE session_id = ?`, sessionID).Exec().Error
 }
 
 // encryptAPIkey encrypts apiKey using chacha20 using the following process:
@@ -366,25 +353,30 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	}
 
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
-		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
-		keyClauses := query_builder.OrClauses{}
-		if !*encryptOldKeys {
-			keyClauses.AddOr("ak.value = ?", apiKey)
+	qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
+	keyClauses := query_builder.OrClauses{}
+	if !*encryptOldKeys {
+		keyClauses.AddOr("ak.value = ?", apiKey)
+	}
+	if d.apiKeyEncryptionKey != nil {
+		encryptedAPIKey, err := d.encryptAPIKey(apiKey)
+		if err != nil {
+			return nil, err
 		}
-		if d.apiKeyEncryptionKey != nil {
-			encryptedAPIKey, err := d.encryptAPIKey(apiKey)
-			if err != nil {
-				return err
-			}
-			keyClauses.AddOr("ak.encrypted_value = ?", encryptedAPIKey)
-		}
-		keyQuery, keyArgs := keyClauses.Build()
-		qb.AddWhereClause(keyQuery, keyArgs...)
-		q, args := qb.Build()
-		rq := tx.NewQuery(ctx, "authdb_get_api_key_group_by_key").Raw(q, args...)
-		return rq.Take(akg)
-	})
+		keyClauses.AddOr("ak.encrypted_value = ?", encryptedAPIKey)
+	}
+	keyQuery, keyArgs := keyClauses.Build()
+	qb.AddWhereClause(keyQuery, keyArgs...)
+	q, args := qb.Build()
+
+	err := d.h.NewQueryWithOpts(
+		ctx,
+		"authdb_get_api_key_group_by_key",
+		db.Opts().WithStaleReads(),
+	).Raw(
+		q, args...,
+	).Take(akg)
+
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			if d.apiKeyGroupCache != nil {
@@ -414,13 +406,19 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		}
 	}
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
-		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
-		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
-		q, args := qb.Build()
-		rq := tx.NewQuery(ctx, "authdb_get_api_key_group_by_id").Raw(q, args...)
-		return rq.Take(akg)
-	})
+	qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
+	qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
+	q, args := qb.Build()
+
+	err := d.h.NewQueryWithOpts(
+		ctx,
+		"authdb_get_api_key_group_by_id",
+		db.Opts().WithStaleReads(),
+	).Raw(
+		q,
+		args...,
+	).Take(akg)
+
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidAPIKey(apiKeyID))
@@ -435,6 +433,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
 	user := &tables.User{}
+	// TODO(zoey): switch this to JOIN
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
 		rq := tx.NewQuery(ctx, "authdb_lookup_user_from_subid").Raw(
 			`SELECT * FROM "Users" WHERE sub_id = ? ORDER BY user_id ASC`, subID)
@@ -576,11 +575,11 @@ func newAPIKeyToken() (string, error) {
 }
 
 func (d *AuthDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {
-	u, err := perms.AuthenticatedUser(ctx, d.env)
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return err
 	}
-	return authutil.AuthorizeGroupRole(u, groupID, role.Admin)
+	return authutil.AuthorizeOrgAdmin(u, groupID)
 }
 
 func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
@@ -608,7 +607,7 @@ func (d *AuthDB) CreateImpersonationAPIKey(ctx context.Context, groupID string) 
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
 
-	u, err := perms.AuthenticatedUser(ctx, d.env)
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -620,7 +619,7 @@ func (d *AuthDB) CreateImpersonationAPIKey(ctx context.Context, groupID string) 
 		if adminGroupID == "" {
 			return nil, status.PermissionDeniedError("You do not have access to the requested organization")
 		}
-		if err := authutil.AuthorizeGroupRole(u, adminGroupID, role.Admin); err != nil {
+		if err := authutil.AuthorizeOrgAdmin(u, adminGroupID); err != nil {
 			return nil, err
 		}
 	}
@@ -648,40 +647,26 @@ func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx interfaces
 	return d.createAPIKey(ctx, tx, ak)
 }
 
-// Returns whether the given capabilities list contains any capabilities that
-// requires Admin role in order to assign. We are opinionated here and let
-// developers read and write to CAS; other capabilities require Admin role.
-func hasAdminOnlyCapabilities(capabilities []akpb.ApiKey_Capability) bool {
-	for _, c := range capabilities {
-		if c != akpb.ApiKey_CAS_WRITE_CAPABILITY {
-			return true
-		}
-	}
-	return false
-}
-
 func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, groupID string, caps []akpb.ApiKey_Capability) error {
+	userCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, groupID)
+	if err != nil {
+		return err
+	}
+
 	if userID != "" {
 		// Capabilities assigned to the user-level key should not exceed the
 		// capabilities of the currently authenticated user.
-		u, err := perms.AuthenticatedUser(ctx, d.env)
-		if err != nil {
-			return err
-		}
 		requestedCapabilities := capabilities.ToInt(caps)
-		userCapabilities := capabilities.ToInt(u.GetCapabilities())
-		if requestedCapabilities&userCapabilities != requestedCapabilities {
+		if requestedCapabilities&capabilities.ToInt(userCapabilities) != requestedCapabilities {
 			return status.PermissionDeniedError("user does not have permission to assign these API key capabilities")
 		}
 
 		// Additionally, respect our list of capabilities that can be assigned
 		// to user-level keys.
-		if requestedCapabilities&userAPIKeyCapabilitiesMask != requestedCapabilities {
+		if requestedCapabilities&capabilities.UserAPIKeyCapabilitiesMask != requestedCapabilities {
 			return status.PermissionDeniedError("the requested API key capabilities are not allowed for user-level keys")
 		}
-	}
 
-	if !hasAdminOnlyCapabilities(caps) {
 		return nil
 	}
 	return d.authorizeGroupAdminRole(ctx, groupID)
@@ -699,7 +684,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 		return nil, err
 	}
 
-	u, err := perms.AuthenticatedUser(ctx, d.env)
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -709,26 +694,26 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 	}
 
 	var createdKey *tables.APIKey
-	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		// Check that the group has user-owned keys enabled.
-		g := &tables.Group{}
-		err := tx.NewQuery(ctx, "authdb_check_user_owned_keys_enabled").Raw(
-			`SELECT user_owned_keys_enabled FROM "Groups" WHERE group_id = ?`,
-			groupID,
-		).Take(g)
-		if err != nil {
-			return status.InternalErrorf("group lookup failed: %s", err)
-		}
-		if !g.UserOwnedKeysEnabled {
-			return status.PermissionDeniedErrorf("group %q does not have user-owned keys enabled", groupID)
-		}
+	// Check that the group has user-owned keys enabled.
+	g := &tables.Group{}
+	err = d.h.NewQuery(ctx, "authdb_check_user_owned_keys_enabled").Raw(
+		`SELECT user_owned_keys_enabled FROM "Groups" WHERE group_id = ?`,
+		groupID,
+	).Take(g)
+	if err != nil {
+		return nil, status.InternalErrorf("group lookup failed: %s", err)
+	}
+	if !g.UserOwnedKeysEnabled {
+		return nil, status.PermissionDeniedErrorf("group %q does not have user-owned keys enabled", groupID)
+	}
 
-		ak := tables.APIKey{
-			UserID:       u.GetUserID(),
-			GroupID:      u.GetGroupID(),
-			Label:        label,
-			Capabilities: capabilities.ToInt(caps),
-		}
+	ak := tables.APIKey{
+		UserID:       u.GetUserID(),
+		GroupID:      u.GetGroupID(),
+		Label:        label,
+		Capabilities: capabilities.ToInt(caps),
+	}
+	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		key, err := d.createAPIKey(ctx, tx, ak)
 		if err != nil {
 			return err
@@ -742,11 +727,11 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 	return createdKey, nil
 }
 
-func (d *AuthDB) getAPIKey(ctx context.Context, tx interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
+func (d *AuthDB) getAPIKey(ctx context.Context, h interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID cannot be empty.")
 	}
-	rq := tx.NewQuery(ctx, "authdb_get_api_key_by_id").Raw(
+	rq := h.NewQuery(ctx, "authdb_get_api_key_by_id").Raw(
 		`SELECT * FROM "APIKeys" WHERE api_key_id = ? AND (expiry_usec = 0 OR expiry_usec > ?)`, apiKeyID, time.Now().UnixMicro())
 	key := &tables.APIKey{}
 	if err := rq.Take(key); err != nil {
@@ -759,7 +744,7 @@ func (d *AuthDB) getAPIKey(ctx context.Context, tx interfaces.DB, apiKeyID strin
 }
 
 func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error) {
-	user, err := perms.AuthenticatedUser(ctx, d.env)
+	user, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -814,7 +799,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	u, err := perms.AuthenticatedUser(ctx, d.env)
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -825,7 +810,10 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	// Select group-owned keys only
 	q.AddWhereClause(`user_id IS NULL OR user_id = ''`)
 	q.AddWhereClause(`group_id = ?`, groupID)
-	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		// If we're not an admin, restrict to keys that have only been made
+		// visible to non-admins. Note: the visible_to_developers field means "visible to
+		// non-admins" now that we have reader/writer roles.
 		q.AddWhereClause("visible_to_developers = ?", true)
 	}
 	q.AddWhereClause(`impersonation = false`)
@@ -845,15 +833,15 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	return keys, err
 }
 
-func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, tx interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
+func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID is required")
 	}
-	user, err := perms.AuthenticatedUser(ctx, d.env)
+	user, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	key, err := d.getAPIKey(ctx, tx, apiKeyID)
+	key, err := d.getAPIKey(ctx, h, apiKeyID)
 	if err != nil {
 		return nil, err
 	}
@@ -871,46 +859,44 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, tx interfaces.DB, api
 }
 
 func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
+	// TODO (zoey): could make this one query
 	if key == nil {
 		return status.InvalidArgumentError("API key cannot be nil.")
 	}
-	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		existingKey, err := d.authorizeAPIKeyWrite(ctx, tx, key.APIKeyID)
-		if err != nil {
-			return err
-		}
-		if existingKey.UserID != "" && key.VisibleToDevelopers {
-			return status.InvalidArgumentError(`"visible_to_developers" field should not be set for user-owned keys`)
-		}
-		// When updating capabilities, make sure the user has the appropriate
-		// permissions to set them.
-		if err := d.authorizeNewAPIKeyCapabilities(ctx, existingKey.UserID, existingKey.GroupID, capabilities.FromInt(key.Capabilities)); err != nil {
-			return err
-		}
-		return tx.NewQuery(ctx, "authdb_update_api_key").Raw(`
-			UPDATE "APIKeys"
-			SET
-				label = ?,
-				capabilities = ?,
-				visible_to_developers = ?
-			WHERE
-				api_key_id = ?`,
-			key.Label,
-			key.Capabilities,
-			key.VisibleToDevelopers,
-			key.APIKeyID,
-		).Exec().Error
-	})
+	existingKey, err := d.authorizeAPIKeyWrite(ctx, d.h, key.APIKeyID)
+	if err != nil {
+		return err
+	}
+	if existingKey.UserID != "" && key.VisibleToDevelopers {
+		return status.InvalidArgumentError(`"visible_to_developers" field should not be set for user-owned keys`)
+	}
+	// When updating capabilities, make sure the user has the appropriate
+	// permissions to set them.
+	if err := d.authorizeNewAPIKeyCapabilities(ctx, existingKey.UserID, existingKey.GroupID, capabilities.FromInt(key.Capabilities)); err != nil {
+		return err
+	}
+	return d.h.NewQuery(ctx, "authdb_update_api_key").Raw(`
+		UPDATE "APIKeys"
+		SET
+			label = ?,
+			capabilities = ?,
+			visible_to_developers = ?
+		WHERE
+			api_key_id = ?`,
+		key.Label,
+		key.Capabilities,
+		key.VisibleToDevelopers,
+		key.APIKeyID,
+	).Exec().Error
 }
 
 func (d *AuthDB) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
-	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		if _, err := d.authorizeAPIKeyWrite(ctx, tx, apiKeyID); err != nil {
-			return err
-		}
-		return tx.NewQuery(ctx, "authdb_delete_api_key").Raw(
-			`DELETE FROM "APIKeys" WHERE api_key_id = ?`, apiKeyID).Exec().Error
-	})
+	// TODO (zoey): could make this one query
+	if _, err := d.authorizeAPIKeyWrite(ctx, d.h, apiKeyID); err != nil {
+		return err
+	}
+	return d.h.NewQuery(ctx, "authdb_delete_api_key").Raw(
+		`DELETE FROM "APIKeys" WHERE api_key_id = ?`, apiKeyID).Exec().Error
 }
 
 func (d *AuthDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error) {
@@ -920,7 +906,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	u, err := perms.AuthenticatedUser(ctx, d.env)
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}

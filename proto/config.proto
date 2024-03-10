@@ -134,8 +134,7 @@ message FrontendConfig {
   // Regional servers.
   repeated Region regions = 44;
 
-  // Whether the new trace viewer is enabled.
-  bool trace_viewer_enabled = 45;
+  reserved 45;
 
   // Whether popup windows should be used for authentication.
   bool popup_auth_enabled = 46;
@@ -146,11 +145,14 @@ message FrontendConfig {
   // Whether the code review UI is enabled.
   bool code_review_enabled = 48;
 
-  // Whether SCIM API keys can be created.
-  bool scim_key_creation_enabled = 49;
+  // Whether Org Admin API keys can be created.
+  bool org_admin_api_key_creation_enabled = 49;
 
   // Whether the codesearch UI is enabled.
   bool codesearch_enabled = 50;
+
+  // Enables reader/writer roles in the UI.
+  bool reader_writer_roles_enabled = 51;
 }
 
 message Region {

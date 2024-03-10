@@ -1,6 +1,8 @@
 package consistent_hash
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"hash/crc32"
 	"sort"
 	"strconv"
@@ -10,28 +12,51 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-const defaultNumReplicas = 100
+// HashFunction is the hash function used to map values to a location on the
+// consistent hash ring.
+type HashFunction func(string) int
+
+var (
+	// SHA256 is a consistent hash function that uses the first 8 bytes from the
+	// SHA256 checksum of the key, interpreted as a big-endian uint64.
+	SHA256 HashFunction = func(key string) int {
+		sum := sha256.Sum256([]byte(key))
+		return int(binary.BigEndian.Uint64(sum[:]))
+	}
+
+	// CRC32 is a consistent hash function based on the CRC32 checksum of the
+	// key. We are currently migrating away from this, since it can result in
+	// uneven load distribution.
+	CRC32 HashFunction = func(key string) int {
+		return int(crc32.ChecksumIEEE([]byte(key)))
+	}
+)
 
 type ConsistentHash struct {
-	ring        map[int]uint8
-	keys        []int
-	items       []string
-	numReplicas int
-	mu          sync.RWMutex
-	replicaMu   sync.RWMutex
+	ring      map[int]uint8
+	keys      []int
+	items     []string
+	numVnodes int
+	hashKey   HashFunction
+	mu        sync.RWMutex
 }
 
-func NewConsistentHash() *ConsistentHash {
+// NewConsistentHash returns a new consistent hash ring.
+//
+// The given hash function is used to map vnodes and keys to positions on the
+// ring. Ideally, the hash function produces random-looking outputs for distinct
+// inputs.
+//
+// vnodes decides how many copies of each server replica to place on the ring.
+// See https://en.wikipedia.org/wiki/Consistent_hashing#Variance_reduction
+func NewConsistentHash(hashFunction HashFunction, vnodes int) *ConsistentHash {
 	return &ConsistentHash{
-		numReplicas: defaultNumReplicas,
-		keys:        make([]int, 0),
-		ring:        make(map[int]uint8, 0),
-		items:       make([]string, 0),
+		numVnodes: vnodes,
+		hashKey:   hashFunction,
+		keys:      make([]int, 0),
+		ring:      make(map[int]uint8, 0),
+		items:     make([]string, 0),
 	}
-}
-
-func (c *ConsistentHash) hashKey(key string) int {
-	return int(crc32.ChecksumIEEE([]byte(key)))
 }
 
 func (c *ConsistentHash) GetItems() []string {
@@ -53,7 +78,7 @@ func (c *ConsistentHash) Set(items ...string) error {
 	sort.Strings(c.items)
 
 	for itemIndex, key := range items {
-		for i := 0; i < c.numReplicas; i++ {
+		for i := 0; i < c.numVnodes; i++ {
 			h := c.hashKey(strconv.Itoa(i) + key)
 			c.keys = append(c.keys, h)
 			c.ring[h] = uint8(itemIndex)
@@ -81,7 +106,7 @@ func (c *ConsistentHash) Get(key string) string {
 	return r
 }
 
-func (c *ConsistentHash) lookupReplicas(idx int, fn func(replicaIndex uint8) bool) {
+func (c *ConsistentHash) lookupVnodes(idx int, fn func(vnodeIndex uint8) bool) {
 	done := false
 	for offset := 1; offset < len(c.keys) && !done; offset += 1 {
 		newIdx := (idx + offset) % len(c.keys)
@@ -107,8 +132,9 @@ func (c *ConsistentHash) GetAllReplicas(key string) []string {
 	replicas := make([]string, 0, len(c.items))
 	replicas = append(replicas, c.items[originalIndex])
 
-	c.lookupReplicas(idx, func(replicaIndex uint8) bool {
-		replica := c.items[replicaIndex]
+	c.lookupVnodes(idx, func(vnodeIndex uint8) bool {
+		replica := c.items[vnodeIndex]
+		// If we already visited this vnode's corresponding replica, skip.
 		for _, r := range replicas {
 			if r == replica {
 				return false
@@ -119,12 +145,11 @@ func (c *ConsistentHash) GetAllReplicas(key string) []string {
 	})
 
 	return replicas
-
 }
 
 // GetNReplicas returns the N "items" responsible for the specified key, in
-// order. It does this by walking the consistent hash ring, in order,
-// until N unique replicas have been found.
+// order. It does this by walking the vnodes in the consistent hash ring, in
+// order, until N unique replicas have been found.
 func (c *ConsistentHash) GetNReplicas(key string, n int) []string {
 	replicas := c.GetAllReplicas(key)
 	if len(replicas) < n {

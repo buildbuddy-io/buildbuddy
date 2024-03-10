@@ -144,7 +144,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 			MaxSizeBytes: int64(1_000_000_000), // 1G
 		},
 	}
-	s, err := store.New(te, ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, partitions)
+	s, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, partitions)
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	s.Start()
@@ -152,7 +152,6 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 
 	t.Cleanup(func() {
 		s.Stop(context.TODO())
-		nodeHost.Close()
 	})
 	return ts, nodeHost
 }

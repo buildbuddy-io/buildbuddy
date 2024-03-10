@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/backends/pubsub",
         "//enterprise/server/gcplink",
+        "//enterprise/server/remote_execution/action_merger",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
@@ -72,6 +73,7 @@ go_test(
         "//server/util/db",
         "//server/util/prefix",
         "//server/util/proto",
+        "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_uuid//:uuid",

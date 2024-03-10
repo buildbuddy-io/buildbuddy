@@ -26,7 +26,7 @@ def main():
             os.environ.get("BUILD_WORKSPACE_DIRECTORY", "")
         )
         m = re.search(
-            f'^\s*(?P<prefix>.*/execroot/|/tmp/bazel-working-directory/{workspace_basename}/)(?P<src_path>.*?\.go): import of "(?P<import_url>.*?)"',
+            f'^\s*(?P<prefix>.*/execroot/|/tmp/bazel-working-directory/)({workspace_basename}/)?(?P<src_path>.*?\.go): import of "(?P<import_url>.*?)"',
             line,
         )
         if not m:

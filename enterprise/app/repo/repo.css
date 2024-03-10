@@ -83,9 +83,9 @@
   border-radius: 16px;
   font-size: 18px;
   cursor: pointer;
-  border: 3px solid #424242;
+  border: 3px solid #212121;
   background-color: #fff;
-  color: #424242;
+  color: #212121;
   transition: 300ms ease-in-out;
   box-sizing: border-box;
   gap: 12px;

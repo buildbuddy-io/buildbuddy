@@ -40,7 +40,7 @@
     "lucide-react": "^0.241.0",
     "memoize-one": "^6.0.0",
     "moment": "^2.29.4",
-    "monaco-editor": "^0.25.2",
+    "monaco-editor": "0.46.0",
     "path-browserify": "^1.0.1",
     "prettier": "^2.1.1",
     "protobufjs": "^7.2.4",

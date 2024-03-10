@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -47,7 +48,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
@@ -82,7 +82,10 @@ var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", f
 var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
+var overprivisionCPUs = flag.Int("executor.firecracker_overprivision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine.")
+
 var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
+var disableWorkspaceSync = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 
 //go:embed guest_api_hash.sha256
 var GuestAPIHash string
@@ -103,7 +106,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "6"
+	GuestAPIVersion = "7"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -425,8 +428,11 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 	savedState := state.GetContainerState().GetFirecrackerState()
 	if savedState == nil {
 		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
+		numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
+		numCPUs += int64(*overprivisionCPUs)
+		numCPUs = min(numCPUs, int64(runtime.NumCPU()))
 		vmConfig = &fcpb.VMConfiguration{
-			NumCpus:           int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
+			NumCpus:           numCPUs,
 			MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 			ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 			EnableNetworking:  true,
@@ -458,9 +464,10 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
 type FirecrackerContainer struct {
-	id     string // a random GUID, unique per-run of firecracker
-	vmIdx  int    // the index of this vm on the host machine
-	loader *snaploader.FileCacheLoader
+	id         string // a random GUID, unique per-run of firecracker
+	snapshotID string // a random GUID, unique per-run of firecracker
+	vmIdx      int    // the index of this vm on the host machine
+	loader     *snaploader.FileCacheLoader
 
 	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
@@ -584,7 +591,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCIRunner(task.GetCommand().GetArguments()) || *forceRemoteSnapshotting)
+	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCICommand(task.GetCommand()) || *forceRemoteSnapshotting)
 
 	if opts.SavedState == nil {
 		c.vmConfig.DebugMode = *debugTerminal
@@ -617,10 +624,10 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			label := ""
 			if err != nil {
 				label = metrics.MissStatusLabel
-				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.SnapshotKeySet()), err)
+				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.SnapshotKeySet(), c.supportsRemoteSnapshots), err)
 			} else {
 				label = metrics.HitStatusLabel
-				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey()))
+				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey(), c.supportsRemoteSnapshots))
 			}
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
 				metrics.RecycleRunnerRequestStatusLabel: label,
@@ -783,6 +790,10 @@ func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
 	return c.snapshotKeySet.CloneVT()
 }
 
+func (c *FirecrackerContainer) SnapshotID() string {
+	return c.snapshotID
+}
+
 // State returns the container state to be persisted to disk so that this
 // container can be reconstructed from the state on disk after an executor
 // restart.
@@ -911,7 +922,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 
 func (c *FirecrackerContainer) getVMMetadata() *repb.VMMetadata {
 	if c.snapshot == nil || c.snapshot.GetVMMetadata() == nil {
-		return &repb.VMMetadata{VmId: c.id}
+		return &repb.VMMetadata{
+			VmId:       c.id,
+			SnapshotId: c.snapshotID,
+		}
 	}
 	return c.snapshot.GetVMMetadata()
 }
@@ -923,6 +937,7 @@ func (c *FirecrackerContainer) getVMTask() *repb.VMMetadata_VMTask {
 		ExecutionId:           c.task.GetExecutionId(),
 		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
 		ExecuteResponseDigest: d,
+		SnapshotId:            c.snapshotID, // Unique ID pertaining to this execution run
 	}
 }
 
@@ -1017,6 +1032,16 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "failed to get snapshot")
 	}
+
+	// Set unique per-run identifier on the vm metadata so this exact snapshot
+	// run can be identified
+	if snap.GetVMMetadata() == nil {
+		md := &repb.VMMetadata{
+			VmId: c.id,
+		}
+		snap.SetVMMetadata(md)
+	}
+	snap.GetVMMetadata().SnapshotId = c.snapshotID
 	c.snapshot = snap
 
 	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
@@ -1118,7 +1143,7 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 
 // initRootfsStore creates the initial rootfs chunk layout in the chroot.
 func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
-	cowChunkDir := filepath.Join(c.getChroot(), rootDriveID)
+	cowChunkDir := filepath.Join(c.getChroot(), rootFSName)
 	if err := os.MkdirAll(cowChunkDir, 0755); err != nil {
 		return status.InternalErrorf("failed to create rootfs chunk dir: %s", err)
 	}
@@ -1270,7 +1295,7 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 			return err
 		}
 		mountPath := filepath.Join(c.getChroot(), workspaceDriveID+vbdMountDirSuffix)
-		if err := d.Mount(mountPath); err != nil {
+		if err := d.Mount(c.vmCtx, mountPath); err != nil {
 			return status.WrapError(err, "mount workspace VBD")
 		}
 		c.workspaceVBD = d
@@ -1305,13 +1330,18 @@ func nonCmdExit(ctx context.Context, err error) *interfaces.CommandResult {
 func (c *FirecrackerContainer) newID(ctx context.Context) error {
 	vmIdxMu.Lock()
 	defer vmIdxMu.Unlock()
-	u, err := uuid.NewRandom()
+	u1, err := uuid.NewRandom()
+	if err != nil {
+		return err
+	}
+	u2, err := uuid.NewRandom()
 	if err != nil {
 		return err
 	}
 	vmIdx += 1
-	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u.String(), vmIdx)
-	c.id = u.String()
+	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u1.String(), vmIdx)
+	c.id = u1.String()
+	c.snapshotID = u2.String()
 	c.vmIdx = vmIdx
 
 	if vmIdx > maxVMSPerHost {
@@ -1714,7 +1744,7 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 			return nil, err
 		}
 		mountPath := filepath.Join(c.getChroot(), driveID+vbdMountDirSuffix)
-		if err := d.Mount(mountPath); err != nil {
+		if err := d.Mount(c.vmCtx, mountPath); err != nil {
 			return nil, err
 		}
 		log.CtxDebugf(ctx, "Mounted %s VBD FUSE filesystem to %s", driveID, mountPath)
@@ -2194,6 +2224,20 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	}()
 
+	// Emit metrics to track time spent preparing VM to execute a command
+	if c.memoryStore != nil {
+		c.memoryStore.EmitUsageMetrics("init")
+	}
+	if c.uffdHandler != nil {
+		c.uffdHandler.EmitSummaryMetrics("init")
+	}
+	if c.rootStore != nil {
+		c.rootStore.EmitUsageMetrics("init")
+	}
+	if c.workspaceStore != nil {
+		c.workspaceStore.EmitUsageMetrics("init")
+	}
+
 	result = c.SendExecRequestToGuest(ctx, cmd, workDir, stdio)
 	close(execDone)
 
@@ -2201,7 +2245,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer cancel()
 
 	// If FUSE is enabled then outputs are already in the workspace.
-	if c.fsLayout == nil {
+	if c.fsLayout == nil && !*disableWorkspaceSync {
 		// Command was successful, let's unpack the files back to our
 		// workspace directory now.
 		if err := c.pauseVM(ctx); err != nil {
@@ -2414,6 +2458,8 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
 
+	log.CtxInfof(ctx, "Pausing VM")
+
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return err
@@ -2525,6 +2571,8 @@ func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 	c.recycled = true
 	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
 
+	log.CtxInfof(ctx, "Unpausing VM")
+
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
 	return c.LoadSnapshot(ctx)
 }
@@ -2535,6 +2583,10 @@ func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 // This is intended to be called just before Exec, so that the inputs to
 // the executed action will be made available to the VM.
 func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
+	if *disableWorkspaceSync {
+		return nil
+	}
+
 	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
@@ -2625,7 +2677,7 @@ func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskSta
 	}
 
 	var groupID string
-	u, err := perms.AuthenticatedUser(ctx, c.env)
+	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err == nil {
 		groupID = u.GetGroupID()
 	}
@@ -2642,7 +2694,7 @@ func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {
 	if c.snapshot == nil {
 		return ""
 	}
-	return snaploader.KeyDebugString(ctx, c.env, c.snapshot.GetKey())
+	return snaploader.KeyDebugString(ctx, c.env, c.snapshot.GetKey(), c.supportsRemoteSnapshots)
 }
 
 func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {

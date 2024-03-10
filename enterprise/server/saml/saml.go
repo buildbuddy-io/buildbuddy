@@ -204,7 +204,7 @@ type SAMLAuthenticator struct {
 }
 
 func IsEnabled(env environment.Env) bool {
-	if (*certFile == "" && *cert == "") || env.GetAuthenticator() == nil {
+	if *certFile == "" && *cert == "" {
 		return false
 	}
 	return true

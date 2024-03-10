@@ -34,9 +34,6 @@ var (
 const (
 	usersPath = "/scim/Users"
 
-	AdminRole     = "admin"
-	DeveloperRole = "developer"
-
 	ListResponseSchema  = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 	UserResourceSchema  = "urn:ietf:params:scim:schemas:core:2.0:User"
 	PatchResourceSchema = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
@@ -84,12 +81,8 @@ func newUserResource(u *tables.User, authGroup *tables.Group) (*UserResource, er
 	userRole := ""
 	for _, g := range u.Groups {
 		if g.Group.GroupID == authGroup.GroupID {
-			switch role.Role(g.Role) {
-			case role.Developer:
-				userRole = DeveloperRole
-			case role.Admin:
-				userRole = AdminRole
-			default:
+			userRole = role.Role(g.Role).String()
+			if userRole == "" {
 				return nil, status.InternalErrorf("unhandled role: %d", g.Role)
 			}
 		}
@@ -220,6 +213,10 @@ func (s *SCIMServer) handleRequest(w http.ResponseWriter, r *http.Request, handl
 		log.CtxWarningf(r.Context(), "SCIM request %s %q failed: %s", r.Method, r.RequestURI, err)
 		w.WriteHeader(mapErrorCode(err))
 		w.Write([]byte(err.Error()))
+		return
+	}
+	if val == nil {
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	out, err := json.Marshal(val)
@@ -402,17 +399,10 @@ func mapRole(ur *UserResource) (role.Role, error) {
 			roleName = ur.Roles[0].Value
 		}
 	}
-
-	switch roleName {
-	case "":
+	if roleName == "" {
 		return role.Default, nil
-	case DeveloperRole:
-		return role.Developer, nil
-	case AdminRole:
-		return role.Admin, nil
-	default:
-		return 0, status.InvalidArgumentErrorf("invalid role %q", roleName)
 	}
+	return role.Parse(roleName)
 }
 
 func roleUpdateRequest(userID string, userRole role.Role) ([]*grpb.UpdateGroupUsersRequest_Update, error) {
@@ -424,6 +414,10 @@ func roleUpdateRequest(userID string, userRole role.Role) ([]*grpb.UpdateGroupUs
 		UserId: &uidpb.UserId{Id: userID},
 		Role:   r,
 	}}, nil
+}
+
+func subIDForUserName(userName string, g *tables.Group) string {
+	return fmt.Sprintf("%s/%s", build_buddy_url.WithPath("saml/metadata").String()+"?slug="+g.URLIdentifier, userName)
 }
 
 func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
@@ -449,10 +443,9 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
-	entityURL := build_buddy_url.WithPath("saml/metadata?slug=" + g.URLIdentifier)
 	u := &tables.User{
 		UserID:    pk,
-		SubID:     fmt.Sprintf("%s/%s", entityURL, ur.UserName),
+		SubID:     subIDForUserName(ur.UserName, g),
 		FirstName: ur.Name.GivenName,
 		LastName:  ur.Name.FamilyName,
 		Email:     ur.UserName,
@@ -533,6 +526,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 				return status.InvalidArgumentErrorf("expected string attribute for username but got %T", value)
 			}
 			u.Email = v
+			u.SubID = subIDForUserName(v, g)
 		default:
 			return status.InvalidArgumentErrorf("unsupported attribute %q", name)
 		}
@@ -617,6 +611,8 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 
 	u.FirstName = ur.Name.GivenName
 	u.LastName = ur.Name.FamilyName
+	u.Email = ur.UserName
+	u.SubID = subIDForUserName(ur.UserName, g)
 	updatedUser, err := newUserResource(u, g)
 	if err != nil {
 		return nil, err
@@ -648,5 +644,9 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 }
 
 func (s *SCIMServer) deleteUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
-	return nil, status.UnimplementedError("delete not supported")
+	id := path.Base(r.URL.Path)
+	if err := s.env.GetUserDB().DeleteUser(ctx, id); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }

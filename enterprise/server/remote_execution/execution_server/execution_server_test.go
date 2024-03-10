@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -323,6 +324,48 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 	err = proto.Unmarshal(result.StdoutRaw, cachedExecuteResponse)
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
+}
+
+func TestMarkFailed(t *testing.T) {
+	env := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	// Create Execution rows to be canceled
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	executionID := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
+
+	completeExecution := &tables.Execution{
+		ExecutionID:  executionID,
+		InvocationID: testInvocationID,
+		Stage:        int64(repb.ExecutionStage_EXECUTING),
+	}
+	createExecution(ctx, t, env.GetDBHandle(), completeExecution)
+
+	ex := &tables.Execution{}
+	err = env.GetDBHandle().GORM(ctx, "select_for_test_mark_failed").Model(ex).Where("execution_id = ?", executionID).Take(ex).Error
+	require.NoError(t, err)
+
+	require.Equal(t, int64(repb.ExecutionStage_EXECUTING), ex.Stage)
+
+	err = s.MarkExecutionFailed(ctx, executionID, status.InternalError("It didn't work"))
+	require.NoError(t, err)
+
+	ex = &tables.Execution{}
+	err = env.GetDBHandle().GORM(ctx, "select_for_test_mark_failed").Model(ex).Where("execution_id = ?", executionID).Take(ex).Error
+	require.NoError(t, err)
+
+	err = s.MarkExecutionFailed(ctx, executionID, status.InternalError("It didn't work"))
+	require.NoError(t, err)
+
+	require.Equal(t, int64(repb.ExecutionStage_COMPLETED), ex.Stage)
+
+	err = s.MarkExecutionFailed(ctx, "blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1", status.InternalError("It didn't work"))
+	require.True(t, status.IsNotFoundError(err), "error should be NotFoundError, but was %s", err)
+
 }
 
 func uploadEmptyAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value) *digest.ResourceName {

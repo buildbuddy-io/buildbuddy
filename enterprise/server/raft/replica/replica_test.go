@@ -863,9 +863,11 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 		leaser.Close()
 		db.Close()
 	})
+	em := newEntryMaker(t)
 
 	store := &fakeStore{}
 	txid := []byte("TX1")
+	txid2 := []byte("TX2")
 
 	{
 		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
@@ -886,6 +888,15 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 			},
 		}).ToProto()
 		_, err = repl.PrepareTransaction(wb, txid, cmd)
+		require.NoError(t, err)
+
+		cmd2, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("baz"),
+				Value: []byte("bap"),
+			},
+		}).ToProto()
+		_, err = repl.PrepareTransaction(wb, txid2, cmd2)
 		require.NoError(t, err)
 
 		require.NoError(t, wb.Commit(pebble.Sync))
@@ -910,6 +921,27 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 		require.NoError(t, err)
 		defer closer.Close()
 		require.Equal(t, []byte("bar"), buf)
+
+		// Direct write should succeed; locks should be released.
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("foo"),
+				Value: []byte("bar"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+
+	{
+		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		require.NotNil(t, repl)
+
+		stopc := make(chan struct{})
+		_, err = repl.Open(stopc)
+		require.NoError(t, err)
 	}
 }
 

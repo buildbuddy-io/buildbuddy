@@ -148,7 +148,7 @@ export async function updatePullRequest({
         owner: state.fork,
         repo,
         sha: state.latestCommitSha,
-        head: `${head}`,
+        head: `refs/heads/${head}`,
         force: true,
       })
     );
@@ -325,7 +325,7 @@ export type Options = {
 
 export type Changes = {
   files?: {
-    [path: string]: string | File | UpdateFunction;
+    [path: string]: string | File | UpdateFunction | null;
   };
   emptyCommit?: boolean | string;
   commit: string;

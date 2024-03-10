@@ -84,7 +84,7 @@ let locations = [
   [6.4550575, 3.3941795], //Lagos, Nigeria
 ];
 
-let colors = ["#CFD8DC", "#90A4AE", "#607D8B"];
+let colors = ["#CFD8DC", "#bdbdbd", "#9e9e9e"];
 
 let arcsData = [];
 
@@ -138,7 +138,7 @@ function Component() {
       <Globe
         ref={globeEl}
         globeImageUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNUM7L4DwACpwGRoMcQzgAAAABJRU5ErkJggg=="
-        atmosphereColor={"#607D8B"}
+        atmosphereColor={"#9e9e9e"}
         width={globeSizePx}
         height={globeSizePx}
         backgroundColor="#fff"

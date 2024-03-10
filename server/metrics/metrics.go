@@ -204,6 +204,10 @@ const (
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
 
+	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
+	// the root dir, and so on.
+	TreeCacheLookupLevel = "level"
+
 	// For firecracker remote execution runners, describes the snapshot
 	// sharing status (Ex. 'disabled' or 'local_sharing_enabled')
 	SnapshotSharingStatus = "snapshot_sharing_status"
@@ -674,6 +678,7 @@ var (
 		Help:      "Total number of TreeCache lookups.",
 	}, []string{
 		TreeCacheLookupStatus,
+		TreeCacheLookupLevel,
 	})
 
 	TreeCacheSetCount = promauto.NewCounter(prometheus.CounterOpts{
@@ -1133,6 +1138,80 @@ var (
 		Help:      "Total number of bytes currently memory-mapped.",
 	}, []string{
 		FileName,
+	})
+
+	COWSnapshotPageFaultCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_page_fault_count",
+		Buckets: []float64{
+			20,
+			50,
+			100,
+			250,
+			500,
+			1000,
+			2500,
+			5000,
+			10000,
+		},
+		Help: "For a snapshotted VM, number of page faults.",
+	}, []string{
+		Stage,
+	})
+
+	COWSnapshotPageFaultTotalDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_page_fault_total_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 10),
+		Help:      "For a snapshotted VM, total time spent fulfilling page faults.",
+	}, []string{
+		Stage,
+	})
+
+	COWSnapshotInitChunkDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_init_chunk_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 3*time.Minute, 10),
+		Help:      "For a COW snapshot, time to initialize one chunk.",
+	}, []string{
+		ChunkSource,
+	})
+
+	COWSnapshotChunkOperationTotalDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_chunk_operation_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 10),
+		Help:      "For a COW snapshot, cumulative time spent on an operation type.",
+	}, []string{
+		FileName,
+		EventName,
+		Stage,
+	})
+
+	COWSnapshotChunkOperationCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_chunk_operation_count",
+		Buckets: []float64{
+			20,
+			50,
+			100,
+			250,
+			500,
+			1000,
+			2500,
+			5000,
+			10000,
+		},
+		Help: "For a COW snapshot, number of times a chunk operation was executed.",
+	}, []string{
+		FileName,
+		EventName,
+		Stage,
 	})
 
 	MaxRecyclableResourceUsageEvent = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1900,6 +1979,30 @@ var (
 		CompressionType,
 	})
 
+	// Taken together, CompressedBlobSize and DecompressedBlobSize allow
+	// determining the average overall compression ratio of items written to
+	// the cache. This is an alternative to CompressionRatio (above) which
+	// is skewed because it weights blobs of different sizes equally. These
+	// values only track the blob size of blobs *written* to the cache.
+	CompressedBlobSizeWrite = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "compressor",
+		Name:      "compressed_blob_size_write",
+		Help:      "The number of compressed bytes in all blobs",
+	}, []string{
+		CacheNameLabel,
+		CompressionType,
+	})
+	DecompressedBlobSizeWrite = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "compressor",
+		Name:      "decompressed_blob_size_write",
+		Help:      "The number of decompressed bytes in all blobs",
+	}, []string{
+		CacheNameLabel,
+		CompressionType,
+	})
+
 	// #### Examples
 	//
 	// ```promql
@@ -2160,6 +2263,35 @@ var (
 		Subsystem: "remote_cache",
 		Name:      "pebble_cache_atime_update_count",
 		Help:      "Count of processed atime updates.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
+	PebbleCacheAtimeDeltaWhenRead = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_atime_delta_when_read",
+		Buckets: customDurationMsecBuckets([]time.Duration{
+			1 * time.Minute,
+			5 * time.Minute,
+			10 * time.Minute,
+			30 * time.Minute,
+			1 * time.Hour,
+			3 * time.Hour,
+			6 * time.Hour,
+			12 * time.Hour,
+			1 * day,
+			2 * day,
+			3 * day,
+			4 * day,
+			5 * day,
+			6 * day,
+			7 * day,
+			14 * day,
+			21 * day,
+		}),
+		Help: "Previous atime of items in the cache when they are read, in msec",
 	}, []string{
 		PartitionID,
 		CacheNameLabel,

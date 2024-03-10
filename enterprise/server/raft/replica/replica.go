@@ -30,6 +30,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -44,6 +46,7 @@ const (
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
+	gb               = 1 << 30
 )
 
 var (
@@ -70,30 +73,8 @@ type IStore interface {
 	SnapshotCluster(ctx context.Context, shardID uint64) error
 }
 
-// IOnDiskStateMachine is the interface to be implemented by application's
-// state machine when the state machine state is always persisted on disks.
-// IOnDiskStateMachine basically matches the state machine type described
-// in the section 5.2 of the Raft thesis.
-//
-// For IOnDiskStateMachine types, concurrent access to the state machine is
-// supported. An IOnDiskStateMachine type allows its Update method to be
-// concurrently invoked when there are ongoing calls to the Lookup or the
-// SaveSnapshot method. Lookup is also allowed when the RecoverFromSnapshot or
-// the Close methods are being invoked. Invocations to the Update, Sync,
-// PrepareSnapshot, RecoverFromSnapshot and Close methods are guarded by the
-// system to ensure mutual exclusion.
-//
-// Once created, the Open method is immediately invoked to open and use the
-// persisted state on disk. This makes IOnDiskStateMachine different from
-// IStateMachine types which require the state machine state to be fully
-// reconstructed from saved snapshots and Raft logs.
-//
-// Applications that implement IOnDiskStateMachine are recommended to setup
-// periodic snapshotting with relatively short time intervals, that triggers
-// the state machine's metadata, usually only a few KBytes each, to be
-// periodically snapshotted and thus causes negligible overheads for the system.
-// It also provides opportunities for the system to signal Raft Log compactions
-// to free up disk spaces.
+// Replica implements the interface IOnDiskStateMachine. More details of
+// IOnDiskStateMachine can be found at https://pkg.go.dev/github.com/lni/dragonboat/v4/statemachine#IOnDiskStateMachine.
 type Replica struct {
 	leaser pebble.Leaser
 
@@ -329,7 +310,7 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 			return wb.Set(key, val, nil /*ignored write options*/)
 		}
 		sm.rangeMu.RUnlock()
-		return status.OutOfRangeErrorf("range %s does not contain key %q", sm.mappedRange, string(key))
+		return status.OutOfRangeErrorf("%s: range %s does not contain key %q", constants.RangeNotCurrentMsg, sm.mappedRange, string(key))
 	}
 	sm.rangeMu.RUnlock()
 
@@ -514,7 +495,7 @@ func (sm *Replica) acquireLocks(wb pebble.Batch, txid []byte) {
 	for len(batchReader) > 0 {
 		_, ukey, _, _ := batchReader.Next()
 		keyString := string(ukey)
-		sm.lockedKeys[keyString] = txid
+		sm.lockedKeys[keyString] = append(make([]byte, 0, len(txid)), txid...)
 	}
 }
 
@@ -557,6 +538,10 @@ func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest
 	for _, union := range batchReq.GetUnion() {
 		rsp := sm.handlePropose(txn, union)
 		if err := gstatus.FromProto(rsp.GetStatus()).Err(); err != nil {
+			// An "normal" error could be returned here if a cas()
+			// request finds a value it does not expect. In this
+			// case we want the transaction to fail (in the prepare
+			// step).
 			return nil, err
 		}
 		batchRsp.Union = append(batchRsp.Union, rsp)
@@ -681,6 +666,7 @@ func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
 		if err := proto.Unmarshal(iter.Value(), batchReq); err != nil {
 			return err
 		}
+		sm.log.Warningf("txid: %q, batchReq: %+v", txid, batchReq)
 		if _, err := sm.loadTxnIntoMemory(txid, batchReq); err != nil {
 			return err
 		}
@@ -1185,12 +1171,6 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 			UpdateAtime: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_FindSplitPoint:
-		r, err := sm.findSplitPoint()
-		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
-			FindSplitPoint: r,
-		}
-		rsp.Status = statusProto(err)
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}
@@ -1232,6 +1212,12 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 			Find: r,
 		}
 		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_FindSplitPoint:
+		r, err := sm.findSplitPoint()
+		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
+			FindSplitPoint: r,
+		}
+		rsp.Status = statusProto(err)
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("Read handling for %+v not implemented.", req))
 	}
@@ -1265,35 +1251,39 @@ func olderThanThreshold(t time.Time, threshold time.Duration) bool {
 }
 
 func (sm *Replica) processAccessTimeUpdates() {
-	batch := rbuilder.NewBatchBuilder()
+	var keys []*sender.KeyMeta
 
 	ctx := context.TODO()
 
 	var lastWrite time.Time
 	flush := func() {
-		if batch.Size() == 0 {
+		if len(keys) == 0 {
 			return
 		}
 
-		batchProto, err := batch.ToProto()
-		if err != nil {
-			sm.log.Warningf("could not generate atime update batch: %s", err)
-			return
-		}
-
-		err = sm.store.Sender().Run(ctx, nil, func(c rfspb.ApiClient, h *rfpb.Header) error {
-			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+		_, err := sm.store.Sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+			batch := rbuilder.NewBatchBuilder()
+			for _, k := range keys {
+				batch.Add(&rfpb.UpdateAtimeRequest{
+					Key:            k.Key,
+					AccessTimeUsec: k.Meta.(int64),
+				})
+			}
+			batchProto, err := batch.ToProto()
+			if err != nil {
+				return nil, err
+			}
+			return c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Header: h,
 				Batch:  batchProto,
 			})
-			return err
 		})
 		if err != nil {
 			sm.log.Warningf("could not update atimes: %s", err)
 			return
 		}
 
-		batch = rbuilder.NewBatchBuilder()
+		keys = nil
 		lastWrite = time.Now()
 	}
 
@@ -1309,11 +1299,11 @@ func (sm *Replica) processAccessTimeUpdates() {
 	for {
 		select {
 		case accessTimeUpdate := <-sm.accesses:
-			batch.Add(&rfpb.UpdateAtimeRequest{
-				Key:            accessTimeUpdate.key,
-				AccessTimeUsec: time.Now().UnixMicro(),
+			keys = append(keys, &sender.KeyMeta{
+				Key:  accessTimeUpdate.key,
+				Meta: time.Now().UnixMicro(),
 			})
-			if batch.Size() >= *atimeWriteBatchSize {
+			if len(keys) >= *atimeWriteBatchSize {
 				flush()
 			}
 		case <-time.After(time.Second):
@@ -1455,52 +1445,6 @@ func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
 
 }
 
-// Update updates the IOnDiskStateMachine instance. The input Entry slice
-// is a list of continuous proposed and committed commands from clients, they
-// are provided together as a batch so the IOnDiskStateMachine implementation
-// can choose to batch them and apply together to hide latency. Update returns
-// the input entry slice with the Result field of all its members set.
-//
-// The read only Index field of each input Entry instance is the Raft log
-// index of each entry, it is IOnDiskStateMachine's responsibility to
-// atomically persist the Index value together with the corresponding state
-// update.
-//
-// The Update method can choose to synchronize all of its in-core state with
-// that on disk. This can minimize the number of committed Raft entries that
-// need to be re-applied after reboot. Update can also choose to postpone such
-// synchronization until the Sync method is invoked, this approach produces
-// higher throughput during fault free running at the cost that some of the
-// most recent Raft entries not synchronized onto disks will have to be
-// re-applied after reboot.
-//
-// When the Update method does not synchronize its in-core state with that on
-// disk, the implementation must ensure that after a reboot there is no
-// applied entry in the State Machine more recent than any entry that was
-// lost during reboot. For example, consider a state machine with 3 applied
-// entries, let's assume their index values to be 1, 2 and 3. Once they have
-// been applied into the state machine without synchronizing the in-core state
-// with that on disk, it is okay to lose the data associated with the applied
-// entry 3, but it is strictly forbidden to have the data associated with the
-// applied entry 3 available in the state machine while the one with index
-// value 2 got lost during reboot.
-//
-// The Update method must be deterministic, meaning given the same initial
-// state of IOnDiskStateMachine and the same input sequence, it should reach
-// to the same updated state and outputs the same results. The input entry
-// slice should be the only input to this method. Reading from the system
-// clock, random number generator or other similar external data sources will
-// likely violate the deterministic requirement of the Update method.
-//
-// Concurrent calls to the Lookup method and the SaveSnapshot method are not
-// blocked when the state machine is being updated by the Update method.
-//
-// The IOnDiskStateMachine implementation should not keep a reference to the
-// input entry slice after return.
-//
-// Update returns an error when there is unrecoverable error when updating the
-// on disk state machine.
-
 func errorEntry(err error) dbsm.Result {
 	status := statusProto(err)
 	rspBuf, _ := proto.Marshal(status)
@@ -1517,7 +1461,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	// and the statemachine keeps progressing.
 	batchReq := &rfpb.BatchCmdRequest{}
 	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
-		return entry, err
+		return entry, status.InternalErrorf("failed to unmarshal entry.Cmd: %s", err)
 	}
 
 	sm.rangeMu.RLock()
@@ -1577,11 +1521,9 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 		}
 	}
 
-	// BatchCMDResponse.MarshalVT() is slower than standard marshal(). See
-	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
-	rspBuf, err := proto.MarshalOld(batchRsp)
+	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
-		return entry, err
+		return entry, status.InternalErrorf("failed to marshal batchRsp: %s", err)
 	}
 	entry.Result = dbsm.Result{
 		Value: uint64(len(entry.Cmd)),
@@ -1590,7 +1532,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	appliedIndex := uint64ToBytes(entry.Index)
 	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
 	if err := wb.Commit(pebble.NoSync); err != nil {
-		return entry, err
+		return entry, status.InternalErrorf("failed to commit batch: %s", err)
 	} else {
 		// If the batch commit was successful, update the replica's in-
 		// memory state.
@@ -1606,18 +1548,63 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	return entry, nil
 }
 
+// Update updates the IOnDiskStateMachine instance. The input Entry slice
+// is a list of continuous proposed and committed commands from clients, they
+// are provided together as a batch so the IOnDiskStateMachine implementation
+// can choose to batch them and apply together to hide latency. Update returns
+// the input entry slice with the Result field of all its members set.
+//
+// The read only Index field of each input Entry instance is the Raft log
+// index of each entry, it is IOnDiskStateMachine's responsibility to
+// atomically persist the Index value together with the corresponding state
+// update.
+//
+// The Update method can choose to synchronize all of its in-core state with
+// that on disk. This can minimize the number of committed Raft entries that
+// need to be re-applied after reboot. Update can also choose to postpone such
+// synchronization until the Sync method is invoked, this approach produces
+// higher throughput during fault free running at the cost that some of the
+// most recent Raft entries not synchronized onto disks will have to be
+// re-applied after reboot.
+//
+// When the Update method does not synchronize its in-core state with that on
+// disk, the implementation must ensure that after a reboot there is no
+// applied entry in the State Machine more recent than any entry that was
+// lost during reboot. For example, consider a state machine with 3 applied
+// entries, let's assume their index values to be 1, 2 and 3. Once they have
+// been applied into the state machine without synchronizing the in-core state
+// with that on disk, it is okay to lose the data associated with the applied
+// entry 3, but it is strictly forbidden to have the data associated with the
+// applied entry 3 available in the state machine while the one with index
+// value 2 got lost during reboot.
+//
+// The Update method must be deterministic, meaning given the same initial
+// state of IOnDiskStateMachine and the same input sequence, it should reach
+// to the same updated state and outputs the same results. The input entry
+// slice should be the only input to this method. Reading from the system
+// clock, random number generator or other similar external data sources will
+// likely violate the deterministic requirement of the Update method.
+//
+// Concurrent calls to the Lookup method and the SaveSnapshot method are not
+// blocked when the state machine is being updated by the Update method.
+//
+// The IOnDiskStateMachine implementation should not keep a reference to the
+// input entry slice after return.
+//
+// Update returns an error when there is unrecoverable error when updating the
+// on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	defer canary.Start("replica.Update", time.Second)()
 	db, err := sm.leaser.DB()
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("failed to get pebble DB from the leaser: %s", err)
 	}
 	defer db.Close()
 
 	for i, entry := range entries {
 		e, err := sm.singleUpdate(db, entry)
 		if err != nil {
-			return nil, err
+			return nil, status.InternalErrorf("failed to singleUpdate: %s", err)
 		}
 		entries[i] = e
 	}
@@ -1672,7 +1659,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	rspBuf, err := proto.MarshalOld(batchRsp)
+	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
 		return nil, err
 	}
@@ -1838,6 +1825,17 @@ func (sm *Replica) saveRangeLocalData(w io.Writer, snap *pebble.Snapshot) error 
 	return nil
 }
 
+func flushBatch(wb pebble.Batch) error {
+	if wb.Empty() {
+		return nil
+	}
+	if err := wb.Commit(pebble.Sync); err != nil {
+		return err
+	}
+	wb.Reset()
+	return nil
+}
+
 func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
 	wb := db.NewBatch()
 	defer wb.Close()
@@ -1869,11 +1867,16 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		if err := wb.Set(kv.Key, kv.Value, nil); err != nil {
 			return err
 		}
+		if wb.Len() > 1*gb {
+			// Pebble panics when the batch is greater than ~4GB (or 2GB on 32-bit systems)
+			log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
+			if err = flushBatch(wb); err != nil {
+				return err
+			}
+		}
 	}
-	if err := db.Apply(wb, pebble.Sync); err != nil {
-		return err
-	}
-	return nil
+	log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
+	return flushBatch(wb)
 }
 
 // SaveSnapshot saves the point in time state of the IOnDiskStateMachine
@@ -2008,7 +2011,7 @@ func (sm *Replica) Close() error {
 	return nil
 }
 
-// CreateReplica creates an ondisk statemachine.
+// New creates a new Replica, an on-disk state machine.
 func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
 	return &Replica{
 		ShardID:             shardID,
@@ -2020,8 +2023,8 @@ func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, broadcas
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", shardID, replicaID)),
 		fileStorer:          filestore.New(),
 		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
-		readQPS:             qps.NewCounter(1 * time.Minute),
-		raftProposeQPS:      qps.NewCounter(1 * time.Minute),
+		readQPS:             qps.NewCounter(5 * time.Second),
+		raftProposeQPS:      qps.NewCounter(5 * time.Second),
 		broadcast:           broadcast,
 		lockedKeys:          make(map[string][]byte),
 		prepared:            make(map[string]pebble.Batch),

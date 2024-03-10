@@ -17,10 +17,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -165,7 +165,7 @@ func Authenticate(env environment.Env, next http.Handler) http.Handler {
 func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		if err := role_filter.AuthorizeRPC(ctx, env, r.URL.Path); err != nil {
+		if err := capabilities_filter.AuthorizeRPC(ctx, env, r.URL.Path); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}

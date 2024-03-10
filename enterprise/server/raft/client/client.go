@@ -38,22 +38,18 @@ type NodeHost interface {
 	StaleRead(shardID uint64, query interface{}) (interface{}, error)
 }
 
-type apiClientAndConn struct {
-	rfspb.ApiClient
-}
-
 type APIClient struct {
 	env     environment.Env
 	log     log.Logger
 	mu      sync.Mutex
-	clients map[string]*apiClientAndConn
+	clients map[string]*grpc_client.ClientConnPool
 }
 
 func NewAPIClient(env environment.Env, name string) *APIClient {
 	return &APIClient{
 		env:     env,
 		log:     log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", name)),
-		clients: make(map[string]*apiClientAndConn, 0),
+		clients: make(map[string]*grpc_client.ClientConnPool),
 	}
 }
 
@@ -61,15 +57,19 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if client, ok := c.clients[peer]; ok {
-		return client, nil
+		conn, err := client.GetReadyConnection()
+		if err != nil {
+			return nil, status.UnavailableErrorf("no connections to peer %q are ready", peer)
+		}
+		return rfspb.NewApiClient(conn), nil
 	}
+	log.Debugf("Creating new client for peer: %q", peer)
 	conn, err := grpc_client.DialSimple("grpc://" + peer)
 	if err != nil {
 		return nil, err
 	}
-	client := rfspb.NewApiClient(conn)
-	c.clients[peer] = &apiClientAndConn{ApiClient: client}
-	return client, nil
+	c.clients[peer] = conn
+	return rfspb.NewApiClient(conn), nil
 }
 
 func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, error) {
@@ -82,8 +82,13 @@ func singleOpTimeout(ctx context.Context) time.Duration {
 	// complete.
 	const maxTimeout = time.Second
 	if deadline, ok := ctx.Deadline(); ok {
-		if dur := deadline.Sub(time.Now()); dur < maxTimeout {
+		dur := time.Until(deadline)
+		if dur <= 0 {
 			return dur
+		}
+		if dur < maxTimeout {
+			// ensure that the returned duration / constants.RTTMillisecond > 0.
+			return dur + constants.RTTMillisecond
 		}
 	}
 	return maxTimeout
@@ -109,7 +114,12 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 			break
 		}
 
-		opCtx, cancel := context.WithTimeout(ctx, singleOpTimeout(ctx))
+		timeout := singleOpTimeout(ctx)
+		if timeout <= 0 {
+			// The deadline has already passed.
+			continue
+		}
+		opCtx, cancel := context.WithTimeout(ctx, timeout)
 		err := nhf(opCtx)
 		cancel()
 
@@ -246,4 +256,16 @@ func SyncProposeLocalBatchNoRsp(ctx context.Context, nodehost *dragonboat.NodeHo
 		return err
 	}
 	return rspBatch.AnyError()
+}
+
+func SyncReadLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
+	batch, err := builder.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := SyncReadLocal(ctx, nodehost, shardID, batch)
+	if err != nil {
+		return nil, err
+	}
+	return rbuilder.NewBatchResponseFromProto(rsp), nil
 }

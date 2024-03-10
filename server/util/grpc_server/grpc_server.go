@@ -174,7 +174,7 @@ func GRPCShutdown(ctx context.Context, grpcServer *grpc.Server) error {
 		grpcServer.Stop()
 		return nil
 	}
-	delay := deadline.Sub(time.Now()) - (100 * time.Millisecond)
+	delay := time.Until(deadline) - (100 * time.Millisecond)
 	ctx, cancel := context.WithTimeout(ctx, delay)
 	go func() {
 		select {

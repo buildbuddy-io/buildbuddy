@@ -14,7 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
-	"github.com/google/go-github/v43/github"
+	"github.com/google/go-github/v59/github"
 	"github.com/hashicorp/serf/serf"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
@@ -78,8 +78,10 @@ type BasicAuthToken interface {
 // GroupMembership represents a user's membership within a group as well as
 // their role within that group.
 type GroupMembership struct {
-	GroupID string    `json:"group_id"`
-	Role    role.Role `json:"role"`
+	GroupID      string                   `json:"group_id"`
+	Capabilities []akpb.ApiKey_Capability `json:"capabilities"`
+	// DEPRECATED. Check Capabilities instead.
+	Role role.Role `json:"role"`
 }
 
 type UserInfo interface {
@@ -105,11 +107,6 @@ type UserInfo interface {
 	GetGroupMemberships() []*GroupMembership
 	// GetCapabilities returns the user's capabilities.
 	GetCapabilities() []akpb.ApiKey_Capability
-	// IsAdmin returns whether this user is a global administrator, meaning
-	// they can access data across groups. This is not to be confused with the
-	// concept of group admin, which grants full access only within a single
-	// group.
-	IsAdmin() bool
 	HasCapability(akpb.ApiKey_Capability) bool
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
@@ -524,7 +521,7 @@ type UserDB interface {
 	// CreateGroup creates a new group, adds the authenticated user to it,
 	// and creates an initial API key for the group.
 	CreateGroup(ctx context.Context, g *tables.Group) (string, error)
-	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (string, error)
+	UpdateGroup(ctx context.Context, g *tables.Group) (string, error)
 	GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error)
 	GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error)
 

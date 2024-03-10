@@ -23,6 +23,13 @@ var (
 	AnonymousUserCapabilities = DefaultAuthenticatedUserCapabilities
 	// AnonymousUserCapabilitiesMask is the mask form of AnonymousUserCapabilities.
 	AnonymousUserCapabilitiesMask = ToInt(AnonymousUserCapabilities)
+
+	// UserAPIKeyCapabilitiesMask defines the capabilities that are allowed to
+	// be assigned to user-owned API keys.
+	UserAPIKeyCapabilitiesMask = ToInt([]akpb.ApiKey_Capability{
+		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+	})
 )
 
 func FromInt(m int32) []akpb.ApiKey_Capability {
@@ -43,6 +50,10 @@ func ToInt(caps []akpb.ApiKey_Capability) int32 {
 	return m
 }
 
+func ApplyMask(caps []akpb.ApiKey_Capability, mask int32) []akpb.ApiKey_Capability {
+	return FromInt(ToInt(caps) & mask)
+}
+
 func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capability) (bool, error) {
 	a := env.GetAuthenticator()
 	authIsRequired := !a.AnonymousUsageEnabled(ctx)
@@ -61,9 +72,6 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 
 func ForAuthenticatedUser(ctx context.Context, env environment.Env) ([]akpb.ApiKey_Capability, error) {
 	auth := env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Auth is not configured")
-	}
 	u, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
 		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {
@@ -72,4 +80,19 @@ func ForAuthenticatedUser(ctx context.Context, env environment.Env) ([]akpb.ApiK
 		return nil, err
 	}
 	return u.GetCapabilities(), nil
+}
+
+// ForAuthenticatedUserGroup returns the authenticated user's capabilities
+// within the given group ID.
+func ForAuthenticatedUserGroup(ctx context.Context, env environment.Env, groupID string) ([]akpb.ApiKey_Capability, error) {
+	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, gm := range u.GetGroupMemberships() {
+		if gm.GroupID == groupID {
+			return gm.Capabilities, nil
+		}
+	}
+	return nil, status.PermissionDeniedError("you are not a member of the requested organization")
 }

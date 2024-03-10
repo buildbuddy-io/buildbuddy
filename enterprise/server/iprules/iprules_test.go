@@ -101,7 +101,7 @@ func TestEnforcement(t *testing.T) {
 	// Enable IP rule enforcement.
 	g.EnforceIPRules = true
 	g.URLIdentifier = "foo"
-	_, err = env.GetUserDB().InsertOrUpdateGroup(authCtx, &g)
+	_, err = env.GetUserDB().UpdateGroup(authCtx, &g)
 	require.NoError(t, err)
 
 	// Re-auth to pick up new group settings.
@@ -150,7 +150,7 @@ func TestEnforcement(t *testing.T) {
 
 	// Delete rule2. Its value should no longer apply.
 	g.EnforceIPRules = false
-	_, err = env.GetUserDB().InsertOrUpdateGroup(authCtx, &g)
+	_, err = env.GetUserDB().UpdateGroup(authCtx, &g)
 	require.NoError(t, err)
 	_, err = irs.DeleteRule(authCtx, &irpb.DeleteRuleRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
@@ -158,7 +158,7 @@ func TestEnforcement(t *testing.T) {
 	})
 	require.NoError(t, err)
 	g.EnforceIPRules = true
-	_, err = env.GetUserDB().InsertOrUpdateGroup(authCtx, &g)
+	_, err = env.GetUserDB().UpdateGroup(authCtx, &g)
 	require.NoError(t, err)
 	authCtx = context.WithValue(authCtx, clientip.ContextKey, "8.8.8.8")
 	err = irs.Authorize(authCtx)
