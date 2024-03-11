@@ -399,7 +399,9 @@ func (ut *Tracker) LocalUpdate(rangeID uint64, usage *rfpb.ReplicaUsage) {
 			log.Warningf("unknown partition %q", u.GetPartitionId())
 			continue
 		}
+		ud.mu.Lock()
 		ud.replicas[rangeID] = u
+		ud.mu.Unlock()
 	}
 
 	// Propagate the updated usage to the LRU.
@@ -410,7 +412,9 @@ func (ut *Tracker) LocalUpdate(rangeID uint64, usage *rfpb.ReplicaUsage) {
 
 func (ut *Tracker) removeRangePartitions(rangeID uint64) {
 	for _, u := range ut.byPartition {
+		u.mu.Lock()
 		delete(u.replicas, rangeID)
+		u.mu.Unlock()
 	}
 }
 
@@ -435,10 +439,12 @@ func (ut *Tracker) computeUsage() *rfpb.NodePartitionUsage {
 		if u, ok := ut.byPartition[p.ID]; ok {
 			// Sum up total partition usage. Other nodes don't need to know
 			// about individual ranges.
+			u.mu.Lock()
 			for _, ru := range u.replicas {
 				up.SizeBytes += ru.GetSizeBytes()
 				up.TotalCount += ru.GetTotalCount()
 			}
+			u.mu.Unlock()
 		}
 		nu.PartitionUsage = append(nu.PartitionUsage, up)
 	}
