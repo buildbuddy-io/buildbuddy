@@ -40,7 +40,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
     if (!this.state.stdErr) {
       return "";
     }
-
+    // Style file names like "/path/to/file.go:10:20" in bold+underline
     return "\n\n" + this.state.stdErr.replaceAll(/([^\s]*:\d+:\d+)/g, "\x1b[1;4m$1\x1b[0m");
   }
 
@@ -61,6 +61,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
       return null;
     }
 
+    // De-emphasize the "--sandbox_debug" message.
     description = description.replaceAll(debugMessage, `\x1b[90m${debugMessage}\x1b[0m\n \n`);
 
     return (
