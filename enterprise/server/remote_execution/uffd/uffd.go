@@ -374,9 +374,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 }
 
 func (h *Handler) EmitSummaryMetrics(stage string) {
-	metrics.COWSnapshotPageFaultCount.With(prometheus.Labels{
-		metrics.Stage: stage,
-	}).Observe(float64(len(h.mappedPageFaults)))
 	metrics.COWSnapshotPageFaultTotalDurationUsec.With(prometheus.Labels{
 		metrics.Stage: stage,
 	}).Observe(float64(h.pageFaultTotalDuration.Microseconds()))

@@ -745,11 +745,6 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 				metrics.EventName: op,
 				metrics.Stage:     stage,
 			}).Observe(float64(summary.totalDuration.Microseconds()))
-			metrics.COWSnapshotChunkOperationCount.With(prometheus.Labels{
-				metrics.FileName:  c.name,
-				metrics.EventName: op,
-				metrics.Stage:     stage,
-			}).Observe(float64(summary.totalCount))
 			logStr += fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v}", op, summary.totalDuration.Milliseconds(), summary.totalCount)
 		}
 	}
