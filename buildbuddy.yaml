@@ -99,6 +99,17 @@ actions:
           - "*"
     bazel_commands:
       - test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare
+  - name: Big container image
+    container_image: "gcr.io/flame-public/iain-test:latest"
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    bazel_commands:
+      - test //... --config=linux-workflows --config=race --config=static --test_tag_filters=-performance,-webdriver,-docker,-bare
 
 plugins:
   - path: cli/plugins/go-deps
