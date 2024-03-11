@@ -21,12 +21,6 @@ jobs:
           # We need to fetch git tags to obtain the latest cli version tag.
           fetch-depth: 0
 
-      - name: Push tag
-        run: |
-          git config --local user.email "github-actions-release-bot@users.noreply.github.com"
-          git config --local user.name "github-actions-release[bot]"
-          ./cli/release.py --auto
-
       - name: Get CLI version
         id: version
         run: |
