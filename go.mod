@@ -319,6 +319,7 @@ require (
 	github.com/vbatts/tar-split v0.11.3 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	github.com/xiam/sexpr v0.0.0-20210104141133-90c47e022bfa // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.etcd.io/bbolt v1.3.7 // indirect
 	go.mongodb.org/mongo-driver v1.12.0 // indirect

@@ -24,7 +24,6 @@ const (
 	npost = 64 << 20 / 8 // 64 MB worth of post entries
 )
 
-
 type postingLists map[string][]uint64
 
 type Writer struct {
@@ -65,10 +64,6 @@ func Uint64ToBytes(i uint64) []byte {
 	return buf
 }
 
-func docidKey(repo string, docID uint64) []byte {
-	return []byte(fmt.Sprintf("%s:did:%d", repo, docID))
-}
-
 func (w *Writer) storedFieldKey(docID uint64, field string) []byte {
 	return []byte(fmt.Sprintf("%s:doc:%d:%s", w.repo, docID, field))
 }
@@ -86,7 +81,8 @@ func (w *Writer) AddDocument(doc types.Document) error {
 		postingLists := w.fieldPostingLists[field.Name()]
 
 		// **Always store DocID.**
-		w.batch.Set(docidKey(w.repo, doc.ID()), Uint64ToBytes(doc.ID()), nil)
+		docidKey := w.storedFieldKey(doc.ID(), types.DocIDField)
+		w.batch.Set(docidKey, Uint64ToBytes(doc.ID()), nil)
 
 		// TODO(tylerw): lookup the tokenizer to use for this field. It
 		// may not always be tritokenizer.
@@ -166,10 +162,14 @@ func NewReader(db pebble.Reader, repo string) *Reader {
 	}
 }
 
+func (r *Reader) storedFieldKey(docID uint64, field string) []byte {
+	return []byte(fmt.Sprintf("%s:doc:%d:%s", r.repo, docID, field))
+}
+
 func (r *Reader) allIndexedFiles() ([]uint64, error) {
 	iter := r.db.NewIter(&pebble.IterOptions{
-		LowerBound: docidKey(r.repo, 0),
-		UpperBound: docidKey(r.repo, math.MaxUint64),
+		LowerBound: r.storedFieldKey(0, types.DocIDField),
+		UpperBound: r.storedFieldKey(math.MaxUint64, types.DocIDField),
 	})
 	defer iter.Close()
 	found := make([]uint64, 0)
@@ -180,8 +180,28 @@ func (r *Reader) allIndexedFiles() ([]uint64, error) {
 	return found, nil
 }
 
-func (r *Reader) storedFieldKey(docID uint64, field string) []byte {
-	return []byte(fmt.Sprintf("%s:doc:%d:%s", r.repo, docID, field))
+
+func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
+	docIDStart := r.storedFieldKey(docID, "")
+	iter := r.db.NewIter(&pebble.IterOptions{
+		LowerBound: docIDStart,
+		UpperBound: r.storedFieldKey(docID, "\xff"),
+	})
+	defer iter.Close()
+
+	fields := make(map[string]types.NamedField, 0)
+	for iter.First(); iter.Valid(); iter.Next() {
+		fieldName := string(bytes.TrimPrefix(iter.Key(), docIDStart))
+		log.Infof("read field name: %q from %q", fieldName, string(iter.Key()))
+		if fieldName == types.DocIDField {
+			continue
+		}
+		fieldVal := make([]byte, len(iter.Value()))
+		copy(fieldVal, iter.Value())
+		fields[fieldName] = types.NewNamedField(types.TextField, fieldName, fieldVal, true /*=stored*/)
+	}
+	doc := types.NewMapDocument(docID, fields)
+	return doc, nil
 }
 
 func (r *Reader) GetStoredFieldValue(docID uint64, field string) ([]byte, error) {
@@ -194,6 +214,7 @@ func (r *Reader) GetStoredFieldValue(docID uint64, field string) ([]byte, error)
 	copy(rbuf, buf)
 	return rbuf, nil
 }
+
 
 // postingListBM looks up the set of docIDs matching the provided ngram.
 // If `field` is set to a non-empty value, matches are restricted to just the
@@ -228,6 +249,14 @@ func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field s
 
 func (r *Reader) PostingList(trigram uint32) ([]uint64, error) {
 	return r.postingList(trigram, nil)
+}
+
+func (r *Reader) PostingListF(ngram []byte, field string) ([]uint64, error) {
+	bm, err := r.postingListBM(ngram, roaring64.New(), field)
+	if err != nil {
+		return nil, err
+	}
+	return bm.ToArray(), nil
 }
 
 func (r *Reader) postingList(trigram uint32, restrict []uint64) ([]uint64, error) {

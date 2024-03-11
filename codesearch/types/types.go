@@ -9,6 +9,9 @@ type FieldType int32
 
 const (
 	TextField FieldType = iota
+
+	DocIDField = "docid"
+	AllFields = "*"
 )
 
 type Field interface {
@@ -42,9 +45,11 @@ type IndexWriter interface {
 
 type IndexReader interface {
 	PostingList(trigram uint32) ([]uint64, error)
+	PostingListF(ngram []byte, field string) ([]uint64, error)
 	PostingAnd(list []uint64, trigram uint32) ([]uint64, error)
 	PostingOr(list []uint64, trigram uint32) ([]uint64, error)
 	GetStoredFieldValue(docID uint64, field string) ([]byte, error)
+	GetStoredDocument(docID uint64) (Document, error)
 }
 
 type NamedField struct {

@@ -4945,6 +4945,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v2.1.0",
     )
     go_repository(
+        name = "com_github_xiam_sexpr",
+        importpath = "github.com/xiam/sexpr",
+        sum = "h1:ojs+u2RDwb5Yzg87Ahld7LtdneGV8W1/YgkXWC3e+VQ=",
+        version = "v0.0.0-20210104141133-90c47e022bfa",
+    )
+    go_repository(
         name = "com_github_xiang90_probing",
         importpath = "github.com/xiang90/probing",
         sum = "h1:eY9dn8+vbi4tKz5Qo6v2eYzo7kUS51QINcR5jNpbZS8=",
