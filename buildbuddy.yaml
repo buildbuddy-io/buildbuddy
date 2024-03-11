@@ -99,7 +99,8 @@ actions:
           - "*"
     bazel_commands:
       - test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare
-  - name: Big container image
+  # TODO(http://go/b/2282): delete this workflow.
+  - name: Image streaming test
     container_image: "gcr.io/flame-public/iain-test:latest"
     triggers:
       push:
