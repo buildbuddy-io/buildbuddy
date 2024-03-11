@@ -99,9 +99,9 @@ class Router {
    * the current href.
    *
    * - Creates a new browser history entry.
-   * - Preserves global filter params.
+   * - Preserves global filter params unless resetFilters is set
    */
-  navigateTo(url: string, ignorePreviousState: boolean = false) {
+  navigateTo(url: string, resetFilters: boolean = false) {
     const oldUrl = new URL(window.location.href);
     const newUrl = new URL(url, window.location.href);
 
@@ -117,7 +117,7 @@ class Router {
     }
 
     // Preserve persistent URL params.
-    if (!ignorePreviousState) {
+    if (!resetFilters) {
       for (const key of PERSISTENT_URL_PARAMS) {
         const oldParam = oldUrl.searchParams.get(key);
         if (!newUrl.searchParams.get(key) && oldParam) {

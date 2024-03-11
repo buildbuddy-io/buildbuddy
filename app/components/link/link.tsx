@@ -2,7 +2,8 @@ import React from "react";
 import router from "../../router/router";
 
 export type LinkProps = {
-  ignorePreviousState?: boolean;
+  /** Prevents existing filter state from being preserved when navigating. */
+  resetFilters?: boolean;
 } & React.AnchorHTMLAttributes<HTMLAnchorElement>;
 
 /**
@@ -19,7 +20,7 @@ export type LinkProps = {
  * handler, navigation is canceled, as is the case for normal `<a>` elements.
  */
 export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAnchorElement>) => {
-  const { className, href, target, onClick, ignorePreviousState, ...rest } = props;
+  const { className, href, target, onClick, resetFilters, ...rest } = props;
   const isExternal = Boolean(target) || Boolean(href && (href.startsWith("http://") || href.startsWith("https://")));
   const onClickWrapped = isExternal
     ? onClick
@@ -32,7 +33,7 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
           return;
         }
         e.preventDefault();
-        if (href) router.navigateTo(href, ignorePreviousState);
+        if (href) router.navigateTo(href, resetFilters);
       };
   return (
     <a
