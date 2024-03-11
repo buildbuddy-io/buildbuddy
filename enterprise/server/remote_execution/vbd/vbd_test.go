@@ -68,7 +68,7 @@ func TestVBD(t *testing.T) {
 	err = v.Mount(ctx, dir)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		err := v.Unmount()
+		err := v.Unmount(ctx)
 		require.NoError(t, err)
 	})
 
