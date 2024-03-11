@@ -1,9 +1,10 @@
 .terminal {
   --scrollbar-width: 8px;
   background: #212121;
+  display: flex;
 }
 .terminal.light-terminal {
-  background: #fafafa;
+  background: #fff;
 }
 
 .terminal .terminal-search {
@@ -31,6 +32,8 @@
 .terminal .terminal-search-input {
   height: 32px;
   max-width: 180px;
+  border: 1px solid #eee;
+  border-radius: 8px;
 }
 
 .terminal .terminal-text {
@@ -41,7 +44,6 @@
 .terminal .terminal-top-bar {
   display: flex;
   padding-right: var(--scrollbar-width);
-  padding-bottom: 4px;
 }
 
 .terminal .terminal-titles {

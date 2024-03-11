@@ -34,7 +34,7 @@ func TestInvocationPage_SuccessfulInvocation_BESOnly(t *testing.T) {
 	assert.Contains(t, details, "Cache off")
 	assert.Contains(t, details, "Remote execution off")
 
-	logs := wt.Find(".terminal").Text()
+	logs := wt.FindByDebugID("build-logs").Text()
 
 	assert.Contains(t, logs, "Streaming build results to:")
 	assert.Contains(t, logs, "Target //:a up-to-date:")
@@ -63,7 +63,7 @@ func TestInvocationPage_FailedInvocation_BESOnly(t *testing.T) {
 	assert.Contains(t, details, "Cache off")
 	assert.Contains(t, details, "Remote execution off")
 
-	logs := wt.Find(".terminal").Text()
+	logs := wt.FindByDebugID("build-logs").Text()
 
 	assert.Contains(t, logs, "Streaming build results to:")
 	assert.Contains(t, logs, "Target //:a failed to build")
