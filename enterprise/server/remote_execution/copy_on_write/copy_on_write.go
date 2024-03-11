@@ -745,11 +745,6 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 				metrics.EventName: op,
 				metrics.Stage:     stage,
 			}).Observe(float64(summary.totalDuration.Microseconds()))
-			metrics.COWSnapshotChunkOperationCount.With(prometheus.Labels{
-				metrics.FileName:  c.name,
-				metrics.EventName: op,
-				metrics.Stage:     stage,
-			}).Observe(float64(summary.totalCount))
 			logStr += fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v}", op, summary.totalDuration.Milliseconds(), summary.totalCount)
 		}
 	}
@@ -1091,7 +1086,6 @@ func mmapDataFromFd(fd, size int, fileNameLabel string) ([]byte, error) {
 
 // NOTE: This function should be executed atomically. Callers should manage locking
 func (m *Mmap) initMap() (err error) {
-	start := time.Now()
 	if m.closed {
 		return status.InternalError("store is closed")
 	}
@@ -1113,11 +1107,6 @@ func (m *Mmap) initMap() (err error) {
 	if m.lru != nil {
 		m.lru.Add(m)
 	}
-
-	metrics.COWSnapshotInitChunkDurationUsec.With(prometheus.Labels{
-		metrics.ChunkSource: m.source.String(),
-	}).Observe(float64(time.Since(start).Microseconds()))
-
 	return nil
 }
 
