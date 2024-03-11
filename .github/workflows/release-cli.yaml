@@ -1,6 +1,7 @@
 name: "release-cli"
 
 on:
+  workflow_dispatch:
   pull_request_target:
     types:
       - closed
@@ -9,7 +10,7 @@ on:
 
 jobs:
   push-tag:
-    if: github.event.pull_request.merged == true && !contains(github.event.pull_request.body, 'release skip')
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && !contains(github.event.pull_request.body, 'release skip'))
     runs-on: ubuntu-20.04
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
@@ -27,10 +28,12 @@ jobs:
           ./cli/release.py --auto
 
       - name: Get CLI version
+        id: version
         run: |
           version=$(git tag -l 'cli-v*' --sort=creatordate |
             perl -nle 'if (/^cli-v(\d+\.\d+\.\d+)$/) { print $1 }' |
             tail -n1)
+          echo $version
           echo "VERSION=$version" >> "$GITHUB_OUTPUT"
 
   create-release:
