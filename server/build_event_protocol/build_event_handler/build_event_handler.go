@@ -983,7 +983,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		if err != nil {
 			return err
 		}
-		
+
 		if authenticated {
 			if irs := e.env.GetIPRulesService(); irs != nil {
 				if err := irs.Authorize(e.ctx); err != nil {
