@@ -69,6 +69,8 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+
+	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
 )
 
 const (
@@ -976,10 +978,15 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	if st == nil && state.GetContainerState() == nil {
 		return nil, status.FailedPreconditionError("either a task or saved container state is required to create a runner")
 	}
+	useOverlayfs, err := isOverlayfsEnabledForAction(ctx, props)
+	if err != nil {
+		return nil, err
+	}
 	wsOpts := &workspace.Opts{
 		Preserve:        props.PreserveWorkspace,
 		CleanInputs:     props.CleanWorkspaceInputs,
 		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
+		UseOverlayfs:    useOverlayfs,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
@@ -1048,6 +1055,30 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		return nil, err
 	}
 	return container.NewTracedCommandContainer(c), nil
+}
+
+func isOverlayfsEnabledForAction(ctx context.Context, props *platform.Properties) (bool, error) {
+	if !*overlayfsEnabled {
+		// overlayfs is disabled executor-wide.
+		// If explicitly requested via platform props, make it an error.
+		if props.OverlayfsWorkspace {
+			return false, status.InvalidArgumentError("overlayfs is not enabled by this executor")
+		}
+		return false, nil
+	}
+
+	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
+		// overlayfs is not supported on firecracker
+		return false, nil
+	}
+	if props.OverlayfsWorkspace {
+		// overlayfs is enabled at the action level
+		return true, nil
+	}
+	if _, err := auth.UserFromTrustedJWT(ctx); err != nil {
+		return true, nil
+	}
+	return false, nil
 }
 
 func keyString(k *rnpb.RunnerKey) string {

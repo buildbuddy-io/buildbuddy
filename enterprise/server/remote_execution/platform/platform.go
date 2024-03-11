@@ -72,6 +72,7 @@ const (
 	RunnerRecyclingMaxWaitPropertyName   = "runner-recycling-max-wait"
 	preserveWorkspacePropertyName        = "preserve-workspace"
 	nonrootWorkspacePropertyName         = "nonroot-workspace"
+	overlayfsWorkspacePropertyName       = "overlayfs-workspace"
 	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
 	persistentWorkerPropertyName         = "persistent-workers"
 	persistentWorkerKeyPropertyName      = "persistentWorkerKey"
@@ -174,7 +175,12 @@ type Properties struct {
 	// TODO(bduffany): Consider making this the default behavior, or inferring it
 	// by inspecting the image and checking that the USER spec is anything other
 	// than "root" or "0".
-	NonrootWorkspace         bool
+	NonrootWorkspace bool
+
+	// OverlayfsWorkspace specifies whether the action should use an
+	// overlayfs-based copy-on-write filesystem for workspace inputs.
+	OverlayfsWorkspace bool
+
 	CleanWorkspaceInputs     string
 	PersistentWorker         bool
 	PersistentWorkerKey      string
@@ -277,6 +283,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
+		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
 		NonrootWorkspace:          boolProp(m, nonrootWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),

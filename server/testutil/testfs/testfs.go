@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -198,7 +199,9 @@ func AssertExactFileContents(t testing.TB, rootDir string, contents map[string]s
 		return nil
 	})
 	require.NoError(t, err)
-	assert.ElementsMatch(
+	sort.Strings(actualFilePaths)
+	sort.Strings(expectedFilePaths)
+	assert.Equal(
 		t, expectedFilePaths, actualFilePaths,
 		"some files were missing or unexpected files were found",
 	)
