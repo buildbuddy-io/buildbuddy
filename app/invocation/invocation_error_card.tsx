@@ -5,7 +5,6 @@ import { failure_details } from "../../proto/failure_details_ts_proto";
 import TerminalComponent from "../terminal/terminal";
 import rpc_service from "../service/rpc_service";
 
-
 const debugMessage =
   "Use --sandbox_debug to see verbose messages from the sandbox and retain the sandbox build root for debugging";
 interface Props {
