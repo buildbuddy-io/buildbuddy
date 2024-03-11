@@ -1050,14 +1050,14 @@ func (s *ExecutionServer) fetchCommandForTask(ctx context.Context, actionResourc
 }
 
 func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
-	if err := md.GetOutputUploadCompletedTimestamp().CheckValid(); err != nil {
+	if err := md.GetWorkerStartTimestamp().CheckValid(); err != nil {
 		return 0, err
 	}
-	if err := md.GetQueuedTimestamp().CheckValid(); err != nil {
+	if err := md.GetWorkerCompletedTimestamp().CheckValid(); err != nil {
 		return 0, err
 	}
-	end := md.GetOutputUploadCompletedTimestamp().AsTime()
-	start := md.GetQueuedTimestamp().AsTime()
+	start := md.GetWorkerStartTimestamp().AsTime()
+	end := md.GetWorkerCompletedTimestamp().AsTime()
 	dur := end.Sub(start)
 	if dur <= 0 {
 		return 0, status.InternalErrorf("Execution duration is <= 0")
