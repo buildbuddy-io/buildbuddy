@@ -123,7 +123,9 @@ export default class InvocationShareButtonComponent extends React.Component<
     }
     const owningGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
     const isEnabledByOrg = Boolean(owningGroup?.sharingEnabled);
-    const isUnauthenticatedBuild = Boolean(!this.props.model.invocation.acl?.userId?.id);
+    const isUnauthenticatedBuild = Boolean(
+      !this.props.model.invocation.acl?.userId?.id && !this.props.model.invocation.acl?.groupId
+    );
     const canChangePermissions = isEnabledByOrg && !isUnauthenticatedBuild;
 
     const visibility: VisibilitySelection = this.state.acl?.othersPermissions?.read ? "public" : "group";
