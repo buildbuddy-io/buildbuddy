@@ -7,8 +7,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:api_key_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/util/alert",
+        "//server/util/blocklist",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//codes",

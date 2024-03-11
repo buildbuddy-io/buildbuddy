@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -217,32 +216,6 @@ func GetPermissionsCheckClauses(ctx context.Context, env environment.Env, q *que
 	}
 
 	return o, nil
-}
-
-func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID string) error {
-	if groupID == "" {
-		return status.InvalidArgumentError("group ID is required")
-	}
-	user, err := env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return err
-	}
-	for _, allowedGroupID := range user.GetAllowedGroups() {
-		if allowedGroupID == groupID {
-			return nil
-		}
-	}
-	return status.PermissionDeniedError("You do not have access to the requested group")
-}
-
-func AuthorizeGroupAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
-	if err := AuthorizeGroupAccess(ctx, env, groupID); err != nil {
-		return err
-	}
-	if blocklist.IsBlockedForStatsQuery(groupID) {
-		return status.ResourceExhaustedError("Too many rows.")
-	}
-	return nil
 }
 
 // ForAuthenticatedGroup returns GROUP_READ|GROUP_WRITE permissions for authenticated groups,

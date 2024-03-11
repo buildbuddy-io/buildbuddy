@@ -951,7 +951,7 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	if groupID == "" {
 		return []*akpb.ApiKey{}, nil
 	}
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
 	authDB := s.env.GetAuthDB()

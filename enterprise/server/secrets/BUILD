@@ -14,6 +14,7 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/tables",
+        "//server/util/authutil",
         "//server/util/db",
         "//server/util/hash",
         "//server/util/perms",
