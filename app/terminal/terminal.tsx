@@ -32,6 +32,8 @@ export interface TerminalProps {
   defaultWrapped?: boolean;
   lightTheme?: boolean;
   fullLogsFetcher?: () => void;
+
+  debugId?: string;
 }
 
 interface State {
@@ -331,6 +333,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
 
     return (
       <div
+        debug-id={this.props.debugId}
         style={{ flexDirection: this.props.bottomControls ? "column-reverse" : "column" }}
         className={`terminal ${this.props.lightTheme ? "light-terminal" : ""}`}
         onMouseEnter={this.onMouseEnter.bind(this)}
