@@ -164,7 +164,9 @@ export default class ActionListComponent extends React.Component<ActionListCompo
           const latestCompletedRun = findLatestCompletedRun(h);
           const latestRunStatus = entryToStatus(latestCompletedRun);
           return (
-            <Link href={router.getWorkflowActionHistoryUrl(this.props.repoUrl, h.actionName)}>
+            <Link
+              ignorePreviousState={true}
+              href={router.getWorkflowActionHistoryUrl(this.props.repoUrl, h.actionName)}>
               <div className={"card action-history-card card-" + getCardClass(latestRunStatus)}>
                 <div className="title-section">
                   <div className="title">{h.actionName}</div>

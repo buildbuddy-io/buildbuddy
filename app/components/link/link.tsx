@@ -1,7 +1,9 @@
 import React from "react";
 import router from "../../router/router";
 
-export type LinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement>;
+export type LinkProps = {
+  ignorePreviousState?: boolean;
+} & React.AnchorHTMLAttributes<HTMLAnchorElement>;
 
 /**
  * `Link` renders an unstyled, router-aware `<a>` element.
@@ -17,7 +19,7 @@ export type LinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement>;
  * handler, navigation is canceled, as is the case for normal `<a>` elements.
  */
 export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAnchorElement>) => {
-  const { className, href, target, onClick, ...rest } = props;
+  const { className, href, target, onClick, ignorePreviousState, ...rest } = props;
   const isExternal = Boolean(target) || Boolean(href && (href.startsWith("http://") || href.startsWith("https://")));
   const onClickWrapped = isExternal
     ? onClick
@@ -30,7 +32,7 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
           return;
         }
         e.preventDefault();
-        if (href) router.navigateTo(href);
+        if (href) router.navigateTo(href, ignorePreviousState);
       };
   return (
     <a

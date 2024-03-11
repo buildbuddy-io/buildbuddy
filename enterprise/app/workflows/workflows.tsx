@@ -430,6 +430,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
       const statusIcon = ok ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
       return (
         <Link
+          ignorePreviousState={true}
           className={`run-result card ${ok ? "card-success" : "card-failure"} ${ok ? "clickable" : ""}`}
           href={ok ? `/invocation/${actionStatus.invocationId}?queued=true` : undefined}>
           <div className="content">
