@@ -71,6 +71,7 @@ var (
 		"UpdateGithubRef",
 		"CreateGithubRef",
 		"GetGithubPullRequest",
+		"ApproveGithubPullRequest",
 		"GetGithubPullRequestDetails",
 	}
 
