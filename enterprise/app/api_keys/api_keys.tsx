@@ -536,14 +536,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
             </DialogHeader>
             <DialogBody>
               Are you sure you want to delete the API key{" "}
-              <span className="delete-modal-key-value">{keyToDelete?.value}</span>
-              {keyToDelete?.label && (
-                <>
-                  {" "}
-                  (<span className="delete-modal-key-label">{keyToDelete.label}</span>)
-                </>
-              )}
-              ? This action cannot be undone.
+              <span className="delete-modal-key-label">{keyToDelete?.label ? keyToDelete.label : "Untitled key"}</span>?
+              This action cannot be undone.
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
