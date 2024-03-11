@@ -87,30 +87,6 @@ REPO_CONFIGS = [
                 --remote_header=x-buildbuddy-api-key={}
         """.format(API_KEY),
     },
-    # NOTE: We are pinning to this commit sha for the bazel repo because it's
-    # before they fully migrated to bzlmod. Our toolchain has not been fully
-    # migrated to supporting bzlmod yet.
-    {
-        "name": "bazel",
-        "repo_url": "https://github.com/bazelbuild/bazel",
-        "commit_sha": "9df8c97f2fc532c966b612559430a5a248886d1b",
-        "command": """
-            bazel build //src/main/java/com/google/devtools/build/lib/... \
-                --remote_executor=remote.buildbuddy.dev \
-                --remote_cache=remote.buildbuddy.dev \
-                --bes_backend=remote.buildbuddy.dev \
-                --bes_results_url=https://app.buildbuddy.dev/invocation/ \
-                --remote_timeout=10m \
-                --extra_execution_platforms=@buildbuddy_toolchain//:platform \
-                --host_platform=@buildbuddy_toolchain//:platform \
-                --platforms=@buildbuddy_toolchain//:platform \
-                --crosstool_top=@buildbuddy_toolchain//:toolchain \
-                --noincompatible_disallow_empty_glob \
-                --java_runtime_version=remotejdk_17 \
-                --jobs=100 \
-                --build_metadata=TAGS=dev-qa
-        """,
-    },
     {
         "name": "rules_python",
         "repo_url": "https://github.com/bazelbuild/rules_python",
