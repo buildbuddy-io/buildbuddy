@@ -549,6 +549,10 @@ message Comment {
   bool is_resolved = 12;
 }
 
+// Creates a draft comment on the specified PR at the specified location.  If
+// the review id isn't specified, a new draft review will be created.  It is
+// an error to not specify the review id if a review is already in progress,
+// since it is assumed the caller is out of sync with Github.
 message CreateGithubPullRequestCommentRequest {
   context.RequestContext request_context = 1;
 
@@ -562,7 +566,12 @@ message CreateGithubPullRequestCommentRequest {
   CommentSide side = 8;
 
   string body = 9;
+
+  // The review ID that the comment should be placed in--if it is not specified,
+  // a new draft review will be created containing this comment.
   string review_id = 10;
+
+  // The comment thread that this comment is replying to, if any.
   string thread_id = 11;
 }
 
@@ -593,10 +602,13 @@ message DeleteGithubPullRequestCommentResponse {
 
 message GetGithubPullRequestDetailsResponse {
   context.ResponseContext response_context = 1;
+
+  // The Github unique ID for this pull request.
+  string pull_id = 19;
+
   string owner = 2;
   string repo = 3;
   int64 pull = 4;
-  string pull_id = 20;
   string author = 5;
   bool mergeable = 6;
   bool submitted = 7;
@@ -615,6 +627,8 @@ message GetGithubPullRequestDetailsResponse {
 
   repeated Comment comments = 17;
 
+  // The id of an ongoing review draft for the logged in user, if one is in
+  // progress.
   string draft_review_id = 18;
 }
 
