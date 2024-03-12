@@ -4505,7 +4505,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:17JxqqJY66GmZVHkmAsGEkcIu0oCe3AM420QDgGwZx0=",
         version = "v0.0.0-20230722043721-ed46e5a46466",
     )
-
     go_repository(
         name = "com_github_shurcool_sanitized_anchor_name",
         importpath = "github.com/shurcooL/sanitized_anchor_name",
