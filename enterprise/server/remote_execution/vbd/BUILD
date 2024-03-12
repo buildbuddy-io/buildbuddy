@@ -29,5 +29,6 @@ go_test(
         "//server/testutil/testfs",
         "//server/testutil/testmount",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
