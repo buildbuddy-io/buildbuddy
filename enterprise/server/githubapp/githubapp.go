@@ -73,6 +73,8 @@ var (
 	actionsRunnerLabel   = flag.String("github.app.actions.runner_label", "buildbuddy", "Label to apply to the actions runner. This is what 'runs-on' needs to be set to in GitHub workflow YAML in order to run on this BuildBuddy instance.")
 	actionsPoolName      = flag.String("github.app.actions.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
 
+	enableReviewMutates  = flag.Bool("github.app.actions.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
+
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
 
@@ -1681,6 +1683,9 @@ func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithu
 }
 
 func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghpb.CreateGithubPullRequestCommentRequest) (*ghpb.CreateGithubPullRequestCommentResponse, error) {
+	if !*enableReviewMutates {
+		return nil, status.UnimplementedError("Not implemented")
+	}
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1783,6 +1788,9 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 }
 
 func (a *GitHubApp) UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error) {
+	if !*enableReviewMutates {
+		return nil, status.UnimplementedError("Not implemented")
+	}
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if (err != nil) {
 		return nil, err
@@ -1804,6 +1812,9 @@ func (a *GitHubApp) UpdateGithubPullRequestComment(ctx context.Context, req *ghp
 }
 
 func (a *GitHubApp) DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error) {
+	if !*enableReviewMutates {
+		return nil, status.UnimplementedError("Not implemented")
+	}
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if (err != nil) {
 		return nil, err
@@ -1990,6 +2001,9 @@ func getLogin(a *actor) string {
 }
 
 func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error) {
+	if !*enableReviewMutates {
+		return nil, status.UnimplementedError("Not implemented")
+	}
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
