@@ -3,7 +3,6 @@ package vbd_test
 import (
 	"bytes"
 	"context"
-	"log"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -13,7 +12,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestMain(m *testing.M) {
@@ -46,7 +47,7 @@ func TestMain(m *testing.M) {
 	os.Exit(cmd.ProcessState.ExitCode())
 }
 
-func TestVBD(t *testing.T) {
+func TestVBDBasicIO(t *testing.T) {
 	ctx := context.Background()
 	root := testfs.MakeTempDir(t)
 
@@ -122,6 +123,43 @@ func TestVBD(t *testing.T) {
 		err = f.Sync()
 		require.NoError(t, err)
 	}
+}
+
+func TestVBDStressMountUnmount(t *testing.T) {
+	var eg errgroup.Group
+	eg.SetLimit(8)
+	const n = 5_000
+	for i := 1; i <= n; i++ {
+		if i%500 == 0 {
+			log.Infof("Mounting VBD %d of %d", i, n)
+		}
+		eg.Go(func() error {
+			ctx := context.Background()
+
+			// Set up a backing file
+			root := testfs.MakeTempDir(t)
+			f, err := os.CreateTemp(root, "vbd-*")
+			require.NoError(t, err)
+			t.Cleanup(func() { f.Close() })
+
+			// Mount as VBD
+			v, err := vbd.New(&FileBlockDevice{f})
+			require.NoError(t, err)
+			dir, err := os.MkdirTemp(root, "mount-*")
+			require.NoError(t, err)
+			err = v.Mount(ctx, dir)
+			require.NoError(t, err)
+
+			// Unmount
+			err = v.Unmount()
+			require.NoError(t, err)
+
+			// os.RemoveAll(dir)
+
+			return nil
+		})
+	}
+	eg.Wait()
 }
 
 type FileBlockDevice struct{ *os.File }

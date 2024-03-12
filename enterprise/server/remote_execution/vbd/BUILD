@@ -27,6 +27,8 @@ go_test(
     deps = [
         ":vbd",
         "//server/testutil/testfs",
+        "//server/util/log",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
