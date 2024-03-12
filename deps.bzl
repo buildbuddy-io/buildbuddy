@@ -4494,6 +4494,18 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.3.1",
     )
     go_repository(
+        name = "com_github_shurcool_githubv4",
+        importpath = "github.com/shurcooL/githubv4",
+        sum = "h1:6dExqsYngGEiixqa1vmtlUd+zbyISilg0Cf3GWVdeYM=",
+        version = "v0.0.0-20231126234147-1cffa1f02456",
+    )
+    go_repository(
+        name = "com_github_shurcool_graphql",
+        importpath = "github.com/shurcooL/graphql",
+        sum = "h1:17JxqqJY66GmZVHkmAsGEkcIu0oCe3AM420QDgGwZx0=",
+        version = "v0.0.0-20230722043721-ed46e5a46466",
+    )
+    go_repository(
         name = "com_github_shurcool_sanitized_anchor_name",
         importpath = "github.com/shurcooL/sanitized_anchor_name",
         sum = "h1:PdmoCO6wvbs+7yrJyMORt4/BmY5IYyJwS/kOiWx8mHo=",

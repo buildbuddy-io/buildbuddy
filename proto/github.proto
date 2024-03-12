@@ -512,10 +512,100 @@ message FileSummary {
   int64 deletions = 3;
   int64 comments = 4;
   string patch = 5;
+  string commit_sha = 6;
+}
+
+message ReviewUser {
+  string login = 1;
+  bool bot = 2;
+}
+
+enum CommentSide {
+  RIGHT_SIDE = 0;
+  LEFT_SIDE = 1;
+}
+
+message CommentPosition {
+  int64 start_line = 1;
+  int64 end_line = 2;
+  CommentSide side = 3;
+}
+
+message Comment {
+  string id = 1;
+  int64 database_id = 2;
+  string body = 3;
+  string path = 4;
+  string commit_sha = 5;
+  CommentPosition position = 6;
+
+  ReviewUser commenter = 7;
+  string review_id = 8;
+  int64 created_at_usec = 9;
+
+  string parent_comment_id = 10;
+  string thread_id = 11;
+
+  bool is_resolved = 12;
+}
+
+// Creates a draft comment on the specified PR at the specified location.  If
+// the review id isn't specified, a new draft review will be created.  It is
+// an error to not specify the review id if a review is already in progress,
+// since it is assumed the caller is out of sync with Github.
+message CreateGithubPullRequestCommentRequest {
+  context.RequestContext request_context = 1;
+
+  string owner = 2;
+  string repo = 3;
+  string pull_id = 4;
+
+  string path = 5;
+  string commit_sha = 6;
+  int64 line = 7;
+  CommentSide side = 8;
+
+  string body = 9;
+
+  // The review ID that the comment should be placed in--if it is not specified,
+  // a new draft review will be created containing this comment.
+  string review_id = 10;
+
+  // The comment thread that this comment is replying to, if any.
+  string thread_id = 11;
+}
+
+message CreateGithubPullRequestCommentResponse {
+  context.ResponseContext response_context = 1;
+  string review_id = 2;
+  string comment_id = 3;
+}
+
+message UpdateGithubPullRequestCommentRequest {
+  context.RequestContext request_context = 1;
+  string comment_id = 2;
+  string new_body = 3;
+}
+
+message UpdateGithubPullRequestCommentResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message DeleteGithubPullRequestCommentRequest {
+  context.RequestContext request_context = 1;
+  string comment_id = 2;
+}
+
+message DeleteGithubPullRequestCommentResponse {
+  context.ResponseContext response_context = 1;
 }
 
 message GetGithubPullRequestDetailsResponse {
   context.ResponseContext response_context = 1;
+
+  // The Github unique ID for this pull request.
+  string pull_id = 19;
+
   string owner = 2;
   string repo = 3;
   int64 pull = 4;
@@ -534,4 +624,20 @@ message GetGithubPullRequestDetailsResponse {
   int64 updated_at_usec = 15;
 
   string branch = 16;
+
+  repeated Comment comments = 17;
+
+  // The id of an ongoing review draft for the logged in user, if one is in
+  // progress.
+  string draft_review_id = 18;
+}
+
+message SendGithubPullRequestReviewRequest {
+  context.RequestContext request_context = 1;
+  string review_id = 2;
+  bool approve = 3;
+}
+
+message SendGithubPullRequestReviewResponse {
+  context.ResponseContext response_context = 1;
 }

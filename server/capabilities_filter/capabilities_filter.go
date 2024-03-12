@@ -72,6 +72,10 @@ var (
 		"CreateGithubRef",
 		"GetGithubPullRequest",
 		"GetGithubPullRequestDetails",
+		"CreateGithubPullRequestComment",
+		"UpdateGithubPullRequestComment",
+		"DeleteGithubPullRequestComment",
+		"SendGithubPullRequestReview",
 	}
 
 	// groupMemberRPCs can only be called when logged in as a member of

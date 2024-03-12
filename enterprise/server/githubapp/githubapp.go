@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,6 +43,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/go-github/v59/github"
+	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
@@ -70,6 +72,8 @@ var (
 	actionsRunnerEnabled = flag.Bool("github.app.actions.runner_enabled", false, "Whether to enable the buildbuddy-hosted runner for GitHub actions.")
 	actionsRunnerLabel   = flag.String("github.app.actions.runner_label", "buildbuddy", "Label to apply to the actions runner. This is what 'runs-on' needs to be set to in GitHub workflow YAML in order to run on this BuildBuddy instance.")
 	actionsPoolName      = flag.String("github.app.actions.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
+
+	enableReviewMutates = flag.Bool("github.app.actions.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
 
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
@@ -1164,6 +1168,21 @@ func (a *GitHubApp) newAuthenticatedClient(ctx context.Context, accessToken stri
 	return github.NewClient(tc), nil
 }
 
+func (a *GitHubApp) newAuthenticatedGraphQLClient(ctx context.Context, accessToken string) (*githubv4.Client, error) {
+	if accessToken == "" {
+		return nil, status.UnauthenticatedError("missing user access token")
+	}
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
+	tc := oauth2.NewClient(ctx, ts)
+
+	if gh_oauth.IsEnterpriseConfigured() {
+		host := fmt.Sprintf("https://%s/", gh_oauth.GithubHost())
+		return githubv4.NewEnterpriseClient(host, tc), nil
+	}
+
+	return githubv4.NewClient(tc), nil
+}
+
 // decodePrivateKey decodes a PEM-format RSA private key.
 func decodePrivateKey(contents string) (*rsa.PrivateKey, error) {
 	contents = strings.TrimSpace(contents)
@@ -1217,6 +1236,17 @@ func (a *GitHubApp) getGithubClient(ctx context.Context) (*github.Client, error)
 		return nil, status.UnauthenticatedError("github account link is required")
 	}
 	return a.newAuthenticatedClient(ctx, tu.GithubToken)
+}
+
+func (a *GitHubApp) getGithubGraphQLClient(ctx context.Context) (*githubv4.Client, error) {
+	tu, err := a.env.GetUserDB().GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if tu.GithubToken == "" {
+		return nil, status.UnauthenticatedError("github account link is required")
+	}
+	return a.newAuthenticatedGraphQLClient(ctx, tu.GithubToken)
 }
 
 func (a *GitHubApp) GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error) {
@@ -1652,52 +1682,383 @@ func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithu
 	return resp, nil
 }
 
+func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghpb.CreateGithubPullRequestCommentRequest) (*ghpb.CreateGithubPullRequestCommentResponse, error) {
+	if !*enableReviewMutates {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	graphqlClient, err := a.getGithubGraphQLClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	reviewId := req.GetReviewId()
+	var commentId string
+
+	var side githubv4.DiffSide
+	if req.GetSide() == ghpb.CommentSide_LEFT_SIDE {
+		side = githubv4.DiffSideLeft
+	} else {
+		side = githubv4.DiffSideRight
+	}
+
+	if reviewId == "" {
+		// This is a comment without a review--make the draft comment as part
+		// of a newly-created review.
+		var m struct {
+			AddPullRequestReview struct {
+				PullRequestReview struct {
+					Id       string
+					Comments struct {
+						Nodes []reviewComment
+					} `graphql:"comments(last: 1)"`
+				}
+			} `graphql:"addPullRequestReview(input: $input)"`
+		}
+		input := githubv4.AddPullRequestReviewInput{
+			PullRequestID: req.GetPullId(),
+			Threads: &[]*githubv4.DraftPullRequestReviewThread{
+				{
+					Path: githubv4.String(req.GetPath()),
+					Line: githubv4.Int(int(req.GetLine())),
+					Side: &side,
+					Body: githubv4.String(req.GetBody()),
+				},
+			},
+		}
+		err := graphqlClient.Mutate(ctx, &m, input, nil)
+		if err != nil {
+			return nil, err
+		}
+		reviewId = m.AddPullRequestReview.PullRequestReview.Id
+		commentId = m.AddPullRequestReview.PullRequestReview.Comments.Nodes[0].Id
+	} else if req.GetThreadId() != "" {
+		// This is a comment in reply to an existing thread, just add it.
+		var m struct {
+			PullRequestReviewThreadReply struct {
+				ClientMutationId string
+				Comment          struct {
+					Id string
+				}
+			} `graphql:"addPullRequestReviewThreadReply(input: $input)"`
+		}
+
+		input := githubv4.AddPullRequestReviewThreadReplyInput{
+			PullRequestReviewID:       githubv4.NewID(req.GetReviewId()),
+			PullRequestReviewThreadID: githubv4.String(req.GetThreadId()),
+			Body:                      githubv4.String(req.GetBody()),
+		}
+
+		err := graphqlClient.Mutate(ctx, &m, input, nil)
+		if err != nil {
+			return nil, err
+		}
+		commentId = m.PullRequestReviewThreadReply.Comment.Id
+	} else {
+		// This is a comment in a new thread, create it.
+		var m struct {
+			AddPullRequestReviewThread struct {
+				ClientMutationId string
+				Thread           struct {
+					Comments struct {
+						Nodes []reviewComment
+					} `graphql:"comments(last: 1)"`
+				}
+			} `graphql:"addPullRequestReviewThread(input: $input)"`
+		}
+
+		input := githubv4.AddPullRequestReviewThreadInput{
+			PullRequestID: githubv4.NewID(req.GetPullId()),
+			Path:          githubv4.String(req.GetPath()),
+			Line:          githubv4.NewInt(githubv4.Int(int(req.GetLine()))),
+			Side:          &side,
+			Body:          githubv4.String(req.GetBody()),
+		}
+
+		err := graphqlClient.Mutate(ctx, &m, input, nil)
+		if err != nil {
+			return nil, err
+		}
+		commentId = m.AddPullRequestReviewThread.Thread.Comments.Nodes[0].Id
+	}
+
+	return &ghpb.CreateGithubPullRequestCommentResponse{
+		ReviewId:  reviewId,
+		CommentId: commentId,
+	}, nil
+}
+
+func (a *GitHubApp) UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error) {
+	if !*enableReviewMutates {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	graphqlClient, err := a.getGithubGraphQLClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var m struct {
+		UpdatePullRequestReviewComment struct {
+			ClientMutationId string
+		} `graphql:"updatePullRequestReviewComment(input: $input)"`
+	}
+	input := githubv4.UpdatePullRequestReviewCommentInput{
+		PullRequestReviewCommentID: req.GetCommentId(),
+		Body:                       githubv4.String(req.GetNewBody()),
+	}
+	err = graphqlClient.Mutate(ctx, &m, input, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ghpb.UpdateGithubPullRequestCommentResponse{}, nil
+}
+
+func (a *GitHubApp) DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error) {
+	if !*enableReviewMutates {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	graphqlClient, err := a.getGithubGraphQLClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var m struct {
+		DeletePullRequestReviewComment struct {
+			ClientMutationId string
+		} `graphql:"deletePullRequestReviewComment(input: $input)"`
+	}
+	input := githubv4.DeletePullRequestReviewCommentInput{
+		ID: githubv4.ID(req.GetCommentId()),
+	}
+	err = graphqlClient.Mutate(ctx, &m, input, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ghpb.DeleteGithubPullRequestCommentResponse{}, nil
+}
+
+type prUser struct {
+	Login string
+}
+
+type bot struct {
+	Login string
+}
+
+type actor struct {
+	Typename string `graphql:"__typename"`
+	User     prUser `graphql:"... on User"`
+	Bot      bot    `graphql:"... on Bot"`
+}
+
+type timelineItem struct {
+	Typename             string `graphql:"__typename"`
+	ReviewRequestedEvent struct {
+		RequestedReviewer actor
+	} `graphql:"... on ReviewRequestedEvent"`
+	ReviewRequestRemovedEvent struct {
+		RequestedReviewer actor
+	} `graphql:"... on ReviewRequestRemovedEvent"`
+	ReviewDismissedEvent struct {
+		Actor actor
+	} `graphql:"... on ReviewDismissedEvent"`
+	PullRequestReview struct {
+		Author actor
+		State  string
+	} `graphql:"... on PullRequestReview"`
+}
+
+type reviewComment struct {
+	comment
+	OriginalCommit struct {
+		Oid string
+	}
+	PullRequestReview struct {
+		Id string
+	}
+	ReplyTo struct {
+		Id string
+	}
+}
+
+type comment struct {
+	Author     actor
+	BodyHTML   string `graphql:"bodyHTML"`
+	BodyText   string
+	CreatedAt  time.Time
+	Id         string
+	DatabaseId int
+}
+
+type commentLink struct {
+	Id string
+}
+
+type reviewThread struct {
+	Id                string
+	Path              string
+	IsResolved        bool
+	DiffSide          githubv4.DiffSide
+	OriginalLine      int
+	Line              int
+	StartDiffSide     githubv4.DiffSide
+	OriginalStartLine int
+	StartLine         int
+	Comments          struct {
+		Nodes []reviewComment
+	} `graphql:"comments(first: 100)"`
+}
+
+type reviewRequest struct {
+	RequestedReviewer actor
+}
+
+type review struct {
+	Id        string
+	BodyText  string
+	CreatedAt time.Time
+	Author    actor
+	State     string
+}
+
+type file struct {
+	Path              string
+	Patch             string
+	Additions         int
+	Deletions         int
+	ChangeType        githubv4.PatchStatus
+	ViewerViewedState githubv4.FileViewedState
+}
+
+type combinedContext struct {
+	Typename      string `graphql:"__typename"`
+	StatusContext struct {
+		Context     string
+		CreatedAt   time.Time
+		Description string
+		TargetUrl   string
+		State       string
+	} `graphql:"... on StatusContext"`
+}
+
+type prCommit struct {
+	Commit struct {
+		Oid    string
+		Status struct {
+			CombinedContexts struct {
+				Nodes []combinedContext
+			} `graphql:"combinedContexts(first: 100)"`
+		}
+	}
+}
+
+type prDetailsQuery struct {
+	Repository struct {
+		PullRequest struct {
+			Title         string
+			TitleHTML     string `graphql:"titleHTML"`
+			Body          string
+			BodyHTML      string `graphql:"bodyHTML"`
+			Author        actor
+			CreatedAt     time.Time
+			Id            string
+			UpdatedAt     time.Time
+			Mergeable     githubv4.MergeableState
+			Merged        bool
+			URL           string `graphql:"url"`
+			HeadRefName   string
+			TimelineItems struct {
+				Nodes []timelineItem
+			} `graphql:"timelineItems(first: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, REVIEW_DISMISSED_EVENT, PULL_REQUEST_REVIEW])"`
+			ReviewRequests struct {
+				Nodes []reviewRequest
+			} `graphql:"reviewRequests(first: 100)"`
+			ReviewThreads struct {
+				Nodes []reviewThread
+			} `graphql:"reviewThreads(first: 100)"`
+			Reviews struct {
+				Nodes []review
+			} `graphql:"reviews(first: 100)"`
+			Comments struct {
+				Nodes []comment
+			} `graphql:"comments(first: 100)"`
+			Commits struct {
+				Nodes []prCommit
+			} `graphql:"commits(first: 100)"`
+			// TODO(jdhollen): Fetch files here
+		} `graphql:"pullRequest(number: $pullNumber)"`
+	} `graphql:"repository(owner: $repoOwner, name: $repoName)"`
+}
+
+func getLogin(a *actor) string {
+	switch a.Typename {
+	case "Bot":
+		return a.Bot.Login
+	case "User":
+		return a.User.Login
+	}
+	return ""
+}
+
+func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error) {
+	if !*enableReviewMutates {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	graphqlClient, err := a.getGithubGraphQLClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reviewId := req.GetReviewId()
+
+	var m struct {
+		SubmitPullRequestReview struct {
+			ClientMutationId string
+		} `graphql:"submitPullRequestReview(input: $input)"`
+	}
+
+	event := githubv4.PullRequestReviewEventComment
+	if req.GetApprove() {
+		event = githubv4.PullRequestReviewEventApprove
+	}
+
+	input := githubv4.SubmitPullRequestReviewInput{
+		PullRequestReviewID: githubv4.NewID(reviewId),
+		Event:               event,
+	}
+	err = graphqlClient.Mutate(ctx, &m, input, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ghpb.SendGithubPullRequestReviewResponse{}, nil
+}
+
+func isBot(a *actor) bool {
+	return a.Typename == "Bot"
+}
+
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
 	}
-	eg, gCtx := errgroup.WithContext(ctx)
 
-	var issue *github.Issue
-
-	eg.Go(func() error {
-		r, err := a.cachedIssue(gCtx, client, req.Owner, req.Repo, int(req.Pull))
-		if err != nil {
-			return err
-		}
-		issue = r
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
+	gqClient, err := a.getGithubGraphQLClient(ctx)
+	if err != nil {
 		return nil, err
 	}
+	eg, gCtx := errgroup.WithContext(ctx)
 
-	eg, gCtx = errgroup.WithContext(ctx)
+	graph := &prDetailsQuery{}
+	vars := map[string]interface{}{
+		"repoOwner":  githubv4.String(req.GetOwner()),
+		"repoName":   githubv4.String(req.GetRepo()),
+		"pullNumber": githubv4.Int(req.GetPull()),
+	}
+	eg.Go(func() error {
+		if err := gqClient.Query(gCtx, &graph, vars); err != nil {
+			return err
+		}
+		return nil
+	})
 
-	var pr *github.PullRequest
-	var events []*github.Timeline
 	var files []*github.CommitFile
-
-	eg.Go(func() error {
-		p, err := a.cachedPullRequests(gCtx, client, req.Owner, req.Repo, int(req.Pull), issue.GetUpdatedAt().Time)
-		if err != nil {
-			return err
-		}
-		pr = p
-		return nil
-	})
-
-	eg.Go(func() error {
-		ev, err := a.cachedTimeline(gCtx, client, req.Owner, req.Repo, int(req.Pull))
-		if err != nil {
-			return err
-		}
-		events = *ev
-		return nil
-	})
-
 	eg.Go(func() error {
 		f, err := a.cachedFiles(gCtx, client, req.Owner, req.Repo, int(req.Pull))
 		if err != nil {
@@ -1706,40 +2067,69 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		files = *f
 		return nil
 	})
+
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
-	eg, gCtx = errgroup.WithContext(ctx)
+	pr := graph.Repository.PullRequest
 
-	var statuses *github.CombinedStatus
-	eg.Go(func() error {
-		s, err := a.cachedStatuses(gCtx, client, req.Owner, req.Repo, pr.Head.GetSHA())
-		if err != nil {
-			return err
+	outputComments := make([]*ghpb.Comment, 0)
+	draftReviewId := ""
+	for _, r := range pr.Reviews.Nodes {
+		if r.State == "PENDING" {
+			draftReviewId = r.Id
 		}
-		statuses = s
-		return nil
-	})
+	}
 
-	if err := eg.Wait(); err != nil {
-		return nil, err
+	for _, thread := range pr.ReviewThreads.Nodes {
+		for _, c := range thread.Comments.Nodes {
+			comment := &ghpb.Comment{}
+			comment.Id = c.Id
+			comment.DatabaseId = int64(c.DatabaseId)
+			comment.Body = c.BodyText
+			comment.Path = thread.Path
+			comment.CommitSha = c.OriginalCommit.Oid
+			comment.ReviewId = c.PullRequestReview.Id
+			comment.CreatedAtUsec = c.CreatedAt.UnixMicro()
+			comment.ParentCommentId = c.ReplyTo.Id
+			comment.ThreadId = thread.Id
+			comment.IsResolved = thread.IsResolved
+
+			position := &ghpb.CommentPosition{}
+			position.StartLine = int64(thread.OriginalStartLine)
+			position.EndLine = int64(thread.OriginalLine)
+
+			if thread.DiffSide == "LEFT" {
+				position.Side = ghpb.CommentSide_LEFT_SIDE
+			} else {
+				position.Side = ghpb.CommentSide_RIGHT_SIDE
+			}
+			comment.Position = position
+
+			commenter := &ghpb.ReviewUser{}
+			commenter.Login = getLogin(&c.Author)
+			commenter.Bot = isBot(&c.Author)
+			comment.Commenter = commenter
+
+			outputComments = append(outputComments, comment)
+		}
 	}
 
 	notExplicitlyRemoved := map[string]struct{}{}
 	approved := map[string]struct{}{}
 
-	for _, e := range events {
-		switch eventType := e.GetEvent(); eventType {
-		case "review_requested":
-			notExplicitlyRemoved[e.GetReviewer().GetLogin()] = struct{}{}
-		case "review_request_removed":
-			delete(notExplicitlyRemoved, e.GetReviewer().GetLogin())
-		case "reviewed":
-			if e.GetState() == "approved" {
-				approved[e.GetUser().GetLogin()] = struct{}{}
-			} else if e.GetState() == "changes_requested" {
-				delete(approved, e.GetUser().GetLogin())
+	for _, e := range pr.TimelineItems.Nodes {
+		switch eventType := e.Typename; eventType {
+		case "ReviewRequestedEvent":
+			notExplicitlyRemoved[getLogin(&e.ReviewRequestedEvent.RequestedReviewer)] = struct{}{}
+		case "ReviewRequestRemovedEvent":
+			delete(notExplicitlyRemoved, getLogin(&e.ReviewRequestRemovedEvent.RequestedReviewer))
+		case "PullRequestReview":
+			if e.PullRequestReview.State == "APPROVED" {
+				approved[getLogin(&e.PullRequestReview.Author)] = struct{}{}
+			} else if e.PullRequestReview.State == "CHANGES_REQUESTED" {
+				delete(approved, getLogin(&e.PullRequestReview.Author))
 			}
 		}
 	}
@@ -1747,8 +2137,8 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	activeReviewers := map[string]struct{}{}
 
 	reviewers := make([]*ghpb.Reviewer, 0)
-	for _, r := range pr.RequestedReviewers {
-		activeReviewers[r.GetLogin()] = struct{}{}
+	for _, r := range pr.ReviewRequests.Nodes {
+		activeReviewers[getLogin(&r.RequestedReviewer)] = struct{}{}
 	}
 
 	for r := range notExplicitlyRemoved {
@@ -1770,35 +2160,61 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		summary.Additions = int64(f.GetAdditions())
 		summary.Deletions = int64(f.GetDeletions())
 		summary.Patch = f.GetPatch()
+		url, err := url.Parse(f.GetContentsURL())
+		if err != nil {
+			return nil, err
+		}
+		ref := url.Query().Get("ref")
+		if ref == "" {
+			return nil, status.InternalErrorf("Couldn't find SHA for file.")
+		}
+		summary.CommitSha = ref
 		// TODO(jdhollen): compute comment count.
 		fileSummaries = append(fileSummaries, summary)
 	}
 
+	trackingMap := make(map[string]*combinedContext, 0)
+	for _, c := range pr.Commits.Nodes {
+		for _, s := range c.Commit.Status.CombinedContexts.Nodes {
+			if prev, ok := trackingMap[s.StatusContext.Context]; ok && s.StatusContext.CreatedAt.UnixMicro() < prev.StatusContext.CreatedAt.UnixMicro() {
+				continue
+			}
+			s2 := s
+			trackingMap[s.StatusContext.Context] = &s2
+		}
+	}
 	actionStatuses := make([]*ghpb.ActionStatus, 0)
-	for _, s := range statuses.Statuses {
+	for _, s := range trackingMap {
+		// TODO(jdhollen): Checks, too.
 		status := &ghpb.ActionStatus{}
-		status.Name = s.GetContext()
-		status.Status = s.GetState()
-		status.Url = s.GetTargetURL()
+		status.Name = s.StatusContext.Context
+		status.Status = s.StatusContext.State
+		status.Url = s.StatusContext.TargetUrl
 		actionStatuses = append(actionStatuses, status)
 	}
+	slices.SortFunc(actionStatuses, func(a, b *ghpb.ActionStatus) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 
 	resp := &ghpb.GetGithubPullRequestDetailsResponse{
 		Owner:          req.Owner,
 		Repo:           req.Repo,
 		Pull:           req.Pull,
-		Title:          pr.GetTitle(),
-		Body:           pr.GetBody(),
-		Author:         pr.GetUser().GetLogin(),
-		CreatedAtUsec:  pr.GetCreatedAt().UnixMicro(),
-		UpdatedAtUsec:  pr.GetUpdatedAt().UnixMicro(),
-		Branch:         pr.GetHead().GetLabel(),
+		PullId:         pr.Id,
+		Title:          pr.Title,
+		Body:           pr.Body,
+		Author:         getLogin(&pr.Author),
+		CreatedAtUsec:  pr.CreatedAt.UnixMicro(),
+		UpdatedAtUsec:  pr.UpdatedAt.UnixMicro(),
+		Branch:         pr.HeadRefName,
 		Reviewers:      reviewers,
 		Files:          fileSummaries,
 		ActionStatuses: actionStatuses,
-		Mergeable:      pr.GetMergeableState() == "clean",
-		Submitted:      pr.GetMerged(),
-		GithubUrl:      pr.GetHTMLURL(),
+		Comments:       outputComments,
+		Mergeable:      pr.Mergeable == "MERGEABLE",
+		Submitted:      pr.Merged,
+		GithubUrl:      pr.URL,
+		DraftReviewId:  draftReviewId,
 	}
 
 	return resp, nil
