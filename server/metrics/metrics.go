@@ -204,6 +204,12 @@ const (
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
 
+	// Distributed cache operation name, such as "FindMissing" or "Get".
+	DistributedCacheOperation = "op"
+
+	// Cache lookup result - "hit" or "miss".
+	CacheHitMissStatus = "status"
+
 	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
 	// the root dir, and so on.
 	TreeCacheLookupLevel = "level"
@@ -626,6 +632,17 @@ var (
 		Help:      "Number of bytes written that already existed in the cache.",
 	}, []string{
 		CacheNameLabel,
+	})
+
+	DistributedCachePeerLookups = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_peer_lookups",
+		Help:      "Number of peers consulted (including the 'local peer') for a distributed cache read before returning a response. For batch requests, one observation is recorded for each digest in the request.",
+		Buckets:   prometheus.LinearBuckets(0, 1, 10),
+	}, []string{
+		DistributedCacheOperation,
+		CacheHitMissStatus,
 	})
 
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
