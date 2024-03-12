@@ -28,5 +28,6 @@ go_test(
         ":vbd",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
