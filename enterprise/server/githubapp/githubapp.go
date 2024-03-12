@@ -2153,16 +2153,6 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		reviewers = append(reviewers, reviewer)
 	}
 
-	// fileSummaries := make([]*ghpb.FileSummary, 0)
-	// for _, f := range graph.Repository.PullRequest.Files.Nodes {
-	// 	summary := &ghpb.FileSummary{}
-	// 	summary.Name = f.Path
-	// 	summary.Additions = int64(f.Additions)
-	// 	summary.Deletions = int64(f.Deletions)
-	// 	summary.Patch = f.Patch
-	// 	// TODO(jdhollen): compute comment count.
-	// 	fileSummaries = append(fileSummaries, summary)
-	// }
 	fileSummaries := make([]*ghpb.FileSummary, 0)
 	for _, f := range files {
 		summary := &ghpb.FileSummary{}
@@ -2176,7 +2166,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		}
 		ref := url.Query().Get("ref")
 		if ref == "" {
-			return nil, status.InternalErrorf("Get real.")
+			return nil, status.InternalErrorf("Couldn't find SHA for file.")
 		}
 		summary.CommitSha = ref
 		// TODO(jdhollen): compute comment count.
