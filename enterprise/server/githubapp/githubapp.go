@@ -1700,7 +1700,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 	} else {
 		side = githubv4.DiffSideRight
 	}
-	log.Printf("%+v", req)
+
 	if reviewId == "" {
 		// This is a comment without a review--make the draft comment as part
 		// of a newly-created review.
@@ -2075,14 +2075,11 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		return nil, err
 	}
 
-	// gqResponsePretty, _ := json.MarshalIndent(graph, "", " ")
-	// fmt.Print(string(gqResponsePretty))
 	pr := graph.Repository.PullRequest
 
 	outputComments := make([]*ghpb.Comment, 0)
 	draftReviewId := ""
 	for _, r := range pr.Reviews.Nodes {
-		log.Printf("%s", r.State)
 		if r.State == "PENDING" {
 			draftReviewId = r.Id
 		}
@@ -2198,7 +2195,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	}
 	actionStatuses := make([]*ghpb.ActionStatus, 0)
 	for _, s := range trackingMap {
-		// XXX: Checks, too.
+		// TODO(jdhollen): Checks, too.
 		status := &ghpb.ActionStatus{}
 		status.Name = s.StatusContext.Context
 		status.Status = s.StatusContext.State
