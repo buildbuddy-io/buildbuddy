@@ -73,7 +73,7 @@ var (
 	actionsRunnerLabel   = flag.String("github.app.actions.runner_label", "buildbuddy", "Label to apply to the actions runner. This is what 'runs-on' needs to be set to in GitHub workflow YAML in order to run on this BuildBuddy instance.")
 	actionsPoolName      = flag.String("github.app.actions.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
 
-	enableReviewMutates  = flag.Bool("github.app.actions.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
+	enableReviewMutates = flag.Bool("github.app.actions.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
 
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
@@ -1693,7 +1693,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 
 	reviewId := req.GetReviewId()
 	var commentId string
-	
+
 	var side githubv4.DiffSide
 	if req.GetSide() == "LEFT" {
 		side = githubv4.DiffSideLeft
@@ -1792,7 +1792,7 @@ func (a *GitHubApp) UpdateGithubPullRequestComment(ctx context.Context, req *ghp
 		return nil, status.UnimplementedError("Not implemented")
 	}
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
-	if (err != nil) {
+	if err != nil {
 		return nil, err
 	}
 	var m struct {
@@ -1816,7 +1816,7 @@ func (a *GitHubApp) DeleteGithubPullRequestComment(ctx context.Context, req *ghp
 		return nil, status.UnimplementedError("Not implemented")
 	}
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
-	if (err != nil) {
+	if err != nil {
 		return nil, err
 	}
 	var m struct {
@@ -2017,8 +2017,8 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 	}
 
 	event := githubv4.PullRequestReviewEventComment
-	if (req.GetApprove()) {
-		event =  githubv4.PullRequestReviewEventApprove
+	if req.GetApprove() {
+		event = githubv4.PullRequestReviewEventApprove
 	}
 
 	input := githubv4.SubmitPullRequestReviewInput{
