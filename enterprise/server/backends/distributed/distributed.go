@@ -773,7 +773,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		}).Observe(float64(lookups))
 		count++
 	}
-	log.Infof("Misses: %d", count)
 
 	// For every digest we found, if we did not find it
 	// on the first peer in our list, we want to backfill it.
