@@ -979,24 +979,12 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		e.hasReceivedEventWithOptions = true
 		log.CtxDebugf(e.ctx, "Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
-		options, err := extractOptions(&bazelBuildEvent)
+		authenticated, err := e.authenticateEvent(&bazelBuildEvent)
 		if err != nil {
 			return err
 		}
-		auth := e.env.GetAuthenticator()
-		apiKey, err := auth.ParseAPIKeyFromString(options)
-		if err != nil {
-			return err
-		}
-		if apiKey != "" {
-			e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
-			authError := e.ctx.Value(interfaces.AuthContextUserErrorKey)
-			if authError != nil {
-				if err, ok := authError.(error); ok {
-					return err
-				}
-				return status.UnknownError(fmt.Sprintf("%v", authError))
-			}
+
+		if authenticated {
 			if irs := e.env.GetIPRulesService(); irs != nil {
 				if err := irs.Authorize(e.ctx); err != nil {
 					return err
@@ -1088,6 +1076,33 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	// Process regular events.
 	return e.processSingleEvent(invocationEvent, iid)
+}
+
+func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.BuildEvent) (bool, error) {
+	auth := e.env.GetAuthenticator()
+	if user, err := auth.AuthenticatedUser(e.ctx); err == nil && user != nil {
+		return true, nil
+	}
+	options, err := extractOptions(bazelBuildEvent)
+	if err != nil {
+		return false, err
+	}
+	apiKey, err := auth.ParseAPIKeyFromString(options)
+	if err != nil {
+		return false, err
+	}
+	if apiKey == "" {
+		return false, nil
+	}
+	e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
+	authError := e.ctx.Value(interfaces.AuthContextUserErrorKey)
+	if authError != nil {
+		if err, ok := authError.(error); ok {
+			return false, err
+		}
+		return false, status.UnknownError(fmt.Sprintf("%v", authError))
+	}
+	return true, nil
 }
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
