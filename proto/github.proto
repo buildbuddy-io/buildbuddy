@@ -520,10 +520,15 @@ message ReviewUser {
   bool bot = 2;
 }
 
+enum CommentSide {
+  RIGHT_SIDE = 0;
+  LEFT_SIDE = 1;
+}
+
 message CommentPosition {
   int64 start_line = 1;
   int64 end_line = 2;
-  bool left_side = 3;
+  CommentSide side = 3;
 }
 
 message Comment {
@@ -554,7 +559,7 @@ message CreateGithubPullRequestCommentRequest {
   string path = 5;
   string commit_sha = 6;
   int64 line = 7;
-  string side = 8;
+  CommentSide side = 8;
 
   string body = 9;
   string review_id = 10;

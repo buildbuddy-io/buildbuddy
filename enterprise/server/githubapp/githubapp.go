@@ -1695,7 +1695,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 	var commentId string
 
 	var side githubv4.DiffSide
-	if req.GetSide() == "LEFT" {
+	if req.GetSide() == ghpb.CommentSide_LEFT_SIDE {
 		side = githubv4.DiffSideLeft
 	} else {
 		side = githubv4.DiffSideRight
@@ -2102,7 +2102,12 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 			position := &ghpb.CommentPosition{}
 			position.StartLine = int64(thread.OriginalStartLine)
 			position.EndLine = int64(thread.OriginalLine)
-			position.LeftSide = thread.DiffSide == "LEFT"
+
+			if thread.DiffSide == "LEFT" {
+				position.Side = ghpb.CommentSide_LEFT_SIDE
+			} else {
+				position.Side = ghpb.CommentSide_RIGHT_SIDE
+			}
 			comment.Position = position
 
 			commenter := &ghpb.ReviewUser{}
