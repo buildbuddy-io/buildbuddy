@@ -203,7 +203,7 @@ func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sampl
 
 	if totalCount <= 0 {
 		if totalCount < 0 {
-			log.Warningf("partitionUsage TotalCount (%d) is negative", totalCount)
+			log.Warningf("partitionUsage (id=%s) TotalCount (%d) is negative", pu.id, totalCount)
 		}
 		return nil, status.FailedPreconditionError("cannot sample empty partition")
 	}
