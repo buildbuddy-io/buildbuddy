@@ -199,4 +199,4 @@ jobs:
     steps:
       - name: Publish release
         run: |
-          gh release edit {{ needs.push-tag.outputs.version }} --draft=false --repo=buildbuddy-io/bazel
+          gh release edit ${{ needs.push-tag.outputs.version }} --draft=false --repo=buildbuddy-io/bazel
