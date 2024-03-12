@@ -1077,7 +1077,8 @@ message BuildMetrics {
     int64 analysis_phase_time_in_ms = 3;
     // The elapsed wall time in milliseconds during the execution phase.
     // When analysis and execution phases are interleaved, this measures the
-    // elapsed time from the first action execution to the last.
+    // elapsed time from the first action execution (excluding workspace status
+    // actions) to the last.
     int64 execution_phase_time_in_ms = 4;
   }
   TimingMetrics timing_metrics = 5;
@@ -1210,12 +1211,16 @@ message BuildMetrics {
 
     int64 actions_executed = 11;
 
+    int64 prior_actions_executed = 13;
+
     // Information collected from worker at some point.
     message WorkerStats {
       // Epoch unix time of collection of metrics.
       int64 collect_time_in_ms = 1;
-      // RSS size of worker process.
+      // Memory usage of worker process at the end of the build.
       int32 worker_memory_in_kb = 2;
+      // Memory usage of the worker process prior to the invocation.
+      int32 prior_worker_memory_in_kb = 4;
       // Epoch unix time of last action started on specific worker.
       int64 last_action_start_time_in_ms = 3;
     }
@@ -1288,6 +1293,26 @@ message BuildMetrics {
   }
 
   WorkerPoolMetrics worker_pool_metrics = 11;
+
+  // Information about dynamic execution.
+  message DynamicExecutionMetrics {
+    message RaceStatistics {
+      // Mnemonic of the action.
+      string mnemonic = 1;
+      // Name of runner of local branch.
+      string local_runner = 2;
+      // Name of runner of remote branch.
+      string remote_runner = 3;
+      // Number of wins of local branch in race.
+      int32 local_wins = 4;
+      // Number of wins of remote branch in race.
+      int32 remote_wins = 5;
+    }
+    // Race statistics grouped by mnemonic, local_name, remote_name.
+    repeated RaceStatistics race_statistics = 1;
+  }
+
+  DynamicExecutionMetrics dynamic_execution_metrics = 12;
 }
 
 // Event providing additional statistics/logs after completion of the build.
