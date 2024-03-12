@@ -528,20 +528,20 @@ message CommentPosition {
 
 message Comment {
   string id = 1;
-  int64 database_id = 12;
-  string body = 2;
-  string path = 3;
-  string commit_sha = 4;
-  CommentPosition position = 5;
+  int64 database_id = 2;
+  string body = 3;
+  string path = 4;
+  string commit_sha = 5;
+  CommentPosition position = 6;
 
-  ReviewUser commenter = 6;
-  string review_id = 7;
-  int64 created_at_usec = 8;
+  ReviewUser commenter = 7;
+  string review_id = 8;
+  int64 created_at_usec = 9;
 
-  string parent_comment_id = 9;
+  string parent_comment_id = 10;
   string thread_id = 11;
 
-  bool is_resolved = 10;
+  bool is_resolved = 12;
 }
 
 message CreateGithubPullRequestCommentRequest {
@@ -610,8 +610,7 @@ message GetGithubPullRequestDetailsResponse {
 
   repeated Comment comments = 17;
 
-  string current_user = 18;
-  string draft_review_id = 19;
+  string draft_review_id = 18;
 }
 
 message SendGithubPullRequestReviewRequest {
