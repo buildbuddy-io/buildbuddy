@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -360,13 +361,25 @@ func newCommand(start *vmxpb.ExecRequest) (*command, error) {
 	}, nil
 }
 
-func logExecutableInfo(executable string) {
-	path, err := exec.LookPath(executable)
+func resolveExecutable(workDir string, executable string) (string, error) {
+	if strings.HasPrefix(executable, "/") {
+		// Absolute path
+		return executable, nil
+	} else if strings.Contains(executable, "/") {
+		// Workdir-relative path
+		return filepath.Join(workDir, executable), nil
+	} else {
+		// $PATH lookup
+		return exec.LookPath(executable)
+	}
+}
+
+func logExecutableInfo(workDir string, executable string) {
+	path, err := resolveExecutable(workDir, executable)
 	if err != nil {
-		log.Warningf("Failed to look up executable in $PATH: %s", err)
+		log.Warningf("Failed to resolve executable %s: %s", executable, err)
 		return
 	}
-
 	stat, err := os.Stat(path)
 	if err != nil {
 		log.Warningf("Failed to stat executable %s: %s", path, err)
@@ -380,12 +393,27 @@ func logExecutableInfo(executable string) {
 		digestStr = digest.String(d)
 	}
 	log.Infof("Executable info: path=%q digest_blake3=%q mode=%q", path, digestStr, stat.Mode())
+	// Print up to 1K bytes from the executable - these can be compared with the
+	// expected contents to diagnose corruption.
+	buf := make([]byte, min(1024, stat.Size()))
+	f, err := os.Open(path)
+	if err != nil {
+		log.Warningf("Failed to open executable: %s", err)
+		return
+	}
+	defer f.Close()
+	n, err := io.ReadFull(f, buf)
+	if err != nil {
+		log.Warningf("Failed to read executable: %s", err)
+		return
+	}
+	log.Infof("Executable first %d bytes: %q", n, buf[:n])
 }
 
 func (c *command) logErrorDiagnostics(err error) {
 	log.Warningf("Command terminated abnormally: %s", err)
 	if strings.Contains(err.Error(), "exec format error") && len(c.cmd.Args) > 0 {
-		logExecutableInfo(c.cmd.Args[0])
+		logExecutableInfo(c.cmd.Dir, c.cmd.Args[0])
 	}
 }
 
