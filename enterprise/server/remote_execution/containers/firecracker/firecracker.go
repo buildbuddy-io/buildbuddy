@@ -1273,7 +1273,7 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 			return status.InternalErrorf("failed to stub out workspace drive: %s", err)
 		}
 		if c.workspaceVBD != nil {
-			if err := c.workspaceVBD.Unmount(); err != nil {
+			if err := c.workspaceVBD.Unmount(ctx); err != nil {
 				return status.WrapError(err, "unmount workspace vbd")
 			}
 			c.workspaceVBD = nil
@@ -2357,7 +2357,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	}
 
 	if c.workspaceVBD != nil {
-		if err := c.workspaceVBD.Unmount(); err != nil {
+		if err := c.workspaceVBD.Unmount(ctx); err != nil {
 			log.CtxErrorf(ctx, "Failed to unmount workspace VBD: %s", err)
 			lastErr = err
 		}
@@ -2368,7 +2368,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.workspaceStore = nil
 	}
 	if c.scratchVBD != nil {
-		if err := c.scratchVBD.Unmount(); err != nil {
+		if err := c.scratchVBD.Unmount(ctx); err != nil {
 			log.CtxErrorf(ctx, "Failed to unmount scratch VBD: %s", err)
 			lastErr = err
 		}
@@ -2379,7 +2379,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.scratchStore = nil
 	}
 	if c.rootVBD != nil {
-		if err := c.rootVBD.Unmount(); err != nil {
+		if err := c.rootVBD.Unmount(ctx); err != nil {
 			log.CtxErrorf(ctx, "Failed to unmount root VBD: %s", err)
 			lastErr = err
 		}
