@@ -1979,13 +1979,10 @@ type prDetailsQuery struct {
 			Comments struct {
 				Nodes []comment
 			} `graphql:"comments(first: 100)"`
-			// XXX
-			// Files struct {
-			// 	Nodes []file
-			// } `graphql:"files(first: 100)"`
 			Commits struct {
 				Nodes []prCommit
 			} `graphql:"commits(first: 100)"`
+			// TODO(jdhollen): Fetch files here
 		} `graphql:"pullRequest(number: $pullNumber)"`
 	} `graphql:"repository(owner: $repoOwner, name: $repoName)"`
 }
@@ -2118,8 +2115,6 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 			outputComments = append(outputComments, comment)
 		}
 	}
-
-	// XXX: Include top-level comments.  Render file-level comments properly.
 
 	notExplicitlyRemoved := map[string]struct{}{}
 	approved := map[string]struct{}{}
@@ -2391,18 +2386,6 @@ func (a *GitHubApp) cachedFiles(ctx context.Context, client *github.Client, owne
 		return nil, err
 	}
 	return pr.(*[]*github.CommitFile), nil
-}
-
-func (a *GitHubApp) cachedComments(ctx context.Context, client *github.Client, owner, repo string, number int) (*[]*github.PullRequestComment, error) {
-	key := fmt.Sprintf("comments/%s/%s/%d", owner, repo, number)
-	pr, err := a.cached(ctx, key, &[]*github.PullRequestComment{}, time.Second*30, func() (any, any, error) {
-		rev, res, err := client.PullRequests.ListComments(ctx, owner, repo, number, &github.PullRequestListCommentsOptions{ListOptions: github.ListOptions{PerPage: 100}})
-		return &rev, res, err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return pr.(*[]*github.PullRequestComment), nil
 }
 
 func (a *GitHubApp) cachedPullRequests(ctx context.Context, client *github.Client, owner, repo string, number int, updatedAt time.Time) (*github.PullRequest, error) {
