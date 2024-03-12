@@ -80,7 +80,7 @@ func (u RangeUsageEvent) EventType() EventType {
 func (u RangeUsageEvent) String() string {
 	switch u.Type {
 	case EventRangeUsageUpdated:
-		return "range-usage-updated"
+		return fmt.Sprintf("range-usage-updated for range ID %d", u.RangeDescriptor.GetRangeId())
 	default:
 		return fmt.Sprintf("unknown event type: %d", u.Type)
 	}

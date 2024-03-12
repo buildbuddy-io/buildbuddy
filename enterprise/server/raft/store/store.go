@@ -355,7 +355,7 @@ func (s *Store) AddEventListener() <-chan events.Event {
 	s.eventsMu.Lock()
 	defer s.eventsMu.Unlock()
 
-	ch := make(chan events.Event, 10)
+	ch := make(chan events.Event, 100)
 	s.eventListeners = append(s.eventListeners, ch)
 	return ch
 }
