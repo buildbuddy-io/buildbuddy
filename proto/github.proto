@@ -512,6 +512,78 @@ message FileSummary {
   int64 deletions = 3;
   int64 comments = 4;
   string patch = 5;
+  string commit_sha = 6;
+}
+
+message ReviewUser {
+  string login = 1;
+  bool bot = 2;
+}
+
+message CommentPosition {
+  int64 start_line = 1;
+  int64 end_line = 2;
+  bool left_side = 3;
+}
+
+message Comment {
+  string id = 1;
+  int64 database_id = 12;
+  string body = 2;
+  string path = 3;
+  string commit_sha = 4;
+  CommentPosition position = 5;
+
+  ReviewUser commenter = 6;
+  string review_id = 7;
+  int64 created_at_usec = 8;
+
+  string parent_comment_id = 9;
+  string thread_id = 11;
+
+  bool is_resolved = 10;
+}
+
+message CreateGithubPullRequestCommentRequest {
+  context.RequestContext request_context = 1;
+
+  string owner = 2;
+  string repo = 3;
+  string pull_id = 4;
+
+  string path = 5;
+  string commit_sha = 6;
+  int64 line = 7;
+  string side = 8;
+
+  string body = 9;
+  string review_id = 10;
+  string thread_id = 11;
+}
+
+message CreateGithubPullRequestCommentResponse {
+  context.ResponseContext response_context = 1;
+  string review_id = 2;
+  string comment_id = 3;
+}
+
+message UpdateGithubPullRequestCommentRequest {
+  context.RequestContext request_context = 1;
+  string comment_id = 2;
+  string new_body = 3;
+}
+
+message UpdateGithubPullRequestCommentResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message DeleteGithubPullRequestCommentRequest {
+  context.RequestContext request_context = 1;
+  string comment_id = 2;
+}
+
+message DeleteGithubPullRequestCommentResponse {
+  context.ResponseContext response_context = 1;
 }
 
 message GetGithubPullRequestDetailsResponse {
@@ -519,6 +591,7 @@ message GetGithubPullRequestDetailsResponse {
   string owner = 2;
   string repo = 3;
   int64 pull = 4;
+  string pull_id = 20;
   string author = 5;
   bool mergeable = 6;
   bool submitted = 7;
@@ -534,4 +607,19 @@ message GetGithubPullRequestDetailsResponse {
   int64 updated_at_usec = 15;
 
   string branch = 16;
+
+  repeated Comment comments = 17;
+
+  string current_user = 18;
+  string draft_review_id = 19;
+}
+
+message SendGithubPullRequestReviewRequest {
+  context.RequestContext request_context = 1;
+  string review_id = 2;
+  bool approve = 3;
+}
+
+message SendGithubPullRequestReviewResponse {
+  context.ResponseContext response_context = 1;
 }

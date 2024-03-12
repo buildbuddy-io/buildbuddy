@@ -1875,12 +1875,44 @@ func (s *BuildBuddyServer) GetGithubPullRequest(ctx context.Context, req *ghpb.G
 	return a.GetGithubPullRequest(ctx, req)
 }
 
+func (s *BuildBuddyServer) CreateGithubPullRequestComment(ctx context.Context, req *ghpb.CreateGithubPullRequestCommentRequest) (*ghpb.CreateGithubPullRequestCommentResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.CreateGithubPullRequestComment(ctx, req)
+}
+
+func (s *BuildBuddyServer) UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.UpdateGithubPullRequestComment(ctx, req)
+}
+
+func (s *BuildBuddyServer) DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.DeleteGithubPullRequestComment(ctx, req)
+}
+
 func (s *BuildBuddyServer) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
 	a := s.env.GetGitHubApp()
 	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
 	return a.GetGithubPullRequestDetails(ctx, req)
+}
+
+func (s *BuildBuddyServer) SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.SendGithubPullRequestReview(ctx, req)
 }
 
 func (s *BuildBuddyServer) SetIPRulesConfig(ctx context.Context, request *irpb.SetRulesConfigRequest) (*irpb.SetRulesConfigResponse, error) {
