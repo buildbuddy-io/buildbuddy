@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2024-01-08T10:00:00.000Z</updated>
+    <updated>2024-03-13T08:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[How to migrate an iOS app to Bazel]]></title>
+        <id>https://www.buildbuddy.io/blog/how-to-migrate-an-ios-app-to-bazel</id>
+        <link href="https://www.buildbuddy.io/blog/how-to-migrate-an-ios-app-to-bazel"/>
+        <updated>2024-03-13T08:00:00.000Z</updated>
+        <summary type="html"><![CDATA[Wondering how to migrate your Apple-based project to Bazel? Whether it's iOS, macOS, watchOS, tvOS, or visionOS, this guide is for you.]]></summary>
+        <author>
+            <name>Brentley Jones</name>
+            <uri>https://brentleyjones.com</uri>
+        </author>
+        <category label="bazel" term="bazel"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[How Bazel 7.0 Makes Your Builds Faster]]></title>
         <id>https://www.buildbuddy.io/blog/how-bazel-7-0-makes-your-builds-faster</id>
@@ -241,19 +253,6 @@
         <link href="https://www.buildbuddy.io/blog/welcoming-iain-macdonald"/>
         <updated>2022-10-26T12:00:00.000Z</updated>
         <summary type="html"><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, we're intensely focused on hiring outstanding Software Engineers. That's why we're excited to share today that Iain Macdonald is joining BuildBuddy's engineering team!]]></summary>
-        <author>
-            <name>Siggi Simonarson</name>
-            <uri>https://www.linkedin.com/in/siggisim/</uri>
-        </author>
-        <category label="company" term="company"/>
-        <category label="team" term="team"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[Welcoming Maggie Lou]]></title>
-        <id>https://www.buildbuddy.io/blog/welcoming-maggie-lou</id>
-        <link href="https://www.buildbuddy.io/blog/welcoming-maggie-lou"/>
-        <updated>2022-07-11T12:00:00.000Z</updated>
-        <summary type="html"><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, we're expanding our team to keep up with our evergrowing customer base. That's why we're excited to share today that Maggie Lou is joining BuildBuddy's engineering team!]]></summary>
         <author>
             <name>Siggi Simonarson</name>
             <uri>https://www.linkedin.com/in/siggisim/</uri>
