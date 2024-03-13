@@ -168,7 +168,7 @@ even if they won't all be used in this migration.
 A [`swift_library`][swift_library] target defines a single Swift static library.
 
 When built directly
-(ideally though an [`ios_built_test`][ios_build_test] to ensure it's in the correct configuration),
+(ideally though an [`ios_build_test`][ios_build_test] to ensure it's in the correct configuration),
 `swift_library` produces `.swiftmodule` and `.swiftdoc` files.
 If the [`swift.enable_library_evolution`][swift-enable_library_evolution-feature] and [`swift.emit_swiftinterface`][swift-emit_swiftinterface-feature] features are enabled,
 it also produces a `.swiftinterface` file.
