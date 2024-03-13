@@ -35,9 +35,15 @@ go_test(
         "too_many_files.zip",
     ],
     embed = [":byte_stream_client"],
+    x_defs = {
+        "noFilesRunfilePath": "$(rlocationpath no_files.zip)",
+        "someFilesRunfilePath": "$(rlocationpath some_files.zip)",
+        "tooManyFilesRunfilePath": "$(rlocationpath too_many_files.zip)",
+    },
     deps = [
         "//proto:zip_go_proto",
         "//server/util/proto",
-        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@com_github_stretchr_testify//assert",
+        "@io_bazel_rules_go//go/runfiles:go_default_library",
     ],
 )

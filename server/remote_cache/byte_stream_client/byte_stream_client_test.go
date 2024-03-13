@@ -9,10 +9,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/stretchr/testify/assert"
 
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
+)
+
+var (
+	someFilesRunfilePath    string
+	noFilesRunfilePath      string
+	tooManyFilesRunfilePath string
 )
 
 func TestManifest_SomeFilesZip(t *testing.T) {
@@ -43,9 +50,12 @@ func TestManifest_SomeFilesZip(t *testing.T) {
 			},
 		},
 	}
-	path, _ := bazel.Runfile("some_files.zip")
-	bytes, _ := os.ReadFile(path)
-	manifest, _ := ParseZipManifestFooter(bytes, 0, int64(len(bytes)))
+	path, err := runfiles.Rlocation(someFilesRunfilePath)
+	assert.NoError(t, err)
+	bytes, err := os.ReadFile(path)
+	assert.NoError(t, err)
+	manifest, err := ParseZipManifestFooter(bytes, 0, int64(len(bytes)))
+	assert.NoError(t, err)
 	if !proto.Equal(expected, manifest) {
 		t.Fatalf("Incorrect manifest. Expected: %v\n Actual: %v", expected, manifest)
 	}
@@ -53,20 +63,25 @@ func TestManifest_SomeFilesZip(t *testing.T) {
 
 func TestManifest_NoFilesZip(t *testing.T) {
 	expected := &zipb.Manifest{}
-	path, _ := bazel.Runfile("no_files.zip")
-	bytes, _ := os.ReadFile(path)
-	manifest, _ := ParseZipManifestFooter(bytes, 0, int64(len(bytes)))
+	path, err := runfiles.Rlocation(noFilesRunfilePath)
+	assert.NoError(t, err)
+	bytes, err := os.ReadFile(path)
+	assert.NoError(t, err)
+	manifest, err := ParseZipManifestFooter(bytes, 0, int64(len(bytes)))
+	assert.NoError(t, err)
 	if !proto.Equal(expected, manifest) {
 		t.Fatalf("Incorrect manifest. Expected: %v\n Actual: %v", expected, manifest)
 	}
 }
 
 func TestManifest_TooManyFilesZip(t *testing.T) {
-	path, _ := bazel.Runfile("too_many_files.zip")
-	bytes, _ := os.ReadFile(path)
+	path, err := runfiles.Rlocation(tooManyFilesRunfilePath)
+	assert.NoError(t, err)
+	bytes, err := os.ReadFile(path)
+	assert.NoError(t, err)
 
 	offset := len(bytes) - 65536
-	_, err := ParseZipManifestFooter(bytes[65536:], int64(offset), int64(len(bytes)))
+	_, err = ParseZipManifestFooter(bytes[65536:], int64(offset), int64(len(bytes)))
 	if !strings.Contains(err.Error(), "code = Unimplemented") {
 		t.Fatalf("Unexpectedly parsed very large manifest.")
 	}
@@ -93,9 +108,12 @@ func validateZipContents(t *testing.T, ctx context.Context, entry *zipb.Manifest
 }
 
 func TestReadZipFileContents(t *testing.T) {
-	path, _ := bazel.Runfile("some_files.zip")
-	b, _ := os.ReadFile(path)
-	manifest, _ := ParseZipManifestFooter(b, 0, int64(len(b)))
+	path, err := runfiles.Rlocation(someFilesRunfilePath)
+	assert.NoError(t, err)
+	b, err := os.ReadFile(path)
+	assert.NoError(t, err)
+	manifest, err := ParseZipManifestFooter(b, 0, int64(len(b)))
+	assert.NoError(t, err)
 
 	streamer := createBytestreamer(b)
 	ctx := context.Background()

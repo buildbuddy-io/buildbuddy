@@ -21,6 +21,9 @@ go_test(
         "test.dockerNetwork": "bridge",
     },
     shard_count = 13,
+    x_defs = {
+        "ciRunnerRunfilePath": "$(rlocationpath //enterprise/server/cmd/ci_runner)",
+    },
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:eventlog_go_proto",
@@ -38,7 +41,7 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@io_bazel_rules_go//go/runfiles:go_default_library",
         "@org_golang_google_protobuf//encoding/protodelim",
     ],
 )

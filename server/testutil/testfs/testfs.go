@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +17,7 @@ import (
 
 // RunfilePath returns the path to the given bazel runfile.
 func RunfilePath(t testing.TB, path string) string {
-	path, err := bazel.Runfile(path)
+	path, err := runfiles.Rlocation(path)
 	require.NoError(t, err)
 	return path
 }

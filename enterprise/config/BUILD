@@ -10,7 +10,7 @@ filegroup(
             "buildbuddy.release.yaml",
             "executor.release.yaml",
         ],
-        "//conditions:default": glob(["**"]),
+        "//conditions:default": glob(["*.yaml"]),
     }),
 )
 
