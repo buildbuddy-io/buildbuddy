@@ -835,10 +835,6 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	}
 
 	atime := time.UnixMicro(md.GetLastAccessUsec())
-	metrics.PebbleCacheAtimeDeltaWhenRead.With(prometheus.Labels{
-		metrics.CacheNameLabel: p.name,
-		metrics.PartitionID:    md.GetFileRecord().GetIsolation().GetPartitionId(),
-	}).Observe(float64(time.Since(atime).Milliseconds()))
 
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return nil
@@ -1713,6 +1709,11 @@ func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op
 
 func (p *PebbleCache) sendAtimeUpdate(key filestore.PebbleKey, lastAccessUsec int64) {
 	atime := time.UnixMicro(lastAccessUsec)
+
+	metrics.PebbleCacheAtimeDeltaWhenRead.With(prometheus.Labels{
+		metrics.CacheNameLabel: p.name,
+	}).Observe(float64(time.Since(atime).Milliseconds()))
+
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return
 	}
