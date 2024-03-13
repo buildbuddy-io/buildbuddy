@@ -56,6 +56,15 @@ class Router {
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
       this.navigateToSettings();
     });
+
+    this.redirectIfNecessary();
+  }
+
+  private redirectIfNecessary() {
+    let redirectUrl = new URLSearchParams(window.location.search).get("redirect_url");
+    if (this.user && redirectUrl) {
+      this.navigateTo(redirectUrl);
+    }
   }
 
   // checks whether user has access to the current page, and if not returns
@@ -449,6 +458,7 @@ class Router {
 
   setUser(user?: User) {
     this.user = user;
+    this.redirectIfNecessary();
     this.rerouteIfNecessary(user);
   }
 
