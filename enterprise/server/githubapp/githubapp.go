@@ -2278,6 +2278,8 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 			p.Additions = int64(pr.GetAdditions())
 			p.Deletions = int64(pr.GetDeletions())
 			p.ChangedFiles = int64(pr.GetChangedFiles())
+			p.Owner = urlParts[4]
+			p.Repo = urlParts[5]
 			for _, r := range pr.RequestedReviewers {
 				review, ok := prs[i.GetNodeID()].Reviews[r.GetLogin()]
 				if !ok {

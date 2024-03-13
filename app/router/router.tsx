@@ -282,6 +282,10 @@ class Router {
     this.navigateTo(Path.createOrgPath);
   }
 
+  getReviewUrl(owner: string, repo: string, pull: number) {
+    return `${Path.reviewsPath}${owner}/${repo}/${pull}`;
+  }
+
   updateParams(params: Record<string, string>) {
     const newUrl = getModifiedUrl({ query: params });
     window.history.pushState({ path: newUrl }, "", newUrl);
