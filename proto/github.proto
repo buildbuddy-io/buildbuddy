@@ -453,6 +453,8 @@ message CreateGithubRefResponse {
 }
 
 message PullRequest {
+  string owner = 11;
+  string repo = 12;
   uint64 number = 1;
   string title = 2;
   string body = 3;
