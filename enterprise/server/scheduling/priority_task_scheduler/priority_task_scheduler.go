@@ -370,7 +370,7 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 		q.cpuMillisUsed += size.GetEstimatedMilliCpu()
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.ramBytesUsed))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.cpuMillisUsed))
-		log.CtxInfof(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
+		log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
 	}
 }
 
@@ -381,7 +381,7 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 		q.cpuMillisUsed -= size.GetEstimatedMilliCpu()
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.ramBytesUsed))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.cpuMillisUsed))
-		log.CtxInfof(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
+		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
 }
 

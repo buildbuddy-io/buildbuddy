@@ -561,9 +561,9 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				metrics.TreeCacheSetCount.Inc()
 			} else {
 				if context.Cause(gCtx) != nil && status.IsDeadlineExceededError(context.Cause(gCtx)) {
-					log.Infof("Could not set treeCache blob: %s", context.Cause(gCtx))
+					log.Debugf("Could not set treeCache blob: %s", context.Cause(gCtx))
 				} else {
-					log.Infof("Could not set treeCache blob: %s", err)
+					log.Debugf("Could not set treeCache blob: %s", err)
 				}
 			}
 			return nil
