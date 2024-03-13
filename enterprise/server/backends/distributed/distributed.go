@@ -1047,7 +1047,7 @@ func (mc *multiWriteCloser) Close() error {
 func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	// Don't bother doing any work if the context is already done.
 	if err := ctx.Err(); err != nil {
-		c.log.CtxInfof(ctx, "multiWriter called when context was already done: %s", err)
+		c.log.CtxDebugf(ctx, "multiWriter called when context was already done: %s", err)
 		return nil, err
 	}
 
@@ -1065,10 +1065,10 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, r)
 		if err != nil {
 			ps.MarkPeerAsFailed(peer)
-			c.log.CtxInfof(ctx, "Error opening remote writer for %q to peer %q after %s: %s", r.GetDigest().GetHash(), peer, time.Since(start), err)
+			c.log.CtxDebugf(ctx, "Error opening remote writer for %q to peer %q after %s: %s", r.GetDigest().GetHash(), peer, time.Since(start), err)
 			// If the context is done, there's no point trying more peers.
 			if err := ctx.Err(); err != nil {
-				c.log.CtxInfof(ctx, "Not trying more peers for %q since the context is done: %s", r.GetDigest().GetHash(), err)
+				c.log.CtxDebugf(ctx, "Not trying more peers for %q since the context is done: %s", r.GetDigest().GetHash(), err)
 				break
 			}
 			continue
@@ -1081,7 +1081,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 			openPeers = append(openPeers, peer)
 		}
 		allPeers := append(ps.PreferredPeers, ps.FallbackPeers...)
-		c.log.CtxInfof(ctx, "Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s (peerset: %+v)", r.Digest.GetHash(), allPeers, openPeers, ps)
+		c.log.CtxDebugf(ctx, "Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s (peerset: %+v)", r.Digest.GetHash(), allPeers, openPeers, ps)
 		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(mwc.peerClosers), c.config.ReplicationFactor)
 	}
 	return mwc, nil
