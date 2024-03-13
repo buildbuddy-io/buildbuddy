@@ -11,7 +11,7 @@ const (
 	TextField FieldType = iota
 
 	DocIDField = "docid"
-	AllFields = "*"
+	AllFields  = "*"
 )
 
 type Field interface {
@@ -50,6 +50,7 @@ type IndexReader interface {
 	PostingOr(list []uint64, trigram uint32) ([]uint64, error)
 	GetStoredFieldValue(docID uint64, field string) ([]byte, error)
 	GetStoredDocument(docID uint64) (Document, error)
+	PostingQuerySX(sExpression []byte) ([]uint64, error)
 }
 
 type NamedField struct {
@@ -59,10 +60,10 @@ type NamedField struct {
 	stored bool
 }
 
-func (f NamedField) Type() FieldType { return f.ftype }
-func (f NamedField) Name() string          { return f.name }
-func (f NamedField) Contents() []byte      { return f.buf }
-func (f NamedField) Stored() bool          { return f.stored }
+func (f NamedField) Type() FieldType  { return f.ftype }
+func (f NamedField) Name() string     { return f.name }
+func (f NamedField) Contents() []byte { return f.buf }
+func (f NamedField) Stored() bool     { return f.stored }
 func (f NamedField) String() string {
 	var snippet string
 	if len(f.buf) < 10 {
@@ -74,9 +75,9 @@ func (f NamedField) String() string {
 }
 func NewNamedField(ftype FieldType, name string, buf []byte, stored bool) NamedField {
 	return NamedField{
-		ftype: ftype,
-		name: name,
-		buf: buf,
+		ftype:  ftype,
+		name:   name,
+		buf:    buf,
 		stored: stored,
 	}
 }
@@ -85,7 +86,8 @@ type MapDocument struct {
 	id     uint64
 	fields map[string]NamedField
 }
-func (d MapDocument) ID() uint64                    { return d.id }
+
+func (d MapDocument) ID() uint64              { return d.id }
 func (d MapDocument) Field(name string) Field { return d.fields[name] }
 func (d MapDocument) Fields() []string {
 	fieldNames := make([]string, 0, len(d.fields))

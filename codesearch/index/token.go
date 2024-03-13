@@ -1,11 +1,11 @@
 package index
 
 import (
-	"io"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/types"	
 	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"io"
 )
 
 type ByteToken []byte
@@ -27,7 +27,7 @@ func (b ByteToken) String() string {
 func newByteToken(fieldID types.FieldType, ngram []byte) ByteToken {
 	buf := make([]byte, len(ngram)+4)
 
-	// Pack the int32 fileID into the first bytes of buf.
+	// Pack the int32 fieldID into the first bytes of buf.
 	buf[0] = byte((fieldID >> 24) & 255)
 	buf[1] = byte((fieldID >> 16) & 255)
 	buf[2] = byte((fieldID >> 8) & 255)
@@ -39,6 +39,7 @@ func newByteToken(fieldID types.FieldType, ngram []byte) ByteToken {
 }
 
 type TrigramTokenizer struct {
+	// TODO(tylerw): why is this here?
 	fieldID types.FieldType
 	r       io.ByteReader
 
@@ -87,4 +88,3 @@ func (tt *TrigramTokenizer) Next() (types.Token, error) {
 		}
 	}
 }
-

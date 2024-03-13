@@ -16,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/google/uuid"
+	"github.com/xiam/sexpr/ast"
+	"github.com/xiam/sexpr/parser"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 )
@@ -180,7 +182,6 @@ func (r *Reader) allIndexedFiles() ([]uint64, error) {
 	return found, nil
 }
 
-
 func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
 	docIDStart := r.storedFieldKey(docID, "")
 	iter := r.db.NewIter(&pebble.IterOptions{
@@ -192,8 +193,8 @@ func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
 	fields := make(map[string]types.NamedField, 0)
 	for iter.First(); iter.Valid(); iter.Next() {
 		fieldName := string(bytes.TrimPrefix(iter.Key(), docIDStart))
-		log.Infof("read field name: %q from %q", fieldName, string(iter.Key()))
 		if fieldName == types.DocIDField {
+			// Skip docID -- we already have it from args.
 			continue
 		}
 		fieldVal := make([]byte, len(iter.Value()))
@@ -215,10 +216,11 @@ func (r *Reader) GetStoredFieldValue(docID uint64, field string) ([]byte, error)
 	return rbuf, nil
 }
 
-
 // postingListBM looks up the set of docIDs matching the provided ngram.
 // If `field` is set to a non-empty value, matches are restricted to just the
 // specified field. Otherwise, all fields are searched.
+// If `restrict` is set to a non-empty value, matches will only be returned if
+// they are both found and also are present in the restrict set.
 func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field string) (*roaring64.Bitmap, error) {
 	minKey := []byte(fmt.Sprintf("%s:gra:%s", r.repo, ngram))
 	if field != "" {
@@ -295,6 +297,99 @@ func (r *Reader) postingOr(list []uint64, trigram uint32, restrict []uint64) ([]
 
 func (r *Reader) PostingQuery(q *query.Query) ([]uint64, error) {
 	return r.postingQuery(q, nil)
+}
+
+const (
+	QNone = ":none"
+	QAll  = ":all"
+
+	QAnd = ":and"
+	QOr  = ":or"
+	QEq  = ":eq"
+)
+
+var allowedAtoms = []string{QEq, QAnd, QOr}
+
+func qOp(expr *ast.Node) (string, error) {
+	if !expr.IsVector() || len(expr.List()) < 1 {
+		return "", status.InvalidArgumentErrorf("%q not q-expr with op", expr)
+	}
+	firstNode := expr.List()[0]
+	if firstNode.Type() != ast.NodeTypeAtom {
+		return "", status.InvalidArgumentErrorf("%q not atom", expr)
+	}
+	atomString, ok := firstNode.Value().(string)
+	if !ok {
+		return "", status.InvalidArgumentErrorf("Query atom: %q not string", expr.Value())
+	}
+	if !slices.Contains(allowedAtoms, atomString) {
+		return "", status.InvalidArgumentErrorf("Unknown query atom: %q", firstNode.Value())
+	}
+	return atomString, nil
+}
+
+func (r *Reader) PostingQuerySX(sExpression []byte) ([]uint64, error) {
+	root, err := parser.Parse([]byte(sExpression))
+	if err != nil {
+		return nil, err
+	}
+
+	// unwrap the tree of expressions which is wrapped in a list.
+	if root.Type() == ast.NodeTypeList && len(root.List()) == 1 {
+		root = root.List()[0]
+	}
+	return r.postingQuerySX(root, nil)
+}
+
+func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error) {
+	r.log.Infof("pqsx %q: %+v", q.List(), restrict)
+	op, err := qOp(q)
+	if err != nil {
+		return nil, err
+	}
+	r.log.Infof("op: %q", op)
+	switch op {
+	case QNone:
+		return nil, nil
+	case QAll:
+		return r.allIndexedFiles()
+	case QAnd:
+		list := restrict
+		for _, subQuery := range q.List()[1:] {
+			list, err = r.postingQuerySX(subQuery, list)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return list, nil
+	case QOr:
+		var list []uint64
+		for _, subQuery := range q.List()[1:] {
+			l, err := r.postingQuerySX(subQuery, restrict)
+			if err != nil {
+				return nil, err
+			}
+			list = r.mergeOr(list, l)
+		}
+		return list, nil
+	case QEq:
+		children := q.List()
+		if len(children) != 3 {
+			return nil, status.InvalidArgumentErrorf("%s expression should have 3 elements: %q (has %d)", QEq, children, len(children))
+		}
+		field, ok := children[1].Value().(string)
+		if !ok {
+			return nil, status.InvalidArgumentErrorf("field name %q must be a string", children[1])
+		}
+		ngram, ok := children[2].Value().(string)
+		if !ok {
+			return nil, status.InvalidArgumentErrorf("ngram %q must be a string/bytes", children[2])
+		}
+		return r.PostingListF([]byte(ngram), field)
+	default:
+		return nil, status.FailedPreconditionErrorf("Unknown query op: %q", op)
+	}
+
 }
 
 // TODO(tylerw): move this to query??

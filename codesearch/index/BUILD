@@ -18,6 +18,8 @@ go_library(
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_google_uuid//:uuid",
         "@com_github_roaringbitmap_roaring//roaring64",
+        "@com_github_xiam_sexpr//ast",
+        "@com_github_xiam_sexpr//parser",
         "@org_golang_x_exp//slices",
         "@org_golang_x_sync//errgroup",
     ],

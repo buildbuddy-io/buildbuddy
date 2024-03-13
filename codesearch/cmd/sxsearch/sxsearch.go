@@ -12,12 +12,11 @@ import (
 	"runtime/pprof"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
 )
-
 
 var (
 	verboseFlag = flag.Bool("verbose", false, "print extra information")
