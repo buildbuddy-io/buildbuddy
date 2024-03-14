@@ -88,6 +88,12 @@ func walk() error {
 			if d.IsDir() {
 				return nil
 			}
+			// .bzl files are formatted directly by buildifier.
+			if strings.HasSuffix(path, ".bzl") {
+				runBuildifier(path)
+				return nil
+			}
+
 			fileName := filepath.Base(path)
 			// Collect any languages and their dep files we found used in the repo.
 			for _, l := range languages {
@@ -167,7 +173,12 @@ func runBuildifier(path string) {
 	}()
 	os.Args = []string{"buildifier"}
 	if *diff {
-		os.Args = append(os.Args, "-mode=diff")
+		os.Args = append(
+			os.Args,
+			"-mode=diff",
+			// Pass -u arg to diff for slightly nicer output.
+			"-diff_command=diff -u",
+		)
 	}
 	os.Args = append(os.Args, path)
 	buildifier.Run()
