@@ -14,6 +14,7 @@ interface ReviewThreadComponentProps {
   threadId: string;
   comments: github.Comment[];
   draftComment?: github.Comment;
+  updating: boolean;
   disabled: boolean;
   editing: boolean;
   saving: boolean;
@@ -26,10 +27,15 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
 
   handleCreate(commentBody: string) {
     commentBody = commentBody.trim();
-    if (!this.props.draftComment?.id || commentBody === "") {
+    if (commentBody === "") {
       return;
     }
-    const commentToSubmit = new github.Comment(this.props.draftComment);
+    // TODO(jdhollen): This is probably a little janky if Github cares about the replyTo fields etc.
+    const commentToSubmit = new github.Comment(this.props.draftComment ?? this.props.comments[0]);
+    if (!this.props.draftComment) {
+      // commentToSubmit.position = undefined;
+      commentToSubmit.id = "";
+    }
     commentToSubmit.body = commentBody;
     this.props.handler.handleCreateComment(commentToSubmit);
   }
@@ -68,7 +74,7 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
       comments.push(draft);
     }
 
-    if (comments.length == 0) {
+    if (comments.length == 0 && !draft) {
       // Shouldn't happen, but fine.
       return <></>;
     }
@@ -92,7 +98,7 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
               </>
             );
           })}
-          {this.props.editing && this.props.draftComment && (
+          {this.props.editing && draft && (
             <div className="thread-reply">
               <div className="thread-comment">
                 <div className="comment-author">
@@ -105,7 +111,7 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
                     autoFocus
                     ref={this.commentTextRef}
                     className="comment-input"
-                    defaultValue={this.props.draftComment.body}></textarea>
+                    defaultValue={draft.body}></textarea>
                 </div>
               </div>
             </div>
@@ -115,7 +121,11 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
               <>
                 <span
                   className="reply-fake-link"
-                  onClick={() => this.handleCreate(this.commentTextRef.current?.value ?? "")}>
+                  onClick={() =>
+                    this.props.updating
+                      ? this.handleUpdate()
+                      : this.handleCreate(this.commentTextRef.current?.value ?? "")
+                  }>
                   Save draft
                 </span>
                 <span className="reply-fake-link" onClick={() => this.handleCancel()}>
@@ -127,7 +137,7 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
               <>
                 <span className="resolution-pill-box">
                   <span className={isBot ? "resolution-pill resolved" : "resolution-pill unresolved"}>
-                    {isBot ? "Automated" : hasDraft ? "Draft" : ""}
+                    {isBot ? "Automated" : hasDraft ? "Draft" : "Unresolved"}
                   </span>
                 </span>
                 {isBot && (

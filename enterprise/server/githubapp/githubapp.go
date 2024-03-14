@@ -1692,7 +1692,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 	}
 
 	reviewId := req.GetReviewId()
-	var threadId, commentId string
+	var commentId string
 
 	var side githubv4.DiffSide
 	if req.GetSide() == ghpb.CommentSide_LEFT_SIDE {
@@ -1702,39 +1702,28 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 	}
 
 	if reviewId == "" {
-		// This is a comment without a review--make the draft comment as part
-		// of a newly-created review.
+		// The Github API is really wonky around new reviews--let's just make
+		// a review with a promotional comment for now and figure it out later.
 		var m struct {
 			AddPullRequestReview struct {
 				PullRequestReview struct {
-					Id            string
-					ReviewThreads struct {
-						Nodes []reviewThread
-					} `graphql:"reviewThreads(last: 1)"`
+					Id   string
+					Body string
 				}
 			} `graphql:"addPullRequestReview(input: $input)"`
 		}
 		input := githubv4.AddPullRequestReviewInput{
 			PullRequestID: req.GetPullId(),
-			Threads: &[]*githubv4.DraftPullRequestReviewThread{
-				{
-					Path: githubv4.String(req.GetPath()),
-					Line: githubv4.Int(int(req.GetLine())),
-					Side: &side,
-					Body: githubv4.String(req.GetBody()),
-				},
-			},
+			Body:          githubv4.NewString("I wrote this review in the BuildBuddy code review UI alpha!"),
 		}
 		err := graphqlClient.Mutate(ctx, &m, input, nil)
 		if err != nil {
 			return nil, err
 		}
 		reviewId = m.AddPullRequestReview.PullRequestReview.Id
-		// This looks unsafe, but it's fine because this new review is
-		// guaranteed to have one thread with one comment.
-		threadId = m.AddPullRequestReview.PullRequestReview.ReviewThreads.Nodes[0].Id
-		commentId = m.AddPullRequestReview.PullRequestReview.ReviewThreads.Nodes[0].Comments.Nodes[0].Id
-	} else if req.GetThreadId() != "" {
+	}
+
+	if req.GetThreadId() != "" {
 		// This is a comment in reply to an existing thread, just add it.
 		var m struct {
 			PullRequestReviewThreadReply struct {
@@ -1746,7 +1735,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		}
 
 		input := githubv4.AddPullRequestReviewThreadReplyInput{
-			PullRequestReviewID:       githubv4.NewID(req.GetReviewId()),
+			PullRequestReviewID:       githubv4.NewID(reviewId),
 			PullRequestReviewThreadID: githubv4.String(req.GetThreadId()),
 			Body:                      githubv4.String(req.GetBody()),
 		}
@@ -1755,7 +1744,6 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		if err != nil {
 			return nil, err
 		}
-		threadId = req.GetThreadId()
 		commentId = m.PullRequestReviewThreadReply.Comment.Id
 	} else {
 		// This is a comment in a new thread, create it.
@@ -1772,24 +1760,23 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		}
 
 		input := githubv4.AddPullRequestReviewThreadInput{
-			PullRequestID: githubv4.NewID(req.GetPullId()),
-			Path:          githubv4.String(req.GetPath()),
-			Line:          githubv4.NewInt(githubv4.Int(int(req.GetLine()))),
-			Side:          &side,
-			Body:          githubv4.String(req.GetBody()),
+			PullRequestID:       githubv4.NewID(req.GetPullId()),
+			PullRequestReviewID: githubv4.NewID(reviewId),
+			Path:                githubv4.String(req.GetPath()),
+			Line:                githubv4.NewInt(githubv4.Int(int(req.GetLine()))),
+			Side:                &side,
+			Body:                githubv4.String(req.GetBody()),
 		}
 
 		err := graphqlClient.Mutate(ctx, &m, input, nil)
 		if err != nil {
 			return nil, err
 		}
-		threadId = m.AddPullRequestReviewThread.Thread.Id
 		commentId = m.AddPullRequestReviewThread.Thread.Comments.Nodes[0].Id
 	}
 
 	return &ghpb.CreateGithubPullRequestCommentResponse{
 		ReviewId:  reviewId,
-		ThreadId:  threadId,
 		CommentId: commentId,
 	}, nil
 }

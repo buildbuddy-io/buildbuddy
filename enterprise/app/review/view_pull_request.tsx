@@ -73,7 +73,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         pull: Long.fromInt(this.props.pull),
       })
       .then((r) => {
-        console.log(r);
+        if (!r.draftReviewId) {
+          r.draftReviewId = newFakeId();
+        }
         this.setState({ response: r });
       })
       .catch((e) => error_service.handleError(e));
@@ -141,13 +143,13 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       path: comment.path,
       body: comment.body,
       commitSha: comment.commitSha,
-      line: comment.position?.startLine,
+      line: comment.position?.startLine ?? comment.position?.endLine ?? undefined,
       side: comment.position?.side,
     });
     if (comment.threadId && !comment.threadId.startsWith(FAKE_ID_PREFIX)) {
       req.threadId = comment.threadId;
     }
-    if (this.state.response.draftReviewId) {
+    if (!this.state.response.draftReviewId.startsWith(FAKE_ID_PREFIX)) {
       req.reviewId = this.state.response.draftReviewId;
     }
     console.log(req);
@@ -162,7 +164,10 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           const commentToUpdate = this.state.response.comments.find((c) => c.id === comment.id);
           if (commentToUpdate) {
             commentToUpdate.id = r.commentId;
-            commentToUpdate.threadId = r.threadId;
+            commentToUpdate.body = comment.body;
+            commentToUpdate.reviewId = r.reviewId;
+          } else {
+            // XXX: Make a bogus comment here.
           }
           this.state.response.draftReviewId = r.reviewId;
         }
@@ -237,18 +242,25 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       return;
     }
 
-    let draft: github.Comment | undefined = undefined;
-    if (this.state.response.draftReviewId) {
-      draft = this.state.response.comments.find((c) => c.reviewId === this.state.response!.draftReviewId);
+    const anyComment = this.state.response.comments.find((c) => c.threadId === threadId);
+    if (anyComment === undefined) {
+      return;
     }
+
+    let draft: github.Comment | undefined = this.state.response.comments.find(
+      (c) => c.reviewId === this.state.response!.draftReviewId && c.threadId === threadId
+    );
     if (draft === undefined) {
-      const reviewId = this.state.response?.draftReviewId || newFakeId();
+      const reviewId = this.state.response.draftReviewId;
       draft = new github.Comment({
         id: newFakeId(),
         threadId,
         reviewId,
         parentCommentId: "",
         body: "",
+        path: anyComment.path,
+        commitSha: anyComment.commitSha,
+        position: anyComment.position,
         // TODO(jdhollen): pass user back from github.
         commenter: new github.ReviewUser({ login: "you" }),
         createdAtUsec: Long.fromNumber(Date.now() * 1000),
@@ -288,7 +300,8 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     if (thread.comments.length < 1 && !thread.draft) {
       return <></>;
     }
-    const leftSide = thread.comments[0].position?.side === github.CommentSide.LEFT_SIDE; // RIGHT_SIDE is default.
+    const firstComment = thread.comments[0] ?? thread.draft;
+    const leftSide = firstComment.position?.side === github.CommentSide.LEFT_SIDE; // RIGHT_SIDE is default.
 
     return (
       <div className="thread-block">
@@ -304,6 +317,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           comments={thread.comments}
           draftComment={thread.draft}
           disabled={Boolean(this.state.pendingRequest)}
+          updating={Boolean(thread.draft && !thread.draft.id.startsWith(FAKE_ID_PREFIX))}
           editing={Boolean(this.state.inProgressCommentsById.has(thread.draft?.id ?? "bogus-id-doesnt-exist"))}
           saving={/* TODO(jdhollen */ false}
           handler={this}
@@ -318,7 +332,12 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     );
   }
 
-  renderComments(path: string, comments: github.Comment[], leftLine: number, rightLine: number) {
+  renderComments(comments: github.Comment[]) {
+    if (comments.length > 0) {
+    }
+    if (!this.state.response) {
+      return <></>;
+    }
     const threads: Map<String, ThreadAndDraft> = new Map();
     comments.forEach((c) => {
       const thread = c.threadId;
@@ -330,7 +349,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         };
         threads.set(thread, threadAndDraft);
       }
-      if (this.state.response?.draftReviewId && c.reviewId === this.state.response.draftReviewId) {
+      if (c.reviewId === this.state.response!.draftReviewId) {
         threadAndDraft.draft = c;
       } else {
         threadAndDraft.comments.push(c);
@@ -338,7 +357,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     });
     const outs: JSX.Element[] = [];
 
-    threads.forEach((comments, threadId) => {
+    threads.forEach((comments) => {
       outs.push(this.renderThread(comments));
     });
     return <>{outs}</>;
@@ -348,7 +367,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     if (this.state.pendingRequest || !this.state.response) {
       return;
     }
-    const reviewId = this.state.response?.draftReviewId || newFakeId();
+    const reviewId = this.state.response.draftReviewId;
     const draft = new github.Comment({
       id: newFakeId(),
       threadId: newFakeId(),
@@ -416,15 +435,12 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
               </div>
               <div className="threads">
                 {this.renderComments(
-                  path,
                   comments.filter((c) => {
                     return (
                       +(c.position?.startLine || c.position?.endLine || 0) ===
                       (c.position?.side === github.CommentSide.LEFT_SIDE ? v.left.lineNumber : v.right.lineNumber)
                     );
-                  }),
-                  v.left.lineNumber ?? -1,
-                  v.right.lineNumber ?? -1
+                  })
                 )}
               </div>
             </>
@@ -546,6 +562,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       reviewId: this.state.response?.draftReviewId ?? "",
       approve,
     });
+    console.log(req);
     rpc_service.service
       .sendGithubPullRequestReview(req)
       .then((r) => {
@@ -585,7 +602,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                   <div></div>
                   <div>
                     <button onClick={() => this.reply(true)}>APPROVE</button>
-                    <button disabled={this.state.response.comments.length > 0} onClick={() => this.reply(false)}>
+                    <button disabled={this.state.response.comments.length < 1} onClick={() => this.reply(false)}>
                       REPLY
                     </button>
                   </div>

@@ -579,8 +579,7 @@ message CreateGithubPullRequestCommentRequest {
 message CreateGithubPullRequestCommentResponse {
   context.ResponseContext response_context = 1;
   string review_id = 2;
-  string thread_id = 3;
-  string comment_id = 4;
+  string comment_id = 3;
 }
 
 message UpdateGithubPullRequestCommentRequest {
