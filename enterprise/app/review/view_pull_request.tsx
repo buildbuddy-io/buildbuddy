@@ -1,7 +1,7 @@
 import Long from "long";
-import React, { ReactNode } from "react";
+import React from "react";
 import format from "../../../app/format/format";
-import rpc_service, { CancelablePromise } from "../../../app/service/rpc_service";
+import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
 import { Github, MessageCircle } from "lucide-react";
 import error_service from "../../../app/errors/error_service";
