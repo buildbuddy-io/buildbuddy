@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"regexp"
 	"runtime"
 	"sync"
 
@@ -22,9 +23,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	npost = 64 << 20 / 8 // 64 MB worth of post entries
-)
+var fieldNameRegex = regexp.MustCompile(`^([a-zA-Z0-9_]+)$`)
+const npost = 64 << 20 / 8 // 64 MB worth of post entries
 
 type postingLists map[string][]uint64
 
@@ -75,16 +75,19 @@ func (w *Writer) postingListKey(ngram string, field string) []byte {
 }
 
 func (w *Writer) AddDocument(doc types.Document) error {
+	// **Always store DocID.**
+	docidKey := w.storedFieldKey(doc.ID(), types.DocIDField)
+	w.batch.Set(docidKey, Uint64ToBytes(doc.ID()), nil)
+
 	for _, fieldName := range doc.Fields() {
+		if !fieldNameRegex.MatchString(fieldName) {
+			return status.InvalidArgumentErrorf("Invalid field name %q", fieldName)
+		}
 		field := doc.Field(fieldName)
 		if _, ok := w.fieldPostingLists[field.Name()]; !ok {
 			w.fieldPostingLists[field.Name()] = make(postingLists, 0)
 		}
 		postingLists := w.fieldPostingLists[field.Name()]
-
-		// **Always store DocID.**
-		docidKey := w.storedFieldKey(doc.ID(), types.DocIDField)
-		w.batch.Set(docidKey, Uint64ToBytes(doc.ID()), nil)
 
 		// TODO(tylerw): lookup the tokenizer to use for this field. It
 		// may not always be tritokenizer.
@@ -168,7 +171,7 @@ func (r *Reader) storedFieldKey(docID uint64, field string) []byte {
 	return []byte(fmt.Sprintf("%s:doc:%d:%s", r.repo, docID, field))
 }
 
-func (r *Reader) allIndexedFiles() ([]uint64, error) {
+func (r *Reader) allDocIDs() ([]uint64, error) {
 	iter := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: r.storedFieldKey(0, types.DocIDField),
 		UpperBound: r.storedFieldKey(math.MaxUint64, types.DocIDField),
@@ -176,6 +179,9 @@ func (r *Reader) allIndexedFiles() ([]uint64, error) {
 	defer iter.Close()
 	found := make([]uint64, 0)
 	for iter.First(); iter.Valid(); iter.Next() {
+		if !bytes.HasSuffix(iter.Key(), []byte(types.DocIDField)) {
+			continue
+		}
 		docid := BytesToUint64(iter.Value())
 		found = append(found, docid)
 	}
@@ -236,7 +242,7 @@ func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field s
 	resultSet := roaring64.New()
 	postingList := roaring64.New()
 	for iter.First(); iter.Valid(); iter.Next() {
-		r.log.Infof("query %q matched key %q", ngram, iter.Key())
+		r.log.Infof("query %q matched tok %q", ngram, iter.Key())
 		if _, err := postingList.ReadFrom(bytes.NewReader(iter.Value())); err != nil {
 			return nil, err
 		}
@@ -244,7 +250,7 @@ func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field s
 		postingList.Clear()
 	}
 	if !restrict.IsEmpty() {
-		resultSet.And(restrict)
+		restrict.And(resultSet)
 	}
 	return resultSet, nil
 }
@@ -308,7 +314,7 @@ const (
 	QEq  = ":eq"
 )
 
-var allowedAtoms = []string{QEq, QAnd, QOr}
+var allowedAtoms = []string{QNone, QAll, QEq, QAnd, QOr}
 
 func qOp(expr *ast.Node) (string, error) {
 	if !expr.IsVector() || len(expr.List()) < 1 {
@@ -350,7 +356,10 @@ func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error
 	case QNone:
 		return nil, nil
 	case QAll:
-		return r.allIndexedFiles()
+		if restrict != nil {
+			return restrict, nil
+		}
+		return r.allDocIDs()
 	case QAnd:
 		list := restrict
 		for _, subQuery := range q.List()[1:] {
@@ -393,7 +402,6 @@ func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error
 // TODO(tylerw): move this to query??
 func (r *Reader) postingQuery(q *query.Query, restrict []uint64) (ret []uint64, err error) {
 	var list []uint64
-	r.log.Infof("q.Op: %+v", q.Op)
 	switch q.Op {
 	case query.QNone:
 		// nothing
@@ -401,7 +409,7 @@ func (r *Reader) postingQuery(q *query.Query, restrict []uint64) (ret []uint64, 
 		if restrict != nil {
 			return restrict, err
 		}
-		list, err = r.allIndexedFiles()
+		list, err = r.allDocIDs()
 	case query.QAnd:
 		for _, t := range q.Trigram {
 			tri := uint32(t[0])<<16 | uint32(t[1])<<8 | uint32(t[2])
