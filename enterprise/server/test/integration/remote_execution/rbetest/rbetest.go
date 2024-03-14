@@ -63,6 +63,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
@@ -79,7 +80,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -812,16 +812,16 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	}
 	env.SetFileCache(fc)
 
-	executorUUID, err := guuid.NewRandom()
-	require.NoError(r.t, err)
-	executorID := executorUUID.String()
+	executorID := uuid.New()
+	executorHostID := uuid.New()
 	if options.Name != "" {
 		executorID = options.Name
+		executorHostID = options.Name
 	}
 
 	runnerPool := NewTestRunnerPool(r.t, env, options.RunInterceptor)
 
-	exec, err := executor.NewExecutor(env, executorID, "" /*=hostID=*/, runnerPool, &executor.Options{NameOverride: options.Name})
+	exec, err := executor.NewExecutor(env, executorID, executorHostID, runnerPool)
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}
@@ -834,7 +834,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 		HostnameOverride: "localhost",
 		APIKeyOverride:   options.APIKey,
 	}
-	registration, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, options.Name, opts)
+	registration, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, executorHostID, opts)
 	if err != nil {
 		assert.FailNowf(r.t, "could not create executor registration", err.Error())
 	}
