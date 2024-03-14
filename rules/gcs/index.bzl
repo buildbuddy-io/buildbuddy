@@ -17,7 +17,7 @@
 # In order to delete the files from GCS, run:
 #   `bazel run :app_bundle_release.delete`
 #
-def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip = True, disable_caching=False, **kwargs):
+def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip = True, disable_caching = False, **kwargs):
     # Apply a trailing slash to the prefix if not present.
     if prefix != "" and not prefix.endswith("/"):
         prefix += "/"
