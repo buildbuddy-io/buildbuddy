@@ -73,7 +73,7 @@ var (
 	actionsRunnerLabel   = flag.String("github.app.actions.runner_label", "buildbuddy", "Label to apply to the actions runner. This is what 'runs-on' needs to be set to in GitHub workflow YAML in order to run on this BuildBuddy instance.")
 	actionsPoolName      = flag.String("github.app.actions.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
 
-	enableReviewMutates = flag.Bool("github.app.actions.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
+	enableReviewMutates = flag.Bool("github.app.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
 
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
