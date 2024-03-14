@@ -167,7 +167,15 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
             commentToUpdate.body = comment.body;
             commentToUpdate.reviewId = r.reviewId;
           } else {
-            // XXX: Make a bogus comment here.
+            const anyComment = this.state.response.comments.find((c) => c.threadId === req.threadId);
+            if (anyComment != undefined) {
+              const newComment = new github.Comment(anyComment);
+              newComment.createdAtUsec = Long.fromNumber(Date.now() * 1000);
+              newComment.id = r.commentId;
+              newComment.body = req.body;
+              newComment.reviewId = r.reviewId;
+              this.state.response.comments.push(newComment);
+            }
           }
           this.state.response.draftReviewId = r.reviewId;
         }
