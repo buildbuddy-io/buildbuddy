@@ -816,7 +816,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	executorHostID := uuid.New()
 	if options.Name != "" {
 		executorID = options.Name
-		executorHostID = options.Name
+		executorHostID = options.Name + ".host"
 	}
 
 	runnerPool := NewTestRunnerPool(r.t, env, options.RunInterceptor)
