@@ -253,8 +253,8 @@ func (r *Reader) PostingList(trigram uint32) ([]uint64, error) {
 	return r.postingList(trigram, nil)
 }
 
-func (r *Reader) PostingListF(ngram []byte, field string) ([]uint64, error) {
-	bm, err := r.postingListBM(ngram, roaring64.New(), field)
+func (r *Reader) PostingListF(ngram []byte, field string, restrict []uint64) ([]uint64, error) {
+	bm, err := r.postingListBM(ngram, roaring64.BitmapOf(restrict...), field)
 	if err != nil {
 		return nil, err
 	}
@@ -328,8 +328,8 @@ func qOp(expr *ast.Node) (string, error) {
 	return atomString, nil
 }
 
-func (r *Reader) PostingQuerySX(sExpression []byte) ([]uint64, error) {
-	root, err := parser.Parse([]byte(sExpression))
+func (r *Reader) PostingQuerySX(sQuery []byte) ([]uint64, error) {
+	root, err := parser.Parse([]byte(sQuery))
 	if err != nil {
 		return nil, err
 	}
@@ -342,12 +342,10 @@ func (r *Reader) PostingQuerySX(sExpression []byte) ([]uint64, error) {
 }
 
 func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error) {
-	r.log.Infof("pqsx %q: %+v", q.List(), restrict)
 	op, err := qOp(q)
 	if err != nil {
 		return nil, err
 	}
-	r.log.Infof("op: %q", op)
 	switch op {
 	case QNone:
 		return nil, nil
@@ -385,7 +383,7 @@ func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error
 		if !ok {
 			return nil, status.InvalidArgumentErrorf("ngram %q must be a string/bytes", children[2])
 		}
-		return r.PostingListF([]byte(ngram), field)
+		return r.PostingListF([]byte(ngram), field, restrict)
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown query op: %q", op)
 	}
