@@ -264,3 +264,16 @@ platform(
         "enable-vfs": "true",
     },
 )
+
+# TODO(#2282): remove this
+platform(
+    name = "many_layered_image",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "container-image": "docker://gcr.io/flame-public/iain-test:latest",
+    },
+)
