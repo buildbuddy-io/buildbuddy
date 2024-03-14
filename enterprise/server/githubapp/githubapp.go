@@ -1692,7 +1692,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 	}
 
 	reviewId := req.GetReviewId()
-	var commentId string
+	var threadId, commentId string
 
 	var side githubv4.DiffSide
 	if req.GetSide() == ghpb.CommentSide_LEFT_SIDE {
@@ -1708,9 +1708,9 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 			AddPullRequestReview struct {
 				PullRequestReview struct {
 					Id       string
-					Comments struct {
-						Nodes []reviewComment
-					} `graphql:"comments(last: 1)"`
+					ReviewThreads struct {
+						Nodes []reviewThread
+					} `graphql:"reviewThreads(last: 1)"`
 				}
 			} `graphql:"addPullRequestReview(input: $input)"`
 		}
@@ -1730,7 +1730,10 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 			return nil, err
 		}
 		reviewId = m.AddPullRequestReview.PullRequestReview.Id
-		commentId = m.AddPullRequestReview.PullRequestReview.Comments.Nodes[0].Id
+		// This looks unsafe, but it's fine because this new review is
+		// guaranteed to have one thread with one comment.
+		threadId = m.AddPullRequestReview.PullRequestReview.ReviewThreads.Nodes[0].Id
+		commentId = m.AddPullRequestReview.PullRequestReview.ReviewThreads.Nodes[0].Comments.Nodes[0].Id
 	} else if req.GetThreadId() != "" {
 		// This is a comment in reply to an existing thread, just add it.
 		var m struct {
@@ -1752,6 +1755,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		if err != nil {
 			return nil, err
 		}
+		threadId = req.GetThreadId()
 		commentId = m.PullRequestReviewThreadReply.Comment.Id
 	} else {
 		// This is a comment in a new thread, create it.
@@ -1759,6 +1763,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 			AddPullRequestReviewThread struct {
 				ClientMutationId string
 				Thread           struct {
+					Id string
 					Comments struct {
 						Nodes []reviewComment
 					} `graphql:"comments(last: 1)"`
@@ -1778,11 +1783,13 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		if err != nil {
 			return nil, err
 		}
+		threadId = m.AddPullRequestReviewThread.Thread.Id;
 		commentId = m.AddPullRequestReviewThread.Thread.Comments.Nodes[0].Id
 	}
 
 	return &ghpb.CreateGithubPullRequestCommentResponse{
 		ReviewId:  reviewId,
+		ThreadId:  threadId,
 		CommentId: commentId,
 	}, nil
 }
@@ -1884,7 +1891,6 @@ type comment struct {
 	BodyText   string
 	CreatedAt  time.Time
 	Id         string
-	DatabaseId int
 }
 
 type commentLink struct {
@@ -2086,7 +2092,6 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		for _, c := range thread.Comments.Nodes {
 			comment := &ghpb.Comment{}
 			comment.Id = c.Id
-			comment.DatabaseId = int64(c.DatabaseId)
 			comment.Body = c.BodyText
 			comment.Path = thread.Path
 			comment.CommitSha = c.OriginalCommit.Oid

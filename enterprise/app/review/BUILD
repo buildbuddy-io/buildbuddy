@@ -34,17 +34,33 @@ ts_library(
 )
 
 ts_library(
+    name = "review_thread",
+    srcs = ["review_thread.tsx"],
+    deps = [
+        "//proto:github_ts_proto",
+        "@npm//@types/moment",
+        "@npm//@types/react",
+        "@npm//moment",
+        "@npm//react",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
     name = "view_pull_request",
     srcs = ["view_pull_request.tsx"],
     deps = [
         "//app/errors:error_service",
         "//app/format",
         "//app/service:rpc_service",
+        "//enterprise/app/review:review_thread",
         "//proto:github_ts_proto",
         "@npm//@types/long",
+        "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//long",
         "@npm//lucide-react",
+        "@npm//moment",
         "@npm//react",
         "@npm//tslib",
     ],
