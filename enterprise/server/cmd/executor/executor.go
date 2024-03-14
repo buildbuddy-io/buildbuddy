@@ -238,8 +238,7 @@ func main() {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
 	}
 
-	opts := &remote_executor.Options{}
-	executor, err := remote_executor.NewExecutor(env, executorID, getExecutorHostID(), runnerPool, opts)
+	executor, err := remote_executor.NewExecutor(env, executorID, getExecutorHostID(), runnerPool)
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}

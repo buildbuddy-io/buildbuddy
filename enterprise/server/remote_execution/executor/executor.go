@@ -63,24 +63,14 @@ type Executor struct {
 	hostID     string
 }
 
-type Options struct {
-	// TESTING ONLY: allows the name of the executor to be manually specified instead of deriving it
-	// from host information.
-	NameOverride string
-}
-
-func NewExecutor(env environment.Env, id, hostID string, runnerPool interfaces.RunnerPool, options *Options) (*Executor, error) {
-	effectiveHostID := hostID
-	if options.NameOverride != "" {
-		effectiveHostID = options.NameOverride
-	}
+func NewExecutor(env environment.Env, id, hostID string, runnerPool interfaces.RunnerPool) (*Executor, error) {
 	if err := disk.EnsureDirectoryExists(runnerPool.GetBuildRoot()); err != nil {
 		return nil, err
 	}
 	return &Executor{
 		env:        env,
 		id:         id,
-		hostID:     effectiveHostID,
+		hostID:     hostID,
 		runnerPool: runnerPool,
 	}, nil
 }
