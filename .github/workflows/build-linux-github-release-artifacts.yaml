@@ -31,16 +31,10 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.release_branch }}
-          # We need to fetch git tags to obtain the latest version tag to report
-          # the version of the running binary.
-          fetch-depth: 0
 
       - name: Build and Upload Artifacts
+        shell: 'script --return --quiet --command "bash {0}"'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bazelisk build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
-          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-linux-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64
-          gh release upload ${{ inputs.version_tag }} buildbuddy-linux-amd64 buildbuddy-enterprise-linux-amd64 executor-enterprise-linux-amd64 --clobber
+          bazel build //enterprise/server/... --config=remote --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
