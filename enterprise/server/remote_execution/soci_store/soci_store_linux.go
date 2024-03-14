@@ -175,6 +175,7 @@ func (s *SociStore) runWithRetries(ctx context.Context) {
 		}
 		args = append(args, s.path)
 		cmd := exec.CommandContext(ctx, *binary, args...)
+		cmd.SysProcAttr.Setpgid = true
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
