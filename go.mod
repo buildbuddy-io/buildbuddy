@@ -325,7 +325,7 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/net v0.22.0 // indirect
 	golang.org/x/term v0.18.0 // indirect
-	golang.org/x/tools v0.19.0 // indirect
+	golang.org/x/tools v0.18.0 // indirect
 	golang.org/x/tools/go/vcs v0.1.0-deprecated // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
