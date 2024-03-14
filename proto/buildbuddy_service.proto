@@ -263,6 +263,17 @@ service BuildBuddyService {
       returns (github.GetGithubPullRequestResponse);
   rpc GetGithubPullRequestDetails(github.GetGithubPullRequestDetailsRequest)
       returns (github.GetGithubPullRequestDetailsResponse);
+  rpc CreateGithubPullRequestComment(
+      github.CreateGithubPullRequestCommentRequest)
+      returns (github.CreateGithubPullRequestCommentResponse);
+  rpc UpdateGithubPullRequestComment(
+      github.UpdateGithubPullRequestCommentRequest)
+      returns (github.UpdateGithubPullRequestCommentResponse);
+  rpc DeleteGithubPullRequestComment(
+      github.DeleteGithubPullRequestCommentRequest)
+      returns (github.DeleteGithubPullRequestCommentResponse);
+  rpc SendGithubPullRequestReview(github.SendGithubPullRequestReviewRequest)
+      returns (github.SendGithubPullRequestReviewResponse);
 
   // GCP API
   rpc GetGCPProject(gcp.GetGCPProjectRequest)

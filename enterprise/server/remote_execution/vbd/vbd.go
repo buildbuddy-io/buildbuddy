@@ -95,9 +95,11 @@ func (f *FS) Mount(ctx context.Context, path string) error {
 			// Debug:         true,
 			DisableXAttrs: true,
 			// Don't depend on `fusermount`.
-			DirectMount: true,
-			FsName:      "vbd",
-			MaxWrite:    fuse.MAX_KERNEL_WRITE,
+			// Disable fallback to fusermount as well, since it can cause
+			// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
+			DirectMountStrict: true,
+			FsName:            "vbd",
+			MaxWrite:          fuse.MAX_KERNEL_WRITE,
 		},
 	}
 	nodeFS := fusefs.NewNodeFS(f.root, opts)
@@ -121,7 +123,24 @@ func (f *FS) Mount(ctx context.Context, path string) error {
 	return nil
 }
 
-func (f *FS) Unmount() error {
+func (f *FS) Unmount(ctx context.Context) error {
+	// Unmount in the background to prevent tasks from being blocked if it
+	// hangs forever.
+	// Log an error if this happens, since this is a goroutine leak.
+	resultCh := make(chan error, 1)
+	go func() {
+		resultCh <- f.unmount(ctx)
+	}()
+	select {
+	case err := <-resultCh:
+		return err
+	case <-ctx.Done():
+		log.CtxErrorf(ctx, "Failed to unmount vbd at %s: %s", f.mountPath, ctx.Err())
+		return ctx.Err()
+	}
+}
+
+func (f *FS) unmount(ctx context.Context) error {
 	err := f.server.Unmount()
 	f.server.Wait()
 	f.server = nil
@@ -129,16 +148,16 @@ func (f *FS) Unmount() error {
 		// If we successfully unmounted, then the mount path should point to
 		// an empty dir. Remove it.
 		if err := os.Remove(f.mountPath); err != nil {
-			log.Errorf("Failed to unmount vbd: %s", err)
+			log.CtxErrorf(ctx, "Failed to unmount vbd: %s", err)
 		}
 	}
 	if err := os.Remove(f.lockFile.Name()); err != nil {
-		log.Errorf("Failed to remove vbd lock file: %s", err)
+		log.CtxErrorf(ctx, "Failed to remove vbd lock file: %s", err)
 	}
 	if err := f.lockFile.Close(); err != nil {
-		log.Errorf("Failed to unlock vbd lock file: %s", err)
+		log.CtxErrorf(ctx, "Failed to unlock vbd lock file: %s", err)
 	}
-	log.Debugf("Unmounted %s", f.mountPath)
+	log.CtxDebugf(ctx, "Unmounted %s", f.mountPath)
 	return err
 }
 

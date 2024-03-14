@@ -4,6 +4,8 @@ import format from "../../../app/format/format";
 import rpc_service from "../../../app/service/rpc_service";
 import { joinReactNodes } from "../../../app/util/react";
 import { github } from "../../../proto/github_ts_proto";
+import Link from "../../../app/components/link/link";
+import router from "../../../app/router/router";
 
 interface ReviewListComponentProps {
   user?: string;
@@ -182,7 +184,7 @@ class PR extends React.Component<PRProps> {
     }
 
     return (
-      <a className="pr" href={this.props.pr.url} target="_blank">
+      <Link className="pr" href={router.getReviewUrl(this.props.pr.owner, this.props.pr.repo, +this.props.pr.number)}>
         <div>{this.props.pr.number}</div>
         <div>{this.props.pr.author}</div>
         <div>
@@ -192,7 +194,7 @@ class PR extends React.Component<PRProps> {
         <div>{joinReactNodes(reviewers, ", ")}</div>
         <div>{size(this.props.pr)}</div>
         <div>{this.props.pr.title}</div>
-      </a>
+      </Link>
     );
   }
 }

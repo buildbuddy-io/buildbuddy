@@ -5,12 +5,13 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "workspace",
     srcs = ["workspace.go"],
-    data = ["//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace",
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
         "//enterprise/server/cmd/github_actions_runner/bundle",
         "//enterprise/server/remote_execution/dirtools",
+        "//enterprise/server/remote_execution/overlayfs",
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/vfs",
         "//proto:remote_execution_go_proto",
         "//server/environment",

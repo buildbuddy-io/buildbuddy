@@ -4512,6 +4512,18 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.3.1",
     )
     go_repository(
+        name = "com_github_shurcool_githubv4",
+        importpath = "github.com/shurcooL/githubv4",
+        sum = "h1:6dExqsYngGEiixqa1vmtlUd+zbyISilg0Cf3GWVdeYM=",
+        version = "v0.0.0-20231126234147-1cffa1f02456",
+    )
+    go_repository(
+        name = "com_github_shurcool_graphql",
+        importpath = "github.com/shurcooL/graphql",
+        sum = "h1:17JxqqJY66GmZVHkmAsGEkcIu0oCe3AM420QDgGwZx0=",
+        version = "v0.0.0-20230722043721-ed46e5a46466",
+    )
+    go_repository(
         name = "com_github_shurcool_sanitized_anchor_name",
         importpath = "github.com/shurcooL/sanitized_anchor_name",
         sum = "h1:PdmoCO6wvbs+7yrJyMORt4/BmY5IYyJwS/kOiWx8mHo=",
@@ -6694,16 +6706,16 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64",
         downloaded_file_path = "soci-store",
         executable = True,
-        sha256 = "9e9eda9b48ff6f364624e25bad1402f2f4df79ad1f4bc68b2e74f00cb989aebd",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.12-linux-amd64"],
+        sha256 = "2dd49ce3bcdd0f4d75c6bd427162c9e9a8dde7430f71df095e698347141d3e53",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.14-linux-amd64"],
     )
 
     http_file(
         name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race",
         downloaded_file_path = "soci-store-race",
         executable = True,
-        sha256 = "14b9d9ef0859c4e0a7697aa86f4ad2aa0164e37a0836c266847b622e690a1848",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.12-linux-amd64-race"],
+        sha256 = "46a7a65d23477c6e177292ab0a8a3bf8617e9d7a290e55e27bc55896e4a504a5",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.14-linux-amd64-race"],
     )
 
     http_file(

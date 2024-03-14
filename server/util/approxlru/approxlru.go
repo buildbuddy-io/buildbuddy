@@ -241,7 +241,7 @@ func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 		oldGlobalSizeBytes := l.globalSizeBytes
 		l.mu.Unlock()
 
-		log.Infof("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
+		log.Debugf("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
 		err := l.onEvict(l.ctx, sample)
 		if err != nil {
 			log.Warningf("Could not evict %q: %s", sample.Key, err)

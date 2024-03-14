@@ -839,31 +839,17 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		return nil, err
 	}
 
-	gid, err := groupID(ctx, l.env)
-	if err != nil {
-		return nil, err
-	}
-	recycleStatus := "clean"
-	if cacheOpts.Recycled {
-		recycleStatus = "recycled"
-	}
 	metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
-		metrics.GroupID:              gid,
-		metrics.FileName:             name,
-		metrics.RecycledRunnerStatus: recycleStatus,
+		metrics.FileName: name,
 	}).Observe(float64(dirtyChunkCount) / float64(len(chunks)))
 	metrics.COWSnapshotDirtyBytes.With(prometheus.Labels{
-		metrics.GroupID:              gid,
-		metrics.FileName:             name,
-		metrics.RecycledRunnerStatus: recycleStatus,
+		metrics.FileName: name,
 	}).Add(float64(dirtyBytes))
 
 	for chunkSrc, count := range chunkSourceCounter {
 		metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{
-			metrics.GroupID:              gid,
-			metrics.FileName:             name,
-			metrics.RecycledRunnerStatus: recycleStatus,
-			metrics.ChunkSource:          snaputil.ChunkSourceLabel(chunkSrc),
+			metrics.FileName:    name,
+			metrics.ChunkSource: snaputil.ChunkSourceLabel(chunkSrc),
 		}).Observe(float64(count) / float64(len(chunks)))
 	}
 

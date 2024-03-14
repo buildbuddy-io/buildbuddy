@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -53,6 +55,35 @@ func AuthorizeOrgAdmin(u interfaces.UserInfo, groupID string) error {
 		}
 	}
 	return status.PermissionDeniedError("you are not a member of the requested organization")
+}
+
+// AuthorizeGroupAccess checks whether the user is a member of the given group.
+// Where applicable, make sure to check the user's capabilities within the group
+// as well.
+func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID string) error {
+	if groupID == "" {
+		return status.InvalidArgumentError("group ID is required")
+	}
+	user, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	for _, gm := range user.GetGroupMemberships() {
+		if gm.GroupID == groupID {
+			return nil
+		}
+	}
+	return status.PermissionDeniedError("You do not have access to the requested group")
+}
+
+func AuthorizeGroupAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
+	if err := AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+		return err
+	}
+	if blocklist.IsBlockedForStatsQuery(groupID) {
+		return status.ResourceExhaustedError("Too many rows.")
+	}
+	return nil
 }
 
 // AnonymousUserError returns an error indicating that the user is not

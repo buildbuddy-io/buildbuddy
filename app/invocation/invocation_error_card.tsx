@@ -5,6 +5,8 @@ import { failure_details } from "../../proto/failure_details_ts_proto";
 import TerminalComponent from "../terminal/terminal";
 import rpc_service from "../service/rpc_service";
 
+const debugMessage =
+  "Use --sandbox_debug to see verbose messages from the sandbox and retain the sandbox build root for debugging";
 interface Props {
   model: InvocationModel;
 }
@@ -33,6 +35,14 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
     }
   }
 
+  prettyPrintedStdErr() {
+    if (!this.state.stdErr) {
+      return "";
+    }
+    // Style file names like "/path/to/file.go:10:20" in bold+underline
+    return "\n\n" + this.state.stdErr.replaceAll(/([^\s]*:\d+:\d+)/g, "\x1b[1;4m$1\x1b[0m");
+  }
+
   render() {
     let title = "";
     let description = "";
@@ -50,6 +60,9 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
       return null;
     }
 
+    // De-emphasize the "--sandbox_debug" message.
+    description = description.replaceAll(debugMessage, `\x1b[90m${debugMessage}\x1b[0m\n \n`);
+
     return (
       <div className="invocation-error-card card card-failure">
         <AlertCircle className="icon red" />
@@ -57,8 +70,13 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
           <div className="title">{title}</div>
           <div className="subtitle">{this.props.model.failedAction?.action?.label}</div>
           <div className="details">
-            <pre className="error-contents">{description}</pre>
-            {this.state.stdErr && <TerminalComponent value={this.state.stdErr} lightTheme />}
+            <TerminalComponent
+              value={"\x1b[1;31m" + description + "\x1b[0m" + this.prettyPrintedStdErr()}
+              lightTheme
+              scrollTop
+              bottomControls
+              defaultWrapped
+            />
           </div>
         </div>
       </div>

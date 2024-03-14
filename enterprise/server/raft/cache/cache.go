@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
@@ -235,15 +234,7 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 		return status.UnavailableError("node is still initializing")
 	}
 
-	key := constants.ClusterSetupTimeKey
-	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
-		Key: key,
-	}).ToProto()
-	if err != nil {
-		return err
-	}
-	_, err = rc.sender().SyncRead(ctx, key, readReq)
-	return err
+	return nil
 }
 
 func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {

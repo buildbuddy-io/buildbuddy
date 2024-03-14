@@ -106,7 +106,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "7"
+	GuestAPIVersion = "8"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -1273,7 +1273,7 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 			return status.InternalErrorf("failed to stub out workspace drive: %s", err)
 		}
 		if c.workspaceVBD != nil {
-			if err := c.workspaceVBD.Unmount(); err != nil {
+			if err := c.workspaceVBD.Unmount(ctx); err != nil {
 				return status.WrapError(err, "unmount workspace vbd")
 			}
 			c.workspaceVBD = nil
@@ -1906,8 +1906,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	createTime := time.Since(start)
 	log.CtxDebugf(ctx, "Create took %s", createTime)
 
-	success := err == nil
-	c.observeStageDuration(ctx, "init", createTime.Microseconds(), success)
+	c.observeStageDuration("init", createTime.Microseconds())
 	return err
 }
 
@@ -2173,9 +2172,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		log.CtxDebugf(ctx, "Exec took %s", execDuration)
 
 		timeSinceContainerInit := time.Since(time.UnixMicro(c.currentTaskInitTimeUsec))
-		execSuccess := result.Error == nil
-		c.observeStageDuration(ctx, "task_lifecycle", timeSinceContainerInit.Microseconds(), execSuccess)
-		c.observeStageDuration(ctx, "exec", execDuration.Microseconds(), execSuccess)
+		c.observeStageDuration("task_lifecycle", timeSinceContainerInit.Microseconds())
+		c.observeStageDuration("exec", execDuration.Microseconds())
 	}()
 
 	if c.fsLayout == nil {
@@ -2359,7 +2357,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	}
 
 	if c.workspaceVBD != nil {
-		if err := c.workspaceVBD.Unmount(); err != nil {
+		if err := c.workspaceVBD.Unmount(ctx); err != nil {
 			log.CtxErrorf(ctx, "Failed to unmount workspace VBD: %s", err)
 			lastErr = err
 		}
@@ -2370,7 +2368,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.workspaceStore = nil
 	}
 	if c.scratchVBD != nil {
-		if err := c.scratchVBD.Unmount(); err != nil {
+		if err := c.scratchVBD.Unmount(ctx); err != nil {
 			log.CtxErrorf(ctx, "Failed to unmount scratch VBD: %s", err)
 			lastErr = err
 		}
@@ -2381,7 +2379,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.scratchStore = nil
 	}
 	if c.rootVBD != nil {
-		if err := c.rootVBD.Unmount(); err != nil {
+		if err := c.rootVBD.Unmount(ctx); err != nil {
 			log.CtxErrorf(ctx, "Failed to unmount root VBD: %s", err)
 			lastErr = err
 		}
@@ -2449,8 +2447,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
 
-	success := err == nil
-	c.observeStageDuration(ctx, "pause", pauseTime.Microseconds(), success)
+	c.observeStageDuration("pause", pauseTime.Microseconds())
 	return err
 }
 
@@ -2562,8 +2559,7 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	unpauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Unpause took %s", unpauseTime)
 
-	success := err == nil
-	c.observeStageDuration(ctx, "init", unpauseTime.Microseconds(), success)
+	c.observeStageDuration("init", unpauseTime.Microseconds())
 	return err
 }
 
@@ -2665,28 +2661,9 @@ func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult
 	return status.InternalErrorf("process hit a segfault:\n%s", tail)
 }
 
-func (c *FirecrackerContainer) observeStageDuration(ctx context.Context, taskStage string, durationUsec int64, success bool) {
-	taskStatus := "success"
-	if !success {
-		taskStatus = "failure"
-	}
-
-	recycleStatus := "clean"
-	if c.recycled {
-		recycleStatus = "recycled"
-	}
-
-	var groupID string
-	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err == nil {
-		groupID = u.GetGroupID()
-	}
-
+func (c *FirecrackerContainer) observeStageDuration(taskStage string, durationUsec int64) {
 	metrics.FirecrackerStageDurationUsec.With(prometheus.Labels{
-		metrics.Stage:                    taskStage,
-		metrics.StatusHumanReadableLabel: taskStatus,
-		metrics.RecycledRunnerStatus:     recycleStatus,
-		metrics.GroupID:                  groupID,
+		metrics.Stage: taskStage,
 	}).Observe(float64(durationUsec))
 }
 

@@ -204,6 +204,12 @@ const (
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
 
+	// Distributed cache operation name, such as "FindMissing" or "Get".
+	DistributedCacheOperation = "op"
+
+	// Cache lookup result - "hit" or "miss".
+	CacheHitMissStatus = "status"
+
 	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
 	// the root dir, and so on.
 	TreeCacheLookupLevel = "level"
@@ -626,6 +632,17 @@ var (
 		Help:      "Number of bytes written that already existed in the cache.",
 	}, []string{
 		CacheNameLabel,
+	})
+
+	DistributedCachePeerLookups = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_peer_lookups",
+		Help:      "Number of peers consulted (including the 'local peer') for a distributed cache read before returning a response. For batch requests, one observation is recorded for each digest in the request.",
+		Buckets:   prometheus.LinearBuckets(0, 1, 10),
+	}, []string{
+		DistributedCacheOperation,
+		CacheHitMissStatus,
 	})
 
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1052,9 +1069,6 @@ var (
 			" and don't represent the actual duration of each event.",
 	}, []string{
 		Stage,
-		StatusHumanReadableLabel,
-		RecycledRunnerStatus,
-		GroupID,
 	})
 
 	// #### Stage label values
@@ -1092,9 +1106,7 @@ var (
 		Buckets:   prometheus.LinearBuckets(0, .05, 20),
 		Help:      "After a copy-on-write snapshot has been used, the ratio of dirty/total chunks.",
 	}, []string{
-		GroupID,
 		FileName,
-		RecycledRunnerStatus,
 	})
 
 	// #### Examples
@@ -1113,21 +1125,17 @@ var (
 		Name:      "cow_snapshot_dirty_bytes",
 		Help:      "After a copy-on-write snapshot has been used, the total count of bytes dirtied.",
 	}, []string{
-		GroupID,
 		FileName,
-		RecycledRunnerStatus,
 	})
 
 	COWSnapshotChunkSourceRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "cow_snapshot_chunk_source_ratio",
-		Buckets:   prometheus.LinearBuckets(0, .05, 20),
+		Buckets:   prometheus.LinearBuckets(0, .1, 10),
 		Help:      "After a copy-on-write snapshot has been used, the percentage of chunks that were initialized by the given source.",
 	}, []string{
-		GroupID,
 		FileName,
-		RecycledRunnerStatus,
 		ChunkSource,
 	})
 
@@ -1140,26 +1148,6 @@ var (
 		FileName,
 	})
 
-	COWSnapshotPageFaultCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "firecracker",
-		Name:      "cow_snapshot_page_fault_count",
-		Buckets: []float64{
-			20,
-			50,
-			100,
-			250,
-			500,
-			1000,
-			2500,
-			5000,
-			10000,
-		},
-		Help: "For a snapshotted VM, number of page faults.",
-	}, []string{
-		Stage,
-	})
-
 	COWSnapshotPageFaultTotalDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
@@ -1170,44 +1158,12 @@ var (
 		Stage,
 	})
 
-	COWSnapshotInitChunkDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "firecracker",
-		Name:      "cow_snapshot_init_chunk_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 3*time.Minute, 10),
-		Help:      "For a COW snapshot, time to initialize one chunk.",
-	}, []string{
-		ChunkSource,
-	})
-
 	COWSnapshotChunkOperationTotalDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "cow_snapshot_chunk_operation_duration_usec",
 		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 10),
 		Help:      "For a COW snapshot, cumulative time spent on an operation type.",
-	}, []string{
-		FileName,
-		EventName,
-		Stage,
-	})
-
-	COWSnapshotChunkOperationCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "firecracker",
-		Name:      "cow_snapshot_chunk_operation_count",
-		Buckets: []float64{
-			20,
-			50,
-			100,
-			250,
-			500,
-			1000,
-			2500,
-			5000,
-			10000,
-		},
-		Help: "For a COW snapshot, number of times a chunk operation was executed.",
 	}, []string{
 		FileName,
 		EventName,

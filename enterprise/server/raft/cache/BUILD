@@ -8,7 +8,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache",
     deps = [
         "//enterprise/server/raft/bringup",
-        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/driver",
         "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/logger",

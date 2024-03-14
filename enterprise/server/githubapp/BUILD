@@ -38,6 +38,7 @@ go_library(
         "@com_github_go_git_go_git_v5//plumbing/transport/http",
         "@com_github_golang_jwt_jwt//:jwt",
         "@com_github_google_go_github_v59//github",
+        "@com_github_shurcool_githubv4//:githubv4",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_x_oauth2//:oauth2",

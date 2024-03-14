@@ -2,9 +2,7 @@ package hostedrunner
 
 import (
 	"context"
-	"encoding/json"
 	"io"
-	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -35,10 +33,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	runnerPath                  = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
-	DefaultRunnerContainerImage = "docker://" + platform.Ubuntu20_04WorkflowsImage
-)
+const DefaultRunnerContainerImage = "docker://" + platform.Ubuntu20_04WorkflowsImage
 
 type runnerService struct {
 	env              environment.Env
@@ -46,11 +41,6 @@ type runnerService struct {
 }
 
 func New(env environment.Env) (*runnerService, error) {
-	f, err := ci_runner_bundle.Get().Open(runnerPath)
-	if err != nil {
-		return nil, status.FailedPreconditionErrorf("could not open runner binary runfile: %s", err)
-	}
-	defer f.Close()
 	return &runnerService{
 		env: env,
 	}, nil
@@ -79,16 +69,12 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	binaryBlob, err := fs.ReadFile(ci_runner_bundle.Get(), runnerPath)
-	if err != nil {
-		return nil, err
-	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, binaryBlob)
+	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, ci_runner_bundle.CiRunnerBytes)
 	if err != nil {
 		return nil, err
 	}
 	// Save this to use when constructing the command to run below.
-	runnerName := filepath.Base(runnerPath)
+	runnerName := filepath.Base(ci_runner_bundle.RunnerName)
 	dir := &repb.Directory{
 		Files: []*repb.FileNode{{
 			Name:         runnerName,
@@ -121,11 +107,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, err
 	}
 
-	envJson, err := json.Marshal(req.GetEnv())
-	if err != nil {
-		return nil, err
-	}
-
 	// NOTE: Be cautious when adding new flags. See
 	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
 	args := []string{
@@ -138,9 +119,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--invocation_id=" + invocationID,
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
-	}
-	if len(string(envJson)) > 0 {
-		args = append(args, "--env_overrides="+string(envJson))
 	}
 	if strings.HasPrefix(req.GetBazelCommand(), "run ") {
 		args = append(args, "--record_run_metadata")
@@ -194,6 +172,13 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
 			Name:  platform.CPUArchitecturePropertyName,
 			Value: req.GetArch(),
+		})
+	}
+
+	for k, v := range req.GetEnv() {
+		cmd.EnvironmentVariables = append(cmd.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+			Name:  k,
+			Value: v,
 		})
 	}
 

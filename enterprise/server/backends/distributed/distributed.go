@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
@@ -677,6 +679,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		}
 	}
 
+	lookups := 0
 	for {
 		// Each iteration through this outer loop sends a "batch" of requests in
 		// parallel, until all digests have been found or we have exhausted all
@@ -709,6 +712,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			// we're out of peers and should exit, returning what we have.
 			break
 		}
+		lookups++
 		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, resources := range peerRequests {
 			peer := peer
@@ -732,6 +736,11 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 					hash := r.GetDigest().GetHash()
 					if _, ok := peerMissingHashes[hash]; !ok {
 						foundMap[hash] = struct{}{}
+						// Record which lookup round we found this resource in.
+						metrics.DistributedCachePeerLookups.With(prometheus.Labels{
+							metrics.DistributedCacheOperation: "FindMissing",
+							metrics.CacheHitMissStatus:        "hit",
+						}).Observe(float64(lookups))
 					}
 				}
 				return nil
@@ -749,6 +758,20 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			// If we've found everything, we can exit now.
 			break
 		}
+	}
+
+	// For every digest we didn't find, record an observation indicating how
+	// many lookups we did.
+	count := 0
+	for _, r := range resources {
+		if _, ok := foundMap[r.GetDigest().GetHash()]; ok {
+			continue
+		}
+		metrics.DistributedCachePeerLookups.With(prometheus.Labels{
+			metrics.DistributedCacheOperation: "FindMissing",
+			metrics.CacheHitMissStatus:        "miss",
+		}).Observe(float64(lookups))
+		count++
 	}
 
 	// For every digest we found, if we did not find it
@@ -790,7 +813,7 @@ func getIsolation(resources []*rspb.ResourceName) *dcpb.Isolation {
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64, metricsLabel string) (io.ReadCloser, error) {
 	ps := c.readPeers(rn.GetDigest())
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(rn, ps)); err != nil {
@@ -798,11 +821,17 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 		}
 	}
 
+	lookups := 0
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		lookups++
 		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
 		if err == nil {
 			c.log.CtxDebugf(ctx, "Reader(%q) found on peer %s", cacheproxy.ResourceIsolationString(rn), peer)
 			backfill()
+			metrics.DistributedCachePeerLookups.With(prometheus.Labels{
+				metrics.DistributedCacheOperation: metricsLabel,
+				metrics.CacheHitMissStatus:        "hit",
+			}).Observe(float64(lookups))
 			return r, err
 		}
 		if status.IsNotFoundError(err) {
@@ -815,12 +844,16 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 		ps.MarkPeerAsFailed(peer)
 
 	}
+	metrics.DistributedCachePeerLookups.With(prometheus.Labels{
+		metrics.DistributedCacheOperation: metricsLabel,
+		metrics.CacheHitMissStatus:        "miss",
+	}).Observe(float64(lookups))
 	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to read %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
 func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
-	r, err := c.distributedReader(ctx, rn, 0, 0)
+	r, err := c.distributedReader(ctx, rn, 0, 0, "Get" /*=metricsLabel*/)
 	if err != nil {
 		return nil, err
 	}
@@ -1014,7 +1047,7 @@ func (mc *multiWriteCloser) Close() error {
 func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	// Don't bother doing any work if the context is already done.
 	if err := ctx.Err(); err != nil {
-		c.log.CtxInfof(ctx, "multiWriter called when context was already done: %s", err)
+		c.log.CtxDebugf(ctx, "multiWriter called when context was already done: %s", err)
 		return nil, err
 	}
 
@@ -1032,10 +1065,10 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, r)
 		if err != nil {
 			ps.MarkPeerAsFailed(peer)
-			c.log.CtxInfof(ctx, "Error opening remote writer for %q to peer %q after %s: %s", r.GetDigest().GetHash(), peer, time.Since(start), err)
+			c.log.CtxDebugf(ctx, "Error opening remote writer for %q to peer %q after %s: %s", r.GetDigest().GetHash(), peer, time.Since(start), err)
 			// If the context is done, there's no point trying more peers.
 			if err := ctx.Err(); err != nil {
-				c.log.CtxInfof(ctx, "Not trying more peers for %q since the context is done: %s", r.GetDigest().GetHash(), err)
+				c.log.CtxDebugf(ctx, "Not trying more peers for %q since the context is done: %s", r.GetDigest().GetHash(), err)
 				break
 			}
 			continue
@@ -1048,7 +1081,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 			openPeers = append(openPeers, peer)
 		}
 		allPeers := append(ps.PreferredPeers, ps.FallbackPeers...)
-		c.log.CtxInfof(ctx, "Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s (peerset: %+v)", r.Digest.GetHash(), allPeers, openPeers, ps)
+		c.log.CtxDebugf(ctx, "Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s (peerset: %+v)", r.Digest.GetHash(), allPeers, openPeers, ps)
 		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(mwc.peerClosers), c.config.ReplicationFactor)
 	}
 	return mwc, nil
@@ -1100,7 +1133,7 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 }
 
 func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	return c.distributedReader(ctx, r, uncompressedOffset, limit)
+	return c.distributedReader(ctx, r, uncompressedOffset, limit, "Reader" /*=metricsLabel*/)
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

@@ -27,8 +27,13 @@ export interface TerminalProps {
 
   title?: React.ReactNode;
 
+  scrollTop?: boolean;
+  bottomControls?: boolean;
+  defaultWrapped?: boolean;
   lightTheme?: boolean;
   fullLogsFetcher?: () => void;
+
+  debugId?: string;
 }
 
 interface State {
@@ -194,6 +199,9 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   private memoizedGetContent = memoizeOne(getContent);
 
   private getWrapPreference(): boolean {
+    if (localStorage.getItem(WRAP_LOCAL_STORAGE_KEY) === null) {
+      return this.props.defaultWrapped || false;
+    }
     return localStorage.getItem(WRAP_LOCAL_STORAGE_KEY) === WRAP_LOCAL_STORAGE_VALUE;
   }
   private updateLineLengthLimit(): void {
@@ -264,6 +272,9 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   }
 
   private scrollToEnd() {
+    if (this.props.scrollTop) {
+      return;
+    }
     let lineNumber = router.getLineNumber();
     if (lineNumber) {
       this.scrollToRow(lineNumber - 1);
@@ -322,10 +333,12 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
 
     return (
       <div
+        debug-id={this.props.debugId}
+        style={{ flexDirection: this.props.bottomControls ? "column-reverse" : "column" }}
         className={`terminal ${this.props.lightTheme ? "light-terminal" : ""}`}
         onMouseEnter={this.onMouseEnter.bind(this)}
         onMouseLeave={this.onMouseLeave.bind(this)}>
-        <div className="terminal-top-bar">
+        <div className="terminal-top-bar" style={{ padding: this.props.bottomControls ? "4px 0 0 0" : "0 0 4px 0" }}>
           {this.props.title && <div className="terminal-titles">{this.props.title}</div>}
           <div className="terminal-actions">
             <div className="terminal-search">
@@ -389,7 +402,10 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
             </button>
           </div>
         </div>
-        <div className="terminal-text" ref={this.terminalRef}>
+        <div
+          className="terminal-text"
+          ref={this.terminalRef}
+          style={{ height: `${content.rows.length ? Math.min(ROW_HEIGHT_PX * content.rows.length + 8, 400) : 400}px` }}>
           {this.props.loading ? (
             <div className={`loading ${this.props.lightTheme ? "" : "loading-dark-terminal"}`} />
           ) : (

@@ -27,6 +27,7 @@ export default class BuildLogsCardComponent extends React.Component<Props> {
               value={this.props.value}
               lightTheme={!this.props.dark}
               fullLogsFetcher={this.props.fullLogsFetcher}
+              debugId={"build-logs"}
             />
           </div>
         </div>

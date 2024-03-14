@@ -20,7 +20,9 @@ ts_library(
     name = "review_list",
     srcs = ["review_list.tsx"],
     deps = [
+        "//app/components/link",
         "//app/format",
+        "//app/router",
         "//app/service:rpc_service",
         "//app/util:react",
         "//proto:github_ts_proto",

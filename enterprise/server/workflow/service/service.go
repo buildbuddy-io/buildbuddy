@@ -719,7 +719,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 	if app == nil {
 		return nil, status.UnimplementedError("GitHub App is not configured")
 	}
-	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
 		return nil, err
 	}
 	gitRepository := &tables.GitRepository{}
@@ -1082,6 +1082,12 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		{Name: "GIT_REPO_DEFAULT_BRANCH", Value: wd.TargetRepoDefaultBranch},
 		{Name: "GIT_PR_NUMBER", Value: fmt.Sprintf("%d", wd.PullRequestNumber)},
 	}
+	for k, v := range env {
+		envVars = append(envVars, &repb.Command_EnvironmentVariable{
+			Name:  k,
+			Value: v,
+		})
+	}
 	containerImage := ""
 	isolationType := ""
 	os := strings.ToLower(workflowAction.OS)
@@ -1122,10 +1128,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		useSelfHostedExecutors = "true"
 	}
 	besResultsURL, err := ws.createBBURL(ctx, "/invocation/")
-	if err != nil {
-		return nil, err
-	}
-	envJson, err := json.Marshal(env)
 	if err != nil {
 		return nil, err
 	}
@@ -1184,11 +1186,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: platform.EstimatedCPUPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedCPU()},
 			},
 		},
-	}
-	// See https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
-	// for more info on why we don't want to pass empty flags
-	if len(env) > 0 {
-		cmd.Arguments = append(cmd.Arguments, "--env_overrides="+string(envJson))
 	}
 	if isSharedFirecrackerWorkflow {
 		// For firecracker workflows, init dockerd in case local actions or

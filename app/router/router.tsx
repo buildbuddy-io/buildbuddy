@@ -56,6 +56,15 @@ class Router {
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
       this.navigateToSettings();
     });
+
+    this.redirectIfNecessary();
+  }
+
+  private redirectIfNecessary() {
+    let redirectUrl = new URLSearchParams(window.location.search).get("redirect_url");
+    if (this.user && redirectUrl) {
+      this.navigateTo(redirectUrl);
+    }
   }
 
   // checks whether user has access to the current page, and if not returns
@@ -99,9 +108,9 @@ class Router {
    * the current href.
    *
    * - Creates a new browser history entry.
-   * - Preserves global filter params.
+   * - Preserves global filter params unless resetFilters is set
    */
-  navigateTo(url: string) {
+  navigateTo(url: string, resetFilters: boolean = false) {
     const oldUrl = new URL(window.location.href);
     const newUrl = new URL(url, window.location.href);
 
@@ -117,10 +126,12 @@ class Router {
     }
 
     // Preserve persistent URL params.
-    for (const key of PERSISTENT_URL_PARAMS) {
-      const oldParam = oldUrl.searchParams.get(key);
-      if (!newUrl.searchParams.get(key) && oldParam) {
-        newUrl.searchParams.set(key, oldParam);
+    if (!resetFilters) {
+      for (const key of PERSISTENT_URL_PARAMS) {
+        const oldParam = oldUrl.searchParams.get(key);
+        if (!newUrl.searchParams.get(key) && oldParam) {
+          newUrl.searchParams.set(key, oldParam);
+        }
       }
     }
 
@@ -256,10 +267,6 @@ class Router {
     return `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}?role=CI_RUNNER&pattern=${actionName}`;
   }
 
-  navigateToWorkflowHistory(repo: string) {
-    this.navigateTo(this.getWorkflowHistoryUrl(repo));
-  }
-
   navigateToRepoHistory(repo: string) {
     this.navigateTo(`${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}`);
   }
@@ -282,6 +289,10 @@ class Router {
       return;
     }
     this.navigateTo(Path.createOrgPath);
+  }
+
+  getReviewUrl(owner: string, repo: string, pull: number) {
+    return `${Path.reviewsPath}${owner}/${repo}/${pull}`;
   }
 
   updateParams(params: Record<string, string>) {
@@ -447,6 +458,7 @@ class Router {
 
   setUser(user?: User) {
     this.user = user;
+    this.redirectIfNecessary();
     this.rerouteIfNecessary(user);
   }
 

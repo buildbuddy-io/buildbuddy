@@ -14,26 +14,9 @@ genrule(
     cmd_bash = "cp $(SRCS) $@",
 )
 
-genrule(
-    name = "empty_for_embedsrcs",
-    outs = ["empty"],
-    cmd_bash = "touch $@",
-)
-
-# gazelle:ignore
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],
-    embedsrcs = select({
-        "//:fastbuild": [
-            ":empty",  # embed fails with no embedsrcs
-        ],
-        "//conditions:default": [
-            ":buildbuddy_ci_runner",
-        ],
-    }),
+    embedsrcs = ["buildbuddy_ci_runner"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle",
-    deps = [
-        "//server/util/fileresolver",
-    ],
 )

@@ -91,11 +91,12 @@ type RunOpts struct {
 }
 
 type RepoConfig struct {
-	Root      string
-	URL       string
-	Ref       string
-	CommitSHA string
-	Patches   [][]byte
+	Root          string
+	URL           string
+	Ref           string
+	CommitSHA     string
+	Patches       [][]byte
+	DefaultBranch string
 }
 
 func determineRemote(repo *git.Repository) (*git.Remote, error) {
@@ -225,16 +226,22 @@ func Config(path string) (*RepoConfig, error) {
 		return nil, status.WrapError(err, "get base branch and commit")
 	}
 
+	defaultBranch, err := determineDefaultBranch(repo)
+	if err != nil {
+		log.Warnf("Failed to fetch default branch: %s", err)
+	}
+
 	wt, err := repo.Worktree()
 	if err != nil {
 		return nil, status.UnknownErrorf("could not determine git repo root")
 	}
 
 	repoConfig := &RepoConfig{
-		Root:      wt.Filesystem.Root(),
-		URL:       fetchURL,
-		CommitSHA: commit,
-		Ref:       branch,
+		Root:          wt.Filesystem.Root(),
+		URL:           fetchURL,
+		CommitSHA:     commit,
+		Ref:           branch,
+		DefaultBranch: defaultBranch,
 	}
 
 	patch, err := runGit("diff", commit)
@@ -581,6 +588,14 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		envVars[envVar] = val
 	}
 
+	// If not explicitly set, try to set the default branch env var,
+	// because it will allow us to fallback to snapshots for the default branch
+	// if there is no snapshot for the current branch
+	if !(contains(envVars, "GIT_REPO_DEFAULT_BRANCH") || contains(envVars, "GIT_BASE_BRANCH")) {
+		defaultBranch := strings.TrimPrefix(repoConfig.DefaultBranch, "refs/heads/")
+		envVars["GIT_REPO_DEFAULT_BRANCH"] = defaultBranch
+	}
+
 	platform, err := rexec.MakePlatform(*execPropsFlag...)
 	if err != nil {
 		return 0, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
@@ -828,4 +843,9 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 	// Add back in the bazel command and any subsequent flags
 	argsRemoteFlagsRemoved = append(argsRemoteFlagsRemoved, args[bazelCmdIdx:]...)
 	return argsRemoteFlagsRemoved, nil
+}
+
+func contains(m map[string]string, elem string) bool {
+	_, ok := m[elem]
+	return ok
 }
