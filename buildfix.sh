@@ -6,16 +6,11 @@ cd "$(dirname "$0")"
 # If ~/go/bin exists, make sure we respect it
 export PATH="$PATH:$HOME/go/bin"
 
-GAZELLE=0
 GO_DEPS=0
 while [[ $# -gt 0 ]]; do
   case $1 in
   -a | --all)
-    GAZELLE=1
     GO_DEPS=1
-    ;;
-  -g | --gazelle)
-    GAZELLE=1
     ;;
   -d | --go_deps)
     GO_DEPS=1
@@ -32,14 +27,10 @@ BAZEL_QUIET_FLAGS=(
   "--noshow_progress"
 )
 
-# buildifier format all BUILD files
-echo "Formatting WORKSPACE/BUILD files..."
-buildifier -r .
-
 echo "Building and running gofmt..."
 GO_SRCS=()
 while IFS= read -r line; do
-    GO_SRCS+=("$line")
+  GO_SRCS+=("$line")
 done < <(git ls-files '*.go')
 bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gofmt -- -w "${GO_SRCS[@]}"
 
@@ -64,10 +55,8 @@ if ((GO_DEPS)); then
   ./tools/fix_go_deps.sh
 fi
 
-if ((GAZELLE)); then
-  echo "Fixing BUILD deps with gazelle..."
-  CLI_VERSION="5.0.25" # Update this to latest version from `git tag -l 'cli-*' --sort=creatordate | tail -n1`
-  USE_BAZEL_VERSION="buildbuddy-io/$CLI_VERSION" bazel fix
-fi
+echo "Running buildifier and gazelle with bb fix..."
+CLI_VERSION="5.0.36" # Update this to latest version from `git tag -l 'cli-*' --sort=creatordate | tail -n1`
+USE_BAZEL_VERSION="buildbuddy-io/$CLI_VERSION" bazel fix
 
 echo 'All done!'
