@@ -2356,34 +2356,18 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.vfsServer = nil
 	}
 
-	if c.workspaceVBD != nil {
-		if err := c.workspaceVBD.Unmount(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount workspace VBD: %s", err)
-			lastErr = err
-		}
-		c.workspaceVBD = nil
+	if err := c.unmountAllVBDs(ctx); err != nil {
+		// Don't log the err - unmountAllVBDs logs it internally.
+		lastErr = err
 	}
+
 	if c.workspaceStore != nil {
 		c.workspaceStore.Close()
 		c.workspaceStore = nil
 	}
-	if c.scratchVBD != nil {
-		if err := c.scratchVBD.Unmount(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount scratch VBD: %s", err)
-			lastErr = err
-		}
-		c.scratchVBD = nil
-	}
 	if c.scratchStore != nil {
 		c.scratchStore.Close()
 		c.scratchStore = nil
-	}
-	if c.rootVBD != nil {
-		if err := c.rootVBD.Unmount(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount root VBD: %s", err)
-			lastErr = err
-		}
-		c.rootVBD = nil
 	}
 	if c.rootStore != nil {
 		c.rootStore.Close()
@@ -2404,6 +2388,36 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
 		log.CtxErrorf(ctx, "Error removing chroot: %s", err)
 		lastErr = err
+	}
+	return lastErr
+}
+
+// Unmounts any mounted VBD filesystems.
+// If this func returns a nil error, then the VBD filesystems were successfully
+// unmounted and the backing COWStores can no longer be accessed using
+// VBD file handles.
+func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context) error {
+	var lastErr error
+	if c.workspaceVBD != nil {
+		if err := c.workspaceVBD.Unmount(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to unmount workspace VBD: %s", err)
+			lastErr = err
+		}
+		c.workspaceVBD = nil
+	}
+	if c.scratchVBD != nil {
+		if err := c.scratchVBD.Unmount(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to unmount scratch VBD: %s", err)
+			lastErr = err
+		}
+		c.scratchVBD = nil
+	}
+	if c.rootVBD != nil {
+		if err := c.rootVBD.Unmount(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to unmount root VBD: %s", err)
+			lastErr = err
+		}
+		c.rootVBD = nil
 	}
 	return lastErr
 }
@@ -2475,17 +2489,19 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return err
 	}
 
-	// Stop the VM, UFFD page fault handler, and NBD server to ensure nothing is
-	// modifying the snapshot files as we save them
+	// Stop the VM, UFFD page fault handler, and VBD servers to ensure nothing
+	// is modifying the snapshot files as we save them
 	if err := c.stopMachine(ctx); err != nil {
 		return err
 	}
 	if c.uffdHandler != nil {
 		if err := c.uffdHandler.Stop(); err != nil {
-			log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
-			return err
+			return status.WrapError(err, "stop uffd handler")
 		}
 		c.uffdHandler = nil
+	}
+	if err := c.unmountAllVBDs(ctx); err != nil {
+		return status.WrapError(err, "unmount vbds")
 	}
 
 	if err = c.saveSnapshot(ctx, snapDetails); err != nil {
