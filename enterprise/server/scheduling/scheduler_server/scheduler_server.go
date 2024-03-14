@@ -1813,22 +1813,22 @@ func successfulReservation(node *executionNode, enqueueStart time.Time) string {
 // returned by the remote executor, if any.
 func (s *SchedulerServer) enqueue(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest, opts enqueueTaskReservationOpts) (bool, error) {
 	if opts.scheduleOnConnectedExecutors {
-		return enqueueOnConnectedExecutor(ctx, node, request), nil
+		return enqueueOnConnectedExecutor(ctx, node, request)
 	} else {
 		return s.enqueueOnRemoteExecutor(ctx, node, request)
 	}
 }
 
-func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) bool {
+func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) (bool, error) {
 	if node.handle == nil {
 		log.CtxErrorf(ctx, "nil handle for a local executor %q", node.GetExecutorID())
-		return false // no sleep
+		return false, nil
 	}
 	_, err := node.handle.EnqueueTaskReservation(ctx, request)
 	if err != nil {
 		log.CtxInfof(ctx, "Failed to enqueue task on connected executor: %s", err)
 	}
-	return err == nil // no sleep
+	return err == nil, nil
 }
 
 func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) (bool, error) {
