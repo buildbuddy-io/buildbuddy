@@ -1707,7 +1707,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		var m struct {
 			AddPullRequestReview struct {
 				PullRequestReview struct {
-					Id       string
+					Id            string
 					ReviewThreads struct {
 						Nodes []reviewThread
 					} `graphql:"reviewThreads(last: 1)"`
@@ -1763,7 +1763,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 			AddPullRequestReviewThread struct {
 				ClientMutationId string
 				Thread           struct {
-					Id string
+					Id       string
 					Comments struct {
 						Nodes []reviewComment
 					} `graphql:"comments(last: 1)"`
@@ -1783,7 +1783,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		if err != nil {
 			return nil, err
 		}
-		threadId = m.AddPullRequestReviewThread.Thread.Id;
+		threadId = m.AddPullRequestReviewThread.Thread.Id
 		commentId = m.AddPullRequestReviewThread.Thread.Comments.Nodes[0].Id
 	}
 
@@ -1886,11 +1886,11 @@ type reviewComment struct {
 }
 
 type comment struct {
-	Author     actor
-	BodyHTML   string `graphql:"bodyHTML"`
-	BodyText   string
-	CreatedAt  time.Time
-	Id         string
+	Author    actor
+	BodyHTML  string `graphql:"bodyHTML"`
+	BodyText  string
+	CreatedAt time.Time
+	Id        string
 }
 
 type commentLink struct {
