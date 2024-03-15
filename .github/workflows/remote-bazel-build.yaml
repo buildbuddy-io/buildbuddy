@@ -22,7 +22,7 @@ jobs:
 
       - name: Test
         run: |
-          bb remote --env=GIT_REPO_DEFAULT_BRANCH=master test //... \
+          bb remote --env=GIT_REPO_DEFAULT_BRANCH=master --interactive=false test //... \
             --config=linux-workflows --config=race \
             --remote_executor=grpcs://buildbuddy.buildbuddy.io \
             --test_tag_filters=-performance,-webdriver,-docker,-bare \
