@@ -1958,7 +1958,7 @@ type prDetailsQuery struct {
 			Merged         bool
 			URL            string `graphql:"url"`
 			HeadRefName    string
-			TimelineItems struct {
+			TimelineItems  struct {
 				Nodes []timelineItem
 			} `graphql:"timelineItems(first: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, REVIEW_DISMISSED_EVENT, PULL_REQUEST_REVIEW])"`
 			ReviewRequests struct {
@@ -2205,10 +2205,10 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		ActionStatuses: actionStatuses,
 		Comments:       outputComments,
 		// TODO(jdhollen): Switch to MergeStateStatus when it's stable. https://docs.github.com/en/graphql/reference/enums#mergestatestatus
-		Mergeable:      pr.Mergeable == "MERGEABLE" && pr.ReviewDecision == githubv4.PullRequestReviewDecisionApproved,
-		Submitted:      pr.Merged,
-		GithubUrl:      pr.URL,
-		DraftReviewId:  draftReviewId,
+		Mergeable:     pr.Mergeable == "MERGEABLE" && pr.ReviewDecision == githubv4.PullRequestReviewDecisionApproved,
+		Submitted:     pr.Merged,
+		GithubUrl:     pr.URL,
+		DraftReviewId: draftReviewId,
 	}
 
 	return resp, nil
