@@ -10,7 +10,7 @@ To deploy BuildBuddy Remote Build Execution on-prem, we recommend using the [Bui
 
 First add the BuildBuddy Helm repository:
 
-```
+```bash
 helm repo add buildbuddy https://helm.buildbuddy.io
 ```
 
@@ -18,7 +18,7 @@ Then you'll need to make sure kubectl is configured with access to your Kubernet
 
 Finally install BuildBuddy enterprise to your Kubernetes cluster:
 
-```
+```bash
 helm install buildbuddy buildbuddy/buildbuddy-enterprise
 ```
 
@@ -26,7 +26,7 @@ This will deploy a minimal BuildBuddy enterprise install to your Kubernetes clus
 
 You can verify your install by waiting a minute or two for your deployment to complete, then running:
 
-```
+```bash
 echo `kubectl get --namespace default service buildbuddy-enterprise -o jsonpath='{.status.loadBalancer.ingress[0].*}'`
 ```
 
@@ -38,7 +38,7 @@ Now that you have a basic BuildBuddy Enterprise install deployed. Let's configur
 
 You can do so this by passing a `values.yaml` file to Helm that enables RBE. Here's a simple `values.yaml` file with RBE enabled. This will deploy RBE with 3 executors and Redis enabled:
 
-```
+```yaml title="values.yaml"
 executor:
   enabled: true
   replicas: 3
@@ -55,13 +55,13 @@ GCP's [n2-standard-8 machines](https://cloud.google.com/compute/docs/machine-typ
 
 You can now upgrade your install with the following command:
 
-```
+```bash
 helm upgrade buildbuddy buildbuddy/buildbuddy-enterprise --values values.yaml
 ```
 
 Once your upgrade has completed (and the rollout has finished), you can reload the IP address you obtained from the kubectl command above.
 
-```
+```bash
 echo `kubectl get --namespace default service buildbuddy-enterprise -o jsonpath='{.status.loadBalancer.ingress[0].*}'`
 ```
 
@@ -75,7 +75,7 @@ By default BuildBuddy app instances request 1 CPU and 4 GB of RAM, executors req
 
 Here's a values.yaml file that specifies the replica and resource settings you can use to scale your cluster up and down:
 
-```
+```yaml title="values.yaml"
 replicas: 1
 resources:
   limits:
@@ -122,12 +122,12 @@ For more configuration options beyond RBE, like authentication and storage optio
 
 If you don't want to use Helm, you can write your Kubernetes deployment configuration to a file:
 
-```
+```bash
 $ helm template buildbuddy buildbuddy/buildbuddy-enterprise > buildbuddy-deploy.yaml
 ```
 
 You can then check this configuration in to your source repository, or manually apply it to your cluster with:
 
-```
+```bash
 $ kubectl apply -f buildbuddy-deploy.yaml
 ```

@@ -27,14 +27,14 @@ In order to configure BuildBuddy's GitHub integration, you'll either need to:
 
 Open source with access token:
 
-```
+```yaml title="config.yaml"
 github:
   access_token: abc123
 ```
 
 Enterprise with Oauth app:
 
-```
+```yaml title="config.yaml"
 github:
   client_id: abc123
   client_secret: def456

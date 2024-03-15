@@ -49,7 +49,7 @@ avoid exposing secrets to actions that do not need them.
 
 Example:
 
-```python
+```python title="BUILD"
 foo_library(
     # ...
     exec_properties = {
@@ -75,8 +75,7 @@ environment variables via special headers passed at the Bazel command line.
 Headers are more secure than setting environment variables with Bazel,
 as they are not stored in the remote cache.
 
-```bash
-# For simple secrets
+```bash title="Simple Secrets"
 --remote_exec_header=x-buildbuddy-platform.env-overrides=VAR_A=value_a,VAR_B=val_b
 
 ## At execution time:
@@ -85,14 +84,13 @@ value_a
 > echo $VAR_B
 val_b
 
----
+```
 
-# For more complex secrets
-
+```bash title="Complex Secrets"
 ## First encode the secrets using base64,
 ## making sure to include the entire 'KEY=VALUE' pair
 > echo -n 'VAR_C={"a": 1, "b", 2}' | base64
-> echo -n 'VAR_D=asdfa!@#C,+{}' | base64
+> echo -n 'VAR_D=asdfa!@@C,+{}' | base64
 
 ## then use the base64-encoded strings in the `env-overrides-base64` header, comma separated.
 --remote_exec_header=x-buildbuddy-platform.env-overrides-base64=VkFSX0M9eyJhIjogMSwgImIiLCAyfQ==,VkFSX0Q9YXNkZmEhQCNDLCt7fQ==
@@ -101,7 +99,7 @@ val_b
 > echo $VAR_C
 {"a": 1, "b", 2}
 > echo $VAR_D
-asdfa!@#C,+{}
+asdfa!@@C,+{}
 ```
 
 :::note

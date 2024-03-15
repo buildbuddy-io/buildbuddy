@@ -20,10 +20,10 @@ If using the `buildbuddy/buildbuddy-executor` [Helm charts](https://github.com/b
 
 By default, both executors and the BuildBuddy app do not set a pool name and any RBE request that comes in without a `Pool` property set will be sent to the default pool. If you'd like requests without a `Pool` property to be sent to a different default pool, you can set the app's `default_pool_name` in the `remote_execution` block of its `config.yaml`.
 
-```
+```yaml title="config.yaml"
 remote_execution:
-    enable_remote_exec: true
-    default_pool_name: my-default-pool
+  enable_remote_exec: true
+  default_pool_name: my-default-pool
 ```
 
 ## Selecting a pool to run your builds on
@@ -32,9 +32,9 @@ Now that you've deployed multiple executor pools, you can select which pool you'
 
 ### Platform level
 
-You can configure BuildBuddy RBE to use a custom executor pool at the platform level, by adding the following rule to a BUILD file:
+You can configure BuildBuddy RBE to use a custom executor pool at the platform level, by adding the following rule to a `BUILD` file:
 
-```
+```python title="BUILD"
 platform(
     name = "gpu_platform",
     exec_properties = {
@@ -48,7 +48,7 @@ Make sure to replace `my-gpu-pool` with your docker image url.
 
 You can then pass this configuration to BuildBuddy RBE with the following flag:
 
-```
+```bash
 --host_platform=//:gpu_platform
 ```
 
@@ -58,7 +58,7 @@ This assumes you've placed this rule in your root BUILD file. If you place it el
 
 If you want different targets to run in different RBE environments, you can specify `exec_properties` at the target level. For example if you want to run one set of tests in a high-memory pool, or another set of targets on executors with GPUs.
 
-```
+```python title="BUILD"
 go_test(
     name = "memory_hogging_test",
     srcs = ["memory_hogging_test.go"],

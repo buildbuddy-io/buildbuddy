@@ -37,7 +37,7 @@ The configuration in `buildbuddy.yaml` only takes effect after you
 
 You can copy this example config as a starting point for your own `buildbuddy.yaml`:
 
-```yaml
+```yaml title="buildbuddy.yaml"
 actions:
   - name: "Test all targets"
     triggers:
@@ -109,7 +109,7 @@ the remote header `x-buildbuddy-platform.container-registry-password` to
 the value of that secret, we can get the secret value using
 `$REGISTRY_TOKEN`, as in the following example:
 
-```yaml
+```yaml title="buildbuddy.yaml"
 # ...
 bazel_commands:
   - "test ... --remote_exec_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
@@ -122,7 +122,7 @@ using a bazel flag like
 or
 [`--test_env`](https://bazel.build/reference/command-line-reference#flag--test_env):
 
-```yaml
+```yaml title="buildbuddy.yaml"
 # ...
 bazel_commands:
   - "test ... --test_env=REGISTRY_TOKEN"
@@ -139,7 +139,7 @@ file.
 
 For example, in `/buildbuddy.yaml`, you would write:
 
-```yaml
+```yaml title="buildbuddy.yaml"
 # ...
 bazel_commands:
   - bazel run :generate_ci_bazelrc
@@ -148,14 +148,14 @@ bazel_commands:
 
 In `/BUILD`, you'd declare an `sh_binary` target for your setup script:
 
-```python
+```python title="/BUILD"
 sh_binary(name = "generate_ci_bazelrc", srcs = ["generate_ci_bazelrc.sh"])
 ```
 
 Then in `/generate_ci_bazelrc.sh`, you'd generate the `ci.bazelrc` file in
 the workspace root (make sure to make this file executable with `chmod +x`):
 
-```shell
+```shell title="/generate_ci_bazelrc.sh"
 #!/usr/bin/env bash
 set -e
 # Change to the WORKSPACE directory
@@ -189,7 +189,7 @@ branch, as described in [Triggering merge group checks with third-party CI provi
 
 Example `buildbuddy.yaml` file:
 
-```yaml
+```yaml title="buildbuddy.yaml"
 - action: Test
   triggers:
     push:
@@ -205,7 +205,7 @@ By default, workflows run on an Ubuntu 18.04-based image. You can use
 a newer, Ubuntu 20.04-based image using the `container_image` action
 setting:
 
-```yaml
+```yaml title="buildbuddy.yaml"
 actions:
   - name: "Test all targets"
     container_image: "ubuntu-20.04" # <-- add this line
@@ -239,7 +239,7 @@ executors.
    also need to set `SYS_MEMORY_BYTES` to allow enough memory to be
    used for workflows (a minimum of 8GB is required).
 
-```xml
+```xml title="buildbuddy-executor.plist"
         ...
         <key>EnvironmentVariables</key>
         <dict>
@@ -264,7 +264,7 @@ executors.
    well. Note: if you copy another action as a starting point, be sure to
    give the new action a unique name:
 
-```yaml
+```yaml title="buildbuddy.yaml"
 actions:
   - name: "Test all targets (Mac)"
     os: "darwin" # <-- add this line
@@ -299,7 +299,7 @@ artifacts directory using the environment variable
 
 Example `buildbuddy.yaml` configuration:
 
-```yaml
+```yaml title="buildbuddy.yaml"
 actions:
   - name: "Test"
     # ...

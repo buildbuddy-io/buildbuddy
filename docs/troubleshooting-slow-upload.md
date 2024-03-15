@@ -10,7 +10,7 @@ This error means the `bes_timeout` [flag](https://docs.bazel.build/versions/mast
 
 We recommend using the following flag to increase this upload timeout:
 
-```
+```bash
 --bes_timeout=600s
 ```
 
@@ -22,7 +22,7 @@ If your build has finished but you're frequently sitting around waiting for buil
 
 For network constrained environments, we recommend running with the flag:
 
-```
+```bash
 --noremote_upload_local_results
 ```
 
