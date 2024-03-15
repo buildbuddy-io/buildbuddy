@@ -39,7 +39,7 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
 
 ### Example cURL response
 
-```json
+```js
 {
   "invocation": [
     {
@@ -319,7 +319,7 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
 
 ### Example cURL response
 
-```json
+```js
 {
   "target": [
     {
@@ -474,7 +474,7 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
 
 ### Example cURL response
 
-```json
+```js
 {
    "action":[
       {

@@ -15,7 +15,7 @@ passed on the command line. For nested options, be sure to write out the full
 YAML path, with a `.` separating each part.
 
 For example:
-```yaml
+```yaml title="config.yaml"
 storage:
     disk:
         root_directory: /tmp/buildbuddy
@@ -30,7 +30,7 @@ representation of the list you wish to concatenate to the end or the element you
 wish to append:
 
 For example, given the following schema:
-```yaml
+```yaml title="config.yaml"
 cache:
     disk:
         partitions: [] # type: []disk.Partition
@@ -39,7 +39,7 @@ cache:
         #   max_size_bytes: 0 # type: int
 ```
 We see that `cache.disk.partitions` is configured as a list of `disk.Partition`. In YAML, we'd normally configure it like this:
-```yaml
+```yaml title="config.yaml"
 cache:
     disk:
         partitions:

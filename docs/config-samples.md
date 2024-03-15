@@ -6,7 +6,7 @@ sidebar_label: Samples
 
 ### Running locally (disk only)
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "http://localhost:8080"
 database:
@@ -24,7 +24,7 @@ cache:
 
 ### Running with MySQL and in-memory cache
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "http://acme.corp"
 database:
@@ -43,7 +43,7 @@ cache:
 
 ### Running with your own auth provider
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "http://acme.corp"
 database:
@@ -65,7 +65,7 @@ auth:
 
 ### Fully loaded
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "https://app.buildbuddy.mydomain"
   events_api_url: "grpcs://events.buildbuddy.mydomain:1986"

@@ -75,7 +75,7 @@ Note: the `k8s_on_prem.sh` script requires **[kubectl](https://kubernetes.io/doc
 
 To pass in a custom [config file](config.md), you can use the `-config` flag:
 
-```
+```bash
 bash k8s_on_prem.sh -config my-config.yaml
 ```
 
@@ -83,7 +83,7 @@ bash k8s_on_prem.sh -config my-config.yaml
 
 By default the `k8s_on_prem.sh` script will use `kubectl apply` to deploy BuildBuddy to your current Kubernetes cluster. If you'd like to output the Kubernetes deployment to a yaml file instead that can be checked in, you can use the `-out` flag:
 
-```
+```bash
 bash k8s_on_prem.sh -out my-buildbuddy-deployment.yaml
 ```
 
@@ -91,7 +91,7 @@ bash k8s_on_prem.sh -out my-buildbuddy-deployment.yaml
 
 By default the `k8s_on_prem.sh` script will deploy a single replica of BuildBuddy. If you've configured a MySQL database, storage, and other options necessary to support multiple replicas, you can increase the number of BuildBuddy replicas to deploy with the `-replicas` flag.
 
-```
+```bash
 bash k8s_on_prem.sh -replicas 3
 ```
 
@@ -99,7 +99,7 @@ bash k8s_on_prem.sh -replicas 3
 
 By default the `k8s_on_prem.sh` will restart your BuildBuddy deployment to pick up any changes in your configuration file. This can lead to brief downtime if only one replica is deployed. You can disable this behavior with the `-norestart` flag.
 
-```
+```bash
 bash k8s_on_prem.sh -norestart
 ```
 
@@ -107,7 +107,7 @@ bash k8s_on_prem.sh -norestart
 
 If you've obtained a BuildBuddy enterprise license, you deploy enterprise BuildBuddy by specifying the `-enterprise` flag.
 
-```
+```bash
 bash k8s_on_prem.sh -enterprise
 ```
 
@@ -119,13 +119,13 @@ They have options to deploy everything necessary to use all of BuildBuddy's bell
 
 The official BuildBuddy charts live in our [buildbuddy-helm repo](https://github.com/buildbuddy-io/buildbuddy-helm) and can be added to helm with the following command:
 
-```
+```bash
 helm repo add buildbuddy https://helm.buildbuddy.io
 ```
 
 You can the deploy BuildBuddy Open Source with the following command:
 
-```
+```bash
 helm install buildbuddy buildbuddy/buildbuddy \
   --set mysql.mysqlUser=sampleUser \
   --set mysql.mysqlPassword=samplePassword

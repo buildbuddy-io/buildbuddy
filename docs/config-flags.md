@@ -18,13 +18,13 @@ Additionally any [configuration option](config.md) can also be specified as a fl
 
 For example the following configuration option:
 
-```
+```yaml title="config.yaml"
 database:
   data_source: "mysql://user:password@tcp(12.34.56.78)/buildbuddy_db"
 ```
 
 Would be specified as a flag like so:
 
-```
+```bash
 --database.data_source="mysql://user:password@tcp(12.34.56.78)/buildbuddy_db"
 ```

@@ -64,6 +64,8 @@ const bazelBinPlugin = function (context, options) {
   };
 };
 
+import { themes as prismThemes } from "prism-react-renderer";
+
 module.exports = {
   title: "BuildBuddy",
   tagline:
@@ -90,7 +92,46 @@ module.exports = {
       disableSwitch: true,
     },
     prism: {
-      additionalLanguages: ["promql", "protobuf"],
+      theme: {
+        plain: { color: "#fff", backgroundColor: "#212121" },
+        styles: [
+          ...prismThemes.vsDark.styles,
+          {
+            types: ["prolog"],
+            style: {
+              color: "#4FC1FF",
+            },
+          },
+          {
+            types: ["key"],
+            style: {
+              color: "#4FC1FF",
+            },
+          },
+          {
+            types: ["user"],
+            style: {
+              color: "#8BC34A",
+              fontWeight: "bold",
+            },
+          },
+          {
+            types: ["path"],
+            style: {
+              color: "#03A9F4",
+              fontWeight: "bold",
+            },
+          },
+          {
+            types: ["shell-symbol"],
+            style: {
+              color: "#FF5722",
+              fontWeight: "bold",
+            },
+          },
+        ],
+      },
+      additionalLanguages: ["promql", "protobuf", "shell-session", "bash"],
     },
     image: "img/preview.png",
     navbar: {

@@ -16,7 +16,7 @@ If you're running BuildBuddy in a Docker image - you can use Docker's [-v flag](
 
 Be sure to replace `PATH_TO_YOUR_LOCAL_CONFIG ` with the path to your custom config file:
 
-```
+```bash
 docker pull gcr.io/flame-public/buildbuddy-app-onprem:latest && docker run -p 1985:1985 -p 8080:8080 -v /PATH_TO_YOUR_LOCAL_CONFIG/config.yaml:/config.yaml gcr.io/flame-public/buildbuddy-app-onprem:latest
 ```
 

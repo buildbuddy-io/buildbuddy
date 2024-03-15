@@ -22,13 +22,13 @@ They have options to deploy everything necessary to use all of BuildBuddy's bell
 
 The official BuildBuddy charts live in our [buildbuddy-helm repo](https://github.com/buildbuddy-io/buildbuddy-helm) and can be added to helm with the following command:
 
-```
+```bash
 helm repo add buildbuddy https://helm.buildbuddy.io
 ```
 
 You can the deploy BuildBuddy Enterprise with the following command:
 
-```
+```bash
 helm install buildbuddy buildbuddy/buildbuddy-enterprise \
   --set mysql.mysqlUser=sampleUser \
   --set mysql.mysqlPassword=samplePassword
@@ -44,7 +44,7 @@ We publish a [Docker](https://www.docker.com/) image with every release that con
 
 To run it, use the following command:
 
-```
+```bash
 docker pull gcr.io/flame-public/buildbuddy-app-enterprise:latest && docker run -p 1985:1985 -p 8080:8080 gcr.io/flame-public/buildbuddy-app-enterprise:latest
 ```
 
@@ -54,7 +54,7 @@ Note: If you're using BuildBuddy's Docker image locally and a third party gRPC c
 
 We also publish a docker image containing our RBE executor:
 
-```
+```bash
 docker pull gcr.io/flame-public/buildbuddy-executor-enterprise:latest && docker run -p 1987:1987 gcr.io/flame-public/buildbuddy-executor-enterprise:latest
 ```
 
@@ -68,13 +68,13 @@ This script uses [this deployment file](https://github.com/buildbuddy-io/buildbu
 
 To kick of the Kubernetes deploy, use the following command:
 
-```
+```bash
 bash k8s_on_prem.sh -enterprise
 ```
 
 To make this easier, the `k8s_on_prem.sh` script can optionally push a config file to your cluster in a Kubernetes ConfigMap that contains the contents of a custom config file. To do this, just specify the -config flag with an argument that is the path to your custom configuration file. For example:
 
-```
+```bash
 ./k8s_on_prem.sh -enterprise -config foo/bar/buildbuddy.custom.yaml
 ```
 

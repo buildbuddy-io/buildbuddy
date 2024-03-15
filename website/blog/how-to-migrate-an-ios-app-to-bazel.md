@@ -44,7 +44,7 @@ That will explain some foundational things that I don't cover in this guide.
 
 ## Table of contents
 
-<nav class="toc">
+<nav className="toc">
 
 - [Bootstrapping Bazel](#bootstrapping-bazel)
 - [Defining targets](#defining-targets)

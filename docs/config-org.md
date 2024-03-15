@@ -20,7 +20,7 @@ Your organization is only configurable in the [Enterprise version](enterprise.md
 
 ## Example section
 
-```
+```yaml title="config.yaml"
 org:
   name: Acme Corp
   domain: acme.com

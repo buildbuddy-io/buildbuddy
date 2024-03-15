@@ -66,3 +66,8 @@ a code {
 .docs-doc-page .markdown li {
   margin-bottom: 1em;
 }
+
+div.codeBlockTitle_node_modules-\@docusaurus-theme-classic-lib-theme-CodeBlock-Content-styles-module {
+  color: #aaa;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}

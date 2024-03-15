@@ -32,7 +32,7 @@ If you'd like to use Google as an auth provider, you can easily obtain your clie
 
 **Example**:
 
-```
+```yaml title="config.yaml"
 auth:
   oauth_providers:
     - issuer_url: "https://accounts.google.com"
@@ -49,7 +49,7 @@ For more details, please refer to [Gitlab's latest Official Documentation](https
 
 **Note**: Because [Gitlab has yet to support refresh tokens](https://gitlab.com/gitlab-org/gitlab/-/issues/16620), you need to configure BuildBuddy to not request the `offline_access` scope from Gitlab:
 
-```
+```yaml title="config.yaml"
 auth:
   disable_refresh_token: true
 ```
@@ -64,7 +64,7 @@ auth:
 
 Once the Gitlab application is created, you can configure it as a BuildBuddy auth provider like so:
 
-```
+```yaml title="config.yaml"
 auth:
   oauth_providers:
     - issuer_url: "https://gitlab.com"

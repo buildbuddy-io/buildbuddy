@@ -21,7 +21,7 @@ RBE configuration must be enabled in your `config.yaml` file, but most configura
 
 ## Example section
 
-```yaml
+```yaml title="config.yaml"
 remote_execution:
   enable_remote_exec: true
 ```
@@ -32,7 +32,7 @@ BuildBuddy RBE executors take their own configuration file that is pulled from `
 
 Here is an example:
 
-```yaml
+```yaml title="config.yaml"
 executor:
   app_target: "grpcs://your.buildbuddy.install:443"
   root_directory: "/buildbuddy/remotebuilds/"
@@ -53,7 +53,7 @@ configuration in `~/.docker/config.json`.
 
 Here is an example:
 
-```yaml
+```yaml title="config.yaml"
 executor:
   container_registries:
     - hostnames:
@@ -69,7 +69,7 @@ for authentication, which avoids the need to set up credential helpers.
 For example, Google Container Registry allows setting a username of
 "\_json_key" and then passing the service account key directly:
 
-```yaml
+```yaml title="config.yaml"
 executor:
   container_registries:
     - hostnames:
@@ -102,7 +102,7 @@ In addition to the config.yaml, there are also environment variables that execut
 
 Many of these environment variables are typically set based on Kubernetes FieldRefs like so:
 
-```yaml
+```yaml title="config.yaml"
 env:
   - name: SYS_MEMORY_BYTES
     valueFrom:
