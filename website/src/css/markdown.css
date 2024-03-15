@@ -67,7 +67,7 @@ a code {
   margin-bottom: 1em;
 }
 
-div.codeBlockTitle_node_modules-\@docusaurus-theme-classic-lib-theme-CodeBlock-Content-styles-module {
+.theme-code-block > div {
   color: #aaa;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom-color: rgba(255, 255, 255, 0.2);
 }

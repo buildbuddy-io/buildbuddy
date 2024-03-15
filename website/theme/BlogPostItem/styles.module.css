@@ -2,6 +2,7 @@ h1,
 .blogPostTitle {
   font-size: 56px;
   line-height: 64px;
+  text-wrap: pretty;
 }
 
 h1 {
