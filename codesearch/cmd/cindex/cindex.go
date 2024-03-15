@@ -157,7 +157,7 @@ func (a *indexWriterAdaptor) AddFileByDigest(name string, digest *repb.Digest, c
 		index.BytesToUint64(hexBytes[:8]),
 		map[string]types.NamedField{
 			"filename": types.NewNamedField(types.TextField, "filename", []byte(name), true /*=stored*/),
-			"body":     types.NewNamedField(types.TextField, "body", contents, true /*=stored*/),
+			"content":  types.NewNamedField(types.TextField, "content", contents, true /*=stored*/),
 		},
 	)
 	return a.AddDocument(doc)

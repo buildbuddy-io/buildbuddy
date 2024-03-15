@@ -5,6 +5,7 @@ go_library(
     srcs = ["regexp.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/query",
     visibility = ["//visibility:public"],
+    deps = ["//codesearch/types"],
 )
 
 go_test(

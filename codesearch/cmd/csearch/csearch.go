@@ -55,6 +55,8 @@ var (
 	iFlag       = flag.Bool("i", false, "case-insensitive search")
 	verboseFlag = flag.Bool("verbose", false, "print extra information")
 	bruteFlag   = flag.Bool("brute", false, "brute force - search all files in index")
+	squery      = flag.Bool("squery", false, "use squery instead of posting query")
+	noResults   = flag.Bool("noresults", false, "don't print results")
 	cpuProfile  = flag.String("cpuprofile", "", "write cpu profile to this file")
 
 	listMatchesOnly = flag.Bool("l", false, "list matching files only")
@@ -67,6 +69,7 @@ var (
 
 type IndexReader interface {
 	PostingQuery(q *query.Query) ([]uint64, error)
+	PostingQuerySX(sExpression []byte) ([]uint64, error)
 	Name(fileid uint64) (string, error)
 	Contents(fileid uint64) ([]byte, error)
 }
@@ -83,7 +86,7 @@ func (a *indexAdapter) Name(docid uint64) (string, error) {
 	return string(buf), nil
 }
 func (a *indexAdapter) Contents(docid uint64) ([]byte, error) {
-	return a.Reader.GetStoredFieldValue(docid, "body")
+	return a.Reader.GetStoredFieldValue(docid, "content")
 }
 
 func indexDir() string {
@@ -102,7 +105,10 @@ func indexDir() string {
 func runQuery(ix IndexReader, q *query.Query, fre *regexp.Regexp) []uint64 {
 	var post []uint64
 	var err error
-	if *bruteFlag {
+
+	if *squery {
+		post, err = ix.PostingQuerySX([]byte(q.SQuery()))
+	} else if *bruteFlag {
 		post, err = ix.PostingQuery(&query.Query{Op: query.QAll})
 	} else {
 		post, err = ix.PostingQuery(q)
@@ -114,9 +120,11 @@ func runQuery(ix IndexReader, q *query.Query, fre *regexp.Regexp) []uint64 {
 		log.Printf("post query identified %d possible files\n", len(post))
 	}
 
+	if *noResults {
+		return nil
+	}
 	if fre != nil {
 		fnames := make([]uint64, 0, len(post))
-
 		for _, fileid := range post {
 			name, err := ix.Name(fileid)
 			if err != nil {
@@ -182,6 +190,7 @@ func Main() {
 	q := query.RegexpQuery(re.Syntax)
 	if *verboseFlag {
 		log.Printf("query: %s\n", q)
+		log.Printf("squery: %s\n", q.SQuery())
 	}
 
 	db, err := pebble.Open(indexDir(), &pebble.Options{})

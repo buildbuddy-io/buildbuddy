@@ -8,6 +8,7 @@ import (
 	"math"
 	"regexp"
 	"runtime"
+	"strconv"
 	"sync"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -24,6 +25,7 @@ import (
 )
 
 var fieldNameRegex = regexp.MustCompile(`^([a-zA-Z0-9_]+)$`)
+
 const npost = 64 << 20 / 8 // 64 MB worth of post entries
 
 type postingLists map[string][]uint64
@@ -229,7 +231,7 @@ func (r *Reader) GetStoredFieldValue(docID uint64, field string) ([]byte, error)
 // they are both found and also are present in the restrict set.
 func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field string) (*roaring64.Bitmap, error) {
 	minKey := []byte(fmt.Sprintf("%s:gra:%s", r.repo, ngram))
-	if field != "" {
+	if field != types.AllFields {
 		minKey = []byte(fmt.Sprintf("%s:gra:%s:%s", r.repo, ngram, field))
 	}
 	maxKey := append(minKey, byte('\xff'))
@@ -242,10 +244,10 @@ func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field s
 	resultSet := roaring64.New()
 	postingList := roaring64.New()
 	for iter.First(); iter.Valid(); iter.Next() {
-		r.log.Infof("query %q matched tok %q", ngram, iter.Key())
 		if _, err := postingList.ReadFrom(bytes.NewReader(iter.Value())); err != nil {
 			return nil, err
 		}
+		r.log.Infof("%q matched tok %q [%d]", ngram, iter.Key(), postingList.GetCardinality())
 		resultSet = roaring64.Or(resultSet, postingList)
 		postingList.Clear()
 	}
@@ -392,6 +394,11 @@ func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error
 		if !ok {
 			return nil, status.InvalidArgumentErrorf("ngram %q must be a string/bytes", children[2])
 		}
+		// TODO(tylerw): consider if this is the right place
+		// for this to happen.
+		if s, err := strconv.Unquote(ngram); err == nil {
+			ngram = s
+		}
 		return r.PostingListF([]byte(ngram), field, restrict)
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown query op: %q", op)
@@ -400,8 +407,7 @@ func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error
 }
 
 // TODO(tylerw): move this to query??
-func (r *Reader) postingQuery(q *query.Query, restrict []uint64) (ret []uint64, err error) {
-	var list []uint64
+func (r *Reader) postingQuery(q *query.Query, restrict []uint64) (list []uint64, err error) {
 	switch q.Op {
 	case query.QNone:
 		// nothing

@@ -5,11 +5,15 @@
 package query
 
 import (
+	"fmt"
+	"log"
 	"regexp/syntax"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 )
 
 // A Query is a matching machine, like a regular expression,
@@ -297,6 +301,7 @@ func (q *Query) andTrigrams(t stringSet) *Query {
 }
 
 func (q *Query) String() string {
+	log.Printf("q: %#v", q)
 	if q == nil {
 		return "?"
 	}
@@ -332,7 +337,12 @@ func (q *Query) String() string {
 		}
 		s += strconv.Quote(t)
 	}
+	for _, sq := range q.Sub {
+		log.Printf("subQ: %#v", sq)
+	}
+
 	if len(q.Sub) > 0 {
+
 		if len(q.Trigram) > 0 {
 			s += sjoin
 		}
@@ -343,6 +353,59 @@ func (q *Query) String() string {
 	}
 	s += end
 	return s
+}
+
+func (q *Query) SQuery() string {
+	if q == nil {
+		return ""
+	}
+	if q.Op == QNone {
+		return "(:none)"
+	}
+	if q.Op == QAll {
+		return "(:all)"
+	}
+
+	fieldName := types.AllFields
+	if len(q.Sub) == 0 && len(q.Trigram) == 1 {
+		return fmt.Sprintf("(:eq %s %s)", fieldName, q.Trigram[0])
+	}
+
+	var qb strings.Builder
+	if q.Op == QAnd {
+		qb.WriteString("(:and ")
+	} else if q.Op == QOr {
+		qb.WriteString("(:or ")
+	}
+	for i, t := range q.Trigram {
+		qb.WriteString(fmt.Sprintf("(:eq %s %s)", fieldName, strconv.Quote(t)))
+		if i != len(q.Trigram)-1 {
+			qb.WriteString(" ")
+		} else {
+			qb.WriteString(")")
+		}
+	}
+
+	if len(q.Sub) == 0 {
+		return qb.String()
+	}
+
+	var sb strings.Builder
+	if q.Op == QAnd {
+		sb.WriteString("(:and ")
+	} else if q.Op == QOr {
+		sb.WriteString("(:or ")
+	}
+	sb.WriteString(qb.String() + " ")
+	for i, sub := range q.Sub {
+		sb.WriteString(sub.SQuery())
+		if i != len(q.Sub)-1 {
+			sb.WriteString(" ")
+		} else {
+			sb.WriteString(")")
+		}
+	}
+	return sb.String()
 }
 
 // RegexpQuery returns a Query for the given regexp.
