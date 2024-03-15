@@ -204,7 +204,6 @@ ul ul ul .table-of-contents__link {
 .blog-post-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: mosiac;
   gap: 32px;
 }
 
