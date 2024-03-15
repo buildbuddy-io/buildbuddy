@@ -7,6 +7,9 @@ go_library(
     data = ["@com_github_bazelbuild_bazelisk//:bazelisk"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testbazelisk",
     visibility = ["//visibility:public"],
+    x_defs = {
+        "bazeliskRunfilePath": "$(rlocationpaths @com_github_bazelbuild_bazelisk//:bazelisk)",
+    },
     deps = [
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles:go_default_library",

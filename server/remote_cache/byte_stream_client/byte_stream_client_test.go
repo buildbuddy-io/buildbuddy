@@ -12,6 +12,7 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 )
@@ -51,7 +52,7 @@ func TestManifest_SomeFilesZip(t *testing.T) {
 		},
 	}
 	path, err := runfiles.Rlocation(someFilesRunfilePath)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	bytes, err := os.ReadFile(path)
 	assert.NoError(t, err)
 	manifest, err := ParseZipManifestFooter(bytes, 0, int64(len(bytes)))
@@ -64,7 +65,7 @@ func TestManifest_SomeFilesZip(t *testing.T) {
 func TestManifest_NoFilesZip(t *testing.T) {
 	expected := &zipb.Manifest{}
 	path, err := runfiles.Rlocation(noFilesRunfilePath)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	bytes, err := os.ReadFile(path)
 	assert.NoError(t, err)
 	manifest, err := ParseZipManifestFooter(bytes, 0, int64(len(bytes)))
@@ -76,7 +77,7 @@ func TestManifest_NoFilesZip(t *testing.T) {
 
 func TestManifest_TooManyFilesZip(t *testing.T) {
 	path, err := runfiles.Rlocation(tooManyFilesRunfilePath)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	bytes, err := os.ReadFile(path)
 	assert.NoError(t, err)
 
@@ -109,7 +110,7 @@ func validateZipContents(t *testing.T, ctx context.Context, entry *zipb.Manifest
 
 func TestReadZipFileContents(t *testing.T) {
 	path, err := runfiles.Rlocation(someFilesRunfilePath)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	b, err := os.ReadFile(path)
 	assert.NoError(t, err)
 	manifest, err := ParseZipManifestFooter(b, 0, int64(len(b)))

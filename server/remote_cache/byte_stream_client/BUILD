@@ -44,6 +44,7 @@ go_test(
         "//proto:zip_go_proto",
         "//server/util/proto",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles:go_default_library",
     ],
 )
