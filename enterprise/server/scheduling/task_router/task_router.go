@@ -124,10 +124,8 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 		return nonePreferred(nodes)
 	}
 
-	nodeByExecutorID := map[string]interfaces.ExecutionNode{}
 	nodeByHostID := map[string]interfaces.ExecutionNode{}
 	for _, node := range nodes {
-		nodeByExecutorID[node.GetExecutorID()] = node
 		// Note: if multiple executors live on the same host, the last one in
 		// the list wins.
 		nodeByHostID[node.GetExecutorHostID()] = node
