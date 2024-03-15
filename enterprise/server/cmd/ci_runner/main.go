@@ -151,7 +151,6 @@ var (
 	patchURIs          = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 	gitCleanExclude    = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
-	interactive        = flag.Bool("interactive", true, "Whether to run the script in interactive mode (will print real-time progress updates using ANSI escape sequences). This may cause duplicate logs to be printed if the console does not support ANSI escape sequences.")
 
 	// TODO(Maggie): Clean up in a rollout-safe way
 	envOverrideStr = flag.String("env_overrides", "", "These env vars should take precedence over any set on the command or in buildbuddy.yaml.")
@@ -1930,12 +1929,6 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	if dir != "" {
 		cmd.Dir = dir
 	}
-
-	if !*interactive {
-		return cmd.Run()
-	}
-
-	// Allocate pseduo tty to run command in interactive mode
 	f, err := pty.Start(cmd)
 	if err != nil {
 		return err

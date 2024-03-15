@@ -98,12 +98,6 @@ message RunRequest {
   // Exec properties to apply to the run request.
   repeated build.bazel.remote.execution.v2.Platform.Property exec_properties =
       13;
-
-  // Whether to run the script in interactive mode (will print real-time
-  // progress updates using ANSI escape sequences). NOTE: This may cause
-  // duplicate logs to be printed if the console does not support ANSI escape
-  // sequences.
-  bool interactive = 14;
 }
 
 message RunResponse {
