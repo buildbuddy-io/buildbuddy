@@ -244,16 +244,158 @@
   line-height: 16px;
   min-height: 16px;
   font-family: "Source Code Pro", monospace;
+  background-color: #f5f5f5;
+}
+
+.pr-view .reply-bar {
+  padding: 8px 12px;
+  line-height: 18px;
+}
+
+.pr-view .reply-fake-link {
+  margin-right: 24px;
+  cursor: pointer;
+  color: #3f51b5;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.pr-view .source-line-number,
+.pr-view .thread-line-number-space {
+  width: 52px;
+  display: inline-block;
+  margin: 0;
+  background-color: #f5f5f5;
+  text-align: end;
+  box-sizing: border-box;
+  padding-right: 8px;
+  overflow: hidden;
+  border-left: solid #e5e5e5 1px;
+  border-right: solid #e5e5e5 1px;
+}
+
+.pr-view .thread-line-number-space {
+  display: table-cell;
 }
 
 .pr-view .source-line {
-  width: 50%;
+  width: calc(50% - 52px);
   display: inline-block;
-  background-color: #f5f5f5;
+  background-color: #fff;
   margin: 0;
   vertical-align: top;
   min-height: 16px;
   white-space: pre-wrap;
+}
+
+.pr-view .source-line.empty {
+  background-color: #f5f5f5;
+}
+
+.pr-view .comment-block {
+  background-color: #fff;
+}
+
+.pr-view .threads {
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+}
+.pr-view .comment-input {
+  resize: vertical;
+  width: 100%;
+  height: 120px;
+}
+
+.pr-view .thread-block {
+  background-color: #f5f5f5;
+  box-sizing: border-box;
+  display: table-row;
+}
+
+.pr-view .thread-empty-side {
+  width: calc(50% - 52px);
+  display: inline-block;
+  background-color: #f5f5f5;
+  display: table-cell;
+}
+
+.pr-view .thread-container {
+  width: calc(50% - 52px);
+  margin: 0;
+  box-sizing: border-box;
+  padding: 4px;
+  display: inline-block;
+  vertical-align: top;
+  display: table-cell;
+}
+
+.pr-view .thread {
+  display: inline-block;
+  background-color: #ffecb3;
+  vertical-align: top;
+  min-height: 16px;
+  white-space: normal;
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 2px;
+  box-shadow: 0 0 4px #ccc;
+}
+
+.pr-view .thread.resolved {
+  background-color: #e0e0e0;
+}
+
+.pr-view .resolution-pill-box {
+  width: 100px;
+  display: inline-block;
+}
+
+.pr-view .resolution-pill {
+  border-radius: 8px;
+  line-height: 16px;
+  padding: 0 8px;
+  background-color: #ffd54f;
+  color: #795548;
+  font-weight: 600;
+}
+
+.pr-view .resolution-pill.resolved {
+  background-color: #bdbdbd;
+  color: #616161;
+}
+
+.pr-view .thread-comment {
+  width: 100%;
+  display: flex;
+  box-sizing: border-box;
+  padding: 8px 12px;
+}
+
+.pr-view .comment-divider {
+  height: 0.5px;
+  background-color: #bbb;
+  width: calc(100% - 20px);
+  margin: 0 10px;
+}
+
+.pr-view .comment-author {
+  flex: 0 0 140px;
+  display: inline-block;
+}
+
+.pr-view .comment-author-text {
+  font-weight: 600;
+}
+
+.pr-view .comment-timestamp {
+  color: #9e9e9e;
+}
+
+.pr-view .comment-body {
+  flex-grow: 1;
+  display: inline-block;
 }
 
 .pr-view .action-status {
@@ -272,8 +414,14 @@
   color: #fff;
 }
 
-.pr-view .source-line.empty {
-  background-color: #fff;
+.pr-view .source-line.right.new,
+.pr-view .source-line.right.modified {
+  background-color: #c8e6c9;
+}
+
+.pr-view .source-line.left.new,
+.pr-view .source-line.left.modified {
+  background-color: #ffcdd2;
 }
 
 .pr-view .source-line.right.new,
