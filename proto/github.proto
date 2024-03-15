@@ -635,7 +635,14 @@ message GetGithubPullRequestDetailsResponse {
 
 message SendGithubPullRequestReviewRequest {
   context.RequestContext request_context = 1;
+  // The unique idenitifer of the review.  If this is not set, pull_request_id
+  // must be set AND this request must be a plain approval (approve == true)
   string review_id = 2;
+
+  // The unique identifier of the pull request.
+  string pull_request_id = 4;
+
+  // If true, the review will approve the specified PR.
   bool approve = 3;
 }
 

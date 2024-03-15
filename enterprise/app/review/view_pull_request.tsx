@@ -565,9 +565,13 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
   }
 
   reply(approve: boolean) {
+    if (!this.state.response) {
+      return;
+    }
     this.setState({ pendingRequest: true });
     const req = new github.SendGithubPullRequestReviewRequest({
-      reviewId: this.state.response?.draftReviewId ?? "",
+      reviewId: this.state.response.draftReviewId.startsWith(FAKE_ID_PREFIX) ? "" : this.state.response.draftReviewId,
+      pullRequestId: this.state.response.pullId,
       approve,
     });
     console.log(req);
