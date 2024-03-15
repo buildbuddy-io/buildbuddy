@@ -17,7 +17,7 @@ sidebar_label: Misc
 
 ## Example section
 
-```
+```yaml title="config.yaml"
 build_event_proxy:
   hosts:
     - "grpc://localhost:1985"

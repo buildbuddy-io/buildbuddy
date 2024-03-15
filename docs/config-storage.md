@@ -48,20 +48,20 @@ One of the following sections is **Required**
 
 ### Disk
 
-```
+```yaml title="config.yaml"
 storage:
-  ttl_seconds: 86400  # One day in seconds.
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 86400 # One day in seconds.
+  chunk_file_size_bytes: 3000000 # 3 MB
   disk:
     root_directory: /tmp/buildbuddy
 ```
 
 ### GCS
 
-```
+```yaml title="config.yaml"
 storage:
-  ttl_seconds: 0  # No TTL.
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 0 # No TTL.
+  chunk_file_size_bytes: 3000000 # 3 MB
   gcs:
     bucket: "buildbuddy_blobs"
     project_id: "my-cool-project"
@@ -70,7 +70,7 @@ storage:
 
 ### AWS S3
 
-```
+```yaml title="config.yaml"
 storage:
   aws_s3:
     # required
@@ -82,7 +82,7 @@ storage:
 
 ### Minio
 
-```
+```yaml title="config.yaml"
 storage:
   aws_s3:
     static_credentials_id: "YOUR_MINIO_ACCESS_KEY"
@@ -95,7 +95,7 @@ storage:
 
 ### Azure
 
-```
+```yaml title="config.yaml"
 storage:
   azure:
     account_name: "mytestblobstore"

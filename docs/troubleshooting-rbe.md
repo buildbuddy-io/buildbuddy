@@ -10,7 +10,7 @@ This error is often a sign that a cache write is timing out. By default, bazel's
 
 We recommend using the following flag to increase this remote timeout:
 
-```
+```bash
 --remote_timeout=600
 ```
 
@@ -22,7 +22,7 @@ This error is a sign that a cache write is timing out. By default, bazel's `remo
 
 We recommend using the following flag to increase this remote timeout:
 
-```
+```bash
 --remote_timeout=600
 ```
 
@@ -47,7 +47,7 @@ between Bazel and BuildBuddy. The log file will be in protobuf format. To conver
 
 In the log, you may see network errors such as the following:
 
-```json
+```js
   "status":  {
     "code":  14,
     "message":  "io.netty.channel.unix.Errors$NativeIoException: readAddress(..) failed: Connection reset by peer"

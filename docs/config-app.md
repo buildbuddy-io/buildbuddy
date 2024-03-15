@@ -26,7 +26,7 @@ sidebar_label: App
 
 ## Example section
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "http://buildbuddy.acme.corp"
 ```

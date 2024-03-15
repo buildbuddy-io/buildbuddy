@@ -10,7 +10,7 @@ BuildBuddy Enterprise allows configuration of many features that are not availab
 
 BuildBuddy uses a SQL connection string to specify the database it will connect to. An example string is:
 
-```
+```bash
 "mysql://user:pass@tcp(12.34.56.78)/database_name"
 ```
 
@@ -20,7 +20,7 @@ To connect BuildBuddy to your own MySQL server:
 1. Create a new user with full access to that database
 1. Put the username, password, IP address of your MySQL server, and database name into the BuildBuddy data_source connection string:
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "https://app.buildbuddy.mydomain.com"
   events_api_url: "grpcs://events.buildbuddy.mydomain.com:1986"
@@ -39,7 +39,7 @@ If no default redis target is configured, we will fall back to using the cache r
 
 The configuration below demostrates a default redis target:
 
-```
+```yaml title="config.yaml"
 app:
   default_redis_target: "my-redis.local:6379"
 ```
@@ -54,10 +54,10 @@ We also recommend providing a Redis instance for improved remote build execution
 
 The configuration below configures Redis & GCS storage bucket to act as a storage backend and cache:
 
-```
+```yaml title="config.yaml"
 storage:
-  ttl_seconds: 2592000  # 30 days
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 2592000 # 30 days
+  chunk_file_size_bytes: 3000000 # 3 MB
   gcs:
     bucket: "buildbuddy_prod_blobs"
     project_id: "flame-build"
@@ -73,10 +73,10 @@ cache:
 
 If using Amazon S3, you can configure your storage and cache similarly:
 
-```
+```yaml title="config.yaml"
 storage:
-  ttl_seconds: 2592000  # 30 days
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 2592000 # 30 days
+  chunk_file_size_bytes: 3000000 # 3 MB
   aws_s3:
     region: "us-west-2"
     bucket: "buildbuddy-bucket"
@@ -94,7 +94,7 @@ cache:
 
 BuildBuddy supports OpenID Connect (OIDC) as a way of interacting with an Auth Provider like Google, Okta, or similar to authenticate your users when they log in. Configuring this is easy, below is an example of using BuildBuddy with Okta. Configuring your Auth Provider to support OIDC is outside the scope of this doc, but we’ve done it for Google, Okta, and others, and are happy to lend a helping hand if you’re stuck.
 
-```
+```yaml title="config.yaml"
 auth:
   oauth_providers:
     - issuer_url: "https://your-custom-domain.okta.com"
@@ -104,7 +104,7 @@ auth:
 
 Here’s another example of Google login using credentials obtained from: https://console.developers.google.com/apis/credentials
 
-```
+```yaml title="config.yaml"
 auth:
   oauth_providers:
     - issuer_url: "https://accounts.google.com"
@@ -116,7 +116,7 @@ auth:
 
 Your users can authenticate to BuildBuddy using an API key or they can use Certificate based authentication over mTLS. To configure mTLS, you must generate a new server certificate authority and key. You can do this using the `openssl` command, for example:
 
-```
+```bash
 # Change these CN's to match your BuildBuddy host name
 SERVER_SUBJECT=buildbuddy.io
 PASS=$(openssl rand -base64 32) # <- Save this :)
@@ -133,7 +133,7 @@ openssl pkcs8 -passin pass:${PASS} -topk8 -nocrypt -in ca.key -out ca.pem
 
 Then, you can use the generated ca.csr and ca.pem files in your BuildBuddy configuration like this:
 
-```
+```yaml title="config.yaml"
 ssl:
   enable_ssl: true
   client_ca_cert_file: your_ca.crt
@@ -144,7 +144,7 @@ ssl:
 
 To enable Remote Build Execution, you'll need to add the following to your config.yaml:
 
-```
+```yaml title="config.yaml"
 remote_execution:
   enable_remote_exec: true
 ```
@@ -157,7 +157,7 @@ For more information on configuring on-prem RBE, see our [enterprise on-prem RBE
 
 Here’s what a fully-featured config.yaml looks like which includes all of the features listed above.
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "https://app.buildbuddy.mydomain"
   events_api_url: "grpcs://events.buildbuddy.mydomain:1986"
@@ -165,18 +165,18 @@ app:
 database:
   data_source: "mysql://user:pass@tcp(12.34.56.78)/database_name"
 storage:
-  ttl_seconds: 2592000  # 30 days
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 2592000 # 30 days
+  chunk_file_size_bytes: 3000000 # 3 MB
   gcs:
     bucket: "buildbuddy_prod_blobs"
     project_id: "flame-build"
     credentials_file: "your_service-acct.json"
 cache:
-    gcs:
-      bucket: "buildbuddy_cache"
-      project_id: "your_gcs_project_id"
-      credentials_file: "/path/to/your/credential/file.json"
-      ttl_days: 30
+  gcs:
+    bucket: "buildbuddy_cache"
+    project_id: "your_gcs_project_id"
+    credentials_file: "/path/to/your/credential/file.json"
+    ttl_days: 30
 auth:
   oauth_providers:
     - issuer_url: "https://your-custom-domain.okta.com"

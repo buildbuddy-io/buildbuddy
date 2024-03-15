@@ -7,10 +7,16 @@ go_library(
     testonly = 1,
     srcs = ["buildbuddy_enterprise.go"],
     data = [
-        "//enterprise/config:config_files",
+        "//enterprise/config/test:buildbuddy.noauth.yaml",
+        "//enterprise/config/test:buildbuddy.selfauth.yaml",
         "//enterprise/server/cmd/server:buildbuddy",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise",
+    x_defs = {
+        "DefaultConfig": "$(rlocationpaths //enterprise/config/test:buildbuddy.selfauth.yaml)",
+        "NoAuthConfig": "$(rlocationpaths //enterprise/config/test:buildbuddy.noauth.yaml)",
+        "buildbuddyRunfilePath": "$(rlocationpaths //enterprise/server/cmd/server:buildbuddy)",
+    },
     deps = [
         "//enterprise/server/testutil/testredis",
         "//proto:context_go_proto",

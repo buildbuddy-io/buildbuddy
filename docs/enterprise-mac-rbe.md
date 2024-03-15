@@ -62,7 +62,7 @@ sudo xcodebuild -runFirstLaunch
 
 You'll likely want to install [Homebrew](https://brew.sh/) on your fresh executor to make installing other software easier. You can install it with the following line:
 
-```
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
@@ -74,7 +74,7 @@ Now that the environment is configured, we can download and install the BuildBud
 
 The BuildBuddy executor binary can be downloaded with (make sure to update the version number to the [lastest release](https://github.com/buildbuddy-io/buildbuddy/releases)):
 
-```
+```bash
 curl -fSL https://github.com/buildbuddy-io/buildbuddy/releases/download/v2.3.0/executor-enterprise-darwin-amd64 -o buildbuddy-executor
 ```
 
@@ -82,7 +82,7 @@ curl -fSL https://github.com/buildbuddy-io/buildbuddy/releases/download/v2.3.0/e
 
 In order to run the executor binary, we must first make it executable with:
 
-```
+```bash
 chmod +x buildbuddy-executor
 ```
 
@@ -90,13 +90,13 @@ chmod +x buildbuddy-executor
 
 If you don't already have any launch agents installed, you'll need to make sure the `~/Library/LaunchAgents/` directory exits with:
 
-```
+```bash
 mkdir -p ~/Library/LaunchAgents/
 ```
 
 You'll also need a directory to store the executor's disk cache and execution roots. We recommend _avoiding_ using the `/tmp` directory since this is periodically cleaned up.
 
-```
+```bash
 mkdir -p buildbuddy
 ```
 
@@ -104,12 +104,12 @@ mkdir -p buildbuddy
 
 You'll need to create a `config.yaml` with the following contents:
 
-```
+```yaml title="config.yaml"
 executor:
   root_directory: "/Users/YOUR_USERNAME/buildbuddy/remote_build"
   app_target: "grpcs://YOUR_BUILDBUDDY_CLUSTER_URL:443"
   local_cache_directory: "/Users/YOUR_USERNAME/buildbuddy/filecache"
-  local_cache_size_bytes: 100000000000  # 100GB
+  local_cache_size_bytes: 100000000000 # 100GB
 ```
 
 Make sure to replace _YOUR_USERNAME_ with your Mac username and _YOUR_BUILDBUDDY_CLUSTER_URL_ with the grpc url the BuildBuddy cluster you deployed. If you deployed the cluster without an NGINX Ingress, you'll need to update the protocol to grpc:// and the port to 1985.
@@ -122,7 +122,7 @@ Make sure to replace _YOUR_USERNAME_ with your Mac username and _YOUR_MACS_NETWO
 
 You can place this file in `~/Library/LaunchAgents/buildbuddy-executor.plist`.
 
-```
+```xml title="~/Library/LaunchAgents/buildbuddy-executor.plist"
 <?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
 <plist version=\"1.0\">
@@ -162,7 +162,7 @@ You can place this file in `~/Library/LaunchAgents/buildbuddy-executor.plist`.
 
 You may need to update the file's permissions with:
 
-```
+```bash
 chmod 600 ~/Library/LaunchAgents/buildbuddy-executor.plist
 ```
 
@@ -170,13 +170,13 @@ chmod 600 ~/Library/LaunchAgents/buildbuddy-executor.plist
 
 You can load the Launch Agent with:
 
-```
+```bash
 launchctl load ~/Library/LaunchAgents/buildbuddy-executor.plist
 ```
 
 And start it with:
 
-```
+```bash
 launchctl start buildbuddy-executor
 ```
 
@@ -184,7 +184,7 @@ launchctl start buildbuddy-executor
 
 You can verify that your BuildBuddy Executor successfully connected to the cluster by live tailing the stdout file:
 
-```
+```bash
 tail -f buildbuddy_stdout.log
 ```
 
@@ -208,7 +208,7 @@ If your Mac executor restarts for whatever reason, you'll likely want to enable 
 
 There's a convenient `brew` package called `kcpassword` that makes this easy.
 
-```
+```bash
 brew tap xfreebird/utils
 brew install kcpassword
 
@@ -219,7 +219,7 @@ sudo enable_autologin "MY_USER" "MY_PASSWORD"
 
 If you're doing a lot of Java builds on your Mac executors that are not fully hermetic (i.e. rely on the system installed Java rather than the remote Java SDK shipped by Bazel), you can install the JDK with:
 
-```
+```bash
 brew install --cask adoptopenjdk
 ```
 
@@ -229,7 +229,7 @@ Some builds will exceed the default maximum number of open files on the Mac exec
 
 You can increase this limit by running the following command:
 
-```
+```bash
 sudo launchctl limit maxfiles 5000000 5000000
 ```
 
@@ -237,13 +237,13 @@ sudo launchctl limit maxfiles 5000000 5000000
 
 If you find your logs are taking up too much space on disk, you may wish to implement log rotation. For this, we recommend `multilog` from `daemontools`:
 
-```
+```bash
 brew install daemontools
 ```
 
 Now that `multilog` is installed, in `~/Library/LaunchAgents/buildbuddy-executor.plist` change:
 
-```
+```xml title="~/Library/LaunchAgents/buildbuddy-executor.plist"
         <key>ProgramArguments</key>
         <array>
             <string>./buildbuddy-executor</string>
@@ -254,7 +254,7 @@ Now that `multilog` is installed, in `~/Library/LaunchAgents/buildbuddy-executor
 
 to:
 
-```
+```xml title="~/Library/LaunchAgents/buildbuddy-executor.plist"
         <key>ProgramArguments</key>
         <array>
             <string>bash</string>
@@ -265,7 +265,7 @@ to:
 
 and remove:
 
-```
+```xml title="~/Library/LaunchAgents/buildbuddy-executor.plist"
         <key>StandardErrorPath</key>
         <string>/Users/YOUR_USERNAME/buildbuddy_stderr.log</string>
         <key>StandardOutPath</key>
@@ -274,7 +274,7 @@ and remove:
 
 This will produce automatically rotated log files with stdout and stderr interleaved. If you wish to preserve the separation of the out and error streams, you may instead use:
 
-```
+```xml title="~/Library/LaunchAgents/buildbuddy-executor.plist"
         <key>ProgramArguments</key>
         <array>
             <string>bash</string>

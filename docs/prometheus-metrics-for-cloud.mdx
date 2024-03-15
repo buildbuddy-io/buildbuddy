@@ -6,13 +6,13 @@ sidebar_label: Prometheus Metrics for Cloud
 
 import Metrics from "../bazel-bin/enterprise/server/backends/prom/generate_docs/docs.mdx";
 
-
-For cloud users, BuildBuddy exposes [Prometheus](https://prometheus.io) metrics 
+For cloud users, BuildBuddy exposes [Prometheus](https://prometheus.io) metrics
 to monitor and alert on their usage.
 
 In order to fetch Prometheus metrics, you can add the following [scrape config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scrape_config) in
 your Prometheus configuration:
-```
+
+```yaml
 global:
   scrape_interval: 3600s
 scrape_configs
@@ -25,7 +25,6 @@ scrape_configs
     static_configs:
       - targets: ["app.buildbuddy.io"]
 ```
-
 
 To view these metrics in a live-updating dashboard, we recommend using a tool
 like [Grafana](https://grafana.com).

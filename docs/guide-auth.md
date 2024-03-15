@@ -14,7 +14,7 @@ You can find your API key on your [Quickstart page](https://app.buildbuddy.io/do
 
 Your API key can be added directly to your `.bazelrc` as long as no one outside of your organization has access to your source code.
 
-```
+```bash title=".bazelrc"
 build --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
 ```
 
@@ -28,13 +28,13 @@ Using the `try-import` directive in your `.bazelrc` - you can direct bazel to pu
 
 You can then place a second `auth.bazelrc` file in a location that's only accessible to members of your organization:
 
-```
+```bash title="auth.bazelrc"
 build --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
 ```
 
 And add a `try-import` to your main `.bazelrc` file at the root of your `WORKSPACE`:
 
-```
+```bash title=".bazelrc"
 try-import /path/to/your/auth.bazelrc
 ```
 
@@ -44,7 +44,7 @@ The command line method allows you to store your API key in an environment varia
 
 If using Github secrets - you can create a secret called `BUILDBUDDY_API_KEY` containing your API key, then use that in your actions:
 
-```
+```bash
 bazel build --config=remote --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
 ```
 
@@ -102,18 +102,15 @@ and delete it using `git config --local --unset buildbuddy.api-key`.
 Otherwise, users within the organization can add their API key to a
 user-specific `.bazelrc` within the workspace:
 
-```
-# file: .bazelrc
+```bash title=".bazelrc"
 try-import %workspace%/user.bazelrc
 ```
 
-```
-# file: .gitignore
+```bash title=".gitignore"
 /user.bazelrc # ignore user-specific bazel settings
 ```
 
-```
-# file: user.bazelrc
+```bash title="user.bazelrc"
 build --remote_header=x-buildbuddy-api-key=<USER_API_KEY>
 ```
 

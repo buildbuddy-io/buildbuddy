@@ -22,7 +22,7 @@ For more instructions on how to get a Slack webhook url, see the [Slack webhooks
 
 ## Example section
 
-```
+```yaml title="config.yaml"
 integrations:
   slack:
     webhook_url: "https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBB/1D36mNyB5nJFCBiFlIOUsKzkW"

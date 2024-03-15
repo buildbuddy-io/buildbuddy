@@ -73,7 +73,7 @@ var (
 	actionsRunnerLabel   = flag.String("github.app.actions.runner_label", "buildbuddy", "Label to apply to the actions runner. This is what 'runs-on' needs to be set to in GitHub workflow YAML in order to run on this BuildBuddy instance.")
 	actionsPoolName      = flag.String("github.app.actions.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
 
-	enableReviewMutates = flag.Bool("github.app.actions.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
+	enableReviewMutates = flag.Bool("github.app.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
 
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
@@ -1702,36 +1702,28 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 	}
 
 	if reviewId == "" {
-		// This is a comment without a review--make the draft comment as part
-		// of a newly-created review.
+		// The Github API is really wonky around new reviews--let's just make
+		// a review with a promotional comment for now and figure it out later.
 		var m struct {
 			AddPullRequestReview struct {
 				PullRequestReview struct {
-					Id       string
-					Comments struct {
-						Nodes []reviewComment
-					} `graphql:"comments(last: 1)"`
+					Id   string
+					Body string
 				}
 			} `graphql:"addPullRequestReview(input: $input)"`
 		}
 		input := githubv4.AddPullRequestReviewInput{
 			PullRequestID: req.GetPullId(),
-			Threads: &[]*githubv4.DraftPullRequestReviewThread{
-				{
-					Path: githubv4.String(req.GetPath()),
-					Line: githubv4.Int(int(req.GetLine())),
-					Side: &side,
-					Body: githubv4.String(req.GetBody()),
-				},
-			},
+			Body:          githubv4.NewString("I wrote this review in the BuildBuddy code review UI alpha!"),
 		}
 		err := graphqlClient.Mutate(ctx, &m, input, nil)
 		if err != nil {
 			return nil, err
 		}
 		reviewId = m.AddPullRequestReview.PullRequestReview.Id
-		commentId = m.AddPullRequestReview.PullRequestReview.Comments.Nodes[0].Id
-	} else if req.GetThreadId() != "" {
+	}
+
+	if req.GetThreadId() != "" {
 		// This is a comment in reply to an existing thread, just add it.
 		var m struct {
 			PullRequestReviewThreadReply struct {
@@ -1743,7 +1735,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		}
 
 		input := githubv4.AddPullRequestReviewThreadReplyInput{
-			PullRequestReviewID:       githubv4.NewID(req.GetReviewId()),
+			PullRequestReviewID:       githubv4.NewID(reviewId),
 			PullRequestReviewThreadID: githubv4.String(req.GetThreadId()),
 			Body:                      githubv4.String(req.GetBody()),
 		}
@@ -1759,6 +1751,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 			AddPullRequestReviewThread struct {
 				ClientMutationId string
 				Thread           struct {
+					Id       string
 					Comments struct {
 						Nodes []reviewComment
 					} `graphql:"comments(last: 1)"`
@@ -1767,11 +1760,12 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		}
 
 		input := githubv4.AddPullRequestReviewThreadInput{
-			PullRequestID: githubv4.NewID(req.GetPullId()),
-			Path:          githubv4.String(req.GetPath()),
-			Line:          githubv4.NewInt(githubv4.Int(int(req.GetLine()))),
-			Side:          &side,
-			Body:          githubv4.String(req.GetBody()),
+			PullRequestID:       githubv4.NewID(req.GetPullId()),
+			PullRequestReviewID: githubv4.NewID(reviewId),
+			Path:                githubv4.String(req.GetPath()),
+			Line:                githubv4.NewInt(githubv4.Int(int(req.GetLine()))),
+			Side:                &side,
+			Body:                githubv4.String(req.GetBody()),
 		}
 
 		err := graphqlClient.Mutate(ctx, &m, input, nil)
@@ -1879,12 +1873,11 @@ type reviewComment struct {
 }
 
 type comment struct {
-	Author     actor
-	BodyHTML   string `graphql:"bodyHTML"`
-	BodyText   string
-	CreatedAt  time.Time
-	Id         string
-	DatabaseId int
+	Author    actor
+	BodyHTML  string `graphql:"bodyHTML"`
+	BodyText  string
+	CreatedAt time.Time
+	Id        string
 }
 
 type commentLink struct {
@@ -1952,19 +1945,20 @@ type prCommit struct {
 type prDetailsQuery struct {
 	Repository struct {
 		PullRequest struct {
-			Title         string
-			TitleHTML     string `graphql:"titleHTML"`
-			Body          string
-			BodyHTML      string `graphql:"bodyHTML"`
-			Author        actor
-			CreatedAt     time.Time
-			Id            string
-			UpdatedAt     time.Time
-			Mergeable     githubv4.MergeableState
-			Merged        bool
-			URL           string `graphql:"url"`
-			HeadRefName   string
-			TimelineItems struct {
+			Title          string
+			TitleHTML      string `graphql:"titleHTML"`
+			Body           string
+			BodyHTML       string `graphql:"bodyHTML"`
+			Author         actor
+			CreatedAt      time.Time
+			Id             string
+			UpdatedAt      time.Time
+			Mergeable      githubv4.MergeableState
+			ReviewDecision githubv4.PullRequestReviewDecision
+			Merged         bool
+			URL            string `graphql:"url"`
+			HeadRefName    string
+			TimelineItems  struct {
 				Nodes []timelineItem
 			} `graphql:"timelineItems(first: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, REVIEW_DISMISSED_EVENT, PULL_REQUEST_REVIEW])"`
 			ReviewRequests struct {
@@ -2086,7 +2080,6 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		for _, c := range thread.Comments.Nodes {
 			comment := &ghpb.Comment{}
 			comment.Id = c.Id
-			comment.DatabaseId = int64(c.DatabaseId)
 			comment.Body = c.BodyText
 			comment.Path = thread.Path
 			comment.CommitSha = c.OriginalCommit.Oid
@@ -2211,10 +2204,11 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		Files:          fileSummaries,
 		ActionStatuses: actionStatuses,
 		Comments:       outputComments,
-		Mergeable:      pr.Mergeable == "MERGEABLE",
-		Submitted:      pr.Merged,
-		GithubUrl:      pr.URL,
-		DraftReviewId:  draftReviewId,
+		// TODO(jdhollen): Switch to MergeStateStatus when it's stable. https://docs.github.com/en/graphql/reference/enums#mergestatestatus
+		Mergeable:     pr.Mergeable == "MERGEABLE" && pr.ReviewDecision == githubv4.PullRequestReviewDecisionApproved,
+		Submitted:     pr.Merged,
+		GithubUrl:     pr.URL,
+		DraftReviewId: draftReviewId,
 	}
 
 	return resp, nil

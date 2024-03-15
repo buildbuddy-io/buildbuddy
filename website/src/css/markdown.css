@@ -66,3 +66,8 @@ a code {
 .docs-doc-page .markdown li {
   margin-bottom: 1em;
 }
+
+.theme-code-block > div {
+  color: #aaa;
+  border-bottom-color: rgba(255, 255, 255, 0.2);
+}

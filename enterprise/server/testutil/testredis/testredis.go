@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
@@ -21,11 +21,12 @@ import (
 )
 
 const (
-	redisBinRunfilePath = "enterprise/server/testutil/testredis/redis-server"
-
 	startupTimeout      = 10 * time.Second
 	startupPingInterval = 5 * time.Millisecond
 )
+
+// set by x_defs in BUILD file
+var redisBinRunfilePath string
 
 type Handle struct {
 	Target     string
@@ -51,7 +52,7 @@ func (h *Handle) start() {
 		return
 	}
 
-	redisBinPath, err := bazel.Runfile(redisBinRunfilePath)
+	redisBinPath, err := runfiles.Rlocation(redisBinRunfilePath)
 	if err != nil {
 		assert.FailNow(h.t, "redis binary not found in runfiles", err.Error())
 	}

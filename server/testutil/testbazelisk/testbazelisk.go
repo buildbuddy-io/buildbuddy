@@ -3,14 +3,16 @@ package testbazelisk
 import (
 	"testing"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/stretchr/testify/require"
-
-	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 )
+
+// set by x_defs in BUILD file
+var bazeliskRunfilePath string
 
 // BinaryPath returns the path to bazelisk in runfiles.
 func BinaryPath(t *testing.T) string {
-	path, err := bazelgo.Runfile("external/com_github_bazelbuild_bazelisk/bazelisk_/bazelisk")
+	path, err := runfiles.Rlocation(bazeliskRunfilePath)
 	require.NoError(t, err, "failed to locate bazelisk")
 	return path
 }

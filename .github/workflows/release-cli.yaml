@@ -198,5 +198,7 @@ jobs:
     needs: [push-tag, sync-plugins, build-artifacts]
     steps:
       - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
         run: |
           gh release edit ${{ needs.push-tag.outputs.version }} --draft=false --repo=buildbuddy-io/bazel

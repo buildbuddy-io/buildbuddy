@@ -44,7 +44,7 @@ That will explain some foundational things that I don't cover in this guide.
 
 ## Table of contents
 
-<nav class="toc">
+<nav className="toc">
 
 - [Bootstrapping Bazel](#bootstrapping-bazel)
 - [Defining targets](#defining-targets)
@@ -439,7 +439,7 @@ Before using rules from some of the core rulesets we need to add dependencies on
 and **bazel_skylib**.
 We do that by adding `bazel_dep`s to our `MODULE.bazel` file:
 
-```python
+```python title="MODULE.bazel"
 bazel_dep(name = "apple_support", version = "1.14.0")
 bazel_dep(name = "rules_swift", version = "1.16.0", repo_name = "build_bazel_rules_swift")
 bazel_dep(name = "rules_apple", version = "3.3.0", repo_name = "build_bazel_rules_apple")
@@ -490,7 +490,7 @@ you'll need to declare those packages as local dependencies in a new `Package.sw
 
 Here is the new `Package.swift` file that includes the dependencies that were referenced in the Xcode project:
 
-```swift
+```swift title="Package.swift"
 // swift-tools-version:5.7
 
 import PackageDescription
@@ -531,7 +531,7 @@ it will add the required stanza for you):
     There is [a plan][remove-swift_deps_index] that before **rules_swift_package_manager** reaches 1.0.0 it will remove the need for the `swift_deps_index.json` file,
     and the need to use Gazelle with it.
 
-```python
+```python title="MODULE.bazel"
 bazel_dep(name = "rules_swift_package_manager", version = "0.28.0")
 bazel_dep(name = "gazelle", version = "0.35.0")
 
@@ -557,7 +557,7 @@ use_repo(
 
 And now we can define our Gazelle targets in a root `BUILD` file:
 
-```python
+```python title="BUILD"
 load("@gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load(
   "@rules_swift_package_manager//swiftpkg:defs.bzl",
@@ -699,7 +699,7 @@ resources will be referenced directly with the `data` attribute of the static li
 
 With that in mind I added `BUILD` files for the app extension targets:
 
-```python
+```python title="WidgetExtension/BUILD"
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_extension")
 load("@build_bazel_rules_apple//apple:resources.bzl", "apple_intent_library")
@@ -787,7 +787,7 @@ which means we need to apply the same translations in regards to `Info.plist` fi
 
 With that in mind I added a `BUILD` file for the `Mastodon` target:
 
-```python
+```python title="Mastodon/BUILD"
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_application")
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
@@ -879,7 +879,7 @@ if the `Allow testing Host Application APIs` checkbox is unchecked,
 
 With that in mind I added `BUILD` files for the `MastodonTests` and `MastodonUITests` targets:
 
-```python
+```python title="MastodonTests/BUILD"
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
@@ -903,7 +903,7 @@ swift_library(
 )
 ```
 
-```python
+```python title="MastodonUITests/BUILD"
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_ui_test")
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
@@ -972,11 +972,11 @@ To use **rules_xcodeproj**,
 we add a `bazel_dep` for it to our `MODULE.bazel` file,
 and define an `xcodeproj` target for the project in the root `BUILD` file:
 
-```python
+```python title="MODULE.bazel"
 bazel_dep(name = "rules_xcodeproj", version = "1.16.0")
 ```
 
-```python
+```python title="BUILD"
 load("@rules_xcodeproj//xcodeproj:defs.bzl", "top_level_target", "xcodeproj")
 
 xcodeproj(
@@ -1092,7 +1092,7 @@ There are pros and cons to using the disk cache:
 With those in mind,
 we are going to start out by enabling the disk cache for all use cases in the [`.bazelrc`][bazelrc] file:
 
-```
+```shell title=".bazelrc"
 # Cache
 
 common --disk_cache=~/bazel_disk_cache
@@ -1121,7 +1121,7 @@ disable uploads for local development,
 and disable the disk cache on CI
 (by using a dedicated [config][bazelrc-config]):
 
-```
+```shell title=".bazelrc"
 common --remote_cache=grpcs://remote.buildbuddy.io
 common --noremote_upload_local_results
 common:upload --disk_cache=
@@ -1164,7 +1164,7 @@ This allows us to build targets on CI in a way that will populate the remote cac
 
 We can add a new config to the `.bazelrc` file to ensure that we don't get CI specific modifications:
 
-```
+```shell title=".bazelrc"
 # Cache warming
 
 common:warming --config=upload
@@ -1240,7 +1240,7 @@ Here are some benefits of using BES:
 
 We can adjust the `.bazelrc` file to upload to a BES endpoint:
 
-```
+```shell title=".bazelrc"
 common --bes_backend=grpcs://remote.buildbuddy.io
 common --bes_results_url=https://app.buildbuddy.io/invocation/
 common --bes_upload_mode=nowait_for_upload_complete
@@ -1291,7 +1291,7 @@ You might also need to set some default platform properties with the [`--remote_
 
 We can adjust the `.bazelrc` file to have a dedicated `remote` config which sets `--remote_executor` and some default platform properties for an Apple silicon Mac:
 
-```
+```shell title=".bazelrc"
 # Remote exectuion
 
 common:remote --config=upload

@@ -6,36 +6,36 @@ sidebar_label: Samples
 
 ### Running locally (disk only)
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "http://localhost:8080"
 database:
   data_source: "sqlite3:///tmp/buildbuddy.db"
 storage:
-  ttl_seconds: 86400  # One day in seconds.
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 86400 # One day in seconds.
+  chunk_file_size_bytes: 3000000 # 3 MB
   disk:
     root_directory: /tmp/buildbuddy
 cache:
-  max_size_bytes: 10000000000  # 10 GB
+  max_size_bytes: 10000000000 # 10 GB
   disk:
     root_directory: /tmp/buildbuddy-cache
 ```
 
 ### Running with MySQL and in-memory cache
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "http://acme.corp"
 database:
   data_source: "mysql://buildbuddy_user:pAsSwOrD@tcp(12.34.56.78)/buildbuddy_db"
 storage:
-  ttl_seconds: 86400  # One day in seconds.
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 86400 # One day in seconds.
+  chunk_file_size_bytes: 3000000 # 3 MB
   disk:
     root_directory: /data/buildbuddy
 cache:
-  max_size_bytes: 10000000000  # 10 GB
+  max_size_bytes: 10000000000 # 10 GB
   in_memory: true
 ```
 
@@ -43,18 +43,18 @@ cache:
 
 ### Running with your own auth provider
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "http://acme.corp"
 database:
   data_source: "mysql://buildbuddy_user:pAsSwOrD@tcp(12.34.56.78)/buildbuddy_db"
 storage:
-  ttl_seconds: 86400  # One day in seconds.
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 86400 # One day in seconds.
+  chunk_file_size_bytes: 3000000 # 3 MB
   disk:
     root_directory: /data/buildbuddy
 cache:
-  max_size_bytes: 10000000000  # 10 GB
+  max_size_bytes: 10000000000 # 10 GB
   in_memory: true
 auth:
   oauth_providers:
@@ -65,7 +65,7 @@ auth:
 
 ### Fully loaded
 
-```
+```yaml title="config.yaml"
 app:
   build_buddy_url: "https://app.buildbuddy.mydomain"
   events_api_url: "grpcs://events.buildbuddy.mydomain:1986"
@@ -73,19 +73,19 @@ app:
 database:
   data_source: "mysql://user:pass@tcp(12.34.56.78)/database_name"
 storage:
-  ttl_seconds: 2592000  # 30 days
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 2592000 # 30 days
+  chunk_file_size_bytes: 3000000 # 3 MB
   gcs:
     bucket: "buildbuddy_prod_blobs"
     project_id: "flame-build"
     credentials_file: "your_service-acct.json"
 cache:
-    redis_target: "12.34.56.79:6379"
-    gcs:
-      bucket: "buildbuddy_cache"
-      project_id: "your_gcs_project_id"
-      credentials_file: "/path/to/your/credential/file.json"
-      ttl_days: 30
+  redis_target: "12.34.56.79:6379"
+  gcs:
+    bucket: "buildbuddy_cache"
+    project_id: "your_gcs_project_id"
+    credentials_file: "/path/to/your/credential/file.json"
+    ttl_days: 30
 auth:
   oauth_providers:
     - issuer_url: "https://your-custom-domain.okta.com"

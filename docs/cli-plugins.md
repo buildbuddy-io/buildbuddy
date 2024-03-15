@@ -74,7 +74,7 @@ You can manually install plugins by editing your `buildbuddy.yaml` file with a t
 
 They live under a `plugins:` section, like so:
 
-```yaml
+```yaml title="buildbuddy.yaml"
 plugins:
   # Local plugins
   - path: cli/example_plugins/go-highlight
@@ -106,7 +106,7 @@ A single plugin can contain multiple hook scripts.
 
 The directory layout for a plugin looks like this:
 
-```
+```bash
 path/to/plugin/
 ├── pre_bazel.sh            # optional
 ├── post_bazel.sh           # optional
@@ -130,7 +130,7 @@ The script will be called like this:
 
 Here's an example of what the Bazel args file might look like:
 
-```
+```bash
 --ignore_all_rc_files
 run
 //server
@@ -158,7 +158,7 @@ Your `pre_bazel.sh` script can also accept user input, spawn other processes, or
 
 Here's an example of a simple `pre_bazel.sh` plugin that disables remote execution if it's unable to ping `remote.buildbuddy.io` within 500ms.
 
-```bash
+```bash title="pre_bazel.sh"
 if ! grep -E '^--remote_executor=.*\.buildbuddy\.io$' "$1" &>/dev/null; then
   # BB remote execution is not enabled; do nothing.
   exit 0
@@ -177,7 +177,7 @@ The `pre_bazel.sh` script is also a great place for more complex plugins to make
 
 Here's example of a `pre_bazel.sh` script that makes sure both `python3` and `open` are installed, and then calls into a python script called `pre_bazel.py`.
 
-```bash
+```bash title="pre_bazel.py"
 if ! which python3 &>/dev/null; then
   echo -e "\x1b[33mWarning: open-invocation plugin is disabled: missing 'python3' in \$PATH\x1b[m" >&2
   exit 0
@@ -203,7 +203,7 @@ The script will be called like this:
 
 Here's an example of what the Bazel outputs file might look like:
 
-```
+```shellsession
 INFO: Invocation ID: cd254c65-c657-4524-b084-15a20d4485d1
 INFO: Streaming build results to: https://app.buildbuddy.io/invocation/cd254c65-c657-4524-b084-15a20d4485d1
 DEBUG: /root/workspace/output-base/external/io_bazel_rules_k8s/toolchains/kubectl/kubectl_toolchain.bzl:28:14: No kubectl tool was found or built, executing run for rules_k8s targets might not work.
@@ -224,7 +224,7 @@ Your `post_bazel.sh` script can also accept user input, spawn other processes, o
 
 Here's an example of a simple plugin that sends a desktop notification once the build completes:
 
-```bash
+```bash title="post_bazel.sh"
 set -eu
 
 STATUS_LINE=$(grep "Build" "$1" | grep "complete" | tail -n1 | perl -p -e 's@.*?(Build)@\1@')
@@ -245,7 +245,7 @@ notify-send --expire-time 3000 "$TITLE" "$MESSAGE"
 
 Here's another example of a more complex plugin, that simply calls a python script name `post_bazel.py` after checking that `python3` is installed:
 
-```bash
+```bash title="post_bazel.sh"
 if ! which python3 &>/dev/null; then
   echo -e "\x1b[33mWarning: go-deps plugin is disabled: missing 'python3' in \$PATH\x1b[m" >&2
   exit 0
@@ -269,7 +269,7 @@ Our `handle_bazel_output.sh` script delegates to a python script
 `handle_bazel_output.py`, gracefully falling back to running `cat` if
 Python is missing:
 
-```bash
+```bash title="handle_bazel_output.sh"
 if ! which python3 &>/dev/null; then
   echo -e "\x1b[33mWarning: go-highlight plugin is disabled: missing 'python3' in \$PATH\x1b[m" >&2
   exec cat
@@ -280,7 +280,7 @@ exec python3 ./handle_bazel_output.py "$@"
 Here is the Python script `handle_bazel_output.py` from the
 `go-highlight` plugin:
 
-```py
+```py title="handle_bazel_output.py"
 import re
 import sys
 
@@ -297,7 +297,7 @@ if __name__ == "__main__":
 As another example, here is a `handle_bazel_output.py` script that changes
 the colors of various Bazel outputs:
 
-```py
+```py title="handle_bazel_output.py"
 import re
 import sys
 
@@ -362,7 +362,7 @@ lexing, as it is not possible to parse or canonicalize options without knowing
 the internals of the executable to be run. The following is an example exec args
 file:
 
-```
+```bash
 --bool_var
 true
 positional_arg

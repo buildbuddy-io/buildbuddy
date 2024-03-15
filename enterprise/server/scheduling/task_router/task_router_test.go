@@ -409,6 +409,55 @@ func TestTaskRouter_WorkflowGitRefRouting(t *testing.T) {
 	requireNotAlwaysRanked(0, executorID1, t, router, ctx, prBranchCmd, instanceName)
 }
 
+func TestTaskRouter_WorkflowGitRefRouting_DefaultRef(t *testing.T) {
+	flags.Set(t, "executor.workflow_default_branch_routing_enabled", true)
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	nodes := sequentiallyNumberedNodes(100)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	instanceName := ""
+
+	// Mark executor1 as having completed a workflow run on the "main" branch.
+	mainBranchCmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "workflow-id", Value: "WF123"},
+		}},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GIT_BRANCH", Value: "main"},
+		},
+		Arguments: []string{"./buildbuddy_ci_runner"},
+	}
+	router.MarkComplete(ctx, mainBranchCmd, instanceName, executorID1)
+
+	// Even though this workflow is running on a different branch, executor1
+	// should be preferred because it ran the workflow on a matching
+	// default branch.
+	prBranchCmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "workflow-id", Value: "WF123"},
+		}},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GIT_BRANCH", Value: "my-cool-pr"},
+			{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "main"},
+		},
+		Arguments: []string{"./buildbuddy_ci_runner"},
+	}
+	ranked := router.RankNodes(ctx, prBranchCmd, instanceName, nodes)
+	require.Equal(t, executorID1, ranked[0].GetExecutionNode().GetExecutorID())
+	// Mark executor1 as having completed a workflow run on the pr branch.
+	router.MarkComplete(ctx, prBranchCmd, instanceName, executorID1)
+
+	// Simulate executor2 running a workflow on the "main" branch.
+	router.MarkComplete(ctx, mainBranchCmd, instanceName, executorID2)
+
+	// The router should prioritize routing a workflow for the pr branch to the
+	// executor that last ran the pr branch, not the one that last ran the default branch.
+	ranked = router.RankNodes(ctx, prBranchCmd, instanceName, nodes)
+	require.Equal(t, executorID1, ranked[0].GetExecutionNode().GetExecutorID())
+}
+
 func requireNonePreferred(t *testing.T, rankedNodes []interfaces.RankedExecutionNode) {
 	for i := 1; i < len(rankedNodes); i++ {
 		require.False(t, rankedNodes[i].IsPreferred())

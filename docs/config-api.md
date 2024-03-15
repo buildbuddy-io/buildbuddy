@@ -20,7 +20,7 @@ The API is only configurable in the [Enterprise version](enterprise.md) of Build
 
 ## Example section
 
-```
+```yaml title="config.yaml"
 api:
   enable_api: true
 ```

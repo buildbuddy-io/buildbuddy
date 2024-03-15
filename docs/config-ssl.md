@@ -26,7 +26,7 @@ sidebar_label: SSL
 
 ## Generating client CA files
 
-```
+```bash
 # Change these CN's to match your BuildBuddy host name
 SERVER_SUBJECT=buildbuddy.io
 PASS=$(openssl rand -base64 32) # <- Save this :)
@@ -44,7 +44,7 @@ openssl pkcs8 -passin pass:${PASS} -topk8 -nocrypt -in ca.key -out ca.pem
 
 ## Example section
 
-```
+```yaml title="config.yaml"
 ssl:
   enable_ssl: true
   use_acme: true

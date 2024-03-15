@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
@@ -63,6 +63,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
@@ -79,19 +80,20 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
-	testCommandBinaryRunfilePath = "enterprise/server/test/integration/remote_execution/command/testcommand_/testcommand"
-	testCommandBinaryName        = "testcommand"
+	testCommandBinaryName = "testcommand"
 
 	// We are currently not testing non-default instances, but we should at some point.
 	defaultInstanceName = ""
 
 	defaultWaitTimeout = 60 * time.Second
 )
+
+// set by x_defs in BUILD file
+var testCommandBinaryRunfilePath string
 
 func init() {
 	// Set umask to match the executor process.
@@ -209,7 +211,7 @@ func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest 
 }
 
 func (r *Env) setupRootDirectoryWithTestCommandBinary(ctx context.Context) *repb.Digest {
-	rfp, err := bazel.Runfile(testCommandBinaryRunfilePath)
+	rfp, err := runfiles.Rlocation(testCommandBinaryRunfilePath)
 	if err != nil {
 		assert.FailNow(r.t, "unable to find test binary in runfiles", err.Error())
 	}
@@ -812,16 +814,16 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	}
 	env.SetFileCache(fc)
 
-	executorUUID, err := guuid.NewRandom()
-	require.NoError(r.t, err)
-	executorID := executorUUID.String()
+	executorID := uuid.New()
+	executorHostID := uuid.New()
 	if options.Name != "" {
 		executorID = options.Name
+		executorHostID = options.Name
 	}
 
 	runnerPool := NewTestRunnerPool(r.t, env, options.RunInterceptor)
 
-	exec, err := executor.NewExecutor(env, executorID, "" /*=hostID=*/, runnerPool, &executor.Options{NameOverride: options.Name})
+	exec, err := executor.NewExecutor(env, executorID, executorHostID, runnerPool)
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}
@@ -834,7 +836,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 		HostnameOverride: "localhost",
 		APIKeyOverride:   options.APIKey,
 	}
-	registration, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, options.Name, opts)
+	registration, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, executorHostID, opts)
 	if err != nil {
 		assert.FailNowf(r.t, "could not create executor registration", err.Error())
 	}

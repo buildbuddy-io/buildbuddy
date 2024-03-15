@@ -18,7 +18,7 @@ system dependencies, such as MySQL server.
 
 Let's say we have a BUILD file like this:
 
-```python
+```python title="BUILD"
 sh_test(
     name = "docker_test",
     srcs = ["docker_test.sh"],
@@ -38,7 +38,7 @@ using self-hosted executors.
 But we can instead run this test using **Docker-in-Firecracker** by
 adding a few `exec_properties` to the test runner action:
 
-```python
+```python title="BUILD"
 sh_test(
     name = "docker_test",
     srcs = ["docker_test.sh"],
@@ -79,7 +79,7 @@ Fortunately, we can mitigate both of these issues using runner recyling.
 MicroVM state can be preserved across action runs by enabling the
 `recycle-runner` exec property:
 
-```python
+```python title="BUILD"
 sh_test(
     name = "docker_test",
     srcs = ["docker_test.sh"],

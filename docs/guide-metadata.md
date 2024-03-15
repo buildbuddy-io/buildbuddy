@@ -14,7 +14,7 @@ BuildBuddy allows you to group invocations by the repository on which they were 
 
 The first method is simple - just provide the repo URL with Bazel's build_metadata flag with the key `REPO_URL`. You can do this by adding the following line to your `.bazelrc`:
 
-```
+```bash title=".bazelrc"
 build --build_metadata=REPO_URL=https://github.com/buildbuddy-io/buildbuddy.git
 ```
 
@@ -24,7 +24,7 @@ The second method is a little more involved, but allows you to populate multiple
 
 First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
 
-```
+```bash title=".bazelrc"
 build --workspace_status_command=$(pwd)/workspace_status.sh
 ```
 
@@ -42,7 +42,7 @@ BuildBuddy allows you to group invocations by the git branch on which they were 
 
 You can provide the current git branch with Bazel's build_metadata flag with the key `BRANCH_NAME`. You can do this by adding the flag to your bazel invocations:
 
-```
+```bash
 --build_metadata=BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
 ```
 
@@ -54,7 +54,7 @@ The second method is a little more involved, but allows you to populate multiple
 
 First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
 
-```
+```bash title=".bazelrc"
 build --workspace_status_command=$(pwd)/workspace_status.sh
 ```
 
@@ -70,7 +70,7 @@ BuildBuddy will automatically pull your git branch from environment variables if
 
 You can provide the current commit SHA with Bazel's build_metadata flag with the key `COMMIT_SHA`. You can do this by adding the flag to your bazel invocations:
 
-```
+```bash
 --build_metadata=COMMIT_SHA=$(git rev-parse HEAD)
 ```
 
@@ -82,7 +82,7 @@ The second method is a little more involved, but allows you to populate multiple
 
 First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
 
-```
+```bash title=".bazelrc"
 build --workspace_status_command=$(pwd)/workspace_status.sh
 ```
 
@@ -98,7 +98,7 @@ The role metadata field allows you to specify whether this invocation was done o
 
 For CI builds, you can add the following line to your `.bazelrc` and run your CI builds with the `--config=ci` flag:
 
-```
+```bash title=".bazelrc"
 build:ci --build_metadata=ROLE=CI
 ```
 
@@ -108,7 +108,7 @@ This role will automatically be populated if the environment variable `CI` is se
 
 If using Github commit status reporting, you can use the test groups metadata field to specify how tests are grouped in your Github commit statuses. Test groups are specified as a comma separated list of test path prefixes that should be grouped together.
 
-```
+```bash title=".bazelrc"
 build --build_metadata=TEST_GROUPS=//foo/bar,//foo/baz
 ```
 
@@ -118,7 +118,7 @@ The visibility metadata field determines who is allowed to view your build resul
 
 You can override these default settings and make authenticated builds visible to anyone with a link by adding the following line to your `.bazelrc`:
 
-```
+```bash title=".bazelrc"
 build --build_metadata=VISIBILITY=PUBLIC
 ```
 
@@ -132,7 +132,7 @@ You can override this using build metadata or workspace info.
 
 You can provide your user with Bazel's build_metadata flag with the key `USER`. You can do this by adding the flag to your bazel invocations:
 
-```
+```bash
 --build_metadata=USER=yourname
 ```
 
@@ -142,7 +142,7 @@ The second method is a little more involved, but allows you to populate multiple
 
 First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
 
-```
+```bash title=".bazelrc"
 build --workspace_status_command=$(pwd)/workspace_status.sh
 ```
 
@@ -158,7 +158,7 @@ You can override this using build metadata or workspace info.
 
 You can provide your user with Bazel's build_metadata flag with the key `HOST`. You can do this by adding the flag to your bazel invocations:
 
-```
+```bash
 --build_metadata=HOST=yourhost
 ```
 
@@ -168,7 +168,7 @@ The second method is a little more involved, but allows you to populate multiple
 
 First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
 
-```
+```bash title=".bazelrc"
 build --workspace_status_command=$(pwd)/workspace_status.sh
 ```
 
@@ -180,13 +180,13 @@ By default a build's pattern is determined by bazel command that is run.
 
 If the bazel command is:
 
-```
+```bash
 bazel build //...
 ```
 
 The pattern would be:
 
-```
+```bash
 //...
 ```
 
@@ -198,7 +198,7 @@ This is generally only needed for advanced use cases where you want to display a
 
 You can provide a custom pattern with Bazel's build_metadata flag with the key `PATTERN`. You can do this by adding the flag to your bazel invocations:
 
-```
+```bash
 --build_metadata=PATTERN=yourpattern
 ```
 
@@ -208,7 +208,7 @@ The second method is a little more involved, but allows you to populate multiple
 
 First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
 
-```
+```bash title=".bazelrc"
 build --workspace_status_command=$(pwd)/workspace_status.sh
 ```
 
@@ -220,7 +220,7 @@ You can add custom links to the BuildBuddy overview page using the `BUILDBUDDY_L
 
 Example:
 
-```
+```bash
 --build_metadata=BUILDBUDDY_LINKS="[Search Github](https://github.com/search),[GCP Dashboard](https://console.cloud.google.com/home/dashboard)"
 ```
 
@@ -230,7 +230,7 @@ You can add multiple free-text tags to a build by passing a comma-separated stri
 
 Example:
 
-```
+```bash
 --build_metadata=TAGS="foo,bar,baz"
 ```
 
@@ -250,18 +250,18 @@ The `ALLOW_ENV` metadata param accepts a comma separated list of allowed environ
 
 Don't redact the `PATH` environment variable:
 
-```
+```bash
 build --build_metadata=ALLOW_ENV=PATH
 ```
 
 Don't redact the `PATH` environment or any environment variable beginning with `BAZEL_`
 
-```
+```bash
 build --build_metadata=ALLOW_ENV=PATH,BAZEL_*
 ```
 
 Don't redact any environment variables.
 
-```
+```bash
 build --build_metadata=ALLOW_ENV=*
 ```

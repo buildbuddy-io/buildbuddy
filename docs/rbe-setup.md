@@ -131,7 +131,7 @@ Some tools like Bazel's zipper (@bazel_tools//tools/zip:zipper) use an attribute
 
 This can be a lot of flags to tack onto each bazel build, so instead you can move these to your `.bazelrc` file under the `remote` config block:
 
-```bash
+```bash title=".bazelrc"
 build:remote --remote_executor=grpcs://remote.buildbuddy.io
 build:remote --host_platform=@buildbuddy_toolchain//:platform
 build:remote --platforms=@buildbuddy_toolchain//:platform
@@ -293,7 +293,7 @@ If you need a more advanced configuration than provided by the basic BuildBuddy 
 
 Here's a quick snippet you can add to your `WORKSPACE` file if using bazel 3.6.0:
 
-```python
+```python title="WORKSPACE"
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
@@ -316,7 +316,7 @@ rbe_autoconfig(name = "rbe_default")
 
 And to your `.bazelrc`:
 
-```bash
+```bash title=".bazelrc"
 # Depending on how many machines are in the remote execution instance, setting
 # this higher can make builds faster by allowing more jobs to run in parallel.
 # Setting it too high can result in jobs that timeout, however, while waiting

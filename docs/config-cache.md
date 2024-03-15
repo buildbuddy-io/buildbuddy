@@ -52,16 +52,16 @@ sidebar_label: Cache
 
 ### Disk
 
-```
+```yaml title="config.yaml"
 cache:
-  max_size_bytes: 10000000000  # 10 GB
+  max_size_bytes: 10000000000 # 10 GB
   disk:
     root_directory: /tmp/buildbuddy-cache
 ```
 
 ### GCS & Redis (Enterprise only)
 
-```
+```yaml title="config.yaml"
 cache:
   redis_target: "my-redis.local:6379"
   gcs:
@@ -73,7 +73,7 @@ cache:
 
 ### S3 (Enterprise only)
 
-```
+```yaml title="config.yaml"
 cache:
   s3:
     # required
@@ -86,7 +86,7 @@ cache:
 
 ### Minio (Enterprise only)
 
-```
+```yaml title="config.yaml"
 cache:
   s3:
     static_credentials_id: "YOUR_MINIO_ACCESS_KEY"

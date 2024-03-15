@@ -18,7 +18,7 @@ There are three steps:
 
 All you have to do is create a file `.github/workflows/main.yaml`
 
-```
+```yaml title=".github/workflows/main.yaml"
 name: CI
 
 on:
@@ -31,35 +31,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
-    - name: Install bazelisk
-      run: |
-        curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.1.0/bazelisk-linux-amd64"
-        mkdir -p "${GITHUB_WORKSPACE}/bin/"
-        mv bazelisk-linux-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
-        chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
-    - name: Build
-      run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" build \
-            --config=ci \
-            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-            //...
-    - name: Test
-      run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" test \
-            --config=ci \
-            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-            //...
-
+      - name: Install bazelisk
+        run: |
+          curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.1.0/bazelisk-linux-amd64"
+          mkdir -p "${GITHUB_WORKSPACE}/bin/"
+          mv bazelisk-linux-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
+          chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
+      - name: Build
+        run: |
+          "${GITHUB_WORKSPACE}/bin/bazel" build \
+              --config=ci \
+              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              //...
+      - name: Test
+        run: |
+          "${GITHUB_WORKSPACE}/bin/bazel" test \
+              --config=ci \
+              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              //...
 ```
 
 ### Updating your .bazelrc
 
 You'll then need to add the following configuration to your `.bazelrc`
 
-```
+```bash title=".bazelrc"
 build:ci --build_metadata=ROLE=CI
 build:ci --bes_results_url=https://app.buildbuddy.io/invocation/
 build:ci --bes_backend=grpcs://remote.buildbuddy.io
@@ -83,7 +82,7 @@ If you'd like BuildBuddy to publish commit statuses to your repo, you can do so 
 
 By default, authenticated builds are only visible to members of your BuildBuddy organization. If you'd like your BuildBuddy results pages to be visible to members outside of your organization, you can add the following line to your `.bazelrc`:
 
-```
+```bash title=".bazelrc"
 build:ci --build_metadata=VISIBILITY=PUBLIC
 ```
 
@@ -91,7 +90,7 @@ build:ci --build_metadata=VISIBILITY=PUBLIC
 
 If you'd like to use BuildBuddy's Remote Build Execution capabilities in your CI workflow, you can add the following lines to your `.bazelrc`:
 
-```
+```bash title=".bazelrc"
 build:remote --remote_cache=grpcs://remote.buildbuddy.io
 build:remote --remote_executor=grpcs://remote.buildbuddy.io
 build:remote --remote_upload_local_results
@@ -105,7 +104,7 @@ build:ci --config=remote
 
 And the following lines to your `WORKSPACE` file:
 
-```
+```python title="WORKSPACE"
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
     sha256 = "b12273608db627eb14051eb75f8a2134590172cd69392086d392e25f3954ea6e",

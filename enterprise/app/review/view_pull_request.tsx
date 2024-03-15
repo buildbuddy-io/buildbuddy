@@ -1,10 +1,13 @@
 import Long from "long";
-import React, { ReactNode } from "react";
+import React from "react";
 import format from "../../../app/format/format";
 import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
 import { Github, MessageCircle } from "lucide-react";
 import error_service from "../../../app/errors/error_service";
+import ReviewThreadComponent from "./review_thread";
+
+const FAKE_ID_PREFIX = "bb-tmp/";
 
 interface ViewPullRequestComponentProps {
   owner: string;
@@ -16,6 +19,10 @@ interface ViewPullRequestComponentProps {
 interface State {
   response?: github.GetGithubPullRequestDetailsResponse;
   displayedDiffs: string[];
+
+  // This map contains draft comments that the user is *actively editing*.
+  inProgressCommentsById: Set<string>;
+  pendingRequest: boolean;
 }
 
 interface DiffLineInfo {
@@ -23,7 +30,10 @@ interface DiffLineInfo {
   lineCount: number;
 }
 
-type SourceLine = string | undefined;
+interface SourceLine {
+  source?: string;
+  lineNumber?: number;
+}
 
 interface DiffLinePair {
   left: SourceLine;
@@ -35,9 +45,23 @@ interface Hunk {
   lines: DiffLinePair[];
 }
 
+interface ThreadAndDraft {
+  threadId: string;
+  comments: github.Comment[];
+  draft?: github.Comment;
+}
+
+let fakeReviewIdCounter = 0;
+function newFakeId(): string {
+  fakeReviewIdCounter++;
+  return FAKE_ID_PREFIX + fakeReviewIdCounter;
+}
+
 export default class ViewPullRequestComponent extends React.Component<ViewPullRequestComponentProps, State> {
   state: State = {
     displayedDiffs: [],
+    inProgressCommentsById: new Set<string>(),
+    pendingRequest: false,
   };
 
   componentWillMount() {
@@ -49,7 +73,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         pull: Long.fromInt(this.props.pull),
       })
       .then((r) => {
-        console.log(r);
+        if (!r.draftReviewId) {
+          r.draftReviewId = newFakeId();
+        }
         this.setState({ response: r });
       })
       .catch((e) => error_service.handleError(e));
@@ -105,31 +131,334 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     return "";
   }
 
-  renderDiffHunk(hunk: Hunk) {
+  handleCreateComment(comment: github.Comment) {
+    if (!this.state.response || this.state.pendingRequest) {
+      return;
+    }
+
+    const req = new github.CreateGithubPullRequestCommentRequest({
+      owner: this.props.owner,
+      repo: this.props.repo,
+      pullId: this.state.response.pullId,
+      path: comment.path,
+      body: comment.body,
+      commitSha: comment.commitSha,
+      line: comment.position?.startLine ?? comment.position?.endLine ?? undefined,
+      side: comment.position?.side,
+    });
+    if (comment.threadId && !comment.threadId.startsWith(FAKE_ID_PREFIX)) {
+      req.threadId = comment.threadId;
+    }
+    if (!this.state.response.draftReviewId.startsWith(FAKE_ID_PREFIX)) {
+      req.reviewId = this.state.response.draftReviewId;
+    }
+    console.log(req);
+
+    this.setState({ pendingRequest: true });
+    rpc_service.service
+      .createGithubPullRequestComment(req)
+      .then((r) => {
+        console.log(r);
+        error_service.handleError("posted!");
+        if (this.state.response) {
+          const commentToUpdate = this.state.response.comments.find((c) => c.id === comment.id);
+          if (commentToUpdate) {
+            commentToUpdate.id = r.commentId;
+            commentToUpdate.body = comment.body;
+            commentToUpdate.reviewId = r.reviewId;
+          } else {
+            const anyComment = this.state.response.comments.find((c) => c.threadId === req.threadId);
+            if (anyComment != undefined) {
+              const newComment = new github.Comment(anyComment);
+              newComment.createdAtUsec = Long.fromNumber(Date.now() * 1000);
+              newComment.id = r.commentId;
+              newComment.body = req.body;
+              newComment.reviewId = r.reviewId;
+              this.state.response.comments.push(newComment);
+            }
+          }
+          this.state.response.draftReviewId = r.reviewId;
+        }
+        this.removeFromPendingAndSetState(comment.id);
+      })
+      .catch((e) => {
+        error_service.handleError(e);
+      })
+      .finally(() => this.setState({ pendingRequest: false }));
+  }
+
+  handleUpdateComment(commentId: string, newBody: string) {
+    if (!this.state.response || this.state.pendingRequest) {
+      return;
+    }
+    const req = new github.UpdateGithubPullRequestCommentRequest({ commentId, newBody });
+    console.log(req);
+
+    this.setState({ pendingRequest: true });
+    rpc_service.service
+      .updateGithubPullRequestComment(req)
+      .then((r) => {
+        console.log(r);
+        error_service.handleError("posted!");
+        const comment = this.state.response?.comments.find((c) => c.id === commentId);
+        if (comment) {
+          comment.body = newBody;
+        }
+        this.removeFromPendingAndSetState(commentId);
+      })
+      .catch((e) => {
+        error_service.handleError(e);
+      })
+      .finally(() => this.setState({ pendingRequest: false }));
+  }
+
+  handleDeleteComment(commentId: string) {
+    if (!this.state.response || this.state.pendingRequest) {
+      return;
+    }
+    const req = new github.DeleteGithubPullRequestCommentRequest({ commentId });
+    console.log(req);
+
+    this.setState({ pendingRequest: true });
+    rpc_service.service
+      .deleteGithubPullRequestComment(req)
+      .then((r) => {
+        console.log(r);
+        error_service.handleError("posted!");
+        if (this.state.response) {
+          const commentIndex = this.state.response.comments.findIndex((c) => c.id === commentId);
+          if (commentIndex >= 0) {
+            this.state.response.comments.splice(commentIndex, 1);
+          }
+        }
+        this.removeFromPendingAndSetState(commentId);
+      })
+      .catch((e) => {
+        error_service.handleError(e);
+      })
+      .finally(() => this.setState({ pendingRequest: false }));
+  }
+
+  removeFromPendingAndSetState(commentId: string) {
+    const newInProgress = new Set(this.state.inProgressCommentsById);
+    newInProgress.delete(commentId);
+    this.setState({ inProgressCommentsById: newInProgress });
+  }
+
+  handleStartReply(threadId: string) {
+    if (this.state.pendingRequest || !this.state.response) {
+      return;
+    }
+
+    const anyComment = this.state.response.comments.find((c) => c.threadId === threadId);
+    if (anyComment === undefined) {
+      return;
+    }
+
+    let draft: github.Comment | undefined = this.state.response.comments.find(
+      (c) => c.reviewId === this.state.response!.draftReviewId && c.threadId === threadId
+    );
+    if (draft === undefined) {
+      const reviewId = this.state.response.draftReviewId;
+      draft = new github.Comment({
+        id: newFakeId(),
+        threadId,
+        reviewId,
+        parentCommentId: "",
+        body: "",
+        path: anyComment.path,
+        commitSha: anyComment.commitSha,
+        position: anyComment.position,
+        // TODO(jdhollen): pass user back from github.
+        commenter: new github.ReviewUser({ login: "you" }),
+        createdAtUsec: Long.fromNumber(Date.now() * 1000),
+        isResolved: false,
+      });
+      this.state.response.comments.push(draft);
+    }
+
+    const newInProgress = new Set(this.state.inProgressCommentsById);
+    newInProgress.add(draft.id);
+    this.setState({ inProgressCommentsById: newInProgress });
+  }
+
+  handleCancelComment(id: string) {
+    const commentIndex = this.findCommentIndexById(id);
+    if (commentIndex < 0 || !this.state.response) {
+      return;
+    }
+
+    const wasInProgress = this.state.inProgressCommentsById.delete(id);
+    if (!wasInProgress) {
+      return;
+    }
+
+    // If the comment is a brand new draft, just delete it.
+    if (this.state.response.comments[commentIndex].id.startsWith(FAKE_ID_PREFIX)) {
+      this.state.response.comments.splice(commentIndex, 1);
+    }
+    this.setState({ inProgressCommentsById: new Set(this.state.inProgressCommentsById) });
+  }
+
+  findCommentIndexById(commentId: string): number {
+    return this.state.response?.comments.findIndex((c) => c.id === commentId) ?? -1;
+  }
+
+  renderThread(thread: ThreadAndDraft) {
+    if (thread.comments.length < 1 && !thread.draft) {
+      return <></>;
+    }
+    const firstComment = thread.comments[0] ?? thread.draft;
+    const leftSide = firstComment.position?.side === github.CommentSide.LEFT_SIDE; // RIGHT_SIDE is default.
+
+    return (
+      <div className="thread-block">
+        {!leftSide ? (
+          <>
+            <pre className="thread-line-number-space"> </pre>
+            <div className="thread-empty-side"> </div>
+          </>
+        ) : undefined}
+        <pre className="thread-line-number-space"> </pre>
+        <ReviewThreadComponent
+          threadId={thread.threadId}
+          comments={thread.comments}
+          draftComment={thread.draft}
+          disabled={Boolean(this.state.pendingRequest)}
+          updating={Boolean(thread.draft && !thread.draft.id.startsWith(FAKE_ID_PREFIX))}
+          editing={Boolean(this.state.inProgressCommentsById.has(thread.draft?.id ?? "bogus-id-doesnt-exist"))}
+          saving={/* TODO(jdhollen */ false}
+          handler={this}
+          activeUsername={/* TODO(jdhollen */ ""}></ReviewThreadComponent>
+        {leftSide ? (
+          <>
+            <pre className="thread-line-number-space"> </pre>
+            <div className="thread-empty-side"> </div>
+          </>
+        ) : undefined}
+      </div>
+    );
+  }
+
+  renderComments(comments: github.Comment[]) {
+    if (comments.length > 0) {
+    }
+    if (!this.state.response) {
+      return <></>;
+    }
+    const threads: Map<String, ThreadAndDraft> = new Map();
+    comments.forEach((c) => {
+      const thread = c.threadId;
+      let threadAndDraft = threads.get(thread);
+      if (!threadAndDraft) {
+        threadAndDraft = {
+          threadId: thread,
+          comments: [],
+        };
+        threads.set(thread, threadAndDraft);
+      }
+      if (c.reviewId === this.state.response!.draftReviewId) {
+        threadAndDraft.draft = c;
+      } else {
+        threadAndDraft.comments.push(c);
+      }
+    });
+    const outs: JSX.Element[] = [];
+
+    threads.forEach((comments) => {
+      outs.push(this.renderThread(comments));
+    });
+    return <>{outs}</>;
+  }
+
+  startComment(side: github.CommentSide, path: string, commitSha: string, lineNumber: number) {
+    if (this.state.pendingRequest || !this.state.response) {
+      return;
+    }
+    const reviewId = this.state.response.draftReviewId;
+    const draft = new github.Comment({
+      id: newFakeId(),
+      threadId: newFakeId(),
+      reviewId,
+      parentCommentId: "",
+      body: "",
+      // TODO(jdhollen): pass user back from github.
+      commenter: new github.ReviewUser({ login: "you" }),
+      path,
+      commitSha,
+      position: new github.CommentPosition({
+        startLine: Long.fromNumber(lineNumber),
+        endLine: Long.fromNumber(lineNumber),
+        side,
+      }),
+      createdAtUsec: Long.fromNumber(Date.now() * 1000),
+      isResolved: false,
+    });
+    this.state.response.comments.push(draft);
+    const newInProgress = new Set(this.state.inProgressCommentsById);
+    newInProgress.add(draft.id);
+    this.setState({ inProgressCommentsById: newInProgress });
+  }
+
+  renderDiffHunk(hunk: Hunk, path: string, commitSha: string, comments: github.Comment[]) {
     return (
       <>
         <pre className="diff-header">{hunk.header}</pre>
         {hunk.lines.map((v) => {
           let leftClasses =
-            "source-line left" + (v.right === undefined ? " new" : "") + (v.left === undefined ? " empty" : "");
+            "source-line left" +
+            (v.right.source === undefined ? " new" : "") +
+            (v.left.source === undefined ? " empty" : "");
           let rightClasses =
-            "source-line right" + (v.left === undefined ? " new" : "") + (v.right === undefined ? " empty" : "");
-          if (v.left !== undefined && v.right !== undefined && v.left !== v.right) {
+            "source-line right" +
+            (v.left.source === undefined ? " new" : "") +
+            (v.right.source === undefined ? " empty" : "");
+          if (v.left.source !== undefined && v.right.source !== undefined && v.left.source !== v.right.source) {
             leftClasses += " modified";
             rightClasses += " modified";
           }
           return (
-            <div className="source-line-pair">
-              <pre className={leftClasses}>{v.left ?? ""}</pre>
-              <pre className={rightClasses}>{v.right ?? ""}</pre>
-            </div>
+            <>
+              <div className="source-line-pair">
+                <pre className="source-line-number">{v.left.lineNumber ?? " "}</pre>
+                <pre
+                  className={leftClasses}
+                  onClick={
+                    v.left.lineNumber
+                      ? this.startComment.bind(this, github.CommentSide.LEFT_SIDE, path, commitSha, v.left.lineNumber)
+                      : undefined
+                  }>
+                  {v.left.source ?? ""}
+                </pre>
+                <pre className="source-line-number">{v.right.lineNumber ?? " "}</pre>
+                <pre
+                  className={rightClasses}
+                  onClick={
+                    v.right.lineNumber
+                      ? this.startComment.bind(this, github.CommentSide.RIGHT_SIDE, path, commitSha, v.right.lineNumber)
+                      : undefined
+                  }>
+                  {v.right.source ?? ""}
+                </pre>
+              </div>
+              <div className="threads">
+                {this.renderComments(
+                  comments.filter((c) => {
+                    return (
+                      +(c.position?.startLine || c.position?.endLine || 0) ===
+                      (c.position?.side === github.CommentSide.LEFT_SIDE ? v.left.lineNumber : v.right.lineNumber)
+                    );
+                  })
+                )}
+              </div>
+            </>
           );
         })}
       </>
     );
   }
 
-  getDiffLines(patch: string): JSX.Element[] {
+  getDiffLines(patch: string, path: string, commitSha: string, comments: github.Comment[]): JSX.Element[] {
     const out: JSX.Element[] = [];
 
     const patchLines = patch.split("\n");
@@ -138,15 +467,17 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       let hunk: Hunk;
       if (patchLines[currentIndex].startsWith("@@")) {
         [hunk, currentIndex] = readNextHunk(patchLines, currentIndex);
-        out.push(this.renderDiffHunk(hunk));
+        out.push(this.renderDiffHunk(hunk, path, commitSha, comments));
       }
     }
 
     return out;
   }
 
-  renderFileDiffs(patch: string) {
-    const out = this.getDiffLines(patch);
+  renderFileDiffs(patch: string, filename: string, commitSha: string) {
+    // TODO(jdhollen): Need to check commit sha.
+    const fileComments = this.state.response!.comments.filter((v) => v.path === filename);
+    const out = this.getDiffLines(patch, filename, commitSha, fileComments);
 
     return (
       <tr className="file-list-diff">
@@ -179,22 +510,23 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           <td>{+file.additions + +file.deletions}</td>
           <td>{this.renderDiffBar(+file.additions, +file.deletions, 0)}</td>
         </tr>
-        {this.state.displayedDiffs.indexOf(file.name) !== -1 && this.renderFileDiffs(file.patch)}
+        {this.state.displayedDiffs.indexOf(file.name) !== -1 &&
+          this.renderFileDiffs(file.patch, file.name, file.commitSha)}
       </>
     );
   }
 
   renderAnalysisResults(statuses: github.ActionStatus[]) {
     const done = statuses
-      .filter((v) => v.status === "success" || v.status === "failure")
-      .sort((a, b) => (a.status === b.status ? 0 : a.status === "failure" ? -1 : 1))
+      .filter((v) => v.status === "SUCCESS" || v.status === "FAILURE")
+      .sort((a, b) => (a.status === b.status ? 0 : a.status === "FAILURE" ? -1 : 1))
       .map((v) => (
         <a href={v.url} target="_blank" className={"action-status " + v.status}>
           {v.name}
         </a>
       ));
     const pending = statuses
-      .filter((v) => v.status !== "success" && v.status !== "failure")
+      .filter((v) => v.status !== "SUCCESS" && v.status !== "FAILURE")
       .map((v) => (
         <a href={v.url} target="_blank" className={"action-status " + v.status}>
           {v.name}
@@ -232,6 +564,23 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     }
   }
 
+  reply(approve: boolean) {
+    this.setState({ pendingRequest: true });
+    const req = new github.SendGithubPullRequestReviewRequest({
+      reviewId: this.state.response?.draftReviewId ?? "",
+      approve,
+    });
+    console.log(req);
+    rpc_service.service
+      .sendGithubPullRequestReview(req)
+      .then((r) => {
+        console.log(r);
+        window.location.reload();
+      })
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ pendingRequest: false }));
+  }
+
   render() {
     return (
       <div className={"pr-view " + this.getPrStatusClass(this.state.response)}>
@@ -258,6 +607,13 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                   <div>Issues</div>
                   <div></div>
                   <div>Mentions</div>
+                  <div></div>
+                  <div>
+                    <button onClick={() => this.reply(true)}>APPROVE</button>
+                    <button disabled={this.state.response.comments.length < 1} onClick={() => this.reply(false)}>
+                      REPLY
+                    </button>
+                  </div>
                   <div></div>
                 </div>
               </div>
@@ -336,27 +692,27 @@ function readNextHunk(patchLines: string[], startIndex: number): [Hunk, number] 
   let leftLines: SourceLine[] = [];
   let rightLines: SourceLine[] = [];
   while (
-    leftLinesRead < (leftInfo?.lineCount ?? 0) &&
-    rightLinesRead < (rightInfo?.lineCount ?? 0) &&
+    leftLinesRead < (leftInfo?.lineCount || 1) &&
+    rightLinesRead < (rightInfo?.lineCount || 1) &&
     currentIndex < patchLines.length
   ) {
     let line = patchLines[currentIndex];
     if (line[0] === "+") {
+      rightLines.push({ source: line.slice(1), lineNumber: (rightInfo?.startLine ?? 0) + rightLinesRead });
       rightLinesRead += 1;
       currentLineOffset += 1;
-      rightLines.push(line.slice(1));
     } else if (line[0] === "-") {
+      leftLines.push({ source: line.slice(1), lineNumber: (leftInfo?.startLine ?? 0) + leftLinesRead });
       leftLinesRead += 1;
       currentLineOffset -= 1;
-      leftLines.push(line.slice(1));
     } else {
+      rightLines.push({ source: line.slice(1), lineNumber: (rightInfo?.startLine ?? 0) + rightLinesRead });
+      leftLines.push({ source: line.slice(1), lineNumber: (leftInfo?.startLine ?? 0) + leftLinesRead });
       leftLinesRead += 1;
       rightLinesRead += 1;
-      rightLines.push(line.slice(1));
-      leftLines.push(line.slice(1));
       const arrayToGrow = currentLineOffset < 0 ? rightLines : leftLines;
       for (let i = 0; i < Math.abs(currentLineOffset); i++) {
-        arrayToGrow.push(undefined);
+        arrayToGrow.push({});
       }
       currentLineOffset = 0;
     }
@@ -366,19 +722,19 @@ function readNextHunk(patchLines: string[], startIndex: number): [Hunk, number] 
   if (finalOffset !== 0) {
     const arrayToGrow = finalOffset < 0 ? rightLines : leftLines;
     for (let i = 0; i < Math.abs(finalOffset); i++) {
-      arrayToGrow.push(undefined);
+      arrayToGrow.push({});
     }
   }
 
   let output: DiffLinePair[] = [];
   for (let i = rightLines.length - 1; i >= 0; i--) {
-    if (leftLines[i] === undefined) {
+    if (leftLines[i].source === undefined) {
       let j = i - 1;
       while (j >= 0) {
-        if (leftLines[j] !== undefined) {
-          if (leftLines[j] === rightLines[i]) {
+        if (leftLines[j].source !== undefined) {
+          if (leftLines[j].source === rightLines[i].source) {
             leftLines[i] = leftLines[j];
-            leftLines[j] = undefined;
+            leftLines[j] = {};
           }
           break;
         }
