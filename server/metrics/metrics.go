@@ -2249,7 +2249,6 @@ var (
 		}),
 		Help: "Previous atime of items in the cache when they are read, in msec",
 	}, []string{
-		PartitionID,
 		CacheNameLabel,
 	})
 
