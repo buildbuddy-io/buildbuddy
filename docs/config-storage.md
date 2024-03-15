@@ -50,8 +50,8 @@ One of the following sections is **Required**
 
 ```yaml title="config.yaml"
 storage:
-  ttl_seconds: 86400  # One day in seconds.
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 86400 # One day in seconds.
+  chunk_file_size_bytes: 3000000 # 3 MB
   disk:
     root_directory: /tmp/buildbuddy
 ```
@@ -60,8 +60,8 @@ storage:
 
 ```yaml title="config.yaml"
 storage:
-  ttl_seconds: 0  # No TTL.
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 0 # No TTL.
+  chunk_file_size_bytes: 3000000 # 3 MB
   gcs:
     bucket: "buildbuddy_blobs"
     project_id: "my-cool-project"

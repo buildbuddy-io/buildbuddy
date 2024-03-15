@@ -56,8 +56,8 @@ The configuration below configures Redis & GCS storage bucket to act as a storag
 
 ```yaml title="config.yaml"
 storage:
-  ttl_seconds: 2592000  # 30 days
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 2592000 # 30 days
+  chunk_file_size_bytes: 3000000 # 3 MB
   gcs:
     bucket: "buildbuddy_prod_blobs"
     project_id: "flame-build"
@@ -75,8 +75,8 @@ If using Amazon S3, you can configure your storage and cache similarly:
 
 ```yaml title="config.yaml"
 storage:
-  ttl_seconds: 2592000  # 30 days
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 2592000 # 30 days
+  chunk_file_size_bytes: 3000000 # 3 MB
   aws_s3:
     region: "us-west-2"
     bucket: "buildbuddy-bucket"
@@ -165,18 +165,18 @@ app:
 database:
   data_source: "mysql://user:pass@tcp(12.34.56.78)/database_name"
 storage:
-  ttl_seconds: 2592000  # 30 days
-  chunk_file_size_bytes: 3000000  # 3 MB
+  ttl_seconds: 2592000 # 30 days
+  chunk_file_size_bytes: 3000000 # 3 MB
   gcs:
     bucket: "buildbuddy_prod_blobs"
     project_id: "flame-build"
     credentials_file: "your_service-acct.json"
 cache:
-    gcs:
-      bucket: "buildbuddy_cache"
-      project_id: "your_gcs_project_id"
-      credentials_file: "/path/to/your/credential/file.json"
-      ttl_days: 30
+  gcs:
+    bucket: "buildbuddy_cache"
+    project_id: "your_gcs_project_id"
+    credentials_file: "/path/to/your/credential/file.json"
+    ttl_days: 30
 auth:
   oauth_providers:
     - issuer_url: "https://your-custom-domain.okta.com"

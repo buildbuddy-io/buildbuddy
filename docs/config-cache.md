@@ -54,7 +54,7 @@ sidebar_label: Cache
 
 ```yaml title="config.yaml"
 cache:
-  max_size_bytes: 10000000000  # 10 GB
+  max_size_bytes: 10000000000 # 10 GB
   disk:
     root_directory: /tmp/buildbuddy-cache
 ```

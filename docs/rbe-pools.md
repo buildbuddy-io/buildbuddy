@@ -22,8 +22,8 @@ By default, both executors and the BuildBuddy app do not set a pool name and any
 
 ```yaml title="config.yaml"
 remote_execution:
-    enable_remote_exec: true
-    default_pool_name: my-default-pool
+  enable_remote_exec: true
+  default_pool_name: my-default-pool
 ```
 
 ## Selecting a pool to run your builds on

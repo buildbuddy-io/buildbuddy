@@ -130,7 +130,7 @@ The script will be called like this:
 
 Here's an example of what the Bazel args file might look like:
 
-```bash 
+```bash
 --ignore_all_rc_files
 run
 //server

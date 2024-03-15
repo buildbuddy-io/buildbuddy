@@ -109,7 +109,7 @@ executor:
   root_directory: "/Users/YOUR_USERNAME/buildbuddy/remote_build"
   app_target: "grpcs://YOUR_BUILDBUDDY_CLUSTER_URL:443"
   local_cache_directory: "/Users/YOUR_USERNAME/buildbuddy/filecache"
-  local_cache_size_bytes: 100000000000  # 100GB
+  local_cache_size_bytes: 100000000000 # 100GB
 ```
 
 Make sure to replace _YOUR_USERNAME_ with your Mac username and _YOUR_BUILDBUDDY_CLUSTER_URL_ with the grpc url the BuildBuddy cluster you deployed. If you deployed the cluster without an NGINX Ingress, you'll need to update the protocol to grpc:// and the port to 1985.
