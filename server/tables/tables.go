@@ -316,7 +316,6 @@ func (u *User) ToProto() *uspb.DisplayUser {
 }
 
 func subIDToAccountType(s string) uspb.AccountType {
-	log.Printf(s)
 	if strings.HasPrefix(s, "https://accounts.google.com/") {
 		return uspb.AccountType_GOOGLE
 	}
