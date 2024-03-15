@@ -55,7 +55,6 @@ var (
 	iFlag       = flag.Bool("i", false, "case-insensitive search")
 	verboseFlag = flag.Bool("verbose", false, "print extra information")
 	bruteFlag   = flag.Bool("brute", false, "brute force - search all files in index")
-	squery      = flag.Bool("squery", false, "use squery instead of posting query")
 	noResults   = flag.Bool("noresults", false, "don't print results")
 	cpuProfile  = flag.String("cpuprofile", "", "write cpu profile to this file")
 
@@ -68,8 +67,7 @@ var (
 )
 
 type IndexReader interface {
-	PostingQuery(q *query.Query) ([]uint64, error)
-	PostingQuerySX(sExpression []byte) ([]uint64, error)
+	RawQuery(squery []byte) ([]uint64, error)
 	Name(fileid uint64) (string, error)
 	Contents(fileid uint64) ([]byte, error)
 }
@@ -103,16 +101,15 @@ func indexDir() string {
 }
 
 func runQuery(ix IndexReader, q *query.Query, fre *regexp.Regexp) []uint64 {
-	var post []uint64
-	var err error
-
-	if *squery {
-		post, err = ix.PostingQuerySX([]byte(q.SQuery()))
-	} else if *bruteFlag {
-		post, err = ix.PostingQuery(&query.Query{Op: query.QAll})
-	} else {
-		post, err = ix.PostingQuery(q)
+	squery := q.SQuery()
+	if *bruteFlag {
+		squery = "(:all)"
 	}
+
+	if *verboseFlag {
+		log.Printf("squery: %s", squery)
+	}
+	post, err := ix.RawQuery([]byte(squery))
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -188,10 +185,6 @@ func Main() {
 		}
 	}
 	q := query.RegexpQuery(re.Syntax)
-	if *verboseFlag {
-		log.Printf("query: %s\n", q)
-		log.Printf("squery: %s\n", q.SQuery())
-	}
 
 	db, err := pebble.Open(indexDir(), &pebble.Options{})
 	if err != nil {

@@ -23,17 +23,13 @@ func NewSexp(ir types.IndexReader) *SexpSearcher {
 	return &SexpSearcher{indexReader: ir}
 }
 
-func printTree(node *ast.Node) {
-	printIndentedTree(node, 0)
-}
-
-func printIndentedTree(node *ast.Node, indentationLevel int) {
+func printAST(node *ast.Node, indentationLevel int) {
 	indent := strings.Repeat("  ", indentationLevel)
 	if node.IsVector() {
 		fmt.Printf("%s<%s>\n", indent, node.Type())
 		children := node.List()
 		for i := range children {
-			printIndentedTree(children[i], indentationLevel+1)
+			printAST(children[i], indentationLevel+1)
 		}
 		fmt.Printf("%s</%s>\n", indent, node.Type())
 		return
@@ -41,14 +37,14 @@ func printIndentedTree(node *ast.Node, indentationLevel int) {
 	fmt.Printf("%s<%s>%v</%s>\n", indent, node.Type(), node.Value(), node.Type())
 }
 
-func (r *SexpSearcher) Search(rawSexpression string) ([]result.Result, error) {
-	root, err := parser.Parse([]byte(rawSexpression))
+func (r *SexpSearcher) Search(squery string) ([]result.Result, error) {
+	root, err := parser.Parse([]byte(squery))
 	if err != nil {
 		return nil, err
 	}
-	printTree(root)
+	printAST(root, 0)
 
-	docIDs, err := r.indexReader.PostingQuerySX([]byte(rawSexpression))
+	docIDs, err := r.indexReader.RawQuery([]byte(squery))
 	if err != nil {
 		return nil, err
 	}

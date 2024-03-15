@@ -336,13 +336,12 @@ func qOp(expr *ast.Node) (string, error) {
 	return atomString, nil
 }
 
-func (r *Reader) PostingQuerySX(sQuery []byte) ([]uint64, error) {
-	root, err := parser.Parse([]byte(sQuery))
+func (r *Reader) RawQuery(squery []byte) ([]uint64, error) {
+	root, err := parser.Parse(squery)
 	if err != nil {
 		return nil, err
 	}
-
-	// unwrap the tree of expressions which is wrapped in a list.
+	// Unwrap the expression tree if it's wrapped in an outer list.
 	if root.Type() == ast.NodeTypeList && len(root.List()) == 1 {
 		root = root.List()[0]
 	}

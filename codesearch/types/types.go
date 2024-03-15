@@ -46,11 +46,7 @@ type IndexWriter interface {
 type IndexReader interface {
 	GetStoredFieldValue(docID uint64, field string) ([]byte, error)
 	GetStoredDocument(docID uint64) (Document, error)
-
-	PostingList(trigram uint32) ([]uint64, error)
-	PostingAnd(list []uint64, trigram uint32) ([]uint64, error)
-	PostingOr(list []uint64, trigram uint32) ([]uint64, error)
-	PostingQuerySX(sExpression []byte) ([]uint64, error)
+	RawQuery(squery []byte) ([]uint64, error)
 }
 
 type NamedField struct {
