@@ -8,6 +8,9 @@ go_library(
     srcs = ["testredis.go"],
     data = [":redis-server_crossplatform"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis",
+    x_defs = {
+        "redisBinRunfilePath": "$(rlocationpath :redis-server_crossplatform)",
+    },
     deps = [
         "//enterprise/server/util/redisutil",
         "//server/testutil/testfs",
@@ -16,7 +19,7 @@ go_library(
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@io_bazel_rules_go//go/runfiles:go_default_library",
     ],
 )
 

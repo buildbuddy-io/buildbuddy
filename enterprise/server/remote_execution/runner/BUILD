@@ -73,6 +73,9 @@ go_test(
     srcs = ["runner_test.go"],
     data = ["//enterprise/server/remote_execution/runner/testworker"],
     embed = [":runner"],
+    x_defs = {
+        "testworkerRunfilePath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
+    },
     deps = [
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/bare",
