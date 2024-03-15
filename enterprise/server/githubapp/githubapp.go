@@ -1945,19 +1945,20 @@ type prCommit struct {
 type prDetailsQuery struct {
 	Repository struct {
 		PullRequest struct {
-			Title         string
-			TitleHTML     string `graphql:"titleHTML"`
-			Body          string
-			BodyHTML      string `graphql:"bodyHTML"`
-			Author        actor
-			CreatedAt     time.Time
-			Id            string
-			UpdatedAt     time.Time
-			Mergeable     githubv4.MergeableState
-			Merged        bool
-			URL           string `graphql:"url"`
-			HeadRefName   string
-			TimelineItems struct {
+			Title          string
+			TitleHTML      string `graphql:"titleHTML"`
+			Body           string
+			BodyHTML       string `graphql:"bodyHTML"`
+			Author         actor
+			CreatedAt      time.Time
+			Id             string
+			UpdatedAt      time.Time
+			Mergeable      githubv4.MergeableState
+			ReviewDecision githubv4.PullRequestReviewDecision
+			Merged         bool
+			URL            string `graphql:"url"`
+			HeadRefName    string
+			TimelineItems  struct {
 				Nodes []timelineItem
 			} `graphql:"timelineItems(first: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, REVIEW_DISMISSED_EVENT, PULL_REQUEST_REVIEW])"`
 			ReviewRequests struct {
@@ -2203,10 +2204,11 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		Files:          fileSummaries,
 		ActionStatuses: actionStatuses,
 		Comments:       outputComments,
-		Mergeable:      pr.Mergeable == "MERGEABLE",
-		Submitted:      pr.Merged,
-		GithubUrl:      pr.URL,
-		DraftReviewId:  draftReviewId,
+		// TODO(jdhollen): Switch to MergeStateStatus when it's stable. https://docs.github.com/en/graphql/reference/enums#mergestatestatus
+		Mergeable:     pr.Mergeable == "MERGEABLE" && pr.ReviewDecision == githubv4.PullRequestReviewDecisionApproved,
+		Submitted:     pr.Merged,
+		GithubUrl:     pr.URL,
+		DraftReviewId: draftReviewId,
 	}
 
 	return resp, nil
