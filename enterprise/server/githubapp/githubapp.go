@@ -1999,12 +1999,13 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 	if err != nil {
 		return nil, err
 	}
+
 	reviewID := req.GetReviewId()
 	prID := req.GetPullRequestId()
 	if reviewID == "" && prID == "" {
 		return nil, status.InvalidArgumentError("You must specify a pull request or Review ID.")
 	}
-	log.Printf("%v", req)
+
 	if reviewID == "" && prID != "" {
 		if !req.GetApprove() {
 			return nil, status.InvalidArgumentError("Must specify a review to send if not approving.")
