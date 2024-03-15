@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -185,6 +186,7 @@ func GetTreeDirectorySizes(ctx context.Context, env environment.Env, req *capb.G
 		})
 
 		if err != nil {
+			log.Warningf("Failed initial GetTree call for directory sizes. digest: %v, instance_name: %s, digest_function: %s. Error: %s", req.GetRootDigest(), req.GetInstanceName(), req.GetDigestFunction(), err)
 			return nil, err
 		}
 		for {
@@ -193,6 +195,7 @@ func GetTreeDirectorySizes(ctx context.Context, env environment.Env, req *capb.G
 				break
 			}
 			if err != nil {
+				log.Warningf("Failed to stream directory sizes. digest: %v, instance_name: %s, digest_function: %s. Error: %s", req.GetRootDigest(), req.GetInstanceName(), req.GetDigestFunction(), err)
 				return nil, err
 			}
 			for _, directory := range rsp.GetDirectories() {
