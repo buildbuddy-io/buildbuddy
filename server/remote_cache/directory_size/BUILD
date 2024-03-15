@@ -10,6 +10,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/remote_cache/digest",
+        "//server/util/log",
         "//server/util/status",
     ],
 )
