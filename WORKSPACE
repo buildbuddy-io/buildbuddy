@@ -205,14 +205,20 @@ googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "616bb3536ac1fff3fb1a141450fa28b875e985712170ea7f1bfe5e5fc41e2cd8",
-    strip_prefix = "protobuf-24.4",
-    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v24.4/protobuf-24.4.tar.gz"],
+    sha256 = "e32100a8013870d24ffc37dad6781a61e5d0c99501bcb04d39c340a1c44a8e63",
+    strip_prefix = "protobuf-26.0",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v26.0/protobuf-26.0.tar.gz"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 
 protobuf_deps()
+
+# rules_python is loaded by protobuf_deps, but the dependencies of rules_python are not
+# we need to load it here to ensure com_google_protobuf could be used.
+load("@rules_python//python:repositories.bzl", "py_repositories")
+
+py_repositories()
 
 # Docker
 
