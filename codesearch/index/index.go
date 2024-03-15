@@ -252,7 +252,7 @@ func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field s
 		postingList.Clear()
 	}
 	if !restrict.IsEmpty() {
-		restrict.And(resultSet)
+		resultSet.And(restrict)
 	}
 	return resultSet, nil
 }
