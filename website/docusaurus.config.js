@@ -386,6 +386,7 @@ module.exports = {
         },
         blog: {
           path: "blog",
+          postsPerPage: 12,
           showReadingTime: true,
           blogSidebarCount: 10,
           editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/website/",
