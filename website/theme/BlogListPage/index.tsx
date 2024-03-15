@@ -5,7 +5,7 @@ import Layout from "@theme/Layout";
 import BlogPostItem from "../BlogPostItem";
 import BlogListPaginator from "@theme/BlogListPaginator";
 import type { Props } from "@theme/BlogListPage";
-import BlogSidebar from "../BlogSidebar";
+import Link from "@docusaurus/Link";
 
 function BlogListPage(props: Props): JSX.Element {
   const { metadata, items, sidebar } = props;
@@ -19,23 +19,20 @@ function BlogListPage(props: Props): JSX.Element {
     <Layout title={title} description={blogDescription} wrapperClassName="blog-wrapper">
       <div className="blog-container margin-vert--lg">
         <div className="row">
-          <main className="col col--8">
+          <main className="blog-post-list col col--12">
             {items.map(({ content: BlogPostContent }) => (
-              <BlogPostItem
-                key={BlogPostContent.metadata.permalink}
-                frontMatter={BlogPostContent.frontMatter}
-                metadata={BlogPostContent.metadata}
-                truncated={BlogPostContent.metadata.hasTruncateMarker}>
-                <BlogPostContent />
-              </BlogPostItem>
+              <Link href={BlogPostContent.metadata.permalink}>
+                <BlogPostItem
+                  key={BlogPostContent.metadata.permalink}
+                  frontMatter={BlogPostContent.frontMatter}
+                  metadata={BlogPostContent.metadata}
+                  truncated={BlogPostContent.metadata.hasTruncateMarker}>
+                  <BlogPostContent />
+                </BlogPostItem>
+              </Link>
             ))}
             <BlogListPaginator metadata={metadata} />
           </main>
-          <div className="col col--1"></div>
-
-          <div className="col col--3">
-            <BlogSidebar sidebar={sidebar} />
-          </div>
         </div>
       </div>
     </Layout>

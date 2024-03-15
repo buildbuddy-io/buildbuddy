@@ -1,8 +1,14 @@
 h1,
 .blogPostTitle {
-  font-size: 56px;
-  line-height: 64px;
+  font-size: 64px;
+  line-height: 72px;
   text-wrap: pretty;
+}
+
+.blogPostTitleGrid {
+  font-size: 48px;
+  line-height: 54px;
+  text-wrap: balance;
 }
 
 h1 {
@@ -79,4 +85,33 @@ h1 {
 
 .readMore a:hover {
   background-color: #fafafa;
+}
+
+.articleGrid {
+  box-shadow: 0px 0px 0px 1px rgba(0, 0, 0, 0.12), 0px 1px 1px -0.5px rgba(0, 0, 0, 0.12),
+  0px 3px 3px -1.5px rgba(0, 0, 0, 0.12), 0px 6px 6px -3px rgba(0, 0, 0, 0.12);
+  padding: 32px 24px;
+  border-radius: 16px;
+  cursor: pointer;
+  max-height: 500px;
+  overflow: hidden;
+  position: relative;
+  height: 100%;
+}
+
+.articleGrid:after {
+  content: "";
+  display: block;
+  position: absolute;
+  height: 128px;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-image: linear-gradient(transparent, white);
+}
+
+.articleGrid:hover {
+  box-shadow: 0px 0px 0px 1px rgba(0, 0, 0, 0.12), 0px 1px 1px -0.5px rgba(0, 0, 0, 0.12),
+  0px 3px 3px -1.5px rgba(0, 0, 0, 0.12), 0px 6px 6px -3px rgba(0, 0, 0, 0.12), 0px 8px 12px -6px rgba(0, 0, 0, 0.12),
+  0px 10px 24px -12px rgba(0, 0, 0, 0.12);
 }

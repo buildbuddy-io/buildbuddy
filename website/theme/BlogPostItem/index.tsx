@@ -91,7 +91,8 @@ function BlogPostItem(props: Props): JSX.Element {
 
     return (
       <header>
-        <TitleHeading className={clsx("margin-bottom--sm", styles.blogPostTitle)}>
+        <TitleHeading
+          className={clsx("margin-bottom--sm", isBlogPostPage ? styles.blogPostTitle : styles.blogPostTitleGrid)}>
           {isBlogPostPage ? title : <Link to={permalink}>{title}</Link>}
         </TitleHeading>
         {subtitle && <SubtitleHeading className={styles.subtitle}>{subtitle}</SubtitleHeading>}
@@ -145,12 +146,14 @@ function BlogPostItem(props: Props): JSX.Element {
     <>
       <PageMetadata {...{ keywords, image }} />
 
-      <article className={!isBlogPostPage ? "margin-bottom--xl" : undefined}>
+      <article className={!isBlogPostPage ? `${styles.articleGrid}` : undefined}>
         {renderPostHeader()}
-        <div className="markdown">
-          <MDXProvider components={MDXComponents}>{children}</MDXProvider>
-        </div>
-        {(tags.length > 0 || truncated) && (
+        {
+          <div className="markdown">
+            <MDXProvider components={MDXComponents}>{children}</MDXProvider>
+          </div>
+        }
+        {(tags.length > 0 || truncated) && isBlogPostPage && (
           <footer className="row margin-vert--lg">
             {tags.length > 0 && !truncated && (
               <div className={styles.tags}>
@@ -164,19 +167,6 @@ function BlogPostItem(props: Props): JSX.Element {
                     {label}
                   </Link>
                 ))}
-              </div>
-            )}
-            {truncated && (
-              <div className={styles.readMore}>
-                <Link to={metadata.permalink} aria-label={`Read more about ${title}`}>
-                  <strong>
-                    <Translate
-                      id="theme.blog.post.readMore"
-                      description="The label used in blog post item excerpts to link to full blog posts">
-                      Read More
-                    </Translate>
-                  </strong>
-                </Link>
               </div>
             )}
           </footer>
