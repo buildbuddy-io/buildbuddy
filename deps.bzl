@@ -2151,8 +2151,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_golang_protobuf",
         importpath = "github.com/golang/protobuf",
-        sum = "h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg=",
-        version = "v1.5.3",
+        sum = "h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=",
+        version = "v1.5.4",
     )
     go_repository(
         name = "com_github_golang_snappy",
@@ -6400,9 +6400,19 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "org_golang_google_protobuf",
+        # As of v1.33.0, some proto files were added to the repo which will
+        # trigger Gazelle to generate proto build targets and create a cyclic
+        # dependency chain.
+        #
+        # Turn off proto targets generation and only use Go targets to avoid
+        # this class of issue.
+        # This could be removed when we moved to bzlmod as Gazelle will set
+        # by default thanks to this change:
+        #   https://github.com/bazelbuild/bazel-gazelle/pull/1758
+        build_file_proto_mode = "disable_global",
         importpath = "google.golang.org/protobuf",
-        sum = "h1:pPC6BG5ex8PDFnkbrGU3EixyhKcQ2aDuBS36lqK/C7I=",
-        version = "v1.32.0",
+        sum = "h1:uNO2rsAINq/JlFpSdYEKIZ0uKD/R9cpdv0T+yoGwGmI=",
+        version = "v1.33.0",
     )
     go_repository(
         name = "org_golang_x_crypto",
