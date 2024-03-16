@@ -21,7 +21,7 @@ The primary differences are:
 	(:none)                 # Match nothing.
 	(:all)                  # Match everything.
 	(:and expr1 ... exprN)  # Find the intersection of matches from expr1 through exprN.
-    (:or expr1 ... exprN)   # Find the union of matches from expr1 through exprN.
+	(:or expr1 ... exprN)   # Find the union of matches from expr1 through exprN.
 ```
 
 7. This code adds a gRPC Server implementation.
