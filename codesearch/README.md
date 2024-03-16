@@ -14,7 +14,7 @@ The primary differences are:
 
 5. This code allows for custom tokenizers. This is to allow for more optimal indexing strategies in the future, like sparse-ngrams.
 
-6. This code replaces the custom `Query` object based search with squery based search. All raw queries are represented as s-expressions, with the following grammar supported:
+6. This code replaces the custom `Query` object with s-expressions for all raw queries. The following grammar is supported:
 
 ```lisp
 	(:eq fieldName "ngram") # Find matches for "ngram" in fieldName. Example: (:eq filename ".go")
@@ -22,6 +22,12 @@ The primary differences are:
 	(:all)                  # Match everything.
 	(:and expr1 ... exprN)  # Find the intersection of matches from expr1 through exprN.
 	(:or expr1 ... exprN)   # Find the union of matches from expr1 through exprN.
+```
+Some example queries:
+```lisp
+	(:and (:eq filename "ted") (:eq filename "dis"))
+	(:and (:and (:eq content "=ba") (:eq content "foo") (:eq content "o=b") (:eq content "oo=")) (:or (:eq content "bar") (:eq content "baz")))
+	(:all)
 ```
 
 7. This code adds a gRPC Server implementation.
