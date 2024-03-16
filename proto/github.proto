@@ -631,6 +631,10 @@ message GetGithubPullRequestDetailsResponse {
   // The id of an ongoing review draft for the logged in user, if one is in
   // progress.
   string draft_review_id = 18;
+
+  // The Github login (username) of the user viewing this PR, based on the
+  // linked Github account.
+  string viewer_login = 20;
 }
 
 message SendGithubPullRequestReviewRequest {

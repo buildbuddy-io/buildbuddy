@@ -585,7 +585,31 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       .finally(() => this.setState({ pendingRequest: false }));
   }
 
+  submit() {
+    if (!this.state.response) {
+      return;
+    }
+    this.setState({ pendingRequest: true });
+    const req = new github.MergeGithubPullRequest({
+      owner: this.state.response.owner,
+      repo: this.state.response.repo,
+      pullNumber: this.state.response.pull,
+    });
+    console.log(req);
+    rpc_service.service
+      .mergeGithubPull(req)
+      .then((r) => {
+        console.log(r);
+        window.location.reload();
+      })
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ pendingRequest: false }));
+  }
+
   render() {
+    const userIsAuthor = Boolean(
+      this.state.response?.viewerLogin && this.state.response.viewerLogin === this.state.response.author
+    );
     return (
       <div className={"pr-view " + this.getPrStatusClass(this.state.response)}>
         {this.state.response !== undefined && (
@@ -613,7 +637,12 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                   <div>Mentions</div>
                   <div></div>
                   <div>
-                    <button onClick={() => this.reply(true)}>APPROVE</button>
+                    {userIsAuthor && !this.state.response.submitted && (
+                      <button disabled={!this.state.response.mergeable} onClick={() => this.submit()}>
+                        SUBMIT
+                      </button>
+                    )}
+                    {!userIsAuthor && <button onClick={() => this.reply(true)}>APPROVE</button>}
                     <button disabled={this.state.response.comments.length < 1} onClick={() => this.reply(false)}>
                       REPLY
                     </button>
