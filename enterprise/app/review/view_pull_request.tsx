@@ -696,8 +696,7 @@ function readNextHunk(patchLines: string[], startIndex: number): [Hunk, number] 
   let leftLines: SourceLine[] = [];
   let rightLines: SourceLine[] = [];
   while (
-    leftLinesRead < (leftInfo?.lineCount || 1) &&
-    rightLinesRead < (rightInfo?.lineCount || 1) &&
+    (leftLinesRead < (leftInfo?.lineCount || 1) || rightLinesRead < (rightInfo?.lineCount || 1)) &&
     currentIndex < patchLines.length
   ) {
     let line = patchLines[currentIndex];
