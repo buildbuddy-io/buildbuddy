@@ -4,11 +4,11 @@ This is a completely rewritten version of Russ Cox's [codesearch implementation]
 
 The primary differences are:
 
-1. The original code stored the index in a custom binary format. This version keeps the index in [pebble](https://pkg.go.dev/github.com/cockroachdb/pebble)(a LSTM).
+1. The original code stored the index in a custom binary format. This version keeps the index in [pebble](https://pkg.go.dev/github.com/cockroachdb/pebble) (a LSTM).
 
-2. The original code was nice (and fast) but strongly coupled to trigrams. For performance reasons, the trigrams were packed into `uint32` types. This made supporting other length ngrams difficult, and also meant there was a lot of uint32 specific code to implement radix-sort and other operations on these trigrams. This code introduces a Token interface and implementation backed by `[]byte`.
+2. The original code was nice (and fast) but strongly coupled to trigrams. For performance reasons, ecah trigram was packed into a `uint32`. This made supporting other length ngrams difficult, and also meant there was a lot of `uint32` specific code implementing radix-sort and other operations for trigrams. This code introduces a Token interface and implementation backed by `[]byte`.
 
-3. This code introduces interfaces for `Token`, `Tokenizer`, `IndexReader`, `IndexWriter`, `Field`, and `Document`. It stores posting lists as 64-bit roaring bitmaps.
+3. This code introduces interfaces for `Token`, `Tokenizer`, `IndexReader`, `IndexWriter`, `Field`, and `Document`. It stores posting lists as 64-bit roaring bitmaps. Where possible it removes fiddly bit-shifting or counting operations and uses methods from the standard library.
 
 4. This code introduces the concept of fields, so document content from different fields is indexed in different posting lists. This makes it possible to search just one field (say, filename), without needing to iterate through all documents.
 
