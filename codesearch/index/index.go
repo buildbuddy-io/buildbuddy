@@ -68,12 +68,54 @@ func Uint64ToBytes(i uint64) []byte {
 	return buf
 }
 
+type indexKeyType string
+const (
+	docField indexKeyType = "doc"
+	ngramField indexKeyType = "gra"
+	keySeparator = ":"
+)
+type key struct {
+	repo string
+	keyType indexKeyType
+	data []byte
+	field string
+	segmentID string
+}
+func (k *key) FromBytes(b []byte) error {
+	segments := bytes.Split(b, []byte(keySeparator))
+	if len(segments) < 5 {
+		return status.InternalErrorf("invalid key %q (<5 segments)", b)
+	}
+	k.repo = string(segments[0])
+	k.keyType = indexKeyType(segments[1])
+	k.data = segments[2]
+	k.field = string(segments[3])
+	k.segmentID = string(segments[4])
+	return nil
+}
+func (k *key) DocID() uint64 {
+	if k.keyType != docField {
+		return 0
+	}
+	d, err := strconv.ParseUint(string(k.data), 10, 64)
+	if err == nil {
+		return d
+	}
+	return 0
+}
+func (k *key) NGram() []byte {
+	if k.keyType != ngramField {
+		return nil
+	}
+	return k.data
+}
+
 func (w *Writer) storedFieldKey(docID uint64, field string) []byte {
-	return []byte(fmt.Sprintf("%s:doc:%d:%s", w.repo, docID, field))
+	return []byte(fmt.Sprintf("%s:doc:%d:%s:%s", w.repo, docID, field, w.segmentID.String()))
 }
 
 func (w *Writer) postingListKey(ngram string, field string) []byte {
-	return []byte(fmt.Sprintf("%s:gra:%s:%s", w.repo, ngram, field))
+	return []byte(fmt.Sprintf("%s:gra:%s:%s:%s", w.repo, ngram, field, w.segmentID.String()))
 }
 
 func (w *Writer) AddDocument(doc types.Document) error {
@@ -179,15 +221,18 @@ func (r *Reader) allDocIDs() ([]uint64, error) {
 		UpperBound: r.storedFieldKey(math.MaxUint64, types.DocIDField),
 	})
 	defer iter.Close()
-	found := make([]uint64, 0)
+	resultSet := roaring64.New()
+	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
-		if !bytes.HasSuffix(iter.Key(), []byte(types.DocIDField)) {
-			continue
+		if err := k.FromBytes(iter.Key()); err != nil {
+			return nil, err
 		}
-		docid := BytesToUint64(iter.Value())
-		found = append(found, docid)
+		if k.keyType == docField && k.field == types.DocIDField {
+			resultSet.Add(BytesToUint64(iter.Value()))
+		}
+		continue
 	}
-	return found, nil
+	return resultSet.ToArray(), nil
 }
 
 func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
@@ -199,29 +244,43 @@ func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
 	defer iter.Close()
 
 	fields := make(map[string]types.NamedField, 0)
+	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
-		fieldName := string(bytes.TrimPrefix(iter.Key(), docIDStart))
-		if fieldName == types.DocIDField {
+		if err := k.FromBytes(iter.Key()); err != nil {
+			return nil, err
+		}
+		if k.keyType != docField || k.field == types.DocIDField {
 			// Skip docID -- we already have it from args.
 			continue
 		}
 		fieldVal := make([]byte, len(iter.Value()))
 		copy(fieldVal, iter.Value())
-		fields[fieldName] = types.NewNamedField(types.TextField, fieldName, fieldVal, true /*=stored*/)
+		fields[k.field] = types.NewNamedField(types.TextField, k.field, fieldVal, true /*=stored*/)
 	}
 	doc := types.NewMapDocument(docID, fields)
 	return doc, nil
 }
 
 func (r *Reader) GetStoredFieldValue(docID uint64, field string) ([]byte, error) {
-	buf, closer, err := r.db.Get(r.storedFieldKey(docID, field))
-	if err == pebble.ErrNotFound {
-		return nil, status.NotFoundErrorf("doc %d (field %q) not found", docID, field)
+	docIDStart := r.storedFieldKey(docID, field)
+	iter := r.db.NewIter(&pebble.IterOptions{
+		LowerBound: docIDStart,
+		UpperBound: r.storedFieldKey(docID, "\xff"),
+	})
+	defer iter.Close()
+
+	k := key{}
+	for iter.First(); iter.Valid(); iter.Next() {
+		if err := k.FromBytes(iter.Key()); err != nil {
+			return nil, err
+		}
+		if k.keyType == docField && k.field == field {
+			fieldVal := make([]byte, len(iter.Value()))
+			copy(fieldVal, iter.Value())
+			return fieldVal, nil
+		}
 	}
-	defer closer.Close()
-	rbuf := make([]byte, len(buf))
-	copy(rbuf, buf)
-	return rbuf, nil
+	return nil, status.NotFoundErrorf("doc %d (field %q) not found", docID, field)
 }
 
 // postingListBM looks up the set of docIDs matching the provided ngram.
@@ -243,7 +302,15 @@ func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field s
 
 	resultSet := roaring64.New()
 	postingList := roaring64.New()
+
+	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
+		if err := k.FromBytes(iter.Key()); err != nil {
+			return nil, err
+		}
+		if k.keyType != ngramField {
+			continue
+		}
 		if _, err := postingList.ReadFrom(bytes.NewReader(iter.Value())); err != nil {
 			return nil, err
 		}
