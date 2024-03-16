@@ -69,18 +69,21 @@ func Uint64ToBytes(i uint64) []byte {
 }
 
 type indexKeyType string
+
 const (
-	docField indexKeyType = "doc"
-	ngramField indexKeyType = "gra"
-	keySeparator = ":"
+	docField     indexKeyType = "doc"
+	ngramField   indexKeyType = "gra"
+	keySeparator              = ":"
 )
+
 type key struct {
-	repo string
-	keyType indexKeyType
-	data []byte
-	field string
+	repo      string
+	keyType   indexKeyType
+	data      []byte
+	field     string
 	segmentID string
 }
+
 func (k *key) FromBytes(b []byte) error {
 	segments := bytes.Split(b, []byte(keySeparator))
 	if len(segments) < 5 {
