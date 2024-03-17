@@ -23,7 +23,9 @@ The primary differences are:
 	(:and expr1 ... exprN)  # Find the intersection of matches from expr1 through exprN.
 	(:or expr1 ... exprN)   # Find the union of matches from expr1 through exprN.
 ```
+
 Some example queries:
+
 ```lisp
 	(:and (:eq filename "ted") (:eq filename "dis"))
 	(:and (:and (:eq content "=ba") (:eq content "foo") (:eq content "o=b") (:eq content "oo=")) (:or (:eq content "bar") (:eq content "baz")))
@@ -35,11 +37,14 @@ Some example queries:
 # Usage
 
 ## Index a directory (CLI)
+
 ```bash
   # Index the ~/buildbuddy directory.
-  $ blaze build codesearch/cmd/cindex:cindex && time bazel-bin/codesearch/cmd/cindex/cindex_/cindex ~/buildbuddy 
+  $ blaze build codesearch/cmd/cindex:cindex && time bazel-bin/codesearch/cmd/cindex/cindex_/cindex ~/buildbuddy
 ```
+
 ## Search the index (CLI)
+
 ```bash
   # Search (w/ a regex)
   $ blaze build codesearch/cmd/csearch:csearch && time bazel-bin/codesearch/cmd/csearch/csearch_/csearch -verbose "className=\.*"
