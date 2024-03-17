@@ -12,7 +12,6 @@ import (
 	"sync"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -73,6 +72,7 @@ type indexKeyType string
 const (
 	docField     indexKeyType = "doc"
 	ngramField   indexKeyType = "gra"
+	deleteField  indexKeyType = "del"
 	keySeparator              = ":"
 )
 
@@ -119,6 +119,16 @@ func (w *Writer) storedFieldKey(docID uint64, field string) []byte {
 
 func (w *Writer) postingListKey(ngram string, field string) []byte {
 	return []byte(fmt.Sprintf("%s:gra:%s:%s:%s", w.repo, ngram, field, w.segmentID.String()))
+}
+
+func (w *Writer) deleteKey(docID uint64) []byte {
+	return []byte(fmt.Sprintf("%s:doc:%d:%s:%s", w.repo, docID, "", w.segmentID.String()))
+}
+
+func (w *Writer) DeleteDocument(docID uint64) error {
+	docidKey := w.deleteKey(docID)
+	w.batch.Set(docidKey, Uint64ToBytes(docID), nil)
+	return nil
 }
 
 func (w *Writer) AddDocument(doc types.Document) error {
@@ -327,54 +337,12 @@ func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field s
 	return resultSet, nil
 }
 
-func (r *Reader) PostingList(trigram uint32) ([]uint64, error) {
-	return r.postingList(trigram, nil)
-}
-
-func (r *Reader) PostingListF(ngram []byte, field string, restrict []uint64) ([]uint64, error) {
+func (r *Reader) postingListF(ngram []byte, field string, restrict []uint64) ([]uint64, error) {
 	bm, err := r.postingListBM(ngram, roaring64.BitmapOf(restrict...), field)
 	if err != nil {
 		return nil, err
 	}
 	return bm.ToArray(), nil
-}
-
-func (r *Reader) postingList(trigram uint32, restrict []uint64) ([]uint64, error) {
-	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...), "")
-	if err != nil {
-		return nil, err
-	}
-	return bm.ToArray(), nil
-}
-
-func (r *Reader) PostingAnd(list []uint64, trigram uint32) ([]uint64, error) {
-	return r.postingAnd(list, trigram, nil)
-}
-
-func (r *Reader) postingAnd(list []uint64, trigram uint32, restrict []uint64) ([]uint64, error) {
-	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...), "")
-	if err != nil {
-		return nil, err
-	}
-	bm.And(roaring64.BitmapOf(list...))
-	return bm.ToArray(), nil
-}
-
-func (r *Reader) PostingOr(list []uint64, trigram uint32) ([]uint64, error) {
-	return r.postingOr(list, trigram, nil)
-}
-
-func (r *Reader) postingOr(list []uint64, trigram uint32, restrict []uint64) ([]uint64, error) {
-	bm, err := r.postingListBM(trigramToBytes(trigram), roaring64.BitmapOf(restrict...), "")
-	if err != nil {
-		return nil, err
-	}
-	bm.Or(roaring64.BitmapOf(list...))
-	return bm.ToArray(), nil
-}
-
-func (r *Reader) PostingQuery(q *query.Query) ([]uint64, error) {
-	return r.postingQuery(q, nil)
 }
 
 const (
@@ -406,6 +374,10 @@ func qOp(expr *ast.Node) (string, error) {
 	return atomString, nil
 }
 
+func (r *Reader) removeDeletedDocIDs(docids []uint64) ([]uint64, error) {
+	return nil, nil
+}
+
 func (r *Reader) RawQuery(squery []byte) ([]uint64, error) {
 	root, err := parser.Parse(squery)
 	if err != nil {
@@ -415,10 +387,10 @@ func (r *Reader) RawQuery(squery []byte) ([]uint64, error) {
 	if root.Type() == ast.NodeTypeList && len(root.List()) == 1 {
 		root = root.List()[0]
 	}
-	return r.postingQuerySX(root, nil)
+	return r.postingQuery(root, nil)
 }
 
-func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error) {
+func (r *Reader) postingQuery(q *ast.Node, restrict []uint64) ([]uint64, error) {
 	op, err := qOp(q)
 	if err != nil {
 		return nil, err
@@ -434,7 +406,7 @@ func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error
 	case QAnd:
 		list := restrict
 		for _, subQuery := range q.List()[1:] {
-			list, err = r.postingQuerySX(subQuery, list)
+			list, err = r.postingQuery(subQuery, list)
 			if err != nil {
 				return nil, err
 			}
@@ -443,11 +415,11 @@ func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error
 	case QOr:
 		var list []uint64
 		for _, subQuery := range q.List()[1:] {
-			l, err := r.postingQuerySX(subQuery, restrict)
+			l, err := r.postingQuery(subQuery, restrict)
 			if err != nil {
 				return nil, err
 			}
-			list = r.mergeOr(list, l)
+			list = mergeOr(list, l)
 		}
 		return list, nil
 	case QEq:
@@ -468,65 +440,14 @@ func (r *Reader) postingQuerySX(q *ast.Node, restrict []uint64) ([]uint64, error
 		if s, err := strconv.Unquote(ngram); err == nil {
 			ngram = s
 		}
-		return r.PostingListF([]byte(ngram), field, restrict)
+		return r.postingListF([]byte(ngram), field, restrict)
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown query op: %q", op)
 	}
 
 }
 
-// TODO(tylerw): move this to query??
-func (r *Reader) postingQuery(q *query.Query, restrict []uint64) (list []uint64, err error) {
-	switch q.Op {
-	case query.QNone:
-		// nothing
-	case query.QAll:
-		if restrict != nil {
-			return restrict, err
-		}
-		list, err = r.allDocIDs()
-	case query.QAnd:
-		for _, t := range q.Trigram {
-			tri := uint32(t[0])<<16 | uint32(t[1])<<8 | uint32(t[2])
-			if list == nil {
-				list, err = r.postingList(tri, restrict)
-			} else {
-				list, err = r.postingAnd(list, tri, restrict)
-			}
-			if len(list) == 0 {
-				return nil, err
-			}
-		}
-		for _, sub := range q.Sub {
-			if list == nil {
-				list = restrict
-			}
-			list, err = r.postingQuery(sub, list)
-			if len(list) == 0 {
-				return nil, err
-			}
-		}
-	case query.QOr:
-		for _, t := range q.Trigram {
-			tri := uint32(t[0])<<16 | uint32(t[1])<<8 | uint32(t[2])
-			if list == nil {
-				list, err = r.postingList(tri, restrict)
-			} else {
-				list, err = r.postingOr(list, tri, restrict)
-			}
-		}
-		for _, sub := range q.Sub {
-			l, err := r.postingQuery(sub, restrict)
-			if err != nil {
-				return nil, err
-			}
-			list = r.mergeOr(list, l)
-		}
-	}
-	return list, err
-}
-
-func (r *Reader) mergeOr(l1, l2 []uint64) []uint64 {
+func mergeOr(l1, l2 []uint64) []uint64 {
 	l := append(l1, l2...)
 	slices.Sort(l)
 	return slices.Compact(l)

@@ -39,6 +39,7 @@ type Tokenizer interface {
 }
 
 type IndexWriter interface {
+	DeleteDocument(docID uint64) error
 	AddDocument(doc Document) error
 	Flush() error
 }
