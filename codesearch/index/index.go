@@ -228,7 +228,11 @@ func (r *Reader) storedFieldKey(docID uint64, field string) []byte {
 	return []byte(fmt.Sprintf("%s:doc:%d:%s", r.repo, docID, field))
 }
 
-func (r *Reader) allDocIDs() ([]uint64, error) {
+func (r *Reader) deletedDocPrefix(docID uint64) []byte {
+	return []byte(fmt.Sprintf("%s:del:%d::", r.repo, docID))
+}
+
+func (r *Reader) allDocIDs() (*roaring64.Bitmap, error) {
 	iter := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: r.storedFieldKey(0, types.DocIDField),
 		UpperBound: r.storedFieldKey(math.MaxUint64, types.DocIDField),
@@ -245,7 +249,7 @@ func (r *Reader) allDocIDs() ([]uint64, error) {
 		}
 		continue
 	}
-	return resultSet.ToArray(), nil
+	return resultSet, nil
 }
 
 func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
@@ -296,12 +300,12 @@ func (r *Reader) GetStoredFieldValue(docID uint64, field string) ([]byte, error)
 	return nil, status.NotFoundErrorf("doc %d (field %q) not found", docID, field)
 }
 
-// postingListBM looks up the set of docIDs matching the provided ngram.
+// postingList looks up the set of docIDs matching the provided ngram.
 // If `field` is set to a non-empty value, matches are restricted to just the
 // specified field. Otherwise, all fields are searched.
 // If `restrict` is set to a non-empty value, matches will only be returned if
 // they are both found and also are present in the restrict set.
-func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field string) (*roaring64.Bitmap, error) {
+func (r *Reader) postingList(ngram []byte, restrict *roaring64.Bitmap, field string) (*roaring64.Bitmap, error) {
 	minKey := []byte(fmt.Sprintf("%s:gra:%s", r.repo, ngram))
 	if field != types.AllFields {
 		minKey = []byte(fmt.Sprintf("%s:gra:%s:%s", r.repo, ngram, field))
@@ -337,14 +341,6 @@ func (r *Reader) postingListBM(ngram []byte, restrict *roaring64.Bitmap, field s
 	return resultSet, nil
 }
 
-func (r *Reader) postingListF(ngram []byte, field string, restrict []uint64) ([]uint64, error) {
-	bm, err := r.postingListBM(ngram, roaring64.BitmapOf(restrict...), field)
-	if err != nil {
-		return nil, err
-	}
-	return bm.ToArray(), nil
-}
-
 const (
 	QNone = ":none"
 	QAll  = ":all"
@@ -374,8 +370,29 @@ func qOp(expr *ast.Node) (string, error) {
 	return atomString, nil
 }
 
-func (r *Reader) removeDeletedDocIDs(docids []uint64) ([]uint64, error) {
-	return nil, nil
+func (r *Reader) removeDeletedDocIDs(docids *roaring64.Bitmap) error {
+	if docids.GetCardinality() == 0 {
+		return nil
+	}
+	iter := r.db.NewIter(&pebble.IterOptions{
+		LowerBound: r.deletedDocPrefix(0),
+		UpperBound: r.deletedDocPrefix(math.MaxUint64),
+	})
+	defer iter.Close()
+
+	arr := docids.ToArray()
+	lastDocKeyPrefix := r.deletedDocPrefix(arr[len(arr)-1])
+	for _, docID := range arr {
+		deletedDocKeyPrefix := r.deletedDocPrefix(docID)
+		valid := iter.SeekGE(deletedDocKeyPrefix)
+		if !valid || bytes.Compare(iter.Key(), lastDocKeyPrefix) > 1 {
+			return nil
+		}
+		if bytes.HasPrefix(iter.Key(), deletedDocKeyPrefix) {
+			docids.Remove(docID)
+		}
+	}
+	return nil
 }
 
 func (r *Reader) RawQuery(squery []byte) ([]uint64, error) {
@@ -387,10 +404,15 @@ func (r *Reader) RawQuery(squery []byte) ([]uint64, error) {
 	if root.Type() == ast.NodeTypeList && len(root.List()) == 1 {
 		root = root.List()[0]
 	}
-	return r.postingQuery(root, nil)
+	bm, err := r.postingQuery(root, roaring64.NewBitmap())
+	if err != nil {
+		return nil, err
+	}
+	err = r.removeDeletedDocIDs(bm)
+	return bm.ToArray(), err
 }
 
-func (r *Reader) postingQuery(q *ast.Node, restrict []uint64) ([]uint64, error) {
+func (r *Reader) postingQuery(q *ast.Node, restrict *roaring64.Bitmap) (*roaring64.Bitmap, error) {
 	op, err := qOp(q)
 	if err != nil {
 		return nil, err
@@ -413,13 +435,13 @@ func (r *Reader) postingQuery(q *ast.Node, restrict []uint64) ([]uint64, error) 
 		}
 		return list, nil
 	case QOr:
-		var list []uint64
+		var list = new(roaring64.Bitmap)
 		for _, subQuery := range q.List()[1:] {
 			l, err := r.postingQuery(subQuery, restrict)
 			if err != nil {
 				return nil, err
 			}
-			list = mergeOr(list, l)
+			list.Or(l)
 		}
 		return list, nil
 	case QEq:
@@ -440,15 +462,9 @@ func (r *Reader) postingQuery(q *ast.Node, restrict []uint64) ([]uint64, error) 
 		if s, err := strconv.Unquote(ngram); err == nil {
 			ngram = s
 		}
-		return r.postingListF([]byte(ngram), field, restrict)
+		return r.postingList([]byte(ngram), restrict, field)
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown query op: %q", op)
 	}
 
-}
-
-func mergeOr(l1, l2 []uint64) []uint64 {
-	l := append(l1, l2...)
-	slices.Sort(l)
-	return slices.Compact(l)
 }
