@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
