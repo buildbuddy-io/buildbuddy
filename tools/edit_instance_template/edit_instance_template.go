@@ -22,6 +22,7 @@ var (
 	cluster = flag.String("cluster", "", "The cluster to modify")
 	pool    = flag.String("pool", "executor-pool", "The pool to modify")
 
+	addNetwork = flag.Bool("add_network", false, "If true, add the subnetwork")
 	subnetwork = flag.String("subnetwork", "executor", "The name of the subnetwork")
 	apply      = flag.Bool("apply", false, "If false, run this script in dry-run mode (makes no changes)")
 )
@@ -79,20 +80,22 @@ func alreadyModified(t *computepb.InstanceTemplate) bool {
 		return false
 	}
 
-	foundOneToOneNAT := false
-	for _, ni := range t.GetProperties().GetNetworkInterfaces() {
-		if ni.GetSubnetwork() != getSubnetURL() {
-			continue
-		}
-		for _, ac := range ni.GetAccessConfigs() {
-			if ac.GetType() == "ONE_TO_ONE_NAT" {
-				foundOneToOneNAT = true
+	if *addNetwork {
+		foundOneToOneNAT := false
+		for _, ni := range t.GetProperties().GetNetworkInterfaces() {
+			if ni.GetSubnetwork() != getSubnetURL() {
+				continue
+			}
+			for _, ac := range ni.GetAccessConfigs() {
+				if ac.GetType() == "ONE_TO_ONE_NAT" {
+					foundOneToOneNAT = true
+				}
 			}
 		}
-	}
-	if !foundOneToOneNAT {
-		log.Printf("ONE_TO_ONE_NAT not found on %q", t.GetName())
-		return false
+		if !foundOneToOneNAT {
+			log.Printf("ONE_TO_ONE_NAT not found on %q", t.GetName())
+			return false
+		}
 	}
 	return true
 }
@@ -118,16 +121,18 @@ func createModifiedVersion(ctx context.Context, c *compute.InstanceTemplatesClie
 		new.GetProperties().AdvancedMachineFeatures = &computepb.AdvancedMachineFeatures{}
 	}
 	new.GetProperties().GetAdvancedMachineFeatures().EnableNestedVirtualization = proto.Bool(true)
-	new.GetProperties().NetworkInterfaces = append(new.GetProperties().GetNetworkInterfaces(),
-		&computepb.NetworkInterface{
-			AccessConfigs: []*computepb.AccessConfig{
-				{
-					Name: proto.String("external-nat"),
-					Type: proto.String("ONE_TO_ONE_NAT"),
+	if *addNetwork {
+		new.GetProperties().NetworkInterfaces = append(new.GetProperties().GetNetworkInterfaces(),
+			&computepb.NetworkInterface{
+				AccessConfigs: []*computepb.AccessConfig{
+					{
+						Name: proto.String("external-nat"),
+						Type: proto.String("ONE_TO_ONE_NAT"),
+					},
 				},
-			},
-			Subnetwork: proto.String(getSubnetURL()),
-		})
+				Subnetwork: proto.String(getSubnetURL()),
+			})
+	}
 	new.Name = proto.String(newTemplateName)
 
 	req := &computepb.InsertInstanceTemplateRequest{
