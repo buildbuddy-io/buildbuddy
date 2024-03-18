@@ -410,7 +410,7 @@ func TestTaskRouter_WorkflowGitRefRouting(t *testing.T) {
 }
 
 func TestTaskRouter_WorkflowGitRefRouting_DefaultRef(t *testing.T) {
-	flags.Set(t, "executor.workflow_default_branch_routing_enabled", true)
+	flags.Set(t, "remote_execution.workflow_default_branch_routing_enabled", true)
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
 	nodes := sequentiallyNumberedNodes(100)
