@@ -9,6 +9,7 @@ go_library(
         "//cli/log",
         "//cli/parser",
         "//cli/setup",
+        "//cli/terminal",
         "//enterprise/server/remote_execution/dirtools",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",

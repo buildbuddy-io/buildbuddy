@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/setup"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -351,6 +352,8 @@ func splitLogBuffer(buf []byte) []string {
 	return lines
 }
 
+// streamLogs streams the logs with real-time progress updates. It uses ANSI
+// escape sequences to delete and rewrite outdated progress messages
 func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
 	chunkID := ""
 	moveBack := 0
@@ -409,6 +412,34 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 
 		if l.GetNextChunkId() == chunkID {
 			time.Sleep(1 * time.Second)
+		}
+		chunkID = l.GetNextChunkId()
+	}
+	return nil
+}
+
+// printLogs prints the logs with real-time streaming updates disabled
+func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	chunkID := ""
+
+	for {
+		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+			InvocationId: invocationID,
+			ChunkId:      chunkID,
+			MinLines:     100,
+		})
+		if err != nil {
+			return status.UnknownErrorf("error streaming logs: %s", err)
+		}
+
+		if l.GetLive() {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		os.Stdout.Write(l.GetBuffer())
+
+		if l.GetNextChunkId() == "" {
+			break
 		}
 		chunkID = l.GetNextChunkId()
 	}
@@ -644,8 +675,15 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}()
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	if err := streamLogs(ctx, bbClient, iid); err != nil {
-		return 0, err
+	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
+	if interactive {
+		if err := streamLogs(ctx, bbClient, iid); err != nil {
+			return 0, err
+		}
+	} else {
+		if err := printLogs(ctx, bbClient, iid); err != nil {
+			return 0, err
+		}
 	}
 
 	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
