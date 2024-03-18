@@ -299,6 +299,7 @@ func (runnerRecycler) routingKeys(params routingParams) ([]string, error) {
 	if platform.IsCICommand(params.cmd) {
 		envVarNames := []string{"GIT_BRANCH"}
 		if *defaultBranchRoutingEnabled {
+			log.Debugf("Default branch routing enabled")
 			envVarNames = append(envVarNames, "GIT_BASE_BRANCH", "GIT_REPO_DEFAULT_BRANCH")
 		}
 		for _, routingEnvVar := range envVarNames {
@@ -306,6 +307,9 @@ func (runnerRecycler) routingKeys(params routingParams) ([]string, error) {
 				if envVar.GetName() == routingEnvVar {
 					branch := envVar.GetValue()
 					keys = append(keys, strings.Join(append(parts, hash.String(branch)), "/"))
+
+					log.Debugf("Routing key for platform %v, env var %s value %s, all env vars are %v: %s",
+						p, routingEnvVar, branch, params.cmd.EnvironmentVariables, keys[len(keys)-1])
 				}
 			}
 		}
