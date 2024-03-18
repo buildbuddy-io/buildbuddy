@@ -804,12 +804,13 @@ func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func()) {
 }
 
 func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string, reason error) error {
-	r, err := digest.ParseDownloadResourceName(taskID)
+	r, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
 		log.CtxWarningf(ctx, "Could not parse taskID: %s", err)
 		return err
 	}
-	op, err := operation.AssembleFailed(repb.ExecutionStage_COMPLETED, taskID, r, reason)
+	rsp := operation.ErrorResponse(reason)
+	op, err := operation.Assemble(repb.ExecutionStage_COMPLETED, taskID, r, rsp)
 	if err != nil {
 		return err
 	}
@@ -824,6 +825,9 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 	if err := s.updateExecution(ctx, taskID, operation.ExtractStage(op), op); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: error updating execution: %q: %s", taskID, err)
 		return err
+	}
+	if err := s.cacheExecuteResponse(ctx, taskID, rsp); err != nil {
+		log.CtxWarningf(ctx, "MarkExecutionFailed: failed to cache execute response for execution %q: %s", taskID, err)
 	}
 	return nil
 }

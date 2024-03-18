@@ -195,10 +195,13 @@ func Assemble(stage repb.ExecutionStage_Value, name string, r *digest.ResourceNa
 }
 
 func AssembleFailed(stage repb.ExecutionStage_Value, name string, d *digest.ResourceName, status error) (*longrunning.Operation, error) {
-	op, err := Assemble(stage, name, d, &repb.ExecuteResponse{
-		Status: gstatus.Convert(status).Proto(),
-	})
-	return op, err
+	return Assemble(stage, name, d, ErrorResponse(status))
+}
+
+func ErrorResponse(err error) *repb.ExecuteResponse {
+	return &repb.ExecuteResponse{
+		Status: gstatus.Convert(err).Proto(),
+	}
 }
 
 type StreamLike interface {
