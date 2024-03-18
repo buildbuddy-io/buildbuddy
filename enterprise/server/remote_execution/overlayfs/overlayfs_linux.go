@@ -56,7 +56,7 @@ func Convert(ctx context.Context, path string, opts Opts) (*Overlay, error) {
 			return nil, status.WrapError(err, "create overlay directory")
 		}
 	}
-	args := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", fs.LowerDir, fs.UpperDir, fs.WorkDir)
+	args := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,userxattr", fs.LowerDir, fs.UpperDir, fs.WorkDir)
 	if err := syscall.Mount("", fs.MountDir, "overlay", syscall.MS_RELATIME, args); err != nil {
 		return nil, status.WrapError(err, "mount overlayfs")
 	}
