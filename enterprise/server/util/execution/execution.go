@@ -65,6 +65,7 @@ func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
 	}
 
 	out := &espb.Execution{
+		ExecutionId:           in.ExecutionID,
 		ActionDigest:          r.GetDigest(),
 		ExecuteResponseDigest: executeResponseDigest,
 		Status: &statuspb.Status{

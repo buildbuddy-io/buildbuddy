@@ -3,6 +3,7 @@ import React from "react";
 interface Props {
   invocationId: string;
   title?: React.ReactNode;
+  subtitle?: React.ReactNode;
 }
 
 export default class InvocationInProgressComponent extends React.Component<Props> {
@@ -15,7 +16,7 @@ export default class InvocationInProgressComponent extends React.Component<Props
             <div className="titles">
               <div className="title">{this.props.title || "Invocation in progress..."}</div>
             </div>
-            <div className="details">This page will refresh every few seconds.</div>
+            <div className="details">{this.props.subtitle || "This page will refresh every few seconds."}</div>
           </div>
         </div>
       </div>

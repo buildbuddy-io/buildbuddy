@@ -3,9 +3,12 @@ import React from "react";
 import { Subscription } from "rxjs";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
+import { execution_stats } from "../../proto/execution_stats_ts_proto";
+import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
+import { google as google_grpc_status } from "../../proto/grpc_status_ts_proto";
 import { User } from "../auth/auth_service";
 import faviconService from "../favicon/favicon";
-import rpcService from "../service/rpc_service";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
 import TargetComponent from "../target/target";
 import DenseInvocationOverviewComponent from "./dense/dense_invocation_overview";
 import ArtifactsCardComponent from "./invocation_artifacts_card";
@@ -19,7 +22,7 @@ import ErrorCardComponent from "./invocation_error_card";
 import SuggestionCardComponent, { getSuggestions } from "./invocation_suggestion_card";
 import InvocationFilterComponent from "./invocation_filter";
 import InvocationInProgressComponent from "./invocation_in_progress";
-import InvocationModel from "./invocation_model";
+import InvocationModel, { CI_RUNNER_ROLE } from "./invocation_model";
 import InvocationLogsModel from "./invocation_logs_model";
 import ChildInvocations from "./child_invocations";
 import InvocationNotFoundComponent from "./invocation_not_found";
@@ -39,6 +42,7 @@ import router from "../router/router";
 import rpc_service from "../service/rpc_service";
 import { InvocationBotCard } from "./invocation_bot_card";
 import TargetV2Component from "../target/target_v2";
+import Banner from "../components/banner/banner";
 
 interface State {
   loading: boolean;
@@ -46,6 +50,12 @@ interface State {
   error: BuildBuddyError | null;
 
   model?: InvocationModel;
+
+  /**
+   * The CI runner execution responsible for creating this invocation, if
+   * applicable.
+   */
+  runnerExecution?: execution_stats.Execution;
 
   keyboardShortcutHandle: string;
 }
@@ -73,6 +83,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   private logsModel?: InvocationLogsModel;
   private logsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
+  private runnerExecutionRPC?: CancelablePromise;
 
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
@@ -86,7 +97,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     this.logsSubscription = this.logsModel.onChange.subscribe({
       next: () => this.forceUpdate(),
     });
-    if (!this.isQueued()) {
+    if (!this.isQueued() && !this.props.search.get("runnerFailed")) {
       this.logsModel.startFetching();
     }
   }
@@ -121,9 +132,23 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (this.state.model?.isInProgress() || this.isQueued()) {
       this.scheduleRefetch();
     }
-    // If we transitioned from queued to not queued, start fetching logs.
-    if (this.isQueued(prevProps, prevState) && !this.isQueued()) {
+    // If we transitioned from queued to not queued, and we have an invocation,
+    // start fetching logs for the workflow.
+    if (this.isQueued(prevProps, prevState) && !this.isQueued() && this.state.model) {
       this.logsModel?.startFetching();
+    }
+    // If we have an invocation, or we failed to fetch an invocation and the CI
+    // runner failed, we're no longer queued.
+    if (
+      this.isQueued() &&
+      (this.state.model || (this.state.error && this.hasStatusError(this.state.runnerExecution)))
+    ) {
+      router.setQueryParam("queued", null);
+      if (this.state.error && this.hasStatusError(this.state.runnerExecution)) {
+        // Make sure we preserve info about this being a failed runner execution
+        // if the page is refreshed.
+        router.setQueryParam("runnerFailed", "true");
+      }
     }
   }
 
@@ -135,7 +160,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   fetchInvocation() {
-    const wasQueued = this.isQueued();
+    // If applicable, fetch the CI runner execution in parallel. The CI runner
+    // execution is what creates the invocation, so it can give us some
+    // diagnostic info in the case where the invocation is never created, and
+    // can also let us show better suggestions for the invocation.
+    if (this.isCIRunnerBuild()) {
+      this.fetchRunnerExecution();
+    }
+
     let request = new invocation.GetInvocationRequest();
     request.lookup = new invocation.InvocationLookup();
     request.lookup.invocationId = this.props.invocationId;
@@ -154,9 +186,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
           model: model,
           error: null,
         });
-        if (wasQueued) {
-          router.setQueryParam("queued", null);
-        }
       })
       .catch((error: any) => {
         console.error(error);
@@ -168,7 +197,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
   scheduleRefetch() {
     clearTimeout(this.timeoutRef);
     // Refetch invocation data in 3 seconds to update status.
-    this.timeoutRef = window.setTimeout(() => {
+    this.timeoutRef = window.setTimeout(async () => {
+      // Before fetching the invocation, wait for the runner execution to be
+      // fetched, so we don't keep canceling the execution fetch if it takes
+      // longer than the invocation poll interval.
+      if (this.runnerExecutionRPC) await this.runnerExecutionRPC;
+
       this.fetchInvocation();
     }, 3000);
   }
@@ -191,6 +225,31 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   isQueued(props = this.props, state = this.state) {
     return !state.model && props.search.get("queued") === "true";
+  }
+
+  isCIRunnerBuild() {
+    return Boolean(
+      this.props.search.get("queued") ||
+        this.props.search.get("runnerFailed") ||
+        this.state.model?.getRole() === CI_RUNNER_ROLE
+    );
+  }
+
+  fetchRunnerExecution() {
+    this.runnerExecutionRPC?.cancel();
+    this.runnerExecutionRPC = rpc_service.service
+      .getExecution({
+        executionLookup: new execution_stats.ExecutionLookup({
+          invocationId: this.props.invocationId,
+        }),
+        // Fetch the full ExecuteResponse, not just metadata.
+        inlineExecuteResponse: true,
+      })
+      .then((response) => {
+        const runnerExecution = response.execution?.[response.execution.length - 1] ?? undefined;
+        this.setState({ runnerExecution });
+      });
+    return this.runnerExecutionRPC;
   }
 
   renderTargetPage(targetLabel: string, targetStatus: api_common.v1.Status) {
@@ -246,9 +305,39 @@ export default class InvocationComponent extends React.Component<Props, State> {
     );
   }
 
+  hasStatusError(execution: execution_stats.Execution | undefined) {
+    if (!execution) return false;
+    return execution.status?.code !== google_grpc_code.rpc.Code.OK;
+  }
+
+  formatStatus(status: google_grpc_status.rpc.Status) {
+    const codeName = google_grpc_code.rpc.Code[status.code];
+    return `Error: ${status.message} (code: ${codeName})`;
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading"></div>;
+    }
+
+    // If we don't have an invocation but we have an execution error, show just
+    // the execution error.
+    if (!this.state.model && this.hasStatusError(this.state.runnerExecution)) {
+      return (
+        <InvocationInProgressComponent
+          invocationId={this.props.invocationId}
+          title={"Invocation execution failed"}
+          subtitle={
+            <span className="error-text">
+              {/* Render ExecuteResponse status if still in cache, or fall back to truncated status from DB. */}
+              {(this.state.runnerExecution?.executeResponse?.status &&
+                this.formatStatus(this.state.runnerExecution.executeResponse.status)) ||
+                (this.state.runnerExecution?.status && this.formatStatus(this.state.runnerExecution.status)) ||
+                "unknown error"}
+            </span>
+          }
+        />
+      );
     }
 
     if (this.isQueued()) {

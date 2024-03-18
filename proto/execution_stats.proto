@@ -96,6 +96,9 @@ message Execution {
   // to the marshaled ExecuteResponse bytes.
   build.bazel.remote.execution.v2.Digest execute_response_digest = 12;
 
+  // Inlined ExecuteResponse, if requested.
+  build.bazel.remote.execution.v2.ExecuteResponse execute_response = 13;
+
   // The stage this execution is currently in.
   build.bazel.remote.execution.v2.ExecutionStage.Value stage = 2;
 
@@ -118,6 +121,11 @@ message Execution {
 
   // The exit code of the command. Should be ignored if status != OK.
   int32 exit_code = 8;
+
+  // The identifier of the scheduled execution. Note that if an execution is
+  // retried internally, this Execution will reflect the latest execution
+  // attempt.
+  string execution_id = 14;
 }
 
 message ExecutionLookup {
@@ -129,6 +137,10 @@ message GetExecutionRequest {
   context.RequestContext request_context = 1;
 
   ExecutionLookup execution_lookup = 2;
+
+  // Fetch the ExecuteResponse from cache for each execution and include it in
+  // the response if it is available.
+  bool inline_execute_response = 3;
 }
 
 message GetExecutionResponse {

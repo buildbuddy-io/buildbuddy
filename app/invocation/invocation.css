@@ -987,6 +987,10 @@
   color: black;
 }
 
+.state-page .error-text {
+  color: #d32f2f;
+}
+
 .workflow-rerun-button > :not(:last-child) {
   margin-right: 8px;
 }

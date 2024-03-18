@@ -10,6 +10,7 @@ ts_library(
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
+        "//app/components/banner",
         "//app/favicon",
         "//app/invocation:cache_requests_card",
         "//app/invocation:child_invocations",
@@ -43,6 +44,9 @@ ts_library(
         "//app/target",
         "//app/target:target_v2",
         "//app/util:errors",
+        "//proto:execution_stats_ts_proto",
+        "//proto:grpc_code_ts_proto",
+        "//proto:grpc_status_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto/api/v1:common_ts_proto",
         "@npm//@types/moment",
