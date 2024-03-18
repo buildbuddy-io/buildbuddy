@@ -165,7 +165,7 @@ common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/
 # On multi-user machines, specify HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX in your
 # repo_env in user.bazelrc to avoid permissions errors.
 common:static --repo_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
-common:static --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl
+common:static --extra_toolchains=@musl_toolchains_hub//:musl-1_2_3-platform-x86_64-unknown-linux-gnu-target-x86_64-linux-musl
 # arm64 is not yet tested, so we leave this toolchain commented out for now.
 # common:static --extra_toolchains=@zig_sdk//toolchain:linux_arm64_musl
 common:static --@io_bazel_rules_go//go/config:static=true

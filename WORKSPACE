@@ -61,7 +61,7 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchai
 
 go_rules_dependencies()
 
-GO_SDK_VERSION = "1.21.7"
+GO_SDK_VERSION = "1.22.1"
 
 # Register multiple Go SDKs so that we can perform cross-compilation remotely.
 # i.e. We might want to trigger a Linux AMD64 Go build remotely from a MacOS ARM64 laptop.
@@ -497,3 +497,17 @@ register_toolchains(
     "//toolchains:sh_toolchain",
     "//toolchains:ubuntu_cc_toolchain",
 )
+
+http_archive(
+    name = "musl_toolchains",
+    sha256 = "f9f077b9ae74a0545f7cb7108462cb061593eef10fd09d25db4554e281ee880b",
+    url = "https://github.com/bazel-contrib/musl-toolchain/releases/download/v0.1.7/musl_toolchain-v0.1.7.tar.gz",
+)
+
+load("@musl_toolchains//:repositories.bzl", "load_musl_toolchains")
+
+load_musl_toolchains()
+
+load("@musl_toolchains//:toolchains.bzl", "register_musl_toolchains")
+
+register_musl_toolchains()
