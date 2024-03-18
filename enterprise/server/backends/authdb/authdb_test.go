@@ -350,7 +350,7 @@ func TestLookupUserFromSubID(t *testing.T) {
 		user.Groups = append(user.Groups, u.Groups[0])
 	}
 
-	sort.Slice(user.Groups, func(i, j int) bool { return strings.Compare(user.Groups[i].GroupID, user.Groups[j].GroupID) < 0 })
+	sort.Slice(user.Groups, func(i, j int) bool { return user.Groups[i].GroupID < user.Groups[j].GroupID })
 
 	u, err = adb.LookupUserFromSubID(ctx, user.SubID)
 	require.NoError(t, err)
