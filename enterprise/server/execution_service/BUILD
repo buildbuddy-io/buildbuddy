@@ -12,8 +12,10 @@ go_library(
         "//server/environment",
         "//server/tables",
         "//server/util/db",
+        "//server/util/log",
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
+        "@org_golang_x_sync//errgroup",
     ],
 )
