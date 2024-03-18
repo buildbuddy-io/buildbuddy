@@ -141,6 +141,10 @@ func (f *FS) Unmount(ctx context.Context) error {
 }
 
 func (f *FS) unmount(ctx context.Context) error {
+	if f.server == nil {
+		return nil
+	}
+
 	err := f.server.Unmount()
 	f.server.Wait()
 	f.server = nil
