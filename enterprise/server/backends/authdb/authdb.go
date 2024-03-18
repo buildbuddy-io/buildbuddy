@@ -432,12 +432,16 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
 	rq := d.h.NewQueryWithOpts(ctx, "authdb_lookup_user_groups", db.Opts().WithStaleReads()).Raw(`
 		SELECT u.*, g.*, ug.*
-		FROM "Users" AS u
+		FROM (
+			SELECT * FROM "Users" 
+			WHERE sub_id = ?
+			ORDER BY user_id ASC
+			LIMIT 1
+		) AS u
 			LEFT JOIN "UserGroups" AS ug
 				ON u.user_id = ug.user_user_id
 			LEFT JOIN "Groups" AS g
 				ON ug.group_group_id = g.group_id
-		WHERE u.sub_id = ?
 		AND (ug.membership_status = ? OR ug.user_user_id IS NULL)
 		ORDER BY u.user_id, g.group_id ASC
 		`, subID, int32(grpb.GroupMembershipStatus_MEMBER),
@@ -454,17 +458,11 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 		return nil, status.NotFoundErrorf("Sub id %s was not found in LookupUserFromSubID.", subID)
 	}
 	user := &ugr[0].User
+	if ugr[0].UserGroup.UserUserID == "" {
+		// no user groups matched this user ID
+		return user, nil
+	}
 	for _, v := range ugr {
-		if v.User.UserID != user.UserID {
-			// in case the sub_id selects more than one user, break as soon as we see
-			// a new user ID.
-			log.CtxWarningf(ctx, "In LookupUserFromSubID, the SubID %s matched multiple userIDs.", subID)
-			break
-		}
-		if v.UserGroup.UserUserID == "" {
-			// no user groups matched this user ID
-			break
-		}
 		if v.Group.GroupID == "" {
 			// no group matched the user group (this shouldn't really happen)
 			log.CtxWarningf(ctx, "In LookupUserFromSubID, the UserGroup row User: %s Group %s did not match a group with that ID.", v.UserGroup.UserUserID, v.UserGroup.GroupGroupID)
