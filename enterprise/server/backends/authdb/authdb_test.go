@@ -384,7 +384,6 @@ func TestLookupUserFromSubIDNoGroup(t *testing.T) {
 	u, err := adb.LookupUserFromSubID(ctx, randUser.SubID)
 	require.NoError(t, err)
 	require.Equal(t, randUser, u)
-
 }
 
 func newFakeUser(userID, domain string) *tables.User {
