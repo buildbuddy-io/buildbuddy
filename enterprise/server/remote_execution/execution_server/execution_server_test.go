@@ -3,7 +3,6 @@ package execution_server_test
 import (
 	"context"
 	"io"
-	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -315,13 +315,7 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 	// Should also be able to fetch the ExecuteResponse from cache. See field
 	// comment on Execution.exeute_response_digest for notes on serialization
 	// format.
-	ed, err := digest.Compute(strings.NewReader(taskID), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
-	ern := digest.NewResourceName(ed, instanceName, rspb.CacheType_AC, repb.DigestFunction_SHA256)
-	result, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), ern)
-	require.NoError(t, err)
-	cachedExecuteResponse := &repb.ExecuteResponse{}
-	err = proto.Unmarshal(result.StdoutRaw, cachedExecuteResponse)
+	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env, taskID)
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 }
@@ -336,7 +330,7 @@ func TestMarkFailed(t *testing.T) {
 	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
-	executionID := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
+	executionID := "test-instance-name/uploads/1797f326-0cd2-45d2-9ad4-f766fd81f2dc/blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
 
 	completeExecution := &tables.Execution{
 		ExecutionID:  executionID,
@@ -354,9 +348,16 @@ func TestMarkFailed(t *testing.T) {
 	err = s.MarkExecutionFailed(ctx, executionID, status.InternalError("It didn't work"))
 	require.NoError(t, err)
 
+	// Should exist in DB after marking failed
 	ex = &tables.Execution{}
 	err = env.GetDBHandle().GORM(ctx, "select_for_test_mark_failed").Model(ex).Where("execution_id = ?", executionID).Take(ex).Error
 	require.NoError(t, err)
+	assert.Equal(t, executionID, ex.ExecutionID)
+
+	// ExecuteResponse should be cached after marking failed
+	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env, executionID)
+	require.NoError(t, err)
+	assert.Equal(t, "It didn't work", executeResponse.GetStatus().GetMessage())
 
 	err = s.MarkExecutionFailed(ctx, executionID, status.InternalError("It didn't work"))
 	require.NoError(t, err)

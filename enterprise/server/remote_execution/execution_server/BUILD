@@ -56,6 +56,7 @@ go_test(
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/tasksize",
         "//enterprise/server/testutil/testredis",
+        "//enterprise/server/util/execution",
         "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
