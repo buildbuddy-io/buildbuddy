@@ -1273,10 +1273,11 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 			return status.InternalErrorf("failed to stub out workspace drive: %s", err)
 		}
 		if c.workspaceVBD != nil {
-			if err := c.workspaceVBD.Unmount(ctx); err != nil {
+			err := c.workspaceVBD.Unmount(ctx)
+			c.workspaceVBD = nil
+			if err != nil {
 				return status.WrapError(err, "unmount workspace vbd")
 			}
-			c.workspaceVBD = nil
 		}
 		if c.workspaceStore != nil {
 			c.workspaceStore.Close()
