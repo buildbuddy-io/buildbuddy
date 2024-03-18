@@ -1943,6 +1943,9 @@ type prCommit struct {
 }
 
 type prDetailsQuery struct {
+	Viewer struct {
+		Login string
+	}
 	Repository struct {
 		PullRequest struct {
 			Title          string
@@ -2239,6 +2242,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		Submitted:     pr.Merged,
 		GithubUrl:     pr.URL,
 		DraftReviewId: draftReviewId,
+		ViewerLogin:   graph.Viewer.Login,
 	}
 
 	return resp, nil
