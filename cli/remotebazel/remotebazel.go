@@ -422,16 +422,6 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
 	chunkID := ""
 
-	drawChunk := func(chunk *elpb.GetEventLogChunkResponse) {
-		logLines := splitLogBuffer(chunk.GetBuffer())
-		for i, l := range logLines {
-			_, _ = os.Stdout.Write([]byte(l))
-			if i != len(logLines)-1 {
-				_, _ = os.Stdout.Write([]byte("\n"))
-			}
-		}
-	}
-
 	for {
 		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 			InvocationId: invocationID,
@@ -446,7 +436,7 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		drawChunk(l)
+		os.Stdout.Write(l.GetBuffer())
 
 		if l.GetNextChunkId() == "" {
 			break
