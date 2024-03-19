@@ -478,7 +478,11 @@ func (h *executorHandle) startTaskReservationStreamer() {
 }
 
 type executionNode struct {
-	executorID            string
+	// Unique ID generated when the executor process starts.
+	executorID string
+
+	// ID of the host that the executor is running on, which persists across
+	// restarts.
 	executorHostID        string
 	assignableMemoryBytes int64
 	assignableMilliCpu    int64

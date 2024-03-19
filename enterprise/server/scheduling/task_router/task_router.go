@@ -124,10 +124,14 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 		return nonePreferred(nodes)
 	}
 
+	// Note: if multiple executors live on the same host, the last one in the
+	// list wins. For now, this is fine because we don't recommend running
+	// multiple executors on the same host. If this use case arises then we
+	// could instead route to the last executor to run the task (by exeucutor
+	// ID), or if that executor doesn't exist then fall back to an arbitrary
+	// executor on the same host.
 	nodeByHostID := map[string]interfaces.ExecutionNode{}
 	for _, node := range nodes {
-		// Note: if multiple executors live on the same host, the last one in
-		// the list wins.
 		nodeByHostID[node.GetExecutorHostID()] = node
 	}
 
