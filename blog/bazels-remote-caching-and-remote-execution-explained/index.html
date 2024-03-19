@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://www.google-analytics.com">
 <script>window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)},ga.l=+new Date,ga("create","UA-156160991-1","auto"),ga("send","pageview")</script>
 <script async src="https://www.google-analytics.com/analytics.js"></script><link rel="stylesheet" href="/assets/css/styles.1c37ef1d.css">
-<script src="/assets/js/runtime~main.c009103e.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.1c75e7a5.js" defer="defer"></script>
 <script src="/assets/js/main.3865da2c.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard" data-theme="light">
@@ -25,7 +25,8 @@ overview of Bazel&#x27;s remote capabilities.</p>
 <p>Each <a href="https://docs.bazel.build/versions/5.0.0/glossary.html#rule" target="_blank" rel="noopener noreferrer">rule target</a> in the <a href="https://docs.bazel.build/versions/5.0.0/glossary.html#build-graph" target="_blank" rel="noopener noreferrer">build graph</a> of a requested build produces zero or more <a href="https://docs.bazel.build/versions/5.0.0/glossary.html#action" target="_blank" rel="noopener noreferrer">actions</a> during the <a href="https://docs.bazel.build/versions/5.0.0/glossary.html#analysis-phase" target="_blank" rel="noopener noreferrer">analysis phase</a>.
 These actions form an <a href="https://docs.bazel.build/versions/5.0.0/glossary.html#action-graph" target="_blank" rel="noopener noreferrer">action graph</a>,
 representing all the actions that need to be performed during the <a href="https://docs.bazel.build/versions/5.0.0/glossary.html#execution-phase" target="_blank" rel="noopener noreferrer">execution phase</a>.</p>
-<p><img loading="lazy" src="/assets/images/action-graph-baae4ebd49d1df74b6f39951baa33250.svg" width="672" height="528" class="img_ev3q"></p>
+<figure><p><img loading="lazy" src="/assets/images/action-graph-baae4ebd49d1df74b6f39951baa33250.svg" width="672" height="528" class="img_ev3q">
+</p><figcaption>An example action graph. Actions are grouped by the targets that created them. Arrows connect the actions, showing dependencies between them.</figcaption><p></p></figure>
 <p>During the execution phase the action graph is traversed.
 For each action,
 Bazel determines if it has to be executed,
@@ -247,7 +248,7 @@ but currently caps the delay at 5 seconds between calls.</p>
 Multiple headers can be passed by specifying the flag multiple times.
 Multiple values for the same name will be converted to a comma-separated list.
 The <a href="https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--remote_header" target="_blank" rel="noopener noreferrer"><code>--remote_header</code></a> flag can be used instead of setting both <code>--remote_cache_header</code> and <code>--remote_exec_header</code> to the same value.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="remote-build-without-the-bytes">Remote Build without the Bytes<a href="#remote-build-without-the-bytes" class="hash-link" aria-label="Direct link to Remote Build without the Bytes" title="Direct link to Remote Build without the Bytes">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="remote-build-without-the-bytes">Remote Build without the Bytes<a href="#remote-build-without-the-bytes" class="hash-link" aria-label="Direct link to Remote Build without the Bytes" title="Direct link to Remote Build without the Bytes">  ​</a></h2>
 <p>For both remote caching and remote execution,
 Bazel supports a feature called <a href="https://github.com/bazelbuild/bazel/issues/6862" target="_blank" rel="noopener noreferrer">&quot;Remote Build without the Bytes&quot;</a> (BwtB).
 If enabled,
