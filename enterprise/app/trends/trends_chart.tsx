@@ -61,7 +61,7 @@ function TrendsChartTooltip({ active, payload, labelFormatter, shouldRender, dat
   if (!active || !payload || payload.length < 1 || !shouldRender()) {
     return null;
   }
-  // XXX: Format data series name into hover label.
+
   return (
     <div className="trend-chart-hover">
       <div className="trend-chart-hover-label">{labelFormatter(payload[0].payload)}</div>
@@ -131,7 +131,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         stroke="#03A9F4"
       />;
     }
-    // XXX: Handle secondary stuff for clicks etc.
+
     return (
       <Bar
         className={

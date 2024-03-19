@@ -326,7 +326,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     formatHoverValue: (value) => `${format.durationSec(value)} average`,
                     isLine: true,
                     usesSecondaryAxis: true,
-                    onClick: this.onBarClicked.bind(this, "", ""),
                   },
                 ]}
                 primaryYAxis={{
