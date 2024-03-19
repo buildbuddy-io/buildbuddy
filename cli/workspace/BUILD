@@ -5,6 +5,7 @@ go_library(
     srcs = ["workspace.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/workspace",
     deps = [
+        "//cli/bazelisk",
         "//cli/log",
         "//server/util/disk",
     ],
