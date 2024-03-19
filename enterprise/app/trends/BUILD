@@ -48,48 +48,6 @@ ts_library(
 )
 
 ts_library(
-    name = "simple_trends_tab",
-    srcs = ["simple_trends_tab.tsx"],
-    deps = [
-        "//app/capabilities",
-        "//app/format",
-        "//app/router",
-        "//app/util:async",
-        "//enterprise/app/filter:filter_util",
-        "//enterprise/app/trends:cache_chart",
-        "//enterprise/app/trends:common",
-        "//enterprise/app/trends:percentile_chart",
-        "//enterprise/app/trends:summary_card",
-        "//enterprise/app/trends:trends_chart",
-        "//enterprise/app/trends:trends_model",
-        "//enterprise/app/trends:trends_requests",
-        "//proto:stats_ts_proto",
-        "@npm//@types/moment",
-        "@npm//@types/react",
-        "@npm//moment",
-        "@npm//react",
-        "@npm//tslib",
-    ],
-)
-
-ts_library(
-    name = "new_trends",
-    srcs = ["new_trends.tsx"],
-    deps = [
-        "//app/auth:auth_service",
-        "//app/capabilities",
-        "//enterprise/app/filter",
-        "//enterprise/app/trends:common",
-        "//enterprise/app/trends:drilldown_page",
-        "//enterprise/app/trends:simple_trends_tab",
-        "//enterprise/app/trends:trends_model",
-        "//enterprise/app/trends:trends_requests",
-        "@npm//@types/react",
-        "@npm//react",
-    ],
-)
-
-ts_library(
     name = "trends_model",
     srcs = ["trends_model.ts"],
     deps = [
