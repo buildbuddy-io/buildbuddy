@@ -1041,7 +1041,10 @@ build,
 install to the simulator,
 and launch successfully:
 
+<figure>
 ![](../static/img/blog/mastodon-bazel-xcode-and-simulator.png)
+<figcaption>The <strong>rules_xcodeproj</strong> generated project open in Xcode and running in the Simulator</figcaption>
+</figure>
 
 ### Ensuring Bazel sees the correct Xcode version
 
@@ -1266,7 +1269,10 @@ INFO:
 INFO: Streaming build results to: https://app.buildbuddy.io/invocation/e69835b2-672f-4a4f-bb00-c73ca8850859
 ```
 
+<figure>
 ![](../static/img/blog/mastodon-bazel-build-results-ui.png)
+<figcaption>BuildBuddy Build Results UI for a build of the <code>//Mastodon</code> target</figcaption>
+</figure>
 
 At [this commit][commit-bes] a BES endpoint has been integrated into the Mastodon iOS project.
 
