@@ -2273,7 +2273,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 			}
 		}
 		for _, s := range c.Commit.CheckSuites.Nodes {
-			if (s.WorkflowRun.Workflow.Name == "") {
+			if s.WorkflowRun.Workflow.Name == "" {
 				continue
 			}
 			name := s.App.Id + s.WorkflowRun.Workflow.Name
