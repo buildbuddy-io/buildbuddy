@@ -512,6 +512,7 @@ proto_library(
         ":user_proto",
         ":workflow_proto",
         ":zip_proto",
+        "//proto/codesearch:search_proto",
     ],
 )
 
@@ -1301,6 +1302,7 @@ go_proto_library(
         ":user_go_proto",
         ":workflow_go_proto",
         ":zip_go_proto",
+        "//proto/codesearch:search_go_proto",
     ],
 )
 

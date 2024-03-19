@@ -543,8 +543,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bits_and_blooms_bitset",
         importpath = "github.com/bits-and-blooms/bitset",
-        sum = "h1:Kn4yilvwNtMACtf1eYDlG8H77R07mZSPbMjLyS07ChA=",
-        version = "v1.2.0",
+        sum = "h1:U/q1fAF7xXRhFCrhROzIfffYnu+dlS38vCZtmFVPHmA=",
+        version = "v1.12.0",
     )
     go_repository(
         name = "com_github_bkaradzic_go_lz4",
@@ -1561,6 +1561,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.5.1",
     )
     go_repository(
+        name = "com_github_gabriel_vasile_mimetype",
+        importpath = "github.com/gabriel-vasile/mimetype",
+        sum = "h1:in2uUcidCuFcDKtdcBxlR0rJ1+fsokWf+uqxgUFjbI0=",
+        version = "v1.4.3",
+    )
+    go_repository(
         name = "com_github_garyburd_redigo",
         importpath = "github.com/garyburd/redigo",
         sum = "h1:LofdAjjjqCSXMwLGgOgnE+rdPuvX9DxCqaHwKy7i/ko=",
@@ -2343,8 +2349,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_google_uuid",
         importpath = "github.com/google/uuid",
-        sum = "h1:1p67kYwdtXjb0gL0BPiP1Av9wiZPo5A8z2cWkTZ+eyU=",
-        version = "v1.5.0",
+        sum = "h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=",
+        version = "v1.6.0",
     )
     go_repository(
         name = "com_github_googleapis_enterprise_certificate_proxy",
@@ -3850,6 +3856,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.5.0",
     )
     go_repository(
+        name = "com_github_mschoch_smat",
+        importpath = "github.com/mschoch/smat",
+        sum = "h1:8imxQsjDm8yFEAVBe7azKmKSgzSkZXDuKkSq9374khM=",
+        version = "v0.2.0",
+    )
+    go_repository(
         name = "com_github_muesli_reflow",
         importpath = "github.com/muesli/reflow",
         sum = "h1:IFsN6K9NfGtjeggFP+68I4chLZV2yIKsXJFNZ+eWh6s=",
@@ -4300,6 +4312,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/rivo/uniseg",
         sum = "h1:S1pD9weZBuJdFmowNwbpi7BJ8TNftyUImj/0WQi72jY=",
         version = "v0.2.0",
+    )
+    go_repository(
+        name = "com_github_roaringbitmap_roaring",
+        importpath = "github.com/RoaringBitmap/roaring",
+        sum = "h1:OZF303tJCER1Tj3x+aArx/S5X7hrT186ri6JjrGvG68=",
+        version = "v1.7.0",
     )
     go_repository(
         name = "com_github_rogpeppe_fastuuid",
@@ -4937,6 +4955,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/xhit/go-str2duration/v2",
         sum = "h1:lxklc02Drh6ynqX+DdPyp5pCKLUQpRT8bp8Ydu2Bstc=",
         version = "v2.1.0",
+    )
+    go_repository(
+        name = "com_github_xiam_sexpr",
+        importpath = "github.com/xiam/sexpr",
+        sum = "h1:ojs+u2RDwb5Yzg87Ahld7LtdneGV8W1/YgkXWC3e+VQ=",
+        version = "v0.0.0-20210104141133-90c47e022bfa",
     )
     go_repository(
         name = "com_github_xiang90_probing",

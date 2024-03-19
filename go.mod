@@ -23,6 +23,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.10.1
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.33.8
 	github.com/Masterminds/semver/v3 v3.2.1
+	github.com/RoaringBitmap/roaring v1.7.0
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
 	github.com/aws/aws-sdk-go v1.44.286
 	github.com/aws/aws-sdk-go-v2 v1.18.1
@@ -57,6 +58,7 @@ require (
 	github.com/dop251/goja v0.0.0-20230626124041-ba8a63e79201
 	github.com/elastic/gosigar v0.14.2
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-00010101000000-000000000000
+	github.com/gabriel-vasile/mimetype v1.4.3
 	github.com/go-faker/faker/v4 v4.0.0-beta.3
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.11.5
@@ -69,7 +71,7 @@ require (
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/tink/go v1.7.0
-	github.com/google/uuid v1.5.0
+	github.com/google/uuid v1.6.0
 	github.com/groob/plist v0.0.0-20220217120414-63fa881b19a5
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/hanwen/go-fuse/v2 v2.3.0
@@ -182,6 +184,7 @@ require (
 	github.com/beevik/etree v1.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
+	github.com/bits-and-blooms/bitset v1.12.0 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
 	github.com/bufbuild/protocompile v0.5.1 // indirect
@@ -291,6 +294,7 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/paulmach/orb v0.9.2 // indirect
@@ -317,6 +321,7 @@ require (
 	github.com/vbatts/tar-split v0.11.3 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	github.com/xiam/sexpr v0.0.0-20210104141133-90c47e022bfa // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.etcd.io/bbolt v1.3.7 // indirect
 	go.mongodb.org/mongo-driver v1.12.0 // indirect
