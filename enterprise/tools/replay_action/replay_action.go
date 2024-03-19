@@ -204,7 +204,7 @@ func main() {
 	}
 	// If remote_executor and target_executor are not the same, copy the files.
 	if inCopyMode() {
-		fmb := NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, destCASClient, FindMissingBatcherOpts{})
+		fmb := NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), destCASClient, FindMissingBatcherOpts{})
 		eg, targetCtx := errgroup.WithContext(targetCtx)
 		eg.Go(func() error {
 			if err := copyFile(srcCtx, targetCtx, fmb, destBSClient, sourceBSClient, actionInstanceDigest.GetDigest(), actionInstanceDigest.GetDigestFunction()); err != nil {
@@ -371,14 +371,15 @@ type FindMissingBatcherOpts struct {
 // digests are missing from cache, while transparently batching requests that
 // are issued very close together (temporally) for greater efficiency.
 type FindMissingBatcher struct {
-	ctx          context.Context
-	instanceName string
-	client       repb.ContentAddressableStorageClient
-	opts         FindMissingBatcherOpts
-	reqs         chan findMissingRequest
+	ctx            context.Context
+	instanceName   string
+	digestFunction repb.DigestFunction_Value
+	client         repb.ContentAddressableStorageClient
+	opts           FindMissingBatcherOpts
+	reqs           chan findMissingRequest
 }
 
-func NewFindMissingBatcher(ctx context.Context, instanceName string, client repb.ContentAddressableStorageClient, opts FindMissingBatcherOpts) *FindMissingBatcher {
+func NewFindMissingBatcher(ctx context.Context, instanceName string, digestFunction repb.DigestFunction_Value, client repb.ContentAddressableStorageClient, opts FindMissingBatcherOpts) *FindMissingBatcher {
 	if opts.MaxBatchSize == 0 {
 		opts.MaxBatchSize = 128
 	}
@@ -389,11 +390,12 @@ func NewFindMissingBatcher(ctx context.Context, instanceName string, client repb
 		opts.MaxConcurrency = 4
 	}
 	f := &FindMissingBatcher{
-		ctx:          ctx,
-		instanceName: instanceName,
-		client:       client,
-		opts:         opts,
-		reqs:         make(chan findMissingRequest, 128),
+		ctx:            ctx,
+		instanceName:   instanceName,
+		digestFunction: digestFunction,
+		client:         client,
+		opts:           opts,
+		reqs:           make(chan findMissingRequest, 128),
 	}
 	go f.run(ctx)
 	return f
@@ -458,7 +460,10 @@ func (f *FindMissingBatcher) run(ctx context.Context) {
 
 func (f *FindMissingBatcher) flush(batch []findMissingRequest) error {
 	responseChansByHash := map[string][]chan findMissingResponse{}
-	batchReq := &repb.FindMissingBlobsRequest{}
+	batchReq := &repb.FindMissingBlobsRequest{
+		InstanceName:   f.instanceName,
+		DigestFunction: f.digestFunction,
+	}
 	for _, req := range batch {
 		hash := req.Digest.GetHash()
 		if _, ok := responseChansByHash[hash]; !ok {
