@@ -11,6 +11,7 @@ go_library(
         ":language",
         "//cli/add",
         "//cli/arg",
+        "//cli/bazelisk",
         "//cli/log",
         "//cli/translate",
         "//cli/workspace",
