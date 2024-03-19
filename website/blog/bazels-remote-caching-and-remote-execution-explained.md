@@ -31,7 +31,10 @@ Each [rule target][rule] in the [build graph][build-graph] of a requested build 
 These actions form an [action graph][action-graph],
 representing all the actions that need to be performed during the [execution phase][execution-phase].
 
+<figure>
 ![](../static/img/blog/action-graph.svg)
+<figcaption>An example action graph. Actions are grouped by the targets that created them. Arrows connect the actions, showing dependencies between them.</figcaption>
+</figure>
 
 During the execution phase the action graph is traversed.
 For each action,
