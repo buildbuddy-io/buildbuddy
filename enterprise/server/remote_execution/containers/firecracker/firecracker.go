@@ -24,6 +24,7 @@ import (
 	_ "embed"
 
 	"github.com/armon/circbuf"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
@@ -347,6 +348,12 @@ type ExecutorConfig struct {
 	GuestAPIVersion    string
 }
 
+var (
+	// set by x_defs in BUILD file
+	initrdRunfilePath  string
+	vmlinuxRunfilePath string
+)
+
 // GetExecutorConfig computes the ExecutorConfig for this executor instance.
 //
 // WARNING: The given buildRootDir will be used as the jailer root dir. Because
@@ -356,11 +363,19 @@ type ExecutorConfig struct {
 // everything after "/tmp" is 65 characters, so 38 are left for the jailerRoot.
 func GetExecutorConfig(ctx context.Context, buildRootDir string) (*ExecutorConfig, error) {
 	bundle := vmsupport_bundle.Get()
-	initrdPath, err := putFileIntoDir(ctx, bundle, "enterprise/vmsupport/bin/initrd.cpio", buildRootDir, 0755)
+	initrdRunfileLocation, err := runfiles.Rlocation(initrdRunfilePath)
 	if err != nil {
 		return nil, err
 	}
-	kernelPath, err := putFileIntoDir(ctx, bundle, "enterprise/vmsupport/bin/vmlinux", buildRootDir, 0755)
+	initrdPath, err := putFileIntoDir(ctx, bundle, initrdRunfileLocation, buildRootDir, 0755)
+	if err != nil {
+		return nil, err
+	}
+	vmlinuxRunfileLocation, err := runfiles.Rlocation(vmlinuxRunfilePath)
+	if err != nil {
+		return nil, err
+	}
+	kernelPath, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation, buildRootDir, 0755)
 	if err != nil {
 		return nil, err
 	}

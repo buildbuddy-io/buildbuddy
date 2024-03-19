@@ -17,6 +17,10 @@ go_library(
     target_compatible_with = [
         "@platforms//os:linux",
     ],
+    x_defs = {
+        "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
+        "vmlinuxRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux)",
+    },
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
@@ -60,6 +64,7 @@ go_library(
         "@com_github_klauspost_cpuid//:cpuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_sirupsen_logrus//:logrus",
+        "@io_bazel_rules_go//go/runfiles:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
