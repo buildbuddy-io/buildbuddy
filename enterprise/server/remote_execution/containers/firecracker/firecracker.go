@@ -2218,7 +2218,13 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		case <-execDone:
 			return
 		case <-t.C:
-			log.CtxWarningf(ctx, "execution possibly stuck. vm log:\n%s", string(c.vmLog.Tail()))
+			dockerCmd := &repb.Command{
+				Arguments:        []string{"docker", "ps", "--all"},
+				Platform:         cmd.Platform,
+				WorkingDirectory: cmd.WorkingDirectory,
+			}
+			dockerResult := c.SendExecRequestToGuest(ctx, dockerCmd, workDir, stdio)
+			log.CtxWarningf(ctx, "execution possibly stuck. docker output: %s\nvm log:\n%s", string(dockerResult.Stdout), string(c.vmLog.Tail()))
 			return
 		}
 	}()
