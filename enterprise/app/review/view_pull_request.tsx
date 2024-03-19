@@ -459,6 +459,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
   }
 
   getDiffLines(patch: string, path: string, commitSha: string, comments: github.Comment[]): JSX.Element[] {
+    if (patch.length === 0) {
+      return [<div>No diff info available (binary file?)</div>];
+    }
     const out: JSX.Element[] = [];
 
     const patchLines = patch.split("\n");
