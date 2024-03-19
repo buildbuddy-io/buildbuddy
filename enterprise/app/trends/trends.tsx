@@ -333,7 +333,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   allowDecimals: false,
                 }}
                 secondaryYAxis={{
-                  formatTickValue: format.durationUsec,
+                  formatTickValue: format.durationSec,
                   allowDecimals: false,
                 }}
                 formatXAxisLabel={this.formatShortDate.bind(this)}

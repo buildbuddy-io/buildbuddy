@@ -61,14 +61,20 @@ function TrendsChartTooltip({ active, payload, labelFormatter, shouldRender, dat
   if (!active || !payload || payload.length < 1 || !shouldRender()) {
     return null;
   }
-
   return (
     <div className="trend-chart-hover">
       <div className="trend-chart-hover-label">{labelFormatter(payload[0].payload)}</div>
       <div className="trend-chart-hover-value">
-        {dataSeries.map((ds) => (
-          <div>{ds.formatHoverValue ? ds.formatHoverValue(payload[0].value) : payload[0].value}</div>
-        ))}
+        {dataSeries.map((ds, index) => {
+          if (index >= payload.length) {
+            return <></>;
+          }
+          const data = payload[index];
+          if (data === undefined) {
+            return <></>;
+          }
+          return <div>{ds.formatHoverValue ? ds.formatHoverValue(data.value) : data.value}</div>;
+        })}
       </div>
     </div>
   );
@@ -121,15 +127,17 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
   renderDataSeries(ds: ChartDataSeries, index: number): JSX.Element {
     const axis = ds.usesSecondaryAxis ? "secondary" : "primary";
     if (ds.isLine) {
-      <Line
-        activeDot={{ pointerEvents: "none" }}
-        yAxisId={axis}
-        name={ds.name}
-        dot={false}
-        dataKey={ds.extractValue}
-        isAnimationActive={false}
-        stroke="#03A9F4"
-      />;
+      return (
+        <Line
+          activeDot={{ pointerEvents: "none" }}
+          yAxisId={axis}
+          name={ds.name}
+          dot={false}
+          dataKey={ds.extractValue}
+          isAnimationActive={false}
+          stroke="#03A9F4"
+        />
+      );
     }
 
     return (
