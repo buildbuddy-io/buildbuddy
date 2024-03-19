@@ -2262,7 +2262,6 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 
 	statusTrackingMap := make(map[string]*combinedContext, 0)
 	checkTrackingMap := make(map[string]*checkSuite, 0)
-	log.Printf("%+v", pr.Commits.Nodes)
 	for _, c := range pr.Commits.Nodes {
 		for _, s := range c.Commit.Status.CombinedContexts.Nodes {
 			if s.Typename == "StatusContext" {
