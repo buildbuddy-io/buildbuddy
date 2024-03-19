@@ -502,9 +502,17 @@ message Reviewer {
   bool approved = 3;
 }
 
+enum ActionStatusState {
+  ACTION_STATUS_STATE_UNKNOWN = 0;
+  ACTION_STATUS_STATE_SUCCESS = 1;
+  ACTION_STATUS_STATE_FAILURE = 2;
+  ACTION_STATUS_STATE_PENDING = 3;
+  ACTION_STATUS_STATE_NEUTRAL = 4;
+}
+
 message ActionStatus {
   string name = 1;
-  string status = 2;
+  ActionStatusState status = 2;
   string url = 3;
 }
 

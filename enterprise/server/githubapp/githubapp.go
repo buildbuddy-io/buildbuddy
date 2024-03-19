@@ -1927,8 +1927,15 @@ type combinedContext struct {
 		CreatedAt   time.Time
 		Description string
 		TargetUrl   string
-		State       string
+		State       githubv4.StatusState
 	} `graphql:"... on StatusContext"`
+	CheckRun struct {
+		StartedAt  time.Time
+		Name       string
+		Permalink  string
+		Status     githubv4.CheckStatusState
+		Conclusion githubv4.CheckConclusionState
+	} `graphql:"... on CheckRun"`
 }
 
 type prCommit struct {
@@ -2058,6 +2065,49 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 
 func isBot(a *actor) bool {
 	return a.Typename == "Bot"
+}
+
+func CheckStateToStatus(s githubv4.CheckStatusState, c githubv4.CheckConclusionState) ghpb.ActionStatusState {
+	if s != githubv4.CheckStatusStateCompleted {
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING
+	}
+	switch c {
+	case githubv4.CheckConclusionStateFailure:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.CheckConclusionStateActionRequired:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.CheckConclusionStateCancelled:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.CheckConclusionStateTimedOut:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.CheckConclusionStateStartupFailure:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.CheckConclusionStateStale:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL
+	case githubv4.CheckConclusionStateNeutral:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL
+	case githubv4.CheckConclusionStateSkipped:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL
+	case githubv4.CheckConclusionStateSuccess:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS
+	}
+	return ghpb.ActionStatusState_ACTION_STATUS_STATE_UNKNOWN
+}
+
+func StatusStateToStatus(s githubv4.StatusState) ghpb.ActionStatusState {
+	switch s {
+	case githubv4.StatusStateError:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.StatusStateFailure:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.StatusStateExpected:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL
+	case githubv4.StatusStateSuccess:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS
+	case githubv4.StatusStatePending:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING
+	}
+	return ghpb.ActionStatusState_ACTION_STATUS_STATE_UNKNOWN
 }
 
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
@@ -2199,23 +2249,39 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		fileSummaries = append(fileSummaries, summary)
 	}
 
-	trackingMap := make(map[string]*combinedContext, 0)
+	statusTrackingMap := make(map[string]*combinedContext, 0)
+	checkTrackingMap := make(map[string]*combinedContext, 0)
 	for _, c := range pr.Commits.Nodes {
 		for _, s := range c.Commit.Status.CombinedContexts.Nodes {
-			if prev, ok := trackingMap[s.StatusContext.Context]; ok && s.StatusContext.CreatedAt.UnixMicro() < prev.StatusContext.CreatedAt.UnixMicro() {
-				continue
+			switch s.Typename {
+			case "StatusContext":
+				if prev, ok := statusTrackingMap[s.StatusContext.Context]; ok && s.StatusContext.CreatedAt.UnixMicro() < prev.StatusContext.CreatedAt.UnixMicro() {
+					continue
+				}
+				s2 := s
+				statusTrackingMap[s.StatusContext.Context] = &s2
+			case "CheckRun":
+				if prev, ok := checkTrackingMap[s.CheckRun.Name]; ok && s.CheckRun.StartedAt.UnixMicro() < prev.CheckRun.StartedAt.UnixMicro() {
+					continue
+				}
+				s2 := s
+				checkTrackingMap[s.CheckRun.Name] = &s2
 			}
-			s2 := s
-			trackingMap[s.StatusContext.Context] = &s2
 		}
 	}
 	actionStatuses := make([]*ghpb.ActionStatus, 0)
-	for _, s := range trackingMap {
-		// TODO(jdhollen): Checks, too.
+	for _, s := range statusTrackingMap {
 		status := &ghpb.ActionStatus{}
 		status.Name = s.StatusContext.Context
-		status.Status = s.StatusContext.State
+		status.Status = StatusStateToStatus(s.StatusContext.State)
 		status.Url = s.StatusContext.TargetUrl
+		actionStatuses = append(actionStatuses, status)
+	}
+	for _, s := range checkTrackingMap {
+		status := &ghpb.ActionStatus{}
+		status.Name = s.CheckRun.Name
+		status.Status = CheckStateToStatus(s.CheckRun.Status, s.CheckRun.Conclusion)
+		status.Url = s.CheckRun.Permalink
 		actionStatuses = append(actionStatuses, status)
 	}
 	slices.SortFunc(actionStatuses, func(a, b *ghpb.ActionStatus) int {
