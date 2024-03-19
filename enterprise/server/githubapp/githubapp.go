@@ -1929,22 +1929,33 @@ type combinedContext struct {
 		TargetUrl   string
 		State       githubv4.StatusState
 	} `graphql:"... on StatusContext"`
-	CheckRun struct {
-		StartedAt  time.Time
-		Name       string
-		Permalink  string
-		Status     githubv4.CheckStatusState
-		Conclusion githubv4.CheckConclusionState
-	} `graphql:"... on CheckRun"`
+}
+
+type checkSuite struct {
+	App struct {
+		Id string
+	}
+	WorkflowRun struct {
+		Workflow struct {
+			Name string
+		}
+	}
+	CreatedAt  time.Time
+	Status     githubv4.CheckStatusState
+	Conclusion githubv4.CheckConclusionState
+	Url        string
 }
 
 type prCommit struct {
 	Commit struct {
-		Oid    string
+		Oid         string
+		CheckSuites struct {
+			Nodes []checkSuite
+		} `graphql:"checkSuites(last: 100)"`
 		Status struct {
 			CombinedContexts struct {
 				Nodes []combinedContext
-			} `graphql:"combinedContexts(first: 100)"`
+			} `graphql:"combinedContexts(last: 100)"`
 		}
 	}
 }
@@ -2250,23 +2261,25 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	}
 
 	statusTrackingMap := make(map[string]*combinedContext, 0)
-	checkTrackingMap := make(map[string]*combinedContext, 0)
+	checkTrackingMap := make(map[string]*checkSuite, 0)
+	log.Printf("%+v", pr.Commits.Nodes)
 	for _, c := range pr.Commits.Nodes {
 		for _, s := range c.Commit.Status.CombinedContexts.Nodes {
-			switch s.Typename {
-			case "StatusContext":
+			if s.Typename == "StatusContext" {
 				if prev, ok := statusTrackingMap[s.StatusContext.Context]; ok && s.StatusContext.CreatedAt.UnixMicro() < prev.StatusContext.CreatedAt.UnixMicro() {
 					continue
 				}
 				s2 := s
 				statusTrackingMap[s.StatusContext.Context] = &s2
-			case "CheckRun":
-				if prev, ok := checkTrackingMap[s.CheckRun.Name]; ok && s.CheckRun.StartedAt.UnixMicro() < prev.CheckRun.StartedAt.UnixMicro() {
-					continue
-				}
-				s2 := s
-				checkTrackingMap[s.CheckRun.Name] = &s2
 			}
+		}
+		for _, s := range c.Commit.CheckSuites.Nodes {
+			name := s.App.Id + s.WorkflowRun.Workflow.Name
+			if prev, ok := checkTrackingMap[name]; ok && s.CreatedAt.UnixMicro() < prev.CreatedAt.UnixMicro() {
+				continue
+			}
+			s2 := s
+			checkTrackingMap[name] = &s2
 		}
 	}
 	actionStatuses := make([]*ghpb.ActionStatus, 0)
@@ -2279,9 +2292,9 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	}
 	for _, s := range checkTrackingMap {
 		status := &ghpb.ActionStatus{}
-		status.Name = s.CheckRun.Name
-		status.Status = CheckStateToStatus(s.CheckRun.Status, s.CheckRun.Conclusion)
-		status.Url = s.CheckRun.Permalink
+		status.Name = s.WorkflowRun.Workflow.Name
+		status.Status = CheckStateToStatus(s.Status, s.Conclusion)
+		status.Url = s.Url
 		actionStatuses = append(actionStatuses, status)
 	}
 	slices.SortFunc(actionStatuses, func(a, b *ghpb.ActionStatus) int {
