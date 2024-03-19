@@ -181,8 +181,8 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               yAxisId="secondary"
               orientation="right"
               height={hasSecondaryAxis ? undefined : 0}
-              tickFormatter={this.props.secondaryYAxis!.formatTickValue}
-              allowDecimals={this.props.secondaryYAxis!.allowDecimals}
+              tickFormatter={this.props.secondaryYAxis?.formatTickValue}
+              allowDecimals={this.props.secondaryYAxis?.allowDecimals}
               width={84}
             />
             <Tooltip
