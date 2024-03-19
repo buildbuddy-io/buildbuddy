@@ -5,7 +5,7 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_push")
 # ensure our changes don't break the internal build.
 alias(
     name = "smarter-device-manager",
-    actual = "@com_gitlab_arm_research_smarter_device_manager//:smarter-device-manager",
+    actual = "@com_gitlab_arm_research_smarter_smarter_device_manager//:smarter-device-manager",
 )
 
 go_image(
