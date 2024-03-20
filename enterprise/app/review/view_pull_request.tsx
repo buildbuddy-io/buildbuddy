@@ -519,19 +519,42 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     );
   }
 
+  statusToCssClass(s: github.ActionStatusState): string {
+    switch (s) {
+      case github.ActionStatusState.ACTION_STATUS_STATE_SUCCESS:
+      case github.ActionStatusState.ACTION_STATUS_STATE_NEUTRAL:
+        return "success";
+      case github.ActionStatusState.ACTION_STATUS_STATE_FAILURE:
+        return "failure";
+      default:
+        return "pending";
+    }
+  }
+
   renderAnalysisResults(statuses: github.ActionStatus[]) {
     const done = statuses
-      .filter((v) => v.status === "SUCCESS" || v.status === "FAILURE")
-      .sort((a, b) => (a.status === b.status ? 0 : a.status === "FAILURE" ? -1 : 1))
+      .filter(
+        (v) =>
+          v.status === github.ActionStatusState.ACTION_STATUS_STATE_SUCCESS ||
+          v.status === github.ActionStatusState.ACTION_STATUS_STATE_FAILURE ||
+          v.status === github.ActionStatusState.ACTION_STATUS_STATE_NEUTRAL
+      )
+      .sort((a, b) =>
+        a.status === b.status ? 0 : a.status === github.ActionStatusState.ACTION_STATUS_STATE_FAILURE ? -1 : 1
+      )
       .map((v) => (
-        <a href={v.url} target="_blank" className={"action-status " + v.status}>
+        <a href={v.url} target="_blank" className={"action-status " + this.statusToCssClass(v.status)}>
           {v.name}
         </a>
       ));
     const pending = statuses
-      .filter((v) => v.status !== "SUCCESS" && v.status !== "FAILURE")
+      .filter(
+        (v) =>
+          v.status === github.ActionStatusState.ACTION_STATUS_STATE_PENDING ||
+          v.status === github.ActionStatusState.ACTION_STATUS_STATE_UNKNOWN
+      )
       .map((v) => (
-        <a href={v.url} target="_blank" className={"action-status " + v.status}>
+        <a href={v.url} target="_blank" className={"action-status " + this.statusToCssClass(v.status)}>
           {v.name}
         </a>
       ));
