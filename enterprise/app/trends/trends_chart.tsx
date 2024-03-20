@@ -16,30 +16,33 @@ import {
 } from "recharts";
 import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
 
+interface ChartDataSeries {
+  name: string;
+  formatHoverValue?: (datum: number) => string;
+  extractValue: (datum: number) => number;
+  onClick?: (datum: number) => void;
+  isLine?: boolean;
+  usesSecondaryAxis?: boolean;
+  stackId?: string;
+}
+
+interface ChartYAxis {
+  allowDecimals?: boolean;
+  formatTickValue?: (datum: number, index: number) => string;
+}
+
 interface Props {
   title: string;
   data: number[];
   ticks: number[];
   id?: string;
 
-  extractLabel: (datum: number) => string;
-  formatHoverLabel: (datum: number) => string;
-  formatHoverValue?: (datum: number) => string;
-  formatTickValue?: (datum: number, index: number) => string;
-  extractValue: (datum: number) => number;
-  allowDecimals?: boolean;
-  name: string;
+  formatXAxisLabel: (datum: number) => string;
+  formatHoverXAxisLabel: (datum: number) => string;
+  dataSeries: ChartDataSeries[];
+  primaryYAxis: ChartYAxis;
+  secondaryYAxis?: ChartYAxis;
 
-  extractSecondaryValue?: (datum: number) => number;
-  formatSecondaryHoverValue?: (datum: number) => string;
-  formatSecondaryTickValue?: (datum: number, index: number) => string;
-  secondaryAllowDecimals?: boolean;
-  secondaryName?: string;
-  secondaryLine?: boolean;
-  separateAxis?: boolean;
-
-  onBarClicked?: (date: number) => void;
-  onSecondaryBarClicked?: (date: number) => void;
   onZoomSelection?: (startDate: number, endDate: number) => void;
 }
 
@@ -51,20 +54,10 @@ interface State {
 interface TrendsChartTooltipProps extends TooltipProps<any, any> {
   labelFormatter: (datum: any) => string;
   shouldRender: () => boolean;
-  valueFormatter?: (datum: number) => string;
-  secondaryValueFormatter?: (datum: number) => string;
-  extractSecondaryValue?: (datum: any) => number;
+  dataSeries: ChartDataSeries[];
 }
 
-function TrendsChartTooltip({
-  active,
-  payload,
-  labelFormatter,
-  shouldRender,
-  valueFormatter,
-  secondaryValueFormatter,
-  extractSecondaryValue,
-}: TrendsChartTooltipProps) {
+function TrendsChartTooltip({ active, payload, labelFormatter, shouldRender, dataSeries }: TrendsChartTooltipProps) {
   if (!active || !payload || payload.length < 1 || !shouldRender()) {
     return null;
   }
@@ -72,14 +65,16 @@ function TrendsChartTooltip({
     <div className="trend-chart-hover">
       <div className="trend-chart-hover-label">{labelFormatter(payload[0].payload)}</div>
       <div className="trend-chart-hover-value">
-        <div>{valueFormatter ? valueFormatter(payload[0].value) : payload[0].value}</div>
-        {extractSecondaryValue && (
-          <div>
-            {secondaryValueFormatter
-              ? secondaryValueFormatter(extractSecondaryValue(payload[0].payload))
-              : extractSecondaryValue(payload[0].payload)}
-          </div>
-        )}
+        {dataSeries.map((ds, index) => {
+          if (index >= payload.length) {
+            return <></>;
+          }
+          const data = payload[index];
+          if (data === undefined) {
+            return <></>;
+          }
+          return <div>{ds.formatHoverValue ? ds.formatHoverValue(data.value) : data.value}</div>;
+        })}
       </div>
     </div>
   );
@@ -129,8 +124,46 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     return !Boolean(this.state.refAreaLeft);
   }
 
+  renderDataSeries(ds: ChartDataSeries, index: number): JSX.Element {
+    const axis = ds.usesSecondaryAxis ? "secondary" : "primary";
+    if (ds.isLine) {
+      return (
+        <Line
+          activeDot={{ pointerEvents: "none" }}
+          yAxisId={axis}
+          name={ds.name}
+          dot={false}
+          dataKey={ds.extractValue}
+          isAnimationActive={false}
+          stroke="#03A9F4"
+        />
+      );
+    }
+
+    return (
+      <Bar
+        className={
+          ds.onClick ? (ds.usesSecondaryAxis ? "trends-clickable-bar-secondary" : "trends-clickable-bar-primary") : ""
+        }
+        yAxisId={axis}
+        name={ds.name}
+        dataKey={ds.extractValue}
+        isAnimationActive={false}
+        fill="#8BC34A">
+        {this.props.data.map((date, index) => (
+          <Cell
+            cursor={ds.onClick ? "pointer" : "default"}
+            key={`cell-${index}`}
+            onClick={!this.props.onZoomSelection && ds.onClick ? ds.onClick.bind(this, date) : undefined}
+          />
+        ))}
+      </Bar>
+    );
+  }
+
   render() {
-    const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
+    const hasSecondaryAxis = this.props.secondaryYAxis !== undefined;
+
     return (
       <div id={this.props.id} className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""}`}>
         <div className="trend-chart-title">{this.props.title}</div>
@@ -142,11 +175,11 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
-            <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.ticks} />
+            <XAxis dataKey={(v) => v} tickFormatter={this.props.formatXAxisLabel} ticks={this.props.ticks} />
             <YAxis
               yAxisId="primary"
-              tickFormatter={this.props.formatTickValue}
-              allowDecimals={this.props.allowDecimals}
+              tickFormatter={this.props.primaryYAxis.formatTickValue}
+              allowDecimals={this.props.primaryYAxis.allowDecimals}
               width={84}
             />
             {/* If no secondary axis should be shown, render an invisible one
@@ -156,78 +189,20 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               yAxisId="secondary"
               orientation="right"
               height={hasSecondaryAxis ? undefined : 0}
-              tickFormatter={this.props.formatSecondaryTickValue}
-              allowDecimals={this.props.secondaryAllowDecimals}
+              tickFormatter={this.props.secondaryYAxis?.formatTickValue}
+              allowDecimals={this.props.secondaryYAxis?.allowDecimals}
               width={84}
             />
             <Tooltip
               content={
                 <TrendsChartTooltip
-                  labelFormatter={this.props.formatHoverLabel}
+                  labelFormatter={this.props.formatHoverXAxisLabel}
                   shouldRender={() => this.shouldRenderTooltip()}
-                  valueFormatter={this.props.formatHoverValue}
-                  extractSecondaryValue={this.props.extractSecondaryValue}
-                  secondaryValueFormatter={this.props.formatSecondaryHoverValue}
+                  dataSeries={this.props.dataSeries}
                 />
               }
             />
-            <Bar
-              className={this.props.onBarClicked ? "trends-clickable-bar-primary" : ""}
-              yAxisId="primary"
-              name={this.props.name}
-              dataKey={this.props.extractValue}
-              isAnimationActive={false}
-              fill="#8BC34A">
-              {this.props.data.map((date, index) => (
-                <Cell
-                  cursor={this.props.onBarClicked ? "pointer" : "default"}
-                  key={`cell-${index}`}
-                  onClick={
-                    !this.props.onZoomSelection && this.props.onBarClicked
-                      ? this.props.onBarClicked.bind(this, date)
-                      : undefined
-                  }
-                />
-              ))}
-            </Bar>
-            {this.props.extractSecondaryValue && this.props.secondaryLine && (
-              <Line
-                activeDot={{ pointerEvents: "none" }}
-                yAxisId={this.props.separateAxis ? "secondary" : "primary"}
-                name={this.props.secondaryName}
-                dot={false}
-                dataKey={this.props.extractSecondaryValue}
-                isAnimationActive={false}
-                stroke="#03A9F4"
-              />
-            )}
-            {this.props.extractSecondaryValue && !this.props.secondaryLine && (
-              <Bar
-                className={
-                  this.props.onBarClicked || this.props.onSecondaryBarClicked ? "trends-clickable-bar-secondary" : ""
-                }
-                yAxisId={this.props.separateAxis ? "secondary" : "primary"}
-                name={this.props.secondaryName}
-                dataKey={this.props.extractSecondaryValue}
-                isAnimationActive={false}
-                fill="#03A9F4">
-                {this.props.data.map((date, index) => (
-                  <Cell
-                    cursor={this.props.onBarClicked || this.props.onSecondaryBarClicked ? "pointer" : "default"}
-                    key={`cell-${index}`}
-                    onClick={
-                      this.props.onZoomSelection !== undefined
-                        ? undefined
-                        : this.props.onSecondaryBarClicked
-                        ? this.props.onSecondaryBarClicked.bind(this, date)
-                        : this.props.onBarClicked
-                        ? this.props.onBarClicked.bind(this, date)
-                        : undefined
-                    }
-                  />
-                ))}
-              </Bar>
-            )}
+            {this.props.dataSeries.map(this.renderDataSeries.bind(this))}
             {this.state.refAreaLeft && this.state.refAreaRight ? (
               <ReferenceArea
                 yAxisId="primary"
