@@ -50,18 +50,16 @@ export default class CodeEmptyStateComponent extends React.Component {
           <div className="repo-start">
             <div className="repo-title">Start</div>
             <div className="repo-section">
-              {this.state.repoStats.map((repo) => (
-                <a href="/repo/?mode=code" className="repo-link">
-                  New repo
-                </a>
-              ))}
+              <a href="/repo/?mode=code" className="repo-link">
+                New repo
+              </a>
             </div>
           </div>
           {this.state.repoStats?.length > 0 && (
             <div className="repo-recent">
               <div className="repo-title">Recent</div>
               <div className="repo-section">
-                {this.state.repoStats.map((repo) => (
+                {this.state.repoStats.slice(0, 5).map((repo) => (
                   <a href={`/code/${format.formatGitUrl(repo.name)}`} className="repo-link">
                     {format.formatGitUrl(repo.name)}
                   </a>
