@@ -250,6 +250,8 @@
   display: flex;
   width: 100%;
   flex-wrap: wrap;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .repo-empty .repo-link {
