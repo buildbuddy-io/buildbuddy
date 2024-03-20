@@ -33,7 +33,7 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-} 
+}
 
 .history .actions button {
   display: flex;
