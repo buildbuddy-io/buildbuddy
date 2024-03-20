@@ -69,7 +69,6 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",
-        "@npm//lucide-react",
         "@npm//react",
     ],
 )

@@ -1027,10 +1027,6 @@ export default class CodeComponent extends React.Component<Props, State> {
   // TODO(siggisim): Make sidebar look nice
   // TODO(siggisim): Make the diff view look nicer
   render() {
-    if (!this.currentRepo() && !this.isSingleFile()) {
-      return <CodeEmptyStateComponent />;
-    }
-
     setTimeout(() => {
       this.editor?.layout();
     }, 0);
@@ -1058,7 +1054,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               // todo show hash and size
               // todo show warning message for files larger than ~50mb
             )}
-            {!this.isSingleFile() && (
+            {!this.isSingleFile() && this.currentRepo() && (
               <>
                 <div className="code-menu-breadcrumbs-environment">
                   {/* <a href="#">my-workspace</a> /{" "} TODO: add workspace to breadcrumb */}
@@ -1131,7 +1127,7 @@ export default class CodeComponent extends React.Component<Props, State> {
             </div>
           )}
           <OrgPicker user={this.props.user} floating={true} inline={true} />
-          {!this.isSingleFile() && (
+          {!this.isSingleFile() && this.currentRepo() && (
             <div className="code-menu-actions">
               {this.state.changes.size > 0 && !this.state.prBranch && (
                 <OutlinedButton
@@ -1224,6 +1220,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               </div>
             )}
             <div className="code-viewer-container">
+              {!this.currentRepo() && !this.isSingleFile() && <CodeEmptyStateComponent />}
               <div className={`code-viewer ${showDiffView ? "hidden-viewer" : ""}`} ref={this.codeViewer} />
               <div className={`diff-viewer ${showDiffView ? "" : "hidden-viewer"}`} ref={this.diffViewer} />
             </div>
