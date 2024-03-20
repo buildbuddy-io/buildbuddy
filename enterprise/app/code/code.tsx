@@ -31,6 +31,7 @@ import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
 import BuildFileSidekick from "../sidekick/buildfile/buildfile";
 import error_service from "../../../app/errors/error_service";
 import { build } from "../../../proto/remote_execution_ts_proto";
+import OrgPicker from "../org_picker/org_picker";
 
 interface Props {
   user: User;
@@ -1129,6 +1130,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               </OutlinedButton>
             </div>
           )}
+          <OrgPicker user={this.props.user} floating={true} inline={true} />
           {!this.isSingleFile() && (
             <div className="code-menu-actions">
               {this.state.changes.size > 0 && !this.state.prBranch && (
