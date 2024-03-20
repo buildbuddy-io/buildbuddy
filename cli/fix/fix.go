@@ -110,7 +110,7 @@ func runGazelle(repoRoot, baseFile string) error {
 		os.Args = originalArgs
 	}()
 
-	os.Args = []string{"gazelle"}
+	os.Args = []string{"gazelle", "update"}
 	if baseFile == workspace.ModuleFileName {
 		configPath, err := gazelleConfig()
 		if err != nil {
