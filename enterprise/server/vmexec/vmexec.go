@@ -480,6 +480,25 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 			msgs <- &message{Response: &vmxpb.ExecStreamedResponse{UsageStats: stats}}
 		}
 	}()
+	go func() {
+		for {
+			select {
+			case <-time.After(1 * time.Minute):
+				// Show command diagnostics
+				// if c.cmd.Process == nil || c.cmd.Process.Pid == 0 {
+				// 	continue
+				// }
+				io.WriteString(os.Stderr, "--- VM Diagnostics ---\n")
+				dbg := exec.Command("top", "-b", "-n1")
+				dbg.Stdout = os.Stderr
+				dbg.Stderr = os.Stderr
+				dbg.Run()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	// Using a nil statsListener since we'd rather report stats from the whole
 	// VM (which includes e.g. docker-in-firecracker containers) -- not just the
 	// process being run.

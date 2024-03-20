@@ -24,6 +24,10 @@ const (
 	// Timeout used for the explicit Sync() call in the case where the command
 	// is cancelled or times out.
 	syncTimeout = 5 * time.Second
+
+	// Timeout used to fail execution if we go this long without getting a
+	// response on the stream.
+	healthCheckTimeout = 10 * time.Second
 )
 
 // Execute executes the command using the ExecStreamed API.
@@ -59,10 +63,34 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 		})
 	}
 
+	// Health checker
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	pingCh := make(chan struct{}, 1)
+	go func() {
+		lastPing := time.Now()
+		t := time.NewTicker(healthCheckTimeout)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				if time.Since(lastPing) > healthCheckTimeout {
+					cancel(status.InternalErrorf("execution stream unhealthy: %s elapsed without reply", healthCheckTimeout))
+					return
+				}
+			case <-pingCh:
+				lastPing = time.Now()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	stream, err := client.ExecStreamed(ctx)
 	if err != nil {
 		return commandutil.ErrorResult(err)
 	}
+
 	startMsg := &vmxpb.ExecStreamedRequest{Start: req}
 	if err := stream.Send(startMsg); err != nil {
 		return commandutil.ErrorResult(err)
@@ -96,6 +124,9 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 				return gstatus.ErrorProto(res.GetStatus())
 			}
 			if err != nil {
+				if cause := context.Cause(ctx); cause != nil {
+					return cause
+				}
 				if ctx.Err() == context.DeadlineExceeded {
 					return status.DeadlineExceededError("context deadline exceeded")
 				}
@@ -103,6 +134,10 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 					return status.CanceledError("context canceled")
 				}
 				return status.InternalErrorf("failed to receive from stream: %s", status.Message(err))
+			}
+			select {
+			case pingCh <- struct{}{}:
+			default:
 			}
 			if _, err := stdoutw.Write(msg.Stdout); err != nil {
 				return status.InternalErrorf("failed to write stdout: %s", status.Message(err))

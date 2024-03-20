@@ -24,6 +24,17 @@ const (
 	iecKilobyte = 1024
 )
 
+func Fsck(ctx context.Context, file string) error {
+	cmd := exec.CommandContext(ctx, "e2fsck", "-nfv", file)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	err := cmd.Run()
+	if err != nil {
+		log.CtxErrorf(ctx, "fsck failed: %s", err)
+	}
+	return err
+}
+
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
 // and writes it to outputFile.
 func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64) error {
@@ -52,6 +63,8 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
 		return status.InternalErrorf("%s: %s", err, out)
 	}
+	log.CtxInfof(ctx, "Running fsck just after creating workspace image")
+	_ = Fsck(ctx, outputFile)
 	return nil
 }
 

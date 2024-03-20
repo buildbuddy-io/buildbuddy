@@ -854,6 +854,11 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 			return status.WrapError(err, "failed to sync scratchfs device store")
 		}
 	}
+	// if c.rootStore != nil {
+	// 	if err := c.rootStore.Sync(); err != nil {
+	// 		return status.WrapError(err, "failed to sync rootfs device store")
+	// 	}
+	// }
 	return nil
 }
 
@@ -1624,6 +1629,8 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 		if err := c.workspaceStore.WriteFile(workspaceExt4Path); err != nil {
 			return err
 		}
+		log.CtxInfof(ctx, "Running fsck just before copying outputs to workspace...")
+		_ = ext4.Fsck(ctx, workspaceExt4Path)
 	}
 
 	start := time.Now()
@@ -1769,6 +1776,10 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 			return nil, err
 		}
 		log.CtxDebugf(ctx, "Mounted %s VBD FUSE filesystem to %s", driveID, mountPath)
+		if driveID == workspaceDriveID {
+			log.CtxInfof(ctx, "Running fsck just after setting up VBD mounts, before resume...")
+			_ = ext4.Fsck(ctx, mountPath+"/"+vbd.FileName)
+		}
 		return d, nil
 	}
 
@@ -2198,6 +2209,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}()
 
 	if c.fsLayout == nil {
+		//
 		if err := c.syncWorkspace(ctx); err != nil {
 			result.Error = status.WrapError(err, "failed to sync workspace")
 			return result
@@ -2608,6 +2620,16 @@ func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
 	return c.LoadSnapshot(ctx)
+}
+
+// attachWorkspace
+func (c *FirecrackerContainer) attachWorkspace(ctx context.Context) error {
+	return nil
+}
+
+// disconnectWorkspace
+func (c *FirecrackerContainer) detachWorkspace(ctx context.Context) error {
+	return nil
 }
 
 // syncWorkspace creates a new disk image from the given working directory

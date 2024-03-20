@@ -64,6 +64,9 @@ func logExecutionMetadata(i int, md *repb.ExecutedActionMetadata) {
 }
 
 func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value) error {
+	if d.GetSizeBytes() == 0 {
+		return nil
+	}
 	outd := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, digestType)
 	exists, err := fmb.Exists(targetCtx, outd.GetDigest())
 	if err != nil {
@@ -319,6 +322,7 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			}
 
 			if err := gstatus.ErrorProto(response.GetStatus()); err != nil {
+
 				log.Errorf("Execution failed: %s", err)
 				break
 			}
