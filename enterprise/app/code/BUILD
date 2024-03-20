@@ -13,11 +13,13 @@ ts_library(
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
+        "//app/capabilities",
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/modal",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/router",
         "//app/service:rpc_service",
         "//app/util:lcov",
         "//enterprise/app/code:code_build_button",
