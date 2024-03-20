@@ -187,6 +187,7 @@
   right: 32px;
   display: flex;
   flex-direction: column-reverse;
+  z-index: 1;
 }
 
 .org-picker-container.floating .org-picker-item {
@@ -238,4 +239,22 @@
   .org-picker-container.floating .org-picker-profile-name {
     display: none;
   }
+}
+
+/* Inline */
+
+.org-picker-container.floating.inline {
+  position: relative;
+  top: initial;
+  right: initial;
+  margin-right: 16px;
+}
+.org-picker-container.floating.inline .org-picker-profile-name {
+  display: none;
+}
+
+.org-picker-container.floating.inline .org-picker-expanded-profile {
+  position: absolute;
+  top: 36px;
+  right: 0;
 }

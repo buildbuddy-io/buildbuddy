@@ -7,6 +7,7 @@ import router from "../../../app/router/router";
 interface Props {
   user?: User;
   floating?: boolean;
+  inline?: boolean;
   forceCollapse?: boolean;
   onClick?: (expanded: boolean) => void;
 }
@@ -43,7 +44,10 @@ export default class OrgPicker extends React.Component<Props, State> {
   render() {
     if (!this.props.user) {
       return (
-        <div className={`org-picker-container ${this.props.floating ? "floating" : ""}`}>
+        <div
+          className={`org-picker-container ${this.props.floating ? "floating" : ""} ${
+            this.props.inline ? "inline" : ""
+          }`}>
           <button
             className="login-button"
             onClick={() =>
@@ -61,7 +65,9 @@ export default class OrgPicker extends React.Component<Props, State> {
     let name = this.props.user?.displayUser?.name?.full || this.props.user?.displayUser?.email;
     return (
       <div
-        className={`org-picker-container ${expanded ? "expanded" : ""} ${this.props.floating ? "floating" : ""}`}
+        className={`org-picker-container ${expanded ? "expanded" : ""} ${this.props.floating ? "floating" : ""} ${
+          this.props.inline ? "inline" : ""
+        }`}
         debug-id="org-picker">
         {expanded && (
           <div className="org-picker-expanded-profile">
