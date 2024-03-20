@@ -94,6 +94,10 @@ func mount(source, target, fstype string, flags uintptr, options string) error {
 	return os.NewSyscallError("MOUNT", syscall.Mount(source, target, fstype, flags, options))
 }
 
+func mknod(path string, mode uint32, dev uint64) error {
+	return os.NewSyscallError("MKNOD", syscall.Mknod(path, mode, int(dev)))
+}
+
 func chdir(path string) error {
 	log.Debugf("chdir %q", path)
 	return os.NewSyscallError("CHDIR", syscall.Chdir(path))
@@ -298,7 +302,12 @@ func main() {
 	die(mount(workspaceDevice, "/mnt/workspace", "ext4", syscall.MS_NOATIME, ""))
 
 	die(mkdirp("/mnt/dev", 0755))
-	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
+	// die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
+
+	// {
+	// 	s, err := os.Stat("/dev/vsock")
+	// 	fmt.Printf("vsock: %#+v, err=%v\n", s, err)
+	// }
 
 	die(copyFile("/init", "/mnt/init", 0555))
 
@@ -319,6 +328,20 @@ func main() {
 
 	die(mkdirp("/dev/hugepages", 0755))
 	die(mount("hugetlbfs", "/dev/hugepages", "hugetlbfs", syscall.MS_RELATIME, "pagesize=2M"))
+
+	// {
+	// 	c := exec.Command("/bin/sh", "-c", `
+	// 		/bin/stat /dev/vsock /dev/random /dev/urandom /dev/null
+	// 	`)
+	// 	c.Stdout = os.Stderr
+	// 	c.Stderr = os.Stderr
+	// 	c.Run()
+	// }
+
+	die(mknod("/dev/null", unix.S_IFCHR|0666, unix.Mkdev(1, 3)))
+	die(mknod("/dev/random", unix.S_IFCHR|0644, unix.Mkdev(1, 8)))
+	die(mknod("/dev/urandom", unix.S_IFCHR|0644, unix.Mkdev(1, 9)))
+	die(mknod("/dev/vsock", unix.S_IFCHR|0600, unix.Mkdev(0xa, 0x7f)))
 
 	die(mkdirp("/proc", 0555))
 	die(mount("proc", "/proc", "proc", commonMountFlags, ""))

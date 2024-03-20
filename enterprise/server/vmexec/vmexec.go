@@ -148,6 +148,20 @@ func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWor
 		return nil, status.InternalErrorf("unmount failed: %s", err)
 	}
 	log.Infof("Unmounted workspace from %s", workspaceMountPath)
+
+	log.Infof("Runnning fsck inside the guest...")
+	x.workspaceDevice = "/tmp/dev__vdc"
+	if err := unix.Mknod(x.workspaceDevice, unix.S_IFBLK|0600, int(unix.Mkdev(0xfe, 0x20))); err != nil {
+		return nil, err
+	}
+	defer os.Remove(x.workspaceDevice)
+	c := exec.Command("/bin/sh", "-c", `
+		e2fsck -fnv /tmp/dev__vdc
+	`)
+	c.Stdout = os.Stderr
+	c.Stderr = os.Stderr
+	fmt.Println(c.Run())
+
 	return &vmxpb.UnmountWorkspaceResponse{}, nil
 }
 
@@ -163,7 +177,15 @@ func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspa
 		return nil, status.InternalErrorf("workspace is already mounted at %s", workspaceMountPath)
 	}
 
-	if err := syscall.Mount(x.workspaceDevice, workspaceMountPath, "ext4", syscall.MS_NOATIME, ""); err != nil {
+	// DO NOT SUBMIT
+	// use mknod to create the workspace device
+	x.workspaceDevice = "/tmp/dev__vdc"
+	if err := unix.Mknod(x.workspaceDevice, unix.S_IFBLK|0600, int(unix.Mkdev(0xfe, 0x20))); err != nil {
+		return nil, err
+	}
+	defer os.Remove(x.workspaceDevice)
+
+	if err := syscall.Mount(x.workspaceDevice, workspaceMountPath, "ext4", syscall.MS_NOATIME, "debug"); err != nil {
 		log.Errorf("Failed to mount workspace: %s", err)
 		return nil, err
 	}
@@ -214,6 +236,32 @@ type message struct {
 }
 
 func (x *execServer) ExecStreamed(stream vmxpb.Exec_ExecStreamedServer) error {
+	// // Hide /dev to prevent actions from corrupting the disk.
+	// if err := os.MkdirAll("/tmp/dev", 0755); err != nil {
+	// 	return err
+	// }
+	// if err := os.WriteFile("/tmp/dev/null", nil, 0644); err != nil {
+	// 	return err
+	// }
+	// randBytes := make([]byte, 1_000_000)
+	// if _, err := rand.Read(randBytes); err != nil {
+	// 	return err
+	// }
+	// if err := os.WriteFile("/tmp/dev/random", randBytes, 0644); err != nil {
+	// 	return err
+	// }
+	// if err := os.WriteFile("/tmp/dev/urandom", randBytes, 0644); err != nil {
+	// 	return err
+	// }
+	// if err := syscall.Mount("/tmp/dev", "/dev", "bind", syscall.MS_BIND, ""); err != nil {
+	// 	return status.WrapError(err, "unmount /dev")
+	// }
+	// defer func() {
+	// 	if err := syscall.Unmount("/dev", 0); err != nil {
+	// 		log.CtxErrorf(stream.Context(), "Failed to restore devtmpfs: %s", err)
+	// 	}
+	// }()
+
 	ctx := stream.Context()
 
 	msgs := make(chan *message, 128)
@@ -483,13 +531,15 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 	go func() {
 		for {
 			select {
-			case <-time.After(1 * time.Minute):
+			case <-time.After(10 * time.Second):
 				// Show command diagnostics
 				// if c.cmd.Process == nil || c.cmd.Process.Pid == 0 {
 				// 	continue
 				// }
 				io.WriteString(os.Stderr, "--- VM Diagnostics ---\n")
-				dbg := exec.Command("top", "-b", "-n1")
+				dbg := exec.Command("sh", "-c", `
+					df /
+				`)
 				dbg.Stdout = os.Stderr
 				dbg.Stderr = os.Stderr
 				dbg.Run()

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -25,13 +26,15 @@ const (
 )
 
 func Fsck(ctx context.Context, file string) error {
-	cmd := exec.CommandContext(ctx, "e2fsck", "-nfv", file)
+	cmd := exec.CommandContext(ctx, "e2fsck", "-fnv", file)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
+	start := time.Now()
 	err := cmd.Run()
 	if err != nil {
 		log.CtxErrorf(ctx, "fsck failed: %s", err)
 	}
+	log.CtxInfof(ctx, "fsck completed in %s", time.Since(start))
 	return err
 }
 
@@ -56,7 +59,7 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		"-b", "4096",
 		"-t", "ext4",
 		outputFile,
-		fmt.Sprintf("%dK", sizeBytes/1e3),
+		fmt.Sprintf("%dK", sizeBytes/1024),
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	if out, err := cmd.CombinedOutput(); err != nil {
