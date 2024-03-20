@@ -642,10 +642,15 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return 0, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
 	}
 
+	gitToken := ""
+	if strings.Contains(repoConfig.URL, "github.com") {
+		gitToken = os.Getenv("GITHUB_TOKEN")
+	}
+
 	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
 			RepoUrl:     repoConfig.URL,
-			AccessToken: os.Getenv("GITHUB_TOKEN"),
+			AccessToken: gitToken,
 		},
 		RepoState: &rnpb.RunRequest_RepoState{
 			CommitSha: repoConfig.CommitSHA,
