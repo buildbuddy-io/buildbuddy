@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/bzlmod"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix/language"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/translate"
@@ -50,7 +51,11 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return -1, err
 	}
 
-	path, baseFile, err := workspace.CreateWorkspaceIfNotExists()
+	useModules, err := bzlmod.UseModules()
+	if err != nil {
+		return 1, err
+	}
+	path, baseFile, err := workspace.CreateWorkspaceIfNotExists(useModules)
 	if err != nil {
 		return 1, err
 	}

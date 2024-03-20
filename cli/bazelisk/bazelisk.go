@@ -1,6 +1,7 @@
 package bazelisk
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -60,6 +61,32 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 		defer close()
 	}
 	return core.RunBazelisk(args, repos)
+}
+
+func BazelInfo(requestInfos []string) (map[string]string, error) {
+	bazelArgs := append([]string{"info"}, requestInfos...)
+	stdout := &bytes.Buffer{}
+	opts := &RunOpts{
+		Stdout: stdout,
+	}
+	_, err := Run(bazelArgs, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run `bazel info`: %w", err)
+	}
+
+	result := make(map[string]string, len(requestInfos))
+	lines := strings.Split(stdout.String(), "\n")
+	for _, line := range lines {
+		halves := strings.Split(line, ": ")
+		for _, info := range requestInfos {
+			if halves[0] == info {
+				result[info] = halves[1]
+				break
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // ConfigureRunScript adds `--script_path` to a bazel run command so that we can
