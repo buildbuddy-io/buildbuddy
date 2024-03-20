@@ -24,6 +24,7 @@ ts_library(
         "//enterprise/app/code:code_empty",
         "//enterprise/app/code:code_pull_request",
         "//enterprise/app/code:code_sidebar_node",
+        "//enterprise/app/org_picker",
         "//enterprise/app/sidekick/bazelrc",
         "//enterprise/app/sidekick/bazelversion",
         "//enterprise/app/sidekick/buildfile",
