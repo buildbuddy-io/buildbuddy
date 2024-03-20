@@ -801,6 +801,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 			Name:        github.String(req.Name),
 			Description: github.String(req.Description),
 			Private:     github.Bool(req.Private),
+			AutoInit:    github.Bool(req.Template == ""),
 		})
 		if err != nil {
 			return nil, err
