@@ -41,6 +41,7 @@ ts_library(
     name = "history_invocation_stat_card",
     srcs = ["history_invocation_stat_card.tsx"],
     deps = [
+        "//app/capabilities",
         "//app/format",
         "//app/router",
         "//proto:invocation_ts_proto",

@@ -1429,10 +1429,14 @@ function stateReviver(key: string, value: any) {
     }
     if (value.dataType === "ModelMap") {
       return new Map(
-        value.value.map((e: { key: string; value: string }) => [
-          e.key,
-          monaco.editor.createModel(e.value, langFromPath(e.key), monaco.Uri.file(e.key)),
-        ])
+        value.value.map((e: { key: string; value: string }) => {
+          let existingModel = monaco.editor.getModel(monaco.Uri.file(e.key));
+          if (existingModel) {
+            existingModel.setValue(e.value);
+            return [e.key, existingModel];
+          }
+          return [e.key, monaco.editor.createModel(e.value, langFromPath(e.key), monaco.Uri.file(e.key))];
+        })
       );
     }
     if (value.dataType === "DiffModelMap") {
