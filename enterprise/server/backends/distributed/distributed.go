@@ -1,6 +1,7 @@
 package distributed
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -16,11 +17,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -48,6 +52,10 @@ var (
 	newConsistentHashFunction    = flag.String("cache.distributed_cache.new_consistent_hash_function", "CRC32", "A consistent hash function to use when hashing data. CRC32 or SHA256")
 	newConsistentHashVNodes      = flag.Int("cache.distributed_cache.new_consistent_hash_vnodes", 100, "The number of copies of each peer on the new consistent hash ring")
 	newNodesReadOnly             = flag.Bool("cache.distributed_cache.new_nodes_read_only", false, "If true, only attempt to read from the newNodes set; do not write to them yet")
+
+	lookasideCacheSizeBytes = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 0, "If > 0 ; lookaside cache will be enabled")
+	lookasideCacheTTL       = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 15*time.Minute, "How long to hold stuff in the lookaside cache. Should be << atime_update_threshold")
+	maxLookasideEntryBytes  = flag.Int64("cache.distributed_cache.max_lookaside_entry_bytes", 10_000, "The biggest allowed entry size in the lookaside cache.")
 )
 
 const (
@@ -66,6 +74,7 @@ type CacheConfig struct {
 	ReplicationFactor            int
 	ClusterSize                  int
 	RPCHeartbeatInterval         time.Duration
+	LookasideCacheSizeBytes      int64
 	DisableLocalLookup           bool
 	EnableLocalWrites            bool
 	EnableLocalCompressionLookup bool
@@ -74,6 +83,11 @@ type CacheConfig struct {
 type hintedHandoffOrder struct {
 	ctx context.Context
 	r   *rspb.ResourceName
+}
+
+type lookasideCacheEntry struct {
+	createdAtMillis int64
+	data            []byte
 }
 
 func (o *hintedHandoffOrder) String() string {
@@ -93,6 +107,8 @@ type peerInfo struct {
 type Cache struct {
 	local                interfaces.Cache
 	log                  log.Logger
+	lookasideMu          *sync.Mutex
+	lookaside            interfaces.LRU[lookasideCacheEntry]
 	peerMetadata         map[string]*peerInfo
 	hintedHandoffsMu     *sync.RWMutex
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
@@ -124,6 +140,7 @@ func Register(env *real_environment.RealEnv) error {
 		ClusterSize:                  *clusterSize,
 		EnableLocalWrites:            *enableLocalWrites,
 		EnableLocalCompressionLookup: *enableLocalCompressionLookup,
+		LookasideCacheSizeBytes:      *lookasideCacheSizeBytes,
 	}
 	log.Infof("Enabling distributed cache with config: %+v", dcConfig)
 	if len(dcConfig.Nodes) == 0 {
@@ -146,6 +163,18 @@ func parseConsistentHash(c string) (consistent_hash.HashFunction, error) {
 		return consistent_hash.SHA256, nil
 	default:
 		return nil, status.InvalidArgumentErrorf("Unknown hash function: %s", c)
+	}
+}
+
+// Converts an LRU eviction reason into a metrics.LookasideCacheEvictionReason.
+func convertEvictionReason(r lru.EvictionReason) string {
+	switch r {
+	case lru.SizeEviction:
+		return "size"
+	case lru.ManualEviction:
+		return "age"
+	default:
+		return string(r)
 	}
 }
 
@@ -181,6 +210,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	}
 	dc := &Cache{
 		local:               c,
+		lookasideMu:         &sync.Mutex{},
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", config.ListenAddr)),
 		config:              config,
 		cacheProxy:          cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
@@ -196,6 +226,28 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		hintedHandoffsMu:     &sync.RWMutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
 	}
+
+	if config.LookasideCacheSizeBytes > 0 {
+		l, err := lru.NewLRU[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
+			MaxSize: config.LookasideCacheSizeBytes,
+			OnEvict: func(v lookasideCacheEntry, reason lru.EvictionReason) {
+				age := time.Since(time.UnixMilli(v.createdAtMillis))
+				metrics.LookasideCacheEvictionAgeMsec.With(prometheus.Labels{
+					metrics.LookasideCacheEvictionReason: convertEvictionReason(reason),
+				}).Observe(float64(age.Milliseconds()))
+			},
+			SizeFn: func(v lookasideCacheEntry) int64 {
+				// []byte size + 8 bytes for the int64 timestamp.
+				return int64(len(v.data) + 8)
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		dc.lookaside = l
+		log.Printf("Initialized lookaside cache (Size %d, ttl=%s)", config.LookasideCacheSizeBytes, *lookasideCacheTTL)
+	}
+
 	if zone := resources.GetZone(); zone != "" {
 		dc.zone = zone
 	}
@@ -264,6 +316,120 @@ func (c *Cache) Check(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+type teeReadCloser struct {
+	rc  io.ReadCloser
+	cwc interfaces.CommittedWriteCloser
+}
+
+func (t *teeReadCloser) Read(p []byte) (n int, err error) {
+	n, err = t.rc.Read(p)
+	if n > 0 {
+		if n, err := t.cwc.Write(p[:n]); err != nil {
+			return n, err
+		}
+	}
+	return
+}
+func (t *teeReadCloser) Close() error {
+	err := t.rc.Close()
+	if err == nil {
+		_ = t.cwc.Commit()
+		_ = t.cwc.Close()
+	}
+	return err
+}
+
+func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
+	if !c.lookasideCacheEnabled() {
+		return
+	}
+	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
+		return
+	}
+	k, err := digest.ResourceNameFromProto(r).DownloadString()
+	if err != nil {
+		c.log.Debugf("Not setting lookaside entry: %s", err)
+		return
+	}
+	entry := lookasideCacheEntry{
+		createdAtMillis: time.Now().UnixMilli(),
+		data:            data,
+	}
+
+	c.lookasideMu.Lock()
+	if !c.lookaside.Contains(k) {
+		c.lookaside.Add(k, entry)
+	}
+	c.lookasideMu.Unlock()
+	c.log.Debugf("Set %q in lookaside cache", k)
+}
+
+func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, error) {
+	if !c.lookasideCacheEnabled() {
+		return nil, status.NotFoundError("lookaside cache disabled")
+	}
+	k, err := digest.ResourceNameFromProto(r).DownloadString()
+	if err != nil {
+		c.log.Debugf("Not getting lookaside entry: %s", err)
+		return nil, err
+	}
+
+	c.lookasideMu.Lock()
+	found := false
+	entry, ok := c.lookaside.Get(k)
+	if ok {
+		if time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
+			// Remove the item from the LRU if it's expired.
+			c.lookaside.Remove(k)
+		} else {
+			found = true
+		}
+	}
+	c.lookasideMu.Unlock()
+
+	lookupStatus := "miss"
+	if found {
+		lookupStatus = "hit"
+	}
+	metrics.LookasideCacheLookupCount.With(prometheus.Labels{
+		metrics.LookasideCacheLookupStatus: lookupStatus,
+	}).Inc()
+
+	if found {
+		c.log.Debugf("Got %q from lookaside cache", k)
+		return entry.data, nil
+	}
+	return nil, status.NotFoundError("no valid lookaside entry")
+}
+
+func (c *Cache) lookasideWriter(r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	buffer := new(bytes.Buffer)
+	wc := ioutil.NewCustomCommitWriteCloser(buffer)
+	wc.CommitFn = func(int64) error {
+		c.addLookasideEntry(r, buffer.Bytes())
+		return nil
+	}
+	return wc, nil
+}
+
+func (c *Cache) lookasideCacheEnabled() bool {
+	return c.config.LookasideCacheSizeBytes > 0
+}
+
+func (c *Cache) teeReadCloser(r *rspb.ResourceName, rc io.ReadCloser) io.ReadCloser {
+	if !c.lookasideCacheEnabled() {
+		return rc
+	}
+	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
+		return rc
+	}
+	lwc, err := c.lookasideWriter(r)
+	if err != nil {
+		return rc
+	}
+	return &teeReadCloser{rc, lwc}
 }
 
 func (c *Cache) recvHeartbeatCallback(ctx context.Context, peer string) {
@@ -484,14 +650,54 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.GetMulti(ctx, rns)
 	}
-	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, rns)
+	results := make(map[*repb.Digest][]byte)
+	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
+
+	for _, r := range rns {
+		if buf, err := c.getLookasideEntry(r); err == nil {
+			results[r.GetDigest()] = buf
+		} else {
+			stillMissing = append(stillMissing, r)
+		}
+	}
+	if len(stillMissing) == 0 {
+		return results, nil
+	}
+
+	results, err := c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, stillMissing)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, r := range stillMissing {
+		buf, ok := results[r.GetDigest()]
+		if ok {
+			c.addLookasideEntry(r, buf)
+		}
+	}
+	return results, nil
 }
+
 func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Reader(ctx, r, offset, limit)
 	}
-	return c.cacheProxy.RemoteReader(ctx, peer, r, offset, limit)
+	lookasideCacheable := offset == 0 && limit == 0
+	if lookasideCacheable {
+		if buf, err := c.getLookasideEntry(r); err == nil {
+			return io.NopCloser(bytes.NewReader(buf)), nil
+		}
+	}
+	rc, err := c.cacheProxy.RemoteReader(ctx, peer, r, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+	if offset == 0 && limit == 0 {
+		return c.teeReadCloser(r, rc), nil
+	}
+	return rc, nil
 }
+
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	if c.config.EnableLocalWrites && peer == c.config.ListenAddr {
 		return c.local.Writer(ctx, r)

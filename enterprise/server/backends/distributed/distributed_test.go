@@ -1823,6 +1823,239 @@ func TestExtraNodesReadWrite(t *testing.T) {
 	}
 }
 
+func TestReadThroughLookaside(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:       3,
+		Nodes:                   []string{peer1, peer2, peer3},
+		DisableLocalLookup:      true,
+		LookasideCacheSizeBytes: 100_000,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	baseCaches := []interfaces.Cache{
+		memoryCache1,
+		memoryCache2,
+		memoryCache3,
+	}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure we can read it back from each node,
+		// both via the base cache and distributed cache for each node.
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, baseCache, rn)
+		}
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Now read all of the digests again -- they should all
+	// be served from the lookaside cache.
+	for _, rn := range allResources {
+		for _, distributedCache := range distributedCaches {
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	assert.Equal(t, opCountBefore[peer1], len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2], len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
+}
+
+func TestGetMultiLookaside(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:       3,
+		Nodes:                   []string{peer1, peer2, peer3},
+		DisableLocalLookup:      true,
+		LookasideCacheSizeBytes: 100_000,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	resourcesWritten := make([]*rspb.ResourceName, 0)
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure it was written to all nodes.
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		resourcesWritten = append(resourcesWritten, rn)
+	}
+
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
+		assert.Nil(t, err)
+		for _, r := range resourcesWritten {
+			d := r.GetDigest()
+			buf, ok := gotMap[d]
+			assert.True(t, ok)
+			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
+		}
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Now read all of the digests again -- they should all
+	// be served from the lookaside cache.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
+		assert.Nil(t, err)
+		for _, r := range resourcesWritten {
+			d := r.GetDigest()
+			buf, ok := gotMap[d]
+			assert.True(t, ok)
+			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
+		}
+	}
+
+	assert.Equal(t, opCountBefore[peer1], len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2], len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
+}
+
+func TestLookasideLimits(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(10_000_000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:       3,
+		Nodes:                   []string{peer1, peer2, peer3},
+		DisableLocalLookup:      true,
+		LookasideCacheSizeBytes: 2_000_000,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+
+	for i := 0; i < 3; i++ {
+		// Do a write, and ensure we can read it back from each node,
+		// both via the base cache and distributed cache for each node.
+		rn, buf := testdigest.RandomCASResourceBuf(t, 1_000_000)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Now read all of the digests again -- none should be served
+	// from the lookaside cache because they were all large files.
+	for _, rn := range allResources {
+		for _, distributedCache := range distributedCaches {
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	assert.NotEqual(t, opCountBefore[peer1], len(memoryCache1.ops))
+	assert.NotEqual(t, opCountBefore[peer2], len(memoryCache2.ops))
+	assert.NotEqual(t, opCountBefore[peer3], len(memoryCache3.ops))
+}
+
 type Op int
 
 const (
