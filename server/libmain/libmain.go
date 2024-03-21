@@ -66,13 +66,6 @@ import (
 	static_bundle "github.com/buildbuddy-io/buildbuddy/static"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	channelzservice "google.golang.org/grpc/channelz/service"
-
-	// Force this package to be a direct dependency in `go.mod` so that
-	// `go mod tidy` doesn't work differently when generated protos are linked
-	// or copied into the source tree
-	// (the generated protos depend on this package)
-	_ "github.com/planetscale/vtprotobuf/vtproto"
-	_ "google.golang.org/genproto/googleapis/api/annotations"
 )
 
 var (

@@ -801,6 +801,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 			Name:        github.String(req.Name),
 			Description: github.String(req.Description),
 			Private:     github.Bool(req.Private),
+			AutoInit:    github.Bool(req.Template == ""),
 		})
 		if err != nil {
 			return nil, err
@@ -1927,17 +1928,35 @@ type combinedContext struct {
 		CreatedAt   time.Time
 		Description string
 		TargetUrl   string
-		State       string
+		State       githubv4.StatusState
 	} `graphql:"... on StatusContext"`
+}
+
+type checkSuite struct {
+	App struct {
+		Id string
+	}
+	WorkflowRun struct {
+		Workflow struct {
+			Name string
+		}
+	}
+	CreatedAt  time.Time
+	Status     githubv4.CheckStatusState
+	Conclusion githubv4.CheckConclusionState
+	Url        string
 }
 
 type prCommit struct {
 	Commit struct {
-		Oid    string
+		Oid         string
+		CheckSuites struct {
+			Nodes []checkSuite
+		} `graphql:"checkSuites(last: 100)"`
 		Status struct {
 			CombinedContexts struct {
 				Nodes []combinedContext
-			} `graphql:"combinedContexts(first: 100)"`
+			} `graphql:"combinedContexts(last: 100)"`
 		}
 	}
 }
@@ -2058,6 +2077,49 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 
 func isBot(a *actor) bool {
 	return a.Typename == "Bot"
+}
+
+func CheckStateToStatus(s githubv4.CheckStatusState, c githubv4.CheckConclusionState) ghpb.ActionStatusState {
+	if s != githubv4.CheckStatusStateCompleted {
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING
+	}
+	switch c {
+	case githubv4.CheckConclusionStateFailure:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.CheckConclusionStateActionRequired:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.CheckConclusionStateCancelled:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.CheckConclusionStateTimedOut:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.CheckConclusionStateStartupFailure:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.CheckConclusionStateStale:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL
+	case githubv4.CheckConclusionStateNeutral:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL
+	case githubv4.CheckConclusionStateSkipped:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL
+	case githubv4.CheckConclusionStateSuccess:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS
+	}
+	return ghpb.ActionStatusState_ACTION_STATUS_STATE_UNKNOWN
+}
+
+func StatusStateToStatus(s githubv4.StatusState) ghpb.ActionStatusState {
+	switch s {
+	case githubv4.StatusStateError:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.StatusStateFailure:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	case githubv4.StatusStateExpected:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL
+	case githubv4.StatusStateSuccess:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS
+	case githubv4.StatusStatePending:
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING
+	}
+	return ghpb.ActionStatusState_ACTION_STATUS_STATE_UNKNOWN
 }
 
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
@@ -2199,23 +2261,43 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		fileSummaries = append(fileSummaries, summary)
 	}
 
-	trackingMap := make(map[string]*combinedContext, 0)
+	statusTrackingMap := make(map[string]*combinedContext, 0)
+	checkTrackingMap := make(map[string]*checkSuite, 0)
 	for _, c := range pr.Commits.Nodes {
 		for _, s := range c.Commit.Status.CombinedContexts.Nodes {
-			if prev, ok := trackingMap[s.StatusContext.Context]; ok && s.StatusContext.CreatedAt.UnixMicro() < prev.StatusContext.CreatedAt.UnixMicro() {
+			if s.Typename == "StatusContext" {
+				if prev, ok := statusTrackingMap[s.StatusContext.Context]; ok && s.StatusContext.CreatedAt.UnixMicro() < prev.StatusContext.CreatedAt.UnixMicro() {
+					continue
+				}
+				s2 := s
+				statusTrackingMap[s.StatusContext.Context] = &s2
+			}
+		}
+		for _, s := range c.Commit.CheckSuites.Nodes {
+			if s.WorkflowRun.Workflow.Name == "" {
+				continue
+			}
+			name := s.App.Id + s.WorkflowRun.Workflow.Name
+			if prev, ok := checkTrackingMap[name]; ok && s.CreatedAt.UnixMicro() < prev.CreatedAt.UnixMicro() {
 				continue
 			}
 			s2 := s
-			trackingMap[s.StatusContext.Context] = &s2
+			checkTrackingMap[name] = &s2
 		}
 	}
 	actionStatuses := make([]*ghpb.ActionStatus, 0)
-	for _, s := range trackingMap {
-		// TODO(jdhollen): Checks, too.
+	for _, s := range statusTrackingMap {
 		status := &ghpb.ActionStatus{}
 		status.Name = s.StatusContext.Context
-		status.Status = s.StatusContext.State
+		status.Status = StatusStateToStatus(s.StatusContext.State)
 		status.Url = s.StatusContext.TargetUrl
+		actionStatuses = append(actionStatuses, status)
+	}
+	for _, s := range checkTrackingMap {
+		status := &ghpb.ActionStatus{}
+		status.Name = s.WorkflowRun.Workflow.Name
+		status.Status = CheckStateToStatus(s.Status, s.Conclusion)
+		status.Url = s.Url
 		actionStatuses = append(actionStatuses, status)
 	}
 	slices.SortFunc(actionStatuses, func(a, b *ghpb.ActionStatus) int {

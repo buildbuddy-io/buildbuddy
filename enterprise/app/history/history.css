@@ -27,3 +27,27 @@
   margin-top: 16px;
   gap: 8px;
 }
+
+.history .actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history .actions button {
+  display: flex;
+  gap: 8px;
+  border-radius: 8px;
+  border: 1px solid #eee;
+  padding: 8px 16px;
+  background: transparent;
+  cursor: pointer;
+  align-items: center;
+}
+
+.history .actions svg {
+  color: #aaa;
+  width: 16px;
+  height: 16px;
+}

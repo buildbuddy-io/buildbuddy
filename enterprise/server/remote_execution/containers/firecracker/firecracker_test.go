@@ -473,7 +473,8 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
 		require.NoError(t, res.Error)
 
-		assert.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
+		require.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
+		require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
 
 		// Try pause, unpause, exec several times.
 		for i := 1; i <= 3; i++ {
@@ -493,6 +494,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 			require.NoError(t, res.Error)
 
 			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
+			require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
 		}
 	}
 }

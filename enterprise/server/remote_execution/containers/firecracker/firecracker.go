@@ -24,6 +24,7 @@ import (
 	_ "embed"
 
 	"github.com/armon/circbuf"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
@@ -347,6 +348,12 @@ type ExecutorConfig struct {
 	GuestAPIVersion    string
 }
 
+var (
+	// set by x_defs in BUILD file
+	initrdRunfilePath  string
+	vmlinuxRunfilePath string
+)
+
 // GetExecutorConfig computes the ExecutorConfig for this executor instance.
 //
 // WARNING: The given buildRootDir will be used as the jailer root dir. Because
@@ -356,11 +363,19 @@ type ExecutorConfig struct {
 // everything after "/tmp" is 65 characters, so 38 are left for the jailerRoot.
 func GetExecutorConfig(ctx context.Context, buildRootDir string) (*ExecutorConfig, error) {
 	bundle := vmsupport_bundle.Get()
-	initrdPath, err := putFileIntoDir(ctx, bundle, "enterprise/vmsupport/bin/initrd.cpio", buildRootDir, 0755)
+	initrdRunfileLocation, err := runfiles.Rlocation(initrdRunfilePath)
 	if err != nil {
 		return nil, err
 	}
-	kernelPath, err := putFileIntoDir(ctx, bundle, "enterprise/vmsupport/bin/vmlinux", buildRootDir, 0755)
+	initrdPath, err := putFileIntoDir(ctx, bundle, initrdRunfileLocation, buildRootDir, 0755)
+	if err != nil {
+		return nil, err
+	}
+	vmlinuxRunfileLocation, err := runfiles.Rlocation(vmlinuxRunfilePath)
+	if err != nil {
+		return nil, err
+	}
+	kernelPath, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation, buildRootDir, 0755)
 	if err != nil {
 		return nil, err
 	}
@@ -1126,6 +1141,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 // initScratchImage creates the empty scratch ext4 disk for the VM.
 func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string) error {
 	scratchDiskSizeBytes := ext4.MinDiskImageSizeBytes + minScratchDiskSizeBytes + c.vmConfig.ScratchDiskSizeMb*1e6
+	scratchDiskSizeBytes = alignToMultiple(scratchDiskSizeBytes, int64(os.Getpagesize()))
 	if err := ext4.MakeEmptyImage(ctx, path, scratchDiskSizeBytes); err != nil {
 		return err
 	}
@@ -1171,6 +1187,7 @@ func (c *FirecrackerContainer) resizeRootfs(ctx context.Context, cf *copy_on_wri
 		return status.WrapError(err, "get container image size")
 	}
 	newSize := curSize + minScratchDiskSizeBytes + c.vmConfig.ScratchDiskSizeMb*1e6
+	newSize = alignToMultiple(newSize, int64(os.Getpagesize()))
 	if _, err := cf.Resize(newSize); err != nil {
 		return status.WrapError(err, "resize root fs")
 	}
@@ -1193,8 +1210,10 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	if err := os.RemoveAll(ext4ImagePath); err != nil {
 		return status.WrapError(err, "failed to delete existing workspace disk image")
 	}
+	pageSize := int64(os.Getpagesize())
 	if workspaceDir == "" {
-		if err := ext4.MakeEmptyImage(ctx, ext4ImagePath, ext4.MinDiskImageSizeBytes); err != nil {
+		imageSize := alignToMultiple(ext4.MinDiskImageSizeBytes, pageSize)
+		if err := ext4.MakeEmptyImage(ctx, ext4ImagePath, imageSize); err != nil {
 			return err
 		}
 	} else {
@@ -1203,6 +1222,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 			return err
 		}
 		workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + *workspaceDiskSlackSpaceMB*1e6
+		workspaceDiskSizeBytes = alignToMultiple(workspaceDiskSizeBytes, int64(os.Getpagesize()))
 		if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes); err != nil {
 			return status.WrapError(err, "failed to convert workspace dir to ext4 image")
 		}

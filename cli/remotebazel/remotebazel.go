@@ -129,16 +129,26 @@ func determineRemote(repo *git.Repository) (*git.Remote, error) {
 
 	var remoteNames []string
 	for _, r := range remotes {
-		remoteNames = append(remoteNames, fmt.Sprintf("%s (%s)", r.Config().Name, r.Config().URLs[0]))
+		if len(r.Config().URLs) > 0 && r.Config().Name != "" {
+			remoteNames = append(remoteNames, fmt.Sprintf("%s (%s)", r.Config().Name, r.Config().URLs[0]))
+		}
+	}
+
+	if len(remoteNames) == 0 {
+		return nil, status.InvalidArgumentErrorf("invalid .git/config - no remote URLs")
 	}
 
 	selectedRemoteAndURL := ""
-	prompt := &survey.Select{
-		Message: "Select the git remote that will be used by the remote Bazel instance to fetch your repo:",
-		Options: remoteNames,
-	}
-	if err := survey.AskOne(prompt, &selectedRemoteAndURL); err != nil {
-		return nil, err
+	if len(remoteNames) == 1 {
+		selectedRemoteAndURL = remoteNames[0]
+	} else {
+		prompt := &survey.Select{
+			Message: "Select the git remote that will be used by the remote Bazel instance to fetch your repo:",
+			Options: remoteNames,
+		}
+		if err := survey.AskOne(prompt, &selectedRemoteAndURL); err != nil {
+			return nil, err
+		}
 	}
 
 	selectedRemote := strings.Split(selectedRemoteAndURL, " (")[0]
@@ -149,7 +159,7 @@ func determineRemote(repo *git.Repository) (*git.Remote, error) {
 
 	conf.Raw.Section(gitConfigSection).SetOption(gitConfigRemoteBazelRemote, selectedRemote)
 	if err := repo.SetConfig(conf); err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "invalid .git/config")
 	}
 
 	return remote, nil
@@ -632,9 +642,15 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return 0, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
 	}
 
+	gitToken := ""
+	if strings.Contains(repoConfig.URL, "github.com") {
+		gitToken = os.Getenv("GITHUB_TOKEN")
+	}
+
 	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
-			RepoUrl: repoConfig.URL,
+			RepoUrl:     repoConfig.URL,
+			AccessToken: gitToken,
 		},
 		RepoState: &rnpb.RunRequest_RepoState{
 			CommitSha: repoConfig.CommitSHA,

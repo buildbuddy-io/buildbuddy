@@ -226,30 +226,43 @@
   border-left: 2px solid #fafafa;
 }
 
-.repo-previews-title {
-  font-size: 1.5em;
-  font-weight: bold;
-  margin: 16px 16px 0 16px;
+.repo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  width: calc(100% - 200px);
+  height: calc(100% - 60px);
 }
 
-.repo-previews-section {
+.repo-empty .repo-options {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.repo-empty .repo-title {
+  font-size: 1.2em;
+  margin-bottom: 4px;
+}
+
+.repo-empty .repo-section {
   display: flex;
   width: 100%;
   flex-wrap: wrap;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.repo-preview {
-  width: calc(33% - 64px);
-  padding: 16px;
-  margin: 16px;
-  font-weight: bold;
-  border: 1px solid #eee;
-  border-radius: 16px;
-  flex-shrink: 0;
+.repo-empty .repo-link {
+  color: #2196f3;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.repo-preview img {
-  width: 100%;
+.repo-empty .repo-logo {
+  font-size: 2em;
+  font-weight: 600;
 }
 
 .request-review-button {

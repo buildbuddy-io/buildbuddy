@@ -3,7 +3,19 @@ import React from "react";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import router from "../../../app/router/router";
 import format from "../../../app/format/format";
-import { Clock, Hash, XCircle, PlayCircle, CheckCircle, Activity } from "lucide-react";
+import {
+  Clock,
+  Hash,
+  XCircle,
+  PlayCircle,
+  CheckCircle,
+  Activity,
+  CodeIcon,
+  Pencil,
+  Settings,
+  Network,
+} from "lucide-react";
+import capabilities from "../../../app/capabilities/capabilities";
 
 interface Props {
   invocationStat: invocation.InvocationStat;
@@ -106,6 +118,38 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
               {format.formatWithCommas(this.props.invocationStat.totalActions)} total actions
             </div>
           </div>
+          {this.props.type == invocation.AggType.REPO_URL_AGGREGATION_TYPE && capabilities.config.codeEditorEnabled && (
+            <div className="actions">
+              <button
+                onClick={(e) => {
+                  router.navigateTo("/code/" + format.formatGitUrl(this.props.invocationStat.name));
+                  e.stopPropagation();
+                }}>
+                <CodeIcon /> Open in code editor
+              </button>
+              <button
+                onClick={(e) => {
+                  router.navigateTo("/code/" + format.formatGitUrl(this.props.invocationStat.name) + "/.bazelrc");
+                  e.stopPropagation();
+                }}>
+                <Settings /> Edit .bazelrc
+              </button>
+              <button
+                onClick={(e) => {
+                  router.navigateTo("/code/" + format.formatGitUrl(this.props.invocationStat.name) + "/MODULE.bazel");
+                  e.stopPropagation();
+                }}>
+                <Network /> Edit MODULE.bazel
+              </button>
+              <button
+                onClick={(e) => {
+                  router.navigateTo("/code/" + format.formatGitUrl(this.props.invocationStat.name) + "/.bazelversion");
+                  e.stopPropagation();
+                }}>
+                <Pencil /> Edit .bazelversion
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );

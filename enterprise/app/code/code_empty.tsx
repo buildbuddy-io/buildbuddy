@@ -2,21 +2,11 @@ import React from "react";
 import rpcService from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import format from "../../../app/format/format";
-import { Code } from "lucide-react";
 
 interface State {
   repoStats: invocation.InvocationStat[];
   loading: boolean;
 }
-
-const RECOMMENDED_REPOS = [
-  "buildbuddy-io/buildbuddy",
-  "bazelbuild/bazel",
-  "bazelbuild/bazel-gazelle",
-  "abseil/abseil-cpp",
-  "tensorflow/tensorflow",
-  "cockroachdb/cockroach",
-];
 
 export default class CodeEmptyStateComponent extends React.Component {
   state: State = {
@@ -36,44 +26,48 @@ export default class CodeEmptyStateComponent extends React.Component {
       })
       .finally(() => this.setState({ loading: false }));
 
+    // TODO(siggisim): Get repos accessible through installations.
+    // rpcService.service.getGitHubAppInstallations({}).then((r) => {
+    //   console.log(r);
+    // });
+
+    // rpcService.service.getAccessibleGitHubRepos({}).then((r) => {
+    //   console.log(r);
+    // });
+
+    // rpcService.service.getLinkedGitHubRepos({}).then((r) => {
+    //   console.log(r);
+    // });
+
     return;
   }
 
   render() {
     return (
-      <div className="">
-        <div className="code-menu">
-          <div className="code-menu-logo">
-            <a href="/">
-              <img alt="BuildBuddy Code" src="/image/logo_dark.svg" className="logo" /> Code{" "}
-              <Code className="icon code-logo" />
-            </a>
+      <div className="repo-empty">
+        <div className="repo-options">
+          <div className="repo-logo">BuildBuddy Code</div>
+          <div className="repo-start">
+            <div className="repo-title">Start</div>
+            <div className="repo-section">
+              <a href="/repo/?mode=code" className="repo-link">
+                New repo
+              </a>
+            </div>
           </div>
-        </div>
-        <div className="repo-previews">
           {this.state.repoStats?.length > 0 && (
-            <>
-              <div className="repo-previews-title">Your Repos</div>
-              <div className="repo-previews-section">
-                {this.state.repoStats.map((repo) => this.renderRepo(format.formatGitUrl(repo.name)))}
+            <div className="repo-recent">
+              <div className="repo-title">Recent</div>
+              <div className="repo-section">
+                {this.state.repoStats.slice(0, 5).map((repo) => (
+                  <a href={`/code/${format.formatGitUrl(repo.name)}`} className="repo-link">
+                    {format.formatGitUrl(repo.name)}
+                  </a>
+                ))}
               </div>
-            </>
+            </div>
           )}
-          <div className="repo-previews-title">Recommended Repos</div>
-          <div className="repo-previews-section">{RECOMMENDED_REPOS.map(this.renderRepo)}</div>
         </div>
-      </div>
-    );
-  }
-
-  renderRepo(repo: string) {
-    return (
-      <div className="repo-preview">
-        <a href={`/code/${repo}`}>
-          <img
-            src={`https://opengraph.githubassets.com/678d0aac73c1525b882f63e6a2978a53b80d99d1788ddb16863183a38a66f98a/${repo}`}
-          />
-        </a>
       </div>
     );
   }

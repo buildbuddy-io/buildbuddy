@@ -1424,8 +1424,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_emicklei_go_restful_v3",
         importpath = "github.com/emicklei/go-restful/v3",
-        sum = "h1:rc42Y5YTp7Am7CS630D7JmhRjq4UlEUuEKfrDac4bSQ=",
-        version = "v3.10.1",
+        sum = "h1:rAQeMHw1c7zTmncogyy8VvRZwtkmkZ4FxERmMY4rD+g=",
+        version = "v3.11.0",
     )
     go_repository(
         name = "com_github_emirpasic_gods",
@@ -2437,8 +2437,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_gorilla_websocket",
         importpath = "github.com/gorilla/websocket",
-        sum = "h1:+/TMaTYc4QFitKJxsQ7Yye35DkWvkdLcvGKqM+x0Ufc=",
-        version = "v1.4.2",
+        sum = "h1:PPwGk2jz7EePpoHN/+ClbZu8SPxiqlu12wZP/3sWmnc=",
+        version = "v1.5.0",
     )
     go_repository(
         name = "com_github_gostaticanalysis_analysisutil",
@@ -5055,7 +5055,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
 
     # keep
     go_repository(
-        name = "com_gitlab_arm_research_smarter_device_manager",
+        name = "com_gitlab_arm_research_smarter_smarter_device_manager",
         build_directives = [
             "gazelle:resolve go google.golang.org/grpc @org_golang_google_grpc//:grpc",
         ],
@@ -6066,28 +6066,28 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "io_k8s_api",
         build_file_proto_mode = "disable_global",
         importpath = "k8s.io/api",
-        sum = "h1:emf74GIQMTik01Aum9dPP0gAypL8JTLl/lHa4V9RFSU=",
-        version = "v0.26.3",
+        sum = "h1:DAjwWX/9YT7NQD4INu49ROJuZAAAP/Ijki48GUPzxqw=",
+        version = "v0.29.1",
     )
     go_repository(
         name = "io_k8s_apimachinery",
         build_file_proto_mode = "disable_global",
         importpath = "k8s.io/apimachinery",
-        sum = "h1:dQx6PNETJ7nODU3XPtrwkfuubs6w7sX0M8n61zHIV/k=",
-        version = "v0.26.3",
+        sum = "h1:KY4/E6km/wLBguvCZv8cKTeOwwOBqFNjwJIdMkMbbRc=",
+        version = "v0.29.1",
     )
     go_repository(
         name = "io_k8s_apiserver",
         importpath = "k8s.io/apiserver",
-        sum = "h1:Pk8lmX4G14hYqJd1poHGC08G03nIHVqdJMR0SD3IH3o=",
-        version = "v0.26.2",
+        sum = "h1:e2wwHUfEmMsa8+cuft8MT56+16EONIEK8A/gpBSco+g=",
+        version = "v0.29.1",
     )
     go_repository(
         name = "io_k8s_client_go",
         build_file_proto_mode = "disable_global",
         importpath = "k8s.io/client-go",
-        sum = "h1:k1UY+KXfkxV2ScEL3gilKcF7761xkYsSD6BC9szIu8s=",
-        version = "v0.26.3",
+        sum = "h1:19B/+2NGEwnFLzt0uB5kNJnfTsbV8w6TgQRz9l7ti7A=",
+        version = "v0.29.1",
     )
     go_repository(
         name = "io_k8s_code_generator",
@@ -6098,14 +6098,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_k8s_component_base",
         importpath = "k8s.io/component-base",
-        sum = "h1:IfWgCGUDzrD6wLLgXEstJKYZKAFS2kO+rBRi0p3LqcI=",
-        version = "v0.26.2",
+        sum = "h1:MUimqJPCRnnHsskTTjKD+IC1EHBbRCVyi37IoFBrkYw=",
+        version = "v0.29.1",
     )
     go_repository(
         name = "io_k8s_cri_api",
         importpath = "k8s.io/cri-api",
-        sum = "h1:KWO+U8MfI9drXB/P4oU9VchaWYOlwDglJZVHWMpTT3Q=",
-        version = "v0.27.1",
+        sum = "h1:pQwYDahnAX9K8KtdV8PD1eeNexMJojEj1t/5kAMX61E=",
+        version = "v0.29.1",
     )
     go_repository(
         name = "io_k8s_gengo",
@@ -6116,8 +6116,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_k8s_klog_v2",
         importpath = "k8s.io/klog/v2",
-        sum = "h1:m4bYOKall2MmOiRaR1J+We67Do7vm9KiQVlT96lnHUw=",
-        version = "v2.90.1",
+        sum = "h1:U/Af64HJf7FcwMcXyKm2RPM22WZzyR7OSpYj5tg3cL0=",
+        version = "v2.110.1",
     )
     go_repository(
         name = "io_k8s_kube_openapi",
@@ -6149,14 +6149,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_k8s_sigs_json",
         importpath = "sigs.k8s.io/json",
-        sum = "h1:iXTIw73aPyC+oRdyqqvVJuloN1p0AC/kzH07hu3NE+k=",
-        version = "v0.0.0-20220713155537-f223a00ba0e2",
+        sum = "h1:EDPBXCAspyGV4jQlpZSudPeMmr1bNJefnuqLsRAsHZo=",
+        version = "v0.0.0-20221116044647-bc3834ca7abd",
     )
     go_repository(
         name = "io_k8s_sigs_structured_merge_diff_v4",
         importpath = "sigs.k8s.io/structured-merge-diff/v4",
-        sum = "h1:PRbqxJClWWYMNV1dhaG4NsibJbArud9kFxnAMREiWFE=",
-        version = "v4.2.3",
+        sum = "h1:150L+0vs/8DA78h1u02ooW1/fFq/Lwr+sGiqlzvrtq4=",
+        version = "v4.4.1",
     )
     go_repository(
         name = "io_k8s_sigs_yaml",
@@ -6167,8 +6167,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_k8s_utils",
         importpath = "k8s.io/utils",
-        sum = "h1:kmDqav+P+/5e1i9tFfHq1qcF3sOrDp+YEkVDAHu7Jwk=",
-        version = "v0.0.0-20230220204549-a5ecb0141aa5",
+        sum = "h1:sgn3ZU783SCgtaSJjpcVVlRqd6GSnlTLKgpAAttJvpI=",
+        version = "v0.0.0-20230726121419-3b25d923346b",
     )
     go_repository(
         name = "io_opencensus_go",
@@ -6745,6 +6745,30 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
         sha256 = "f03d44ecaac3878e3d19489e37caa4ca1dc57427b686a78a85065ea3c27ebe68",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/6.0.0/bazel-6.0.0-linux-x86_64"],
+    )
+    http_file(
+        name = "io_bazel_bazel-6.5.0-darwin-x86_64",
+        executable = True,
+        sha256 = "bbf9c2c03bac48e0514f46db0295027935535d91f6d8dcd960c53393559eab29",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-darwin-x86_64"],
+    )
+    http_file(
+        name = "io_bazel_bazel-6.5.0-linux-x86_64",
+        executable = True,
+        sha256 = "a40ac69263440761199fcb8da47ad4e3f328cbe79ffbf4ecc14e5ba252857307",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/6.5.0/bazel-6.5.0-linux-x86_64"],
+    )
+    http_file(
+        name = "io_bazel_bazel-7.1.0-darwin-x86_64",
+        executable = True,
+        sha256 = "52ad8d57c22e4f873c724473a09ecfd98966c3a2950e102a7bd7e8c612b8001c",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.1.0/bazel-7.1.0-darwin-x86_64"],
+    )
+    http_file(
+        name = "io_bazel_bazel-7.1.0-linux-x86_64",
+        executable = True,
+        sha256 = "62d62c699c1eb9f9be6a88030912a54d19fe45ae29329c7e5c53aba787492522",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/7.1.0/bazel-7.1.0-linux-x86_64"],
     )
     http_file(
         name = "io_bazel_bazelisk-1.17.0-darwin-amd64",

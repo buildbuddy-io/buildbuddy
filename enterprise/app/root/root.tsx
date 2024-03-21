@@ -40,7 +40,6 @@ const CodeComponent = React.lazy(() => import("../code/code"));
 import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
 import Modal from "../../../app/components/modal/modal";
-import NewTrendsComponent from "../trends/new_trends";
 import OrgAccessDeniedComponent from "../org/org_access_denied";
 import rpc_service from "../../../app/service/rpc_service";
 import { api_key } from "../../../proto/api_key_ts_proto";
@@ -371,12 +370,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   )}
                   {trends && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
-                      {capabilities.config.newTrendsUiEnabled && (
-                        <NewTrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
-                      )}
-                      {!capabilities.config.newTrendsUiEnabled && (
-                        <TrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
-                      )}
+                      <TrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
                     </Suspense>
                   )}
                   {usage && this.state.user && <UsageComponent user={this.state.user} />}

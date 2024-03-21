@@ -31,6 +31,9 @@ import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
 import BuildFileSidekick from "../sidekick/buildfile/buildfile";
 import error_service from "../../../app/errors/error_service";
 import { build } from "../../../proto/remote_execution_ts_proto";
+import OrgPicker from "../org_picker/org_picker";
+import capabilities from "../../../app/capabilities/capabilities";
+import router from "../../../app/router/router";
 
 interface Props {
   user: User;
@@ -592,14 +595,17 @@ export default class CodeComponent extends React.Component<Props, State> {
       ],
     })
       .then((response) => {
+        let prLink = capabilities.config.codeReviewEnabled
+          ? router.getReviewUrl(this.currentOwner(), this.currentRepo(), +response.pullNumber)
+          : response.url;
         this.updateState({
           requestingReview: false,
           reviewRequestModalVisible: false,
-          prLink: response.url,
+          prLink: prLink,
           prNumber: response.pullNumber,
           prBranch: response.ref,
         });
-        window.open(response.url, "_blank");
+        window.open(prLink, "_blank");
         console.log(response);
       })
       .catch((e) => {
@@ -1026,10 +1032,6 @@ export default class CodeComponent extends React.Component<Props, State> {
   // TODO(siggisim): Make sidebar look nice
   // TODO(siggisim): Make the diff view look nicer
   render() {
-    if (!this.currentRepo() && !this.isSingleFile()) {
-      return <CodeEmptyStateComponent />;
-    }
-
     setTimeout(() => {
       this.editor?.layout();
     }, 0);
@@ -1057,7 +1059,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               // todo show hash and size
               // todo show warning message for files larger than ~50mb
             )}
-            {!this.isSingleFile() && (
+            {!this.isSingleFile() && this.currentRepo() && (
               <>
                 <div className="code-menu-breadcrumbs-environment">
                   {/* <a href="#">my-workspace</a> /{" "} TODO: add workspace to breadcrumb */}
@@ -1103,6 +1105,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               </>
             )}
           </div>
+          <OrgPicker user={this.props.user} floating={true} inline={true} />
           {this.isSingleFile() && (
             <div className="code-menu-actions">
               <OutlinedButton
@@ -1129,7 +1132,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               </OutlinedButton>
             </div>
           )}
-          {!this.isSingleFile() && (
+          {!this.isSingleFile() && this.currentRepo() && (
             <div className="code-menu-actions">
               {this.state.changes.size > 0 && !this.state.prBranch && (
                 <OutlinedButton
@@ -1222,6 +1225,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               </div>
             )}
             <div className="code-viewer-container">
+              {!this.currentRepo() && !this.isSingleFile() && <CodeEmptyStateComponent />}
               <div className={`code-viewer ${showDiffView ? "hidden-viewer" : ""}`} ref={this.codeViewer} />
               <div className={`diff-viewer ${showDiffView ? "" : "hidden-viewer"}`} ref={this.diffViewer} />
             </div>
@@ -1429,10 +1433,14 @@ function stateReviver(key: string, value: any) {
     }
     if (value.dataType === "ModelMap") {
       return new Map(
-        value.value.map((e: { key: string; value: string }) => [
-          e.key,
-          monaco.editor.createModel(e.value, langFromPath(e.key), monaco.Uri.file(e.key)),
-        ])
+        value.value.map((e: { key: string; value: string }) => {
+          let existingModel = monaco.editor.getModel(monaco.Uri.file(e.key));
+          if (existingModel) {
+            existingModel.setValue(e.value);
+            return [e.key, existingModel];
+          }
+          return [e.key, monaco.editor.createModel(e.value, langFromPath(e.key), monaco.Uri.file(e.key))];
+        })
       );
     }
     if (value.dataType === "DiffModelMap") {
