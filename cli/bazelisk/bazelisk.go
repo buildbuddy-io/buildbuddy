@@ -74,7 +74,7 @@ func BazelInfo(requestInfos []string) (map[string]string, error) {
 	}
 	// Prevent Bazelisk `log.Printf` call to write directly to stderr
 	oldWriter := log.Writer()
-	log.SetOutput(stdout)
+	log.SetOutput(stderr)
 	defer log.SetOutput(oldWriter)
 
 	_, err := Run(bazelArgs, opts)
