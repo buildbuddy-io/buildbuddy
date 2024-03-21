@@ -6676,10 +6676,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
-        name = "com_github_buildbuddy_io_firecracker_firecracker-v1.4.0-20230720-cf5f56f",
-        build_file_content = 'exports_files(["firecracker-v1.4.0-20230720-cf5f56f", "jailer-v1.4.0-20230720-cf5f56f"])',
-        sha256 = "b36d9ad62ca467d2794635c4f19b0993c11bb46ed3b575037287964f9c82cc9b",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.4.0-20230720-cf5f56f.tgz"],
+        name = "com_github_firecracker_microvm_firecracker",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
+            'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
+        ]).format(release = "v1.7.0-x86_64"),
+        sha256 = "55bd3e6d599fdd108e36e52f9aee2319f06c18a90f2fa49b64e93fdf06f5ff53",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.7.0/firecracker-v1.7.0-x86_64.tgz"],
     )
     http_archive(
         name = "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
