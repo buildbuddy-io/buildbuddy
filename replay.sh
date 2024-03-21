@@ -5,3 +5,6 @@ bazel run enterprise/tools/replay_action -- \
   --source_executor=grpc://localhost:1985 \
   --target_executor=grpc://localhost:1985 \
   "$@"
+
+# To replay with podman:
+# --target_headers=x-buildbuddy-platform.workload-isolation-type=podman --target_headers=x-buildbuddy-platform.dockerNetwork=bridge

@@ -307,6 +307,7 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 		"--name",
 		c.name,
 		"--rm",
+		"--privileged",
 		"--cidfile",
 		c.cidFilePath(),
 		"--volume",
@@ -461,7 +462,46 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	if startResult.ExitCode != 0 {
 		return status.UnknownErrorf("podman start failed: exit code %d, stderr: %s", startResult.ExitCode, startResult.Stderr)
 	}
+
+	if err := c.startDockerd(ctx); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (c *podmanCommandContainer) startDockerd(ctx context.Context) error {
+	cmd := &repb.Command{
+		Arguments: []string{"dockerd", "--tls=false", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"},
+	}
+	go func() {
+		res := c.Exec(context.Background(), cmd, &interfaces.Stdio{
+			Stderr: os.Stderr,
+			Stdout: os.Stderr,
+		})
+		if res.Error != nil {
+			log.CtxErrorf(ctx, "Failed to start dockerd: %s", res.Error)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	for {
+		cmd := &repb.Command{
+			Arguments: []string{"docker", "--host=tcp://127.0.0.1:2375", "ps"},
+		}
+		res := c.Exec(ctx, cmd, &interfaces.Stdio{
+			Stderr: os.Stderr,
+			Stdout: os.Stderr,
+		})
+		if ctx.Err() != nil {
+			return status.UnavailableError("timed out waiting for dockerd to spin up")
+		}
+		if res.ExitCode != 0 {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		return nil
+	}
 }
 
 func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
