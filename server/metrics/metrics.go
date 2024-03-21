@@ -207,6 +207,10 @@ const (
 	// The Lookaside cache status: hit/miss.
 	LookasideCacheLookupStatus = "status"
 
+	// The reason an item was evicted from the lookaside cache.
+	// One of: "expired" or "size"
+	LookasideCacheEvictionReason = "eviction_reason"
+
 	// Distributed cache operation name, such as "FindMissing" or "Get".
 	DistributedCacheOperation = "op"
 
@@ -725,7 +729,9 @@ var (
 		Name:      "lookaside_cache_eviction_age_msec",
 		Buckets:   durationMsecBuckets(time.Millisecond, 15*time.Minute, 10),
 		Help:      "Age of items evicted from the cache, in **milliseconds**.",
-	}, []string{})
+	}, []string{
+		LookasideCacheEvictionReason,
+	})
 
 	// ## Remote execution metrics
 

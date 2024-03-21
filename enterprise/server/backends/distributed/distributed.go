@@ -55,6 +55,7 @@ var (
 
 	lookasideCacheSizeBytes = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 0, "If > 0 ; lookaside cache will be enabled")
 	lookasideCacheTTL       = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 15*time.Minute, "How long to hold stuff in the lookaside cache. Should be << atime_update_threshold")
+	maxLookasideEntryBytes  = flag.Int64("cache.distributed_cache.max_lookaside_entry_bytes", 10_000, "The biggest allowed entry size in the lookaside cache.")
 )
 
 const (
@@ -62,9 +63,6 @@ const (
 	// (40 bytes). So keeping around 100000 of these means an extra 10MB
 	// per peer.
 	maxHintedHandoffsPerPeer = 100000
-
-	// Max size of an entry that can be cached in the lookaside cache.
-	maxLookasideEntrySize = 100_000
 )
 
 type CacheConfig struct {
@@ -168,6 +166,17 @@ func parseConsistentHash(c string) (consistent_hash.HashFunction, error) {
 	}
 }
 
+func convertEvictionReason(r lru.EvictionReason) string {
+	switch r {
+	case lru.SizeEviction:
+		return "size"
+	case lru.ManualEviction:
+		return "age"
+	default:
+		return string(r)
+	}
+}
+
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
 // in a HTTP API and announcing its presence over redis to other distributed
 // cache nodes. Together, these distributed caches each maintain a consistent
@@ -222,7 +231,9 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 			MaxSize: config.LookasideCacheSizeBytes,
 			OnEvict: func(v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))
-				metrics.LookasideCacheEvictionAgeMsec.With(prometheus.Labels{}).Observe(float64(age.Milliseconds()))
+				metrics.LookasideCacheEvictionAgeMsec.With(prometheus.Labels{
+					metrics.LookasideCacheEvictionReason: convertEvictionReason(reason),
+				}).Observe(float64(age.Milliseconds()))
 			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
 				return int64(len(v.data) + 8)
@@ -332,6 +343,9 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	if !c.lookasideCacheEnabled() {
 		return
 	}
+	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
+		return
+	}
 	k, err := digest.ResourceNameFromProto(r).DownloadString()
 	if err != nil {
 		c.log.Debugf("Not setting lookaside entry: %s", err)
@@ -343,7 +357,9 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	}
 
 	c.lookasideMu.Lock()
-	c.lookaside.Add(k, entry)
+	if !c.lookaside.Contains(k) {
+		c.lookaside.Add(k, entry)
+	}
 	c.lookasideMu.Unlock()
 	c.log.Debugf("Set %q in lookaside cache", k)
 }
@@ -357,24 +373,33 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, error) {
 		c.log.Debugf("Not getting lookaside entry: %s", err)
 		return nil, err
 	}
+
 	c.lookasideMu.Lock()
+	found := false
 	entry, ok := c.lookaside.Get(k)
+	if ok {
+		if time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
+			// Remove the item from the LRU if it's expired.
+			c.lookaside.Remove(k)
+		} else {
+			found = true
+		}
+	}
 	c.lookasideMu.Unlock()
-	validEntry := ok && time.Since(time.UnixMilli(entry.createdAtMillis)) < *lookasideCacheTTL
 
 	lookupStatus := "miss"
-	if validEntry {
+	if found {
 		lookupStatus = "hit"
 	}
 	metrics.LookasideCacheLookupCount.With(prometheus.Labels{
 		metrics.LookasideCacheLookupStatus: lookupStatus,
 	}).Inc()
 
-	if !validEntry {
-		return nil, status.NotFoundError("no valid lookaside entry")
+	if found {
+		c.log.Debugf("Got %q from lookaside cache", k)
+		return entry.data, nil
 	}
-	c.log.Debugf("Got %q from lookaside cache", k)
-	return entry.data, nil
+	return nil, status.NotFoundError("no valid lookaside entry")
 }
 
 func (c *Cache) lookasideWriter(r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
@@ -395,7 +420,7 @@ func (c *Cache) teeReadCloser(r *rspb.ResourceName, rc io.ReadCloser) io.ReadClo
 	if !c.lookasideCacheEnabled() {
 		return rc
 	}
-	if r.GetDigest().GetSizeBytes() > maxLookasideEntrySize {
+	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
 		return rc
 	}
 	lwc, err := c.lookasideWriter(r)
