@@ -309,20 +309,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
-                    name: "successful builds",
-                    extractValue: (tsMillis) => +(this.getStat(tsMillis).successfulBuilds ?? 0),
-                    formatHoverValue: (value) => (value || 0) + " successful builds",
-                    onClick: this.onBarClicked.bind(this, "", ""),
-                    stackId: "builds",
-                    color: ChartColor.GREEN,
-                  },
-                  {
                     name: "failed builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).failedBuilds ?? 0),
                     formatHoverValue: (value) => (value || 0) + " failed builds",
                     onClick: this.onBarClicked.bind(this, "", ""),
                     stackId: "builds",
                     color: ChartColor.RED,
+                  },
+                  {
+                    name: "successful builds",
+                    extractValue: (tsMillis) => +(this.getStat(tsMillis).successfulBuilds ?? 0),
+                    formatHoverValue: (value) => (value || 0) + " successful builds",
+                    onClick: this.onBarClicked.bind(this, "", ""),
+                    stackId: "builds",
+                    color: ChartColor.GREEN,
                   },
                   {
                     name: "average build duration",
