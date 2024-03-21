@@ -705,7 +705,6 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 		return nil, err
 	}
 
-	var createdKey *tables.APIKey
 	// Check that the group has user-owned keys enabled.
 	g := &tables.Group{}
 	err = d.h.NewQuery(ctx, "authdb_check_user_owned_keys_enabled").Raw(
@@ -725,18 +724,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 		Label:        label,
 		Capabilities: capabilities.ToInt(caps),
 	}
-	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		key, err := d.createAPIKey(ctx, tx, ak)
-		if err != nil {
-			return err
-		}
-		createdKey = key
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return createdKey, nil
+	return d.createAPIKey(ctx, d.h, ak)
 }
 
 func (d *AuthDB) getAPIKey(ctx context.Context, h interfaces.DB, apiKeyID string) (*tables.APIKey, error) {
