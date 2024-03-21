@@ -412,7 +412,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
             tab={this.props.tab}
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
-            executionsEnabled={this.state.model.getIsRBEEnabled() || this.state.model.isWorkflowInvocation()}
+            executionsEnabled={
+              this.state.model.getIsRBEEnabled() ||
+              this.state.model.isWorkflowInvocation() ||
+              this.state.model.isHostedBazelInvocation()
+            }
             hasSuggestions={suggestions.length > 0}
           />
 
