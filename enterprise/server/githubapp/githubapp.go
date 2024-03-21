@@ -1933,7 +1933,7 @@ type combinedContext struct {
 
 type checkSuite struct {
 	App struct {
-		Id string
+		Id   string
 		Name string
 	}
 	CheckRuns struct {
@@ -2123,22 +2123,22 @@ func statusStateToStatus(s githubv4.StatusState) ghpb.ActionStatusState {
 
 func combineStatuses(a ghpb.ActionStatusState, b ghpb.ActionStatusState) ghpb.ActionStatusState {
 	if a == ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING || b == ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING {
-		return ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING;
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING
 	} else if a == ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE || b == ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE {
-		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE;
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
 	} else if a == ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL || b == ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL {
-		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL;
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL
 	} else if a == ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS || b == ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS {
-		return ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS;
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS
 	}
 	return ghpb.ActionStatusState_ACTION_STATUS_STATE_UNKNOWN
 }
 
 type combinedChecksForApp struct {
-	Name string;
-	Count int;
-	Status ghpb.ActionStatusState;
-	URL string;
+	Name   string
+	Count  int
+	Status ghpb.ActionStatusState
+	URL    string
 }
 
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
@@ -2286,39 +2286,39 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	// run hasn't fired instead of hiding them.
 	if len(pr.Commits.Nodes) > 0 {
 		lastCommit := pr.Commits.Nodes[len(pr.Commits.Nodes)-1]
-			for _, s := range lastCommit.Commit.Status.CombinedContexts.Nodes {
-				if s.Typename == "StatusContext" {
-					if prev, ok := statusTrackingMap[s.StatusContext.Context]; ok && s.StatusContext.CreatedAt.UnixMicro() < prev.StatusContext.CreatedAt.UnixMicro() {
-						continue
-					}
-					s2 := s
-					statusTrackingMap[s.StatusContext.Context] = &s2
+		for _, s := range lastCommit.Commit.Status.CombinedContexts.Nodes {
+			if s.Typename == "StatusContext" {
+				if prev, ok := statusTrackingMap[s.StatusContext.Context]; ok && s.StatusContext.CreatedAt.UnixMicro() < prev.StatusContext.CreatedAt.UnixMicro() {
+					continue
 				}
+				s2 := s
+				statusTrackingMap[s.StatusContext.Context] = &s2
 			}
-			// TODO(jdhollen): Request access to Workflows in Github App, and show
-			// GH workflow names instead of just the app name.
-			for _, s := range lastCommit.Commit.CheckSuites.Nodes {
-				// GitHub creates CheckSuites for all apps that listen for
-				// CheckSuite hooks, and can't know if they'll ever create a
-				// CheckRun--let's just show the ones that did.
-				if s.CheckRuns.TotalCount == 0 {
-					continue;
-				}
-				name := s.App.Id + s.App.Name
-				v, ok := checkTrackingMap[name]
-				if (!ok) {
-					v = &combinedChecksForApp{
-						Count: 1,
-						Name: s.App.Name,
-						Status: checkStateToStatus(s.Status, s.Conclusion),
-						URL: pr.ChecksURL,
-					}
-				} else {
-					v.Count = v.Count + 1;
-					v.Status = combineStatuses(v.Status, checkStateToStatus(s.Status, s.Conclusion))
-				}
-				checkTrackingMap[name] = v
+		}
+		// TODO(jdhollen): Request access to Workflows in Github App, and show
+		// GH workflow names instead of just the app name.
+		for _, s := range lastCommit.Commit.CheckSuites.Nodes {
+			// GitHub creates CheckSuites for all apps that listen for
+			// CheckSuite hooks, and can't know if they'll ever create a
+			// CheckRun--let's just show the ones that did.
+			if s.CheckRuns.TotalCount == 0 {
+				continue
 			}
+			name := s.App.Id + s.App.Name
+			v, ok := checkTrackingMap[name]
+			if !ok {
+				v = &combinedChecksForApp{
+					Count:  1,
+					Name:   s.App.Name,
+					Status: checkStateToStatus(s.Status, s.Conclusion),
+					URL:    pr.ChecksURL,
+				}
+			} else {
+				v.Count = v.Count + 1
+				v.Status = combineStatuses(v.Status, checkStateToStatus(s.Status, s.Conclusion))
+			}
+			checkTrackingMap[name] = v
+		}
 	}
 	actionStatuses := make([]*ghpb.ActionStatus, 0)
 	for _, s := range statusTrackingMap {
