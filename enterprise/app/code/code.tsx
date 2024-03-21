@@ -32,6 +32,8 @@ import BuildFileSidekick from "../sidekick/buildfile/buildfile";
 import error_service from "../../../app/errors/error_service";
 import { build } from "../../../proto/remote_execution_ts_proto";
 import OrgPicker from "../org_picker/org_picker";
+import capabilities from "../../../app/capabilities/capabilities";
+import router from "../../../app/router/router";
 
 interface Props {
   user: User;
@@ -593,14 +595,17 @@ export default class CodeComponent extends React.Component<Props, State> {
       ],
     })
       .then((response) => {
+        let prLink = capabilities.config.codeReviewEnabled
+          ? router.getReviewUrl(this.currentOwner(), this.currentRepo(), +response.pullNumber)
+          : response.url;
         this.updateState({
           requestingReview: false,
           reviewRequestModalVisible: false,
-          prLink: response.url,
+          prLink: prLink,
           prNumber: response.pullNumber,
           prBranch: response.ref,
         });
-        window.open(response.url, "_blank");
+        window.open(prLink, "_blank");
         console.log(response);
       })
       .catch((e) => {
