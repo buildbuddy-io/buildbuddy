@@ -4,7 +4,7 @@ import * as format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
 import { stats } from "../../../proto/stats_ts_proto";
-import TrendsChartComponent from "./trends_chart";
+import TrendsChartComponent, { ChartColor } from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
 import PercentilesChartComponent from "./percentile_chart";
 import TrendsSummaryCard from "./summary_card";
@@ -309,10 +309,20 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
-                    name: "builds",
-                    extractValue: (tsMillis) => +(this.getStat(tsMillis).totalNumBuilds ?? 0),
-                    formatHoverValue: (value) => (value || 0) + " builds",
+                    name: "failed builds",
+                    extractValue: (tsMillis) => +(this.getStat(tsMillis).failedBuilds ?? 0),
+                    formatHoverValue: (value) => (value || 0) + " failed builds",
                     onClick: this.onBarClicked.bind(this, "", ""),
+                    stackId: "builds",
+                    color: ChartColor.RED,
+                  },
+                  {
+                    name: "successful builds",
+                    extractValue: (tsMillis) => +(this.getStat(tsMillis).successfulBuilds ?? 0),
+                    formatHoverValue: (value) => (value || 0) + " successful builds",
+                    onClick: this.onBarClicked.bind(this, "", ""),
+                    stackId: "builds",
+                    color: ChartColor.GREEN,
                   },
                   {
                     name: "average build duration",

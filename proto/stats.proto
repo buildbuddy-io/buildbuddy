@@ -81,7 +81,7 @@ message TrendQuery {
   repeated string tags = 16;
 }
 
-// Next tag: 28
+// Next tag: 31
 message TrendStat {
   // When specified, this contains the (local) date that these stats are
   // aggregated on in YYYY-MM-DD format.  This field will not be set when
@@ -143,6 +143,10 @@ message TrendStat {
 
   // The sum of the cpu time saved.
   int64 total_cpu_micros_saved = 26;
+
+  int64 successful_builds = 28;
+  int64 failed_builds = 29;
+  int64 other_builds = 30;
 }
 
 message Summary {

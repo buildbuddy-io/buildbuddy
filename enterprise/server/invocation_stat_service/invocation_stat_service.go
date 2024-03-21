@@ -259,6 +259,9 @@ func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSett
 
 	q = q + `
 	    COUNT(1) AS total_num_builds,
+	    SUM(CASE WHEN success AND invocation_status = 1 THEN 1 ELSE 0 END) as successful_builds,
+	    SUM(CASE WHEN NOT success AND invocation_status = 1 THEN 1 ELSE 0 END) as failed_builds,
+	    SUM(CASE WHEN invocation_status <> 1 THEN 1 ELSE 0 END) as other_builds,
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,
 	    SUM(CASE WHEN duration_usec > 0 THEN 1 ELSE 0 END) as completed_invocation_count,
 	    COUNT(DISTINCT user) as user_count,
@@ -291,6 +294,9 @@ func (i *InvocationStatService) flattenTrendsQuery(innerQuery string) string {
 	}
 	return q + `
 	total_num_builds,
+	successful_builds,
+	failed_builds,
+	other_builds,
 	total_build_time_usec,
 	completed_invocation_count,
 	user_count,

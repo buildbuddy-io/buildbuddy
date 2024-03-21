@@ -56,12 +56,21 @@
   font-weight: 600;
 }
 
-.trends-clickable-bar-primary:hover {
+.trends-clickable-bar:hover,
+.trends-clickable-bar.green:hover {
   fill: #9ccc65;
 }
 
-.trends-clickable-bar-secondary:hover {
-  fill: #5bc4f5;
+.trends-clickable-bar.red:hover {
+  fill: #e57373;
+}
+
+.trends-clickable-bar.grey:hover {
+  fill: #ccc;
+}
+
+.trends-clickable-bar.blue:hover {
+  fill: #29b6f6;
 }
 
 .trends svg.recharts-surface {
