@@ -152,12 +152,15 @@ func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecret
 
 	newSecret := false
 	err = dbHandle.Transaction(ctx, func(tx interfaces.DB) error {
+		// TODO(zoey): remove this SELECT and replace with INSERT
+		// that does nothing on conflict and then run UPDATE if zero
+		// rows are affected.
 		var secret tables.Secret
 		err := tx.NewQuery(ctx, "secrets_get_for_update)").Raw(`
 			SELECT * 
 			FROM "Secrets" 
 			WHERE group_id = ? AND name = ?
-			`+dbHandle.SelectForUpdateModifier(), u.GetGroupID(), req.GetSecret().GetName()).Take(secret)
+			`+dbHandle.SelectForUpdateModifier(), u.GetGroupID(), req.GetSecret().GetName()).Take(&secret)
 		existingSecret := true
 		if err != nil {
 			if db.IsRecordNotFound(err) {
