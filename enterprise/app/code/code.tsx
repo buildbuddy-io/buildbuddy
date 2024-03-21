@@ -1105,6 +1105,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               </>
             )}
           </div>
+          <OrgPicker user={this.props.user} floating={true} inline={true} />
           {this.isSingleFile() && (
             <div className="code-menu-actions">
               <OutlinedButton
@@ -1131,7 +1132,6 @@ export default class CodeComponent extends React.Component<Props, State> {
               </OutlinedButton>
             </div>
           )}
-          <OrgPicker user={this.props.user} floating={true} inline={true} />
           {!this.isSingleFile() && this.currentRepo() && (
             <div className="code-menu-actions">
               {this.state.changes.size > 0 && !this.state.prBranch && (
