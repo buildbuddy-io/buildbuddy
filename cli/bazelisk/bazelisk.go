@@ -66,12 +66,14 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 func BazelInfo(requestInfos []string) (map[string]string, error) {
 	bazelArgs := append([]string{"info"}, requestInfos...)
 	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
 	opts := &RunOpts{
 		Stdout: stdout,
+		Stderr: stderr,
 	}
 	_, err := Run(bazelArgs, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to run `bazel info`: %w", err)
+		return nil, fmt.Errorf("failed to run `bazel info`: %w %s", err, stderr.String())
 	}
 
 	result := make(map[string]string, len(requestInfos))
