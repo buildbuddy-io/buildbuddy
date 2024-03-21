@@ -88,8 +88,8 @@ type hintedHandoffOrder struct {
 }
 
 type lookasideCacheEntry struct {
-	expiresAfterNanos int64
-	data              []byte
+	createdAtMillis int64
+	data            []byte
 }
 
 func (o *hintedHandoffOrder) String() string {
@@ -109,7 +109,7 @@ type peerInfo struct {
 type Cache struct {
 	local                interfaces.Cache
 	log                  log.Logger
-	lookasideMu          *sync.RWMutex
+	lookasideMu          *sync.Mutex
 	lookaside            interfaces.LRU[lookasideCacheEntry]
 	peerMetadata         map[string]*peerInfo
 	hintedHandoffsMu     *sync.RWMutex
@@ -200,7 +200,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	}
 	dc := &Cache{
 		local:               c,
-		lookasideMu:         &sync.RWMutex{},
+		lookasideMu:         &sync.Mutex{},
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", config.ListenAddr)),
 		config:              config,
 		cacheProxy:          cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
@@ -220,6 +220,10 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	if config.LookasideCacheSizeBytes > 0 {
 		l, err := lru.NewLRU[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
 			MaxSize: config.LookasideCacheSizeBytes,
+			OnEvict: func(v lookasideCacheEntry, reason lru.EvictionReason) {
+				age := time.Since(time.UnixMilli(v.createdAtMillis))
+				metrics.LookasideCacheEvictionAgeMsec.With(prometheus.Labels{}).Observe(float64(age.Milliseconds()))
+			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
 				return int64(len(v.data) + 8)
 			},
@@ -334,8 +338,8 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 		return
 	}
 	entry := lookasideCacheEntry{
-		expiresAfterNanos: time.Now().Add(*lookasideCacheTTL).UnixNano(),
-		data:              data,
+		createdAtMillis: time.Now().UnixMilli(),
+		data:            data,
 	}
 
 	c.lookasideMu.Lock()
@@ -353,10 +357,20 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, error) {
 		c.log.Debugf("Not getting lookaside entry: %s", err)
 		return nil, err
 	}
-	c.lookasideMu.RLock()
+	c.lookasideMu.Lock()
 	entry, ok := c.lookaside.Get(k)
-	c.lookasideMu.RUnlock()
-	if !ok || time.Now().UnixNano() > entry.expiresAfterNanos {
+	c.lookasideMu.Unlock()
+	validEntry := ok && time.Since(time.UnixMilli(entry.createdAtMillis)) < *lookasideCacheTTL
+
+	lookupStatus := "miss"
+	if validEntry {
+		lookupStatus = "hit"
+	}
+	metrics.LookasideCacheLookupCount.With(prometheus.Labels{
+		metrics.LookasideCacheLookupStatus: lookupStatus,
+	}).Inc()
+
+	if !validEntry {
 		return nil, status.NotFoundError("no valid lookaside entry")
 	}
 	c.log.Debugf("Got %q from lookaside cache", k)

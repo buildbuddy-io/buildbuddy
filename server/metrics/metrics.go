@@ -204,6 +204,9 @@ const (
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
 
+	// The Lookaside cache status: hit/miss.
+	LookasideCacheLookupStatus = "status"
+
 	// Distributed cache operation name, such as "FindMissing" or "Get".
 	DistributedCacheOperation = "op"
 
@@ -704,6 +707,25 @@ var (
 		Name:      "tree_cache_set_count",
 		Help:      "Total number of TreeCache sets.",
 	})
+
+	LookasideCacheLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "lookaside_cache_lookup_count",
+		Help:      "Total number of Lookaside Cache lookups.",
+	}, []string{
+		LookasideCacheLookupStatus,
+	})
+
+	// This metric is in milliseconds because Grafana heatmaps don't display
+	// microsecond durations nicely when they can contain large durations.
+	LookasideCacheEvictionAgeMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "lookaside_cache_eviction_age_msec",
+		Buckets:   durationMsecBuckets(time.Millisecond, 15*time.Minute, 10),
+		Help:      "Age of items evicted from the cache, in **milliseconds**.",
+	}, []string{})
 
 	// ## Remote execution metrics
 
