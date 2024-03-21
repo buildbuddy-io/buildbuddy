@@ -166,6 +166,7 @@ func parseConsistentHash(c string) (consistent_hash.HashFunction, error) {
 	}
 }
 
+// Converts an LRU eviction reason into a metrics.LookasideCacheEvictionReason.
 func convertEvictionReason(r lru.EvictionReason) string {
 	switch r {
 	case lru.SizeEviction:
@@ -236,6 +237,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 				}).Observe(float64(age.Milliseconds()))
 			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
+				// []byte size + 8 bytes for the int64 timestamp.
 				return int64(len(v.data) + 8)
 			},
 		})
