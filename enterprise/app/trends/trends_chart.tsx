@@ -24,6 +24,7 @@ interface ChartDataSeries {
   isLine?: boolean;
   usesSecondaryAxis?: boolean;
   stackId?: string;
+  color?: ChartColor;
 }
 
 interface ChartYAxis {
@@ -55,6 +56,27 @@ interface TrendsChartTooltipProps extends TooltipProps<any, any> {
   labelFormatter: (datum: any) => string;
   shouldRender: () => boolean;
   dataSeries: ChartDataSeries[];
+}
+
+export enum ChartColor {
+  GREEN = "#8BC34A",
+  RED = "#F44336",
+  BLUE = "#03A9F4",
+  GREY = "#AAAAAA",
+}
+
+function chartColorToCssClass(c: ChartColor): string {
+  switch (c) {
+    case ChartColor.BLUE:
+      return "blue";
+    case ChartColor.GREY:
+      return "grey";
+    case ChartColor.RED:
+      return "red";
+    case ChartColor.GREEN:
+      return "green";
+  }
+  return "";
 }
 
 function TrendsChartTooltip({ active, payload, labelFormatter, shouldRender, dataSeries }: TrendsChartTooltipProps) {
@@ -135,21 +157,22 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
           dot={false}
           dataKey={ds.extractValue}
           isAnimationActive={false}
-          stroke="#03A9F4"
+          stroke={ds.color ?? ChartColor.BLUE}
         />
       );
     }
 
+    const color = ds.color ?? ChartColor.GREEN;
+
     return (
       <Bar
-        className={
-          ds.onClick ? (ds.usesSecondaryAxis ? "trends-clickable-bar-secondary" : "trends-clickable-bar-primary") : ""
-        }
+        className={ds.onClick ? "trends-clickable-bar " + chartColorToCssClass(color) : ""}
         yAxisId={axis}
         name={ds.name}
         dataKey={ds.extractValue}
         isAnimationActive={false}
-        fill="#8BC34A">
+        stackId={ds.stackId}
+        fill={color}>
         {this.props.data.map((date, index) => (
           <Cell
             cursor={ds.onClick ? "pointer" : "default"}
