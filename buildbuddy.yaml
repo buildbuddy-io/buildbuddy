@@ -10,17 +10,6 @@ actions:
           - "*"
     bazel_commands:
       - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
-  - name: Test with static
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    bazel_commands:
-      - test //... --config=linux-workflows --config=race --config=static --test_tag_filters=-performance,-webdriver,-docker,-bare
   - name: Check style
     container_image: ubuntu-20.04
     triggers:
@@ -110,7 +99,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --host_platform=//:many_layered_image --config=linux-workflows --config=race --config=static --test_tag_filters=-performance,-webdriver,-docker,-bare
+      - test //... --host_platform=//:many_layered_image --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
 
 plugins:
   - path: cli/plugins/go-deps
