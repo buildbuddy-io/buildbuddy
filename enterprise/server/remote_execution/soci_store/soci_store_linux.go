@@ -278,9 +278,11 @@ func streamingStoreArg(path string) string {
 
 func getArtifacts(ctx context.Context, client socipb.SociArtifactStoreClient, env environment.Env, image string, credentials oci.Credentials) error {
 	startTime := time.Now()
-	defer metrics.PodmanGetSociArtifactsLatencyUsec.
-		With(prometheus.Labels{metrics.ContainerImageTag: image}).
-		Observe(float64(time.Since(startTime).Microseconds()))
+	defer func() {
+		metrics.PodmanGetSociArtifactsLatencyUsec.
+			With(prometheus.Labels{metrics.ContainerImageTag: image}).
+			Observe(float64(time.Since(startTime).Microseconds()))
+	}()
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, env)
 	if err != nil {
