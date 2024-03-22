@@ -1934,12 +1934,11 @@ type combinedContext struct {
 
 type checkSuite struct {
 	App struct {
-		Id string
+		Id   string
+		Name string
 	}
-	WorkflowRun struct {
-		Workflow struct {
-			Name string
-		}
+	CheckRuns struct {
+		TotalCount int
 	}
 	CreatedAt  time.Time
 	Status     githubv4.CheckStatusState
@@ -1979,6 +1978,7 @@ type prDetailsQuery struct {
 			ReviewDecision githubv4.PullRequestReviewDecision
 			Merged         bool
 			URL            string `graphql:"url"`
+			ChecksURL      string `graphql:"checksUrl"`
 			HeadRefName    string
 			TimelineItems  struct {
 				Nodes []timelineItem
@@ -2079,7 +2079,7 @@ func isBot(a *actor) bool {
 	return a.Typename == "Bot"
 }
 
-func CheckStateToStatus(s githubv4.CheckStatusState, c githubv4.CheckConclusionState) ghpb.ActionStatusState {
+func checkStateToStatus(s githubv4.CheckStatusState, c githubv4.CheckConclusionState) ghpb.ActionStatusState {
 	if s != githubv4.CheckStatusStateCompleted {
 		return ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING
 	}
@@ -2106,7 +2106,7 @@ func CheckStateToStatus(s githubv4.CheckStatusState, c githubv4.CheckConclusionS
 	return ghpb.ActionStatusState_ACTION_STATUS_STATE_UNKNOWN
 }
 
-func StatusStateToStatus(s githubv4.StatusState) ghpb.ActionStatusState {
+func statusStateToStatus(s githubv4.StatusState) ghpb.ActionStatusState {
 	switch s {
 	case githubv4.StatusStateError:
 		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
@@ -2120,6 +2120,26 @@ func StatusStateToStatus(s githubv4.StatusState) ghpb.ActionStatusState {
 		return ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING
 	}
 	return ghpb.ActionStatusState_ACTION_STATUS_STATE_UNKNOWN
+}
+
+func combineStatuses(a ghpb.ActionStatusState, b ghpb.ActionStatusState) ghpb.ActionStatusState {
+	if a == ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING || b == ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING {
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_PENDING
+	} else if a == ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE || b == ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE {
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_FAILURE
+	} else if a == ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL || b == ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL {
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_NEUTRAL
+	} else if a == ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS || b == ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS {
+		return ghpb.ActionStatusState_ACTION_STATUS_STATE_SUCCESS
+	}
+	return ghpb.ActionStatusState_ACTION_STATUS_STATE_UNKNOWN
+}
+
+type combinedChecksForApp struct {
+	Name   string
+	Count  int
+	Status ghpb.ActionStatusState
+	URL    string
 }
 
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
@@ -2262,9 +2282,12 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	}
 
 	statusTrackingMap := make(map[string]*combinedContext, 0)
-	checkTrackingMap := make(map[string]*checkSuite, 0)
-	for _, c := range pr.Commits.Nodes {
-		for _, s := range c.Commit.Status.CombinedContexts.Nodes {
+	checkTrackingMap := make(map[string]*combinedChecksForApp, 0)
+	// TODO(jdhollen): show previous checks + status as "outdated" when a new
+	// run hasn't fired instead of hiding them.
+	if len(pr.Commits.Nodes) > 0 {
+		lastCommit := pr.Commits.Nodes[len(pr.Commits.Nodes)-1]
+		for _, s := range lastCommit.Commit.Status.CombinedContexts.Nodes {
 			if s.Typename == "StatusContext" {
 				if prev, ok := statusTrackingMap[s.StatusContext.Context]; ok && s.StatusContext.CreatedAt.UnixMicro() < prev.StatusContext.CreatedAt.UnixMicro() {
 					continue
@@ -2273,31 +2296,44 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 				statusTrackingMap[s.StatusContext.Context] = &s2
 			}
 		}
-		for _, s := range c.Commit.CheckSuites.Nodes {
-			if s.WorkflowRun.Workflow.Name == "" {
+		// TODO(jdhollen): Request access to Workflows in Github App, and show
+		// GH workflow names instead of just the app name.
+		for _, s := range lastCommit.Commit.CheckSuites.Nodes {
+			// GitHub creates CheckSuites for all apps that listen for
+			// CheckSuite hooks, and can't know if they'll ever create a
+			// CheckRun--let's just show the ones that did.
+			if s.CheckRuns.TotalCount == 0 {
 				continue
 			}
-			name := s.App.Id + s.WorkflowRun.Workflow.Name
-			if prev, ok := checkTrackingMap[name]; ok && s.CreatedAt.UnixMicro() < prev.CreatedAt.UnixMicro() {
-				continue
+			name := s.App.Id + s.App.Name
+			v, ok := checkTrackingMap[name]
+			if !ok {
+				v = &combinedChecksForApp{
+					Count:  1,
+					Name:   s.App.Name,
+					Status: checkStateToStatus(s.Status, s.Conclusion),
+					URL:    pr.ChecksURL,
+				}
+			} else {
+				v.Count = v.Count + 1
+				v.Status = combineStatuses(v.Status, checkStateToStatus(s.Status, s.Conclusion))
 			}
-			s2 := s
-			checkTrackingMap[name] = &s2
+			checkTrackingMap[name] = v
 		}
 	}
 	actionStatuses := make([]*ghpb.ActionStatus, 0)
 	for _, s := range statusTrackingMap {
 		status := &ghpb.ActionStatus{}
 		status.Name = s.StatusContext.Context
-		status.Status = StatusStateToStatus(s.StatusContext.State)
+		status.Status = statusStateToStatus(s.StatusContext.State)
 		status.Url = s.StatusContext.TargetUrl
 		actionStatuses = append(actionStatuses, status)
 	}
 	for _, s := range checkTrackingMap {
 		status := &ghpb.ActionStatus{}
-		status.Name = s.WorkflowRun.Workflow.Name
-		status.Status = CheckStateToStatus(s.Status, s.Conclusion)
-		status.Url = s.Url
+		status.Name = fmt.Sprintf("%s (%d actions)", s.Name, s.Count)
+		status.Status = s.Status
+		status.Url = s.URL
 		actionStatuses = append(actionStatuses, status)
 	}
 	slices.SortFunc(actionStatuses, func(a, b *ghpb.ActionStatus) int {
