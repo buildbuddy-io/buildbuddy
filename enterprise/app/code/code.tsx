@@ -76,6 +76,11 @@ interface State {
   contextMenuFile?: github.TreeNode;
 }
 
+// When upgrading monaco, make sure to run
+// cp node_modules/monaco-editor/min/vs/editor/editor.main.css enterprise/app/code/monaco.css
+// and replace ../base/browser/ui/codicons/codicon/codicon.ttf
+// with https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs/base/browser/ui/codicons/codicon/codicon.ttf
+const MONACO_VERSION = "0.47.0";
 const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -297,6 +302,8 @@ export default class CodeComponent extends React.Component<Props, State> {
           this.state.mergeConflicts.get(this.currentPath())!,
           undefined
         );
+      } else if (this.isDiffView()) {
+        this.handleViewDiffClicked(this.currentPath());
       } else {
         this.editor.setModel(this.state.fullPathToModelMap.get(this.currentPath()) || null);
       }
@@ -765,6 +772,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   handleRevertClicked(path: string, event: React.MouseEvent<HTMLSpanElement, MouseEvent>) {
+    window.location.hash = "";
     this.state.changes.delete(path);
     if (this.state.originalFileContents.has(path)) {
       this.state.fullPathToModelMap.get(path)?.setValue(this.state.originalFileContents.get(path) || "");
@@ -899,11 +907,8 @@ export default class CodeComponent extends React.Component<Props, State> {
         }
         let fileContents = textDecoder.decode(response.content);
         let editedModel = this.state.fullPathToModelMap.get(fullPath)!;
-        let uri = monaco.Uri.file(`${fullPath}-${sha}`);
-        let latestModel = monaco.editor.getModel(uri);
-        if (!latestModel) {
-          latestModel = monaco.editor.createModel(fileContents, langFromPath(uri.path), uri);
-        }
+        let uri = monaco.Uri.file(`${sha}-${fullPath}`);
+        let latestModel = getOrCreateModel(uri.path, fileContents);
         let diffModel = { original: latestModel, modified: editedModel };
         this.diffEditor.setModel(diffModel);
         this.state.fullPathToDiffModelMap.set(fullPath, diffModel);
@@ -913,6 +918,22 @@ export default class CodeComponent extends React.Component<Props, State> {
           this.diffEditor?.layout();
         });
       });
+  }
+
+  handleViewDiffClicked(fullPath: string, event?: React.MouseEvent<HTMLSpanElement, MouseEvent>) {
+    event?.stopPropagation();
+    if (!this.diffEditor) {
+      this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current!);
+    }
+    let editedModel = this.state.fullPathToModelMap.get(fullPath)!;
+    let uri = monaco.Uri.file(`original-${fullPath}`);
+    let latestModel = getOrCreateModel(uri.path, this.state.originalFileContents.get(fullPath)!);
+    let diffModel = { original: latestModel, modified: editedModel };
+    this.diffEditor.setModel(diffModel);
+    this.navigateToPath(fullPath + "#diff");
+    this.updateState({ fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
+      this.diffEditor?.layout();
+    });
   }
 
   handleCloseReviewModal() {
@@ -929,6 +950,10 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   joinPath(paths: string[]) {
     return paths.filter((p) => p).join("");
+  }
+
+  isDiffView() {
+    return window.location.hash == "#diff";
   }
 
   async handleRename(node: github.TreeNode, path: string, newValue: string, existingFile: boolean) {
@@ -1036,7 +1061,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       this.editor?.layout();
     }, 0);
 
-    let showDiffView = this.state.fullPathToDiffModelMap.has(this.currentPath());
+    let showDiffView = this.state.fullPathToDiffModelMap.has(this.currentPath()) || this.isDiffView();
     let applicableInstallation = this.state.installationsResponse?.installations.find(
       (i) => i.login == this.currentOwner()
     );
@@ -1284,6 +1309,16 @@ export default class CodeComponent extends React.Component<Props, State> {
                         Resolve Conflict
                       </span>
                     )}
+                    {!this.isDiffView() && (
+                      <span className="code-revert-button" onClick={this.handleViewDiffClicked.bind(this, fullPath)}>
+                        View Diff
+                      </span>
+                    )}
+                    {this.isDiffView() && (
+                      <span className="code-revert-button" onClick={() => (window.location.hash = "")}>
+                        Hide Diff
+                      </span>
+                    )}
                     <span className="code-revert-button" onClick={this.handleRevertClicked.bind(this, fullPath)}>
                       Revert
                     </span>
@@ -1380,9 +1415,9 @@ self.MonacoEnvironment = {
     //https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.25.2/min/vs/basic-languages/go/go.min.js
     return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
       self.MonacoEnvironment = {
-        baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.25.2/min/'
+        baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/${MONACO_VERSION}/min/'
       };
-      importScripts('https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.25.2/min/vs/base/worker/workerMain.js');`)}`;
+      importScripts('https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/${MONACO_VERSION}/min/vs/base/worker/workerMain.js');`)}`;
   },
 };
 
@@ -1410,8 +1445,8 @@ function stateReplacer(key: string, value: any) {
           key: e[0],
           original: e[1].original.getValue(),
           modified: e[1].modified.getValue(),
-          originalUri: e[1].original.uri,
-          modifiedUri: e[1].modified.uri,
+          originalUri: e[1].original.uri.path,
+          modifiedUri: e[1].modified.uri.path,
         };
       }),
     };
@@ -1425,6 +1460,15 @@ function stateReplacer(key: string, value: any) {
   return value;
 }
 
+function getOrCreateModel(url: string, value: string) {
+  let existingModel = monaco.editor.getModel(monaco.Uri.file(url));
+  if (existingModel) {
+    existingModel.setValue(value);
+    return existingModel;
+  }
+  return monaco.editor.createModel(value, "text/plain", monaco.Uri.file(url));
+}
+
 // This revives any non-serializable objects in state from their seralized form.
 function stateReviver(key: string, value: any) {
   if (typeof value === "object" && value !== null) {
@@ -1434,12 +1478,7 @@ function stateReviver(key: string, value: any) {
     if (value.dataType === "ModelMap") {
       return new Map(
         value.value.map((e: { key: string; value: string }) => {
-          let existingModel = monaco.editor.getModel(monaco.Uri.file(e.key));
-          if (existingModel) {
-            existingModel.setValue(e.value);
-            return [e.key, existingModel];
-          }
-          return [e.key, monaco.editor.createModel(e.value, langFromPath(e.key), monaco.Uri.file(e.key))];
+          return [e.key, getOrCreateModel(e.key, e.value)];
         })
       );
     }
@@ -1449,16 +1488,8 @@ function stateReviver(key: string, value: any) {
           (e: { key: string; original: string; originalUri: string; modified: string; modifiedUri: string }) => [
             e.key,
             {
-              original: monaco.editor.createModel(
-                e.original,
-                langFromPath(e.originalUri),
-                monaco.Uri.file(e.originalUri)
-              ),
-              modified: monaco.editor.createModel(
-                e.modified,
-                langFromPath(e.modifiedUri),
-                monaco.Uri.file(e.modifiedUri)
-              ),
+              original: getOrCreateModel(e.originalUri, e.original),
+              modified: getOrCreateModel(e.modifiedUri, e.modified),
             },
           ]
         )
