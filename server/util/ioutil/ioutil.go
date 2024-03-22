@@ -76,7 +76,7 @@ func (c *CustomCommitWriteCloser) Close() error {
 	// Close may free resources, so all Close functions should be called.
 	// The first error encountered will be returned.
 	if closer, ok := c.w.(io.Closer); ok {
-		if err := closer.Close(); err != nil && firstErr == nil {
+		if err := closer.Close(); err != nil {
 			firstErr = err
 		}
 	}

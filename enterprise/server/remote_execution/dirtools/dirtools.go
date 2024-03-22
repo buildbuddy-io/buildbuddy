@@ -198,9 +198,6 @@ func newDirToUpload(instanceName string, digestFunction repb.DigestFunction_Valu
 		return nil, err
 	}
 	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)
-	if err != nil {
-		return nil, err
-	}
 
 	return &fileToUpload{
 		fullFilePath: filepath.Join(parentDir, info.Name()),

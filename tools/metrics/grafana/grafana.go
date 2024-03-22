@@ -174,9 +174,13 @@ func exportNormalizedDashboard(d *Dashboard) error {
 		return err
 	}
 	outPath := filepath.Join(dashboardsDir, fileName)
+	outFile, err := os.ReadFile(outPath)
+	if err != nil {
+		return err
+	}
 	// Write file only if different, to avoid updating mtime and triggering file
 	// watchers etc.
-	if b, _ := os.ReadFile(outPath); err == nil && !bytes.Equal(b, normalized.Bytes()) {
+	if !bytes.Equal(outFile, normalized.Bytes()) {
 		return os.WriteFile(outPath, normalized.Bytes(), 0644)
 	}
 	return nil

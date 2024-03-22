@@ -76,7 +76,7 @@ func (s *SecretService) listSecretsIncludingValues(ctx context.Context) (*skpb.L
 		return nil, err
 	}
 	dbHandle := s.env.GetDBHandle()
-	if err != nil {
+	if dbHandle == nil {
 		return nil, status.FailedPreconditionError("A database is required")
 	}
 
@@ -119,7 +119,7 @@ func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecret
 		return nil, false, err
 	}
 	dbHandle := s.env.GetDBHandle()
-	if err != nil {
+	if dbHandle == nil {
 		return nil, false, status.FailedPreconditionError("A database is required")
 	}
 
@@ -202,7 +202,7 @@ func (s *SecretService) DeleteSecret(ctx context.Context, req *skpb.DeleteSecret
 		return nil, err
 	}
 	dbHandle := s.env.GetDBHandle()
-	if err != nil {
+	if dbHandle == nil {
 		return nil, status.FailedPreconditionError("A database is required")
 	}
 

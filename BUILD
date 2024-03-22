@@ -56,8 +56,7 @@ write_file(
                     "loopclosure",
                     "lostcancel",
                     "nilfunc",
-                    # template methods currently cause this analyzer to panic
-                    # "nilness",
+                    "nilness",
                     "printf",
                     # Everyone shadows `err`
                     # "shadow",
@@ -107,8 +106,7 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/loopclosure",
         "@org_golang_x_tools//go/analysis/passes/lostcancel",
         "@org_golang_x_tools//go/analysis/passes/nilfunc",
-        # template methods currently cause this analyzer to panic
-        # "@org_golang_x_tools//go/analysis/passes/nilness",
+        "@org_golang_x_tools//go/analysis/passes/nilness",
         "@org_golang_x_tools//go/analysis/passes/printf",
         # Everyone shadows `err`
         # "@org_golang_x_tools//go/analysis/passes/shadow",

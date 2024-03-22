@@ -149,7 +149,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	if err == nil {
 		return resp, nil
 	}
-	if err != nil && !status.IsNotFoundError(err) {
+	if !status.IsNotFoundError(err) {
 		return nil, err
 	}
 

@@ -436,7 +436,7 @@ func (sm *Replica) updatePartitionMetadata(wb pebble.Batch, key, val []byte, fil
 			// Skip increment on duplicate write.
 			return closer.Close()
 		}
-		if err != nil && err != pebble.ErrNotFound {
+		if err != pebble.ErrNotFound {
 			return err
 		}
 		pm.TotalCount++

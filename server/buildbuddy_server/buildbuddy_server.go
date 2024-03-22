@@ -505,18 +505,14 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	var group *tables.Group
-	var err error
-
-	if group == nil {
-		if req.GetRequestContext().GetGroupId() == "" {
-			return nil, status.InvalidArgumentError("Missing organization identifier.")
-		}
-		group, err = userDB.GetGroupByID(ctx, req.GetRequestContext().GetGroupId())
-		if err != nil {
-			return nil, err
-		}
+	if req.GetRequestContext().GetGroupId() == "" {
+		return nil, status.InvalidArgumentError("Missing organization identifier.")
 	}
+	group, err := userDB.GetGroupByID(ctx, req.GetRequestContext().GetGroupId())
+	if err != nil {
+		return nil, err
+	}
+
 	group.Name = req.GetName()
 	if ui := strings.TrimSpace(req.GetUrlIdentifier()); ui != "" {
 		group.URLIdentifier = ui
