@@ -927,7 +927,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     }
     let editedModel = this.state.fullPathToModelMap.get(fullPath)!;
     let uri = monaco.Uri.file(`original-${fullPath}`);
-    let latestModel = getOrCreateModel(uri.path, this.state.originalFileContents.get(fullPath)!);
+    let latestModel = getOrCreateModel(uri.path, this.state.originalFileContents.get(fullPath) || "");
     let diffModel = { original: latestModel, modified: editedModel };
     this.diffEditor.setModel(diffModel);
     this.navigateToPath(fullPath + "#diff");
@@ -1309,12 +1309,12 @@ export default class CodeComponent extends React.Component<Props, State> {
                         Resolve Conflict
                       </span>
                     )}
-                    {!this.isDiffView() && (
+                    {(!this.isDiffView() || fullPath != this.currentPath()) && (
                       <span className="code-revert-button" onClick={this.handleViewDiffClicked.bind(this, fullPath)}>
                         View Diff
                       </span>
                     )}
-                    {this.isDiffView() && (
+                    {this.isDiffView() && fullPath == this.currentPath() && (
                       <span className="code-revert-button" onClick={() => (window.location.hash = "")}>
                         Hide Diff
                       </span>
