@@ -23,6 +23,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/bazel",
         "//server/util/flag",
+        "//server/util/git",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
         "//server/util/rexec",

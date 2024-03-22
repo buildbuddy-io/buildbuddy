@@ -46,6 +46,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	bbflag "github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -643,7 +644,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	gitToken := ""
-	if strings.Contains(repoConfig.URL, "github.com") {
+	if u, err := gitutil.NormalizeRepoURL(repoConfig.URL); err == nil && u.Hostname() == "github.com" {
 		gitToken = os.Getenv("GITHUB_TOKEN")
 	}
 
