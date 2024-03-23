@@ -596,10 +596,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_bojand_ghz",
-        build_directives = [
-            "gazelle:resolve go github.com/prometheus/client_model/go @{}//proto:prometheus_client_go_proto".format(workspace_name),
-        ],
         importpath = "github.com/bojand/ghz",
+        patch_args = ["-p1"],
+        patches = ["@{}//buildpatches:com_github_bojand_ghz.patch".format(workspace_name)],
         sum = "h1:dTMxg+tUcLMw8BYi7vQPjXsrM2DJ20ns53hz1am1SbQ=",
         version = "v0.117.0",
     )
@@ -4201,10 +4200,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_prometheus_client_golang",
-        build_directives = [
-            "gazelle:resolve go github.com/prometheus/client_model/go @{}//proto:prometheus_client_go_proto".format(workspace_name),
-        ],
         importpath = "github.com/prometheus/client_golang",
+        patch_args = ["-p1"],
+        patches = ["@{}//buildpatches:com_github_prometheus_client_golang.patch".format(workspace_name)],
         sum = "h1:yk/hx9hDbrGHovbci4BY+pRMfSuuat626eFsHb7tmT8=",
         version = "v1.16.0",
     )
@@ -4216,10 +4214,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_prometheus_common",
-        build_directives = [
-            "gazelle:resolve go github.com/prometheus/client_model/go @{}//proto:prometheus_client_go_proto".format(workspace_name),
-        ],
         importpath = "github.com/prometheus/common",
+        patch_args = ["-p1"],
+        patches = ["@{}//buildpatches:com_github_prometheus_common.patch".format(workspace_name)],
         sum = "h1:+5BrQJwiBB9xsMygAB3TNvpQKOwlkc25LbISbrdOOfY=",
         version = "v0.44.0",
     )
