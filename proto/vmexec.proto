@@ -138,7 +138,10 @@ message SyncRequest {}
 message SyncResponse {}
 
 message UnmountWorkspaceRequest {}
-message UnmountWorkspaceResponse {}
+message UnmountWorkspaceResponse {
+  // Whether the workspace device is still busy even after unmounting.
+  bool busy = 1;
+}
 
 message MountWorkspaceRequest {}
 message MountWorkspaceResponse {}

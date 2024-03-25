@@ -139,8 +139,8 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "0a4d754cb1b71a32c7f1bea13ac4a69c2e4f045ccf08e44ff08157dc0bdd9a35"
-		expectedVersion = "8"
+		expectedHash    = "ea0de565c88324395ee28efb8b7c3beb83b3a97fdbf1d9b5b19539ad7993f938"
+		expectedVersion = "9"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -1476,6 +1476,54 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
 	assert.NotEqual(t, 0, res.ExitCode)
+}
+
+func TestFirecrackerRecycleWithDockerWorkspaceMounts(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"config.json": `{}`,
+	})
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			set -e
+			docker pull ` + busyboxImage + `
+			docker run --rm -d --volume=/workspace/config.json:/config.json ` + busyboxImage + ` sh -c '
+			    while true; do
+					cat /config.json
+					sleep 0.01
+				done
+			'
+		`},
+	}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageWithDockerInstalled,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  true,
+			InitDockerd:       true,
+			ScratchDiskSizeMb: 200,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+
+	res := c.Exec(ctx, cmd, nil)
+	require.NoError(t, res.Error)
+	require.True(t, res.DoNotRecycle, "should not recycle VM since filesystem is still busy")
 }
 
 func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {

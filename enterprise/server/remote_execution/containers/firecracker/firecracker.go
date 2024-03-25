@@ -107,7 +107,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "8"
+	GuestAPIVersion = "9"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -2020,16 +2020,9 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) *interfaces.CommandResult {
+func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-
-	// TODO(bduffany): Reuse connection from Unpause(), if applicable
-	conn, err := c.dialVMExecServer(ctx)
-	if err != nil {
-		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
-	}
-	defer conn.Close()
 
 	client := vmxpb.NewExecClient(conn)
 	health := hlpb.NewHealthClient(conn)
@@ -2257,7 +2250,14 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		c.workspaceStore.EmitUsageMetrics("init")
 	}
 
-	result = c.SendExecRequestToGuest(ctx, cmd, workDir, stdio)
+	// TODO(bduffany): Reuse connection from Unpause(), if applicable
+	conn, err := c.dialVMExecServer(ctx)
+	if err != nil {
+		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
+	}
+	defer conn.Close()
+
+	result = c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
 	close(execDone)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
@@ -2265,21 +2265,45 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	// If FUSE is enabled then outputs are already in the workspace.
 	if c.fsLayout == nil && !*disableWorkspaceSync {
-		// Command was successful, let's unpack the files back to our
-		// workspace directory now.
+		// Unmount the workspace and pause the VM before syncing to ensure that
+		// the guest's FS cache is flushed to the backing file on the host and
+		// that no concurrent operations can occur while we're reading the
+		// workspace disk.
+		//
+		// TODO(bduffany): after notifying users of these warnings below,
+		// make it a hard failure if we fail to unmount or if the workspace disk
+		// is still busy after unmounting.
+		client := vmxpb.NewExecClient(conn)
+		var unmounted bool
+		if rsp, err := client.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
+			log.CtxWarningf(ctx, "Failed to unmount workspace")
+		} else {
+			unmounted = true
+			if rsp.GetBusy() {
+				// Do not recycle the VM if the workspace device is still busy after
+				// unmounting.
+				result.DoNotRecycle = true
+				log.CtxWarningf(ctx, "Workspace device is still busy after unmounting - not recycling VM")
+			}
+		}
 		if err := c.pauseVM(ctx); err != nil {
 			result.Error = status.InternalErrorf("error pausing VM: %s", err)
 			return result
 		}
-
 		if err := c.copyOutputsToWorkspace(ctx); err != nil {
 			result.Error = status.WrapError(err, "failed to copy action outputs from VM workspace")
 			return result
 		}
-
+		// Resume the VM and remount the workspace now that we're done copying.
 		if err := c.machine.ResumeVM(ctx); err != nil {
 			result.Error = status.InternalErrorf("error resuming VM after copying workspace outputs: %s", err)
 			return result
+		}
+		if unmounted {
+			if _, err := client.MountWorkspace(ctx, &vmxpb.MountWorkspaceRequest{}); err != nil {
+				result.Error = status.WrapErrorf(err, "copy action outputs: re-mount workspace")
+				return result
+			}
 		}
 	}
 

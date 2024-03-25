@@ -340,7 +340,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
 		return finishWithErrFn(err)
 	}
-	if cmdResult.Error == nil {
+	if cmdResult.Error == nil && !cmdResult.DoNotRecycle {
 		log.CtxDebugf(ctx, "Task finished cleanly.")
 		finishedCleanly = true
 	}
