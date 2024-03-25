@@ -21,6 +21,7 @@ go_library(
         "//server/util/status",
         "@com_github_docker_docker//api/types",
         "@com_github_docker_docker//api/types/container",
+        "@com_github_docker_docker//api/types/registry",
         "@com_github_docker_docker//client",
         "@com_github_docker_docker//pkg/stdcopy",
         "@com_github_docker_go_units//:go-units",

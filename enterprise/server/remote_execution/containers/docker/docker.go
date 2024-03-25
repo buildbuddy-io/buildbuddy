@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/pkg/stdcopy"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -236,7 +237,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	}
 	cid := createResponse.ID
 
-	hijackedResp, err := r.client.ContainerAttach(ctx, cid, dockertypes.ContainerAttachOptions{
+	hijackedResp, err := r.client.ContainerAttach(ctx, cid, dockercontainer.AttachOptions{
 		Stream: true,
 		Stdout: true,
 		Stderr: true,
@@ -247,7 +248,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	}
 	defer hijackedResp.Close()
 
-	err = r.client.ContainerStart(ctx, cid, dockertypes.ContainerStartOptions{})
+	err = r.client.ContainerStart(ctx, cid, dockercontainer.StartOptions{})
 	if err != nil {
 		result.Error = wrapDockerErr(err, "failed to start docker container")
 		return result
@@ -268,7 +269,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 					log.Errorf("Failed to kill docker container: %s", err)
 				}
 			}
-			if err := r.client.ContainerRemove(ctx, cid, dockertypes.ContainerRemoveOptions{}); err != nil {
+			if err := r.client.ContainerRemove(ctx, cid, dockercontainer.RemoveOptions{}); err != nil {
 				log.Errorf("Failed to remove docker container: %s", err)
 			}
 		}()
@@ -484,7 +485,7 @@ func (r *dockerCommandContainer) PullImage(ctx context.Context, creds oci.Creden
 
 func PullImage(ctx context.Context, client *dockerclient.Client, image string, creds oci.Credentials) error {
 	if !creds.IsEmpty() {
-		authCfg := dockertypes.AuthConfig{
+		authCfg := registry.AuthConfig{
 			Username: creds.Username,
 			Password: creds.Password,
 		}
@@ -576,7 +577,7 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 		return wrapDockerErr(err, "failed to create container")
 	}
 	r.id = createResponse.ID
-	if err := r.client.ContainerStart(ctx, r.id, dockertypes.ContainerStartOptions{}); err != nil {
+	if err := r.client.ContainerStart(ctx, r.id, dockercontainer.StartOptions{}); err != nil {
 		return wrapDockerErr(err, "failed to start container")
 	}
 	r.workDir = workDir
@@ -694,7 +695,7 @@ func (r *dockerCommandContainer) Pause(ctx context.Context) error {
 
 func (r *dockerCommandContainer) Remove(ctx context.Context) error {
 	r.removed = true
-	if err := r.client.ContainerRemove(ctx, r.id, dockertypes.ContainerRemoveOptions{Force: true}); err != nil {
+	if err := r.client.ContainerRemove(ctx, r.id, dockercontainer.RemoveOptions{Force: true}); err != nil {
 		return wrapDockerErr(err, fmt.Sprintf("failed to remove docker container %s", r.id))
 	}
 	return nil
@@ -739,7 +740,7 @@ type statsResponse struct {
 }
 
 // encodeAuthToBase64 serializes the auth configuration as JSON base64 payload
-func encodeAuthToBase64(authConfig dockertypes.AuthConfig) (string, error) {
+func encodeAuthToBase64(authConfig registry.AuthConfig) (string, error) {
 	buf, err := json.Marshal(authConfig)
 	if err != nil {
 		return "", err
