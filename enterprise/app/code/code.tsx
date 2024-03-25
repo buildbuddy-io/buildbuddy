@@ -189,6 +189,8 @@ export default class CodeComponent extends React.Component<Props, State> {
       let parts = match?.rest.split("/");
       let branch = parts.shift();
       destinationUrl += parts.join("/") + "?branch=" + branch;
+    } else if (match?.entity == "pull") {
+      destinationUrl = `/reviews/${match?.owner}/${match?.repo}/${match?.rest.split("/")[0]}`;
     }
     return destinationUrl;
   }
