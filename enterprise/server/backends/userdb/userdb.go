@@ -1015,7 +1015,7 @@ func (d *UserDB) GetOrCreatePublicKey(ctx context.Context, groupID string) (stri
 	}
 
 	// Still here? Group may not have a public key yet. Let's add one.
-	pubKey, encPrivKey, err := keystore.GenerateSealedBoxKeys(d.env)
+	pubKey, encPrivKey, err := keystore.GenerateSealedBoxKeys(ctx, d.env)
 	if err != nil {
 		return "", err
 	}

@@ -14,21 +14,21 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/tink/go/core/registry"
-	"github.com/google/tink/go/integration/awskms"
-	"github.com/google/tink/go/integration/gcpkms"
-	"github.com/google/tink/go/tink"
+	"github.com/tink-crypto/tink-go-awskms/v2/integration/awskms"
+	"github.com/tink-crypto/tink-go-gcpkms/v2/integration/gcpkms"
+	"github.com/tink-crypto/tink-go/v2/core/registry"
+	"github.com/tink-crypto/tink-go/v2/tink"
 	"google.golang.org/api/option"
 
-	awscreds "github.com/aws/aws-sdk-go/aws/credentials"
-	awssession "github.com/aws/aws-sdk-go/aws/session"
-	awssdkkms "github.com/aws/aws-sdk-go/service/kms"
+	awscreds "github.com/aws/aws-sdk-go-v2/credentials"
+	awssdkkms "github.com/aws/aws-sdk-go-v2/service/kms"
 )
 
 const (
@@ -72,7 +72,7 @@ func New(ctx context.Context) (*KMS, error) {
 	if err := kms.initLocalInsecureKMSClient(ctx); err != nil {
 		return nil, err
 	}
-	_, err := kms.clientForURI(*masterKeyURI)
+	_, err := kms.clientForURI(ctx, *masterKeyURI)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("master key URI not supported")
 	}
@@ -158,7 +158,7 @@ func (k *KMS) initAWSClient(ctx context.Context) error {
 		}
 	}
 	if strings.HasPrefix(*masterKeyURI, awsKMSPrefix) {
-		_, err := k.clientForURI(*masterKeyURI)
+		_, err := k.clientForURI(ctx, *masterKeyURI)
 		return status.FailedPreconditionErrorf("could not initialize KMS client for master key: %s", err)
 	}
 	return nil
@@ -173,7 +173,7 @@ func (k *KMS) initLocalInsecureKMSClient(ctx context.Context) error {
 	return nil
 }
 
-func loadAWSCreds() (*awscreds.Value, error) {
+func loadAWSCreds() (*aws.Credentials, error) {
 	var credsData []byte
 	if *awsCredentials != "" {
 		credsData = []byte(*awsCredentials)
@@ -194,7 +194,7 @@ func loadAWSCreds() (*awscreds.Value, error) {
 	if len(rs[1]) != 2 {
 		return nil, status.FailedPreconditionErrorf("credential file not in valid format (expected 2 columns, got %d", len(rs[0]))
 	}
-	return &awscreds.Value{
+	return &aws.Credentials{
 		AccessKeyID:     rs[1][0],
 		SecretAccessKey: rs[1][1],
 	}, nil
@@ -202,23 +202,25 @@ func loadAWSCreds() (*awscreds.Value, error) {
 
 // For some reason, the tink library does not support aws credential files with
 // 2 columns so we manually create the AWS SDK client.
-func createAWSClientWithCreds(arn *awsKMSARN) (registry.KMSClient, error) {
+func createAWSClientWithCreds(ctx context.Context, arn *awsKMSARN) (registry.KMSClient, error) {
 	credValue, err := loadAWSCreds()
 	if err != nil {
 		return nil, status.UnknownErrorf("could not load credentials file: %s", err)
 	}
-	creds := awscreds.NewStaticCredentialsFromCreds(*credValue)
-	sess, err := awssession.NewSession(&aws.Config{
-		Credentials: creds,
-		Region:      aws.String(arn.region),
-	})
+	cfg, err := config.LoadDefaultConfig(
+		ctx,
+		config.WithRegion(arn.region),
+		config.WithCredentialsProvider(
+			awscreds.StaticCredentialsProvider{Value: *credValue},
+		),
+	)
 	if err != nil {
-		return nil, status.UnknownErrorf("could not create session: %s", err)
+		return nil, status.UnknownErrorf("could not create config: %s", err)
 	}
-	return awskms.NewClientWithKMS(arn.uriLocationPrefix, awssdkkms.New(sess))
+	return awskms.NewClientWithKMS(ctx, arn.uriLocationPrefix, awssdkkms.NewFromConfig(cfg))
 }
 
-func (k *KMS) clientForURI(uri string) (registry.KMSClient, error) {
+func (k *KMS) clientForURI(ctx context.Context, uri string) (registry.KMSClient, error) {
 	if strings.HasPrefix(uri, gcpKMSPrefix) && k.gcpClient != nil {
 		return k.gcpClient, nil
 	} else if strings.HasPrefix(uri, awsKMSPrefix) && k.awsClients != nil {
@@ -234,9 +236,9 @@ func (k *KMS) clientForURI(uri string) (registry.KMSClient, error) {
 			return client, nil
 		}
 		if *awsCredentialsFile != "" || *awsCredentials != "" {
-			client, err = createAWSClientWithCreds(arn)
+			client, err = createAWSClientWithCreds(ctx, arn)
 		} else {
-			client, err = awskms.NewClient(arn.uriLocationPrefix)
+			client, err = awskms.NewClientWithOptions(ctx, arn.uriLocationPrefix)
 		}
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("could not create AWS KMS client: %s", err)
@@ -250,12 +252,12 @@ func (k *KMS) clientForURI(uri string) (registry.KMSClient, error) {
 	return nil, status.InvalidArgumentError("no matching client for key URI")
 }
 
-func (k *KMS) FetchMasterKey() (interfaces.AEAD, error) {
-	return k.FetchKey(*masterKeyURI)
+func (k *KMS) FetchMasterKey(ctx context.Context) (interfaces.AEAD, error) {
+	return k.FetchKey(ctx, *masterKeyURI)
 }
 
-func (k *KMS) FetchKey(uri string) (interfaces.AEAD, error) {
-	c, err := k.clientForURI(uri)
+func (k *KMS) FetchKey(ctx context.Context, uri string) (interfaces.AEAD, error) {
+	c, err := k.clientForURI(ctx, uri)
 	if err != nil {
 		return nil, status.NotFoundErrorf("no handler available for KMS URI: %s", err)
 	}

@@ -1262,8 +1262,8 @@ const (
 // service) that manages keys that can be fetched and used to encrypt/decrypt
 // data.
 type KMS interface {
-	FetchMasterKey() (AEAD, error)
-	FetchKey(uri string) (AEAD, error)
+	FetchMasterKey(ctx context.Context) (AEAD, error)
+	FetchKey(ctx context.Context, uri string) (AEAD, error)
 
 	SupportedTypes() []KMSType
 }
