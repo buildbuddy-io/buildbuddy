@@ -728,6 +728,7 @@ func (sm *Replica) loadReplicaState(db ReplicaReader) error {
 		return status.FailedPreconditionErrorf("last applied not moving forward: %d > %d", sm.lastAppliedIndex, lastStoredIndex)
 	}
 	sm.lastAppliedIndex = lastStoredIndex
+	log.Debugf("replica (shardID=%d, replicaID=%d) loadReplicaState finished", sm.ShardID, sm.ReplicaID)
 	return nil
 }
 
