@@ -9,7 +9,7 @@ replace (
 	github.com/firecracker-microvm/firecracker-go-sdk => github.com/buildbuddy-io/firecracker-go-sdk v0.0.0-20230721-1d5c50b
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
 	github.com/jotfs/fastcdc-go v0.2.0 => github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2
-	github.com/lni/dragonboat/v4 => github.com/tylerwilliams/dragonboat/v4 v4.0.0-pre1
+	github.com/lni/dragonboat/v4 => github.com/tylerwilliams/dragonboat/v4 v4.0.0-pre1.2-tag
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
 	github.com/tink-crypto/tink-go-awskms/v2 => github.com/tempoz/tink-go-awskms/v2 v2.0.2
 )

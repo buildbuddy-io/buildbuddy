@@ -3320,8 +3320,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_lni_dragonboat_v4",
         importpath = "github.com/lni/dragonboat/v4",
         replace = "github.com/tylerwilliams/dragonboat/v4",
-        sum = "h1:P37KaddUF5gl34TjhavSc7qi1U292DxinSXcXUs6i9Q=",
-        version = "v4.0.0-pre1",
+        sum = "h1:LDCX2o8gFbKXR2o7kyvAWNrcsIi0fzxr0c/A3RBhOLE=",
+        version = "v4.0.0-pre1.2-tag",
     )
     go_repository(
         name = "com_github_lni_goutils",
