@@ -2276,7 +2276,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		client := vmxpb.NewExecClient(conn)
 		var unmounted bool
 		if rsp, err := client.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
-			log.CtxWarningf(ctx, "Failed to unmount workspace")
+			log.CtxWarningf(ctx, "Failed to unmount workspace - not recycling VM")
+			result.DoNotRecycle = true
 		} else {
 			unmounted = true
 			if rsp.GetBusy() {
