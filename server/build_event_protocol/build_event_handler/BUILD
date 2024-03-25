@@ -51,6 +51,7 @@ go_library(
         "//server/util/usageutil",
         "//server/util/uuid",
         "@com_github_google_shlex//:shlex",
+        "@com_github_masterminds_semver_v3//:semver",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/fieldmaskpb",
