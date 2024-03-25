@@ -960,13 +960,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	if e.isFirstStartedEvent(&bazelBuildEvent) {
 		started, _ := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Started)
 
-		// Record the Bazel version
 		version, err := semver.NewVersion(started.Started.GetBuildToolVersion())
 		majorVersion := "unknown"
 		if err == nil {
 			majorVersion = strconv.Itoa(int(version.Major()))
 		}
-		fmt.Println(majorVersion)
 		metrics.InvocationsByBazelMajorVersionCount.With(
 			prometheus.Labels{metrics.BazelMajorVersion: majorVersion}).Inc()
 
