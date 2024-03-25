@@ -113,6 +113,10 @@ func (s *SecretService) ListSecrets(ctx context.Context, req *skpb.ListSecretsRe
 	return rsp, nil
 }
 
+// UpdateSecret updates the secret with the given name associated with the group
+// the user is authenticated as, creating it if it does not exist. It returns,
+// in order, the response proto, whether the secret was newly created or not,
+// and any error encountered.
 func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, bool, error) {
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
