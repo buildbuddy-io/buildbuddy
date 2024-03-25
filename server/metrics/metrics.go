@@ -91,8 +91,8 @@ const (
 	// Exit code of a completed bazel command
 	BazelExitCode = "bazel_exit_code"
 
-	// Bazel major version
-	BazelMajorVersion = "bazel_major_version"
+	// Bazel version
+	BazelVersion = "bazel_version"
 
 	// Executed action stage. Action execution is split into stages corresponding to
 	// the timestamps defined in
@@ -275,12 +275,12 @@ var (
 	})
 
 	// Number of invocations by Bazel major version.
-	InvocationsByBazelMajorVersionCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	InvocationsByBazelVersionCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
-		Name:      "bazel_major_version",
-		Help:      "The number of invocations by client Bazel major version.",
-	}, []string{BazelMajorVersion})
+		Name:      "bazel_version",
+		Help:      "The number of invocations by client Bazel version.",
+	}, []string{BazelVersion})
 
 	// #### Examples
 	//

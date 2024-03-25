@@ -960,13 +960,13 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	if e.isFirstStartedEvent(&bazelBuildEvent) {
 		started, _ := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Started)
 
-		version, err := semver.NewVersion(started.Started.GetBuildToolVersion())
-		majorVersion := "unknown"
+		parsedVersion, err := semver.NewVersion(started.Started.GetBuildToolVersion())
+		version := "unknown"
 		if err == nil {
-			majorVersion = strconv.Itoa(int(version.Major()))
+			version = fmt.Sprintf("%d.%d", parsedVersion.Major(), parsedVersion.Minor())
 		}
-		metrics.InvocationsByBazelMajorVersionCount.With(
-			prometheus.Labels{metrics.BazelMajorVersion: majorVersion}).Inc()
+		metrics.InvocationsByBazelVersionCount.With(
+			prometheus.Labels{metrics.BazelVersion: version}).Inc()
 
 		e.hasReceivedStartedEvent = true
 		e.unprocessedStartingEvents[bazelBuildEvent.Id.String()] = struct{}{}
