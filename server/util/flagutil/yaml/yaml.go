@@ -719,7 +719,7 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 			if node != nil {
 				// Ensure that we populate flags in the order they are specified in the
 				// YAML data if the node structure data was provided.
-				for ok := false; node != nil && !ok; i++ {
+				for ok := false; !ok; i++ {
 					k = node.Content[2*i].Value
 					n = node.Content[2*i+1]
 					v, ok = m[k]

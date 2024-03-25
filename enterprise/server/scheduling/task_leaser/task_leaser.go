@@ -184,10 +184,8 @@ func (t *TaskLeaser) Close(ctx context.Context, taskErr error, retry bool) {
 		req.Finalize = true
 	} else {
 		req.ReEnqueue = true
-		if taskErr != nil {
-			s, _ := gstatus.FromError(taskErr)
-			req.ReEnqueueReason = s.Proto()
-		}
+		s, _ := gstatus.FromError(taskErr)
+		req.ReEnqueueReason = s.Proto()
 	}
 	if err := t.stream.Send(req); err != nil {
 		log.CtxWarningf(ctx, "Could not send request: %s", err)

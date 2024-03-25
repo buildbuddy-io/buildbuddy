@@ -1018,8 +1018,8 @@ func (r *rawQuery) IterateRaw(fn func(ctx context.Context, row *sql.Rows) error)
 			return err
 		}
 	}
-	if err != nil {
-		return err
+	if rows.Err() != nil {
+		return rows.Err()
 	}
 	return nil
 }

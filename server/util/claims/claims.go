@@ -129,9 +129,7 @@ func ParseClaims(token string) (*Claims, error) {
 		if errors.As(err, &validationErr) && validationErr.Errors&jwt.ValidationErrorSignatureInvalid != 0 {
 			continue
 		}
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	return nil, lastErr
 }

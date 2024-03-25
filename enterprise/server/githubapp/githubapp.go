@@ -629,16 +629,13 @@ func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetLinkedRe
 		WHERE group_id = ?
 		ORDER BY repo_url ASC
 	`, u.GetGroupID())
-	if err != nil {
-		return nil, status.InternalErrorf("failed to query repo rows: %s", err)
-	}
 	res := &ghpb.GetLinkedReposResponse{}
 	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitRepository) error {
 		res.RepoUrls = append(res.RepoUrls, row.RepoURL)
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("failed to query repo rows: %s", err)
 	}
 	return res, nil
 }

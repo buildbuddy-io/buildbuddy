@@ -66,7 +66,7 @@ func NewHealthChecker(serverType string) *HealthChecker {
 		checkers:      make(map[string]interfaces.Checker, 0),
 		lastStatus:    make([]*serviceStatus, 0),
 	}
-	sigTerm := make(chan os.Signal)
+	sigTerm := make(chan os.Signal, 1)
 	go func() {
 		<-sigTerm
 		hc.Shutdown()
