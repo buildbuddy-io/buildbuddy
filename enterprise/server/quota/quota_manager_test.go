@@ -115,6 +115,7 @@ func TestQuotaManagerFindBucket(t *testing.T) {
 
 	qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 	require.NoError(t, err)
+	require.NotNil(t, qm)
 
 	testCases := []struct {
 		name       string
@@ -139,6 +140,7 @@ func TestQuotaManagerFindBucket(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			bucket := qm.findBucket(tc.namespace, tc.quotaKey)
+			require.NotNil(t, bucket)
 			config := bucket.Config()
 			assert.Equal(t, config, tc.wantConfig)
 		})
@@ -423,6 +425,7 @@ func TestModifyNamespace_UpdateBucket(t *testing.T) {
 			sortProtos := cmpopts.SortSlices(func(m1, m2 protocmp.Message) bool { return m1.String() < m2.String() })
 			assert.Empty(t, cmp.Diff([]*tables.QuotaBucket{tc.wantBucket}, got, protocmp.Transform(), sortProtos))
 			b := qm.findBucket("remote_execution", "GR123456")
+			require.NotNil(t, b)
 			config := b.Config()
 			config.Model = tables.Model{}
 			assert.Empty(t, cmp.Diff(config, *tc.wantBucket, protocmp.Transform()))
