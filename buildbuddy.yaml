@@ -10,6 +10,17 @@ actions:
           - "*"
     bazel_commands:
       - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
+  - name: Test with BzlMod
+    container_image: ubuntu-20.04
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    bazel_commands:
+      - test //... --enable_bzlmod --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
   - name: Check style
     container_image: ubuntu-20.04
     triggers:
