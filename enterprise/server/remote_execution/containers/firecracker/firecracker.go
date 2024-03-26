@@ -53,7 +53,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/google/uuid"
-	"github.com/klauspost/cpuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -1393,14 +1392,13 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		netNS = networking.NetNamespacePath(c.id)
 	}
 
-	// On AMD CPUs, disabling the LAPIC TSC-Deadline feature works around an
+	// Disabling the LAPIC TSC-Deadline feature works around an
 	// issue where processes occasionally freeze up after being resumed from
 	// snapshot.
-	// TODO(https://github.com/firecracker-microvm/firecracker/issues/4099):
+	// TODO(https://github.com/firecracker-microvm/firecracker/issues/4099 &
+	//  https://github.com/buildbuddy-io/buildbuddy-internal/issues/3255):
 	// remove this workaround.
-	if cpuid.CPU.VendorID == cpuid.AMD {
-		bootArgs += " lapic=notscdeadline"
-	}
+	bootArgs += " lapic=notscdeadline"
 
 	// Pass some flags to the init script.
 	//
