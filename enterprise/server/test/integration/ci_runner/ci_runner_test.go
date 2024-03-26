@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
@@ -330,6 +331,49 @@ func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *t
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
+}
+
+func TestCredentialHelper(t *testing.T) {
+	binPath, err := runfiles.Rlocation(ciRunnerRunfilePath)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		user     string
+		token    string
+		expected string
+	}{
+		{
+			user:     "foo",
+			token:    "bar",
+			expected: "username=foo\npassword=bar\n",
+		},
+		{
+			user:     "",
+			token:    "bar",
+			expected: "username=x-access-token\npassword=bar\n",
+		},
+	} {
+		// credential helper should run relatively quickly
+		ctx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelFn()
+
+		cmd := exec.CommandContext(ctx, binPath, "--credential_helper", "get")
+		cmd.Env = []string{
+			"REPO_USER=" + tc.user,
+			"REPO_TOKEN=" + tc.token,
+		}
+		// Simulating passing empty pipe to the binary
+		//   echo '' | <binary> <args...>
+		stdin, err := cmd.StdinPipe()
+		require.NoError(t, err)
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+
+		require.NoError(t, cmd.Start())
+		require.NoError(t, stdin.Close())
+		require.NoError(t, cmd.Wait())
+		require.Equal(t, tc.expected, stdout.String())
+	}
 }
 
 func TestCIRunner_Push_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t *testing.T) {
