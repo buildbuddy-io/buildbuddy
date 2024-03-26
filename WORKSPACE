@@ -113,7 +113,11 @@ go_register_toolchains(
     nogo = "@//:vet",
 )
 
-gazelle_dependencies()
+gazelle_dependencies(
+    go_env = {
+        "GOPROXY": "https://proxy.golang.org|direct",
+    },
+)
 
 http_archive(
     name = "googleapis",
