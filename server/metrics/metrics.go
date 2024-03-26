@@ -91,6 +91,9 @@ const (
 	// Exit code of a completed bazel command
 	BazelExitCode = "bazel_exit_code"
 
+	// Bazel version
+	BazelVersion = "bazel_version"
+
 	// Executed action stage. Action execution is split into stages corresponding to
 	// the timestamps defined in
 	// [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797):
@@ -270,6 +273,14 @@ var (
 		BazelExitCode,
 		BazelCommand,
 	})
+
+	// Number of invocations by Bazel major version.
+	InvocationsByBazelVersionCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "bazel_version",
+		Help:      "The number of invocations by client Bazel version.",
+	}, []string{BazelVersion})
 
 	// #### Examples
 	//

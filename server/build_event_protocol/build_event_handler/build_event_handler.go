@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
@@ -957,6 +958,16 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	}
 
 	if e.isFirstStartedEvent(&bazelBuildEvent) {
+		started, _ := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Started)
+
+		parsedVersion, err := semver.NewVersion(started.Started.GetBuildToolVersion())
+		version := "unknown"
+		if err == nil {
+			version = fmt.Sprintf("%d.%d", parsedVersion.Major(), parsedVersion.Minor())
+		}
+		metrics.InvocationsByBazelVersionCount.With(
+			prometheus.Labels{metrics.BazelVersion: version}).Inc()
+
 		e.hasReceivedStartedEvent = true
 		e.unprocessedStartingEvents[bazelBuildEvent.Id.String()] = struct{}{}
 		for _, child := range bazelBuildEvent.Children {
