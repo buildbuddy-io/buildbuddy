@@ -1146,7 +1146,7 @@
           "editorMode": "code",
           "expr": "sum by (bazel_version) (rate(buildbuddy_invocation_bazel_version{region=\"${region}\"}[${window}]))",
           "interval": "",
-          "legendFormat": "{{invocation_status}}",
+          "legendFormat": "{{bazel_version}}",
           "queryType": "randomWalk",
           "range": true,
           "refId": "A"
