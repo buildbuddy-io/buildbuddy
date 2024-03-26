@@ -2181,9 +2181,9 @@ func TestFirecrackerStressIO(t *testing.T) {
 	// High-level orchestration options
 	const (
 		// Total number of runs
-		runs = 10
+		runs = 100
 		// Max number of VMs to run concurrently
-		concurrency = 1
+		concurrency = 4
 	)
 	// Per-exec options
 	const (
@@ -2203,15 +2203,15 @@ func TestFirecrackerStressIO(t *testing.T) {
 	// VM lifecycle options
 	const (
 		// Max number of times a single VM can be used before it is removed
-		maxRunsPerVM = 1
+		maxRunsPerVM = 10
 	)
 	// VM configuration
 	const (
-		cpus       = 4
-		memoryMB   = 800
-		scratchMB  = 800
-		dockerd    = false
-		networking = false
+		cpus       = 3
+		memoryMB   = 7500
+		scratchMB  = 1500
+		dockerd    = true
+		networking = true
 	)
 
 	if dockerize && (!dockerd || !networking) {
@@ -2365,30 +2365,52 @@ func TestBazelBuild(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{Arguments: []string{"bash", "-c", `
-		cd ~
-		git clone https://github.com/bazelbuild/rules_foreign_cc
-		cd rules_foreign_cc
-		bazelisk test //...
-	`}}
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           6,
-			MemSizeMb:         8000,
-			EnableNetworking:  true,
-			ScratchDiskSizeMb: 20_000,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	require.NoError(t, err)
+		export USER=buildbuddy
+		export HOME=/home/buildbuddy
 
-	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
-	require.NoError(t, res.Error)
+		cd ~
+		! [[ -e rules_foreign_cc ]] &&
+			git clone https://github.com/bazelbuild/rules_foreign_cc
+		cd rules_foreign_cc
+		bazelisk clean
+		bazelisk test //...
+	`}, Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: "recycle-runner", Value: "true"},
+	}}}
+	for i := 0; i < 20; i++ {
+		workDir := testfs.MakeDirAll(t, rootDir, fmt.Sprintf("work-%d", i))
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+			ActionWorkingDirectory: workDir,
+			User:                   "buildbuddy",
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           6,
+				MemSizeMb:         8000,
+				EnableNetworking:  true,
+				ScratchDiskSizeMb: 20_000,
+			},
+			ExecutorConfig: getExecutorConfig(t),
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		require.NoError(t, err)
+		err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
+		require.NoError(t, err)
+		err = c.Create(ctx, opts.ActionWorkingDirectory)
+		require.NoError(t, err)
+
+		res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+		assert.NoError(t, res.Error, "stderr: %s", string(res.Stderr))
+		assert.Equal(t, 0, res.ExitCode, "stderr: %s", string(res.Stderr))
+
+		err = c.Pause(ctx)
+		require.NoError(t, err)
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+		if t.Failed() {
+			return
+		}
+	}
 }
 
 func tree(label string) {

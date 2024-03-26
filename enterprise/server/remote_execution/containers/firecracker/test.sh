@@ -11,7 +11,7 @@ set -e
 # BAZEL env var: can be overridden to e.g. 'bb' or 'bazel --startup_opt=...'
 : "${BAZEL:=bazel}"
 # RUN_UNDER: test wrapper. 'sudo strace -f' is also useful.
-: "${RUN_UNDER:=sudo}"
+: "${RUN_UNDER:=sudo --preserve-env=TEST_TMPDIR_OVERRIDE}"
 : "${TARGET:=firecracker_test_blockio}"
 
 # Make sure buildozer is installed

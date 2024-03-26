@@ -22,10 +22,18 @@ func RunfilePath(t testing.TB, path string) string {
 	return path
 }
 
+func tmpDir() string {
+	dir := os.Getenv("TEST_TMPDIR_OVERRIDE")
+	if dir != "" {
+		return dir
+	}
+	return os.Getenv("TEST_TMPDIR")
+}
+
 // CreateTemp creates a temp file which is automatically cleaned up after the
 // test.
 func CreateTemp(t testing.TB) *os.File {
-	f, err := os.CreateTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-file-*")
+	f, err := os.CreateTemp(tmpDir(), "buildbuddy-test-file-*")
 	require.NoError(t, err)
 	path := f.Name()
 	t.Cleanup(func() {
@@ -40,7 +48,7 @@ func CreateTemp(t testing.TB) *os.File {
 // MakeTempDir creates and returns an empty directory that exists for the scope
 // of a test.
 func MakeTempDir(t testing.TB) string {
-	tmpDir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-*")
+	tmpDir, err := os.MkdirTemp(tmpDir(), "buildbuddy-test-*")
 	if err != nil {
 		assert.FailNow(t, "failed to create temp dir", err)
 	}
@@ -75,7 +83,7 @@ func MakeSocket(t testing.TB, socketName string) string {
 
 func MakeTempFile(t testing.TB, rootDir, pattern string) string {
 	if rootDir == "" {
-		rootDir = os.Getenv("TEST_TMPDIR")
+		rootDir = tmpDir()
 	}
 	if pattern == "" {
 		pattern = "buildbuddy-test-*"
