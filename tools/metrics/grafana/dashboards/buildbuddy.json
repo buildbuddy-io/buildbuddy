@@ -11220,7 +11220,7 @@
                 "uid": "prom"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_execution_tasks_executing{region=\"${region}\"})",
+              "expr": "sum(buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "Tasks running",
