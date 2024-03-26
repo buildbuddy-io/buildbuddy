@@ -100,7 +100,7 @@ sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_execution_duration_usec_exported",
-			LabelNames:       []string{metrics.OS},
+			LabelNames:       []string{metrics.OS, podNameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_execution_duration_usec"),
 				Help: proto.String("The total duration of remote execution, in **microseconds**."),
@@ -115,7 +115,7 @@ sum by (os) (rate(exported_buildbuddy_remote_execution_duration_usec_sum[1w]))`,
 const (
 	redisMetricsKeyPrefix = "exportedMetrics"
 	// The version in redis cache, as part of the redis key.
-	version = "v3"
+	version = "v4"
 	// The time for the metrics to expire in redis.
 	metricsExpiration = 30*time.Second - 50*time.Millisecond
 
