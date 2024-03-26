@@ -668,6 +668,12 @@ func parseFlags() error {
 
 	unparsedArgs := os.Args[1:]
 	for len(unparsedArgs) > 0 {
+		// Handle special case for credential helper using a subcommand
+		//   ./ci_runner --credential_helper get
+		if len(unparsedArgs) == 1 && unparsedArgs[0] == "get" {
+			break
+		}
+
 		err := flagset.Parse(unparsedArgs)
 		// Ignore undefined flag errors. The flag package will automatically print
 		// a warning error message.
