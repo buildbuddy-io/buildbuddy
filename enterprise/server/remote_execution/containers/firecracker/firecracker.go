@@ -2020,7 +2020,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) *interfaces.CommandResult {
+func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -2065,13 +2065,13 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	}()
 	select {
 	case res := <-resultCh:
-		return res
+		return res, true
 	case err := <-healthCheckErrCh:
 		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
 		lastObservedStatsMutex.Lock()
 		res.UsageStats = lastObservedStats
 		lastObservedStatsMutex.Unlock()
-		return res
+		return res, false
 	}
 }
 
@@ -2257,7 +2257,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 	defer conn.Close()
 
-	result = c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
+	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
 	close(execDone)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
@@ -2275,16 +2275,22 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		// is still busy after unmounting.
 		client := vmxpb.NewExecClient(conn)
 		var unmounted bool
-		if rsp, err := client.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
-			log.CtxWarningf(ctx, "Failed to unmount workspace - not recycling VM")
-			result.DoNotRecycle = true
-		} else {
-			unmounted = true
-			if rsp.GetBusy() {
-				// Do not recycle the VM if the workspace device is still busy after
-				// unmounting.
+
+		// If the healthcheck failed then the vmexec server has probably crashed
+		// and unmounting will most likely not work - skip unmounting, but still
+		// do a best-effort attempt to copy outputs from the image.
+		if vmHealthy {
+			if rsp, err := client.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
+				log.CtxWarningf(ctx, "Failed to unmount workspace - not recycling VM")
 				result.DoNotRecycle = true
-				log.CtxWarningf(ctx, "Workspace device is still busy after unmounting - not recycling VM")
+			} else {
+				unmounted = true
+				if rsp.GetBusy() {
+					// Do not recycle the VM if the workspace device is still busy after
+					// unmounting.
+					result.DoNotRecycle = true
+					log.CtxWarningf(ctx, "Workspace device is still busy after unmounting - not recycling VM")
+				}
 			}
 		}
 		if err := c.pauseVM(ctx); err != nil {
