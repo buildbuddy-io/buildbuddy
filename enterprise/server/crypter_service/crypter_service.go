@@ -207,13 +207,13 @@ func (c *keyCache) testGetActiveRefreshOps() int32 {
 	return c.activeRefreshOps.Load()
 }
 
-func (c *keyCache) derivedKey(ctx context.Context, groupID string, key *tables.EncryptionKeyVersion) ([]byte, error) {
-	bbmk, err := c.kms.FetchMasterKey(ctx)
+func (c *keyCache) derivedKey(groupID string, key *tables.EncryptionKeyVersion) ([]byte, error) {
+	bbmk, err := c.kms.FetchMasterKey()
 	if err != nil {
 		return nil, err
 	}
 
-	gmk, err := c.kms.FetchKey(ctx, key.GroupKeyURI)
+	gmk, err := c.kms.FetchKey(key.GroupKeyURI)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +288,7 @@ func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]
 		}
 		return nil, nil, err
 	}
-	key, err := c.derivedKey(ctx, ck.groupID, ekv)
+	key, err := c.derivedKey(ck.groupID, ekv)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -698,12 +698,12 @@ type encryptionKeyVersionWithGroupID struct {
 }
 
 func (c *Crypter) reencryptKey(ctx context.Context, ekv *encryptionKeyVersionWithGroupID) error {
-	bbmk, err := c.kms.FetchMasterKey(ctx)
+	bbmk, err := c.kms.FetchMasterKey()
 	if err != nil {
 		return err
 	}
 
-	gmk, err := c.kms.FetchKey(ctx, ekv.GroupKeyURI)
+	gmk, err := c.kms.FetchKey(ekv.GroupKeyURI)
 	if err != nil {
 		return err
 	}
@@ -905,11 +905,11 @@ func (c *Crypter) enableEncryption(ctx context.Context, kmsConfig *enpb.KMSConfi
 
 	// Get the KMS clients for the customer and our own keys. This doesn't
 	// actually talk to the KMS systems yet.
-	groupKeyClient, err := c.env.GetKMS().FetchKey(ctx, groupKeyURI)
+	groupKeyClient, err := c.env.GetKMS().FetchKey(groupKeyURI)
 	if err != nil {
 		return status.UnavailableErrorf("invalid key URI: %s", err)
 	}
-	masterKeyClient, err := c.env.GetKMS().FetchMasterKey(ctx)
+	masterKeyClient, err := c.env.GetKMS().FetchMasterKey()
 	if err != nil {
 		return err
 	}
