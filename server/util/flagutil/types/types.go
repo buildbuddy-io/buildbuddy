@@ -473,7 +473,6 @@ func Deprecate[T any](flagset *flag.FlagSet, name, migrationPlan string) {
 	tags.Tag[T](flagset, name, tags.DeprecatedTag(migrationPlan))
 }
 
-
 func Secret[T any](flagset *flag.FlagSet, name string) {
 	tags.Tag[T](flagset, name, tags.SecretTag)
 }

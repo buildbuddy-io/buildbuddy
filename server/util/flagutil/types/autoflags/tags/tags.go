@@ -20,7 +20,7 @@ type Tagged interface {
 	WrappedValueFunc(func() flag.Value)
 
 	// from Expandable
-	ExpandFunc(func(mapping func(string) (string, error)) error )
+	ExpandFunc(func(mapping func(string) (string, error)) error)
 
 	// from Secretable
 	IsSecretFunc(func() bool)
@@ -39,13 +39,13 @@ type Taggable interface {
 type TagFlag[T any] struct {
 	value flag.Value
 
-	setFunc func(value string) error
-	stringFunc func() string
-	wrappedValueFunc func() flag.Value
-	expandFunc func(mapping func(string) (string, error)) error 
-	isSecretFunc func() bool
+	setFunc                     func(value string) error
+	stringFunc                  func() string
+	wrappedValueFunc            func() flag.Value
+	expandFunc                  func(mapping func(string) (string, error)) error
+	isSecretFunc                func() bool
 	setValueForFlagNameHookFunc func()
-	yamlSetValueHookFunc func()
+	yamlSetValueHookFunc        func()
 }
 
 func (t *TagFlag[T]) Value() flag.Value {
@@ -189,7 +189,6 @@ func (d *deprecatedTag) Tag(flagset *flag.FlagSet, name string, tagged Tagged) {
 func DeprecatedTag(migrationPlan string) Taggable {
 	return &deprecatedTag{migrationPlan: migrationPlan}
 }
-
 
 type secretTag struct{}
 
