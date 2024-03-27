@@ -2190,7 +2190,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	if c.fsLayout == nil {
 		if err := c.syncWorkspace(ctx); err != nil {
-			result.Error = status.WrapError(err, "failed to sync workspace")
+			result.Error = status.WrapError(err, "failed to sync workspace. Other this change is unrelated.")
 			return result
 		}
 	} else {
