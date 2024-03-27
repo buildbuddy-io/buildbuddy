@@ -2181,7 +2181,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		result.AuxiliaryLogs[vmLogTailFileName] = c.vmLog.Tail()
 
 		execDuration := time.Since(start)
-		log.CtxDebugf(ctx, "Exec took %s", execDuration)
+		log.CtxDebugf(ctx, "Exec took %s More and more changes in b1", execDuration)
 
 		timeSinceContainerInit := time.Since(time.UnixMicro(c.currentTaskInitTimeUsec))
 		c.observeStageDuration("task_lifecycle", timeSinceContainerInit.Microseconds())
