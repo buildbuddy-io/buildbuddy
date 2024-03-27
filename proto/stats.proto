@@ -8,7 +8,7 @@ import "google/protobuf/timestamp.proto";
 
 package stats;
 
-// Next tag: 8
+// Next tag: 9
 message ExecutionStat {
   // When specified, this contains the (local) date that these stats are
   // aggregated on in YYYY-MM-DD format.  This field will not be set when
@@ -26,6 +26,12 @@ message ExecutionStat {
   double queue_duration_usec_p90 = 3;
   double queue_duration_usec_p95 = 4;
   double queue_duration_usec_p99 = 5;
+
+  // The total amount of "build time" spent (this is a number we use for
+  // billing purposes).  This sums up the total time spent on builds on all RBE
+  // workers, ignoring how many cores were used (i.e., a task using 2 cores for
+  // one minute counts the same as a task using 1 core for one minute).
+  int64 total_build_time_usec = 8;
 }
 
 message TrendQuery {

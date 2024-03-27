@@ -485,14 +485,16 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
 	if !i.finerTimeBucketsEnabled() {
 		return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
-		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles
+		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
+		SUM(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0)) as total_build_time_usec
 		FROM "Executions"`, make([]interface{}, 0)
 	}
 
 	bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
 
 	return fmt.Sprintf("SELECT %s as bucket_start_time_micros,", bucketStr) + `
-	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles
+	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
+	SUM(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0)) as total_build_time_usec
 	FROM "Executions"
 	`, bucketArgs
 }
@@ -518,7 +520,8 @@ func getQueryWithFlattenedArray(innerQuery string) string {
 	arrayElement(queue_duration_usec_quantiles, 2) as queue_duration_usec_p75,
 	arrayElement(queue_duration_usec_quantiles, 3) as queue_duration_usec_p90,
 	arrayElement(queue_duration_usec_quantiles, 4) as queue_duration_usec_p95,
-	arrayElement(queue_duration_usec_quantiles, 5) as queue_duration_usec_p99
+	arrayElement(queue_duration_usec_quantiles, 5) as queue_duration_usec_p99,
+	total_build_time_usec
 	FROM (` + innerQuery + ")"
 }
 

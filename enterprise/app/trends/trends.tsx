@@ -630,31 +630,55 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 ticks={this.state.ticks}
               />
               {this.state.timeToExecutionStatMap.size > 0 && (
-                <PercentilesChartComponent
-                  title="Remote Execution Queue Duration"
-                  data={this.state.timeKeys}
-                  extractLabel={this.formatShortDate.bind(this)}
-                  ticks={this.state.ticks}
-                  formatHoverLabel={this.formatLongDate.bind(this)}
-                  extractP50={(tsMillis) =>
-                    +(this.getExecutionStat(tsMillis).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
-                  }
-                  extractP75={(tsMillis) =>
-                    +(this.getExecutionStat(tsMillis).queueDurationUsecP75 ?? 0) * SECONDS_PER_MICROSECOND
-                  }
-                  extractP90={(tsMillis) =>
-                    +(this.getExecutionStat(tsMillis).queueDurationUsecP90 ?? 0) * SECONDS_PER_MICROSECOND
-                  }
-                  extractP95={(tsMillis) =>
-                    +(this.getExecutionStat(tsMillis).queueDurationUsecP95 ?? 0) * SECONDS_PER_MICROSECOND
-                  }
-                  extractP99={(tsMillis) =>
-                    +(this.getExecutionStat(tsMillis).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
-                  }
-                  onZoomSelection={
-                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
-                  }
-                />
+                <>
+                  <TrendsChartComponent
+                    title="Remote Execution Build Time (minutes)"
+                    data={this.state.timeKeys}
+                    dataSeries={[
+                      {
+                        name: "build time (minutes)",
+                        extractValue: (tsMillis) =>
+                          +(+(this.getExecutionStat(tsMillis).totalBuildTimeUsec ?? 0) / 60e6).toPrecision(3),
+                        formatHoverValue: (value) => `${format.count(value || 0)} minutes of build time`,
+                      },
+                    ]}
+                    primaryYAxis={{
+                      formatTickValue: format.count,
+                      allowDecimals: false,
+                    }}
+                    formatXAxisLabel={this.formatShortDate.bind(this)}
+                    formatHoverXAxisLabel={this.formatLongDate.bind(this)}
+                    ticks={this.state.ticks}
+                    onZoomSelection={
+                      capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
+                    }
+                  />
+                  <PercentilesChartComponent
+                    title="Remote Execution Queue Duration"
+                    data={this.state.timeKeys}
+                    extractLabel={this.formatShortDate.bind(this)}
+                    ticks={this.state.ticks}
+                    formatHoverLabel={this.formatLongDate.bind(this)}
+                    extractP50={(tsMillis) =>
+                      +(this.getExecutionStat(tsMillis).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
+                    }
+                    extractP75={(tsMillis) =>
+                      +(this.getExecutionStat(tsMillis).queueDurationUsecP75 ?? 0) * SECONDS_PER_MICROSECOND
+                    }
+                    extractP90={(tsMillis) =>
+                      +(this.getExecutionStat(tsMillis).queueDurationUsecP90 ?? 0) * SECONDS_PER_MICROSECOND
+                    }
+                    extractP95={(tsMillis) =>
+                      +(this.getExecutionStat(tsMillis).queueDurationUsecP95 ?? 0) * SECONDS_PER_MICROSECOND
+                    }
+                    extractP99={(tsMillis) =>
+                      +(this.getExecutionStat(tsMillis).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
+                    }
+                    onZoomSelection={
+                      capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
+                    }
+                  />
+                </>
               )}
             </>
           )}
