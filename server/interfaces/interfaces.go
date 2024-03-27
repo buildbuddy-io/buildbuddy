@@ -708,7 +708,11 @@ type GitProvider interface {
 	// repository.
 	IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error)
 
-	// TODO(bduffany): CreateStatus, ListRepos
+	// CreateStatus publishes a status payload to the given repo at the given
+	// commit SHA.
+	CreateStatus(ctx context.Context, accessToken, repoURL, commitSHA string, payload any) error
+
+	// TODO(bduffany): ListRepos
 }
 
 // WebhookData represents the data extracted from a Webhook event.

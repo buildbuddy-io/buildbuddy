@@ -9,6 +9,8 @@ go_library(
     deps = [
         "//enterprise/server/util/fieldgetter",
         "//enterprise/server/webhooks/webhook_data",
+        "//server/backends/github",
+        "//server/environment",
         "//server/interfaces",
         "//server/util/git",
         "//server/util/status",
@@ -25,6 +27,7 @@ go_test(
         ":github",
         "//enterprise/server/webhooks/github/test_data",
         "//server/interfaces",
+        "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
     ],
 )

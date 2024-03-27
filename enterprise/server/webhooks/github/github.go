@@ -12,10 +12,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2"
 
+	gh_backend "github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	gh "github.com/google/go-github/v59/github"
 )
@@ -25,10 +27,14 @@ var (
 	eventsToReceive = []string{"push", "pull_request", "pull_request_review"}
 )
 
-type githubGitProvider struct{}
+type githubGitProvider struct {
+	env environment.Env
+}
 
-func NewProvider() interfaces.GitProvider {
-	return &githubGitProvider{}
+func NewProvider(env environment.Env) interfaces.GitProvider {
+	return &githubGitProvider{
+		env: env,
+	}
 }
 
 func newGitHubClient(ctx context.Context, accessToken string) *gh.Client {
@@ -242,6 +248,19 @@ func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, u
 		return false, status.InternalErrorf("failed to determine whether %s is a collaborator in %s: %s", user, repoURL, err)
 	}
 	return isCollaborator, nil
+}
+
+func (g *githubGitProvider) CreateStatus(ctx context.Context, token, repoURL, commitSHA string, payload any) error {
+	s, ok := payload.(*gh_backend.GithubStatusPayload)
+	if !ok {
+		return status.InvalidArgumentErrorf("invalid GitHub status payload type %T (expected %T)", payload, &gh_backend.GithubStatusPayload{})
+	}
+	client := gh_backend.NewGithubClient(g.env, token)
+	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(repoURL)
+	if err != nil {
+		return err
+	}
+	return client.CreateStatus(ctx, ownerRepo, commitSHA, s)
 }
 
 func webhookJSONPayload(r *http.Request) ([]byte, error) {

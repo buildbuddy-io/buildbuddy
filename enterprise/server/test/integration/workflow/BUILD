@@ -27,6 +27,7 @@ go_test(
         "//proto:invocation_status_go_proto",
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
+        "//server/backends/github",
         "//server/backends/repo_downloader",
         "//server/interfaces",
         "//server/testutil/testbazel",
