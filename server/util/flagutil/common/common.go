@@ -314,6 +314,24 @@ func setWithOverride(flagset *flag.FlagSet, flagValue flag.Value, name, newValue
 	return nil
 }
 
+// Expand updates the flag value to replace any placeholders in format ${FOO}
+// with the content of calling the mapper function with the placeholder name.
+func Expand(v flag.Value, mapper func(string) (string, error)) error {
+	// If the flag type wants to handle expansion, let it.
+	if r, ok := v.(Expandable); ok {
+		if err := r.Expand(mapper); err != nil {
+			return err
+		}
+		return nil
+	}
+	// Otherwise, expand directly using String/Set.
+	exp, err := mapper(v.String())
+	if err != nil {
+		return err
+	}
+	return v.Set(exp)
+}
+
 // AddTestFlagTypeForTesting adds a type correspondence to the internal
 // flagTypeMap.
 func AddTestFlagTypeForTesting(flagValue, value any) {

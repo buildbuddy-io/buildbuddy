@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -70,7 +69,7 @@ func LoadFromData(data string) error {
 	}
 	var lastErr error
 	common.DefaultFlagSet.VisitAll(func(f *flag.Flag) {
-		if err := types.Expand(f.Value, expandStringValue); err != nil {
+		if err := flagutil.Expand(f.Value, expandStringValue); err != nil {
 			lastErr = err
 		}
 	})

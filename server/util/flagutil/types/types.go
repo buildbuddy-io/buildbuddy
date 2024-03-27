@@ -20,6 +20,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gopkg.in/yaml.v3"
@@ -434,12 +435,6 @@ func (f *FlagAlias[T]) WrappedValue() flag.Value {
 	return flg.Value
 }
 
-type DeprecatedFlag[T any] struct {
-	flag.Value
-	name          string
-	MigrationPlan string
-}
-
 // DeprecatedVar takes a flag.Value (which can be obtained for primitive types
 // via the NewPrimitiveFlag or NewPrimitiveFlagVar functions), the customary
 // name and usage parameters, and a migration plan, and defines a flag that will
@@ -460,7 +455,7 @@ type DeprecatedFlag[T any] struct {
 func DeprecatedVar[T any](flagset *flag.FlagSet, value flag.Value, name string, usage, migrationPlan string) *T {
 	flagset.Var(value, name, usage)
 	Deprecate[T](flagset, name, migrationPlan)
-	converted, err := common.ConvertFlagValue(value)
+	converted, err := common.ConvertFlagValue(flagset.Lookup(name).Value)
 	if err != nil {
 		log.Fatalf("Error creating deprecated flag %s: %v", name, err)
 	}
@@ -475,97 +470,10 @@ func DeprecatedVar[T any](flagset *flag.FlagSet, value flag.Value, name string, 
 // called in an init func. While simpler to use than DeprecatedVar, it does
 // decouple the flag declaration from the flag deprecation.
 func Deprecate[T any](flagset *flag.FlagSet, name, migrationPlan string) {
-	flg := flagset.Lookup(name)
-	converted, err := common.ConvertFlagValue(flg.Value)
-	if err != nil {
-		log.Fatalf("Error creating deprecated flag %s: %v", name, err)
-	} else if _, ok := converted.(*T); !ok {
-		log.Fatalf("Error creating deprecated flag %s: could not coerce flag of type %T to type %T.", name, converted, (*T)(nil))
-	}
-	flg.Value = &DeprecatedFlag[T]{
-		Value:         flg.Value,
-		name:          flg.Name,
-		MigrationPlan: migrationPlan,
-	}
-	flg.Usage = flg.Usage + " **DEPRECATED** " + migrationPlan
+	tags.Tag[T](flagset, name, tags.DeprecatedTag(migrationPlan))
 }
 
-func (d *DeprecatedFlag[T]) Set(value string) error {
-	log.Warningf("Flag \"%s\" was set on the command line but has been deprecated: %s", d.name, d.MigrationPlan)
-	return d.Value.Set(value)
-}
-
-func (d *DeprecatedFlag[T]) WrappedValue() flag.Value {
-	return d.Value
-}
-
-func (d *DeprecatedFlag[T]) SetValueForFlagNameHook() {
-	log.Warningf("Flag \"%s\" was set programmatically by name but has been deprecated: %s", d.name, d.MigrationPlan)
-}
-
-func (d *DeprecatedFlag[T]) YAMLSetValueHook() {
-	log.Warningf("Flag \"%s\" was set through the YAML config but has been deprecated: %s", d.name, d.MigrationPlan)
-}
-
-func (d *DeprecatedFlag[T]) String() string {
-	if d.Value == nil {
-		return fmt.Sprint(common.Zero[T]())
-	}
-	return d.Value.String()
-}
-
-func (d *DeprecatedFlag[T]) Expand(mapping func(string) (string, error)) error {
-	return Expand(d.Value, mapping)
-}
-
-type SecretFlag[T any] struct {
-	flag.Value
-}
 
 func Secret[T any](flagset *flag.FlagSet, name string) {
-	flg := flagset.Lookup(name)
-	converted, err := common.ConvertFlagValue(flg.Value)
-	if err != nil {
-		log.Fatalf("Error creating secret flag %s: %v", name, err)
-	} else if _, ok := converted.(*T); !ok {
-		log.Fatalf("Error creating secret flag %s: could not coerce flag of type %T to type %T.", name, converted, (*T)(nil))
-	}
-	flg.Value = &SecretFlag[T]{flg.Value}
-}
-
-func (s *SecretFlag[T]) WrappedValue() flag.Value {
-	return s.Value
-}
-
-func (s *SecretFlag[T]) IsSecret() bool {
-	return true
-}
-
-func (s *SecretFlag[T]) String() string {
-	if s.Value == nil {
-		return fmt.Sprint(common.Zero[T]())
-	}
-	return s.Value.String()
-}
-
-func (s *SecretFlag[T]) Expand(mapping func(string) (string, error)) error {
-	return Expand(s.Value, mapping)
-}
-
-// Expand updates the flag value to replace any placeholders in format ${FOO}
-// with the content of calling the mapper function with the placeholder name.
-func Expand(v flag.Value, mapper func(string) (string, error)) error {
-	// If the flag type wants to handle expansion, let it.
-	if r, ok := v.(common.Expandable); ok {
-		if err := r.Expand(mapper); err != nil {
-			return err
-		}
-		return nil
-	}
-	// Otherwise, expand directly using String/Set.
-	exp, err := mapper(v.String())
-	if err != nil {
-		return err
-	}
-	return v.Set(exp)
+	tags.Tag[T](flagset, name, tags.SecretTag)
 }

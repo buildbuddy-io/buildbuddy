@@ -10,7 +10,9 @@ go_library(
     ],
     deps = [
         "//server/util/flagutil/types",
+        "//server/util/flagutil/types/autoflags/tags",
         "//server/util/flagutil/yaml",
+        "//server/util/log",
     ],
 )
 

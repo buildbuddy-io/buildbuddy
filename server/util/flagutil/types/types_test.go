@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -465,7 +466,7 @@ deprecated_string_slice:
 	require.NoError(t, err)
 	assert.Equal(t, testStringSlice, []string{"hi", "hello", "hey"})
 
-	d := any(&DeprecatedFlag[struct{}]{})
+	d := any(&tags.TagFlag[struct{}]{})
 	_, ok := d.(common.WrappingValue)
 	assert.True(t, ok)
 	_, ok = d.(common.SetValueForFlagNameHooked)
@@ -474,8 +475,8 @@ deprecated_string_slice:
 	assert.True(t, ok)
 
 	// `String` should not panic on zero-constructed flag
-	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*DeprecatedFlag[[]testStruct])(nil)).Elem()).Interface().(flag.Value).String())
-	assert.Equal(t, "", reflect.New(reflect.TypeOf((*DeprecatedFlag[string])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*tags.TagFlag[[]testStruct])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "", reflect.New(reflect.TypeOf((*tags.TagFlag[string])(nil)).Elem()).Interface().(flag.Value).String())
 }
 
 func TestDeprecate(t *testing.T) {

@@ -2,52 +2,26 @@ package autoflags
 
 import (
 	"flag"
-	"log"
 	"net/url"
 	"reflect"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
+	flagtags "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
 	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
-type Taggable interface {
-	Tag(name string)
-}
+type Taggable flagtags.Taggable
 
-type secretTag struct{}
+var SecretTag = flagtags.SecretTag
 
-func (_ *secretTag) Tag(name string) {
-	log.Fatalf(
-		"'secretTag.Taggable' was called for flag '%s', but is not meant to be "+
-			"called for 'secretTag'; tagging a flag as secret is instead handled by "+
-			"'New' or 'Var'.",
-		name,
-	)
-}
-
-var SecretTag = &secretTag{}
-
-type deprecatedTag struct {
-	migrationPlan string
-}
-
-func (d *deprecatedTag) Tag(name string) {
-	log.Fatalf(
-		"'deprecatedTag.Taggable' was called for flag '%s', but is not meant to "+
-			"be called for 'deprecatedTag'; tagging a flag as deprecated is instead "+
-			"handled by 'New' or 'Var'.",
-		name,
-	)
-}
-
-func DeprecatedTag(migrationPlan string) Taggable {
-	return &deprecatedTag{migrationPlan: migrationPlan}
-}
+var DeprecatedTag = flagtags.DeprecatedTag
 
 type yamlIgnoreTag struct{}
 
-func (_ *yamlIgnoreTag) Tag(name string) {
+func (_ *yamlIgnoreTag) Tag(flagset *flag.FlagSet, name string, f flagtags.Tagged) {
 	flagyaml.IgnoreFlagForYAML(name)
 }
 
@@ -105,13 +79,6 @@ func Var[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, us
 		log.Fatalf("Var was called from flag registry for flag %s with value %v of unrecognized type %T.", name, defaultValue, defaultValue)
 	}
 	for _, tg := range tags {
-		switch v := any(tg).(type) {
-		case *secretTag:
-			flagtypes.Secret[T](flagset, name)
-		case *deprecatedTag:
-			flagtypes.Deprecate[T](flagset, name, v.migrationPlan)
-		default:
-			tg.Tag(name)
-		}
+		flagtags.Tag[T](flagset, name, tg)
 	}
 }
