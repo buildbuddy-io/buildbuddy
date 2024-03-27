@@ -2158,7 +2158,7 @@ func (c *FirecrackerContainer) monitorVMContext(ctx context.Context) (context.Co
 // If stdout is non-nil, the stdout of the executed process will be written to the
 // stdout writer.
 func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	log.CtxInfof(ctx, "(Second commit) Executing command. My first commit.")
+	log.CtxInfof(ctx, "This is a stacked PR. Executing command. My first commit.")
 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
