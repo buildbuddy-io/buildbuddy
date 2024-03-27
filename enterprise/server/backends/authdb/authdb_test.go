@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -30,9 +31,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	crand "crypto/rand"
+
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 func TestSessionInsertUpdateDeleteRead(t *testing.T) {
@@ -331,17 +335,54 @@ func TestLookupUserFromSubID(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, randUser, u)
 
+	user := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
+	for i := 0; i < 10; i++ {
+		u := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
+		ctx2, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, u.UserID)
+		require.NoError(t, err)
+		err = env.GetUserDB().UpdateGroupUsers(ctx2, u.Groups[0].GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+			{UserId: &uidpb.UserId{Id: user.UserID}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+		})
+		require.NoError(t, err)
+
+		u.Groups[0].Role = uint32(grpb.GroupMembershipStatus_MEMBER)
+		user.Groups = append(user.Groups, u.Groups[0])
+	}
+
+	sort.Slice(user.Groups, func(i, j int) bool { return user.Groups[i].GroupID < user.Groups[j].GroupID })
+
+	u, err = adb.LookupUserFromSubID(ctx, user.SubID)
+	require.NoError(t, err)
+	require.Equal(t, user, u)
+
 	// Using empty or invalid values should produce an error
 	u, err = adb.LookupUserFromSubID(ctx, "")
 	require.Nil(t, u)
 	require.Truef(
-		t, db.IsRecordNotFound(err),
+		t, status.IsNotFoundError(err),
 		"expected RecordNotFound error; got: %v", err)
 	u, err = adb.LookupUserFromSubID(ctx, "INVALID")
 	require.Nil(t, u)
 	require.Truef(
-		t, db.IsRecordNotFound(err),
+		t, status.IsNotFoundError(err),
 		"expected RecordNotFound error; got: %v", err)
+}
+
+func TestLookupUserFromSubIDNoGroup(t *testing.T) {
+	flags.Set(t, "database.log_queries", true)
+
+	ctx := context.Background()
+	env := setupEnv(t)
+	adb := env.GetAuthDB()
+
+	flags.Set(t, "app.add_user_to_domain_group", false)
+	flags.Set(t, "app.create_group_per_user", false)
+
+	randUser := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
+
+	u, err := adb.LookupUserFromSubID(ctx, randUser.SubID)
+	require.NoError(t, err)
+	require.Equal(t, randUser, u)
 }
 
 func newFakeUser(userID, domain string) *tables.User {
