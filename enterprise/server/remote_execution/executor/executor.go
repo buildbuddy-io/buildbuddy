@@ -337,7 +337,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// Otherwise, send the error back to the client via the ExecuteResponse
 	// status.
 	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, executeResponse); err != nil {
-		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
+		log.CtxErrorf(ctx, "A change from b1. Failed to publish ExecuteResponse: %s", err)
 		return finishWithErrFn(err)
 	}
 	if cmdResult.Error == nil && !cmdResult.DoNotRecycle {
