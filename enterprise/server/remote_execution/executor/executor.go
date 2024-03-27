@@ -341,7 +341,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(err)
 	}
 	if cmdResult.Error == nil && !cmdResult.DoNotRecycle {
-		log.CtxDebugf(ctx, "Task finished cleanly.")
+		log.CtxDebugf(ctx, "Task finished cleanly. From branch 3")
 		finishedCleanly = true
 	}
 	return false, nil
