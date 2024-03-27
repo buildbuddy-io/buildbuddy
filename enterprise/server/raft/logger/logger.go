@@ -32,7 +32,7 @@ func (l *dbCompatibleLogger) SetLevel(level logger.LogLevel) {}
 func init() {
 	logger.SetLoggerFactory(func(pkgName string) logger.ILogger {
 		switch pkgName {
-		case "rsm", "transport", "raftpb", "logdb":
+		case "dragonboat", "logdb", "raft", "raftpb", "rsm", "transport":
 			// Make the raft library be quieter.
 			return &nullLogger{}
 		default:

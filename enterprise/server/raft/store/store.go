@@ -205,6 +205,10 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		s.grpcServer.Serve(lis)
 	}()
 
+	// Start the leaseKeeper before we rejoin configured clusters, otherwise,
+	// StartOnDiskReplica can be blocked when the the buffered leaderChangeListener channel is full.
+	s.leaseKeeper.Start()
+
 	// rejoin configured clusters
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
 
@@ -393,8 +397,6 @@ func (s *Store) Start() error {
 		s.processSplitRequests(gctx)
 		return nil
 	})
-
-	s.leaseKeeper.Start()
 
 	return nil
 }

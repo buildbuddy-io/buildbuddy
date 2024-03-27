@@ -671,7 +671,6 @@ func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
 			return err
 		}
 	}
-	log.Debugf("replica(shardID=%d, replicaID=%d) loaded inflight transactions", sm.ShardID, sm.ReplicaID)
 	return nil
 }
 
@@ -686,7 +685,6 @@ func (sm *Replica) loadPartitionMetadata(db ReplicaReader) error {
 	for _, pm := range pms.GetMetadata() {
 		sm.partitionMetadata[pm.GetPartitionId()] = pm
 	}
-	log.Debugf("replica(shardID=%d, replicaID=%d) loaded partition metadata", sm.ShardID, sm.ReplicaID)
 	return nil
 }
 
@@ -697,7 +695,6 @@ func (sm *Replica) loadRangeDescriptor(db ReplicaReader) {
 		return
 	}
 	sm.setRange(constants.LocalRangeKey, buf)
-	log.Debugf("replica(shardID=%d, replicaID=%d) loaded range descriptor", sm.ShardID, sm.ReplicaID)
 }
 
 func (sm *Replica) loadRangeLease(db ReplicaReader) {
@@ -706,12 +703,10 @@ func (sm *Replica) loadRangeLease(db ReplicaReader) {
 		return
 	}
 	sm.setRangeLease(constants.LocalRangeLeaseKey, buf)
-	log.Debugf("replica(shardID=%d, replicaID=%d) loaded range lease", sm.ShardID, sm.ReplicaID)
 }
 
 // loadReplicaState loads any in-memory replica state from the DB.
 func (sm *Replica) loadReplicaState(db ReplicaReader) error {
-	log.Debugf("replica (shardID=%d, replicaID=%d) loadReplicaState started", sm.ShardID, sm.ReplicaID)
 	sm.loadRangeDescriptor(db)
 	sm.loadRangeLease(db)
 	if err := sm.loadPartitionMetadata(db); err != nil {
@@ -728,7 +723,6 @@ func (sm *Replica) loadReplicaState(db ReplicaReader) error {
 		return status.FailedPreconditionErrorf("last applied not moving forward: %d > %d", sm.lastAppliedIndex, lastStoredIndex)
 	}
 	sm.lastAppliedIndex = lastStoredIndex
-	log.Debugf("replica (shardID=%d, replicaID=%d) loadReplicaState finished", sm.ShardID, sm.ReplicaID)
 	return nil
 }
 
