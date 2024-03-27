@@ -1,7 +1,6 @@
 package keystore
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 
@@ -21,12 +20,12 @@ import (
 // This method should generally only be called once per customer -- to generate
 // the initial keys which are then stored and used to decrypt secrets provided
 // by that customer.
-func GenerateSealedBoxKeys(ctx context.Context, env environment.Env) (string, string, error) {
+func GenerateSealedBoxKeys(env environment.Env) (string, string, error) {
 	kms := env.GetKMS()
 	if kms == nil {
 		return "", "", status.FailedPreconditionError("No KMS was configured")
 	}
-	masterKey, err := kms.FetchMasterKey(ctx)
+	masterKey, err := kms.FetchMasterKey()
 	if err != nil {
 		return "", "", err
 	}
@@ -46,12 +45,12 @@ func GenerateSealedBoxKeys(ctx context.Context, env environment.Env) (string, st
 // provided publicKey and (encrypted) private key. (See GenerateSealedBoxKey
 // above to generate a publicKey and privateKey). If any error is encountered it
 // is immediately returned (no partial content is ever returned).
-func OpenAnonymousSealedBoxes(ctx context.Context, env environment.Env, b64PublicKey, b64EncryptedPrivateKey string, b64CipherTexts []string) ([]string, error) {
+func OpenAnonymousSealedBoxes(env environment.Env, b64PublicKey, b64EncryptedPrivateKey string, b64CipherTexts []string) ([]string, error) {
 	kms := env.GetKMS()
 	if kms == nil {
 		return nil, status.FailedPreconditionError("No KMS was configured")
 	}
-	masterKey, err := kms.FetchMasterKey(ctx)
+	masterKey, err := kms.FetchMasterKey()
 	if err != nil {
 		return nil, err
 	}
@@ -90,8 +89,8 @@ func OpenAnonymousSealedBoxes(ctx context.Context, env environment.Env, b64Publi
 
 // OpenAnonymousSealedBox is the singlular version of the method
 // OpenAnonymousSealedBoxes above.
-func OpenAnonymousSealedBox(ctx context.Context, env environment.Env, b64PublicKey, b64EncryptedPrivateKey string, b64CipherText string) (string, error) {
-	decoded, err := OpenAnonymousSealedBoxes(ctx, env, b64PublicKey, b64EncryptedPrivateKey, []string{b64CipherText})
+func OpenAnonymousSealedBox(env environment.Env, b64PublicKey, b64EncryptedPrivateKey string, b64CipherText string) (string, error) {
+	decoded, err := OpenAnonymousSealedBoxes(env, b64PublicKey, b64EncryptedPrivateKey, []string{b64CipherText})
 	if err != nil {
 		return "", err
 	}

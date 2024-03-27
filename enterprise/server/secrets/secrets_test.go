@@ -84,7 +84,7 @@ func TestUpdateSecret(t *testing.T) {
 	pubKeys := make(map[string]string, len(groups))
 	encPrivKeys := make(map[string]string, len(groups))
 	for gid := range groups {
-		pubKey, encPrivKey, err := keystore.GenerateSealedBoxKeys(context.Background(), te)
+		pubKey, encPrivKey, err := keystore.GenerateSealedBoxKeys(te)
 		require.NoError(t, err)
 
 		pubKeys[gid] = pubKey
@@ -166,7 +166,7 @@ func TestUpdateSecret(t *testing.T) {
 		).Take(&encValue)
 		assert.NoError(t, err)
 
-		value, err := keystore.OpenAnonymousSealedBox(context.Background(), te, pubKeys[gid], encPrivKeys[gid], encValue)
+		value, err := keystore.OpenAnonymousSealedBox(te, pubKeys[gid], encPrivKeys[gid], encValue)
 		assert.NoError(t, err)
 
 		lastUser := users[len(users)-1]
@@ -194,7 +194,7 @@ func TestUpdateSecret(t *testing.T) {
 			).Take(&encValue)
 			assert.NoError(t, err)
 
-			value, err := keystore.OpenAnonymousSealedBox(context.Background(), te, pubKeys[gid], encPrivKeys[gid], encValue)
+			value, err := keystore.OpenAnonymousSealedBox(te, pubKeys[gid], encPrivKeys[gid], encValue)
 			assert.NoError(t, err)
 
 			assert.Equal(t, values[u.UserID], value)

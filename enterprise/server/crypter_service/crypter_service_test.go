@@ -84,8 +84,8 @@ func (f *fakeKMS) ReturnError(uri string, err error) {
 	f.keys[uri] = &fakeKmsKey{err: err}
 }
 
-func (f *fakeKMS) FetchMasterKey(ctx context.Context) (interfaces.AEAD, error) {
-	return f.FetchKey(ctx, "master")
+func (f *fakeKMS) FetchMasterKey() (interfaces.AEAD, error) {
+	return f.FetchKey("master")
 }
 
 func (f *fakeKMS) ResetFetchCount(uri string) {
@@ -129,7 +129,7 @@ func (g *gcmAESAEAD) Decrypt(ciphertext, associatedData []byte) ([]byte, error) 
 	return g.ciph.Open(nil, nonce, ciphertext[g.ciph.NonceSize():], associatedData)
 }
 
-func (f *fakeKMS) FetchKey(_ context.Context, uri string) (interfaces.AEAD, error) {
+func (f *fakeKMS) FetchKey(uri string) (interfaces.AEAD, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	keyData, ok := f.keys[uri]
@@ -184,12 +184,12 @@ func createKey(t *testing.T, env environment.Env, clock clockwork.Clock, keyID, 
 	_, err = rand.Read(groupKeyPart)
 	require.NoError(t, err)
 
-	masterAEAD, err := kmsClient.FetchMasterKey(context.Background())
+	masterAEAD, err := kmsClient.FetchMasterKey()
 	require.NoError(t, err)
 	encMasterKeyPart, err := masterAEAD.Encrypt(masterKeyPart, []byte(groupID))
 	require.NoError(t, err)
 
-	groupAEAD, err := kmsClient.FetchKey(context.Background(), groupKeyURI)
+	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
 	require.NoError(t, err)
 	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, []byte(groupID))
 	require.NoError(t, err)

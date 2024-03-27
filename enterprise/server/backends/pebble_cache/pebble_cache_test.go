@@ -2362,12 +2362,12 @@ func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI st
 	_, err = rand.Read(groupKeyPart)
 	require.NoError(t, err)
 
-	masterAEAD, err := kmsClient.FetchMasterKey(context.Background())
+	masterAEAD, err := kmsClient.FetchMasterKey()
 	require.NoError(t, err)
 	encMasterKeyPart, err := masterAEAD.Encrypt(masterKeyPart, []byte(groupID))
 	require.NoError(t, err)
 
-	groupAEAD, err := kmsClient.FetchKey(context.Background(), groupKeyURI)
+	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
 	require.NoError(t, err)
 	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, []byte(groupID))
 	require.NoError(t, err)
