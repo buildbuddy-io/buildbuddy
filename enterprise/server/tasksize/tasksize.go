@@ -385,7 +385,7 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 		freeDiskEstimate = props.EstimatedFreeDiskBytes
 	}
 	if freeDiskEstimate > MaxEstimatedFreeDisk {
-		log.Warningf("Task requested %d free disk which is more than the max %d", freeDiskEstimate, MaxEstimatedFreeDisk)
+		log.Infof("Task %q requested %d free disk which is more than the max %d", task.GetExecutionId(), freeDiskEstimate, MaxEstimatedFreeDisk)
 		freeDiskEstimate = MaxEstimatedFreeDisk
 	}
 
