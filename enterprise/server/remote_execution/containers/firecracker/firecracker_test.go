@@ -139,8 +139,8 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "0a4d754cb1b71a32c7f1bea13ac4a69c2e4f045ccf08e44ff08157dc0bdd9a35"
-		expectedVersion = "8"
+		expectedHash    = "e13844bc52491c4e466e9251e6fe2c4a76d32e9c3b22c6b90a348cef4c5d4d0a"
+		expectedVersion = "9"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -1476,6 +1476,47 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
 	assert.NotEqual(t, 0, res.ExitCode)
+}
+
+func TestFirecrackerVMNotRecycledIfWorkspaceDeviceStillBusy(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	testfs.WriteAllFileContents(t, workDir, map[string]string{"foo.txt": ""})
+	cmd := &repb.Command{
+		// Have the guest create a bind-mount that will cause the workspace
+		// block device to stay busy even after we've unmounted the /workspace
+		// dir.
+		Arguments: []string{"bash", "-c", `
+			touch /root/foo.txt
+			mount --bind /workspace/foo.txt /root/foo.txt
+		`},
+	}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageWithDockerInstalled,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			ScratchDiskSizeMb: 200,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+
+	res := c.Exec(ctx, cmd, nil)
+	require.NoError(t, res.Error)
+	require.True(t, res.DoNotRecycle, "should not recycle VM since filesystem is still busy")
 }
 
 func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {

@@ -1012,6 +1012,10 @@ type CommandResult struct {
 	// useful to present to the user.
 	AuxiliaryLogs map[string][]byte
 
+	// DoNotRecycle indicates that a runner should not be reused after this
+	// command has executed.
+	DoNotRecycle bool
+
 	// ExitCode is one of the following:
 	// * The exit code returned by the executed command
 	// * -1 if the process was killed or did not exit

@@ -147,8 +147,24 @@ func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWor
 		log.Errorf("Failed to unmount workspace: %s", err)
 		return nil, status.InternalErrorf("unmount failed: %s", err)
 	}
-	log.Infof("Unmounted workspace from %s", workspaceMountPath)
-	return &vmxpb.UnmountWorkspaceResponse{}, nil
+
+	// Try to open the workspace device in exclusive mode. If this fails, the
+	// workspace device is still busy even after unmounting. This can happen
+	// e.g. if a docker container is running that tries to mount a workspace
+	// file as a volume.
+	busy := false
+	f, err := os.OpenFile(x.workspaceDevice, os.O_RDONLY|os.O_EXCL, 0)
+	if err != nil {
+		// TODO(bduffany): make this a hard failure once we notify affected
+		// users that this is happening.
+		busy = true
+		log.Warningf("Workspace device is still busy after unmounting. VM will not be recycled.")
+	} else {
+		f.Close()
+	}
+
+	log.Infof("Unmounted workspace device %s", x.workspaceDevice)
+	return &vmxpb.UnmountWorkspaceResponse{Busy: busy}, nil
 }
 
 func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspaceRequest) (*vmxpb.MountWorkspaceResponse, error) {
