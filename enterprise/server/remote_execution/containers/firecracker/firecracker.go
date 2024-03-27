@@ -1038,7 +1038,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	machine, err := fcclient.NewMachine(vmCtx, cfg, machineOpts...)
 	if err != nil {
-		return status.InternalErrorf("Failed creating machine: %s", err)
+		return status.UnavailableErrorf("Failed creating machine: %s", err)
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
@@ -1108,7 +1108,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		if cause := context.Cause(ctx); cause != nil {
 			return cause
 		}
-		return status.InternalErrorf("failed to start machine: %s", err)
+		return status.UnavailableErrorf("failed to start machine: %s", err)
 	}
 	c.machine = machine
 
@@ -1116,7 +1116,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		if cause := context.Cause(ctx); cause != nil {
 			return cause
 		}
-		return status.InternalErrorf("error resuming VM: %s", err)
+		return status.UnavailableErrorf("error resuming VM: %s", err)
 	}
 
 	conn, err := c.dialVMExecServer(ctx)
@@ -1160,7 +1160,7 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 	cowChunkDir := filepath.Join(c.getChroot(), rootFSName)
 	if err := os.MkdirAll(cowChunkDir, 0755); err != nil {
-		return status.InternalErrorf("failed to create rootfs chunk dir: %s", err)
+		return status.UnavailableErrorf("failed to create rootfs chunk dir: %s", err)
 	}
 	containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
 	cf, err := snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.supportsRemoteSnapshots)
@@ -1286,10 +1286,10 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 		// this awkwardness.
 		const emptyFileName = "empty.ext4"
 		if err := os.WriteFile(filepath.Join(c.getChroot(), emptyFileName), nil, 0644); err != nil {
-			return status.InternalErrorf("failed to create empty workspace file")
+			return status.UnavailableErrorf("failed to create empty workspace file")
 		}
 		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, emptyFileName); err != nil {
-			return status.InternalErrorf("failed to stub out workspace drive: %s", err)
+			return status.UnavailableErrorf("failed to stub out workspace drive: %s", err)
 		}
 		if c.workspaceVBD != nil {
 			err := c.workspaceVBD.Unmount(ctx)
@@ -1326,7 +1326,7 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 		chrootRelativeImagePath = filepath.Join(workspaceDriveID+vbdMountDirSuffix, vbd.FileName)
 	}
 	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
-		return status.InternalErrorf("error updating workspace drive attached to snapshot: %s", err)
+		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
 
 	if _, err := execClient.MountWorkspace(ctx, &vmxpb.MountWorkspaceRequest{}); err != nil {
@@ -2098,9 +2098,9 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 			// Intentionally not returning DeadlineExceededError here since it
 			// is not a Bazel-retryable error, but this particular timeout
 			// should be retryable.
-			return nil, status.InternalErrorf("failed to connect to VM: %s", err)
+			return nil, status.UnavailableErrorf("failed to connect to VM: %s", err)
 		}
-		return nil, status.InternalErrorf("failed to connect to VM: %s", err)
+		return nil, status.UnavailableErrorf("failed to connect to VM: %s", err)
 	}
 	return conn, nil
 }
@@ -2292,7 +2292,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			}
 		}
 		if err := c.pauseVM(ctx); err != nil {
-			result.Error = status.InternalErrorf("error pausing VM: %s", err)
+			result.Error = status.UnavailableErrorf("error pausing VM: %s", err)
 			return result
 		}
 		if err := c.copyOutputsToWorkspace(ctx); err != nil {
@@ -2301,7 +2301,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 		// Resume the VM and remount the workspace now that we're done copying.
 		if err := c.machine.ResumeVM(ctx); err != nil {
-			result.Error = status.InternalErrorf("error resuming VM after copying workspace outputs: %s", err)
+			result.Error = status.UnavailableErrorf("error resuming VM after copying workspace outputs: %s", err)
 			return result
 		}
 		if unmounted {
@@ -2691,7 +2691,7 @@ func (c *FirecrackerContainer) parseFatalInitError() error {
 	lines := strings.Split(tail, "\n")
 	for _, line := range lines {
 		if m := fatalErrPattern.FindStringSubmatch(line); len(m) >= 1 {
-			return status.InternalErrorf("Firecracker VM crashed: %s", m[1])
+			return status.UnavailableErrorf("Firecracker VM crashed: %s", m[1])
 		}
 	}
 	return nil
@@ -2724,7 +2724,7 @@ func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult
 	tail := string(c.vmLog.Tail())
 	// Logs contain "\r\n"; convert these to universal line endings.
 	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	return status.InternalErrorf("process hit a segfault:\n%s", tail)
+	return status.UnavailableErrorf("process hit a segfault:\n%s", tail)
 }
 
 func (c *FirecrackerContainer) observeStageDuration(taskStage string, durationUsec int64) {
