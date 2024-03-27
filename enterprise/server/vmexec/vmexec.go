@@ -158,8 +158,10 @@ func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWor
 		// TODO(bduffany): make this a hard failure once we notify affected
 		// users that this is happening.
 		busy = true
+		log.Warningf("Workspace device is still busy after unmounting. VM will not be recycled.")
+	} else {
+		f.Close()
 	}
-	f.Close()
 
 	log.Infof("Unmounted workspace device %s", x.workspaceDevice)
 	return &vmxpb.UnmountWorkspaceResponse{Busy: busy}, nil
