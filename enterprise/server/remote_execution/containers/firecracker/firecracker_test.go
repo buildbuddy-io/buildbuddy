@@ -1478,24 +1478,19 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 	assert.NotEqual(t, 0, res.ExitCode)
 }
 
-func TestFirecrackerRecycleWithDockerWorkspaceMounts(t *testing.T) {
+func TestFirecrackerVMNotRecycledIfWorkspaceDeviceStillBusy(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	testfs.WriteAllFileContents(t, workDir, map[string]string{
-		"config.json": `{}`,
-	})
+	testfs.WriteAllFileContents(t, workDir, map[string]string{"foo.txt": ""})
 	cmd := &repb.Command{
+		// Have the guest create a bind-mount that will cause the workspace
+		// block device to stay busy even after we've unmounted the /workspace
+		// dir.
 		Arguments: []string{"bash", "-c", `
-			set -e
-			docker pull ` + busyboxImage + `
-			docker run --rm -d --volume=/workspace/config.json:/config.json ` + busyboxImage + ` sh -c '
-			    while true; do
-					cat /config.json
-					sleep 0.01
-				done
-			'
+			touch /root/foo.txt
+			mount --bind /workspace/foo.txt /root/foo.txt
 		`},
 	}
 	opts := firecracker.ContainerOpts{
@@ -1503,9 +1498,7 @@ func TestFirecrackerRecycleWithDockerWorkspaceMounts(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
-			MemSizeMb:         2500,
-			EnableNetworking:  true,
-			InitDockerd:       true,
+			MemSizeMb:         minMemSizeMB,
 			ScratchDiskSizeMb: 200,
 		},
 		ExecutorConfig: getExecutorConfig(t),
