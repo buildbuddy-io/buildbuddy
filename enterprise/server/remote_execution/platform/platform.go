@@ -129,6 +129,10 @@ const (
 	workflowClientIdentityTokenLifetime = 12 * time.Hour
 )
 
+func VFSEnabled() bool {
+	return *enableVFS
+}
+
 // Properties represents the platform properties parsed from a command.
 type Properties struct {
 	OS                        string
