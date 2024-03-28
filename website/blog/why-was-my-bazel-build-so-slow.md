@@ -3,7 +3,7 @@ slug: debugging-slow-bazel-builds
 title: Why is my Bazel build so slow?
 author: Maggie Lou
 author_title: "Software Engineer @ BuildBuddy"
-date: 2024-3-14 12:00:00
+date: 2024-4-02 12:00:00
 author_url: https://www.linkedin.com/in/maggie-lou-4a3bb110a/
 author_image_url: https://avatars.githubusercontent.com/u/13951661
 image: /img/slow.webp
@@ -14,10 +14,12 @@ The promise of Bazel is the promise of fast builds. So what do you do if your bu
 
 BuildBuddy is here to help. Bazel provides a lot of helpful information to debug slow builds, but it can be overwhelming to know where to look.
 
-Maybe you ran two builds and you’re surprised the second build ran so slowly, when you’d expected it to be cached. Or maybe you ran one build, and you just want to understand where all the time was spent. Here are a couple good places to start, with some real-world examples of why our own builds were slow.
+<!-- truncate -->
+
+Maybe you ran two builds and you’re surprised the second build ran so slowly, when you’d expected it to be cached. Or maybe you ran one build, and you just want to understand where all the time was spent. Here are some good places to start, with some real-world examples of why our own builds were slow.
 
 This post frequently references the BuildBuddy UI. While most of these steps are
-possible without it, it will be a lot more work to find and parse the info from Bazel yourself.
+possible without it, it will be a lot more work to find and parse the info from the build event stream yourself.
 If you’re not already using it, you can stream build events to our servers for free by
 adding the following flags to your builds (more setup docs [here](https://www.buildbuddy.io/docs/cloud)):
 
@@ -46,7 +48,16 @@ Once you’ve added these flags, you’ll see a line like `Streaming build resul
 - `--digest_function=BLAKE3`
   - This flag can improve the performance of digest calculation of large files by using a faster hashing algorithm. This is available for Bazel 6.4+.
 - `--jobs`
-  - This flag can improve execution throughput by allowing more actions to execute in parallel.
+  - This flag can improve execution throughput by allowing more actions to execute in parallel. We recommend starting with `--jobs=50` and working your way up from there.
+
+To set these flags on every build by default, you can set them in a [.bazelrc file](https://bazel.build/run/bazelrc). We check our .bazelrc into git, so that all our developers use standardized build options.
+
+```txt title=".bazelrc"
+# Example of a .bazelrc that will configure every Bazel build to use these flags
+common --nolegacy_important_outputs
+common --remote_build_event_upload=minimal
+...
+```
 
 ⭐ The details on the top of our UI are helpful for a quick sanity check here. If I’m comparing two builds, my first step will often be to compare the details on the top of the invocation pages and verify they’re exactly the same.
 
@@ -111,7 +122,9 @@ In the example images included above, you can see that only two threads are work
 
 Famously, Bazel loves memory. This section is short and sweet, but describes a common problem we’ve seen with our customers.
 
-⭐ If Bazel doesn’t have enough memory, it will evict parts of the analysis cache. As described in the previous section, this can significantly slow down builds. If you notice a lot of `MerkleTree.build` actions even when you’re reusing a warm Bazel cache or see heavy garbage collection activity in the timing profile, you may want to increase the amount of RAM available to Bazel by increasing the JVM heap size with `--host_jvm_args`.
+⭐ If Bazel doesn’t have enough memory, it will evict parts of the analysis cache. As described in the previous section, this can significantly slow down builds. If you notice a lot of `MerkleTree.build` actions even when you’re reusing a warm Bazel cache or see heavy garbage collection activity in the timing profile, you may want to increase the amount of RAM available to Bazel by increasing the JVM heap size with `--host_jvm_args`. For example, to increase the JVM heap size to 6GB, you would set `--host_jvm_args=-Xmx6g`.
+
+The `--host_jvm` is considered a startup option, and should appear before the Bazel command (non-startup options, like the `--jobs` flag, go after the bazel command). Ex. `bazel --host_jvm_args=-Xmx6g build --jobs=50`.
 
 ![](../static/img/blog/garbage-collection.webp)
 _The timing profile for this sample build showed heavy garbage collection activity. Increasing the heap size for future builds helped reduce memory pressure and bring down build times._
