@@ -321,6 +321,9 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 
 	// Gitlab CI Environment Variables
 	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
+	if user, ok := envVarMap["GITLAB_USER_NAME"]; ok && user != "" {
+		sep.setUser(user, priority)
+	}
 	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
 		sep.setRepoUrl(url, priority)
 	}
