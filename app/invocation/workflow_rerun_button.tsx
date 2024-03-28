@@ -1,5 +1,5 @@
 import React from "react";
-import { workflow } from "../../proto/workflow_ts_proto";
+import { InvalidateAllSnapshotsForRepoRequest, workflow } from "../../proto/workflow_ts_proto";
 import Button, { OutlinedButton } from "../components/button/button";
 import { OutlinedButtonGroup } from "../components/button/button_group";
 import Modal from "../components/modal/modal";
@@ -108,6 +108,19 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       .finally(() => this.setState({ isLoading: false }));
   }
 
+  onClickInvalidateAll() {
+    if (!this.props.model.workflowConfigured) {
+      return;
+    }
+    this.inFlightRpc = rpcService.service
+      .invalidateAllSnapshotsForRepo(
+        new workflow.InvalidateAllSnapshotsForRepoRequest({
+          repoUrl: this.props.model.workflowConfigured.targetRepoUrl,
+        })
+      )
+      .catch((e) => errorService.handleError(e));
+  }
+
   componentWillUnmount() {
     this.inFlightRpc?.cancel();
   }
@@ -137,29 +150,30 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           </OutlinedButtonGroup>
           <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)} anchor="right">
             <Menu>
-              <MenuItem onClick={this.onOpenDialog.bind(this)}>Re-run from clean workspace</MenuItem>
+              <MenuItem onClick={this.onClickRerun.bind(this, /*clean=*/ true)}>Re-run from clean workspace</MenuItem>
+              <MenuItem onClick={this.onOpenDialog.bind(this)}>Invalidate all workflow snapshots for repo</MenuItem>
             </Menu>
           </Popup>
         </PopupContainer>
         <Modal isOpen={this.state.isDialogOpen} onRequestClose={this.onCloseDialog.bind(this)}>
           <Dialog>
             <DialogHeader>
-              <DialogTitle>Confirm clean re-run</DialogTitle>
+              <DialogTitle>Confirm invalidate all snapshots for repo</DialogTitle>
             </DialogHeader>
             <DialogBody>
               <p>
-                This will create a new runner for this workflow, re-clone the Git repo, and start from a new, empty
-                Bazel cache.
+                All future workflows for this REPO will be run on clean runners. They will need to re-clone the Git repo
+                and start from a new, empty Bazel cache.
               </p>
               <p>
                 In some cases, this can recover workflows that are in a broken state, but may temporarily slow down all
-                executions of this workflow, so it is intended to be used sparingly.
+                workflows, so it is intended to be used sparingly.
               </p>
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
                 <OutlinedButton onClick={this.onCloseDialog.bind(this)}>Cancel</OutlinedButton>
-                <Button onClick={this.onClickRerun.bind(this, /*clean=*/ true)}>OK</Button>
+                <Button onClick={this.onClickInvalidateAll.bind(this)}>OK</Button>
               </DialogFooterButtons>
             </DialogFooter>
           </Dialog>

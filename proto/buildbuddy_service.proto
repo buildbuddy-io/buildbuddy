@@ -134,6 +134,9 @@ service BuildBuddyService {
   rpc GetRepos(workflow.GetReposRequest) returns (workflow.GetReposResponse);
   rpc GetWorkflowHistory(workflow.GetWorkflowHistoryRequest)
       returns (workflow.GetWorkflowHistoryResponse);
+  rpc InvalidateAllSnapshotsForRepo(
+      workflow.InvalidateAllSnapshotsForRepoRequest)
+      returns (workflow.InvalidateAllSnapshotsForRepoResponse);
 
   // GitHub account API
   // Note: GitHub account linking is accomplished via HTTP redirect flow

@@ -297,3 +297,13 @@ message GetReposResponse {
   // Repos fetched from the provider.
   repeated Repo repo = 2;
 }
+
+message InvalidateAllSnapshotsForRepoRequest {
+  context.ResponseContext response_context = 1;
+
+  string repo_url = 2;
+}
+
+message InvalidateAllSnapshotsForRepoResponse {
+  context.ResponseContext response_context = 1;
+}

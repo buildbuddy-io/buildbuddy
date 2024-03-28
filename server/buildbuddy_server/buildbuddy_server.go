@@ -1193,6 +1193,19 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
+
+func (s *BuildBuddyServer) InvalidateAllSnapshotsForRepo(ctx context.Context, req *wfpb.InvalidateAllSnapshotsForRepoRequest) (*wfpb.InvalidateAllSnapshotsForRepoResponse, error) {
+	if wfs := s.env.GetWorkflowService(); wfs != nil {
+		user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		groupID := user.GetGroupID()
+		return wfs.InvalidateAllSnapshotsForRepo(ctx, groupID, req.RepoUrl)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		return wfs.GetRepos(ctx, req)
