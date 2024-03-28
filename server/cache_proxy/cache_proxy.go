@@ -318,7 +318,7 @@ func (qw *queueWorker) Start() {
 		for {
 			select {
 			case <-qw.ctx.Done():
-				break
+				return
 			case req := <-qw.workQ:
 				if err := qw.handleWriteRequest(req); err != nil {
 					log.Printf("Error handling write request: %s", err.Error())

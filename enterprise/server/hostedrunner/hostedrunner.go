@@ -345,7 +345,6 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 					return nil
 				}
 			}
-			break
 		case op := <-opCh:
 			stage = operation.ExtractStage(op)
 			if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {

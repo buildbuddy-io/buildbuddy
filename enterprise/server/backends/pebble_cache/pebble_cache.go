@@ -1203,7 +1203,7 @@ func (p *PebbleCache) backgroundRepair(quitChan chan struct{}) error {
 		case <-quitChan:
 			return nil
 		case <-time.After(*backgroundRepairFrequency):
-			break
+			// continue with for loop
 		}
 	}
 }

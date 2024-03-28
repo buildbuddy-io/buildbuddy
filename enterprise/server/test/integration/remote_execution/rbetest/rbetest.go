@@ -569,7 +569,6 @@ func (c *testCommandController) RegisterCommand(stream retpb.CommandController_R
 			err = stream.Send(op)
 			if err != nil {
 				log.Warningf("Send failed: %v", err)
-				break
 			}
 		case <-done:
 			return nil

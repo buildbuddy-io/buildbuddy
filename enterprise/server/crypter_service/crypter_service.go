@@ -31,10 +31,11 @@ import (
 	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 
+	mrand "math/rand"
+
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	mrand "math/rand"
 )
 
 var (
@@ -179,7 +180,7 @@ func (c *keyCache) startRefresher(quitChan chan struct{}) {
 			case <-quitChan:
 				return
 			case <-t.Chan():
-				break
+				// continue with for loop
 			}
 
 			c.data.Range(func(key, value any) bool {
@@ -842,7 +843,7 @@ func (c *Crypter) startKeyReencryptor(quitChan chan struct{}) {
 			case <-quitChan:
 				return
 			case <-c.clock.After(keyReencryptCheckInterval):
-				break
+				// Continue for loop
 			}
 		}
 	}()

@@ -111,7 +111,7 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 			}
 			return ctx.Err()
 		default:
-			break
+			// continue with for loop
 		}
 
 		timeout := singleOpTimeout(ctx)
