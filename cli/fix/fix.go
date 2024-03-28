@@ -51,11 +51,11 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return -1, err
 	}
 
-	useModules, err := bzlmod.UseModules()
+	bzlmodEnabled, err := bzlmod.Enabled()
 	if err != nil {
 		return 1, err
 	}
-	path, baseFile, err := workspace.CreateWorkspaceIfNotExists(useModules)
+	path, baseFile, err := workspace.CreateWorkspaceIfNotExists(bzlmodEnabled)
 	if err != nil {
 		return 1, err
 	}

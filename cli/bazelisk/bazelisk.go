@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
+	goLog "log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +15,7 @@ import (
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	bbLog "github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 )
 
@@ -60,6 +60,11 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 			return -1, err
 		}
 		defer close()
+
+		// Prevent Bazelisk `log.Printf` call to write directly to stderr
+		oldWriter := goLog.Writer()
+		goLog.SetOutput(opts.Stderr)
+		defer goLog.SetOutput(oldWriter)
 	}
 	return core.RunBazelisk(args, repos)
 }
@@ -72,11 +77,6 @@ func BazelInfo(requestInfos []string) (map[string]string, error) {
 		Stdout: stdout,
 		Stderr: stderr,
 	}
-	// Prevent Bazelisk `log.Printf` call to write directly to stderr
-	oldWriter := log.Writer()
-	log.SetOutput(stderr)
-	defer log.SetOutput(oldWriter)
-
 	_, err := Run(bazelArgs, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run `bazel info`: %w %s", err, stderr.String())
@@ -280,7 +280,7 @@ func ResolveVersion() (string, error) {
 func setBazelVersion() error {
 	setVersionOnce.Do(func() {
 		setVersionErr = setBazelVersionImpl()
-		bbLog.Debugf("setBazelVersion: Set env version to %s", getEnvVersion())
+		log.Debugf("setBazelVersion: Set env version to %s", getEnvVersion())
 	})
 	return setVersionErr
 }
@@ -318,7 +318,7 @@ func setBazelVersionImpl() error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	bbLog.Debugf(".bazelversion file contents: %s", parts)
+	log.Debugf(".bazelversion file contents: %s", parts)
 	// If we appear first in .bazelversion, ignore that version to prevent
 	// bazelisk from invoking us recursively.
 	if IsInvokedByBazelisk() {

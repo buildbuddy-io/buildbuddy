@@ -72,7 +72,7 @@ func SetForTest(path string) {
 	pathVal, pathErr = path, nil
 }
 
-func CreateWorkspaceIfNotExists(useModules bool) (string, string, error) {
+func CreateWorkspaceIfNotExists(bzlmodEnabled bool) (string, string, error) {
 	log.Debugf("Checking if workspace file exists")
 	path, base, err := PathAndBasename()
 	if err == nil {
@@ -80,7 +80,7 @@ func CreateWorkspaceIfNotExists(useModules bool) (string, string, error) {
 	}
 
 	fileName := ModuleFileName
-	if !useModules {
+	if !bzlmodEnabled {
 		fileName = WorkspaceFileName // gazelle doesn't like WORKSPACE.bazel...
 	}
 
@@ -96,7 +96,7 @@ func CreateWorkspaceIfNotExists(useModules bool) (string, string, error) {
 		return "", "", err
 	}
 	contents := ""
-	if useModules {
+	if bzlmodEnabled {
 		contents = `module(name = "` + filepath.Base(workspacePath) + `")` + "\n"
 	} else {
 		contents = `workspace(name = "` + filepath.Base(workspacePath) + `")` + "\n"

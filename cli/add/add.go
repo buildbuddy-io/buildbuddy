@@ -276,12 +276,12 @@ func showPicker(modules []Disambiguation) (string, error) {
 }
 
 func openOrCreateWorkspaceFile() (*os.File, error) {
-	useModules, err := bzlmod.UseModules()
+	bzlmodEnabled, err := bzlmod.Enabled()
 	if err != nil {
 		return nil, err
 	}
 
-	workspacePath, basename, err := workspace.CreateWorkspaceIfNotExists(useModules)
+	workspacePath, basename, err := workspace.CreateWorkspaceIfNotExists(bzlmodEnabled)
 	if err != nil {
 		return nil, err
 	}
