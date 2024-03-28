@@ -246,6 +246,18 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 	if user, ok := envVarMap["USER"]; ok && user != "" {
 		sep.setUser(user, priority)
 	}
+	if user, ok := envVarMap["GITHUB_ACTOR"]; ok && user != "" {
+		sep.setUser(user, priority)
+	}
+	if user, ok := envVarMap["BUILDKITE_BUILD_CREATOR"]; ok && user != "" {
+		sep.setUser(user, priority)
+	}
+	if user, ok := envVarMap["GITLAB_USER_NAME"]; ok && user != "" {
+		sep.setUser(user, priority)
+	}
+	if user, ok := envVarMap["CIRCLE_USERNAME"]; ok && user != "" {
+		sep.setUser(user, priority)
+	}
 	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
 		sep.setRepoUrl(url, priority)
 	}
@@ -321,9 +333,6 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 
 	// Gitlab CI Environment Variables
 	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
-	if user, ok := envVarMap["GITLAB_USER_NAME"]; ok && user != "" {
-		sep.setUser(user, priority)
-	}
 	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
 		sep.setRepoUrl(url, priority)
 	}
