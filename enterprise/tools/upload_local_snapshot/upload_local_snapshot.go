@@ -257,10 +257,10 @@ func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context
 			rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
 			rn.SetCompressor(repb.Compressor_ZSTD)
 			file, err := os.Open(path)
-			defer file.Close()
 			if err != nil {
 				return err
 			}
+			defer file.Close()
 			_, err = cachetools.UploadFromReader(ctx, env.GetByteStreamClient(), rn, file)
 			if err != nil {
 				return status.WrapErrorf(err, "upload %s", path)
