@@ -518,7 +518,7 @@ func routingTableContainsTable(tableEntry string) (bool, error) {
 // ConfigureRoutingForIsolation sets up a routing table for handling network
 // isolation via either a secondary network interface or blackholing.
 func ConfigureRoutingForIsolation(ctx context.Context) error {
-	if !IsSecondaryNetworkEnabled() && !*blackholePrivateRanges {
+	if !IsSecondaryNetworkEnabled() && !IsPrivateRangeBlackholingEnabled() {
 		// No need to add IP rule when we don't use secondary network
 		return nil
 	}

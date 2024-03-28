@@ -871,8 +871,10 @@ func configureSecondaryNetwork(ctx context.Context) error {
 	return nil
 }
 
-// Configure the secondary network for podman so that traffic from podman will be routed through
-// the secondary network interface instead of the primary network.
+// ConfigureIsolation setsup network isolation so that container traffic is
+// isolated from other traffic. Isolation will consist either of a second
+// network interface or private IP range blackholing, depending on config
+// options.
 func ConfigureIsolation(ctx context.Context) error {
 	if networking.IsSecondaryNetworkEnabled() {
 		return configureSecondaryNetwork(ctx)
