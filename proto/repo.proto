@@ -11,10 +11,11 @@ message CreateRepoRequest {
   // The name of the repo, i.e. "buildbuddy".
   string name = 2;
 
-  // The organization that the repo should be created under ex. "buildbuddy-io".
-  // If this is empty, the repo will be created under the authenticated Github
-  // User's account.
-  string organization = 3;
+  // The owner that of the github repo ex. "buildbuddy-io".
+  string owner = 3;
+
+  // True if this repo should belong to an organization.
+  bool is_organization = 14;
 
   // A short description of the repo, ex. "BuildBuddy is an open source Bazel
   // build event viewer, result store, remote caching, and remote build

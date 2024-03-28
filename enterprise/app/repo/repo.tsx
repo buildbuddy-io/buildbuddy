@@ -250,6 +250,12 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     r.template = this.state.template;
     r.templateDirectory = this.state.templateDirectory;
     r.destinationDirectory = this.state.destinationDirectory;
+
+    if (selectedInstallation) {
+      r.owner = selectedInstallation.login;
+      r.installationId = selectedInstallation.id;
+    }
+
     if (update) {
       r.skipRepo = true;
       r.skipLink = true;
@@ -257,8 +263,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     }
 
     if (selectedInstallation?.targetType == "Organization") {
-      r.installationId = selectedInstallation.id;
-      r.organization = selectedInstallation.login;
+      r.isOrganization = true;
     }
     return rpc_service.service.createRepo(r);
   }
