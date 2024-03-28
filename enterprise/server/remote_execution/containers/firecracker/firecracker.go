@@ -1655,6 +1655,9 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	}
 
 	walkErr := fs.WalkDir(os.DirFS(wsDir), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 		// Skip filesystem layerfs write-layer files.
 		if strings.HasPrefix(path, "bbvmroot/") || strings.HasPrefix(path, "bbvmwork/") {
 			return nil
