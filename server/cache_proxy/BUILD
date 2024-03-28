@@ -4,6 +4,7 @@ go_library(
     name = "cache_proxy",
     srcs = ["cache_proxy.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/cache_proxy",
+    visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -23,5 +24,3 @@ go_library(
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])
