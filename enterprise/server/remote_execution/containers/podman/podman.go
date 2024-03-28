@@ -836,14 +836,7 @@ func (c *podmanCommandContainer) removeImage(ctx context.Context, imageName stri
 	return status.UnknownErrorf("podman rmi failed: %s", string(result.Stderr))
 }
 
-// Configure the secondary network for podman so that traffic from podman will be routed through
-// the secondary network interface instead of the primary network.
-func ConfigureSecondaryNetwork(ctx context.Context) error {
-	if !networking.IsSecondaryNetworkEnabled() {
-		// No need to configure secondary network for podman.
-		return nil
-	}
-
+func configureSecondaryNetwork(ctx context.Context) error {
 	podmanVersion, err := getPodmanVersion(ctx, commandutil.CommandRunner{})
 	if err != nil {
 		return status.WrapError(err, "podman version")
@@ -873,6 +866,27 @@ func ConfigureSecondaryNetwork(ctx context.Context) error {
 	route := []string{podmanDefaultNetworkIPRange, "via", podmanDefaultNetworkGateway, "dev", podmanDefaultNetworkBridge}
 	if err := networking.AddRouteIfNotPresent(ctx, route); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// ConfigureIsolation setsup network isolation so that container traffic is
+// isolated from other traffic. Isolation will consist either of a second
+// network interface or private IP range blackholing, depending on config
+// options.
+func ConfigureIsolation(ctx context.Context) error {
+	if networking.IsSecondaryNetworkEnabled() {
+		return configureSecondaryNetwork(ctx)
+	}
+
+	if networking.IsPrivateRangeBlackholingEnabled() {
+		for _, r := range networking.PrivateIPRanges {
+			if err := networking.AddIPRuleIfNotPresent(ctx, []string{"from", podmanDefaultNetworkIPRange, "to", r}); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	return nil
 }

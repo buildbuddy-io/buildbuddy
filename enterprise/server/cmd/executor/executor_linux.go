@@ -20,16 +20,14 @@ func setupNetworking(rootContext context.Context) {
 			log.Debugf("Error cleaning up old net namespaces:  %s", err)
 		}
 	}
-	if err := networking.ConfigurePolicyBasedRoutingForSecondaryNetwork(rootContext); err != nil {
+	if err := networking.ConfigureRoutingForIsolation(rootContext); err != nil {
 		fmt.Printf("Error configuring secondary network: %s", err)
 		os.Exit(1)
 	}
 
-	if networking.IsSecondaryNetworkEnabled() {
-		if err := podman.ConfigureSecondaryNetwork(rootContext); err != nil {
-			fmt.Printf("Error configuring secondary network for podman: %s", err)
-			os.Exit(1)
-		}
+	if err := podman.ConfigureIsolation(rootContext); err != nil {
+		fmt.Printf("Error configuring secondary network for podman: %s", err)
+		os.Exit(1)
 	}
 }
 

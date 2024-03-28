@@ -18,7 +18,11 @@ import (
 
 var (
 	routePrefix                   = flag.String("executor.route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+	blackholePrivateRanges        = flag.Bool("executor.blackhole_private_ranges", false, "If true, no traffic will be allowed to RFC1918 ranges.")
 	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
+
+	// Private IP ranges, as defined in RFC1918.
+	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
 )
 
 const (
@@ -202,11 +206,17 @@ func DeleteRoute(ctx context.Context, vmIdx int) error {
 }
 
 func DeleteRuleIfSecondaryNetworkEnabled(ctx context.Context, vmIdx int) error {
-	if !IsSecondaryNetworkEnabled() {
-		// IP rule is only added when the secondary network is enabled
-		return nil
+	if IsSecondaryNetworkEnabled() {
+		return runCommand(ctx, "ip", "rule", "del", "from", getCloneIP(vmIdx))
 	}
-	return runCommand(ctx, "ip", "rule", "del", "from", getCloneIP(vmIdx))
+
+	if IsPrivateRangeBlackholingEnabled() {
+		for _, r := range PrivateIPRanges {
+			return runCommand(ctx, "ip", "rule", "del", "from", getCloneIP(vmIdx), "to", r)
+		}
+	}
+
+	return nil
 }
 
 func routeExists(ctx context.Context, source string, gateway string) (bool, error) {
@@ -360,6 +370,15 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 		}
 	}
 
+	if IsPrivateRangeBlackholingEnabled() {
+		for _, r := range PrivateIPRanges {
+			err = runCommand(ctx, "ip", "rule", "add", "from", cloneIP, "to", r, "lookup", routingTableName)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	err = runCommand(ctx, "iptables", "--wait", "-A", "FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT")
 	if err != nil {
 		return nil, err
@@ -496,7 +515,32 @@ func routingTableContainsTable(tableEntry string) (bool, error) {
 	return false, nil
 }
 
-// ConfigurePolicyBasedRoutingForNetworkWIthRoutePrefix configures policy routing for secondary
+// ConfigureRoutingForIsolation sets up a routing table for handling network
+// isolation via either a secondary network interface or blackholing.
+func ConfigureRoutingForIsolation(ctx context.Context) error {
+	if !IsSecondaryNetworkEnabled() && !IsPrivateRangeBlackholingEnabled() {
+		// No need to add IP rule when we don't use secondary network
+		return nil
+	}
+
+	// Adds a new routing table
+	if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
+		return err
+	}
+
+	if IsSecondaryNetworkEnabled() {
+		return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
+	} else {
+		// Blackhole any traffic that is sent to this table.
+		if err := AddRouteIfNotPresent(ctx, []string{"blackhole", "0.0.0.0/0"}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// configurePolicyBasedRoutingForNetworkWIthRoutePrefix configures policy routing for secondary
 // network interface. The secondary interface is identified by the --route_prefix.
 // This function:
 //   - adds a new routing table tableName.
@@ -509,15 +553,10 @@ func routingTableContainsTable(tableEntry string) (bool, error) {
 //     Equivalent to: 'ip route add 172.24.0.1 src 172.24.0.24 dev ens5 table rt1' and
 //     'ip route add default via 172.24.0.1 dev ens5 table rt1' where 172.24.0.1 and ens5 are
 //     the gateway and interface name of the secondary network interface.
-func ConfigurePolicyBasedRoutingForSecondaryNetwork(ctx context.Context) error {
+func configurePolicyBasedRoutingForSecondaryNetwork(ctx context.Context) error {
 	if !IsSecondaryNetworkEnabled() {
 		// No need to add IP rule when we don't use secondary network
 		return nil
-	}
-
-	// Adds a new routing table
-	if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
-		return err
 	}
 
 	route, err := findRoute(ctx, *routePrefix)
@@ -579,7 +618,11 @@ func AddIPRuleIfNotPresent(ctx context.Context, ruleArgs []string) error {
 // AddRouteIfNotPresent adds a route in the routing table with routingTableName if the route is not
 // present.
 func AddRouteIfNotPresent(ctx context.Context, routeArgs []string) error {
-	listArgs := append([]string{"ip", "route", "list"}, routeArgs...)
+	listArgs := routeArgs
+	if len(listArgs) > 0 && listArgs[0] == "blackhole" {
+		listArgs = listArgs[1:]
+	}
+	listArgs = append([]string{"ip", "route", "list"}, listArgs...)
 	listArgs = appendRoutingTable(listArgs)
 	out, err := sudoCommand(ctx, listArgs...)
 	addRoute := false
@@ -608,6 +651,10 @@ func AddRouteIfNotPresent(ctx context.Context, routeArgs []string) error {
 
 func IsSecondaryNetworkEnabled() bool {
 	return *routePrefix != "default"
+}
+
+func IsPrivateRangeBlackholingEnabled() bool {
+	return *blackholePrivateRanges
 }
 
 func PreserveExistingNetNamespaces() bool {
