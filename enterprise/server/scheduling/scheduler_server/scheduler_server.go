@@ -478,7 +478,12 @@ func (h *executorHandle) startTaskReservationStreamer() {
 }
 
 type executionNode struct {
-	executorID            string
+	// Unique ID generated when the executor process starts.
+	executorID string
+
+	// ID of the host that the executor is running on, which persists across
+	// restarts.
+	executorHostID        string
 	assignableMemoryBytes int64
 	assignableMilliCpu    int64
 	// Optional host:port of the scheduler to which the executor is connected. Only set for executors connecting using
@@ -507,6 +512,10 @@ func (en *executionNode) String() string {
 
 func (en *executionNode) GetExecutorID() string {
 	return en.executorID
+}
+
+func (en *executionNode) GetExecutorHostID() string {
+	return en.executorHostID
 }
 
 func nodesThatFit(nodes []*executionNode, taskSize *scpb.TaskSize) []*executionNode {
@@ -611,6 +620,7 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 
 		executors = append(executors, &executionNode{
 			executorID:            id,
+			executorHostID:        node.GetRegistration().GetExecutorHostId(),
 			schedulerHostPort:     node.GetSchedulerHostPort(),
 			assignableMemoryBytes: node.GetRegistration().GetAssignableMemoryBytes(),
 			assignableMilliCpu:    node.GetRegistration().GetAssignableMilliCpu(),

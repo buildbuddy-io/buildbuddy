@@ -124,35 +124,43 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 		return nonePreferred(nodes)
 	}
 
-	nodeByID := map[string]interfaces.ExecutionNode{}
+	// Note: if multiple executors live on the same host, the last one in the
+	// list wins. For now, this is fine because we don't recommend running
+	// multiple executors on the same host. If this use case arises then we
+	// could instead route to the last executor to run the task (by exeucutor
+	// ID), or if that executor doesn't exist then fall back to an arbitrary
+	// executor on the same host.
+	nodeByHostID := map[string]interfaces.ExecutionNode{}
 	for _, node := range nodes {
-		nodeByID[node.GetExecutorID()] = node
+		nodeByHostID[node.GetExecutorHostID()] = node
 	}
+
+	// Executor IDs of the nodes we've added to the front of the list so far.
 	preferredSet := map[string]struct{}{}
 	ranked := make([]interfaces.RankedExecutionNode, 0, len(nodes))
 
 	// Routing keys should be prioritized in the order they were returned
 	for _, routingKey := range routingKeys {
-		preferredNodeIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
+		preferredHostIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
 		if err != nil {
 			log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
 			return nonePreferred(nodes)
 		}
 
-		log.Debugf("Preferred executor IDs for %q: %v", routingKey, preferredNodeIDs)
+		log.Debugf("Preferred executor host IDs for %q: %v", routingKey, preferredHostIDs)
 
 		// Place all preferred nodes first.
 		// For each routing key, preferred nodes should be prioritized in the order
 		// they appear in the Redis list.
-		for _, id := range preferredNodeIDs[:min(preferredNodeLimit, len(preferredNodeIDs))] {
-			node := nodeByID[id]
+		for _, hostID := range preferredHostIDs[:min(preferredNodeLimit, len(preferredHostIDs))] {
+			node := nodeByHostID[hostID]
 			if node == nil {
 				continue
 			}
 			if _, ok := preferredSet[node.GetExecutorID()]; ok {
 				continue
 			}
-			preferredSet[id] = struct{}{}
+			preferredSet[node.GetExecutorID()] = struct{}{}
 			ranked = append(ranked, rankedExecutionNode{node: node, preferred: true})
 		}
 	}
@@ -171,7 +179,7 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 // MarkComplete updates the routing table after a task is completed, so that
 // future tasks with those properties are more likely to be fulfilled by the
 // given node.
-func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorID string) {
+func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorHostID string) {
 	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(params)
 	if strategy == nil {
@@ -198,8 +206,8 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 	// Push the node to the head of the list (but first remove it if already
 	// present to avoid dupes), trim to max length to prevent it from growing
 	// too large, and renew the TTL.
-	pipe.LRem(ctx, routingKey, 1, executorID)
-	pipe.LPush(ctx, routingKey, executorID)
+	pipe.LRem(ctx, routingKey, 1, executorHostID)
+	pipe.LPush(ctx, routingKey, executorHostID)
 	pipe.LTrim(ctx, routingKey, 0, int64(preferredNodeLimit)-1)
 	pipe.Expire(ctx, routingKey, routingPropsKeyTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -207,7 +215,7 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 		return
 	}
 
-	log.Debugf("Preferred executor %q added to %q", executorID, routingKey)
+	log.Debugf("Preferred executor host ID %q added to %q", executorHostID, routingKey)
 }
 
 // Contains the parameters required to make a routing decision.

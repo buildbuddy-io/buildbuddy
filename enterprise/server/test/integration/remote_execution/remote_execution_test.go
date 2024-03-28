@@ -1376,7 +1376,7 @@ func TestWorkSchedulingOnNewExecutor(t *testing.T) {
 
 	for i, cmd := range cmds {
 		res := cmd.Wait()
-		assert.Equal(t, "newExecutor", res.Executor, "[%s] should have been executed on new executor", cmd.Name)
+		assert.Equal(t, "newExecutor", res.ActionResult.GetExecutionMetadata().GetExecutorId(), "[%s] should have been executed on new executor", cmd.Name)
 		assert.Equal(t, 0, res.ExitCode, "exit code should be propagated")
 		assert.Equal(t, fmt.Sprintf("hello from command %d\n", i), res.Stdout, "stdout should be propagated")
 		assert.Equal(t, "", res.Stderr, "stderr should be empty")
@@ -1463,7 +1463,7 @@ func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, 
 	return out
 }
 
-func (f *fixedNodeTaskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
+func (f *fixedNodeTaskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorHostID string) {
 }
 
 func (f *fixedNodeTaskRouter) UpdateSubset(executorIDs []string) {
@@ -1522,7 +1522,7 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 
 	for _, cmd := range cmds {
 		res := cmd.Wait()
-		assert.Equal(t, "newExecutor", res.Executor, "[%s] should have been executed on new executor", cmd.Name)
+		assert.Equal(t, "newExecutor", res.ActionResult.GetExecutionMetadata().GetExecutorId(), "[%s] should have been executed on new executor", cmd.Name)
 	}
 }
 

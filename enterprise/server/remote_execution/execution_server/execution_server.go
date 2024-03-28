@@ -965,8 +965,8 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 	router := s.env.GetTaskRouter()
 	// Only update the router if a task was actually executed
 	if router != nil && !executeResponse.GetCachedResult() {
-		nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
-		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
+		executorHostID := executeResponse.GetResult().GetExecutionMetadata().GetWorker()
+		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), executorHostID)
 	}
 
 	if sizer := s.env.GetTaskSizer(); sizer != nil {

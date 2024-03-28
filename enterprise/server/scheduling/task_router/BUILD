@@ -33,5 +33,6 @@ go_test(
         "//server/testutil/testauth",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_exp//slices",
     ],
 )
