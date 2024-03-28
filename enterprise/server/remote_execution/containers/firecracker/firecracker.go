@@ -453,6 +453,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 			InitDockerd:       props.InitDockerd,
 			EnableDockerdTcp:  props.EnableDockerdTCP,
 		}
+		vmConfig.BootArgs = getBootArgs(vmConfig)
 	} else if *snaputil.EnableLocalSnapshotSharing {
 		// When local snapshot sharing is enabled, reject old-style persisted
 		// snapshots, since these aren't shareable (i.e. COW-formatted).
@@ -1379,57 +1380,71 @@ func (c *FirecrackerContainer) getChroot() string {
 	return filepath.Join(c.jailerRoot, "firecracker", c.id, "root")
 }
 
+func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
+	kernelArgs := []string{
+		"ro",
+		"console=ttyS0",
+		"noapic",
+		"reboot=k",
+		"panic=1",
+		"pci=off",
+		"nomodules=1",
+		"random.trust_cpu=on",
+		"i8042.noaux",
+		"i8042.nomux",
+		"i8042.nopnp",
+		"i8042.dumbkbd",
+		"tsc=reliable",
+		"ipv6.disable=1",
+		// Disabling the LAPIC TSC-Deadline feature works around an
+		// issue where processes occasionally freeze up after being resumed from
+		// snapshot.
+		// TODO(https://github.com/firecracker-microvm/firecracker/issues/4099 &
+		//  https://github.com/buildbuddy-io/buildbuddy-internal/issues/3255):
+		// remove this workaround.
+		"lapic=notscdeadline",
+	}
+	if vmConfig.EnableNetworking {
+		kernelArgs = append(kernelArgs, machineIPBootArgs)
+	}
+
+	var initArgs []string
+	if vmConfig.DebugMode {
+		initArgs = append(initArgs, "-debug_mode")
+	}
+	if vmConfig.EnableNetworking {
+		initArgs = append(initArgs, "-set_default_route")
+	}
+	if vmConfig.InitDockerd {
+		initArgs = append(initArgs, "-init_dockerd")
+	}
+	if vmConfig.EnableDockerdTcp {
+		initArgs = append(initArgs, "-enable_dockerd_tcp")
+	}
+	if *EnableRootfs {
+		initArgs = append(initArgs, "-enable_rootfs")
+	}
+	if platform.VFSEnabled() {
+		initArgs = append(initArgs, "-enable_vfs")
+	}
+
+	return strings.Join(append(initArgs, kernelArgs...), " ")
+}
+
 // getConfig returns the firecracker config for the current container and given
 // filesystem image paths. The image paths are not expected to be in the chroot;
 // they will be hardlinked to the chroot when starting the machine (see
 // NaiveChrootStrategy).
 func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
-	bootArgs := "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules=1 random.trust_cpu=on i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd tsc=reliable ipv6.disable=1"
 	var netNS string
-
 	if c.vmConfig.EnableNetworking {
-		bootArgs += " " + machineIPBootArgs
 		netNS = networking.NetNamespacePath(c.id)
-	}
-
-	// Disabling the LAPIC TSC-Deadline feature works around an
-	// issue where processes occasionally freeze up after being resumed from
-	// snapshot.
-	// TODO(https://github.com/firecracker-microvm/firecracker/issues/4099 &
-	//  https://github.com/buildbuddy-io/buildbuddy-internal/issues/3255):
-	// remove this workaround.
-	bootArgs += " lapic=notscdeadline"
-
-	// Pass some flags to the init script.
-	//
-	// !!! WARNING !!!
-	//
-	// When adding new flags, you'll probably want to bump goinitVersion,
-	// otherwise the flags will not actually be used until all of the older
-	// snapshots expire from cache (which can take an indefinite amount of
-	// time).
-	if c.vmConfig.DebugMode {
-		bootArgs = "-debug_mode " + bootArgs
-	}
-	if c.vmConfig.EnableNetworking {
-		bootArgs = "-set_default_route " + bootArgs
-	}
-	if c.vmConfig.InitDockerd {
-		bootArgs = "-init_dockerd " + bootArgs
-	}
-	if c.vmConfig.EnableDockerdTcp {
-		bootArgs = "-enable_dockerd_tcp " + bootArgs
-	}
-	if *EnableRootfs {
-		bootArgs = "-enable_rootfs " + bootArgs
-	}
-	if c.fsLayout != nil {
-		bootArgs = "-enable_vfs " + bootArgs
 	}
 	cgroupVersion, err := getCgroupVersion()
 	if err != nil {
 		return nil, err
 	}
+	bootArgs := getBootArgs(c.vmConfig)
 	cfg := &fcclient.Config{
 		VMID:            c.id,
 		SocketPath:      firecrackerSocketPath,

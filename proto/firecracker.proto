@@ -23,6 +23,9 @@ message VMConfiguration {
   string firecracker_version = 9;
   string guest_api_version = 10;
 
+  // Guest kernel boot args.
+  string boot_args = 11;
+
   // TODO: add container_image here?
 }
 
