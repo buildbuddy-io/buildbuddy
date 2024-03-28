@@ -1320,7 +1320,7 @@ func (s *Store) waitForReplicaToCatchUp(ctx context.Context, shardID uint64, des
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			break
+			// continue with for loop
 		}
 		if rd := s.lookupRange(shardID); rd != nil {
 			if r, err := s.GetReplica(rd.GetRangeId()); err == nil {

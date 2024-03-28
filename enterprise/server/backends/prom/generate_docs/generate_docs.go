@@ -58,11 +58,11 @@ func main() {
 	flag.Parse()
 
 	f, err := os.Create(*outputPath)
-	defer f.Close()
 	if err != nil {
 		fmt.Printf("failed to create file %q %s\n", *outputPath, err)
 		return
 	}
+	defer f.Close()
 	for _, m := range prom.MetricConfigs {
 		generateDoc(f, m)
 	}

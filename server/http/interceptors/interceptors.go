@@ -145,11 +145,11 @@ func Zstd(next http.Handler) http.Handler {
 		// Note that unlike the gzip code above, zstd decompressors are pooled
 		// under the hood of this function call.
 		zstd, err := compression.NewZstdDecompressor(w)
-		defer zstd.Close()
 		if err != nil {
 			http.Error(w, "Failed to initialize decompressor", http.StatusInternalServerError)
 			return
 		}
+		defer zstd.Close()
 
 		next.ServeHTTP(&wrappedCompressionResponseWriter{ResponseWriter: w, Writer: zstd}, r)
 	})

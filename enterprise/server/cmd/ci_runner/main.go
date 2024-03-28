@@ -491,7 +491,7 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 		for {
 			select {
 			case <-stop:
-				break
+				return
 			case <-time.After(progressFlushInterval):
 				r.FlushProgress()
 			}

@@ -1745,7 +1745,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			break
+			// continue with for loop
 		}
 
 		rankedNode := rankedNodes[0]

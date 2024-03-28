@@ -347,7 +347,7 @@ func (g *runner) prepareCommands(ctx context.Context) ([]*rbeclient.Command, err
 		for {
 			select {
 			case <-prepDone:
-				break
+				return
 			case <-time.After(1 * time.Second):
 			}
 

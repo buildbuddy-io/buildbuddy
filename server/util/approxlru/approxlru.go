@@ -346,7 +346,7 @@ func (l *LRU[T]) ttl() error {
 		case <-l.ctx.Done():
 			return nil
 		default:
-			break
+			// continue with for loop
 		}
 
 		lastEvicted, err := l.evict()

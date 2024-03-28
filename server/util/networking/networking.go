@@ -487,10 +487,10 @@ func addRoutingTableEntryIfNotPresent(ctx context.Context) error {
 	}
 
 	f, err := os.OpenFile(routingTableFilename, os.O_APPEND|os.O_WRONLY, 0644)
-	defer f.Close()
 	if err != nil {
 		return status.InternalErrorf("failed to add routing table %s: %s", routingTableName, err)
 	}
+	defer f.Close()
 	if _, err = f.WriteString(tableEntry + "\n"); err != nil {
 		return status.InternalErrorf("failed to add routing table %s: %s", routingTableName, err)
 	}

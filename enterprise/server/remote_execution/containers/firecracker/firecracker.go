@@ -716,7 +716,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 				case <-ctx.Done():
 					return context.Cause(ctx)
 				default:
-					break
+					// continue with for loop
 				}
 				// 3 is the Linux constant for the SEEK_DATA option to lseek.
 				newOffset, err := syscall.Seek(int(gin.Fd()), offset, 3)
@@ -1655,6 +1655,9 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	}
 
 	walkErr := fs.WalkDir(os.DirFS(wsDir), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 		// Skip filesystem layerfs write-layer files.
 		if strings.HasPrefix(path, "bbvmroot/") || strings.HasPrefix(path, "bbvmwork/") {
 			return nil

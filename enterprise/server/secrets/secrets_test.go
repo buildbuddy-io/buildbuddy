@@ -29,7 +29,6 @@ func TestUpdateSecret(t *testing.T) {
 
 	// Get slices of users by gid with the admin user at the beginning
 	groups := make(map[string][]*tables.User, 12)
-	gids := make([]string, 12)
 	for _, u := range enterprise_testauth.CreateRandomGroups(t, te) {
 		for _, g := range u.Groups {
 			gid := g.Group.GroupID
@@ -40,7 +39,6 @@ func TestUpdateSecret(t *testing.T) {
 					groups[gid] = append(users, u)
 				}
 			} else {
-				gids = append(gids, gid)
 				groups[gid] = []*tables.User{u}
 			}
 		}
