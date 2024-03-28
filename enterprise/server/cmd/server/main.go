@@ -117,7 +117,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	workflowService := workflow.NewWorkflowService(env)
 	env.SetWorkflowService(workflowService)
 	env.SetGitProviders([]interfaces.GitProvider{
-		github.NewProvider(),
+		github.NewProvider(env),
 		bitbucket.NewProvider(),
 	})
 	if err := githubapp.Register(env); err != nil {
