@@ -126,6 +126,8 @@ build --build_metadata=VISIBILITY=PUBLIC
 
 By default a build's user is determined by the system on which Bazel is run.
 
+BuildBuddy will automatically pull your username from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Jenkins, Gitlab CI, Bitrise, or BuildKite. The environment variables currently supported are `USER`, `GITHUB_ACTOR`, `GITLAB_USER_NAME`, `BUILDKITE_BUILD_CREATOR`, `CIRCLE_USERNAME`.
+
 You can override this using build metadata or workspace info.
 
 ### Build metadata
