@@ -716,7 +716,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 				case <-ctx.Done():
 					return context.Cause(ctx)
 				default:
-					break
+					// continue with for loop
 				}
 				// 3 is the Linux constant for the SEEK_DATA option to lseek.
 				newOffset, err := syscall.Seek(int(gin.Fd()), offset, 3)

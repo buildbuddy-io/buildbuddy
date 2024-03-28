@@ -270,10 +270,11 @@ func main() {
 			writeQPSCounter.Inc()
 
 			if *readQPS > 0 {
+			outer:
 				for i := 0; i < readsPerWrite; i++ {
 					select {
 					case writtenDigests <- d:
-						break
+						break outer
 					default:
 					}
 				}
