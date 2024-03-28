@@ -390,7 +390,7 @@ func Alias[T any](flagset *flag.FlagSet, name string, newNames ...string) *T {
 	}
 	var flg *flag.Flag
 	for aliaser, ok := common.IsNameAliasing(f), true; ok; aliaser, ok = flg.Value.(common.IsNameAliasing) {
-		if flg = flagset.Lookup(aliaser.AliasedName()); flg == nil {
+		if flg = flagset.Lookup(aliaser.AliasedName()); flg == nil || flg.Value == nil {
 			log.Fatalf("Error aliasing flag %s as %s: flag %s does not exist.", name, strings.Join(newNames, ", "), aliaser.AliasedName())
 		}
 	}
