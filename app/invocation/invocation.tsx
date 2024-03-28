@@ -128,9 +128,15 @@ export default class InvocationComponent extends React.Component<Props, State> {
       )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
       faviconService.setFaviconForType(this.state.model.getFaviconType());
     }
-    // If in progress or queued, schedule another fetch
+    // If in progress or queued, schedule another fetch of the invocation (and
+    // runner execution if applicable).
     if (this.state.model?.isInProgress() || this.isQueued()) {
       this.scheduleRefetch();
+    } else if (!prevState.model && this.state.model && this.isCIRunnerBuild() && !this.state.runnerExecution) {
+      // If we just learned that this is a CI runner build then fetch the runner
+      // execution, since we won't have scheduled a refetch (which includes both
+      // the invocation and runner execution).
+      this.fetchRunnerExecution();
     }
     // If we transitioned from queued to not queued, and we have an invocation,
     // start fetching logs for the workflow.
@@ -156,6 +162,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     clearTimeout(this.timeoutRef);
     this.logsModel?.stopFetching();
     this.logsSubscription?.unsubscribe();
+    this.runnerExecutionRPC?.cancel();
     shortcuts.deregister(this.state.keyboardShortcutHandle);
   }
 
@@ -382,6 +389,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     const suggestions = getSuggestions({
       model: this.state.model,
       buildLogs: this.getBuildLogs(this.state.model),
+      runnerExecution: this.state.runnerExecution,
       user: this.props.user,
     });
 
