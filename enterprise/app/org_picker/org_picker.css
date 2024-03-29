@@ -248,6 +248,7 @@
   top: initial;
   right: initial;
   margin-right: 16px;
+  z-index: 6;
 }
 .org-picker-container.floating.inline .org-picker-profile-name {
   display: none;
