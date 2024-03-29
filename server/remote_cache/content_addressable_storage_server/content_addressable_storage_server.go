@@ -38,7 +38,8 @@ import (
 )
 
 const (
-	gRPCMaxSize = int64(4194304 - 2000)
+	gRPCMaxSize                 = int64(4194304 - 2000)
+	TreeCacheRemoteInstanceName = "_bb_treecache_"
 )
 
 var (
@@ -421,9 +422,13 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, dirName 
 	return dir, nil
 }
 
-func makeTreeCacheDigest(rn *rspb.ResourceName, digestFunction repb.DigestFunction_Value) (*repb.Digest, error) {
+func makeTreeCacheDigest(rn *rspb.ResourceName, digestFunction repb.DigestFunction_Value) (*digest.ResourceName, error) {
 	buf := bytes.NewBuffer([]byte(rn.GetDigest().GetHash() + *treeCacheSeed))
-	return digest.Compute(buf, digestFunction)
+	d, err := digest.Compute(buf, digestFunction)
+	if err != nil {
+		return nil, err
+	}
+	return digest.NewResourceName(d, TreeCacheRemoteInstanceName, rspb.CacheType_AC, digestFunction), nil
 }
 
 func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, remoteInstanceName string, digestFunction repb.DigestFunction_Value, dd *capb.DirectoryWithDigest) ([]*capb.DirectoryWithDigest, error) {
@@ -540,12 +545,12 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	cacheCtx, cacheCancel := context.WithCancelCause(ctx)
 	defer cacheCancel(context.Canceled)
 	eg, gCtx := errgroup.WithContext(cacheCtx)
-	cacheTreeNode := func(d *repb.Digest, descendents []*capb.DirectoryWithDigest) {
+	cacheTreeNode := func(r *digest.ResourceName, descendents []*capb.DirectoryWithDigest) {
 		treeCache := &capb.TreeCache{
 			Children: make([]*capb.DirectoryWithDigest, len(descendents)),
 		}
 		copy(treeCache.Children, descendents)
-		treeCacheDigest := d.CloneVT()
+		treeCacheRN := r.ToProto()
 
 		eg.Go(func() error {
 			if !isComplete(treeCache.GetChildren()) {
@@ -556,7 +561,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if err != nil {
 				return err
 			}
-			treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()).ToProto()
 			if err := s.cache.Set(gCtx, treeCacheRN, buf); err == nil {
 				metrics.TreeCacheSetCount.Inc()
 			} else {
@@ -576,7 +580,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return []*capb.DirectoryWithDigest{dirWithDigest}, nil
 		}
 
-		treeCacheDigest, err := makeTreeCacheDigest(dirWithDigest.GetResourceName(), req.GetDigestFunction())
+		treeCacheResource, err := makeTreeCacheDigest(dirWithDigest.GetResourceName(), req.GetDigestFunction())
 		if err != nil {
 			return nil, err
 		}
@@ -584,7 +588,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		if *enableTreeCaching && level > *minTreeCacheLevel {
 			// Limit cardinality of level label.
 			levelLabel := fmt.Sprintf("%d", min(level, 12))
-			treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()).ToProto()
+			treeCacheRN := treeCacheResource.ToProto()
 			if blob, err := s.cache.Get(ctx, treeCacheRN); err == nil {
 				treeCache := &capb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
@@ -643,7 +647,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 
 		// TODO: change > to >= here and update flag settings to match.
 		if *enableTreeCaching && level > *minTreeCacheLevel && len(allDescendents) > *minTreeCacheDescendents {
-			cacheTreeNode(treeCacheDigest, allDescendents)
+			cacheTreeNode(treeCacheResource, allDescendents)
 		}
 		return allDescendents, nil
 	}
