@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -2052,6 +2053,112 @@ func TestLookasideLimits(t *testing.T) {
 
 	// Now read all of the digests again -- none should be served
 	// from the lookaside cache because they were all large files.
+	for _, rn := range allResources {
+		for _, distributedCache := range distributedCaches {
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	assert.NotEqual(t, opCountBefore[peer1], len(memoryCache1.ops))
+	assert.NotEqual(t, opCountBefore[peer2], len(memoryCache2.ops))
+	assert.NotEqual(t, opCountBefore[peer3], len(memoryCache3.ops))
+}
+
+func TestTreeCacheLookaside(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:       3,
+		Nodes:                   []string{peer1, peer2, peer3},
+		DisableLocalLookup:      true,
+		LookasideCacheSizeBytes: 100_000,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomACResourceBuf(t, 100)
+		rn.InstanceName = content_addressable_storage_server.TreeCacheRemoteInstanceName
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Now read all of the digests again -- they should all
+	// be served from the lookaside cache.
+	for _, rn := range allResources {
+		for _, distributedCache := range distributedCaches {
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	assert.Equal(t, opCountBefore[peer1], len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2], len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
+
+	// Now write some other AC content (without the special tree-cache
+	// remote instance name), and verify it's not put in the lookaside
+	// cache.
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomACResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	opCountBefore = map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Now read all of the digests again -- none should be served from the
+	// lookaside cache.
 	for _, rn := range allResources {
 		for _, distributedCache := range distributedCaches {
 			readAndCompareDigest(t, ctx, distributedCache, rn)

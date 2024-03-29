@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -341,6 +342,17 @@ func (t *teeReadCloser) Close() error {
 	return err
 }
 
+func lookasideKey(r *rspb.ResourceName) (string, error) {
+	if r.GetInstanceName() == content_addressable_storage_server.TreeCacheRemoteInstanceName {
+		// These are OK to put in the lookaside cache because even
+		// though they are technically AC entries, they are based on CAS
+		// content that does not change.
+		return digest.ResourceNameFromProto(r).ActionCacheString()
+	} else {
+		return digest.ResourceNameFromProto(r).DownloadString()
+	}
+}
+
 func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	if !c.lookasideCacheEnabled() {
 		return
@@ -348,7 +360,7 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
 		return
 	}
-	k, err := digest.ResourceNameFromProto(r).DownloadString()
+	k, err := lookasideKey(r)
 	if err != nil {
 		c.log.Debugf("Not setting lookaside entry: %s", err)
 		return
@@ -370,7 +382,7 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, error) {
 	if !c.lookasideCacheEnabled() {
 		return nil, status.NotFoundError("lookaside cache disabled")
 	}
-	k, err := digest.ResourceNameFromProto(r).DownloadString()
+	k, err := lookasideKey(r)
 	if err != nil {
 		c.log.Debugf("Not getting lookaside entry: %s", err)
 		return nil, err
