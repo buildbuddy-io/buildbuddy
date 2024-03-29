@@ -222,7 +222,7 @@ const matchers: SuggestionMatcher[] = [
           <code>
             <pre>
               {`actions:
-  - name: Test all targets
+  - name: ${model.workflowConfigured?.actionName || "..."}
     # ...
     resource_requests:
 ${yamlSuggestions.map((s) => `      - ${s}`).join("\n")}`}
