@@ -296,6 +296,9 @@ message InvocationQuery {
 
   // Plaintext tags for the targets built (exact match). Ex: "my-cool-tag"
   repeated string tags = 16;
+
+  // If non-empty, restrict to invocations matching these exact IDs.
+  repeated string invocation_ids = 17;
 }
 
 message InvocationSort {

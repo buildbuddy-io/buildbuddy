@@ -17,6 +17,7 @@ export type TabsContext = {
 
 export type TabId =
   | "all"
+  | "steps"
   | "targets"
   | "log"
   | "details"
@@ -29,16 +30,16 @@ export type TabId =
   | "fetches"
   | "action";
 
-export function getTabId(tab: string): TabId {
+function getTabId(tab: string): TabId {
   return (tab.substring(1) as TabId) || "all";
 }
 
-export function getActiveTab({ tab, role, denseMode }: TabsContext): TabId {
+export function getActiveTab({ tab, role, denseMode }: Partial<TabsContext>): TabId {
   if (tab) return getTabId(tab);
 
-  if (!denseMode) return "all";
+  if (role === CI_RUNNER_ROLE) return "steps";
 
-  return role === CI_RUNNER_ROLE ? "log" : "targets";
+  return denseMode ? "log" : "all";
 }
 
 export default class InvocationTabsComponent extends React.Component<InvocationTabsProps> {
@@ -51,21 +52,23 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
   }
 
   render() {
-    const isBazelInvocation = this.props.role !== CI_RUNNER_ROLE && this.props.role !== HOSTED_BAZEL_ROLE;
-
     return (
       <div className="tabs">
         {!this.props.denseMode && this.renderTab("all", { href: "#", label: "All" })}
-        {isBazelInvocation && this.renderTab("targets", { label: "Targets" })}
+        {this.renderTab("targets", { label: "Targets" })}
         {this.renderTab("log", { label: "Logs" })}
         {this.renderTab("details", { label: "Details" })}
         {this.renderTab("artifacts", { label: "Artifacts" })}
-        {isBazelInvocation && this.renderTab("timing", { label: "Timing" })}
-        {isBazelInvocation && this.renderTab("cache", { label: "Cache" })}
+        {this.renderTab("timing", { label: "Timing" })}
+        {this.renderTab("cache", { label: "Cache" })}
         {this.props.executionsEnabled && this.renderTab("execution", { label: "Executions" })}
         {this.props.hasSuggestions && this.renderTab("suggestions", { label: "Suggestions" })}
         {this.renderTab("raw", { label: "Raw" })}
       </div>
     );
   }
+}
+
+export interface WorkflowInvocationTabsProps {
+  tab: string;
 }

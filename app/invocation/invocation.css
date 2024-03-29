@@ -1105,6 +1105,23 @@ svg.invocation-query-graph .nodes rect {
   margin-right: 16px;
 }
 
+.invocation.workflow-invocation {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.invocation.workflow-invocation {
+  .invocation-body {
+    flex-grow: 1;
+    background: #222;
+    padding: 32px;
+
+    display: flex;
+    flex-direction: column;
+  }
+}
+
 .workflow-details-header {
   margin-top: 32px;
   margin-bottom: 16px;
@@ -1218,5 +1235,24 @@ svg.invocation-query-graph .nodes rect {
     right: 0;
     padding: 16px;
     margin-right: 0;
+  }
+}
+
+.dark-mode {
+  .invocation-card {
+    background: #424242;
+    color: white;
+
+    .title {
+      color: white;
+    }
+
+    .details {
+      color: white;
+    }
+  }
+
+  .icon {
+    stroke: #bdbdbd;
   }
 }

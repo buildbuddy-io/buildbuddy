@@ -46,7 +46,7 @@ interface RowSpanProps extends SpanData {
 /**
  * Renders a `<span>` with one or more ANSI styles applied to the whole span.
  */
-function RowSpan({ text, matchIndex, isActiveMatch, style }: RowSpanProps) {
+export function RowSpan({ text, matchIndex, isActiveMatch, style }: RowSpanProps) {
   if (!style) style = {};
   const className = [
     style.background && `ansi-bg-${style.background}`,

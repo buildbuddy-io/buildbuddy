@@ -37,6 +37,7 @@ ts_library(
         "//app/invocation:invocation_timing_card",
         "//app/invocation:scorecard_card",
         "//app/invocation/dense:dense_invocation_overview",
+        "//app/log",
         "//app/preferences",
         "//app/router",
         "//app/service:rpc_service",

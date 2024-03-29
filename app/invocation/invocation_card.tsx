@@ -25,6 +25,7 @@ import { exitCode } from "../util/exit_codes";
 const durationRefreshIntervalMillis = 3000;
 
 interface Props {
+  className?: string;
   invocation: invocation.Invocation;
   onMouseOver?: any;
   onMouseOut?: any;

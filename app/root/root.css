@@ -192,6 +192,10 @@ button {
   font-size: 14px;
 }
 
+.workflow-invocation .shelf {
+  background-color: #eceff1;
+}
+
 .shelf b {
   font-weight: 600;
 }

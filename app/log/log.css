@@ -1,0 +1,68 @@
+.log {
+  background: #222;
+  color: white;
+
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  flex-grow: 1;
+
+  overflow: hidden;
+}
+
+.log-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .icon {
+    width: 20px;
+    flex-shrink: 0;
+  }
+
+  .history-header {
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .history .card {
+    color: black;
+    margin: 16px 0;
+
+    .title {
+      font-size: 18px;
+    }
+
+    .details {
+      margin-top: 0;
+    }
+  }
+
+  .header {
+    display: flex;
+    justify-content: initial;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 8px;
+    user-select: none;
+
+    opacity: 0.7;
+  }
+
+  &.expanded .header {
+    opacity: 1;
+  }
+
+  .header:hover {
+    background: #424242;
+    cursor: pointer;
+  }
+
+  .duration {
+    margin-left: auto;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+}

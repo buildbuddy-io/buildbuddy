@@ -139,7 +139,7 @@ func (s *InvocationSearchService) checkPreconditions(req *inpb.SearchInvocationR
 	if req.Query == nil {
 		return status.InvalidArgumentError("The query field is required")
 	}
-	if req.Query.Host == "" && req.Query.User == "" && req.Query.CommitSha == "" && req.Query.RepoUrl == "" && req.Query.GroupId == "" {
+	if req.Query.Host == "" && req.Query.User == "" && req.Query.CommitSha == "" && req.Query.RepoUrl == "" && req.Query.GroupId == "" && len(req.Query.InvocationIds) == 0 {
 		return status.InvalidArgumentError("At least one search atom must be set")
 	}
 	return nil
@@ -227,6 +227,9 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	// Don't include anonymous builds.
 	q.AddWhereClause("((i.user_id != '' AND i.user_id IS NOT NULL) OR (i.group_id != '' AND i.group_id IS NOT NULL))")
 
+	if len(req.GetQuery().GetInvocationIds()) > 0 {
+		q.AddWhereClause("i.invocation_id IN ?", req.GetQuery().GetInvocationIds())
+	}
 	if user := req.GetQuery().GetUser(); user != "" {
 		q.AddWhereClause("i.user = ?", user)
 	}

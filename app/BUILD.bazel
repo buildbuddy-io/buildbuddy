@@ -47,6 +47,7 @@ genrule(
         "//app/invocation:invocation.css",
         "//app/trace:trace_viewer.css",
         "//app/terminal:terminal.css",
+        "//app/log:log.css",
         "//app/components/banner:banner.css",
         "//app/components/button:button.css",
         "//app/components/dialog:dialog.css",

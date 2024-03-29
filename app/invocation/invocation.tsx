@@ -43,6 +43,7 @@ import rpc_service from "../service/rpc_service";
 import { InvocationBotCard } from "./invocation_bot_card";
 import TargetV2Component from "../target/target_v2";
 import Banner from "../components/banner/banner";
+import Log from "../log/log";
 
 interface State {
   loading: boolean;
@@ -315,6 +316,20 @@ export default class InvocationComponent extends React.Component<Props, State> {
     return `Error: ${status.message} (code: ${codeName})`;
   }
 
+  renderShelf() {
+    if (!this.state.model) return null;
+
+    return (
+      <div className={`shelf nopadding-dense ${this.state.model.getStatusClass()}`}>
+        {this.props.preferences.denseModeEnabled ? (
+          <DenseInvocationOverviewComponent user={this.props.user} model={this.state.model} />
+        ) : (
+          <InvocationOverviewComponent user={this.props.user} model={this.state.model} />
+        )}
+      </div>
+    );
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading"></div>;
@@ -385,28 +400,22 @@ export default class InvocationComponent extends React.Component<Props, State> {
       user: this.props.user,
     });
 
+    if (!isBazelInvocation) {
+      return (
+        <div className="invocation workflow-invocation">
+          {this.renderShelf()}
+
+          <div className="container invocation-body">
+            <Log text={this.getBuildLogs(this.state.model)} />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="invocation">
-        <div className={`shelf nopadding-dense ${this.state.model.getStatusClass()}`}>
-          {this.props.preferences.denseModeEnabled ? (
-            <DenseInvocationOverviewComponent user={this.props.user} model={this.state.model} />
-          ) : (
-            <InvocationOverviewComponent user={this.props.user} model={this.state.model} />
-          )}
-          {!isBazelInvocation && (
-            <div className="container">
-              <ChildInvocations model={this.state.model} />
-            </div>
-          )}
-        </div>
-        {!isBazelInvocation && (
-          <div className="container">
-            <div className="workflow-details-header">
-              <h2>Runner results (advanced)</h2>
-              <div>Raw output from the runner instance that executed the Bazel commands.</div>
-            </div>
-          </div>
-        )}
+        {this.renderShelf()}
+
         <div className="container nopadding-dense">
           <InvocationTabsComponent
             tab={this.props.tab}
@@ -437,7 +446,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {(activeTab === "all" || activeTab === "log") && <ErrorCardComponent model={this.state.model} />}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab === "targets") && (
+          {(activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="failing"
@@ -460,7 +469,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
               fullLogsFetcher={fetchBuildLogs}
             />
           )}
-
           {(activeTab === "all" || activeTab === "log" || activeTab === "suggestions") && (
             <SuggestionCardComponent
               suggestions={suggestions}
@@ -469,7 +477,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab === "targets") && (
+          {(activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="passing"
@@ -482,17 +490,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!activeTab} />
           )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab === "cache") && (
-            <CacheCardComponent model={this.state.model} />
+          {(activeTab === "all" || activeTab === "cache") && <CacheCardComponent model={this.state.model} />}
+          {(activeTab === "all" || activeTab === "cache") && !capabilities.config.detailedCacheStatsEnabled && (
+            <ScorecardCardComponent model={this.state.model} />
           )}
-          {isBazelInvocation &&
-            (activeTab === "all" || activeTab === "cache") &&
-            !capabilities.config.detailedCacheStatsEnabled && <ScorecardCardComponent model={this.state.model} />}
-          {isBazelInvocation &&
-            (activeTab === "all" || activeTab === "cache") &&
-            capabilities.config.detailedCacheStatsEnabled && (
-              <CacheRequestsCardComponent model={this.state.model} search={this.props.search} />
-            )}
+          {(activeTab === "all" || activeTab === "cache") && capabilities.config.detailedCacheStatsEnabled && (
+            <CacheRequestsCardComponent model={this.state.model} search={this.props.search} />
+          )}
 
           {(activeTab === "all" || activeTab === "artifacts") && (
             <ArtifactsCardComponent
