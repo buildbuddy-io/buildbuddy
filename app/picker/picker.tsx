@@ -79,11 +79,12 @@ export default class Picker extends React.Component<{}, State> {
   }
 
   async fetchOptions(search: string) {
+    this.setState({ search: search });
     let searchString = search.toLowerCase();
     let cachedValue = this.state.optionCache.get(searchString);
     if (cachedValue) {
       // If we have a cached option value, use it.
-      this.setState({ search: search, currentOptions: await cachedValue });
+      this.setState({ currentOptions: await cachedValue });
       return;
     }
 
@@ -91,13 +92,12 @@ export default class Picker extends React.Component<{}, State> {
     if (this.state.picker?.fetchOptions) {
       let results = this.state.picker.fetchOptions(searchString);
       this.state.optionCache.set(searchString, results);
-      this.setState({ search: search, currentOptions: await results });
+      this.setState({ currentOptions: await results });
       return;
     }
 
     // If we don't have cached options, or an options function - do a simple text search of the fixed options.
     this.setState({
-      search: search,
       currentOptions:
         this.state.picker?.options?.filter((o) => o.toLowerCase().includes(this.state.search.toLowerCase())) || [],
     });

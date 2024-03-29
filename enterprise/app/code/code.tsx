@@ -189,11 +189,12 @@ export default class CodeComponent extends React.Component<Props, State> {
     };
     if (capabilities.config.codesearchEnabled) {
       picker.fetchOptions = async (query) => {
-        // TODO: edit query to search only filenames, once supported
         // TODO: include repo info once supported
         // TODO: kick off indexing on page load
         return (
-          await rpcService.service.search(new search.SearchRequest({ query: new search.Query({ term: query }) }))
+          await rpcService.service.search(
+            new search.SearchRequest({ query: new search.Query({ term: `filepath:${query}` }) })
+          )
         ).results.map((r) => r.filename);
       };
     } else {
