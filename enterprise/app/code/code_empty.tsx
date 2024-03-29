@@ -9,7 +9,7 @@ interface State {
   loading: boolean;
 }
 
-export default class CodeEmptyStateComponent extends React.Component {
+export default class CodeEmptyStateComponent extends React.Component<{}, State> {
   state: State = {
     reposWithStats: [],
     linkedRepos: [],
@@ -24,7 +24,7 @@ export default class CodeEmptyStateComponent extends React.Component {
       .getInvocationStat(request)
       .then((response) => {
         console.log(response);
-        this.setState({ repoStats: response.invocationStat.map((stat) => stat.name).filter((name) => name) });
+        this.setState({ reposWithStats: response.invocationStat.map((stat) => stat.name).filter((name) => name) });
       })
       .finally(() => this.setState({ loading: false }));
 
