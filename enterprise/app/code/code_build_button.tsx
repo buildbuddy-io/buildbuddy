@@ -43,7 +43,7 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
       return;
     }
     if (customArgs.startsWith("bazel ")) {
-      customArgs.replace("bazel ", "");
+      customArgs = customArgs.replace("bazel ", "");
     }
     this.handleCommandClicked(customArgs);
   }
