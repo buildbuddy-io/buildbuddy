@@ -840,9 +840,13 @@ type RankedExecutionNode interface {
 }
 
 type ExecutionNode interface {
-	// GetExecutorID returns the ID for this execution node that uniquely identifies
-	// it within a node pool.
+	// GetExecutorID returns the ID for this execution node that uniquely
+	// identifies it within a node pool.
 	GetExecutorID() string
+
+	// GetExecutorHostID returns the executor host ID for this execution node,
+	// which persists across restarts of a given executor instance.
+	GetExecutorHostID() string
 }
 
 type ExecutionSearchService interface {
