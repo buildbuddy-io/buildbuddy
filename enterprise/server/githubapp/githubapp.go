@@ -781,7 +781,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 	// Pick the right client based on the request (organization or user).
 	var githubClient *github.Client
 	var token = tu.GithubToken
-	if !req.IsOrganization {
+	if req.InstallationTargetType != "Organization"  {
 		githubClient, err = a.newAuthenticatedClient(ctx, token)
 	} else {
 		githubClient, token, err = a.newInstallationClient(ctx, token, req.InstallationId)
@@ -795,7 +795,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 	// Create a new repository on github, if requested
 	if !req.SkipRepo {
 		organization := ""
-		if req.IsOrganization {
+		if req.InstallationTargetType == "Organization" {
 			organization = req.Owner
 		}
 		_, _, err := githubClient.Repositories.Create(ctx, organization, &github.Repository{

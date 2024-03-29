@@ -254,6 +254,7 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     if (selectedInstallation) {
       r.owner = selectedInstallation.login;
       r.installationId = selectedInstallation.id;
+      r.installationTargetType = selectedInstallation.targetType;
     }
 
     if (update) {
@@ -262,9 +263,6 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       r.templateVariables = Object.fromEntries(this.state.vars.entries());
     }
 
-    if (selectedInstallation?.targetType == "Organization") {
-      r.isOrganization = true;
-    }
     return rpc_service.service.createRepo(r);
   }
 

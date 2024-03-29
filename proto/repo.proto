@@ -14,9 +14,6 @@ message CreateRepoRequest {
   // The owner that of the github repo ex. "buildbuddy-io".
   string owner = 3;
 
-  // True if this repo should belong to an organization.
-  bool is_organization = 14;
-
   // A short description of the repo, ex. "BuildBuddy is an open source Bazel
   // build event viewer, result store, remote caching, and remote build
   // execution platform."
@@ -45,6 +42,9 @@ message CreateRepoRequest {
   // The Github app installation id that should be used to create the
   // repository. Only required for repositories that are hosted on Github.
   int64 installation_id = 8;
+
+  // The target for this installation, for example "Organization".
+  string installation_target_type = 14;
 
   // If set, the template will be copied into the given directory in the
   // newly created repo.
