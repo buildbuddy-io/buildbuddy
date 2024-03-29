@@ -74,6 +74,9 @@ interface State {
   contextMenuY?: number;
   contextMenuFullPath?: string;
   contextMenuFile?: github.TreeNode;
+
+  commands: string[];
+  defaultConfig: string;
 }
 
 // When upgrading monaco, make sure to run
@@ -116,6 +119,9 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     prTitle: "",
     prBody: "",
+
+    commands: ["build //...", "test //..."],
+    defaultConfig: "",
   };
 
   editor: monaco.editor.IStandaloneCodeEditor | undefined;
@@ -507,17 +513,28 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   handleBuildClicked(args: string) {
+    let newCommands = this.state.commands;
+    // Remove if it already exists.
+    const index = newCommands.indexOf(args);
+    if (index > -1) {
+      newCommands.splice(index, 1);
+    }
+    // Place it at the front.
+    newCommands.unshift(args);
+    // Limit the number of commands.
+    newCommands = newCommands.slice(0, 10);
+
     let request = new runner.RunRequest();
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.currentOwner()}/${this.currentRepo()}.git`;
-    request.bazelCommand = args;
+    request.bazelCommand = args + (this.state.defaultConfig ? ` --config=${this.state.defaultConfig}` : "");
     request.repoState = this.getRepoState();
     request.async = true;
     request.execProperties = [
       new build.bazel.remote.execution.v2.Platform.Property({ name: "include-secrets", value: "true" }),
     ];
 
-    this.updateState({ isBuilding: true });
+    this.updateState({ isBuilding: true, commands: newCommands });
     rpcService.service
       .run(request)
       .then((response: runner.RunResponse) => {
@@ -679,8 +696,8 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({});
   }
 
-  handleNewFileClicked(node: github.TreeNode, path: string) {
-    if (node.type != "tree") {
+  handleNewFileClicked(node: github.TreeNode | undefined, path: string) {
+    if (node && node.type != "tree") {
       path = this.getParent(path);
     }
 
@@ -691,8 +708,8 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({ temporaryFiles: this.state.temporaryFiles });
   }
 
-  handleNewFolderClicked(node: github.TreeNode, path: string) {
-    if (node.type != "tree") {
+  handleNewFolderClicked(node: github.TreeNode | undefined, path: string) {
+    if (node && node.type != "tree") {
       path = this.getParent(path);
     }
 
@@ -1195,8 +1212,11 @@ export default class CodeComponent extends React.Component<Props, State> {
               )}
               <CodeBuildButton
                 onCommandClicked={this.handleBuildClicked.bind(this)}
+                onDefaultConfig={(config) => this.setState({ defaultConfig: config })}
                 isLoading={this.state.isBuilding}
                 project={`${this.currentOwner()}/${this.currentRepo()}}`}
+                commands={this.state.commands}
+                defaultConfig={this.state.defaultConfig}
               />
             </div>
           )}

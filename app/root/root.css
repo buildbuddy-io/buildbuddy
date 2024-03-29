@@ -1027,7 +1027,7 @@ code .comment {
 
 .build-logs-card {
   position: relative;
-  padding-bottom: 16px;
+  padding-bottom: 24px;
 }
 
 .inline-code {

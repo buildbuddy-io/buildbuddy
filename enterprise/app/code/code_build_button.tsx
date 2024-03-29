@@ -6,70 +6,55 @@ import Popup, { PopupContainer } from "../../../app/components/popup/popup";
 import Spinner from "../../../app/components/spinner/spinner";
 import { ChevronDown, PlayCircle } from "lucide-react";
 
-const LOCAL_STORAGE_STATE_KEY = "code-button-commands";
-const MAX_COMMANDS = 10;
-
 export interface CodeBuildButtonProps {
   onCommandClicked: (args: string) => void;
+  onDefaultConfig: (config: string) => void;
   isLoading: boolean;
   project: string;
+  commands: string[];
+  defaultConfig: string;
 }
 
 type State = {
   isMenuOpen: boolean;
-  commands: string[];
 };
 
 export default class CodeBuildButton extends React.Component<CodeBuildButtonProps, State> {
-  state: State = this.getSavedState()
-    ? (JSON.parse(this.getSavedState()) as State)
-    : {
-        isMenuOpen: false,
-        commands: ["build //...", "test //..."],
-      };
-
-  private getSavedState() {
-    return localStorage[this.localStorageKey()];
-  }
-
-  private saveState() {
-    localStorage[this.localStorageKey()] = JSON.stringify(this.state);
-  }
-
-  private localStorageKey() {
-    return LOCAL_STORAGE_STATE_KEY + this.props.project;
-  }
+  state: State = {
+    isMenuOpen: false,
+  };
 
   private onOpenMenu() {
-    this.setState({ isMenuOpen: true }, this.saveState.bind(this));
+    this.setState({ isMenuOpen: true });
   }
   private onCloseMenu() {
-    this.setState({ isMenuOpen: false }, this.saveState.bind(this));
+    this.setState({ isMenuOpen: false });
   }
 
   private handleCommandClicked(args: string) {
     this.onCloseMenu();
-    let newCommands = this.state.commands;
-    // Remove if it already exists.
-    const index = newCommands.indexOf(args);
-    if (index > -1) {
-      newCommands.splice(index, 1);
-    }
-    // Place it at the front.
-    newCommands.unshift(args);
-    // Limit the number of commands.
-    newCommands = newCommands.slice(0, MAX_COMMANDS);
-    this.setState({ commands: newCommands }, this.saveState.bind(this));
     this.props.onCommandClicked(args);
   }
 
-  private handleCustomClicked() {
+  private handleCustomClicked(defaultValue: string) {
     this.onCloseMenu();
-    let customArgs = prompt("bazel");
+    let customArgs = prompt("bazel", defaultValue);
     if (!customArgs) {
       return;
     }
+    if (customArgs.startsWith("bazel ")) {
+      customArgs = customArgs.replace("bazel ", "");
+    }
     this.handleCommandClicked(customArgs);
+  }
+
+  private handleDefaultConfigClicked() {
+    this.onCloseMenu();
+    this.props.onDefaultConfig(prompt("config") || "");
+  }
+
+  private getConfig() {
+    return this.props.defaultConfig ? ` --config=${this.props.defaultConfig}` : "";
   }
 
   render() {
@@ -78,9 +63,12 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
         <OutlinedButtonGroup>
           <OutlinedButton
             className="workflow-rerun-button"
-            onClick={this.handleCommandClicked.bind(this, this.state.commands[0])}>
+            onClick={this.handleCommandClicked.bind(this, this.props.commands[0])}>
             {this.props.isLoading ? <Spinner /> : <PlayCircle className="icon green" />}
-            <span>{this.state.commands[0]}</span>
+            <span>
+              {this.props.commands[0]}
+              {this.getConfig()}
+            </span>
           </OutlinedButton>
           <OutlinedButton className="icon-button" onClick={this.onOpenMenu.bind(this)}>
             <ChevronDown />
@@ -88,10 +76,15 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
         </OutlinedButtonGroup>
         <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)} anchor="right">
           <Menu>
-            {this.state.commands.slice(1).map((command) => (
-              <MenuItem onClick={this.handleCommandClicked.bind(this, command)}>{command}</MenuItem>
+            {this.props.commands.slice(1).map((command) => (
+              <MenuItem onClick={this.handleCommandClicked.bind(this, command)}>
+                {command}
+                {this.getConfig()}
+              </MenuItem>
             ))}
-            <MenuItem onClick={this.handleCustomClicked.bind(this, undefined)}>Custom...</MenuItem>
+            <MenuItem onClick={this.handleDefaultConfigClicked.bind(this, undefined)}>Set default config...</MenuItem>
+            <MenuItem onClick={this.handleCustomClicked.bind(this, this.props.commands[0])}>Edit...</MenuItem>
+            <MenuItem onClick={this.handleCustomClicked.bind(this, "")}>New...</MenuItem>
           </Menu>
         </Popup>
       </PopupContainer>
