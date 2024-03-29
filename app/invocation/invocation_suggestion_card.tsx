@@ -1,10 +1,12 @@
 import React from "react";
-import { AlertCircle, HelpCircle } from "lucide-react";
+import { AlertCircle, AlertTriangle, HelpCircle } from "lucide-react";
 import { TextLink } from "../components/link/link";
 import InvocationModel from "./invocation_model";
 import capabilities from "../capabilities/capabilities";
 import { User } from "../auth/user";
 import { grp } from "../../proto/group_ts_proto";
+import { execution_stats } from "../../proto/execution_stats_ts_proto";
+import { bytes as formatBytes } from "../format/format";
 
 interface Props {
   suggestions: Suggestion[];
@@ -26,10 +28,12 @@ interface Suggestion {
 interface MatchParams {
   model: InvocationModel;
   buildLogs: string;
+  runnerExecution?: execution_stats.Execution;
 }
 
 export enum SuggestionLevel {
   INFO,
+  WARNING,
   ERROR,
 }
 
@@ -152,6 +156,85 @@ const matchers: SuggestionMatcher[] = [
           Shown because this build is cache-enabled, has an effective{" "}
           <span className="inline-code">remote_timeout</span> less than 10 minutes, and failed with a log message
           containing "DEADLINE_EXCEEDED"
+        </>
+      ),
+    };
+  },
+  // Show warning if VM is low on disk/memory.
+  ({ model, runnerExecution, buildLogs }) => {
+    if (!runnerExecution) return null;
+    // TODO: show for remote bazel as well one we have a way to configure the
+    // runner via buildbuddy.yaml?
+    if (!model.isWorkflowInvocation()) return null;
+
+    let rootDiskUsage = 0.0;
+    let rootDiskBytesUsed = 0;
+    let rootDiskBytesTotal = 0;
+    // Get execution metadata from the cached ExecutionResponse,
+    // since we don't store this in the DB currently.
+    const executionMetadata = runnerExecution?.executeResponse?.result?.executionMetadata;
+    if (!executionMetadata) return null;
+
+    for (const fs of executionMetadata.usageStats?.peakFileSystemUsage ?? []) {
+      if (fs.target === "/" && Number(fs.totalBytes) !== 0) {
+        rootDiskUsage = Number(fs.usedBytes) / Number(fs.totalBytes);
+        rootDiskBytesUsed = Number(fs.usedBytes);
+        rootDiskBytesTotal = Number(fs.totalBytes);
+      }
+    }
+    const memoryUsedBytes = Number(executionMetadata?.usageStats?.peakMemoryBytes);
+    const memoryTotalBytes = Number(executionMetadata?.estimatedTaskSize?.estimatedMemoryBytes);
+    let memoryUsage = 0.0;
+    if (memoryTotalBytes !== 0) {
+      memoryUsage = memoryUsedBytes / memoryTotalBytes;
+    }
+
+    const lowResources: string[] = [];
+    const yamlSuggestions: string[] = [];
+    if (rootDiskUsage > 0.98) {
+      lowResources.push(`disk (${formatBytes(rootDiskBytesUsed)} used of ${formatBytes(rootDiskBytesTotal)} total)`);
+      // Conservatively suggest adding 5GB for now.
+      yamlSuggestions.push(`disk: ${Math.floor((rootDiskBytesTotal + 5e9) / 1e9)}GB`);
+    }
+    if (memoryUsage > 0.98) {
+      lowResources.push(`memory (${formatBytes(memoryUsedBytes)} used of ${formatBytes(memoryTotalBytes)} total)`);
+      // Conservatively suggest adding 2GB for now.
+      yamlSuggestions.push(`memory: ${Math.floor((memoryTotalBytes + 2e9) / 1e9)}GB`);
+    }
+
+    if (!lowResources.length) return null;
+
+    const hasNoSpaceError = buildLogs.match(/[Nn]o space left on device/);
+    return {
+      level: hasNoSpaceError ? SuggestionLevel.ERROR : SuggestionLevel.WARNING,
+      message: (
+        <>
+          <p>
+            The VM that executed this invocation is low on <InlineProseList items={lowResources} />.
+          </p>
+          <p>
+            To increase the available resources, set <span className="inline-code">resource_requests</span> in{" "}
+            <TextLink href="https://buildbuddy.io/docs/workflows-config">
+              <span className="inline-code">buildbuddy.yaml</span>
+            </TextLink>
+            :
+          </p>
+          <code>
+            <pre>
+              {`actions:
+  - name: Test all targets
+    # ...
+    resource_requests:
+${yamlSuggestions.map((s) => `      - ${s}`).join("\n")}`}
+            </pre>
+          </code>
+        </>
+      ),
+      reason: (
+        <>
+          Shown because the{" "}
+          <TextLink href={`/invocation/${model.getInvocationId()}#execution`}>runner execution</TextLink> reported high
+          resource usage{hasNoSpaceError && ' and the build log contains "no space left on device"'}.
         </>
       ),
     };
@@ -452,10 +535,12 @@ const matchers: SuggestionMatcher[] = [
 export function getSuggestions({
   model,
   buildLogs,
+  runnerExecution,
   user,
 }: {
   model: InvocationModel;
   buildLogs: string;
+  runnerExecution?: execution_stats.Execution;
   user?: User;
 }): Suggestion[] {
   if (!buildLogs || !model || !user) return [];
@@ -468,7 +553,7 @@ export function getSuggestions({
 
   const suggestions: Suggestion[] = [];
   for (let matcher of matchers) {
-    const suggestion = matcher({ buildLogs, model });
+    const suggestion = matcher({ buildLogs, model, runnerExecution });
     if (suggestion) suggestions.push(suggestion);
   }
   return suggestions;
@@ -522,6 +607,8 @@ function renderIcon(level: SuggestionLevel) {
   switch (level) {
     case SuggestionLevel.INFO:
       return <HelpCircle className="icon" />;
+    case SuggestionLevel.WARNING:
+      return <AlertTriangle className="icon orange" />;
     case SuggestionLevel.ERROR:
       return <AlertCircle className="icon red" />;
   }
