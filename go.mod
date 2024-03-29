@@ -24,6 +24,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.10.1
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.33.8
 	github.com/Masterminds/semver/v3 v3.2.1
+	github.com/RoaringBitmap/roaring v1.9.1
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
 	github.com/aws/aws-sdk-go v1.44.286
 	github.com/aws/aws-sdk-go-v2 v1.18.1
@@ -41,6 +42,7 @@ require (
 	github.com/bazelbuild/rules_go v0.46.0
 	github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
+	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/bojand/ghz v0.117.0
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6
@@ -58,6 +60,7 @@ require (
 	github.com/dop251/goja v0.0.0-20230626124041-ba8a63e79201
 	github.com/elastic/gosigar v0.14.2
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-00010101000000-000000000000
+	github.com/gabriel-vasile/mimetype v1.4.3
 	github.com/go-faker/faker/v4 v4.0.0-beta.3
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.11.5
@@ -116,6 +119,7 @@ require (
 	github.com/throttled/throttled/v2 v2.12.0
 	github.com/tklauser/go-sysconf v0.3.11
 	github.com/vishvananda/netlink v1.2.1-beta.2
+	github.com/xiam/s-expr v0.0.0-20240311144413-9d7e25c9d7d1
 	github.com/zeebo/blake3 v0.2.3
 	gitlab.com/arm-research/smarter/smarter-device-manager v1.20.11
 	go.opentelemetry.io/contrib/detectors/gcp v1.21.1
@@ -168,7 +172,6 @@ require (
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/Microsoft/hcsshim v0.11.4 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20230828082145-3c4c8a2d2371 // indirect
-	github.com/RoaringBitmap/roaring v1.9.1 // indirect
 	github.com/VictoriaMetrics/metrics v1.24.0 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
@@ -330,7 +333,6 @@ require (
 	github.com/vbatts/tar-split v0.11.3 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	github.com/xiam/s-expr v0.0.0-20240311144413-9d7e25c9d7d1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.etcd.io/bbolt v1.3.7 // indirect
 	go.mongodb.org/mongo-driver v1.12.0 // indirect
