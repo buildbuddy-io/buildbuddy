@@ -555,8 +555,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bits_and_blooms_bitset",
         importpath = "github.com/bits-and-blooms/bitset",
-        sum = "h1:Kn4yilvwNtMACtf1eYDlG8H77R07mZSPbMjLyS07ChA=",
-        version = "v1.2.0",
+        sum = "h1:U/q1fAF7xXRhFCrhROzIfffYnu+dlS38vCZtmFVPHmA=",
+        version = "v1.12.0",
     )
     go_repository(
         name = "com_github_bkaradzic_go_lz4",
@@ -3895,6 +3895,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.5.0",
     )
     go_repository(
+        name = "com_github_mschoch_smat",
+        importpath = "github.com/mschoch/smat",
+        sum = "h1:8imxQsjDm8yFEAVBe7azKmKSgzSkZXDuKkSq9374khM=",
+        version = "v0.2.0",
+    )
+    go_repository(
         name = "com_github_muesli_reflow",
         importpath = "github.com/muesli/reflow",
         sum = "h1:IFsN6K9NfGtjeggFP+68I4chLZV2yIKsXJFNZ+eWh6s=",
@@ -4357,6 +4363,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/rivo/uniseg",
         sum = "h1:S1pD9weZBuJdFmowNwbpi7BJ8TNftyUImj/0WQi72jY=",
         version = "v0.2.0",
+    )
+    go_repository(
+        name = "com_github_roaringbitmap_roaring",
+        importpath = "github.com/RoaringBitmap/roaring",
+        sum = "h1:LXcSqGGGMKm+KAzUyWn7ZeREqoOkoMX+KwLOK1thc4I=",
+        version = "v1.9.1",
     )
     go_repository(
         name = "com_github_rogpeppe_fastuuid",
@@ -5012,6 +5024,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/xhit/go-str2duration/v2",
         sum = "h1:lxklc02Drh6ynqX+DdPyp5pCKLUQpRT8bp8Ydu2Bstc=",
         version = "v2.1.0",
+    )
+    go_repository(
+        name = "com_github_xiam_s_expr",
+        importpath = "github.com/xiam/s-expr",
+        sum = "h1:GOOG0ytl7fQsJ2yyA0qJu4uSUyv2pbILu+7edPboSNk=",
+        version = "v0.0.0-20240311144413-9d7e25c9d7d1",
     )
     go_repository(
         name = "com_github_xiang90_probing",
