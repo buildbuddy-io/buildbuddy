@@ -2192,6 +2192,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		}
 	}
 
+	fileCommentCount := make(map[string]int64)
 	for _, thread := range pr.ReviewThreads.Nodes {
 		for _, c := range thread.Comments.Nodes {
 			comment := &ghpb.Comment{}
@@ -2221,6 +2222,9 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 			commenter.Bot = isBot(&c.Author)
 			comment.Commenter = commenter
 
+			if thread.Path != "" {
+				fileCommentCount[thread.Path]++
+			}
 			outputComments = append(outputComments, comment)
 		}
 	}
@@ -2278,7 +2282,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 			return nil, status.InternalErrorf("Couldn't find SHA for file.")
 		}
 		summary.CommitSha = ref
-		// TODO(jdhollen): compute comment count.
+		summary.Comments = fileCommentCount[f.GetFilename()]
 		fileSummaries = append(fileSummaries, summary)
 	}
 
