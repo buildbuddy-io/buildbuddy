@@ -250,16 +250,19 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
     r.template = this.state.template;
     r.templateDirectory = this.state.templateDirectory;
     r.destinationDirectory = this.state.destinationDirectory;
+
+    if (selectedInstallation) {
+      r.owner = selectedInstallation.login;
+      r.installationId = selectedInstallation.id;
+      r.installationTargetType = selectedInstallation.targetType;
+    }
+
     if (update) {
       r.skipRepo = true;
       r.skipLink = true;
       r.templateVariables = Object.fromEntries(this.state.vars.entries());
     }
 
-    if (selectedInstallation?.targetType == "Organization") {
-      r.installationId = selectedInstallation.id;
-      r.organization = selectedInstallation.login;
-    }
     return rpc_service.service.createRepo(r);
   }
 
