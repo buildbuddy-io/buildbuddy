@@ -273,7 +273,6 @@ func main() {
 				for i := 0; i < readsPerWrite; i++ {
 					select {
 					case writtenDigests <- d:
-						break
 					default:
 					}
 				}

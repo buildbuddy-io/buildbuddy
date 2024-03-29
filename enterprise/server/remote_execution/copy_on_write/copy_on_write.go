@@ -883,7 +883,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		select {
 		case <-egCtx.Done():
 			// One goroutine failed - exit the for loop
-			break
+			return nil, eg.Wait()
 		default:
 			chunkStartOffset := chunkStartOffset
 			eg.Go(func() error {
