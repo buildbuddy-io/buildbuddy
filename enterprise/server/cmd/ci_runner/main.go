@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -513,8 +514,12 @@ func main() {
 }
 
 func run() error {
-	if err := parseFlags(); err != nil {
-		return err
+	if slices.Contains(os.Args, "--credential_helper") {
+		flag.Parse()
+	} else {
+		if err := parseFlags(); err != nil {
+			return err
+		}
 	}
 	if *credentialHelper {
 		return runCredentialHelper()
