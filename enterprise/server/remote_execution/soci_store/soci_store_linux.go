@@ -323,10 +323,10 @@ func getArtifacts(ctx context.Context, client socipb.SociArtifactStoreClient, en
 			}
 		}
 		blobFile, err := os.Create(sociBlob(artifact.Digest))
-		defer blobFile.Close()
 		if err != nil {
 			return err
 		}
+		defer blobFile.Close()
 		resourceName := digest.NewResourceName(artifact.Digest, "" /*=instanceName -- not used */, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 		if err = cachetools.GetBlob(ctx, env.GetByteStreamClient(), resourceName, blobFile); err != nil {
 			return err
