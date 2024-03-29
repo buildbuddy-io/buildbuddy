@@ -4,13 +4,15 @@ import { invocation } from "../../../proto/invocation_ts_proto";
 import format from "../../../app/format/format";
 
 interface State {
-  repoStats: invocation.InvocationStat[];
+  reposWithStats: string[];
+  linkedRepos: string[];
   loading: boolean;
 }
 
-export default class CodeEmptyStateComponent extends React.Component {
+export default class CodeEmptyStateComponent extends React.Component<{}, State> {
   state: State = {
-    repoStats: [],
+    reposWithStats: [],
+    linkedRepos: [],
     loading: false,
   };
 
@@ -22,7 +24,7 @@ export default class CodeEmptyStateComponent extends React.Component {
       .getInvocationStat(request)
       .then((response) => {
         console.log(response);
-        this.setState({ repoStats: response.invocationStat.filter((stat) => stat.name) });
+        this.setState({ reposWithStats: response.invocationStat.map((stat) => stat.name).filter((name) => name) });
       })
       .finally(() => this.setState({ loading: false }));
 
@@ -35,14 +37,19 @@ export default class CodeEmptyStateComponent extends React.Component {
     //   console.log(r);
     // });
 
-    // rpcService.service.getLinkedGitHubRepos({}).then((r) => {
-    //   console.log(r);
-    // });
+    rpcService.service.getLinkedGitHubRepos({}).then((response) => {
+      console.log(response);
+      this.setState({ linkedRepos: response.repoUrls });
+    });
 
     return;
   }
 
   render() {
+    let recentRepos = new Set<string>();
+    this.state.reposWithStats.forEach((r) => recentRepos.add(r));
+    this.state.linkedRepos.forEach((r) => recentRepos.add(r));
+
     return (
       <div className="repo-empty">
         <div className="repo-options">
@@ -55,13 +62,13 @@ export default class CodeEmptyStateComponent extends React.Component {
               </a>
             </div>
           </div>
-          {this.state.repoStats?.length > 0 && (
+          {recentRepos.size > 0 && (
             <div className="repo-recent">
               <div className="repo-title">Recent</div>
               <div className="repo-section">
-                {this.state.repoStats.slice(0, 5).map((repo) => (
-                  <a href={`/code/${format.formatGitUrl(repo.name)}`} className="repo-link">
-                    {format.formatGitUrl(repo.name)}
+                {[...recentRepos.values()].slice(0, 5).map((repo) => (
+                  <a href={`/code/${format.formatGitUrl(repo)}`} className="repo-link">
+                    {format.formatGitUrl(repo)}
                   </a>
                 ))}
               </div>
