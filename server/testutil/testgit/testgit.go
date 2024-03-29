@@ -22,12 +22,20 @@ const (
 	FakeWebhookID = "fake-webhook-id"
 )
 
+type Status struct {
+	AccessToken string
+	RepoURL     string
+	CommitSHA   string
+	Payload     any
+}
+
 // FakeProvider implements the git provider interface for tests.
 type FakeProvider struct {
 	// Captured values
 
 	RegisteredWebhookURL  string
 	UnregisteredWebhookID string
+	Statuses              chan *Status
 
 	// Faked values
 
@@ -38,7 +46,9 @@ type FakeProvider struct {
 }
 
 func NewFakeProvider() *FakeProvider {
-	return &FakeProvider{}
+	return &FakeProvider{
+		Statuses: make(chan *Status, 1024),
+	}
 }
 
 func (p *FakeProvider) MatchRepoURL(u *url.URL) bool {
@@ -78,6 +88,10 @@ func (p *FakeProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user
 		}
 	}
 	return false, nil
+}
+func (p *FakeProvider) CreateStatus(ctx context.Context, accessToken, repoURL, commitSHA string, payload any) error {
+	p.Statuses <- &Status{accessToken, repoURL, commitSHA, payload}
+	return nil
 }
 
 // MakeTempRepo initializes a Git repository with the given file contents, and

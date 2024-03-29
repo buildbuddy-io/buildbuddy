@@ -212,7 +212,7 @@ func (ws *workflowService) runStartWorkflowTask(task *startWorkflowTask) {
 	defer cancel()
 
 	if err := ws.startWorkflow(ctx, task.gitProvider, task.webhookData, task.workflow, nil /*env*/); err != nil {
-		log.Errorf("Failed to start workflow in the background: %s", err)
+		log.CtxErrorf(ctx, "Failed to start workflow in the background: %s", err)
 	}
 }
 
@@ -275,7 +275,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	}
 	repoURL := u.String()
 
-	provider, err := ws.providerForRepo(u)
+	provider, err := ws.providerForRepo(repoURL)
 	if err != nil {
 		return nil, err
 	}
@@ -381,11 +381,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	if wf.GitProviderWebhookID != "" {
 		const errMsg = "Failed to remove the webhook from the repo; it may need to be removed manually via the repo's settings page"
 
-		u, err := gitutil.ParseRepoURL(wf.RepoURL)
-		if err != nil {
-			return nil, status.WrapError(err, errMsg)
-		}
-		provider, err := ws.providerForRepo(u)
+		provider, err := ws.providerForRepo(wf.RepoURL)
 		if err != nil {
 			return nil, status.WrapError(err, errMsg)
 		}
@@ -414,7 +410,11 @@ func (ws *workflowService) GetLinkedWorkflows(ctx context.Context, accessToken s
 	return ids, err
 }
 
-func (ws *workflowService) providerForRepo(u *url.URL) (interfaces.GitProvider, error) {
+func (ws *workflowService) providerForRepo(repoURL string) (interfaces.GitProvider, error) {
+	u, err := gitutil.NormalizeRepoURL(repoURL)
+	if err != nil {
+		return nil, status.WrapError(err, "parse repo URL")
+	}
 	for _, provider := range ws.env.GetGitProviders() {
 		if provider.MatchRepoURL(u) {
 			return provider, nil
@@ -596,11 +596,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter []string) ([]*config.Action, error) {
 	// Fetch the workflow config
-	repoURL, err := gitutil.ParseRepoURL(wd.PushedRepoURL)
-	if err != nil {
-		return nil, err
-	}
-	gitProvider, err := ws.providerForRepo(repoURL)
+	gitProvider, err := ws.providerForRepo(wd.PushedRepoURL)
 	if err != nil {
 		return nil, err
 	}
@@ -1329,12 +1325,7 @@ func (ws *workflowService) isTrustedCommit(ctx context.Context, gitProvider inte
 }
 
 func (ws *workflowService) HandleRepositoryEvent(ctx context.Context, repo *tables.GitRepository, wd *interfaces.WebhookData, accessToken string) error {
-	u, err := url.Parse(repo.RepoURL)
-	if err != nil {
-		log.CtxErrorf(ctx, "Failed to parse repo URL %s", u.String())
-		return status.InvalidArgumentError("failed to parse repo URL")
-	}
-	provider, err := ws.providerForRepo(u)
+	provider, err := ws.providerForRepo(repo.RepoURL)
 	if err != nil {
 		return err
 	}
@@ -1396,6 +1387,9 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	// for each action matching the webhook event.
 	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
 	if err != nil {
+		if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd); err != nil {
+			log.CtxWarningf(ctx, "Failed to create workflow config error status: %s", err)
+		}
 		return err
 	}
 	var wg sync.WaitGroup
@@ -1524,12 +1518,26 @@ func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Wo
 	}
 	invocationURL += "?queued=true"
 	status := github.NewGithubStatusPayload(actionName, invocationURL, "Queued...", github.PendingState)
-	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
+	provider, err := ws.providerForRepo(wd.TargetRepoURL)
 	if err != nil {
 		return err
 	}
-	ghc := github.NewGithubClient(ws.env, wf.AccessToken)
-	return ghc.CreateStatus(ctx, ownerRepo, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, wd.TargetRepoURL, wd.SHA, status)
+}
+
+func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData) error {
+	// For now just point to docs. Eventually it'd be nice to link to BB code
+	// and highlight the YAML syntax error.
+	status := github.NewGithubStatusPayload(
+		"BuildBuddy Workflows",
+		"https://buildbuddy.io/docs/workflows-config",
+		"Invalid buildbuddy.yaml",
+		github.ErrorState)
+	provider, err := ws.providerForRepo(wd.TargetRepoURL)
+	if err != nil {
+		return err
+	}
+	return provider.CreateStatus(ctx, wf.AccessToken, wd.TargetRepoURL, wd.SHA, status)
 }
 
 func isGitHubURL(s string) bool {

@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -33,6 +34,19 @@ func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
 			},
 		},
 	}, conf)
+}
+
+func TestWorkflowConf_Parse_InvalidConfig_Error(t *testing.T) {
+	// Unquoted bazel command
+	s := `
+actions:
+  - name: Test
+    bazel_commands:
+      - "test foo
+`
+	conf, err := config.NewConfig(strings.NewReader(s))
+	assert.Nil(t, conf)
+	assert.Error(t, err)
 }
 
 func TestMatchesAnyTrigger_SupportsBasicWildcard(t *testing.T) {

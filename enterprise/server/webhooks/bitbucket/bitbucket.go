@@ -114,6 +114,10 @@ func (*bitbucketGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL
 	return false, status.UnimplementedError("Not implemented")
 }
 
+func (*bitbucketGitProvider) CreateStatus(ctx context.Context, accessToken, repoURL, commitSHA string, payload any) error {
+	return status.UnimplementedError("Not implemented")
+}
+
 func unmarshalBody(r *http.Request, payload interface{}) error {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {

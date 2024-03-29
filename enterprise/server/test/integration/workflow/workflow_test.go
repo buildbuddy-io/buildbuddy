@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
@@ -36,7 +37,7 @@ import (
 
 // simpleRepo simulates a test repo with the config files required to run a workflow
 func simpleRepo() map[string]string {
-	fileNameToFileContentsMap := map[string]string{
+	return map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
 sh_binary(
@@ -54,15 +55,13 @@ actions:
     arch: ` + runtime.GOARCH + `
 `,
 	}
-
-	return fileNameToFileContentsMap
 }
 
 // repoWithSlowScript simulates a test repo with the config files required to run a workflow
 // It sets up a slow script that takes a while to run so the CI runner does not return immediately,
 // giving tests that need to modify the workflow (Ex. for testing cancellation) time to complete
 func repoWithSlowScript() map[string]string {
-	fileNameToFileContentsMap := map[string]string{
+	return map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
 sh_binary(
@@ -80,8 +79,18 @@ actions:
     arch: ` + runtime.GOARCH + `
 `,
 	}
+}
 
-	return fileNameToFileContentsMap
+func repoWithInvalidConfig() map[string]string {
+	// Note the missing close-quote in the bazel command.
+	return map[string]string{
+		"buildbuddy.yaml": `
+actions:
+  - name: Test
+    bazel_commands:
+      - "test //...
+`,
+	}
 }
 
 func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.WorkflowService) {
@@ -419,4 +428,43 @@ func TestCancel(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cancelResp)
 	require.NotNil(t, inv)
+}
+
+func TestInvalidYAML(t *testing.T) {
+	fakeGitProvider := testgit.NewFakeProvider()
+	env, workflowService := setup(t, fakeGitProvider)
+	bb := env.GetBuildBuddyServiceClient()
+
+	repoContentsMap := repoWithInvalidConfig()
+	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsMap)
+	repoURL := fmt.Sprintf("file://%s", repoPath)
+
+	// Create the workflow
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+	createResp, err := bb.CreateWorkflow(ctx, &wfpb.CreateWorkflowRequest{
+		RequestContext: reqCtx,
+		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+	})
+	require.NoError(t, err)
+
+	// Attempt to trigger the workflow
+	triggerWebhook(t, fakeGitProvider, workflowService, repoContentsMap, repoURL, commitSHA, createResp.GetWebhookUrl())
+
+	// Make sure we published an invalid YAML status
+	s := <-fakeGitProvider.Statuses
+	require.Equal(t, &testgit.Status{
+		AccessToken: "",
+		RepoURL:     repoURL,
+		CommitSHA:   commitSHA,
+		Payload: &github.GithubStatusPayload{
+			Context:     "BuildBuddy Workflows",
+			Description: "Invalid buildbuddy.yaml",
+			TargetURL:   "https://buildbuddy.io/docs/workflows-config",
+			State:       github.ErrorState,
+		},
+	}, s)
 }
