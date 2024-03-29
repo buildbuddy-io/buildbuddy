@@ -9,6 +9,8 @@ interface State {
   isVisible: boolean;
   search: string;
   selectedIndex: number;
+  currentOptions: string[];
+  optionCache: Map<string, Promise<string[]>>;
 }
 
 export default class Picker extends React.Component<{}, State> {
@@ -16,6 +18,8 @@ export default class Picker extends React.Component<{}, State> {
     isVisible: false,
     search: "",
     selectedIndex: 0,
+    currentOptions: [],
+    optionCache: new Map<string, Promise<string[]>>(),
   };
 
   ref = React.createRef<HTMLInputElement>();
@@ -23,7 +27,14 @@ export default class Picker extends React.Component<{}, State> {
   private subscription: Subscription = pickerService.pickers.subscribe(this.onPicker.bind(this));
 
   private onPicker(picker: PickerModel) {
-    this.setState({ isVisible: true, search: "", picker });
+    this.setState({
+      isVisible: true,
+      search: "",
+      picker,
+      optionCache: new Map<string, Promise<string[]>>(),
+      currentOptions: [],
+    });
+    this.fetchOptions("");
   }
 
   componentWillUnmount() {
@@ -40,12 +51,15 @@ export default class Picker extends React.Component<{}, State> {
     this.setState({ isVisible: false });
   }
 
+  handleSearchChanged(value: string) {
+    this.fetchOptions(value);
+  }
+
   handleKeyUp(e: React.KeyboardEvent<HTMLInputElement>) {
-    let matchingOptions = this.matchingOptions();
     switch (e.key) {
       case "Enter":
-        if (matchingOptions && matchingOptions.length > this.selectedIndex()) {
-          this.handleOptionPicked(matchingOptions[this.selectedIndex()]);
+        if (this.state.currentOptions.length > this.selectedIndex()) {
+          this.handleOptionPicked(this.state.currentOptions[this.selectedIndex()]);
           e.preventDefault();
         }
         break;
@@ -61,11 +75,32 @@ export default class Picker extends React.Component<{}, State> {
   }
 
   selectedIndex() {
-    return Math.min((this.matchingOptions()?.length || 0) - 1, this.state.selectedIndex);
+    return Math.min((this.state.currentOptions.length || 0) - 1, this.state.selectedIndex);
   }
 
-  matchingOptions() {
-    return this.state.picker?.options.filter((o) => o.includes(this.state.search));
+  async fetchOptions(search: string) {
+    let searchString = search.toLowerCase();
+    let cachedValue = this.state.optionCache.get(searchString);
+    if (cachedValue) {
+      // If we have a cached option value, use it.
+      this.setState({ search: search, currentOptions: await cachedValue });
+      return;
+    }
+
+    // If we have an options function, use that.
+    if (this.state.picker?.fetchOptions) {
+      let results = this.state.picker.fetchOptions(searchString);
+      this.state.optionCache.set(searchString, results);
+      this.setState({ search: search, currentOptions: await results });
+      return;
+    }
+
+    // If we don't have cached options, or an options function - do a simple text search of the fixed options.
+    this.setState({
+      search: search,
+      currentOptions:
+        this.state.picker?.options?.filter((o) => o.toLowerCase().includes(this.state.search.toLowerCase())) || [],
+    });
   }
 
   render() {
@@ -82,13 +117,13 @@ export default class Picker extends React.Component<{}, State> {
                 onKeyUp={this.handleKeyUp.bind(this)}
                 value={this.state.search}
                 ref={this.ref}
-                onChange={(e) => this.setState({ search: e.target.value })}
+                onChange={(e) => this.handleSearchChanged(e.target.value)}
                 placeholder={this.state.picker?.placeholder}
               />
             </div>
             <div className="picker-options">
               <div className="picker-options-label">{this.state.picker?.title}</div>
-              {this.matchingOptions()?.map((o, index) => (
+              {this.state.currentOptions.map((o, index) => (
                 <div
                   className={`picker-option ${index == this.selectedIndex() ? "selected" : ""}`}
                   onMouseOver={() => this.setState({ selectedIndex: index })}
@@ -96,12 +131,12 @@ export default class Picker extends React.Component<{}, State> {
                   {o}
                 </div>
               ))}
-              {!Boolean(this.matchingOptions()?.length) && (
+              {!Boolean(this.state.currentOptions.length) && (
                 <div className="picker-option">
                   {this.state.picker?.emptyState ? this.state.picker.emptyState : <>No matches found.</>}
                 </div>
               )}
-              {Boolean(this.matchingOptions()?.length) && this.state.picker?.footer && (
+              {Boolean(this.state.currentOptions.length) && this.state.picker?.footer && (
                 <div className="picker-option">{this.state.picker?.footer}</div>
               )}
             </div>

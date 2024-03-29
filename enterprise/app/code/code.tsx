@@ -31,9 +31,11 @@ import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
 import BuildFileSidekick from "../sidekick/buildfile/buildfile";
 import error_service from "../../../app/errors/error_service";
 import { build } from "../../../proto/remote_execution_ts_proto";
+import { search } from "../../../proto/search_ts_proto";
 import OrgPicker from "../org_picker/org_picker";
 import capabilities from "../../../app/capabilities/capabilities";
 import router from "../../../app/router/router";
+import picker_service, { PickerModel } from "../../../app/picker/picker_service";
 
 interface Props {
   user: User;
@@ -171,8 +173,43 @@ export default class CodeComponent extends React.Component<Props, State> {
           this.editor?.trigger("find", "editor.actions.findWithArgs", { searchString: "" });
           e.preventDefault();
           break;
+        case 80: // Meta + P
+          if (!e.metaKey) break;
+          e.preventDefault();
+          this.showFileSearch();
       }
     };
+  }
+
+  showFileSearch() {
+    let picker: PickerModel = {
+      title: "Search",
+      placeholder: "",
+      // TODO: add debounce support
+    };
+    if (capabilities.config.codesearchEnabled) {
+      picker.fetchOptions = async (query) => {
+        // TODO: edit query to search only filenames, once supported
+        // TODO: include repo info once supported
+        // TODO: kick off indexing on page load
+        return (
+          await rpcService.service.search(new search.SearchRequest({ query: new search.Query({ term: query }) }))
+        ).results.map((r) => r.filename);
+      };
+    } else {
+      picker.options = this.state.treeResponse?.nodes.map((n) => n.path) || [];
+    }
+    picker_service.show(picker);
+    picker_service.picked.subscribe((path) => {
+      this.navigateToPath(path);
+      if (this.state.fullPathToModelMap.has(path)) {
+        this.setModel(path, this.state.fullPathToModelMap.get(path));
+      } else {
+        this.fetchContentForPath(path).then((response) => {
+          this.navigateToContent(path, response.content);
+        });
+      }
+    });
   }
 
   parseGithubUrl(githubUrl: string) {

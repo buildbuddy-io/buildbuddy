@@ -3,9 +3,12 @@ import { Subject } from "rxjs";
 export type PickerModel = {
   title: string;
   placeholder: string;
-  options: string[];
   emptyState?: any;
   footer?: any;
+
+  // Either a fixed set of options, or a function to fetch options is required.
+  options?: string[];
+  fetchOptions?: (search: string) => Promise<string[]>;
 };
 
 export class PickerService {

@@ -12,6 +12,7 @@ ts_library(
         "@npm//lucide-react",
         "@npm//react",
         "@npm//rxjs",
+        "@npm//tslib",
     ],
 )
 
