@@ -1024,7 +1024,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	var snapOpt fcclient.Opt
 	if *enableUFFD {
-		uffdType := fcclient.MemoryBackendType(fcmodels.MemoryBackendBackendTypeUffdPrivileged)
+		uffdType := fcclient.MemoryBackendType(fcmodels.MemoryBackendBackendTypeUffd)
 		snapOpt = fcclient.WithSnapshot(uffdSockName, vmStateSnapshotName, uffdType)
 	} else {
 		snapOpt = fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName)
