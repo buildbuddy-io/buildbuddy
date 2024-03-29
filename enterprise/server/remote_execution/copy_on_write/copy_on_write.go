@@ -879,12 +879,11 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 	}
 
 	var chunksMu sync.Mutex
-out:
 	for chunkStartOffset := int64(0); chunkStartOffset < totalSizeBytes; chunkStartOffset += chunkSizeBytes {
 		select {
 		case <-egCtx.Done():
 			// One goroutine failed - exit the for loop
-			break out
+			return nil, eg.Wait()
 		default:
 			chunkStartOffset := chunkStartOffset
 			eg.Go(func() error {
