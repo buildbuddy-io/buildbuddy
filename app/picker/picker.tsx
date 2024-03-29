@@ -81,18 +81,28 @@ export default class Picker extends React.Component<{}, State> {
   async fetchOptions(search: string) {
     this.setState({ search: search });
     let searchString = search.toLowerCase();
-    let cachedValue = this.state.optionCache.get(searchString);
-    if (cachedValue) {
+    let cachedValuePromise = this.state.optionCache.get(searchString);
+    if (cachedValuePromise) {
       // If we have a cached option value, use it.
-      this.setState({ currentOptions: await cachedValue });
+      let cachedValue = await cachedValuePromise;
+      if (search != this.state.search) {
+        // If the search query has changed since we kicked off the request, don't update the state
+        return;
+      }
+      this.setState({ currentOptions: cachedValue });
       return;
     }
 
     // If we have an options function, use that.
     if (this.state.picker?.fetchOptions) {
-      let results = this.state.picker.fetchOptions(searchString);
-      this.state.optionCache.set(searchString, results);
-      this.setState({ currentOptions: await results });
+      let resultsPromise = this.state.picker.fetchOptions(searchString);
+      this.state.optionCache.set(searchString, resultsPromise);
+      let results = await resultsPromise;
+      if (search != this.state.search) {
+        // If the search query has changed since we kicked off the request, don't update the state
+        return;
+      }
+      this.setState({ currentOptions: results });
       return;
     }
 
