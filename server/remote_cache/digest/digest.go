@@ -195,6 +195,28 @@ func (r *ResourceName) DownloadString() (string, error) {
 	}
 }
 
+// ActionCacheString returns a string representing the resource name for in
+// the action cache. This is BuildBuddy specific.
+func (r *ResourceName) ActionCacheString() (string, error) {
+	if r.rn.GetCacheType() != rspb.CacheType_AC {
+		return "", status.FailedPreconditionError("Cannot compute bytestream download string for non-CAS resource name")
+	}
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	if isOldStyleDigestFunction(r.rn.DigestFunction) {
+		return fmt.Sprintf(
+			"%s/%s/ac/%s/%d",
+			instanceName, blobTypeSegment(r.GetCompressor()),
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+	} else {
+		return fmt.Sprintf(
+			"%s/%s/ac/%s/%s/%d",
+			instanceName, blobTypeSegment(r.GetCompressor()),
+			strings.ToLower(r.rn.DigestFunction.String()),
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+	}
+}
+
 // UploadString returns a string representing the resource name for upload
 // purposes.
 func (r *ResourceName) UploadString() (string, error) {

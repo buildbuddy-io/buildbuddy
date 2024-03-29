@@ -59,7 +59,6 @@ type CommandResult struct {
 	// Execution outcome.
 	ID           string
 	Err          error
-	Executor     string
 	ExitCode     int
 	ActionResult *repb.ActionResult
 
@@ -263,7 +262,6 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 		res := &CommandResult{
 			Stage:        repb.ExecutionStage_COMPLETED,
 			Err:          gstatus.ErrorProto(response.GetStatus()),
-			Executor:     response.GetResult().GetExecutionMetadata().GetWorker(),
 			ExitCode:     int(response.GetResult().GetExitCode()),
 			InstanceName: c.actionResourceName.GetInstanceName(),
 			ActionResult: response.GetResult(),
