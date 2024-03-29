@@ -1900,6 +1900,13 @@ func TestReadThroughLookaside(t *testing.T) {
 		}
 	}
 
+	// Call FindMissing on all the digests -- this should also hit
+	// the lookaside cache.
+	for _, distributedCache := range distributedCaches {
+		missing, err := distributedCache.FindMissing(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(missing))
+	}
 	assert.Equal(t, opCountBefore[peer1], len(memoryCache1.ops))
 	assert.Equal(t, opCountBefore[peer2], len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))

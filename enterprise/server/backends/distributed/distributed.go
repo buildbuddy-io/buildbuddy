@@ -643,7 +643,19 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.FindMissing(ctx, rns)
 	}
-	return c.cacheProxy.RemoteFindMissing(ctx, peer, isolation, rns)
+
+	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
+	for _, r := range rns {
+		if _, err := c.getLookasideEntry(r); err == nil {
+			continue
+		} else {
+			stillMissing = append(stillMissing, r)
+		}
+	}
+	if len(stillMissing) == 0 {
+		return nil, nil
+	}
+	return c.cacheProxy.RemoteFindMissing(ctx, peer, isolation, stillMissing)
 }
 
 func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
