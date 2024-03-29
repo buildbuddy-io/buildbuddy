@@ -56,15 +56,17 @@ message BuildEventId {
 
     // BUILDBUDDY-SPECIFIC FIELDS BELOW.
 
-    // The invocation step ID. This can be used to group progress streams into
-    // discrete "steps". At most one step's stream may be open at once - the
-    // server may finalize a stream when transitioning from one stream ID to
-    // another, and may return an error if attempting to resume a previously
-    // finalized stream.
+    // The invocation step number. This can be used to group progress streams by
+    // step. At most one step's stream may be open at once - the server may
+    // finalize a stream when transitioning from one step to another, and may
+    // return an error if attempting to resume a previously finalized stream. If
+    // steps are used at all in the invocation then the step number must start
+    // at 1 and be monotonically increasing, otherwise the server may return an
+    // error.
     //
     // BuildBuddy will use this ID to render each step's output for a workflow
     // invocation.
-    int32 step_id = 1000;
+    int32 step_number = 1000;
   }
 
   // Identifier of an event indicating the beginning of a build; this will
@@ -287,7 +289,8 @@ message BuildEventId {
   // Identifier of an event providing a list of commands that are
   // run as children of this invocation.
   message ChildInvocationsConfiguredId {
-    // The workflow step number in which the child invocation(s) occurred.
+    // The workflow step number in which the child invocation(s) occurred,
+    // starting from 1.
     int32 step_number = 1;
 
     // A unique ID, required if multiple child invocations appear in the same
@@ -307,12 +310,12 @@ message BuildEventId {
   message RunTargetAnalyzedId {}
 
   message WorkflowStepStartedId {
-    // The workflow step number (0, 1, 2, ...)
+    // The workflow step number (1, 2, ...)
     int32 step_number = 1;
   }
 
   message WorkflowStepCompletedId {
-    // The workflow step number (0, 1, 2, ...)
+    // The workflow step number (1, 2, ...)
     int32 step_number = 1;
   }
 
@@ -1541,7 +1544,7 @@ message ChildInvocationsConfigured {
   repeated InvocationMetadata invocation = 1;
 
   // The workflow step in which these child invocations appeared.
-  int32 step_id = 2;
+  int32 step_number = 2;
 }
 
 // Event describing completion of a child invocation.
