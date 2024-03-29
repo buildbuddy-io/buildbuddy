@@ -120,7 +120,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
 	}
-	if strings.HasPrefix(req.GetBazelCommand(), "run ") {
+	if !req.GetRunRemotely() && strings.HasPrefix(req.GetBazelCommand(), "run ") {
 		args = append(args, "--record_run_metadata")
 	}
 	if req.GetInstanceName() != "" {

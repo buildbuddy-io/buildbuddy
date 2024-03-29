@@ -530,6 +530,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     request.bazelCommand = args + (this.state.defaultConfig ? ` --config=${this.state.defaultConfig}` : "");
     request.repoState = this.getRepoState();
     request.async = true;
+    request.runRemotely = true;
     request.execProperties = [
       new build.bazel.remote.execution.v2.Platform.Property({ name: "include-secrets", value: "true" }),
     ];
