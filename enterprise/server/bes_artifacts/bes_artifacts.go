@@ -92,6 +92,10 @@ func (u *Uploader) UploadDirectory(namedSetID, root string) {
 func (u *Uploader) uploadDirectory(namedSetID, root string) error {
 	var uploadChans []chan *Result
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
 		if !d.Type().IsRegular() {
 			return nil
 		}
