@@ -523,7 +523,6 @@ export default class CodeComponent extends React.Component<Props, State> {
     newCommands.unshift(args);
     // Limit the number of commands.
     newCommands = newCommands.slice(0, 10);
-    this.setState({ commands: newCommands }, this.saveState.bind(this));
 
     let request = new runner.RunRequest();
     request.gitRepo = new runner.RunRequest.GitRepo();
@@ -535,7 +534,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       new build.bazel.remote.execution.v2.Platform.Property({ name: "include-secrets", value: "true" }),
     ];
 
-    this.updateState({ isBuilding: true });
+    this.updateState({ isBuilding: true, commands: newCommands });
     rpcService.service
       .run(request)
       .then((response: runner.RunResponse) => {
