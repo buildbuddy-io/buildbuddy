@@ -48,10 +48,11 @@ type CacheProxy struct {
 	heartbeatCallback     func(ctx context.Context, peer string)
 	hintedHandoffCallback func(ctx context.Context, peer string, r *rspb.ResourceName)
 	listenAddr            string
+	listener              net.Listener
 	zone                  string
 }
 
-func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
+func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string, listener net.Listener) *CacheProxy {
 	proxy := &CacheProxy{
 		env:         env,
 		cache:       c,
@@ -63,6 +64,7 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 			},
 		},
 		listenAddr: listenAddr,
+		listener:   listener,
 		mu:         &sync.Mutex{},
 		// server goes here
 		clients: make(map[string]*grpc_client.ClientConnPool),
@@ -80,9 +82,13 @@ func (c *CacheProxy) StartListening() error {
 		return status.FailedPreconditionError("The server is already running.")
 	}
 
-	lis, err := net.Listen("tcp", c.listenAddr)
-	if err != nil {
-		return err
+	lis := c.listener
+	if lis == nil {
+		l, err := net.Listen("tcp", c.listenAddr)
+		if err != nil {
+			return err
+		}
+		lis = l
 	}
 	grpcOptions := grpc_server.CommonGRPCServerOptions(c.env)
 	grpcServer := grpc.NewServer(grpcOptions...)
