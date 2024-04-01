@@ -200,7 +200,7 @@ func linkForGroup(env environment.Env, w http.ResponseWriter, r *http.Request, r
 }
 
 // Takes a list of environment variables and exchanges "CLOUDSDK_AUTH_REFRESH_TOKEN" for "CLOUDSDK_AUTH_ACCESS_TOKEN"
-func ExchangeRefreshTokenForAuthToken(ctx context.Context, envVars []*repb.Command_EnvironmentVariable, isWorkflow bool) ([]*repb.Command_EnvironmentVariable, error) {
+func ExchangeRefreshTokenForAuthToken(ctx context.Context, envVars []*repb.Command_EnvironmentVariable, shouldExchangeToken bool) ([]*repb.Command_EnvironmentVariable, error) {
 	newEnvVars := []*repb.Command_EnvironmentVariable{}
 	for _, e := range envVars {
 		if e.GetName() != refreshTokenEnvVariableName {
@@ -210,8 +210,8 @@ func ExchangeRefreshTokenForAuthToken(ctx context.Context, envVars []*repb.Comma
 			})
 			continue
 		}
-		if !isWorkflow {
-			// We'll omit gcloud refresh tokens from non-workflow executions.
+		if !shouldExchangeToken {
+			// We'll omit refresh tokens if we're asked not to exchange token.
 			continue
 		}
 		accessToken, err := makeTokenExchangeRequest(e.GetValue())

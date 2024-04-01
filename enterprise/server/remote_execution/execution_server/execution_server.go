@@ -500,7 +500,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if err != nil {
 			return "", err
 		}
-		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, props.WorkflowID != "")
+		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, platform.IsCICommand(command))
 		if err != nil {
 			return "", err
 		}
