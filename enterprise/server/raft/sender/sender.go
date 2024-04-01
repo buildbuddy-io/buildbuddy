@@ -329,7 +329,6 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 		// We'll repopulate remaining keys below.
 		remainingKeys = nil
 
-		var errs []error
 		for _, rk := range keysByRange {
 			var rangeRsp interface{}
 			_, err = s.tryReplicas(ctx, rk.rd, func(c rfspb.ApiClient, h *rfpb.Header) error {
@@ -344,7 +343,6 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 				if !status.IsOutOfRangeError(err) {
 					return nil, err
 				}
-				errs = append(errs, err)
 				skipRangeCache = true
 				// No luck for the keys in the range on this try, let's try them
 				// on the next attempt.

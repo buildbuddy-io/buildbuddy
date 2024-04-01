@@ -165,7 +165,6 @@ func TestUserQuery(t *testing.T) {
 		}
 	}
 
-	nodes := make([]*gossip.GossipManager, 0)
 	for i, nodeAddr := range addrs {
 		nodeAddr := nodeAddr
 		b := &testBroker{
@@ -179,7 +178,6 @@ func TestUserQuery(t *testing.T) {
 			},
 		}
 		n := newGossipManager(t, nodeAddr, addrs[:i], b)
-		nodes = append(nodes, n)
 		defer n.Shutdown()
 	}
 

@@ -1130,12 +1130,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			peerRequests[peer] = append(peerRequests[peer], perHashResources[0])
 		}
 		if len(peerRequests) == 0 {
-			stillMissing := make([]string, 0)
-			for h := range hashResources {
-				if _, ok := gotMap[h]; !ok {
-					stillMissing = append(stillMissing, h)
-				}
-			}
 			// If we aren't able to plan any more batch requests, that means
 			// we're out of peers and should exit, returning what we have.
 			break
