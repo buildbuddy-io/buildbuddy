@@ -7,8 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
+	"sync"
 )
 
 const (
@@ -52,23 +51,13 @@ func CacheDir() (string, error) {
 	return cacheDir, nil
 }
 
-func repoRootPath() (string, error) {
-	ws, err := workspace.Path()
+var repoRootPath = sync.OnceValues(func() (string, error) {
+	dir, err := exec.Command("git", "rev-parse", "--show-toplevel").CombinedOutput()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to run git rev-parse: %s", err)
 	}
-	dotgit, err := os.Stat(filepath.Join(ws, ".git"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("not inside a git repository")
-		}
-		return "", fmt.Errorf("failed to determine git repo root: %s", err)
-	}
-	if dotgit.Mode().IsDir() {
-		return ws, nil
-	}
-	return "", fmt.Errorf("failed to determine git repo root: %q is not a directory", filepath.Join(ws, ".git"))
-}
+	return strings.TrimSpace(string(dir)), nil
+})
 
 // ReadRepoConfig reads a repository-local configuration setting.
 func ReadRepoConfig(key string) (string, error) {
