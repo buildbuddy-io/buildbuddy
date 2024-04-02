@@ -32,7 +32,7 @@ var Enabled = sync.OnceValues(func() (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("could not find `release` in `bazel info` result: %v", infos)
 	}
-	version := strings.TrimLeft(release, "release ")
+	version := strings.TrimPrefix(release, "release ")
 	versionParts := strings.Split(version, ".")
 	majorVersion, err := strconv.Atoi(versionParts[0])
 	if err != nil {
