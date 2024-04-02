@@ -6,11 +6,11 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -42,6 +42,13 @@ func makeTempDirWithWorldTxt(t *testing.T) string {
 	return dir
 }
 
+func getTestEnv(t *testing.T) *testenv.TestEnv {
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetCommandRunner(&commandutil.CommandRunner{})
+	return env
+}
+
 func TestRunHelloWorld(t *testing.T) {
 	ctx := context.Background()
 	rootDir := makeTempDirWithWorldTxt(t)
@@ -55,8 +62,7 @@ func TestRunHelloWorld(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env := getTestEnv(t)
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
@@ -91,8 +97,7 @@ func TestHelloWorldExec(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env := getTestEnv(t)
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
@@ -139,8 +144,7 @@ func TestExecStdio(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env := getTestEnv(t)
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
@@ -184,8 +188,7 @@ func TestRun_Timeout(t *testing.T) {
 			sleep 100
 		`,
 	}}
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env := getTestEnv(t)
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
@@ -236,8 +239,7 @@ func TestExec_Timeout(t *testing.T) {
 			sleep 100
 		`,
 	}}
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env := getTestEnv(t)
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
@@ -283,8 +285,7 @@ func TestIsImageCached(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env := getTestEnv(t)
 
 	tests := []struct {
 		desc    string
@@ -331,12 +332,11 @@ func TestIsImageCached(t *testing.T) {
 
 func TestForceRoot(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	testfs.MakeDirAll(t, rootDir, "work")
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env := getTestEnv(t)
 	image := "gcr.io/flame-public/test-nonroot:test-enterprise-v1.5.4"
 
 	cmd := &repb.Command{
@@ -346,35 +346,36 @@ func TestForceRoot(t *testing.T) {
 	tests := []struct {
 		desc      string
 		forceRoot bool
-		wantUID   int
+		wantUID   string
 	}{
 		{
-			desc:      "forceRoot",
+			desc:      "ForceRoot=true",
 			forceRoot: true,
-			wantUID:   0,
+			wantUID:   "0",
 		},
 		{
-			desc:      "not forceRoot",
+			desc:      "ForceRoot=false",
 			forceRoot: false,
-			wantUID:   1000,
+			wantUID:   "1000",
 		},
 	}
 	for _, tc := range tests {
-		provider, err := podman.NewProvider(env, rootDir)
-		require.NoError(t, err)
-		props := platform.Properties{
-			ContainerImage:  image,
-			DockerForceRoot: tc.forceRoot,
-			DockerNetwork:   "off",
-		}
-		c, err := provider.New(ctx, &props, nil, nil, "")
-		require.NoError(t, err)
-		result := c.Run(ctx, cmd, "/work", oci.Credentials{})
-		uid, err := strconv.Atoi(strings.TrimSpace(string(result.Stdout)))
-		assert.NoError(t, err)
-		assert.Equal(t, tc.wantUID, uid)
-		assert.Empty(t, string(result.Stderr), "stderr should be empty")
-		assert.Equal(t, 0, result.ExitCode, "should exit with success")
+		t.Run(tc.desc, func(t *testing.T) {
+			provider, err := podman.NewProvider(env, rootDir)
+			require.NoError(t, err)
+			props := platform.Properties{
+				ContainerImage:  image,
+				DockerForceRoot: tc.forceRoot,
+				DockerNetwork:   "off",
+			}
+			c, err := provider.New(ctx, &props, nil, nil, "")
+			require.NoError(t, err)
+			result := c.Run(ctx, cmd, workDir, oci.Credentials{})
+			require.NoError(t, result.Error)
+			assert.Equal(t, tc.wantUID, strings.TrimSpace(string(result.Stdout)))
+			assert.Empty(t, string(result.Stderr), "stderr should be empty")
+			assert.Equal(t, 0, result.ExitCode, "should exit with success")
+		})
 	}
 }
 
@@ -385,8 +386,7 @@ func TestUser(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env := getTestEnv(t)
 	image := "docker.io/library/busybox"
 
 	tests := []struct {
@@ -459,8 +459,7 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 			echo "Hello again"
 		`},
 	}
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env := getTestEnv(t)
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
@@ -500,8 +499,7 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", "head -c 1000000000 /dev/urandom | sha256sum"},
 	}
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env := getTestEnv(t)
 
 	flags.Set(t, "executor.podman.enable_stats", true)
 	provider, err := podman.NewProvider(env, rootDir)

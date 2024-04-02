@@ -2,30 +2,26 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-# To run this test with remote execution, add a test_tag_filter:
-# bazel test --config=remote --test_tag_filters=+bare \
-# //enterprise/server/test/integration/podman:podman_test
 go_test(
     name = "podman_test",
     size = "large",
     srcs = ["podman_test.go"],
     exec_properties = {
-        "test.Pool": "bare",
-        "test.use-self-hosted-executors": "true",
-        "test.container-image": "none",
+        "test.workload-isolation-type": "firecracker",
+        "test.EstimatedComputeUnits": "4",
+        "test.EstimatedFreeDiskBytes": "10GB",
+        # Use the executor image since it has podman installed.
+        "test.container-image": "docker://gcr.io/flame-public/buildbuddy-executor-enterprise:enterprise-v2.47.0",
+        # Enable runner recycling to cache test images.
+        "test.recycle-runner": "true",
     },
-    # Podman tests must run on the bare executors because podman-on-podman /
-    # podman-on-firecracker don't work due to issues running overlayfs on
-    # overlayfs.
-    # TODO(go/b/2944): move to firecracker once
-    # firecracker.enable_merged_rootfs works.
-    tags = [
-        "bare",
-        # TODO(go/b/2945): remove manual tag.
-        "manual",
-    ],
+    # TODO: set up build constraints for Firecracker so that this can be skipped
+    # locally but not when using --config=remote. For now just use the "docker"
+    # tag which we apply to tests that only run on CI.
+    tags = ["docker"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/docker",
         "//enterprise/server/remote_execution/containers/podman",
