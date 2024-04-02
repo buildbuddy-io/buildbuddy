@@ -4,17 +4,22 @@ import Checkbox from "../checkbox/checkbox";
 
 export type CheckboxButtonProps = JSX.IntrinsicElements["input"] & {
   checkboxOnLeft?: boolean;
+  checkboxRef?: React.RefObject<HTMLInputElement>;
 };
 
 export default function CheckboxButton({
   children,
   checkboxOnLeft,
+  checkboxRef,
   checked,
   onChange,
   className,
   ...props
 }: CheckboxButtonProps) {
-  const nodes = [<span>{children}</span>, <Checkbox checked={checked} onChange={onChange} {...props} />];
+  const nodes = [
+    <span>{children}</span>,
+    <Checkbox ref={checkboxRef} checked={checked} onChange={onChange} {...props} />,
+  ];
 
   return (
     <OutlinedButton className={`checkbox-button ${className || ""}`}>

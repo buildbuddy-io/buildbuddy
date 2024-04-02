@@ -656,6 +656,9 @@ message SendGithubPullRequestReviewRequest {
 
   // If true, the review will approve the specified PR.
   bool approve = 3;
+
+  // The main body of the reply--if not specified, we'll try to make one up.
+  string body = 5;
 }
 
 message SendGithubPullRequestReviewResponse {

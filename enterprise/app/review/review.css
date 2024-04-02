@@ -330,6 +330,10 @@
   display: table-cell;
 }
 
+.pr-view .reply-modal-thread-container {
+  margin: 12px 0;
+}
+
 .pr-view .thread {
   display: inline-block;
   background-color: #ffecb3;
@@ -444,4 +448,8 @@
 
 .pr-view .reviewer.approved {
   color: #4caf50;
+}
+
+.pr-view .reply-modal-approve-button {
+  margin: 12px 0 0 0;
 }
