@@ -38,6 +38,7 @@ type Action struct {
 	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
 	Env               map[string]string `yaml:"env"`
 	BazelCommands     []string          `yaml:"bazel_commands"`
+	Steps             []Step            `yaml:"steps"`
 	Timeout           *time.Duration    `yaml:"timeout"`
 }
 
@@ -46,6 +47,15 @@ func (a *Action) GetTriggers() *Triggers {
 		return &Triggers{}
 	}
 	return a.Triggers
+}
+
+type Step struct {
+	// Name is an optional display name for the step.
+	Name string `yaml:"name"`
+
+	// Run specifies a shell script to be run. The shell script is executed with
+	// "bash --noprofile --norc -eo pipefail".
+	Run string `yaml:"run"`
 }
 
 type Triggers struct {
