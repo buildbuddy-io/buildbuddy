@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -461,6 +462,9 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	assert.NoError(t, err)
+	te.SetMetricsCollector(mc)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
@@ -509,6 +513,10 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+
+	metrics, err := te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
 }
 
 func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
@@ -607,6 +615,9 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	assert.NoError(t, err)
+	te.SetMetricsCollector(mc)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
@@ -649,12 +660,19 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+
+	metrics, err := te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
 }
 
 func TestFinishedFinalize(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	assert.NoError(t, err)
+	te.SetMetricsCollector(mc)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
@@ -695,12 +713,19 @@ func TestFinishedFinalize(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+
+	metrics, err := te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
 }
 
 func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	assert.NoError(t, err)
+	te.SetMetricsCollector(mc)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
@@ -738,12 +763,19 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+
+	metrics, err := te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
 }
 
 func TestUnfinishedFinalize(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	assert.NoError(t, err)
+	te.SetMetricsCollector(mc)
 	ctx, cancel := context.WithCancel(context.Background())
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
@@ -779,12 +811,19 @@ func TestUnfinishedFinalize(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+
+	metrics, err := te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
 }
 
 func TestRetryOnComplete(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	assert.NoError(t, err)
+	te.SetMetricsCollector(mc)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
@@ -832,6 +871,10 @@ func TestRetryOnComplete(t *testing.T) {
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 
+	metrics, err := te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
+
 	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
 	assert.True(t, exists)
@@ -859,6 +902,9 @@ func TestRetryOnDisconnect(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	assert.NoError(t, err)
+	te.SetMetricsCollector(mc)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
@@ -900,6 +946,10 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+
+	metrics, err := te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
 
 	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
@@ -951,6 +1001,10 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.Equal(t, "def456", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 
+	metrics, err = te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
+
 	// Make sure the new protofile exists
 	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 2), 0))
 	assert.NoError(t, err)
@@ -966,6 +1020,9 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	assert.NoError(t, err)
+	te.SetMetricsCollector(mc)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
@@ -1007,6 +1064,10 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+
+	metrics, err := te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
 
 	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
@@ -1057,6 +1118,10 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "def456", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+
+	metrics, err = te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
 
 	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 2), 0))
 	assert.NoError(t, err)
@@ -1113,6 +1178,10 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.Equal(t, "000789", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 
+	metrics, err = te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
+
 	// Make sure all protofiles exist
 	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
@@ -1144,6 +1213,9 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	assert.NoError(t, err)
+	te.SetMetricsCollector(mc)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
@@ -1188,6 +1260,10 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+
+	metrics, err := te.GetMetricsCollector().ReadCounts(ctx, "hit_tracker/"+testInvocationID)
+	assert.NoError(t, err)
+	assert.Empty(t, metrics)
 
 	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)

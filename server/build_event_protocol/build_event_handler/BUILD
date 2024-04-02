@@ -71,6 +71,7 @@ go_test(
         "//proto:invocation_status_go_proto",
         "//proto:publish_build_event_go_proto",
         "//server/backends/chunkstore",
+        "//server/backends/memory_metrics_collector",
         "//server/eventlog",
         "//server/tables",
         "//server/testutil/testauth",
