@@ -1,6 +1,7 @@
 package fix
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/bzlmod"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix/language"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/translate"
@@ -48,35 +51,85 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return -1, err
 	}
 
-	path, _, err := workspace.CreateWorkspaceIfNotExists()
+	bzlmodEnabled, err := bzlmod.Enabled()
+	if err != nil {
+		return 1, err
+	}
+	path, baseFile, err := workspace.CreateWorkspaceIfNotExists(bzlmodEnabled)
 	if err != nil {
 		return 1, err
 	}
 
-	err = walk()
-	if err != nil {
+	// don't run update-repos in bzlmod
+	updateRepos := baseFile != workspace.ModuleFileName
+	if err := walk(updateRepos); err != nil {
 		log.Printf("Error fixing: %s", err)
 	}
 
-	runGazelle(path)
+	if err := runGazelle(path, baseFile); err != nil {
+		return 1, err
+	}
 
 	return 0, nil
 }
 
-func runGazelle(repoRoot string) {
+const goRepositoryConfigLocation = "@@gazelle~override~go_deps~bazel_gazelle_go_repository_config//:WORKSPACE"
+
+func gazelleConfig() (string, error) {
+	// we intentionally skip stderr here for both
+	// bazelisk and bazel to avoid failing checkstyle.sh
+	bazelArgs := []string{
+		"query",
+		"--ui_event_filters=-info,-debug,-warning,-stderr",
+		"--noshow_progress",
+		"--logging=0",
+		"--output=location",
+		goRepositoryConfigLocation,
+	}
+	stdout := &bytes.Buffer{}
+	opts := &bazelisk.RunOpts{
+		Stdout: stdout,
+	}
+	_, err := bazelisk.Run(bazelArgs, opts)
+	if err != nil {
+		return "", err
+	}
+
+	// output will be in the form of
+	//   /some/path/config/WORKSPACE:1:1 source file <target>
+	// extract `/some/path/config/WORKSPACE` from that.
+	out := stdout.String()
+	fragments := strings.Split(out, " ")
+	locations := strings.Split(fragments[0], ":")
+	return locations[0], nil
+}
+
+func runGazelle(repoRoot, baseFile string) error {
 	originalArgs := os.Args
 	defer func() {
 		os.Args = originalArgs
 	}()
-	os.Args = []string{"gazelle", "-repo_root=" + repoRoot, "--go_prefix="}
+
+	os.Args = []string{"gazelle", "update"}
+	if baseFile == workspace.ModuleFileName {
+		configPath, err := gazelleConfig()
+		if err != nil {
+			return err
+		}
+		os.Args = append(os.Args, "-bzlmod", "-repo_config="+configPath)
+	} else {
+		os.Args = append(os.Args, "-repo_root="+repoRoot, "-go_prefix=")
+	}
+
 	if *diff {
 		os.Args = append(os.Args, "-mode=diff")
 	}
 	log.Debugf("Calling gazelle with args: %+v", os.Args)
 	gazelle.Run()
+	return nil
 }
 
-func walk() error {
+func walk(updateRepos bool) error {
 	languages := getLanguages()
 	foundLanguages := map[language.Language]bool{}
 	depFiles := map[string][]string{}
@@ -144,10 +197,12 @@ func walk() error {
 		}
 	}
 
-	// Run update-repos on any dependency files we found.
-	for _, paths := range depFiles {
-		for _, p := range paths {
-			runUpdateRepos(p)
+	if updateRepos {
+		// Run update-repos on any dependency files we found.
+		for _, paths := range depFiles {
+			for _, p := range paths {
+				runUpdateRepos(p)
+			}
 		}
 	}
 
@@ -156,10 +211,9 @@ func walk() error {
 
 // Collect the languages that support auto-generating WORKSPACE files.
 func getLanguages() []language.Language {
-	languages := make([]language.Language, 0)
+	var languages []language.Language
 	for _, l := range langs.Languages {
-		l, ok := l.(language.Language)
-		if ok {
+		if l, ok := l.(language.Language); ok {
 			languages = append(languages, l)
 		}
 	}

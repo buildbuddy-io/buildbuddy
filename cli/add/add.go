@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/bzlmod"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
@@ -275,7 +276,12 @@ func showPicker(modules []Disambiguation) (string, error) {
 }
 
 func openOrCreateWorkspaceFile() (*os.File, error) {
-	workspacePath, basename, err := workspace.CreateWorkspaceIfNotExists()
+	bzlmodEnabled, err := bzlmod.Enabled()
+	if err != nil {
+		return nil, err
+	}
+
+	workspacePath, basename, err := workspace.CreateWorkspaceIfNotExists(bzlmodEnabled)
 	if err != nil {
 		return nil, err
 	}
