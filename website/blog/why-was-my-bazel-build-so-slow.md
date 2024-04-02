@@ -92,13 +92,16 @@ To understand where time was spent during analysis, we want to focus on the `eva
 In this sample build, you can see that a lot of time and compute were spent during the analysis phase. You can hover over each event in the timing profile to get more information.
 
 ![](../static/img/blog/timing-profile-npm.webp)
+
+For example, we can see that a decent amount of time is spent on actions related to npm installation.
+
 ![](../static/img/blog/timing-profile-gazelle.webp)
 
-In this case, I can see that a decent chunk of time was spent on actions related to npm installation and setting up gazelle, for example.
+We also see a good number of actions related to setting up gazelle.
 
 You may also see actions labeled with `package creation` - which refers to pulling external dependencies specified in your WORKSPACE file - or `MerkleTree.build` - which refers to building the dependency graph.
 
-The more of these type actions you see, the more likely your build did not hit a warm Bazel instance and spent a lot of time in the analysis phase. To understand why, you may want to consider:
+The more actions of this type that you see, the more likely your build did not hit a warm Bazel instance and spent a lot of time in the analysis phase. To understand why, you may want to consider:
 
 - Has the analysis cache been initialized on your machine?
   - Even if you’re using a remote cache and remote execution, the analysis phase is run on the machine that kicked off the build - i.e. if you’re running a build on your laptop, the analysis phase is running on your laptop, regardless of where remote execution is occurring. Have you run a Bazel build for this repository on this machine yet?
@@ -108,7 +111,7 @@ The more of these type actions you see, the more likely your build did not hit a
   - To avoid corruption, Bazel will discard the analysis cache if a build has a different build option or configuration from previous builds. When this happens, you’ll see a log line like `WARNING: Build option --compilation_mode has changed, discarding analysis cache`.
   - For example if you use the flag `--compilation_mode fastbuild` on a series of builds and `--compilation_mode opt` on a later build, you will notice that the later build is slower because the server will have discarded the analysis cache and must restart the analysis phase from scratch.
 
-If you’re using Bazel in CI, you may be frustrated by the lack of good options to save the analysis cache between runs on remote CI runners. Our CI solution, [BuildBuddy Workflows](https://www.buildbuddy.io/blog/meet-buildbuddy-workflows/), preserves the analysis cache by cloning CI runners to guarantee the in-memory state is not lost. Check out our [BazelCon](https://www.youtube.com/watch?v=YycEXBlv7ZA&list=PLxNYxgaZ8Rsefrwb_ySGRi_bvQejpO_Tj&index=10) talk for more technical details.
+If you’re using Bazel in CI, you may be frustrated by the lack of good options to save the analysis cache between runs on remote CI runners. Our CI solution, [BuildBuddy Workflows](https://www.buildbuddy.io/blog/meet-buildbuddy-workflows/), preserves the analysis cache by cloning CI runners to guarantee that the in-memory state is not lost. Check out our [BazelCon](https://www.youtube.com/watch?v=YycEXBlv7ZA&list=PLxNYxgaZ8Rsefrwb_ySGRi_bvQejpO_Tj&index=10) talk for more technical details.
 
 ⭐ If your build was slow due to fetching external dependencies, you may want to investigate the [repository cache](https://sluongng.hashnode.dev/bazel-caching-explained-pt-3-repository-cache). During a clean build, Bazel will fetch the external dependencies referenced in your WORKSPACE file and store the downloaded blobs in the repository cache. If the dependencies have not changed between builds, Bazel will not need to re-download them.
 
@@ -122,7 +125,7 @@ In the example images included above, you can see that only two threads are work
 
 Famously, Bazel loves memory. This section is short and sweet, but describes a common problem we’ve seen with our customers.
 
-⭐ If Bazel doesn’t have enough memory, it will evict parts of the analysis cache. As described in the previous section, this can significantly slow down builds. If you notice a lot of `MerkleTree.build` actions even when you’re reusing a warm Bazel cache or see heavy garbage collection activity in the timing profile, you may want to increase the amount of RAM available to Bazel by increasing the JVM heap size with `--host_jvm_args`. For example, to increase the JVM heap size to 6GB, you would set `--host_jvm_args=-Xmx6g`.
+⭐ If Bazel doesn’t have enough memory, it will evict parts of the analysis cache. As described in the previous section, this can significantly slow down builds. If you notice a lot of `MerkleTree.build` actions even when you’re reusing a warm Bazel instance or see heavy garbage collection activity in the timing profile, you may want to increase the amount of RAM available to Bazel by increasing the JVM heap size with `--host_jvm_args`. For example, to increase the JVM heap size to 6GB, you would set `--host_jvm_args=-Xmx6g`.
 
 The `--host_jvm` is considered a startup option, and should appear before the Bazel command (non-startup options, like the `--jobs` flag, go after the bazel command). Ex. `bazel --host_jvm_args=-Xmx6g build --jobs=50`.
 
