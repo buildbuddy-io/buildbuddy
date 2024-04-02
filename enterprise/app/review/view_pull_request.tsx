@@ -15,7 +15,6 @@ import { Github, MessageCircle } from "lucide-react";
 import error_service from "../../../app/errors/error_service";
 import ReviewThreadComponent from "./review_thread";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
-import Spinner from "../../../app/components/spinner/spinner";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 
 const FAKE_ID_PREFIX = "bb-tmp/";
@@ -726,7 +725,6 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           </DialogBody>
           <DialogFooter>
             <DialogFooterButtons>
-              {false && <Spinner /> /* XXX */}
               <OutlinedButton
                 disabled={false}
                 onClick={() => {

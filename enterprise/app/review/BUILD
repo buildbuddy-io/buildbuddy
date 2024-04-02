@@ -54,7 +54,6 @@ ts_library(
         "//app/components/button:checkbox_button",
         "//app/components/dialog",
         "//app/components/modal",
-        "//app/components/spinner",
         "//app/errors:error_service",
         "//app/format",
         "//app/service:rpc_service",
