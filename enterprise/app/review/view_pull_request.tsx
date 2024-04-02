@@ -345,13 +345,13 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
             saving={/* TODO(jdhollen */ false}
             handler={this}
             activeUsername={this.state.response?.viewerLogin ?? ""}></ReviewThreadComponent>
-          {leftSide ? (
-            <>
-              <pre className="thread-line-number-space"> </pre>
-              <div className="thread-empty-side"> </div>
-            </>
-          ) : undefined}
         </div>
+        {leftSide ? (
+          <>
+            <pre className="thread-line-number-space"> </pre>
+            <div className="thread-empty-side"> </div>
+          </>
+        ) : undefined}
       </div>
     );
   }
