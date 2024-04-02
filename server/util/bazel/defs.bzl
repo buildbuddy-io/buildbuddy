@@ -43,6 +43,7 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
             name = "bazel-{}_crossplatform".format(version),
             srcs = select({
                 "@bazel_tools//src/conditions:darwin": ["@io_bazel_bazel-{}-darwin-x86_64//file:downloaded".format(version)],
+                "//platforms/configs:linux_arm64": ["@io_bazel_bazel-{}-linux-arm64//file:downloaded".format(version)],
                 "//conditions:default": ["@io_bazel_bazel-{}-linux-x86_64//file:downloaded".format(version)],
             }),
             outs = ["bazel-{}".format(version)],
