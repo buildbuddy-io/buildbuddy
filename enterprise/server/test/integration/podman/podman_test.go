@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -332,11 +331,6 @@ func TestIsImageCached(t *testing.T) {
 }
 
 func TestForceRoot(t *testing.T) {
-	// This test image doesn't have an arm64 variant yet; skip for now.
-	if runtime.GOARCH != "amd64" {
-		t.Skipf("test is currently only supported on arm64")
-	}
-
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	ctx := context.Background()

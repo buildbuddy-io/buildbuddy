@@ -15,10 +15,10 @@ go_test(
         # Enable runner recycling to cache test images.
         "test.recycle-runner": "true",
     },
-    tags = [
-        # TODO(go/b/2945): remove manual tag.
-        "manual",
-    ],
+    # TODO: set up build constraints for Firecracker so that this can be skipped
+    # locally but not when using --config=remote. For now just use the "docker"
+    # tag which we apply to tests that only run on CI.
+    tags = ["docker"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
