@@ -2,11 +2,25 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2024-03-13T08:00:00.000Z</updated>
+    <updated>2024-04-02T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Why is my Bazel build so slow?]]></title>
+        <id>https://www.buildbuddy.io/blog/debugging-slow-bazel-builds</id>
+        <link href="https://www.buildbuddy.io/blog/debugging-slow-bazel-builds"/>
+        <updated>2024-04-02T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[The promise of Bazel is the promise of fast builds. So what do you do if your build was slow? Curse out the developer that convinced your company to migrate to Bazel? Of course not! You’d never do that, right? 🙂]]></summary>
+        <author>
+            <name>Maggie Lou</name>
+            <uri>https://www.linkedin.com/in/maggie-lou-4a3bb110a/</uri>
+        </author>
+        <category label="debugging" term="debugging"/>
+        <category label="product" term="product"/>
+        <category label="engineering" term="engineering"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[How to migrate an iOS app to Bazel]]></title>
         <id>https://www.buildbuddy.io/blog/how-to-migrate-an-ios-app-to-bazel</id>
@@ -246,18 +260,5 @@
         </author>
         <category label="product" term="product"/>
         <category label="engineering" term="engineering"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[Welcoming Iain Macdonald]]></title>
-        <id>https://www.buildbuddy.io/blog/welcoming-iain-macdonald</id>
-        <link href="https://www.buildbuddy.io/blog/welcoming-iain-macdonald"/>
-        <updated>2022-10-26T12:00:00.000Z</updated>
-        <summary type="html"><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, we're intensely focused on hiring outstanding Software Engineers. That's why we're excited to share today that Iain Macdonald is joining BuildBuddy's engineering team!]]></summary>
-        <author>
-            <name>Siggi Simonarson</name>
-            <uri>https://www.linkedin.com/in/siggisim/</uri>
-        </author>
-        <category label="company" term="company"/>
-        <category label="team" term="team"/>
     </entry>
 </feed>
