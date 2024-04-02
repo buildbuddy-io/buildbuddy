@@ -54,6 +54,38 @@ actions:
 This config is equivalent to the default config that we use if you
 do not have a `buildbuddy.yaml` file at the root of your repo.
 
+### Running shell scripts
+
+It is possible to run shell scripts in BuildBuddy Workflows by declaring
+an `sh_binary` target in a `BUILD` file, then running that target as a
+step in the `bazel_commands` list:
+
+```bash title="workflow_setup.sh"
+#!/usr/bin/env bash
+set -eo pipefail
+sudo apt-get update && sudo apt-get install -y my-lib
+```
+
+```python title="BUILD"
+sh_binary(name = "workflow_setup", srcs = ["workflow_setup.sh"])
+```
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Test all targets"
+    # ...
+    bazel_commands:
+      - "run :workflow_setup" # runs workflow_setup.sh with Bazel
+      - "test //..."
+```
+
+Setup scripts are occasionally useful for installing system dependencies
+that aren't available in BuildBuddy's available workflow images. Because
+workflows are run in [snapshotted microVMs](./rbe-microvms), system
+dependencies will be persisted across workflow runs. However, we recommend
+fetching dependencies with Bazel whenever possible, rather than relying
+on system dependencies.
+
 ## Bazel configuration
 
 ### Bazel version
@@ -172,10 +204,6 @@ build --remote_exec_header=x-buildbuddy-platform.container-registry-password=${R
 
 This `generate_ci_bazelrc.sh` script can access workflow secrets using
 environment variables.
-
-For Linux workflows, the script can also install system dependencies using
-`apt-get` if needed, although if possible we recommend using Bazel to
-build or fetch these dependencies.
 
 :::
 
