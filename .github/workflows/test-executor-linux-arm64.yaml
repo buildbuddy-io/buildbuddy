@@ -41,7 +41,6 @@ jobs:
           [engine]
           cgroup_manager = "cgroupfs"
           '
-          mkdir -p ~/.local
           BUILD_FLAGS=(
             --config=cache
             --bes_backend=remote.buildbuddy.io
