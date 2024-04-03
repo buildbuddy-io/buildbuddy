@@ -387,7 +387,7 @@ func TestForceRoot(t *testing.T) {
 func TestUser(t *testing.T) {
 	if runtime.GOARCH == "arm64" {
 		// TODO: build podman ourselves, and remove this
-		t.Skipf("--passwd arg is not yet supported by podman version available on GitHub actions runner")
+		t.Skipf("--passwd arg is not yet supported by podman 3.4.4 (the version available on GitHub actions runner)")
 	}
 
 	rootDir := testfs.MakeTempDir(t)
