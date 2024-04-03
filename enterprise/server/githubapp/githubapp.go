@@ -2029,10 +2029,21 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 		return nil, status.InvalidArgumentError("You must specify a pull request or Review ID.")
 	}
 
-	if reviewID == "" && prID != "" {
-		if !req.GetApprove() {
-			return nil, status.InvalidArgumentError("Must specify a review to send if not approving.")
+	replyBody := req.GetBody()
+	if replyBody == "" {
+		if req.GetApprove() {
+			replyBody = "LGTM, Approval"
+		} else {
+			replyBody = "See comments"
 		}
+	}
+
+	event := githubv4.PullRequestReviewEventComment
+	if req.GetApprove() {
+		event = githubv4.PullRequestReviewEventApprove
+	}
+
+	if reviewID == "" && prID != "" {
 		var m struct {
 			AddPullRequestReview struct {
 				PullRequestReview struct {
@@ -2041,11 +2052,10 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 				}
 			} `graphql:"addPullRequestReview(input: $input)"`
 		}
-		approvePointerGolangRules := githubv4.PullRequestReviewEventApprove
 		input := githubv4.AddPullRequestReviewInput{
 			PullRequestID: req.GetPullRequestId(),
-			Body:          githubv4.NewString("LGTM, Approval"),
-			Event:         &approvePointerGolangRules,
+			Body:          githubv4.NewString(githubv4.String(replyBody)),
+			Event:         &event,
 		}
 		err := graphqlClient.Mutate(ctx, &m, input, nil)
 		if err != nil {
@@ -2060,13 +2070,9 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 		} `graphql:"submitPullRequestReview(input: $input)"`
 	}
 
-	event := githubv4.PullRequestReviewEventComment
-	if req.GetApprove() {
-		event = githubv4.PullRequestReviewEventApprove
-	}
-
 	input := githubv4.SubmitPullRequestReviewInput{
 		PullRequestReviewID: githubv4.NewID(reviewID),
+		Body:                githubv4.NewString(githubv4.String(replyBody)),
 		Event:               event,
 	}
 	err = graphqlClient.Mutate(ctx, &m, input, nil)

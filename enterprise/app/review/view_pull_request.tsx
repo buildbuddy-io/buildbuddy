@@ -1,11 +1,21 @@
 import Long from "long";
 import React from "react";
+import Dialog, {
+  DialogBody,
+  DialogFooter,
+  DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
+} from "../../../app/components/dialog/dialog";
+import Modal from "../../../app/components/modal/modal";
 import format from "../../../app/format/format";
 import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
 import { Github, MessageCircle } from "lucide-react";
 import error_service from "../../../app/errors/error_service";
 import ReviewThreadComponent from "./review_thread";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import CheckboxButton from "../../../app/components/button/checkbox_button";
 
 const FAKE_ID_PREFIX = "bb-tmp/";
 
@@ -19,6 +29,8 @@ interface ViewPullRequestComponentProps {
 interface State {
   response?: github.GetGithubPullRequestDetailsResponse;
   displayedDiffs: string[];
+  replyDialogOpen: boolean;
+  draftReplyText: string;
 
   // This map contains draft comments that the user is *actively editing*.
   inProgressCommentsById: Set<string>;
@@ -58,8 +70,13 @@ function newFakeId(): string {
 }
 
 export default class ViewPullRequestComponent extends React.Component<ViewPullRequestComponentProps, State> {
+  replyBodyTextRef: React.RefObject<HTMLTextAreaElement> = React.createRef();
+  replyApprovalCheckRef: React.RefObject<HTMLInputElement> = React.createRef();
+
   state: State = {
     displayedDiffs: [],
+    replyDialogOpen: false,
+    draftReplyText: "",
     inProgressCommentsById: new Set<string>(),
     pendingRequest: false,
   };
@@ -269,8 +286,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         path: anyComment.path,
         commitSha: anyComment.commitSha,
         position: anyComment.position,
-        // TODO(jdhollen): pass user back from github.
-        commenter: new github.ReviewUser({ login: "you" }),
+        commenter: new github.ReviewUser({ login: this.state.response.viewerLogin || "you" }),
         createdAtUsec: Long.fromNumber(Date.now() * 1000),
         isResolved: false,
       });
@@ -320,16 +336,18 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           </>
         ) : undefined}
         <pre className="thread-line-number-space"> </pre>
-        <ReviewThreadComponent
-          threadId={thread.threadId}
-          comments={thread.comments}
-          draftComment={thread.draft}
-          disabled={Boolean(this.state.pendingRequest)}
-          updating={Boolean(thread.draft && !thread.draft.id.startsWith(FAKE_ID_PREFIX))}
-          editing={Boolean(this.state.inProgressCommentsById.has(thread.draft?.id ?? "bogus-id-doesnt-exist"))}
-          saving={/* TODO(jdhollen */ false}
-          handler={this}
-          activeUsername={/* TODO(jdhollen */ ""}></ReviewThreadComponent>
+        <div className="thread-container">
+          <ReviewThreadComponent
+            threadId={thread.threadId}
+            comments={thread.comments}
+            draftComment={thread.draft}
+            disabled={Boolean(this.state.pendingRequest)}
+            updating={Boolean(thread.draft && !thread.draft.id.startsWith(FAKE_ID_PREFIX))}
+            editing={Boolean(this.state.inProgressCommentsById.has(thread.draft?.id ?? "bogus-id-doesnt-exist"))}
+            saving={/* TODO(jdhollen */ false}
+            handler={this}
+            activeUsername={this.state.response?.viewerLogin ?? ""}></ReviewThreadComponent>
+        </div>
         {leftSide ? (
           <>
             <pre className="thread-line-number-space"> </pre>
@@ -590,7 +608,26 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     }
   }
 
-  reply(approve: boolean) {
+  handleReviewReplyClick(approve: boolean) {
+    if (!this.state.response) {
+      return;
+    }
+    if (!approve) {
+      this.showReplyDialog();
+    } else {
+      this.submitReview("", true);
+    }
+  }
+
+  showReplyDialog() {
+    this.setState({ replyDialogOpen: true });
+  }
+
+  handleCloseReplyDialog() {
+    this.setState({ replyDialogOpen: false });
+  }
+
+  submitReview(body: string, approve: boolean) {
     if (!this.state.response) {
       return;
     }
@@ -598,6 +635,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     const req = new github.SendGithubPullRequestReviewRequest({
       reviewId: this.state.response.draftReviewId.startsWith(FAKE_ID_PREFIX) ? "" : this.state.response.draftReviewId,
       pullRequestId: this.state.response.pullId,
+      body,
       approve,
     });
     console.log(req);
@@ -632,10 +670,95 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       .finally(() => this.setState({ pendingRequest: false }));
   }
 
-  render() {
-    const userIsAuthor = Boolean(
-      this.state.response?.viewerLogin && this.state.response.viewerLogin === this.state.response.author
+  hasAnyDraftComments() {
+    const response = this.state.response;
+    if (!response) {
+      return false;
+    }
+    return response.comments.filter((v) => v.reviewId === response.draftReviewId).length > 0;
+  }
+
+  replyNotReady() {
+    return (this.replyBodyTextRef.current?.value ?? "").length === 0 && !this.hasAnyDraftComments();
+  }
+
+  userIsPrAuthor() {
+    return Boolean(this.state.response?.viewerLogin && this.state.response.viewerLogin === this.state.response.author);
+  }
+
+  handleReplyTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    this.setState({ draftReplyText: e.target.value });
+  }
+
+  renderReplyModal() {
+    if (!this.state.response) {
+      return undefined;
+    }
+    const userIsPrAuthor = this.userIsPrAuthor();
+    const draftReviewId = this.state.response.draftReviewId;
+    const draftComments = draftReviewId ? this.state.response.comments.filter((v) => v.reviewId === draftReviewId) : [];
+    return (
+      <Modal isOpen={this.state.replyDialogOpen} onRequestClose={this.handleCloseReplyDialog.bind(this)}>
+        <Dialog className="pr-view">
+          <DialogHeader>
+            <DialogTitle>Replying to change #{this.props.pull}</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <textarea
+              disabled={this.state.pendingRequest}
+              ref={this.replyBodyTextRef}
+              className="comment-input"
+              onChange={this.handleReplyTextChange.bind(this)}
+              defaultValue={""}></textarea>
+            {!userIsPrAuthor && (
+              <CheckboxButton checkboxRef={this.replyApprovalCheckRef} className="reply-modal-approve-button">
+                Approve
+              </CheckboxButton>
+            )}
+            {draftComments.map((c) => (
+              <div className="reply-modal-thread-container">
+                <ReviewThreadComponent
+                  threadId={c.threadId}
+                  comments={[]}
+                  draftComment={c}
+                  disabled={Boolean(this.state.pendingRequest)}
+                  updating={!c.id.startsWith(FAKE_ID_PREFIX)}
+                  editing={Boolean(this.state.inProgressCommentsById.has(c.id ?? "bogus-id-doesnt-exist"))}
+                  saving={/* TODO(jdhollen */ false}
+                  handler={this}
+                  activeUsername={this.state.response?.viewerLogin ?? ""}></ReviewThreadComponent>
+              </div>
+            ))}
+          </DialogBody>
+          <DialogFooter>
+            <DialogFooterButtons>
+              <OutlinedButton
+                disabled={false}
+                onClick={() => {
+                  this.handleCloseReplyDialog();
+                }}>
+                Cancel
+              </OutlinedButton>
+              <FilledButton
+                disabled={this.state.pendingRequest || this.replyNotReady()}
+                onClick={() => {
+                  this.submitReview(
+                    this.replyBodyTextRef.current?.value ?? "",
+                    this.replyApprovalCheckRef.current?.checked ?? false
+                  );
+                }}>
+                Send
+              </FilledButton>
+            </DialogFooterButtons>
+          </DialogFooter>
+        </Dialog>
+      </Modal>
     );
+  }
+
+  render() {
+    const userIsPrAuthor = this.userIsPrAuthor();
+
     return (
       <div className={"pr-view " + this.getPrStatusClass(this.state.response)}>
         {this.state.response !== undefined && (
@@ -663,13 +786,15 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                   <div>Mentions</div>
                   <div></div>
                   <div>
-                    {userIsAuthor && !this.state.response.submitted && (
+                    {userIsPrAuthor && !this.state.response.submitted && (
                       <button disabled={!this.state.response.mergeable} onClick={() => this.submit()}>
                         SUBMIT
                       </button>
                     )}
-                    {!userIsAuthor && <button onClick={() => this.reply(true)}>APPROVE</button>}
-                    <button disabled={this.state.response.comments.length < 1} onClick={() => this.reply(false)}>
+                    {!userIsPrAuthor && <button onClick={() => this.handleReviewReplyClick(true)}>APPROVE</button>}
+                    <button
+                      disabled={this.state.response.comments.length < 1}
+                      onClick={() => this.handleReviewReplyClick(false)}>
                       REPLY
                     </button>
                   </div>
@@ -711,6 +836,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
                 {this.state.response.files.map((f) => this.renderFileRow(f))}
               </table>
             </div>
+            {this.renderReplyModal()}
           </>
         )}
       </div>

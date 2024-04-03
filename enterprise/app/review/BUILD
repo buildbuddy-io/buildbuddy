@@ -50,6 +50,10 @@ ts_library(
     name = "view_pull_request",
     srcs = ["view_pull_request.tsx"],
     deps = [
+        "//app/components/button",
+        "//app/components/button:checkbox_button",
+        "//app/components/dialog",
+        "//app/components/modal",
         "//app/errors:error_service",
         "//app/format",
         "//app/service:rpc_service",
