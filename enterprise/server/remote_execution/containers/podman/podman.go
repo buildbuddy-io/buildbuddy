@@ -74,7 +74,7 @@ var (
 	userRegex         = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*(:[a-z0-9_-]*)?$`)
 
 	// Min podman version supporting the '--transient-store' flag.
-	transientStoreMinVersion = semver.MustParse("4.3.0")
+	transientStoreMinVersion = semver.MustParse("4.4.0")
 
 	// A map from image name to pull status. This is used to avoid parallel pulling of the same image.
 	pullOperations sync.Map
