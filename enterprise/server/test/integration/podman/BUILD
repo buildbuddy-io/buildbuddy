@@ -18,7 +18,11 @@ go_test(
     # TODO: set up build constraints for Firecracker so that this can be skipped
     # locally but not when using --config=remote. For now just use the "docker"
     # tag which we apply to tests that only run on CI.
-    tags = ["docker"],
+    tags = [
+        "docker",
+        # podman is not compatible with linux-sandbox
+        "no-sandbox",
+    ],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",

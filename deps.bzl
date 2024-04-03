@@ -6826,6 +6826,12 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/redis/redis-server-6.2.1-linux-x86_64"],
     )
     http_file(
+        name = "com_github_redis_redis-redis-server-v6.2.1-linux-arm64",
+        executable = True,
+        sha256 = "c381660c79dcbe4835a243bab8a0d3c3ee5dc502c1b4a47f1761bd8f9e7be240",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/redis/redis-server-6.2.1-linux-arm64"],
+    )
+    http_file(
         name = "com_github_redis_redis-redis-server-v6.2.6-darwin-arm64",
         executable = True,
         sha256 = "a70261f7a3f455a9a7c9d845299d487a86c1faef2af1605b94f39db44c098e69",
@@ -6850,6 +6856,12 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-linux-x86_64"],
     )
     http_file(
+        name = "io_bazel_bazel-5.3.2-linux-arm64",
+        executable = True,
+        sha256 = "dcad413da286ac1d3f88e384ff05c2ed796f903be85b253591d170ce258db721",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-linux-arm64"],
+    )
+    http_file(
         name = "io_bazel_bazel-6.0.0-darwin-x86_64",
         executable = True,
         sha256 = "8e543c5c9f1c8c91df945cd2fb4c3b43587929a43044a0ed87d13da0d19f96e8",
@@ -6860,6 +6872,12 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
         sha256 = "f03d44ecaac3878e3d19489e37caa4ca1dc57427b686a78a85065ea3c27ebe68",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/6.0.0/bazel-6.0.0-linux-x86_64"],
+    )
+    http_file(
+        name = "io_bazel_bazel-6.0.0-linux-arm64",
+        executable = True,
+        sha256 = "408c33a0edb8f31374da47e011eef88c360264f268e9a4e3d9e699fbd5e57ad3",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/6.0.0/bazel-6.0.0-linux-arm64"],
     )
     http_file(
         name = "io_bazel_bazel-6.5.0-darwin-x86_64",

@@ -661,8 +661,10 @@ func TestSimpleCommandWithOSArchPool_CaseInsensitive(t *testing.T) {
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: "FoO"},
-			{Name: "OSFamily", Value: "LiNuX"},
-			{Name: "Arch", Value: "AmD64"},
+			// GOOS / GOARCH are normally lowercase, make sure uppercase
+			// variants are treated equivalently.
+			{Name: "OSFamily", Value: strings.ToUpper(runtime.GOOS)},
+			{Name: "Arch", Value: strings.ToUpper(runtime.GOARCH)},
 		},
 	}
 
@@ -694,11 +696,19 @@ func TestSimpleCommand_DefaultWorkspacePermissions(t *testing.T) {
 		"output_file_parent", "input_dir",
 	}
 
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+
 	cmd := rbe.Execute(&repb.Command{
 		// %a %n prints perms in octal followed by the file name.
 		Arguments:         append([]string{"stat", "--format", "%a %n"}, dirs...),
 		OutputDirectories: []string{"output_dir", "output_dir_parent/output_dir_child"},
 		OutputFiles:       []string{"output_file_parent/output.txt"},
+		Platform:          platform,
 	}, &rbetest.ExecuteOpts{InputRootDir: inputRoot})
 	res := cmd.Wait()
 

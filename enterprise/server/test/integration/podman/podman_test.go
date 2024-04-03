@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -35,13 +36,6 @@ func writeFile(t *testing.T, parentDir, fileName, content string) {
 	}
 }
 
-func makeTempDirWithWorldTxt(t *testing.T) string {
-	dir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, dir, "work")
-	writeFile(t, workDir, "world.txt", "world")
-	return dir
-}
-
 func getTestEnv(t *testing.T) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -51,7 +45,10 @@ func getTestEnv(t *testing.T) *testenv.TestEnv {
 
 func TestRunHelloWorld(t *testing.T) {
 	ctx := context.Background()
-	rootDir := makeTempDirWithWorldTxt(t)
+	buildRoot := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.WriteAllFileContents(t, workDir, map[string]string{"world.txt": "world"})
+
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			&repb.Command_EnvironmentVariable{Name: "GREETING", Value: "Hello"},
@@ -64,7 +61,7 @@ func TestRunHelloWorld(t *testing.T) {
 
 	env := getTestEnv(t)
 
-	provider, err := podman.NewProvider(env, rootDir)
+	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
@@ -72,7 +69,7 @@ func TestRunHelloWorld(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &props, nil, nil, "")
 	require.NoError(t, err)
-	result := c.Run(ctx, cmd, "/work", oci.Credentials{})
+	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	require.NoError(t, result.Error)
 	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
@@ -86,7 +83,10 @@ func TestRunHelloWorld(t *testing.T) {
 
 func TestHelloWorldExec(t *testing.T) {
 	ctx := context.Background()
-	rootDir := makeTempDirWithWorldTxt(t)
+	buildRoot := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.WriteAllFileContents(t, workDir, map[string]string{"world.txt": "world"})
+
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			&repb.Command_EnvironmentVariable{Name: "GREETING", Value: "Hello"},
@@ -99,7 +99,7 @@ func TestHelloWorldExec(t *testing.T) {
 
 	env := getTestEnv(t)
 
-	provider, err := podman.NewProvider(env, rootDir)
+	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
@@ -108,7 +108,7 @@ func TestHelloWorldExec(t *testing.T) {
 	c, err := provider.New(ctx, &props, nil, nil, "")
 	require.NoError(t, err)
 
-	err = c.Create(ctx, "/work")
+	err = c.Create(ctx, workDir)
 	require.NoError(t, err)
 
 	result := c.Exec(ctx, cmd, &interfaces.Stdio{})
@@ -128,7 +128,8 @@ func TestHelloWorldExec(t *testing.T) {
 
 func TestExecStdio(t *testing.T) {
 	ctx := context.Background()
-	rootDir := makeTempDirWithWorldTxt(t)
+	buildRoot := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, buildRoot, "work")
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `
 			if ! [ $(cat) = "TestInput" ]; then
@@ -146,7 +147,7 @@ func TestExecStdio(t *testing.T) {
 
 	env := getTestEnv(t)
 
-	provider, err := podman.NewProvider(env, rootDir)
+	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
@@ -155,7 +156,7 @@ func TestExecStdio(t *testing.T) {
 	c, err := provider.New(ctx, &props, nil, nil, "")
 	require.NoError(t, err)
 
-	err = c.Create(ctx, "/work")
+	err = c.Create(ctx, workDir)
 	require.NoError(t, err)
 
 	var stdout, stderr bytes.Buffer
@@ -253,8 +254,6 @@ func TestExec_Timeout(t *testing.T) {
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
 	require.NoError(t, err)
-	err = c.Create(ctx, workDir)
-	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -331,6 +330,12 @@ func TestIsImageCached(t *testing.T) {
 }
 
 func TestForceRoot(t *testing.T) {
+	// The image used in this test doesn't have an arm64 variant yet; skip for
+	// now.
+	if runtime.GOARCH != "amd64" {
+		t.Skipf("test is currently only supported on amd64")
+	}
+
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	ctx := context.Background()
@@ -380,9 +385,13 @@ func TestForceRoot(t *testing.T) {
 }
 
 func TestUser(t *testing.T) {
+	if runtime.GOARCH == "arm64" {
+		// TODO: build podman ourselves, and remove this
+		t.Skipf("--passwd arg is not yet supported by podman 3.4.4 (the version available on GitHub actions runner)")
+	}
+
 	rootDir := testfs.MakeTempDir(t)
-	workDir := filepath.Join(rootDir, "work")
-	testfs.MakeDirAll(t, rootDir, "work")
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()

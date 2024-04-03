@@ -43,6 +43,7 @@ func (h *Handle) start() {
 	osArchKey := runtime.GOOS + "_" + runtime.GOARCH
 	switch osArchKey {
 	case "linux_amd64":
+	case "linux_arm64":
 	case "darwin_amd64":
 	case "darwin_arm64":
 	default:
