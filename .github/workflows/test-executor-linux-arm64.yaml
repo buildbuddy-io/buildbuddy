@@ -32,6 +32,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc g++ podman
 
+          echo "podman version:"
+          podman version
+
       - name: Run tests
         run: |
           # Have podman use cgroupfs to prevent warnings like
