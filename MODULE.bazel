@@ -96,7 +96,7 @@ go_deps.module_override(
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "@buildbuddy//buildpatches:com_github_awslabs_soci_snapshotter.patch",
+        "@buildbuddy//buildpatches:bzlmod_com_github_awslabs_soci_snapshotter.patch",
     ],
     path = "github.com/awslabs/soci-snapshotter",
 )
@@ -104,11 +104,6 @@ go_deps.module_override(
     patch_strip = 1,
     patches = ["@@//buildpatches:buildifier.patch"],
     path = "github.com/bazelbuild/buildtools",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["@@//buildpatches:bazelisk.patch"],
-    path = "github.com/bazelbuild/bazelisk",
 )
 go_deps.module_override(
     patch_strip = 1,
@@ -247,7 +242,6 @@ use_repo(
     "com_github_jotfs_fastcdc_go",
     "com_github_jsimonetti_rtnetlink",
     "com_github_klauspost_compress",
-    "com_github_klauspost_cpuid",
     "com_github_lestrrat_go_jwx",
     "com_github_lni_dragonboat_v4",
     "com_github_lni_goutils",
@@ -270,6 +264,7 @@ use_repo(
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
     "com_github_rantav_go_grpc_channelz",
+    "com_github_roaringbitmap_roaring",
     "com_github_rs_zerolog",
     "com_github_shirou_gopsutil_v3",
     "com_github_shurcool_githubv4",
@@ -280,6 +275,7 @@ use_repo(
     "com_github_throttled_throttled_v2",
     "com_github_tklauser_go_sysconf",
     "com_github_vishvananda_netlink",
+    "com_github_xiam_s_expr",
     "com_github_zeebo_blake3",
     "com_gitlab_arm_research_smarter_smarter_device_manager",
     "com_google_cloud_go_compute",
