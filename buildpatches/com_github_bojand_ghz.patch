@@ -1,0 +1,22 @@
+diff --git a/printer/BUILD.bazel b/printer/BUILD.bazel
+index dd57d0e..737aa59 100644
+--- a/printer/BUILD.bazel
++++ b/printer/BUILD.bazel
+@@ -13,7 +13,7 @@ go_library(
+     deps = [
+         "//runner",
+         "@com_github_alecthomas_template//:template",
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@com_github_prometheus_common//expfmt",
+     ],
+ )
+@@ -33,7 +33,7 @@ go_test(
+     embed = [":printer"],
+     deps = [
+         "//runner",
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@com_github_prometheus_common//expfmt",
+         "@com_github_stretchr_testify//assert",
+     ],
