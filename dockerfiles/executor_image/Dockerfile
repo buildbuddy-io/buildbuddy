@@ -12,27 +12,17 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && \
     add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable" && \
     apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io
 
-# Install umoci which we use to unpack OCI images when we're not using docker.
+# Install skopeo and umoci which we use to unpack OCI images when we're not using docker.
 # Install iproute2 ("ip" command) to configure networking on host.
-RUN apt-get update && apt-get install -y umoci iproute2 amazon-ecr-credential-helper
+RUN apt-get update && \
+    apt-get install -y umoci skopeo iproute2 amazon-ecr-credential-helper
 
-# Install podman and skopeo. We install using a static archive stored in GCS to
-# avoid a hard dependency on the third-party debian repo where the packages are
-# hosted.
-#
-# To update podman, run create_podman_bundle.sh to generate a new static
-# archive, then update ARCHIVE as well as the sha256sum below.
-RUN mkdir /tmp/podman-install && \
-    cd /tmp/podman-install && \
-    ARCHIVE='podman-4.9.1.tar.gz' && \
-    curl -fsSL "https://storage.googleapis.com/buildbuddy-tools/binaries/podman-debian/$ARCHIVE" > "$ARCHIVE" && \
-    echo "2453353fb01e7a952408e5c0e4d8300d66c420db0d778d5af052a3fdd70aad49  $ARCHIVE" > podman.sum && \
-    sha256sum -c podman.sum && \
-    tar -xzvf "$ARCHIVE" && \
-    ./install.sh && \
-    cd / && \
-    rm -rf /tmp/podman-install && \
-    rm -rf /var/lib/apt/lists/*
+# Install podman.
+# See README in this directory for instructions on how to update podman versions.
+RUN curl -fsSL 'https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-v4.9.4/podman-linux-amd64.tar.gz' -o podman.tar.gz && \
+    echo 'ac14152d2ef5cb25abbd615893cd56355f951f075a7ae663f0b2c1bc5d3fb77e podman.tar.gz' | sha256sum -c && \
+    tar -xzf podman.tar.gz --strip-components 1 --directory / && \
+    rm podman.tar.gz
 
 # Copy podman registries configuration.
 COPY data/registries.conf /etc/containers/registries.conf
