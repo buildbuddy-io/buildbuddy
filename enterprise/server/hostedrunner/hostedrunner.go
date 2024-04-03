@@ -71,7 +71,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, ci_runner_bundle.CiRunnerBytes)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "upload runner bin")
 	}
 	// Save this to use when constructing the command to run below.
 	runnerName := filepath.Base(ci_runner_bundle.RunnerName)
@@ -84,19 +84,19 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, dir)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "upload input root")
 	}
 
 	var patchURIs []string
 	for _, patch := range req.GetRepoState().GetPatch() {
 		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, patch)
 		if err != nil {
-			return nil, err
+			return nil, status.WrapError(err, "upload patch")
 		}
 		rn := digest.NewResourceName(patchDigest, req.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 		uri, err := rn.DownloadString()
 		if err != nil {
-			return nil, err
+			return nil, status.WrapError(err, "patch download string")
 		}
 		patchURIs = append(patchURIs, uri)
 	}
@@ -104,7 +104,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	// Use https for git operations.
 	repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "normalize git repo")
 	}
 
 	// NOTE: Be cautious when adding new flags. See
@@ -187,7 +187,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, cmd)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "upload command")
 	}
 	action := &repb.Action{
 		CommandDigest:   cmdDigest,
@@ -204,7 +204,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, action)
-	return actionDigest, err
+	return actionDigest, status.WrapError(err, "upload action")
 }
 
 func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
@@ -233,31 +233,31 @@ func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunReques
 // encountered.
 func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {
 	if err := r.checkPreconditions(req); err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "check preconditions")
 	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "attach user prefix")
 	}
 
 	guid, err := uuid.NewRandom()
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "uuid")
 	}
 	invocationID := guid.String()
 	actionDigest, err := r.createAction(ctx, req, invocationID)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "create action")
 	}
 	log.Debugf("Uploaded runner action to cache. Digest: %s/%d", actionDigest.GetHash(), actionDigest.GetSizeBytes())
 
 	execCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{ToolInvocationId: invocationID})
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "add request metadata to ctx")
 	}
 	execCtx, err = r.withCredentials(execCtx, req)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "authenticate ctx")
 	}
 
 	executionClient := r.env.GetRemoteExecutionClient()
@@ -270,14 +270,14 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		ActionDigest:    actionDigest,
 	})
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "execute")
 	}
 	// Even for async requests, we must wait until the first operation has been
 	// returned from the stream to guarantee the context isn't canceled too early
 	// before the execution has been created
 	op, err := opStream.Recv()
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "opstream receive")
 	}
 
 	res := &rnpb.RunResponse{InvocationId: invocationID}
@@ -287,7 +287,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 	executionID := op.GetName()
 	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "wait invocation exists")
 	}
 
 	return res, nil
