@@ -6,14 +6,13 @@ import sys
 import time
 
 EXPECTED_ASSETS = [
+    # enterprise app
     "buildbuddy-enterprise-darwin-amd64",
     "buildbuddy-enterprise-linux-amd64",
-    "buildbuddy-enterprise-linux-arm64",
-
-    "buildbuddy-darwin-amd64"
+    # OSS app
+    "buildbuddy-darwin-amd64",
     "buildbuddy-linux-amd64",
-    "buildbuddy-linux-arm64",
-
+    # executor
     "executor-enterprise-darwin-amd64",
     "executor-enterprise-darwin-arm64",
     "executor-enterprise-linux-amd64",

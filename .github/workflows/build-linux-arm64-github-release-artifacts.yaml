@@ -55,8 +55,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bazelisk build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
-          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-linux-arm64
-          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-arm64
+          bazelisk build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-arm64
-          gh release upload ${{ inputs.version_tag }} buildbuddy-linux-arm64 buildbuddy-enterprise-linux-arm64 executor-enterprise-linux-arm64 --clobber
+          gh release upload ${{ inputs.version_tag }} executor-enterprise-linux-arm64 --clobber
