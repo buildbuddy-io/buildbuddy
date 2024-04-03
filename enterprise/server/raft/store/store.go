@@ -99,6 +99,8 @@ type Store struct {
 
 	eg       *errgroup.Group
 	egCancel context.CancelFunc
+
+	updateTagsWorker *updateTagsWorker
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -149,6 +151,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
 	eventsChan := make(chan events.Event, 100)
+
 	s := &Store{
 		env:           env,
 		rootDir:       rootDir,
@@ -176,6 +179,14 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
 	}
+
+	updateTagsWorker := &updateTagsWorker{
+		store:          s,
+		tasks:          make(chan *updateTagsTask, 2000),
+		lastExecutedAt: time.Now(),
+	}
+
+	s.updateTagsWorker = updateTagsWorker
 
 	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
 	if err != nil {
@@ -209,6 +220,8 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	// StartOnDiskReplica can be blocked when the the buffered leaderChangeListener channel is full.
 	s.leaseKeeper.Start()
 
+	go s.updateTagsWorker.Start()
+
 	// rejoin configured clusters
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
 
@@ -227,8 +240,6 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	gossipManager.AddListener(s)
 	statusz.AddSection("raft_store", "Store", s)
-
-	go s.updateTags()
 
 	return s, nil
 }
@@ -530,8 +541,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	}
 
 	s.leaseKeeper.AddRange(rd, r)
-	// Start goroutines for these so that Adding ranges is quick.
-	go s.updateTags()
+	s.updateTagsWorker.Enqueue()
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -554,7 +564,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	s.sendRangeEvent(events.EventRangeRemoved, rd)
 	s.leaseKeeper.RemoveRange(rd, r)
-	go s.updateTags()
+	s.updateTagsWorker.Enqueue()
 }
 
 func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*replica.LRUSample], error) {
@@ -1092,9 +1102,9 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 		Node: s.NodeDescriptor(),
 	}
 
-	s.rangeMu.Lock()
+	s.rangeMu.RLock()
 	su.ReplicaCount = int64(len(s.openRanges))
-	s.rangeMu.Unlock()
+	s.rangeMu.RUnlock()
 
 	su.LeaseCount = s.leaseKeeper.LeaseCount()
 	s.replicas.Range(func(key, value any) bool {
@@ -1122,7 +1132,57 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	return su
 }
 
-func (s *Store) updateTags() error {
+type updateTagsTask struct {
+	// createdAt is the time at which this task was created
+	createdAt time.Time
+}
+
+type updateTagsWorker struct {
+	mu sync.Mutex // protects(lastExecutedAt, tasks)
+	// lastExecutedAt is the time at which udpateTagsWorker finished execution.
+	lastExecutedAt time.Time
+	tasks          chan *updateTagsTask
+
+	store *Store
+}
+
+func (w *updateTagsWorker) Enqueue() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	task := &updateTagsTask{
+		createdAt: time.Now(),
+	}
+
+	select {
+	case w.tasks <- task:
+		break
+	default:
+		alert.UnexpectedEvent(
+			"update_tags_channel_buffer_full",
+			"Failed to update tags: update tags task buffer is full")
+	}
+}
+
+func (w *updateTagsWorker) Start() {
+	for task := range w.tasks {
+		w.handleTask(task)
+	}
+}
+
+func (w *updateTagsWorker) handleTask(task *updateTagsTask) {
+	w.mu.Lock()
+	if task.createdAt.Before(w.lastExecutedAt) {
+		w.mu.Unlock()
+		return
+	}
+
+	w.lastExecutedAt = time.Now()
+	w.mu.Unlock()
+	w.updateTags()
+}
+
+func (w *updateTagsWorker) updateTags() error {
 	storeTags := make(map[string]string, 0)
 
 	if zone := resources.GetZone(); zone != "" {
@@ -1131,13 +1191,13 @@ func (s *Store) updateTags() error {
 		storeTags[constants.ZoneTag] = "local"
 	}
 
-	su := s.Usage()
+	su := w.store.Usage()
 	buf, err := proto.Marshal(su)
 	if err != nil {
 		return err
 	}
 	storeTags[constants.StoreUsageTag] = base64.StdEncoding.EncodeToString(buf)
-	err = s.gossipManager.SetTags(storeTags)
+	err = w.store.gossipManager.SetTags(storeTags)
 	return err
 }
 
