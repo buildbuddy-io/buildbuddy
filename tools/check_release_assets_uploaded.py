@@ -6,14 +6,18 @@ import sys
 import time
 
 EXPECTED_ASSETS = [
-    "executor-enterprise-darwin-arm64",
-    "buildbuddy-enterprise-linux-amd64",
-    "buildbuddy-linux-amd64",
-    "executor-enterprise-linux-amd64",
+    # enterprise app
     "buildbuddy-enterprise-darwin-amd64",
+    "buildbuddy-enterprise-linux-amd64",
+    # OSS app
+    "buildbuddy-darwin-amd64",
+    "buildbuddy-linux-amd64",
+    # executor
     "executor-enterprise-darwin-amd64",
+    "executor-enterprise-darwin-arm64",
+    "executor-enterprise-linux-amd64",
+    "executor-enterprise-linux-arm64",
     "executor-enterprise-windows-amd64-beta.exe",
-    "buildbuddy-darwin-amd64"
 ]
 
 def die(message):
