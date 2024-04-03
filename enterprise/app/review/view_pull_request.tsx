@@ -30,6 +30,7 @@ interface State {
   response?: github.GetGithubPullRequestDetailsResponse;
   displayedDiffs: string[];
   replyDialogOpen: boolean;
+  draftReplyText: string;
 
   // This map contains draft comments that the user is *actively editing*.
   inProgressCommentsById: Set<string>;
@@ -75,6 +76,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
   state: State = {
     displayedDiffs: [],
     replyDialogOpen: false,
+    draftReplyText: "",
     inProgressCommentsById: new Set<string>(),
     pendingRequest: false,
   };
@@ -684,6 +686,10 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     return Boolean(this.state.response?.viewerLogin && this.state.response.viewerLogin === this.state.response.author);
   }
 
+  handleReplyTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    this.setState({ draftReplyText: e.target.value });
+  }
+
   renderReplyModal() {
     if (!this.state.response) {
       return undefined;
@@ -702,6 +708,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
               disabled={this.state.pendingRequest}
               ref={this.replyBodyTextRef}
               className="comment-input"
+              onChange={this.handleReplyTextChange.bind(this)}
               defaultValue={""}></textarea>
             {!userIsPrAuthor && (
               <CheckboxButton checkboxRef={this.replyApprovalCheckRef} className="reply-modal-approve-button">
