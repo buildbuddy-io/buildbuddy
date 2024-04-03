@@ -67,7 +67,14 @@ jobs:
 
   slack_on_failure:
     runs-on: ubuntu-latest
-    needs: [create-release, build-linux-arm64-artifacts, build-linux-amd64-artifacts, build-mac-intel-artifacts, build-mac-m1-artifacts]
+    needs:
+      [
+        create-release,
+        build-linux-arm64-artifacts,
+        build-linux-amd64-artifacts,
+        build-mac-intel-artifacts,
+        build-mac-m1-artifacts,
+      ]
     if: ${{ always() && contains(needs.*.result, 'failure') }}
     steps:
       - name: Slack
