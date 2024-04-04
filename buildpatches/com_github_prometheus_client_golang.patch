@@ -1,0 +1,96 @@
+diff --git a/prometheus/BUILD.bazel b/prometheus/BUILD.bazel
+index 00668fa..d141081 100644
+--- a/prometheus/BUILD.bazel
++++ b/prometheus/BUILD.bazel
+@@ -39,7 +39,7 @@ go_library(
+         "//prometheus/internal",
+         "@com_github_beorn7_perks//quantile",
+         "@com_github_cespare_xxhash_v2//:xxhash",
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@com_github_prometheus_common//expfmt",
+         "@com_github_prometheus_common//model",
+         "@org_golang_google_protobuf//proto",
+@@ -131,7 +131,7 @@ go_test(
+     deps = [
+         "//prometheus/internal",
+         "//prometheus/promhttp",
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@com_github_prometheus_common//expfmt",
+         "@org_golang_google_protobuf//proto",
+         "@org_golang_google_protobuf//types/known/timestamppb",
+diff --git a/prometheus/graphite/BUILD.bazel b/prometheus/graphite/BUILD.bazel
+index 17685c8..28c7ccf 100644
+--- a/prometheus/graphite/BUILD.bazel
++++ b/prometheus/graphite/BUILD.bazel
+@@ -7,7 +7,7 @@ go_library(
+     visibility = ["//visibility:public"],
+     deps = [
+         "//prometheus",
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@com_github_prometheus_common//expfmt",
+         "@com_github_prometheus_common//model",
+     ],
+diff --git a/prometheus/internal/BUILD.bazel b/prometheus/internal/BUILD.bazel
+index 0d0d51e..86b73d5 100644
+--- a/prometheus/internal/BUILD.bazel
++++ b/prometheus/internal/BUILD.bazel
+@@ -12,7 +12,7 @@ go_library(
+     importpath = "github.com/prometheus/client_golang/prometheus/internal",
+     visibility = ["//prometheus:__subpackages__"],
+     deps = [
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@com_github_prometheus_common//model",
+     ],
+ )
+diff --git a/prometheus/promhttp/BUILD.bazel b/prometheus/promhttp/BUILD.bazel
+index 50fcf73..9c4f0d3 100644
+--- a/prometheus/promhttp/BUILD.bazel
++++ b/prometheus/promhttp/BUILD.bazel
+@@ -13,7 +13,7 @@ go_library(
+     visibility = ["//visibility:public"],
+     deps = [
+         "//prometheus",
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@com_github_prometheus_common//expfmt",
+     ],
+ )
+@@ -36,7 +36,7 @@ go_test(
+     deps = [
+         "//prometheus",
+         "//prometheus/testutil",
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@org_golang_google_protobuf//proto",
+     ],
+ )
+diff --git a/prometheus/testutil/BUILD.bazel b/prometheus/testutil/BUILD.bazel
+index e82b53e..05991dd 100644
+--- a/prometheus/testutil/BUILD.bazel
++++ b/prometheus/testutil/BUILD.bazel
+@@ -13,7 +13,7 @@ go_library(
+         "//prometheus/internal",
+         "//prometheus/testutil/promlint",
+         "@com_github_davecgh_go_spew//spew",
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@com_github_prometheus_common//expfmt",
+     ],
+ )
+diff --git a/prometheus/testutil/promlint/BUILD.bazel b/prometheus/testutil/promlint/BUILD.bazel
+index d0e9972..770970e 100644
+--- a/prometheus/testutil/promlint/BUILD.bazel
++++ b/prometheus/testutil/promlint/BUILD.bazel
+@@ -6,7 +6,7 @@ go_library(
+     importpath = "github.com/prometheus/client_golang/prometheus/testutil/promlint",
+     visibility = ["//visibility:public"],
+     deps = [
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@com_github_prometheus_common//expfmt",
+     ],
+ )

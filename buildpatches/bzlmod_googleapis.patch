@@ -1,0 +1,15 @@
+diff --git a/google/rpc/BUILD.bazel b/google/rpc/BUILD.bazel
+index 18835af..d24aeaf 100755
+--- a/google/rpc/BUILD.bazel
++++ b/google/rpc/BUILD.bazel
+@@ -79,6 +79,10 @@ go_proto_library(
+ 
+ go_proto_library(
+     name = "status_go_proto",
++    compilers = [
++        "@io_bazel_rules_go//proto:go_proto",
++        "@@//proto:vtprotobuf_compiler",
++    ],
+     importpath = "google.golang.org/genproto/googleapis/rpc/status",
+     protos = [":status_proto"],
+ )

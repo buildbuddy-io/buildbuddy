@@ -1,0 +1,329 @@
+module(name = "buildbuddy")
+
+bazel_dep(name = "bazel_skylib", version = "1.5.0")
+bazel_dep(name = "platforms", version = "0.0.8")
+bazel_dep(name = "rules_proto", version = "5.3.0-21.7")
+
+# Needed for com_google_protobuf
+bazel_dep(name = "rules_python", version = "0.31.0")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    configure_coverage_tool = False,
+    # Do not error if root user is detected
+    ignore_root_user_error = True,
+    python_version = "3.11",
+)
+
+bazel_dep(name = "zlib", version = "1.3")
+bazel_dep(name = "rules_go", version = "0.46.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "gazelle", version = "0.35.0", repo_name = "bazel_gazelle")
+archive_override(
+    module_name = "gazelle",
+    integrity = "sha256-MpOL2hbmcABjA1R5Bj2dJMYO2o15/Uc5Vj9Q0zHLMgk=",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:gazelle.patch",
+    ],
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.35.0/bazel-gazelle-v0.35.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.35.0/bazel-gazelle-v0.35.0.tar.gz",
+    ],
+)
+
+# TODO: Remove explicit `goarch`/`goos` once rules_go v0.47.0 is released:
+# https://github.com/bazelbuild/rules_go/commit/145b042e21a073fa3637c096bf9779cdbcac6f75
+go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(
+    goarch = "arm64",
+    goos = "linux",
+    version = "1.22.1",
+)
+go_sdk.download(
+    goarch = "amd64",
+    goos = "linux",
+    version = "1.22.1",
+)
+go_sdk.download(
+    goarch = "arm64",
+    goos = "darwin",
+    version = "1.22.1",
+)
+go_sdk.download(
+    goarch = "amd64",
+    goos = "darwin",
+    version = "1.22.1",
+)
+go_sdk.nogo(nogo = "@//:vet")
+use_repo(
+    go_sdk,
+    "go_toolchains",
+    "io_bazel_rules_nogo",
+)
+
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")
+
+# Go repos with patches
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@io_bazel_rules_go//third_party:com_github_gogo_protobuf-gazelle.patch",
+    ],
+    path = "github.com/gogo/protobuf",
+)
+go_deps.gazelle_override(
+    build_file_generation = "off",
+    path = "github.com/gogo/protobuf",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@buildbuddy//buildpatches:cloudflare_circl.patch",
+    ],
+    path = "github.com/cloudflare/circl",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@buildbuddy//buildpatches:vtprotobuf.patch",
+    ],
+    path = "github.com/planetscale/vtprotobuf",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@buildbuddy//buildpatches:bzlmod_com_github_awslabs_soci_snapshotter.patch",
+    ],
+    path = "github.com/awslabs/soci-snapshotter",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@@//buildpatches:buildifier.patch"],
+    path = "github.com/bazelbuild/buildtools",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@@//buildpatches:bazelisk.patch"],
+    path = "github.com/bazelbuild/bazelisk",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@@//buildpatches:com_github_bojand_ghz.patch"],
+    path = "github.com/bojand/ghz",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@@//buildpatches:com_github_prometheus_client_golang.patch"],
+    path = "github.com/prometheus/client_golang",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@@//buildpatches:com_github_prometheus_common.patch"],
+    path = "github.com/prometheus/common",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch"],
+    path = "github.com/firecracker-microvm/firecracker-go-sdk",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@@//buildpatches:com_github_hanwen_go_fuse_v2.patch"],
+    path = "github.com/hanwen/go-fuse/v2",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@@//buildpatches:com_github_mattn_go_sqlite3.patch"],
+    path = "github.com/mattn/go-sqlite3",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@@//buildpatches:org_golang_google_grpc_remove_drain_panic.patch"],
+    path = "google.golang.org/grpc",
+)
+
+# Go repos with custom directives
+go_deps.gazelle_override(
+    directives = ["gazelle:proto disable"],
+    path = "k8s.io/kubelet",
+)
+go_deps.gazelle_override(
+    directives = ["gazelle:proto disable"],
+    path = "google.golang.org/protobuf",
+)
+go_deps.gazelle_override(
+    directives = ["gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2"],
+    path = "github.com/awslabs/soci-snapshotter",
+)
+go_deps.gazelle_override(
+    directives = ["gazelle:proto disable"],
+    path = "github.com/cockroachdb/errors",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:resolve go github.com/jhump/protoreflect/internal/testprotos @com_github_jhump_protoreflect//internal/testprotos",
+        "gazelle:proto disable",
+    ],
+    path = "github.com/jhump/protoreflect",
+)
+go_deps.gazelle_override(
+    # Force a Gazelle run to ensure build targets in Bazelisk follow
+    # Gazelle naming conventions.
+    build_file_generation = "on",
+    path = "github.com/bazelbuild/bazelisk",
+)
+use_repo(
+    go_deps,
+    "co_honnef_go_tools",
+    "com_github_alecaivazis_survey_v2",
+    "com_github_armon_circbuf",
+    "com_github_aws_aws_sdk_go",
+    "com_github_aws_aws_sdk_go_v2",
+    "com_github_aws_aws_sdk_go_v2_config",
+    "com_github_aws_aws_sdk_go_v2_credentials",
+    "com_github_aws_aws_sdk_go_v2_feature_rds_auth",
+    "com_github_aws_aws_sdk_go_v2_feature_s3_manager",
+    "com_github_aws_aws_sdk_go_v2_service_s3",
+    "com_github_aws_aws_sdk_go_v2_service_sts",
+    "com_github_aws_smithy_go",
+    "com_github_awslabs_soci_snapshotter",
+    "com_github_azure_azure_storage_blob_go",
+    "com_github_bazelbuild_bazelisk",
+    "com_github_bazelbuild_buildtools",
+    "com_github_bazelbuild_rules_webtesting",
+    "com_github_bduffany_godemon",
+    "com_github_bojand_ghz",
+    "com_github_bradfitz_gomemcache",
+    "com_github_buildbuddy_io_tensorflow_proto",
+    "com_github_buildkite_terminal_to_html_v3",
+    "com_github_cavaliergopher_cpio",
+    "com_github_cespare_xxhash_v2",
+    "com_github_clickhouse_clickhouse_go_v2",
+    "com_github_cockroachdb_pebble",
+    "com_github_containerd_containerd",
+    "com_github_coreos_go_oidc",
+    "com_github_creack_pty",
+    "com_github_crewjam_saml",
+    "com_github_docker_distribution",
+    "com_github_docker_docker",
+    "com_github_docker_go_units",
+    "com_github_dop251_goja",
+    "com_github_elastic_gosigar",
+    "com_github_firecracker_microvm_firecracker_go_sdk",
+    "com_github_go_faker_faker_v4",
+    "com_github_go_git_go_git_v5",
+    "com_github_go_redis_redis_extra_redisotel_v8",
+    "com_github_go_redis_redis_v8",
+    "com_github_go_sql_driver_mysql",
+    "com_github_gobwas_glob",
+    "com_github_golang_jwt_jwt",
+    "com_github_google_go_cmp",
+    "com_github_google_go_containerregistry",
+    "com_github_google_go_github_v59",
+    "com_github_google_shlex",
+    "com_github_google_tink_go",
+    "com_github_google_uuid",
+    "com_github_googlecloudplatform_cloudsql_proxy",
+    "com_github_gorilla_mux",
+    "com_github_groob_plist",
+    "com_github_grpc_ecosystem_go_grpc_prometheus",
+    "com_github_hanwen_go_fuse_v2",
+    "com_github_hashicorp_golang_lru",
+    "com_github_hashicorp_memberlist",
+    "com_github_hashicorp_serf",
+    "com_github_jackc_pgerrcode",
+    "com_github_jackc_pgx_v5",
+    "com_github_jhump_protoreflect",
+    "com_github_jonboulle_clockwork",
+    "com_github_jotfs_fastcdc_go",
+    "com_github_jsimonetti_rtnetlink",
+    "com_github_klauspost_compress",
+    "com_github_lestrrat_go_jwx",
+    "com_github_lni_dragonboat_v4",
+    "com_github_lni_goutils",
+    "com_github_logrusorgru_aurora",
+    "com_github_manifoldco_promptui",
+    "com_github_masterminds_semver_v3",
+    "com_github_mattn_go_isatty",
+    "com_github_mattn_go_shellwords",
+    "com_github_mattn_go_sqlite3",
+    "com_github_mdlayher_vsock",
+    "com_github_mitchellh_go_ps",
+    "com_github_mwitkow_grpc_proxy",
+    "com_github_nishanths_exhaustive",
+    "com_github_opencontainers_go_digest",
+    "com_github_opencontainers_image_spec",
+    "com_github_pkg_errors",
+    "com_github_planetscale_vtprotobuf",
+    "com_github_pmezard_go_difflib",
+    "com_github_prometheus_client_golang",
+    "com_github_prometheus_client_model",
+    "com_github_prometheus_common",
+    "com_github_rantav_go_grpc_channelz",
+    "com_github_roaringbitmap_roaring",
+    "com_github_rs_zerolog",
+    "com_github_shirou_gopsutil_v3",
+    "com_github_shurcool_githubv4",
+    "com_github_sirupsen_logrus",
+    "com_github_smacker_go_tree_sitter",
+    "com_github_stretchr_testify",
+    "com_github_tebeka_selenium",
+    "com_github_throttled_throttled_v2",
+    "com_github_tklauser_go_sysconf",
+    "com_github_vishvananda_netlink",
+    "com_github_xiam_s_expr",
+    "com_github_zeebo_blake3",
+    "com_gitlab_arm_research_smarter_smarter_device_manager",
+    "com_google_cloud_go_compute",
+    "com_google_cloud_go_compute_metadata",
+    "com_google_cloud_go_logging",
+    "com_google_cloud_go_longrunning",
+    "com_google_cloud_go_secretmanager",
+    "com_google_cloud_go_storage",
+    "in_gopkg_yaml_v2",
+    "in_gopkg_yaml_v3",
+    "io_gorm_driver_clickhouse",
+    "io_gorm_driver_mysql",
+    "io_gorm_driver_postgres",
+    "io_gorm_driver_sqlite",
+    "io_gorm_gorm",
+    "io_opentelemetry_go_contrib_detectors_gcp",
+    "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
+    "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",
+    "io_opentelemetry_go_otel",
+    "io_opentelemetry_go_otel_exporters_jaeger",
+    "io_opentelemetry_go_otel_metric",
+    "io_opentelemetry_go_otel_sdk",
+    "io_opentelemetry_go_otel_trace",
+    "org_golang_google_api",
+    "org_golang_google_genproto",
+    "org_golang_google_genproto_googleapis_api",
+    "org_golang_google_genproto_googleapis_bytestream",
+    "org_golang_google_genproto_googleapis_rpc",
+    "org_golang_google_grpc",
+    "org_golang_google_protobuf",
+    "org_golang_x_crypto",
+    "org_golang_x_exp",
+    "org_golang_x_mod",
+    "org_golang_x_oauth2",
+    "org_golang_x_sync",
+    "org_golang_x_sys",
+    "org_golang_x_text",
+    "org_golang_x_time",
+    "org_golang_x_tools",
+    "org_uber_go_atomic",
+)
+
+# Note that this is 'rules_nodejs-core'
+# Keep in sync with build_bazel_rules_nodejs in WORKSPACE.bzlmod
+bazel_dep(name = "rules_nodejs", version = "5.8.2")
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(
+    name = "nodejs",
+    node_version = "18.13.0",
+)
+use_repo(node, "nodejs_toolchains")
+
+register_toolchains("@nodejs_toolchains//:all")

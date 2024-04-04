@@ -1,0 +1,14 @@
+diff --git a/ztoc/compression/BUILD.bazel b/ztoc/compression/BUILD.bazel
+index 0d10a4d..bca5dac 100644
+--- a/ztoc/compression/BUILD.bazel
++++ b/ztoc/compression/BUILD.bazel
+@@ -11,7 +11,8 @@ go_library(
+         "zinfo.go",
+     ],
+     cgo = True,
+-    clinkopts = ["-Lztoc/compression/ztoc/out -l:libz.a"],
++    cdeps = ["@@//:zlib"],
++    clinkopts = ["-Lztoc/compression/ztoc/out"],
+     copts = ["-Iztoc/compression/ztoc/compression"],
+     importpath = "github.com/awslabs/soci-snapshotter/ztoc/compression",
+     visibility = ["//visibility:public"],
