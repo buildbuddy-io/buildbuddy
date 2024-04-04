@@ -608,6 +608,14 @@ type WorkflowService interface {
 	// can be created from GitRepositories to play nicely with the pre-existing architecture
 	// that expects the legacy format
 	GetLegacyWorkflowIDForGitRepository(groupID string, repoURL string) string
+
+	// InvalidateAllSnapshotsForRepo invalidates all snapshots for a repo. Any future workflow
+	// runs will be executed on a clean runner.
+	InvalidateAllSnapshotsForRepo(ctx context.Context, groupID string, repoURL string) error
+}
+
+type SnapshotService interface {
+	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) error
 }
 
 type SnapshotService interface {
