@@ -164,6 +164,10 @@
   gap: 8px;
 }
 
+.pr-view .review-actions .filled-button {
+  background-color: #d32f2f;
+}
+
 .pr-view .description {
   padding: 12px;
   font-size: 12px;
