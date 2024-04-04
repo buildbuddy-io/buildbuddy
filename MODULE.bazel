@@ -16,11 +16,6 @@ python.toolchain(
 )
 
 bazel_dep(name = "zlib", version = "1.3")
-bazel_dep(name = "bazel_features", version = "1.4.1", repo_name = "io_bazel_rules_go_bazel_features")
-
-version = use_extension("@io_bazel_rules_go_bazel_features//private:extensions.bzl", "version_extension")
-use_repo(version, "bazel_features_globals", "bazel_features_version")
-
 bazel_dep(name = "rules_go", version = "0.46.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "gazelle", version = "0.35.0", repo_name = "bazel_gazelle")
 archive_override(
@@ -36,6 +31,8 @@ archive_override(
     ],
 )
 
+# TODO: Remove explicit `goarch`/`goos` once rules_go v0.47.0 is released:
+# https://github.com/bazelbuild/rules_go/commit/145b042e21a073fa3637c096bf9779cdbcac6f75
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(
     goarch = "arm64",
