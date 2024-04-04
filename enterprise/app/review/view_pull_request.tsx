@@ -519,6 +519,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
   }
 
   renderFileRow(file: github.FileSummary) {
+    let expanded = this.state.displayedDiffs.indexOf(file.name) !== -1;
     return (
       <>
         <tr className="file-list-row" onClick={this.handleDiffClicked.bind(this, file.name)}>
@@ -527,12 +528,11 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           </td>
           <td className="diff-file-name">{file.name}</td>
           <td>{file.comments}</td>
-          <td>Diff</td>
+          <td>{expanded ? "Hide" : "Diff"}</td>
           <td>{+file.additions + +file.deletions}</td>
           <td>{this.renderDiffBar(+file.additions, +file.deletions, 0)}</td>
         </tr>
-        {this.state.displayedDiffs.indexOf(file.name) !== -1 &&
-          this.renderFileDiffs(file.patch, file.name, file.commitSha)}
+        {expanded && this.renderFileDiffs(file.patch, file.name, file.commitSha)}
       </>
     );
   }
@@ -765,39 +765,39 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           <>
             <div className="summary-section">
               <div className="review-header">
-                <MessageCircle size="36" className="icon" />
                 <span className="review-title">
                   <span className="review-number">Change #{this.state.response.pull}&nbsp;</span>
-                  <span className="review-author">
-                    by {this.state.response.author} in {this.state.response.owner}/{this.state.response.repo}
+                  <span className="review-details">
+                    by <span className="review-author">{this.state.response.author}</span> in{" "}
+                    <span className="review-repo">
+                      {this.state.response.owner}/{this.state.response.repo}
+                    </span>
                   </span>
                   <a href={this.state.response.githubUrl} className="review-gh-link">
                     <Github size="16" className="icon" />
                   </a>
                 </span>
+                <div className="review-actions">
+                  {userIsPrAuthor && !this.state.response.submitted && (
+                    <OutlinedButton disabled={!this.state.response.mergeable} onClick={() => this.submit()}>
+                      Submit
+                    </OutlinedButton>
+                  )}
+                  {!userIsPrAuthor && (
+                    <OutlinedButton onClick={() => this.handleReviewReplyClick(true)}>Approve</OutlinedButton>
+                  )}
+                  <FilledButton onClick={() => this.handleReviewReplyClick(false)}>Reply</FilledButton>
+                </div>
               </div>
               <div className="header-separator"></div>
               <div className="review-cell">
                 <div className="attr-grid">
-                  <div>Reviewers</div>
+                  <div className="attr-label">Reviewers</div>
                   <div>{this.renderReviewers(this.state.response.reviewers)}</div>
-                  <div>Issues</div>
+                  <div className="attr-label">Issues</div>
                   <div></div>
-                  <div>Mentions</div>
+                  <div className="attr-label">Mentions</div>
                   <div></div>
-                  <div>
-                    {userIsPrAuthor && !this.state.response.submitted && (
-                      <button disabled={!this.state.response.mergeable} onClick={() => this.submit()}>
-                        SUBMIT
-                      </button>
-                    )}
-                    {!userIsPrAuthor && <button onClick={() => this.handleReviewReplyClick(true)}>APPROVE</button>}
-                    <button
-                      disabled={this.state.response.comments.length < 1}
-                      onClick={() => this.handleReviewReplyClick(false)}>
-                      REPLY
-                    </button>
-                  </div>
                   <div></div>
                 </div>
               </div>
@@ -811,24 +811,24 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
               </div>
               <div className="review-cell">
                 <div className="attr-grid">
-                  <div>Created</div>
+                  <div className="attr-label">Created</div>
                   <div>{format.formatTimestampUsec(this.state.response.createdAtUsec)}</div>
-                  <div>Modified</div>
+                  <div className="attr-label">Modified</div>
                   <div>{format.formatTimestampUsec(this.state.response.updatedAtUsec)}</div>
-                  <div>Branch</div>
+                  <div className="attr-label">Branch</div>
                   <div>{this.state.response.branch}</div>
                 </div>
               </div>
               <div className="review-cell">
                 <div className="attr-grid">
-                  <div>Status</div>
+                  <div className="attr-label">Status</div>
                   <div>{this.getPrStatusString(this.state.response)}</div>
-                  <div>Analysis</div>
+                  <div className="attr-label">Analysis</div>
                   <div>{this.renderAnalysisResults(this.state.response.actionStatuses)}</div>
                 </div>
               </div>
-              <div className="review-cell blue">Files</div>
-              <div className="review-cell blue"></div>
+              <div className="review-cell header">Files</div>
+              <div className="review-cell header"></div>
             </div>
             <div className="file-section">
               <table>
