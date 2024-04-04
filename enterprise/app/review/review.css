@@ -112,9 +112,11 @@
 .pr-view .review-header {
   padding: 32px 32px 16px;
   line-height: 36px;
-  font-size: 24px;
-  background-color: #ffecb3;
+  font-size: 32px;
+  background-color: #f8f8f8;
   grid-column: span 2;
+  display: flex;
+  justify-content: space-between;
 }
 
 .pr-view .header-separator {
@@ -137,20 +139,15 @@
 
 .pr-view .review-number {
   font-weight: 600;
-  padding-left: 16px;
   display: inline-block;
 }
 
-.pr-view .review-author {
-  font-size: 14px;
+.pr-view .review-details {
+  font-size: 16px;
   vertical-align: baseline;
   display: inline-block;
   padding-right: 8px;
-}
-
-.pr-view .review-gh-link {
-  vertical-align: middle;
-  line-height: 16px;
+  color: rgba(0, 0, 0, 0.8);
 }
 
 .pr-view .review-cell {
@@ -162,12 +159,16 @@
   stroke: #8bc34a;
 }
 
+.pr-view .review-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .pr-view .description {
   padding: 12px;
   font-size: 12px;
   line-height: 16px;
   border-radius: 4px;
-  border: 1px solid #eee;
   background-color: #fff;
   font-family: "Source Code Pro", monospace;
   box-sizing: border-box;
@@ -176,16 +177,8 @@
   overflow-y: auto;
 }
 
-.pr-view.submitted .review-header {
-  background-color: #f5f5f5;
-}
-
 .pr-view.submitted .review-cell {
   background-color: #fafafa;
-}
-
-.pr-view.approved .review-header {
-  background-color: #dcedc8;
 }
 
 .pr-view.approved .review-cell {
@@ -195,8 +188,12 @@
 .pr-view .attr-grid {
   display: grid;
   grid-template-columns: max-content 1fr;
-  row-gap: 2px;
+  row-gap: 4px;
   column-gap: 24px;
+}
+
+.pr-view .attr-label {
+  color: #424242;
 }
 
 .pr-view .file-section table {
@@ -211,7 +208,7 @@
   width: auto;
   white-space: nowrap;
   font-size: 14px;
-  padding: 1px 2px;
+  padding: 2px 4px;
 }
 
 .pr-view .file-section td input {
@@ -237,6 +234,8 @@
   font-size: 12px;
   line-height: 16px;
   font-family: "Source Code Pro", monospace;
+  margin: 0;
+  padding: 6px 8px;
 }
 
 .pr-view .source-line-pair {
@@ -270,8 +269,7 @@
   box-sizing: border-box;
   padding-right: 8px;
   overflow: hidden;
-  border-left: solid #e5e5e5 1px;
-  border-right: solid #e5e5e5 1px;
+  color: rgba(0, 0, 0, 0.6);
 }
 
 .pr-view .thread-line-number-space {
@@ -438,8 +436,15 @@
   background-color: #ffcdd2;
 }
 
-.pr-view .review-cell.blue {
+.pr-view .review-cell.header {
+  padding: 8px 32px;
   background-color: #e1f5fe;
+  font-weight: 600;
+}
+
+.pr-view .file-list-header {
+  font-weight: 600;
+  color: #424242;
 }
 
 .pr-view .reviewer.strong {
@@ -452,4 +457,8 @@
 
 .pr-view .reply-modal-approve-button {
   margin: 12px 0 0 0;
+}
+
+.pr-view .file-list-diff td {
+  padding: 0;
 }
