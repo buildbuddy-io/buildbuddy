@@ -487,6 +487,7 @@ message GetGithubPullRequestResponse {
   context.ResponseContext response_context = 1;
   repeated PullRequest outgoing = 3;
   repeated PullRequest incoming = 4;
+  repeated PullRequest pending = 5;
 }
 
 message GetGithubPullRequestDetailsRequest {

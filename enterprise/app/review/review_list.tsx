@@ -58,6 +58,12 @@ export default class ReviewListComponent extends React.Component<ReviewListCompo
           loading={!this.state.response}
           prs={this.state.response?.outgoing ?? []}
         />
+        <PRSection
+          title="Other pending changes"
+          emptyMessage="No other pending changes!"
+          loading={!this.state.response}
+          prs={this.state.response?.pending ?? []}
+        />
       </div>
     );
   }
