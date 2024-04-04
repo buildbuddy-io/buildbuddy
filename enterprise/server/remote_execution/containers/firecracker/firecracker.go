@@ -627,7 +627,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		if *snaputil.EnableLocalSnapshotSharing {
 			runnerID = ""
 		}
-		c.snapshotKeySet, err = snaploader.SnapshotKeySet(task, cd.GetHash(), runnerID)
+		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID)
 		if err != nil {
 			return nil, err
 		}
@@ -940,8 +940,9 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 	if c.snapshot == nil || c.snapshot.GetVMMetadata() == nil {
 		return &fcpb.VMMetadata{
-			VmId:       c.id,
-			SnapshotId: c.snapshotID,
+			VmId:        c.id,
+			SnapshotId:  c.snapshotID,
+			SnapshotKey: c.SnapshotKeySet().BranchKey,
 		}
 	}
 	return c.snapshot.GetVMMetadata()
@@ -1054,7 +1055,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	// run can be identified
 	if snap.GetVMMetadata() == nil {
 		md := &fcpb.VMMetadata{
-			VmId: c.id,
+			VmId:        c.id,
+			SnapshotKey: c.SnapshotKeySet().BranchKey,
 		}
 		snap.SetVMMetadata(md)
 	}

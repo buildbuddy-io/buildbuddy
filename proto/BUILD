@@ -339,6 +339,7 @@ proto_library(
     deps = [
         ":context_proto",
         ":invocation_status_proto",
+        ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
         "@googleapis//google/rpc:status_proto",
     ],
@@ -1138,6 +1139,7 @@ go_proto_library(
     deps = [
         ":context_go_proto",
         ":invocation_status_go_proto",
+        ":remote_execution_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
@@ -1899,6 +1901,7 @@ ts_proto_library(
         ":duration_ts_proto",
         ":grpc_status_ts_proto",
         ":invocation_status_ts_proto",
+        ":remote_execution_ts_proto",
     ],
 )
 

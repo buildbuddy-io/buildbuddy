@@ -48,6 +48,7 @@ import (
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -1187,7 +1188,7 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			req.WorkflowId = wfs.GetLegacyWorkflowIDForGitRepository(authenticatedUser.GetGroupID(), req.GetTargetRepoUrl())
 		}
 		if al := s.env.GetAuditLogger(); al != nil && req.GetClean() {
-			al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_EXECUTE_CLEAN_WORKFLOW, req)
+			al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_ALL_WORKFLOW_RECYCLED_RUNNERS, req)
 		}
 		return wfs.ExecuteWorkflow(ctx, req)
 	}
@@ -1313,6 +1314,50 @@ func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.Unlin
 		al.LogForGroup(ctx, req.GetRequestContext().GroupId, alpb.Action_UNLINK_GITHUB_REPO, req)
 	}
 	return rsp, nil
+}
+
+func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb.InvalidateSnapshotRequest) (*wfpb.InvalidateSnapshotResponse, error) {
+	if ss := s.env.GetSnapshotService(); ss != nil {
+		if err := s.checkInvalidateSnapshotPerms(ctx); err != nil {
+			return nil, status.UnauthenticatedError(err.Error())
+		}
+
+		k := request.SnapshotKey
+		if k == nil {
+			return nil, status.InvalidArgumentError("snapshot key is required")
+		}
+
+		if al := s.env.GetAuditLogger(); al != nil {
+			al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_RECYCLED_RUNNER_SNAPSHOT, request)
+		}
+
+		if err := ss.InvalidateSnapshot(ctx, &fcpb.SnapshotKey{
+			InstanceName:      k.GetInstanceName(),
+			PlatformHash:      k.GetPlatformHash(),
+			ConfigurationHash: k.GetConfigurationHash(),
+			Ref:               k.GetRef(),
+			SnapshotId:        k.GetSnapshotId(),
+		}); err != nil {
+			return nil, err
+		}
+		return &wfpb.InvalidateSnapshotResponse{}, nil
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) checkInvalidateSnapshotPerms(ctx context.Context) error {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return err
+	}
+	if g.RestrictCleanWorkflowRunsToAdmins {
+		return authutil.AuthorizeOrgAdmin(u, u.GetGroupID())
+	}
+	return nil
 }
 
 func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {

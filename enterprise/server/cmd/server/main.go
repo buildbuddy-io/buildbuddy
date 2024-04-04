@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scim"
@@ -123,6 +124,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	if err := githubapp.Register(env); err != nil {
 		log.Fatalf("Failed to register GitHub app: %s", err)
 	}
+	env.SetSnapshotService(snaploader.NewSnapshotService(env))
 
 	runnerService, err := hostedrunner.New(env)
 	if err != nil {
