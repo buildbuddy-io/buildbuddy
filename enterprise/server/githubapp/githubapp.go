@@ -1667,7 +1667,6 @@ func (a *GitHubApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithu
 		}
 	}
 
-	// XXX: Check Outgoing filter, fix it a different way if needed.
 	resp := &ghpb.GetGithubPullRequestResponse{
 		Incoming: incoming,
 		Outgoing: nonPendingOutgoing,
