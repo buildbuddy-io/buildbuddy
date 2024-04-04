@@ -107,6 +107,11 @@ go_deps.module_override(
 )
 go_deps.module_override(
     patch_strip = 1,
+    patches = ["@@//buildpatches:bazelisk.patch"],
+    path = "github.com/bazelbuild/bazelisk",
+)
+go_deps.module_override(
+    patch_strip = 1,
     patches = ["@@//buildpatches:com_github_bojand_ghz.patch"],
     path = "github.com/bojand/ghz",
 )
@@ -119,11 +124,6 @@ go_deps.module_override(
     patch_strip = 1,
     patches = ["@@//buildpatches:com_github_prometheus_common.patch"],
     path = "github.com/prometheus/common",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["@@//buildpatches:docker-host.patch"],
-    path = "github.com/docker/docker",
 )
 go_deps.module_override(
     patch_strip = 1,
