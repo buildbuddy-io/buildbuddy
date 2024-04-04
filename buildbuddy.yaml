@@ -110,6 +110,14 @@ actions:
           - "*"
     bazel_commands:
       - test //... --host_platform=//:many_layered_image --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
+  - name: Maggie
+    container_image: ubuntu-20.04
+    triggers:
+      push:
+        branches:
+          - "master"
+    bazel_commands:
+      - help
 
 plugins:
   - path: cli/plugins/go-deps
