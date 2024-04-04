@@ -177,6 +177,14 @@
   overflow-y: auto;
 }
 
+.pr-view.submitted .review-cell {
+  background-color: #fafafa;
+}
+
+.pr-view.approved .review-cell {
+  background-color: #f1f8e9;
+}
+
 .pr-view .attr-grid {
   display: grid;
   grid-template-columns: max-content 1fr;
