@@ -47,11 +47,6 @@ actions:
         test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
         --
         //...
-        -//server/backends/disk_cache:all
-        -//enterprise/server/backends/pebble_cache:all
-        -//enterprise/server/raft/store:all
-        -//enterprise/server/remote_execution/commandutil:all
-        -//enterprise/server/remote_execution/runner:all
         -//enterprise/server/test/integration/...
   - name: Benchmark
     container_image: ubuntu-20.04
