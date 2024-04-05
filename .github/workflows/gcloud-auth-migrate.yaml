@@ -1,0 +1,49 @@
+# DO NOT SUBMIT
+name: "test gcloud migration"
+
+on:
+  push:
+    branches:
+      - gcloud-auth-migrate
+
+jobs:
+  test:
+    runs-on: ubuntu-20.04-16cpu
+    steps:
+      - name: Google auth
+        uses: "google-github-actions/auth@v2"
+        with:
+          credentials_json: "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}"
+
+      - name: Setup gcloud CLI
+        uses: "google-github-actions/setup-gcloud@v2"
+        with:
+          version: "410.0"
+          install_components: "gke-gcloud-auth-plugin"
+
+      - name: Configure Application Default Credentials
+        run: |
+          find ~/.config/gcloud/
+          [[ -e ~/.config/gcloud/application_default_credentials.json ]] && {
+            if [[ $(cat "$GOOGLE_APPLICATION_CREDENTIALS") == $(cat  ~/.config/gcloud/application_default_credentials.json) ]]; then
+              echo "Equal!"
+            fi
+          }
+          cp ${GOOGLE_APPLICATION_CREDENTIALS} ~/.config/gcloud/application_default_credentials.json
+
+      - name: Setup gcr.io registry auth
+        run: |
+          gcloud auth configure-docker
+
+      # - name: Setup GCloud CLI
+      #   uses: google-github-actions/setup-gcloud@v0
+      #   with:
+      #     version: "410.0.0"
+      #     service_account_email: ${{ secrets.SA_EMAIL }}
+      #     service_account_key: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+      #     install_components: "gke-gcloud-auth-plugin"
+
+      - name: Test
+        run: |
+          docker pull gcr.io/flame-build/cacheload:server_image
+          echo y | gcloud container images add-tag gcr.io/flame-public/test-nonroot:test-enterprise-v1.5.4 gcr.io/flame-public/test-nonroot:latest
