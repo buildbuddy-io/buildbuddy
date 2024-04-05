@@ -126,6 +126,8 @@ build --build_metadata=VISIBILITY=PUBLIC
 
 By default a build's user is determined by the system on which Bazel is run.
 
+BuildBuddy will automatically pull your username from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Jenkins, Gitlab CI, Bitrise, or BuildKite. The environment variables currently supported are `USER`, `GITHUB_ACTOR`, `GITLAB_USER_NAME`, `BUILDKITE_BUILD_CREATOR`, `CIRCLE_USERNAME`.
+
 You can override this using build metadata or workspace info.
 
 ### Build metadata
@@ -238,7 +240,7 @@ You can filter by these tags on build history pages and the trends page. Note th
 
 ## Environment variable redacting
 
-By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR` `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID`, `BUILDKITE_BUILD_URL`, `BUILDKITE_JOB_ID`, `CIRCLE_REPOSITORY_URL`, `GITHUB_REPOSITORY`, `BUILDKITE_REPO`, `TRAVIS_REPO_SLUG`, `GIT_REPOSITORY_URL`, `GIT_URL`, `CI_REPOSITORY_URL`, `REPO_URL`, `CIRCLE_SHA1`, `GITHUB_SHA`, `BUILDKITE_COMMIT`, `TRAVIS_COMMIT`, `BITRISE_GIT_COMMIT`, `GIT_COMMIT`, `CI_COMMIT_SHA`, `COMMIT_SHA`, `CI`, `CI_RUNNER`, `CIRCLE_BRANCH`, `GITHUB_HEAD_REF`, `BUILDKITE_BRANCH`, `BITRISE_GIT_BRANCH`, `TRAVIS_BRANCH`, `GIT_BRANCH`, `CI_COMMIT_BRANCH`, `GITHUB_REF`, which are displayed in the BuildBuddy UI.
+By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR`, `GITLAB_USER_NAME`, `BUILDKITE_BUILD_CREATOR`, `CIRCLE_USERNAME`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID`, `BUILDKITE_BUILD_URL`, `BUILDKITE_JOB_ID`, `CIRCLE_REPOSITORY_URL`, `GITHUB_REPOSITORY`, `BUILDKITE_REPO`, `TRAVIS_REPO_SLUG`, `GIT_REPOSITORY_URL`, `GIT_URL`, `CI_REPOSITORY_URL`, `REPO_URL`, `CIRCLE_SHA1`, `GITHUB_SHA`, `BUILDKITE_COMMIT`, `TRAVIS_COMMIT`, `BITRISE_GIT_COMMIT`, `GIT_COMMIT`, `CI_COMMIT_SHA`, `COMMIT_SHA`, `CI`, `CI_RUNNER`, `CIRCLE_BRANCH`, `GITHUB_HEAD_REF`, `BUILDKITE_BRANCH`, `BITRISE_GIT_BRANCH`, `TRAVIS_BRANCH`, `GIT_BRANCH`, `CI_COMMIT_BRANCH`, `GITHUB_REF`, which are displayed in the BuildBuddy UI.
 
 Redacted environment variables are displayed in the BuildBuddy UI as `<REDACTED>`.
 
