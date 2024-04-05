@@ -220,7 +220,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	// StartOnDiskReplica can be blocked when the the buffered leaderChangeListener channel is full.
 	s.leaseKeeper.Start()
 
-	go s.updateTagsWorker.Start()
+	s.updateTagsWorker.Start()
 
 	// rejoin configured clusters
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
@@ -425,6 +425,7 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.liveness.Release()
 		s.eg.Wait()
 	}
+	s.updateTagsWorker.Stop()
 	s.log.Info("Store: waitgroups finished")
 	s.nodeHost.Close()
 
@@ -1143,13 +1144,13 @@ type updateTagsWorker struct {
 	lastExecutedAt time.Time
 	tasks          chan *updateTagsTask
 
+	quitChan chan struct{}
+	eg       errgroup.Group
+
 	store *Store
 }
 
 func (w *updateTagsWorker) Enqueue() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	task := &updateTagsTask{
 		createdAt: time.Now(),
 	}
@@ -1165,8 +1166,39 @@ func (w *updateTagsWorker) Enqueue() {
 }
 
 func (w *updateTagsWorker) Start() {
-	for task := range w.tasks {
-		w.handleTask(task)
+	w.quitChan = make(chan struct{})
+	w.eg.Go(func() error {
+		w.processUpdateTags()
+		return nil
+	})
+}
+
+func (w *updateTagsWorker) processUpdateTags() error {
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		for {
+			select {
+			case <-w.quitChan:
+				return nil
+			case task := <-w.tasks:
+				w.handleTask(task)
+			}
+		}
+	})
+	eg.Wait()
+
+	for len(w.tasks) > 0 {
+		<-w.tasks
+	}
+	return nil
+
+}
+
+func (w *updateTagsWorker) Stop() {
+	close(w.quitChan)
+
+	if err := w.eg.Wait(); err != nil {
+		log.Error(err.Error())
 	}
 }
 
