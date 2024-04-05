@@ -6,6 +6,15 @@ executor (such as docker and podman). The executor binary as well as some
 bazel-provisioned tools (such as firecracker) are additionally added to
 the image in //enterprise/server/cmd/executor:executor_image.
 
+## Multi-platform support
+
+Each step in the Dockerfile needs to work on both amd64 and arm64 CPU
+architectures. Follow the existing steps in the Dockerfile for examples of
+how to install dependencies for the correct architecture.
+
+To do a test build, you can use a temporary ARM instance on GCP or on a
+Raspberry Pi (they are cheap).
+
 ## Podman installation
 
 We install podman from https://github.com/buildbuddy-io/podman-static
