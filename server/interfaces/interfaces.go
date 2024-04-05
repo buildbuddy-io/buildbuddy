@@ -615,10 +615,6 @@ type WorkflowService interface {
 }
 
 type SnapshotService interface {
-	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) error
-}
-
-type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
 }
 

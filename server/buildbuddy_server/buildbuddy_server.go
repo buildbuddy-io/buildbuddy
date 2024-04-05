@@ -1189,9 +1189,11 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 			req.WorkflowId = wfs.GetLegacyWorkflowIDForGitRepository(authenticatedUser.GetGroupID(), req.GetTargetRepoUrl())
 		}
+
 		if al := s.env.GetAuditLogger(); al != nil && req.GetClean() {
 			al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_ALL_WORKFLOW_VM_SNAPSHOTS, req)
 		}
+
 		return wfs.ExecuteWorkflow(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
@@ -1336,6 +1338,25 @@ func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb
 			return nil, err
 		}
 		return &wfpb.InvalidateSnapshotResponse{}, nil
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) InvalidateAllSnapshotsForRepo(ctx context.Context, req *wfpb.InvalidateAllSnapshotsForRepoRequest) (*wfpb.InvalidateAllSnapshotsForRepoResponse, error) {
+	if wfs := s.env.GetWorkflowService(); wfs != nil {
+		if err := s.checkInvalidateSnapshotPerms(ctx); err != nil {
+			return nil, status.UnauthenticatedError(err.Error())
+		}
+
+		groupID := req.GetRequestContext().GetGroupId()
+		if al := s.env.GetAuditLogger(); al != nil {
+			al.LogForGroup(ctx, groupID, alpb.Action_INVALIDATE_ALL_WORKFLOW_RECYCLED_RUNNERS, req)
+		}
+
+		if err := wfs.InvalidateAllSnapshotsForRepo(ctx, groupID, req.RepoUrl); err != nil {
+			return nil, err
+		}
+		return &wfpb.InvalidateAllSnapshotsForRepoResponse{}, nil
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

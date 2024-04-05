@@ -273,7 +273,6 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
         pushedBranch: "main",
         targetRepoUrl: repo,
         targetBranch: "main",
-        clean: false,
         visibility: "",
         async: true,
       })

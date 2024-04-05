@@ -820,10 +820,6 @@ message ExecuteWorkflowRequest {
   //
   // Ex. ["Browser Tests", "Docker tests"]
   repeated string action_names = 3;
-  // Whether to run the workflow in a clean container. This prevents all
-  // existing workflow containers from being reused, so using this flag is not
-  // encouraged.
-  bool clean = 4;
   // VISIBILITY build metadata used for the workflow invocation.
   // Workflow invocations are private by default, but this can be
   // set to "PUBLIC" to make the workflow invocation public.
