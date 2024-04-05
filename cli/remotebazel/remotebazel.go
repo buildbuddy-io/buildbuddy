@@ -3,6 +3,7 @@ package remotebazel
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -70,7 +72,8 @@ var (
 	timeout        = remoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
 	execPropsFlag  = bbflag.New(remoteFlagset, "runner_exec_properties", []string{}, "Exec properties that will apply to the *ci runner execution*. Key-value pairs should be separated by '=' (Ex. --runner_exec_properties=NAME=VALUE). Can be specified more than once. NOTE: If you want to apply an exec property to the bazel command that's run on the runner, just pass at the end of the command (Ex. bb remote build //... --remote_default_exec_properties=OSFamily=linux).")
 
-	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
+	defaultRefNames       = []string{"refs/heads/main", "refs/heads/master"}
+	defaultOriginRefNames = []string{"refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master"}
 )
 
 func consoleCursorMoveUp(y int) {
@@ -167,27 +170,66 @@ func determineRemote(repo *git.Repository) (*git.Remote, error) {
 }
 
 func determineDefaultBranch(repo *git.Repository) (string, error) {
-	branches, err := repo.Branches()
-	if err != nil {
-		return "", status.UnknownErrorf("could not list branches: %s", err)
+	branch, localErr := localDefaultRef(repo)
+	if localErr == nil {
+		return branch, nil
 	}
 
-	allBranches := make(map[string]struct{})
-	err = branches.ForEach(func(branch *plumbing.Reference) error {
-		allBranches[string(branch.Name())] = struct{}{}
-		return nil
-	})
-	if err != nil {
-		return "", status.UnknownErrorf("could not iterate over branches: %s", err)
+	log.Debugf("Could not determine default git branch locally. Finding the default branch on the 'origin' remote.\n")
+	branch, remoteErr := remoteDefaultRef(repo)
+	if remoteErr == nil {
+		return branch, nil
 	}
 
-	for _, defaultBranch := range defaultBranchRefs {
-		if _, ok := allBranches[defaultBranch]; ok {
-			return defaultBranch, nil
+	return "", status.NotFoundErrorf("could not determine default branch: %s", errors.Join(localErr, remoteErr))
+}
+
+func localDefaultRef(repo *git.Repository) (string, error) {
+	var localErr error
+	// Check for existence of
+	//   refs/heads/main
+	//   refs/heads/master
+	for _, defaultRefName := range defaultRefNames {
+		if _, err := repo.Reference(plumbing.ReferenceName(defaultRefName), false /*resolved*/); err != nil {
+			localErr = errors.Join(localErr, err)
+			continue
+		}
+		return defaultRefName, nil
+	}
+
+	// Check for existence of
+	//   refs/remotes/origin/HEAD
+	//   refs/remotes/origin/main
+	//   refs/remotes/origin/master
+	for _, defaultOriginRefName := range defaultOriginRefNames {
+		if _, err := repo.Reference(plumbing.ReferenceName(defaultOriginRefName), true /*resolved*/); err != nil {
+			localErr = errors.Join(localErr, err)
+			continue
+		}
+		return strings.ReplaceAll(defaultOriginRefName, "remotes/origin", "heads"), nil
+	}
+
+	return "", status.NotFoundErrorf("could not determine local default branch: %s", localErr)
+}
+
+// remoteDefaultRef determines the default ref of a repository
+// by running `git ls-remote origin`. This creates a network call
+// and should use as little as possible.
+func remoteDefaultRef(repo *git.Repository) (string, error) {
+	refs, err := getOriginRefs(repo)
+	if err != nil {
+		return "", status.UnknownErrorf("could not ls-remote origin: %s", err)
+	}
+
+	for _, ref := range refs {
+		for _, defaultRefName := range defaultRefNames {
+			if ref.Name().String() == defaultRefName {
+				return defaultRefName, nil
+			}
 		}
 	}
 
-	return "", status.NotFoundErrorf("could not determine default branch")
+	return "", status.NotFoundErrorf("could not determine remote default branch")
 }
 
 func runGit(args ...string) (string, error) {
@@ -285,6 +327,26 @@ func Config(path string) (*RepoConfig, error) {
 	return repoConfig, nil
 }
 
+// TODO(sluongng): move this to a dedicated struct wrapping around git.Repository
+var (
+	doneLsRef sync.Once
+
+	repoRefs []*plumbing.Reference
+	lsRefErr error
+)
+
+func getOriginRefs(repo *git.Repository) ([]*plumbing.Reference, error) {
+	doneLsRef.Do(func() {
+		originRemote, err := repo.Remote("origin")
+		if err != nil {
+			lsRefErr = err
+			return
+		}
+		repoRefs, lsRefErr = originRemote.List(&git.ListOptions{})
+	})
+	return repoRefs, lsRefErr
+}
+
 // getBaseBranchAndCommit returns the git branch and commit that the remote run
 // should be based off
 func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string, err error) {
@@ -304,12 +366,17 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 		}
 		currentBranch = matches[1]
 	}
-
-	remoteBranchOutput, err := runGit("ls-remote", "origin", currentBranch)
+	refs, err := getOriginRefs(repo)
 	if err != nil {
-		return "", "", status.WrapError(err, fmt.Sprintf("check if branch %s exists remotely", currentBranch))
+		return "", "", err
 	}
-	currentBranchExistsRemotely := remoteBranchOutput != ""
+	currentBranchExistsRemotely := false
+	for _, r := range refs {
+		if r.Name().Short() == currentBranch {
+			currentBranchExistsRemotely = true
+			break
+		}
+	}
 
 	currentCommitHash, err := runGit("rev-parse", "HEAD")
 	if err != nil {
