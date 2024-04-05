@@ -1059,6 +1059,25 @@ because it [applies these steps for you][rules_xcodeproj-xcode-management].
 [rules_xcodeproj-command-line-api]: https://github.com/MobileNativeFoundation/rules_xcodeproj/blob/1.17.0/docs/usage.md#command-line-api
 [rules_xcodeproj-xcode-management]: https://github.com/MobileNativeFoundation/rules_xcodeproj/blob/1.17.0/xcodeproj/internal/templates/runner.sh#L148-L171
 
+### Generating release archives
+
+Currently the Archive action in Xcode doesn't work when using **rules_xcodeproj**.
+This means that you'll need to generate release archives on the command line directly with Bazel,
+and then upload them to the App Store.
+
+For example, you can generate the `.ipa` archive for the Mastodon app by running the following command:
+
+```shellsession
+$ bazel build //Mastodon --ios_multi_cpus=arm64
+```
+
+And then you can [manually upload the archive][upload-ipa].
+Or you can use the [`xcarchive`][xcarchive] rule from **rules_apple** to generate an `.xcarchive` bundle,
+and then use Xcode to upload the archive.
+
+[upload-ipa]: https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/
+[xcarchive]: https://github.com/bazelbuild/rules_apple/blob/3.2.1/doc/rules-xcarchive.md#xcarchive
+
 ## Leveraging remote caching and remote execution
 
 One of the main reasons to use Bazel,
