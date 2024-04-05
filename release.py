@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
-import re
+import platform
 import requests
 import subprocess
 import sys
@@ -153,19 +153,22 @@ def push_image_with_bazel(bazel_target, image_tag):
     ).format(image_tag=image_tag, target=bazel_target)
     run_or_die(command)
 
-def update_docker_images(version_tag, skip_update_latest_tag):
+def update_docker_images(images, version_tag, skip_update_latest_tag, arch_specific_executor_tag):
     clean_cmd = 'bazel clean --expunge'
     run_or_die(clean_cmd)
 
-    oss_tag = version_tag
-    enterprise_tag = 'enterprise-'+version_tag
-
     # OSS app
-    push_image_for_project("flame-public/buildbuddy-app-onprem", oss_tag, '//deployment:release_onprem', skip_update_latest_tag)
+    if 'buildbuddy-app-onprem' in images:
+        push_image_for_project("flame-public/buildbuddy-app-onprem", version_tag, '//deployment:release_onprem', skip_update_latest_tag)
     # Enterprise app
-    push_image_for_project("flame-public/buildbuddy-app-enterprise", enterprise_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
+    if 'buildbuddy-app-enterprise' in images:
+        push_image_for_project("flame-public/buildbuddy-app-enterprise", 'enterprise-' + version_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
     # Enterprise executor
-    push_image_for_project("flame-public/buildbuddy-executor-enterprise", enterprise_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
+    if 'buildbuddy-executor-enterprise' in images:
+        executor_tag = 'enterprise-' + version_tag
+        if arch_specific_executor_tag:
+            executor_tag += '-' + get_cpu_architecture()
+        push_image_for_project("flame-public/buildbuddy-executor-enterprise", executor_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
@@ -183,13 +186,27 @@ def get_latest_remote_version():
     p = run_or_die("./tools/latest_version_tag.sh", capture_stdout=True)
     return p.stdout.strip()
 
+def get_cpu_architecture():
+    arch = platform.machine()
+    if arch in ['x86_64', 'AMD64']:
+        return 'amd64'
+    elif arch in ['aarch64', 'arm64', 'ARM64']:
+        return 'arm64'
+    else:
+        die('unknown CPU architecture ' + arch)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--auto', default=False, action='store_true')
     parser.add_argument('--allow_dirty', default=False, action='store_true')
-    parser.add_argument('--skip_latest_tag', default=False, action='store_true')
     parser.add_argument('--force', default=False, action='store_true')
     parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
+    parser.add_argument('--update_app_image', default=False, action='store_true')
+    parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
+    parser.add_argument('--update_executor_image', default=False, action='store_true')
+    parser.add_argument('--arch_specific_executor_tag', default=False, action='store_true', help='Suffix the executor image tag with the CPU architecture (amd64 or arm64)')
+    parser.add_argument('--version', default='', help='Version tag override, used when pushing docker images. Implies --bump_version_type=none')
+    parser.add_argument('--skip_latest_tag', default=False, action='store_true')
     args = parser.parse_args()
 
     if workspace_is_clean():
@@ -209,7 +226,9 @@ def main():
         " If you still want to upgrade the version, rerun the script with --force.")
 
     new_version = old_version
-    if args.bump_version_type != 'none':
+    if args.version:
+        new_version = args.version
+    elif args.bump_version_type != 'none':
         if args.bump_version_type == 'patch':
             new_version = bump_patch_version(old_version)
         elif args.bump_version_type == 'minor':
@@ -228,7 +247,25 @@ def main():
         create_and_push_tag(old_version, new_version, release_notes)
         print("Pushed tag for new version %s" % new_version)
 
-    update_docker_images(new_version, args.skip_latest_tag)
+    # Write the version tag to $GITHUB_OUTPUT if it exists.
+    github_outputs_file = os.environ.get('GITHUB_OUTPUT')
+    if github_outputs_file:
+        with open(github_outputs_file, 'a') as f:
+            f.write('version_tag=' + new_version + '\n')
+        print("Wrote version_tag output to $GITHUB_OUTPUT")
+
+    images = []
+    if args.update_app_image:
+        images.append("buildbuddy-app-onprem")
+    if args.update_enterprise_app_image:
+        images.append("buildbuddy-app-enterprise")
+    if args.update_executor_image:
+        images.append("buildbuddy-executor-enterprise")
+
+    if images:
+        update_docker_images(
+            images, new_version, args.skip_latest_tag, args.arch_specific_executor_tag
+        )
     print("Done -- proceed with the release guide!")
 
 if __name__ == "__main__":
