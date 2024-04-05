@@ -204,7 +204,10 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, action)
-	return actionDigest, status.WrapError(err, "upload action")
+	if err != nil {
+		return nil, status.WrapError(err, "upload action")
+	}
+	return actionDigest, nil
 }
 
 func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
