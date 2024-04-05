@@ -16,15 +16,13 @@ jobs:
         with:
           token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
 
-      - name: Build and install bb cli
+      - name: Download bb cli
         run: |
-          bazelisk build --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --config=cache cli &&\
-          cp -f $(bazel info bazel-bin|xargs)/cli/cmd/bb/bb_/bb /usr/local/bin/ &&\
-          which bb
+          cli/install.sh
 
       - name: Test
         run: |
-          BB_VERBOSE=1 bb remote --env=GIT_REPO_DEFAULT_BRANCH=master test //... \
+          bb remote --env=GIT_REPO_DEFAULT_BRANCH=master test //... \
             --config=linux-workflows --config=race \
             --remote_executor=grpcs://buildbuddy.buildbuddy.io \
             --test_tag_filters=-performance,-webdriver,-docker,-bare \
