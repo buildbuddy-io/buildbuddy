@@ -1416,7 +1416,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "query_duration_usec",
-		Buckets:   coarseMicrosecondToHour,
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*time.Hour, 1.2),
 		Help:      "SQL query duration, in **microseconds**.",
 	}, []string{
 		SQLQueryTemplateLabel,
