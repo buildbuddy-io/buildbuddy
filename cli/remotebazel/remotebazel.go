@@ -175,7 +175,7 @@ func determineDefaultBranch(repo *git.Repository) (string, error) {
 		return branch, nil
 	}
 
-	log.Warnf("Could not determine default git branch locally. Finding the default branch on the 'origin' remote.\n")
+	log.Debugf("Could not determine default git branch locally. Finding the default branch on the 'origin' remote.\n")
 	branch, remoteErr := remoteDefaultRef(repo)
 	if remoteErr == nil {
 		return branch, nil
@@ -189,12 +189,12 @@ func localDefaultRef(repo *git.Repository) (string, error) {
 	// Check for existence of
 	//   refs/heads/main
 	//   refs/heads/master
-	for _, defaultRefName := range []plumbing.ReferenceName{plumbing.Master, plumbing.Main} {
-		if _, err := repo.Reference(defaultRefName, false /*resolved*/); err != nil {
+	for _, defaultRefName := range defaultRefNames {
+		if _, err := repo.Reference(plumbing.ReferenceName(defaultRefName), false /*resolved*/); err != nil {
 			localErr = errors.Join(localErr, err)
 			continue
 		}
-		return defaultRefName.String(), nil
+		return defaultRefName, nil
 	}
 
 	// Check for existence of
