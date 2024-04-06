@@ -180,9 +180,9 @@ func (sm *Replica) replicaLocalKey(key []byte) []byte {
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
-	sm.rangeMu.Lock()
+	sm.rangeMu.RLock()
 	rd := sm.rangeDescriptor
-	sm.rangeMu.Unlock()
+	sm.rangeMu.RUnlock()
 
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
@@ -212,9 +212,9 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 }
 
 func (sm *Replica) String() string {
-	sm.rangeMu.Lock()
+	sm.rangeMu.RLock()
 	rd := sm.rangeDescriptor
-	sm.rangeMu.Unlock()
+	sm.rangeMu.RUnlock()
 
 	return fmt.Sprintf("Replica c%dn%d %s", sm.ShardID, sm.ReplicaID, rdString(rd))
 }
