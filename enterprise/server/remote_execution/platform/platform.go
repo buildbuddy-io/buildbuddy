@@ -363,8 +363,8 @@ func GetExecutorProperties() *ExecutorProperties {
 	}
 
 	if *EnableFirecracker {
-		if runtime.GOOS == "darwin" {
-			log.Warning("Firecracker was enabled, but is unsupported on darwin. Ignoring.")
+		if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+			log.Warningf("Firecracker was enabled, but is unsupported on %s/%s. Ignoring.", runtime.GOOS, runtime.GOARCH)
 		} else {
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, FirecrackerContainerType)
 		}

@@ -198,6 +198,12 @@ func (s *SociStore) runWithRetries(ctx context.Context) {
 
 func Init(env environment.Env) (Store, error) {
 	if *imageStreamingEnabled {
+
+		if runtime.GOARCH != "amd64" {
+			log.Warningf("Podman image streaming was enabled, but is unsupported on %s. Ignoring.", runtime.GOARCH)
+			return &NoStore{}, nil
+		}
+
 		artifactStoreClient, err := intializeSociArtifactStoreClient(env, *artifactStoreTarget)
 		if err != nil {
 			return nil, err

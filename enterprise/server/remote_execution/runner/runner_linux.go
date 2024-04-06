@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -44,12 +43,8 @@ func (p *pool) registerContainerProviders(providers map[platform.ContainerType]c
 		providers[platform.PodmanContainerType] = podmanProvider
 	}
 
-	if executor.SupportsIsolation(platform.FirecrackerContainerType) {
-		p, err := firecracker.NewProvider(p.env, *rootDirectory)
-		if err != nil {
-			return status.FailedPreconditionErrorf("Failed to initialize firecracker container provider: %s", err)
-		}
-		providers[platform.FirecrackerContainerType] = p
+	if err := p.registerFirecrackerProvider(providers, executor); err != nil {
+		return err
 	}
 
 	if executor.SupportsIsolation(platform.BareContainerType) {
@@ -101,7 +96,7 @@ func (r *taskRunner) prepareVFS(ctx context.Context, layout *container.FileSyste
 	if r.PlatformProperties.EnableVFS {
 		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
 		// pass the layout information to the implementation.
-		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
+		if fc, ok := r.Container.Delegate.(container.VM); ok {
 			fc.SetTaskFileSystemLayout(layout)
 		}
 	}
@@ -140,7 +135,7 @@ func (r *taskRunner) removeVFS() error {
 // it, because that may cause failures if it's reused, and we don't want to save
 // bad snapshots to the cache.
 func (r *taskRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *repb.UsageStats) bool {
-	if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
+	if fc, ok := r.Container.Delegate.(container.VM); ok {
 		maxedOutStr := ""
 		maxMemory := false
 		maxDisk := false

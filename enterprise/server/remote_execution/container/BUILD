@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/oci",
+        "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//server/environment",
