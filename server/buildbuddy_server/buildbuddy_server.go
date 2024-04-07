@@ -1189,9 +1189,6 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 			req.WorkflowId = wfs.GetLegacyWorkflowIDForGitRepository(authenticatedUser.GetGroupID(), req.GetTargetRepoUrl())
 		}
-		if al := s.env.GetAuditLogger(); al != nil && req.GetClean() {
-			al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_ALL_WORKFLOW_VM_SNAPSHOTS, req)
-		}
 		return wfs.ExecuteWorkflow(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")

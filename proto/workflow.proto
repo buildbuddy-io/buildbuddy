@@ -192,8 +192,7 @@ message ExecuteWorkflowRequest {
   // Ex. "main"
   string target_branch = 9;
 
-  // TODO(Maggie): Clean up when all references are cleaned up
-  bool clean = 10 [deprecated = true];
+  reserved 10;
 
   // VISIBILITY build metadata used for the workflow invocation.
   string visibility = 11;
