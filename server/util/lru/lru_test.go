@@ -24,7 +24,7 @@ func TestAdd(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.True(t, l.Add("a", 5))
+	require.False(t, l.Add("a", 5))
 	require.True(t, l.Add("b", 4))
 	require.True(t, l.Add("c", 3))
 	require.Equal(t, []eviction{{5, lru.SizeEviction}}, evictions)
