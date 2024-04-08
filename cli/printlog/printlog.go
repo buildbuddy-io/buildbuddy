@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	rlpb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log"
+	spb "github.com/buildbuddy-io/buildbuddy/proto/spawn"
 )
 
 const (
@@ -28,8 +31,9 @@ Currently supported log types:
 )
 
 var (
-	flags   = flag.NewFlagSet("print", flag.ContinueOnError)
-	grpcLog = flags.String("grpc_log", "", "gRPC log path.")
+	flags          = flag.NewFlagSet("print", flag.ContinueOnError)
+	grpcLog        = flags.String("grpc_log", "", "gRPC log path.")
+	compactExecLog = flags.String("compact_execution_log", "", "compact execution log path.")
 )
 
 func HandlePrint(args []string) (int, error) {
@@ -46,8 +50,242 @@ func HandlePrint(args []string) (int, error) {
 		}
 		return 0, nil
 	}
+	if *compactExecLog != "" {
+		if err := printCompactExecLog(*compactExecLog); err != nil {
+			return -1, err
+		}
+		return 0, nil
+	}
 	log.Print(usage)
 	return 1, nil
+}
+
+func printCompactExecLog(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	r, err := zstd.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	slr := NewSpawnLogReconstructor(r)
+
+	for {
+		sr, err := slr.GetSpawnExec()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed getting spawn exec: %s", err)
+		}
+		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(sr)
+		if err != nil {
+			return fmt.Errorf("failed to marshal remote gRPC log entry: %s", err)
+		}
+		if _, err := os.Stdout.Write(append(b, []byte{'\n'}...)); err != nil {
+			return fmt.Errorf("failed to write to stdout: %s", err)
+		}
+	}
+}
+
+type SpawnLogReconstructor struct {
+	input io.Reader
+
+	hashFunc string
+	files    map[int32]*spb.File
+	dirs     map[int32]*reconstructedDir
+	symlinks map[int32]*spb.File
+	sets     map[int32]*spb.ExecLogEntry_InputSet
+}
+
+type reconstructedDir struct {
+	path  string
+	files []*spb.File
+}
+
+func NewSpawnLogReconstructor(input io.Reader) *SpawnLogReconstructor {
+	return &SpawnLogReconstructor{
+		input:    input,
+		hashFunc: "",
+		files:    make(map[int32]*spb.File),
+		dirs:     make(map[int32]*reconstructedDir),
+		symlinks: make(map[int32]*spb.File),
+		sets:     make(map[int32]*spb.ExecLogEntry_InputSet),
+	}
+}
+
+func (slr *SpawnLogReconstructor) GetSpawnExec() (*spb.SpawnExec, error) {
+	entry := &spb.ExecLogEntry{}
+	br := bufio.NewReader(slr.input)
+	for {
+		err := protodelim.UnmarshalFrom(br, entry)
+		if err == io.EOF {
+			return nil, io.EOF
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read execution log entry: %s", err)
+		}
+
+		switch e := entry.GetType().(type) {
+		case *spb.ExecLogEntry_Invocation_:
+			slr.hashFunc = e.Invocation.GetHashFunctionName()
+		case *spb.ExecLogEntry_File_:
+			slr.files[entry.GetId()] = reconFile(nil, e.File)
+		case *spb.ExecLogEntry_Directory_:
+			slr.dirs[entry.GetId()] = reconDir(e.Directory)
+		case *spb.ExecLogEntry_UnresolvedSymlink_:
+			slr.symlinks[entry.GetId()] = reconSymlink(e.UnresolvedSymlink)
+		case *spb.ExecLogEntry_InputSet_:
+			slr.sets[entry.GetId()] = e.InputSet
+		case *spb.ExecLogEntry_Spawn_:
+			return slr.reconSpawn(e.Spawn)
+		default:
+			return nil, fmt.Errorf("unknown entry: %s", entry)
+		}
+	}
+}
+
+func (slr *SpawnLogReconstructor) reconSpawn(s *spb.ExecLogEntry_Spawn) (*spb.SpawnExec, error) {
+	se := &spb.SpawnExec{
+		CommandArgs:          s.GetArgs(),
+		EnvironmentVariables: s.GetEnvVars(),
+		TargetLabel:          s.GetTargetLabel(),
+		Mnemonic:             s.GetMnemonic(),
+		ExitCode:             s.GetExitCode(),
+		Status:               s.GetStatus(),
+		Runner:               s.GetRunner(),
+		CacheHit:             s.GetCacheHit(),
+		Remotable:            s.GetRemotable(),
+		Cacheable:            s.GetCacheable(),
+		RemoteCacheable:      s.GetRemoteCacheable(),
+		TimeoutMillis:        s.GetTimeoutMillis(),
+		Metrics:              s.GetMetrics(),
+		Platform:             s.GetPlatform(),
+	}
+
+	// Handle inputs
+	inputs := slr.reconInputs(s.GetInputSetId())
+	toolInputs := slr.reconInputs(s.GetToolSetId())
+	var spawnInputs []*spb.File
+	for path, file := range inputs {
+		if _, ok := toolInputs[path]; ok {
+			file.IsTool = true
+		}
+		spawnInputs = append(spawnInputs, file)
+	}
+	se.Inputs = spawnInputs
+
+	// Handle outputs
+	var listedOutputs []string
+	var actualOutputs []*spb.File
+	for _, output := range s.GetOutputs() {
+		switch o := output.GetType().(type) {
+		case *spb.ExecLogEntry_Output_FileId:
+			f := slr.files[o.FileId]
+			listedOutputs = append(listedOutputs, f.GetPath())
+			actualOutputs = append(actualOutputs, f)
+		case *spb.ExecLogEntry_Output_DirectoryId:
+			d := slr.dirs[o.DirectoryId]
+			listedOutputs = append(listedOutputs, d.path)
+			actualOutputs = append(actualOutputs, d.files...)
+		case *spb.ExecLogEntry_Output_UnresolvedSymlinkId:
+			symlink := slr.symlinks[o.UnresolvedSymlinkId]
+			listedOutputs = append(listedOutputs, symlink.GetPath())
+			actualOutputs = append(actualOutputs, symlink)
+		case *spb.ExecLogEntry_Output_InvalidOutputPath:
+			listedOutputs = append(listedOutputs, o.InvalidOutputPath)
+		default:
+			return nil, fmt.Errorf("unknown output type: %s", output)
+		}
+	}
+	se.ListedOutputs = listedOutputs
+	se.ActualOutputs = actualOutputs
+
+	if s.GetDigest() != nil {
+		se.Digest = &spb.Digest{HashFunctionName: s.GetDigest().GetHashFunctionName()}
+	}
+
+	return se, nil
+}
+
+func (slr *SpawnLogReconstructor) reconInputs(setID int32) map[string]*spb.File {
+	inputs := make(map[string]*spb.File)
+	setsToVisit := []int32{}
+	visited := make(map[int32]struct{})
+	if setID != 0 {
+		setsToVisit = append(setsToVisit, setID)
+		visited[setID] = struct{}{}
+	}
+	for len(setsToVisit) > 0 {
+		currentID := setsToVisit[0]
+		setsToVisit = setsToVisit[1:]
+		set := slr.sets[currentID]
+
+		for _, fileID := range set.GetFileIds() {
+			if _, ok := visited[fileID]; !ok {
+				visited[fileID] = struct{}{}
+				f := slr.files[fileID]
+				inputs[f.GetPath()] = f
+			}
+		}
+		for _, dirID := range set.GetDirectoryIds() {
+			if _, ok := visited[dirID]; !ok {
+				visited[dirID] = struct{}{}
+				d := slr.dirs[dirID]
+				for _, f := range d.files {
+					inputs[f.GetPath()] = f
+				}
+			}
+		}
+		for _, symlinkID := range set.GetUnresolvedSymlinkIds() {
+			if _, ok := visited[symlinkID]; !ok {
+				visited[symlinkID] = struct{}{}
+				s := slr.symlinks[symlinkID]
+				inputs[s.GetPath()] = s
+			}
+		}
+		for _, setID := range set.GetTransitiveSetIds() {
+			if _, ok := visited[setID]; !ok {
+				visited[setID] = struct{}{}
+				setsToVisit = append(setsToVisit, setID)
+			}
+		}
+	}
+	return inputs
+}
+
+func reconDir(d *spb.ExecLogEntry_Directory) *reconstructedDir {
+	filesInDir := make([]*spb.File, len(d.GetFiles()))
+	for _, file := range d.GetFiles() {
+		filesInDir = append(filesInDir, reconFile(d, file))
+	}
+	return &reconstructedDir{
+		path:  d.GetPath(),
+		files: filesInDir,
+	}
+}
+
+func reconFile(parentDir *spb.ExecLogEntry_Directory, file *spb.ExecLogEntry_File) *spb.File {
+	f := &spb.File{}
+	if parentDir != nil {
+		f.Path = filepath.Join(parentDir.GetPath(), file.GetPath())
+	} else {
+		f.Path = file.GetPath()
+	}
+	if file.GetDigest() != nil {
+		f.Digest = &spb.Digest{HashFunctionName: file.GetDigest().GetHashFunctionName()}
+	}
+	return f
+}
+
+func reconSymlink(s *spb.ExecLogEntry_UnresolvedSymlink) *spb.File {
+	return &spb.File{
+		Path:              s.GetPath(),
+		SymlinkTargetPath: s.GetTargetPath(),
+	}
 }
 
 func printLog(path string, m proto.Message) error {

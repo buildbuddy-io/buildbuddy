@@ -268,6 +268,14 @@ proto_library(
 )
 
 proto_library(
+    name = "spawn_proto",
+    srcs = ["spawn.proto"],
+    deps = [
+        "@com_google_protobuf//:duration_proto",
+    ],
+)
+
+proto_library(
     name = "stat_filter_proto",
     srcs = ["stat_filter.proto"],
 )
@@ -998,6 +1006,21 @@ go_proto_library(
     deps = [
         ":registry_go_proto",
         ":remote_execution_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "spawn_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/spawn",
+    proto = ":spawn_proto",
+    deps = [
+        ":context_go_proto",
+        ":invocation_status_go_proto",
+        ":stat_filter_go_proto",
     ],
 )
 
