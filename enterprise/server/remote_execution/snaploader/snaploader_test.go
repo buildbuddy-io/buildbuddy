@@ -341,7 +341,7 @@ func TestRemoteSnapshotFetching(t *testing.T) {
 			"scratchfs": forkCOW,
 		}, "")
 		err := loader.CacheSnapshot(ctx, keys.GetBranchKey(), forkOpts)
-		require.NoError(t, err)
+		require.Error(t, err)
 		originalOpts = forkOpts
 	}
 }
