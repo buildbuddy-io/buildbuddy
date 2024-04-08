@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"path/filepath"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
@@ -53,8 +54,6 @@ type ConfigTemplateParams struct {
 const testConfigData string = `
 app:
   build_buddy_url: "http://localhost:8080"
-database:
-  data_source: "sqlite3://:memory:"
 storage:
   enable_chunked_event_logs: true
 cache:
@@ -148,7 +147,7 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 
 	switch *databaseType {
 	case "sqlite":
-		// do nothing, this is the default
+		flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://%s", filepath.Join(testRootDir, "test.db")))
 	case "mysql":
 		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
 	case "postgres":

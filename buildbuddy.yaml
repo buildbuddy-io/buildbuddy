@@ -72,8 +72,7 @@ actions:
           - "*"
     bazel_commands:
       # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
-      # TODO(http://go/b/1575): De-flake, and remove --flaky_test_attempts
-      - test //... --config=linux-workflows --config=race --remote_download_outputs=toplevel --test_tag_filters=+webdriver --flaky_test_attempts=4
+      - test //... --config=linux-workflows --config=race --remote_download_outputs=toplevel --test_tag_filters=+webdriver
   # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
   - name: Docker tests
     container_image: ubuntu-20.04
