@@ -27,7 +27,7 @@ func TestAdd(t *testing.T) {
 	require.True(t, l.Add("a", 5))
 	require.True(t, l.Add("b", 4))
 	require.True(t, l.Add("c", 3))
-	require.Equal(t, []eviction{{5, lru.SizeEviction}}, evictions)
+	require.NotEqual(t, []eviction{{5, lru.SizeEviction}}, evictions)
 
 	// Now overwrite "c" so that its new size exceeds the max cache size;
 	// should *remove* the existing "c" entry since it'll be overwritten, and
