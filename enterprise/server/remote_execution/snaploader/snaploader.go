@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -847,6 +848,11 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}).Add(float64(dirtyBytes))
 
 	for chunkSrc, count := range chunkSourceCounter {
+		fetchPcg := float64(count) / float64(len(chunks))
+		if strings.Contains(name, "memory") {
+			log.CtxInfof(ctx, "Maggie: File %s fetch pcg is %v,  source is %s, snapshot id %s", name, fetchPcg, snaputil.ChunkSourceLabel(chunkSrc), cacheOpts.VMMetadata.SnapshotId)
+
+		}
 		metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{
 			metrics.FileName:    name,
 			metrics.ChunkSource: snaputil.ChunkSourceLabel(chunkSrc),
