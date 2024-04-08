@@ -126,6 +126,8 @@ def push_image_for_project(project, version_tag, bazel_target, skip_update_lates
     version_image = get_image(project, version_tag)
     if version_image is None:
         push_image_with_bazel(bazel_target, version_tag)
+    else:
+        print(f'Image gcr.io/{project}:{version_tag} already exists, skipping bazel build.')
 
     if skip_update_latest_tag:
         return
@@ -263,6 +265,7 @@ def main():
         images.append("buildbuddy-executor-enterprise")
 
     if images:
+        print('Building and pushing docker images', images)
         update_docker_images(
             images, new_version, args.skip_latest_tag, args.arch_specific_executor_tag
         )
