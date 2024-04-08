@@ -847,6 +847,10 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}).Add(float64(dirtyBytes))
 
 	for chunkSrc, count := range chunkSourceCounter {
+		fetchPcg := float64(count) / float64(len(chunks))
+		if chunkSrc == snaputil.ChunkSourceRemoteCache && fetchPcg > 0.7 {
+			log.CtxInfof(ctx, "Maggie: File %s fetch pcg is %v, snapshot key %v", name, fetchPcg, cacheOpts.VMMetadata.SnapshotKey)
+		}
 		metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{
 			metrics.FileName:    name,
 			metrics.ChunkSource: snaputil.ChunkSourceLabel(chunkSrc),
