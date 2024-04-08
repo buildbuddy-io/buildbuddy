@@ -163,6 +163,7 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) (*
 		TimeoutMillis:        s.GetTimeoutMillis(),
 		Metrics:              s.GetMetrics(),
 		Platform:             s.GetPlatform(),
+		Digest:               s.GetDigest(),
 	}
 
 	// Handle inputs
@@ -202,11 +203,6 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) (*
 	}
 	se.ListedOutputs = listedOutputs
 	se.ActualOutputs = actualOutputs
-
-	if s.GetDigest() != nil {
-		se.Digest = &spb.Digest{HashFunctionName: s.GetDigest().GetHashFunctionName()}
-	}
-
 	return se, nil
 }
 
@@ -268,14 +264,11 @@ func reconstructDir(d *spb.ExecLogEntry_Directory) *reconstructedDir {
 }
 
 func reconstructFile(parentDir *spb.ExecLogEntry_Directory, file *spb.ExecLogEntry_File) *spb.File {
-	f := &spb.File{}
+	f := &spb.File{Digest: file.GetDigest()}
 	if parentDir != nil {
 		f.Path = filepath.Join(parentDir.GetPath(), file.GetPath())
 	} else {
 		f.Path = file.GetPath()
-	}
-	if file.GetDigest() != nil {
-		f.Digest = &spb.Digest{HashFunctionName: file.GetDigest().GetHashFunctionName()}
 	}
 	return f
 }
