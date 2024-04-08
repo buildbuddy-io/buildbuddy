@@ -139,8 +139,15 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 	preferredSet := map[string]struct{}{}
 	ranked := make([]interfaces.RankedExecutionNode, 0, len(nodes))
 
-	// Routing keys should be prioritized in the order they were returned
+	maggieTest := false
 	for _, routingKey := range routingKeys {
+		if strings.Contains(routingKey, "e2b3e9ce02aeb0abce3ee49948ee98f6ac153ece226563a70faf97ef50e574b6") {
+			maggieTest = true
+			break
+		}
+	}
+	// Routing keys should be prioritized in the order they were returned
+	for i, routingKey := range routingKeys {
 		preferredHostIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
 		if err != nil {
 			log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
@@ -148,6 +155,9 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 		}
 
 		log.Debugf("Preferred executor host IDs for %q: %v", routingKey, preferredHostIDs)
+		if maggieTest {
+			log.Debugf("Maggie: ranked key %d %s has %d preferred host IDs", i, routingKey, len(preferredHostIDs))
+		}
 
 		// Place all preferred nodes first.
 		// For each routing key, preferred nodes should be prioritized in the order
@@ -155,10 +165,16 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 		for _, hostID := range preferredHostIDs[:min(preferredNodeLimit, len(preferredHostIDs))] {
 			node := nodeByHostID[hostID]
 			if node == nil {
+				if maggieTest {
+					log.Debugf("Maggie: ranked key %d %s, node could not be found", i, routingKey)
+				}
 				continue
 			}
 			if _, ok := preferredSet[node.GetExecutorID()]; ok {
 				continue
+			}
+			if maggieTest {
+				log.Debugf("Maggie: ranked key %d %s, preferred node %s added", i, routingKey, hostID)
 			}
 			preferredSet[node.GetExecutorID()] = struct{}{}
 			ranked = append(ranked, rankedExecutionNode{node: node, preferred: true})
