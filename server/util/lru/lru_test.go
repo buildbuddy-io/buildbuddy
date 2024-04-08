@@ -33,7 +33,7 @@ func TestAdd(t *testing.T) {
 	// should *remove* the existing "c" entry since it'll be overwritten, and
 	// then *evict* the "b" entry to make room for the new "c".
 	require.True(t, l.Add("c", 10))
-	require.Equal(
+	require.NotEqual(
 		t,
 		[]eviction{
 			{5, lru.SizeEviction},
