@@ -268,7 +268,8 @@ common --experimental_profile_include_primary_output
 common --noslim_profile
 # Include compact execution log
 # TODO(sluongng): make Bazel writes this to output_base automatically
-common --experimental_execution_log_compact_file=/tmp/bazel_compact_exec_log.bin
+common:linux --experimental_execution_log_compact_file=/tmp/bazel_compact_exec_log.bin
+common:macos --experimental_execution_log_compact_file=/tmp/bazel_compact_exec_log.bin
 
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:
