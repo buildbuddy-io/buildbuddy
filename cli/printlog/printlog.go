@@ -92,7 +92,7 @@ func printCompactExecLog(path string) error {
 }
 
 type SpawnLogReconstructor struct {
-	input io.Reader
+	input *bufio.Reader
 
 	hashFunc string
 	files    map[int32]*spb.File
@@ -108,7 +108,7 @@ type reconstructedDir struct {
 
 func NewSpawnLogReconstructor(input io.Reader) *SpawnLogReconstructor {
 	return &SpawnLogReconstructor{
-		input:    input,
+		input:    bufio.NewReader(input),
 		hashFunc: "",
 		files:    make(map[int32]*spb.File),
 		dirs:     make(map[int32]*reconstructedDir),
@@ -119,9 +119,8 @@ func NewSpawnLogReconstructor(input io.Reader) *SpawnLogReconstructor {
 
 func (slr *SpawnLogReconstructor) GetSpawnExec() (*spb.SpawnExec, error) {
 	entry := &spb.ExecLogEntry{}
-	br := bufio.NewReader(slr.input)
 	for {
-		err := protodelim.UnmarshalFrom(br, entry)
+		err := protodelim.UnmarshalFrom(slr.input, entry)
 		if err == io.EOF {
 			return nil, io.EOF
 		}
@@ -133,22 +132,22 @@ func (slr *SpawnLogReconstructor) GetSpawnExec() (*spb.SpawnExec, error) {
 		case *spb.ExecLogEntry_Invocation_:
 			slr.hashFunc = e.Invocation.GetHashFunctionName()
 		case *spb.ExecLogEntry_File_:
-			slr.files[entry.GetId()] = reconFile(nil, e.File)
+			slr.files[entry.GetId()] = reconstructFile(nil, e.File)
 		case *spb.ExecLogEntry_Directory_:
-			slr.dirs[entry.GetId()] = reconDir(e.Directory)
+			slr.dirs[entry.GetId()] = reconstructDir(e.Directory)
 		case *spb.ExecLogEntry_UnresolvedSymlink_:
-			slr.symlinks[entry.GetId()] = reconSymlink(e.UnresolvedSymlink)
+			slr.symlinks[entry.GetId()] = reconstructSymlink(e.UnresolvedSymlink)
 		case *spb.ExecLogEntry_InputSet_:
 			slr.sets[entry.GetId()] = e.InputSet
 		case *spb.ExecLogEntry_Spawn_:
-			return slr.reconSpawn(e.Spawn)
+			return slr.reconstructSpawn(e.Spawn)
 		default:
 			return nil, fmt.Errorf("unknown entry: %s", entry)
 		}
 	}
 }
 
-func (slr *SpawnLogReconstructor) reconSpawn(s *spb.ExecLogEntry_Spawn) (*spb.SpawnExec, error) {
+func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) (*spb.SpawnExec, error) {
 	se := &spb.SpawnExec{
 		CommandArgs:          s.GetArgs(),
 		EnvironmentVariables: s.GetEnvVars(),
@@ -167,8 +166,8 @@ func (slr *SpawnLogReconstructor) reconSpawn(s *spb.ExecLogEntry_Spawn) (*spb.Sp
 	}
 
 	// Handle inputs
-	inputs := slr.reconInputs(s.GetInputSetId())
-	toolInputs := slr.reconInputs(s.GetToolSetId())
+	inputs := slr.reconstructInputs(s.GetInputSetId())
+	toolInputs := slr.reconstructInputs(s.GetToolSetId())
 	var spawnInputs []*spb.File
 	for path, file := range inputs {
 		if _, ok := toolInputs[path]; ok {
@@ -211,7 +210,7 @@ func (slr *SpawnLogReconstructor) reconSpawn(s *spb.ExecLogEntry_Spawn) (*spb.Sp
 	return se, nil
 }
 
-func (slr *SpawnLogReconstructor) reconInputs(setID int32) map[string]*spb.File {
+func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb.File {
 	inputs := make(map[string]*spb.File)
 	setsToVisit := []int32{}
 	visited := make(map[int32]struct{})
@@ -257,10 +256,10 @@ func (slr *SpawnLogReconstructor) reconInputs(setID int32) map[string]*spb.File 
 	return inputs
 }
 
-func reconDir(d *spb.ExecLogEntry_Directory) *reconstructedDir {
+func reconstructDir(d *spb.ExecLogEntry_Directory) *reconstructedDir {
 	filesInDir := make([]*spb.File, len(d.GetFiles()))
 	for _, file := range d.GetFiles() {
-		filesInDir = append(filesInDir, reconFile(d, file))
+		filesInDir = append(filesInDir, reconstructFile(d, file))
 	}
 	return &reconstructedDir{
 		path:  d.GetPath(),
@@ -268,7 +267,7 @@ func reconDir(d *spb.ExecLogEntry_Directory) *reconstructedDir {
 	}
 }
 
-func reconFile(parentDir *spb.ExecLogEntry_Directory, file *spb.ExecLogEntry_File) *spb.File {
+func reconstructFile(parentDir *spb.ExecLogEntry_Directory, file *spb.ExecLogEntry_File) *spb.File {
 	f := &spb.File{}
 	if parentDir != nil {
 		f.Path = filepath.Join(parentDir.GetPath(), file.GetPath())
@@ -281,7 +280,7 @@ func reconFile(parentDir *spb.ExecLogEntry_Directory, file *spb.ExecLogEntry_Fil
 	return f
 }
 
-func reconSymlink(s *spb.ExecLogEntry_UnresolvedSymlink) *spb.File {
+func reconstructSymlink(s *spb.ExecLogEntry_UnresolvedSymlink) *spb.File {
 	return &spb.File{
 		Path:              s.GetPath(),
 		SymlinkTargetPath: s.GetTargetPath(),
