@@ -49,7 +49,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 	require.NoError(t, err)
 	b := []byte(randomStr)
 	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_BLAKE3)
-	require.NoError(t, err)
+	require.Error(t, err)
 
 	// Test caching and fetching
 	err = snaputil.CacheBytes(ctx, fc, env.GetByteStreamClient(), true, d, "", b)
