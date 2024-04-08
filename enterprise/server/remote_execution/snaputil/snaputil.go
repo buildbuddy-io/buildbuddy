@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -72,6 +73,9 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
 	if fetchedLocally {
 		return ChunkSourceLocalFilecache, nil
+	}
+	if strings.Contains(outputPath, "memory") {
+		log.CtxInfof(ctx, "Maggie: Did not find memory digest %s in local cache", d.GetHash())
 	}
 
 	if !*EnableRemoteSnapshotSharing || !remoteEnabled {
