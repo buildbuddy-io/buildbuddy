@@ -142,7 +142,7 @@ func (slr *SpawnLogReconstructor) GetSpawnExec() (*spb.SpawnExec, error) {
 		case *spb.ExecLogEntry_Spawn_:
 			return slr.reconstructSpawn(e.Spawn)
 		default:
-			return nil, fmt.Errorf("unknown entry: %s", entry)
+			log.Warnf("unknown exec log entry: %v", entry)
 		}
 	}
 }
@@ -197,7 +197,7 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) (*
 		case *spb.ExecLogEntry_Output_InvalidOutputPath:
 			listedOutputs = append(listedOutputs, o.InvalidOutputPath)
 		default:
-			return nil, fmt.Errorf("unknown output type: %s", output)
+			log.Warnf("unknown output type: %v", output)
 		}
 	}
 	se.ListedOutputs = listedOutputs
