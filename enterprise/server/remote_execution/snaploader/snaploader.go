@@ -88,10 +88,15 @@ func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.
 	rn := digest.NewResourceName(versionKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if status.IsNotFoundError(err) {
-		// If the snapshot version has never been updated, version metadata
-		// won't exist in the cache. It's valid for the version ID to be empty
-		// in this case.
-		return "", nil
+		// Version metadata might not exist in the cache if:
+		// * The snapshot version has never been set (Ex. if you've never invalidated
+		//   a snapshot with this key)
+		// * The version metadata has expired from the cache
+		// In the latter case, we want to be careful to not fallback to an older,
+		// invalid snapshot. So here we generate a new version ID to guarantee
+		// we start from a clean snapshot.
+		ss := NewSnapshotService(l.env)
+		return ss.InvalidateSnapshot(ctx, key)
 	} else if err != nil {
 		return "", err
 	}
@@ -940,16 +945,17 @@ func NewSnapshotService(env environment.Env) *SnapshotService {
 	return &SnapshotService{env: env}
 }
 
-func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) error {
+// InvalidateSnapshot returns the new valid version ID for snapshots to be based off.
+func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error) {
 	// Update the snapshot version to a random value. This will invalidate all past
 	// snapshots that have a different version.
 	newVersion, err := random.RandomString(10)
 	if err != nil {
-		return err
+		return "", err
 	}
 	versionMetadata, err := anypb.New(&fcpb.SnapshotVersionMetadata{VersionId: newVersion})
 	if err != nil {
-		return err
+		return "", err
 	}
 	versionMetadataActionResult := &repb.ActionResult{
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
@@ -959,15 +965,15 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 
 	versionKey, err := SnapshotVersionKey(key)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	acDigest := digest.NewResourceName(versionKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
 	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, versionMetadataActionResult); err != nil {
-		return err
+		return "", err
 	}
 	log.CtxInfof(ctx, "Invalidated all snapshots for key %s", key)
-	return nil
+	return newVersion, nil
 }
 
 func hashStrings(strs ...string) string {

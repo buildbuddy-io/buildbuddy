@@ -326,8 +326,9 @@ func TestSnapshotVersioning(t *testing.T) {
 
 		// Invalidate snapshot A
 		snapshotService := snaploader.NewSnapshotService(env)
-		err = snapshotService.InvalidateSnapshot(ctx, originalSnapshotKey.GetBranchKey())
+		newVersionID, err := snapshotService.InvalidateSnapshot(ctx, originalSnapshotKey.GetBranchKey())
 		require.NoError(t, err)
+		require.NotEqual(t, originalSnapshotKey.GetBranchKey().VersionId, newVersionID)
 
 		// Regenerate the snapshot key - the version ID should be different
 		snapshotKey2, err := loader.SnapshotKeySet(ctx, task, configurationHash, "")
@@ -355,6 +356,24 @@ func TestSnapshotVersioning(t *testing.T) {
 		// Start a VM from the new key.
 		workDirD := testfs.MakeDirAll(t, workDir, "VM-D")
 		mustUnpack(t, ctx, loader, snapshotKey2, workDirD, snapshotC)
+
+		// Delete the snapshot version from the cache, to simulate it expiring.
+		// This should invalidate all snapshots.
+		cache := env.GetCache()
+		versionKey, err := snaploader.SnapshotVersionKey(snapshotKey2.GetBranchKey())
+		require.NoError(t, err)
+		versionDigest := digest.NewResourceName(versionKey, "", rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+		ctx, err = prefix.AttachUserPrefixToContext(ctx, env)
+		require.NoError(t, err)
+		err = cache.Delete(ctx, versionDigest.ToProto())
+		require.NoError(t, err)
+
+		// Even though we did not explicitly invalidate the snapshots, snapshot keys
+		// should have a new version ID.
+		snapshotKey3, err := loader.SnapshotKeySet(ctx, task, configurationHash, "")
+		require.NoError(t, err)
+		require.NotEqual(t, originalSnapshotKey.GetBranchKey().VersionId, snapshotKey3.GetBranchKey().VersionId)
+		require.NotEqual(t, snapshotKey2.GetBranchKey().VersionId, snapshotKey3.GetBranchKey().VersionId)
 	}
 }
 

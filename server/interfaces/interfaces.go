@@ -611,7 +611,7 @@ type WorkflowService interface {
 }
 
 type SnapshotService interface {
-	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) error
+	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
 }
 
 type GitHubApp interface {

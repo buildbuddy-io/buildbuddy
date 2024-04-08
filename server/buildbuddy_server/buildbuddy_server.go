@@ -1331,7 +1331,7 @@ func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb
 			al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_RECYCLED_RUNNER_SNAPSHOT, request)
 		}
 
-		if err := ss.InvalidateSnapshot(ctx, &fcpb.SnapshotKey{
+		if _, err := ss.InvalidateSnapshot(ctx, &fcpb.SnapshotKey{
 			InstanceName:      k.GetInstanceName(),
 			PlatformHash:      k.GetPlatformHash(),
 			ConfigurationHash: k.GetConfigurationHash(),
