@@ -3,6 +3,7 @@ package podman_test
 import (
 	"bytes"
 	"context"
+	"log"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -41,6 +42,17 @@ func getTestEnv(t *testing.T) *testenv.TestEnv {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	env.SetCommandRunner(&commandutil.CommandRunner{})
 	return env
+}
+
+func TestMain(m *testing.M) {
+	// Prevent podman from reading ~/.docker/config.json which causes the gcr
+	// credential helper to be used, which causes authentication to fail when
+	// pulling our custom test images.
+	if err := os.WriteFile("/tmp/auth.json", []byte("{}"), 0644); err != nil {
+		log.Fatalf("Failed to write registry auth config: %s", err)
+	}
+	os.Setenv("REGISTRY_AUTH_FILE", "/tmp/auth.json")
+	os.Exit(m.Run())
 }
 
 func TestRunHelloWorld(t *testing.T) {
