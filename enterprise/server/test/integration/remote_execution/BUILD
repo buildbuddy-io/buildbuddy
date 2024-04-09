@@ -4,13 +4,14 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "remote_execution_test",
-    size = "small",
+    size = "enormous",
     # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/2379):
     # make these tests run faster
     timeout = "long",
     srcs = ["remote_execution_test.go"],
     args = ["--test.v"],
     shard_count = 11,
+    tags = ["cpu:4"],
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",

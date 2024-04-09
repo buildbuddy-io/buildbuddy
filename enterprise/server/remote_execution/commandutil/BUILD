@@ -45,6 +45,7 @@ go_test(
         "@io_bazel_rules_go//go/platform:windows": [],
         "//conditions:default": ["//enterprise/server/remote_execution/commandutil/test_binary"],
     }),
+    tags = ["cpu:4"],
     x_defs = select({
         "@io_bazel_rules_go//go/platform:windows": {},
         "//conditions:default": {
