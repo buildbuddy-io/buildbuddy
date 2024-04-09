@@ -102,12 +102,15 @@ genrule(
 container_layer(
     name = "executor_tools",
     directory = "/usr/bin",
-    files = [
-        ":firecracker",
-        ":jailer",
-        "@com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race//file:soci-store-race",
-        "@com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64//file:soci-store",
-    ],
+    files = select({
+        "@platforms//cpu:x86_64": [
+            ":firecracker",
+            ":jailer",
+            "@com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race//file:soci-store-race",
+            "@com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64//file:soci-store",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 container_image(

@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
@@ -232,6 +233,21 @@ type CommandContainer interface {
 	// If a container implementation does not support saving and restoring state
 	// across restarts, it can return UNIMPLEMENTED.
 	State(ctx context.Context) (*rnpb.ContainerState, error)
+}
+
+// VM is an interface implemented by containers backed by VMs (i.e. just
+// Firecracker). This just exists to avoid depending on the Firecracker package
+// on non-linux/amd64 platforms.
+type VM interface {
+	// SetTaskFileSystemLayout sets the VFS layout for use inside the guest.
+	SetTaskFileSystemLayout(layout *FileSystemLayout)
+
+	// SnapshotDebugString returns a string representing the cache key used for
+	// VM snapshots, if applicable.
+	SnapshotDebugString(ctx context.Context) string
+
+	// VMConfig returns the VM's initialization config.
+	VMConfig() *fcpb.VMConfiguration
 }
 
 // PullImageIfNecessary pulls the image configured for the container if it

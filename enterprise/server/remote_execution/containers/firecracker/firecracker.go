@@ -551,6 +551,8 @@ type FirecrackerContainer struct {
 	cancelVmCtx context.CancelCauseFunc
 }
 
+var _ container.VM = (*FirecrackerContainer)(nil)
+
 func NewContainer(ctx context.Context, env environment.Env, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
 	if *snaputil.EnableLocalSnapshotSharing && !(*enableVBD && *enableUFFD) {
 		return nil, status.FailedPreconditionError("executor configuration error: local snapshot sharing requires VBD and UFFD to be enabled")
