@@ -497,21 +497,19 @@ load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains"
 # download URL.
 zig_toolchains()
 
-# http_archive(
-#     name = "musl_toolchains",
-#     sha256 = "c79b7de81d3dcc0e920810ede4d850214c8288ee0a91034a258f26004e33dcae",
-#     strip_prefix = "musl-toolchain-335c23c017d36fa8302419b101ed5bf2ca1958e8",
-#     urls = [
-#         "https://github.com/bazel-contrib/musl-toolchain/archive/335c23c017d36fa8302419b101ed5bf2ca1958e8.tar.gz",
-#     ],
-# )
-
 http_archive(
     name = "musl_toolchains",
-    urls = [
-        "file:///home/zoey/musl-toolchain-335c23c017d36fa8302419b101ed5bf2ca1958e8/output/musl-1.2.3-platform-x86_64-unknown-linux-gnu-target-x86_64-linux-musl.tar.gz",
-    ],
+    sha256 = "f9f077b9ae74a0545f7cb7108462cb061593eef10fd09d25db4554e281ee880b",
+    url = "https://github.com/bazel-contrib/musl-toolchain/releases/download/v0.1.7/musl_toolchain-v0.1.7.tar.gz",
 )
+
+load("@musl_toolchains//:repositories.bzl", "load_musl_toolchains")
+
+load_musl_toolchains()
+
+load("@musl_toolchains//:toolchains.bzl", "register_musl_toolchains")
+
+register_musl_toolchains()
 
 register_toolchains(
     "//toolchains:sh_toolchain",
