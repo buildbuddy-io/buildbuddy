@@ -715,4 +715,8 @@ func CleanupCacheStats(ctx context.Context, env environment.Env, iid string) {
 	if err := c.Delete(ctx, counterKey(iid)); err != nil {
 		log.Warningf("Failed to clean up cache stats for invocation %s: %s", iid, err)
 	}
+
+	if err := c.Delete(ctx, targetMissesKey(iid)); err != nil {
+		log.Warningf("Failed to clean up cache stats for invocation %s: %s", iid, err)
+	}
 }
