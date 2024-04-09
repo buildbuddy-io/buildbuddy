@@ -199,11 +199,11 @@ func (s *Snapshot) GetKey() *fcpb.SnapshotKey {
 	return s.key.CloneVT()
 }
 
-func (s *Snapshot) GetVMMetadata() *repb.VMMetadata {
+func (s *Snapshot) GetVMMetadata() *fcpb.VMMetadata {
 	return s.manifest.GetVmMetadata()
 }
 
-func (s *Snapshot) SetVMMetadata(md *repb.VMMetadata) {
+func (s *Snapshot) SetVMMetadata(md *fcpb.VMMetadata) {
 	s.manifest.VmMetadata = md
 }
 
@@ -226,7 +226,7 @@ func (s *Snapshot) GetChunkedFiles() []*fcpb.ChunkedFile {
 // an asset shared across VMs (such as the containerfs), or a fully snapshotted
 // VM.
 type CacheSnapshotOptions struct {
-	VMMetadata          *repb.VMMetadata
+	VMMetadata          *fcpb.VMMetadata
 	VMConfiguration     *fcpb.VMConfiguration
 	VMStateSnapshotPath string
 	KernelImagePath     string
@@ -399,7 +399,7 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 
 func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInstanceName string, snapshotActionResult *repb.ActionResult, tmpDir string, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
 	snapMetadata := snapshotActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
-	if len(snapMetadata) != 1 {
+	if len(snapMetadata) != 2 {
 		return nil, status.InternalErrorf("expected vm config in snapshot auxiliary metadata")
 	}
 
@@ -408,8 +408,13 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 		return nil, status.WrapErrorf(err, "unmarshall vm config")
 	}
 
+	vmMetadata := &fcpb.VMMetadata{}
+	if err := snapMetadata[1].UnmarshalTo(vmMetadata); err != nil {
+		return nil, status.WrapErrorf(err, "unmarshall vm metadata")
+	}
+
 	manifest := &fcpb.SnapshotManifest{
-		VmMetadata:      snapshotActionResult.GetExecutionMetadata().GetVmMetadata(),
+		VmMetadata:      vmMetadata,
 		VmConfiguration: vmConfig,
 		Files:           []*repb.FileNode{},
 		ChunkedFiles:    []*fcpb.ChunkedFile{},
@@ -517,10 +522,13 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	if err != nil {
 		return err
 	}
+	vmMetadata, err := anypb.New(opts.VMMetadata)
+	if err != nil {
+		return err
+	}
 	ar := &repb.ActionResult{
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
-			AuxiliaryMetadata: []*anypb.Any{vmConfig},
-			VmMetadata:        opts.VMMetadata,
+			AuxiliaryMetadata: []*anypb.Any{vmConfig, vmMetadata},
 		},
 		OutputFiles:       []*repb.OutputFile{},
 		OutputDirectories: []*repb.OutputDirectory{},

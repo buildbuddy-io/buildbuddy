@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"google.golang.org/protobuf/types/known/anypb"
 	"strings"
 	"syscall"
 	"time"
@@ -297,7 +298,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	defer cancel()
 
 	md.UsageStats = cmdResult.UsageStats
-	md.VmMetadata = cmdResult.VMMetadata
+	if cmdResult.VMMetadata != nil {
+		vmMetadata, err := anypb.New(cmdResult.VMMetadata)
+		if err != nil {
+			// TODO
+		}
+		md.AuxiliaryMetadata = []*anypb.Any{vmMetadata}
+	}
 	md.ExecutionCompletedTimestamp = timestamppb.Now()
 	md.OutputUploadStartTimestamp = timestamppb.Now()
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	"io"
 	"net/http"
 	"net/url"
@@ -1036,7 +1037,7 @@ type CommandResult struct {
 	UsageStats *repb.UsageStats
 
 	// VMMetadata associated with the VM that ran the task, if applicable.
-	VMMetadata *repb.VMMetadata
+	VMMetadata *fcpb.VMMetadata
 }
 
 type Subscriber interface {

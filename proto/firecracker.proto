@@ -90,7 +90,7 @@ message SnapshotManifest {
   // stays constant across each resume/pause cycle of a particular snapshot, but
   // the snapshot creator is expected to change each time the snapshot is
   // updated.
-  build.bazel.remote.execution.v2.VMMetadata vm_metadata = 4;
+  VMMetadata vm_metadata = 4;
 }
 
 // Represents a chunked file for use with copy-on-write snapshotting.
@@ -121,4 +121,43 @@ message Chunk {
 
   // Digest of the chunk
   build.bazel.remote.execution.v2.Digest digest = 3;
+}
+
+// Metadata associated with a firecracker VM.
+message VMMetadata {
+  // A UUID assigned to the VM upon creation which is preserved across
+  // snapshots.
+  string vm_id = 1;
+
+  // Represents a task executed on this VM.
+  message VMTask {
+    // The task's invocation ID. If multiple invocations are associated with the
+    // task (via action merging) then this will be the first invocation to have
+    // requested execution of this task.
+    string invocation_id = 1;
+
+    // The task's execution ID.
+    string execution_id = 2;
+
+    // The action digest associated with the task. The digest function used to
+    // compute the digest should match the one associated with the invocation.
+    build.bazel.remote.execution.v2.Digest action_digest = 3;
+
+    // The digest of the execution ID, used as the AC key for the stored
+    // ExecuteResponse. The digest function used to compute the digest should
+    // match the one associated with the invocation.
+    build.bazel.remote.execution.v2.Digest execute_response_digest = 4;
+
+    // A unique UUID assigned each time a snapshot is used.
+    // For example, even if the same execution is retried multiple times using
+    // the same snapshot key, each run will have a unqiue snapshot_id.
+    string snapshot_id = 5;
+  }
+
+  // The last task to execute on this VM. When resuming from snapshot, this
+  // represents the task which created the snapshot.
+  VMTask last_executed_task = 2;
+
+  // The snapshot ID of the task that is currently executing.
+  string snapshot_id = 3;
 }
