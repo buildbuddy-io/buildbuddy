@@ -418,13 +418,14 @@ func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 	// Check that each statement addresses a different shard. If two statements
 	// address a single shard, they should be combined, otherwise finalization
 	// will fail when attempted twice.
-	shardStatementMap := make(map[uint64]int64)
+	shardStatementMap := make(map[uint64]int)
 	for i, statement := range txnProto.GetStatements() {
 		shardID := statement.GetReplica().GetShardId()
 		existing, ok := shardStatementMap[shardID]
 		if ok {
 			return status.FailedPreconditionErrorf("Statements %d and %d both address shard %d. Only one batch per shard is allowed", i, existing, shardID)
 		}
+		shardStatementMap[shardID] = i
 	}
 
 	var prepareError error
