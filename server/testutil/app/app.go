@@ -54,7 +54,7 @@ func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string
 		"--static_directory=static",
 		"--app_directory=/app",
 		fmt.Sprintf("--app.build_buddy_url=http://localhost:%d", app.HttpPort),
-		"--database.data_source=sqlite3://:memory:",
+		fmt.Sprintf("--database.data_source=sqlite3://%s", filepath.Join(dataDir, "buildbuddy.db")),
 		fmt.Sprintf("--storage.disk.root_directory=%s", filepath.Join(dataDir, "storage")),
 		fmt.Sprintf("--cache.disk.root_directory=%s", filepath.Join(dataDir, "cache")),
 	}
