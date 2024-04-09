@@ -1188,7 +1188,7 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			req.WorkflowId = wfs.GetLegacyWorkflowIDForGitRepository(authenticatedUser.GetGroupID(), req.GetTargetRepoUrl())
 		}
 		if al := s.env.GetAuditLogger(); al != nil && req.GetClean() {
-			al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_ALL_WORKFLOW_RECYCLED_RUNNERS, req)
+			al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_ALL_WORKFLOW_VM_SNAPSHOTS, req)
 		}
 		return wfs.ExecuteWorkflow(ctx, req)
 	}
@@ -1328,7 +1328,7 @@ func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb
 		}
 
 		if al := s.env.GetAuditLogger(); al != nil {
-			al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_RECYCLED_RUNNER_SNAPSHOT, request)
+			al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_VM_SNAPSHOT, request)
 		}
 
 		if _, err := ss.InvalidateSnapshot(ctx, &fcpb.SnapshotKey{
