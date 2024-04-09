@@ -522,6 +522,11 @@
   margin-bottom: 16px;
 }
 
+.action-header {
+  display: flex;
+  justify-content: space-between;
+}
+
 .action-list {
   display: block;
 }
