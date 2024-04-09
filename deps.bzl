@@ -1,3 +1,4 @@
+load("//platforms/podman:version.bzl", "PODMAN_VERSION")
 load("@bazel_gazelle//:deps.bzl", "go_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
@@ -6934,4 +6935,16 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
         sha256 = "85b1c2591274422234955e906aee39e6f793a88a74f3efc49a1852a0646ce08f",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-14_linux-x86_64"],
+    )
+
+    http_file(
+        name = "com_github_buildbuddy_io_podman_static_podman-linux-amd64",
+        urls = ["https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-{podman_version}/podman-linux-amd64.tar.gz".format(podman_version = PODMAN_VERSION)],
+        sha256 = "ac14152d2ef5cb25abbd615893cd56355f951f075a7ae663f0b2c1bc5d3fb77e",
+    )
+
+    http_file(
+        name = "com_github_buildbuddy_io_podman_static_podman-linux-arm64",
+        urls = ["https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-{podman_version}/podman-linux-arm64.tar.gz".format(podman_version = PODMAN_VERSION)],
+        sha256 = "72ab4a9c6ae9d5d00200070cb43b0921117898925a284bfacbfb3873aa82e598",
     )
