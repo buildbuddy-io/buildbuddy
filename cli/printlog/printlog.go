@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"path"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -266,7 +266,7 @@ func reconstructDir(d *spb.ExecLogEntry_Directory) *reconstructedDir {
 func reconstructFile(parentDir *spb.ExecLogEntry_Directory, file *spb.ExecLogEntry_File) *spb.File {
 	f := &spb.File{Digest: file.GetDigest()}
 	if parentDir != nil {
-		f.Path = filepath.Join(parentDir.GetPath(), file.GetPath())
+		f.Path = path.Join(parentDir.GetPath(), file.GetPath())
 	} else {
 		f.Path = file.GetPath()
 	}
