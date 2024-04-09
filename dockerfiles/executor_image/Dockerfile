@@ -27,7 +27,7 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && \
 # Install skopeo and umoci which we use to unpack OCI images when we're not using docker.
 # Install iproute2 ("ip" command) to configure networking on host.
 RUN apt-get update && \
-    apt-get install -y umoci iproute2 amazon-ecr-credential-helper && \
+    apt-get install -y skopeo umoci iproute2 amazon-ecr-credential-helper && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
 # Install podman.
