@@ -66,7 +66,7 @@ export default class FileContentComponent extends React.Component<FileContentCom
             comments={comments}
             draftComment={draft}
             disabled={Boolean(this.props.disabled)}
-            updating={Boolean(draft && !draft.isSubmittedToGithub())}
+            updating={Boolean(draft && draft.isSubmittedToGithub())}
             editing={Boolean(this.props.reviewModel.isCommentInProgress(draft?.getId()))}
             saving={/* TODO(jdhollen */ false}
             handler={this.props.handler}
