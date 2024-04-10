@@ -6,6 +6,8 @@ ts_library(
     name = "format",
     srcs = ["format.tsx"],
     deps = [
+        "//app/util:proto",
+        "//proto:duration_ts_proto",
         "@npm//@types/long",
         "@npm//@types/moment",
         "@npm//date-fns",
