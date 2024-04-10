@@ -705,6 +705,51 @@ func (sm *Replica) loadRangeLease(db ReplicaReader) {
 	sm.setRangeLease(constants.LocalRangeLeaseKey, buf)
 }
 
+// clearInMemoryReplicaState clears in-memory replica state.
+func (sm *Replica) clearInMemoryReplicaState() {
+	sm.rangeMu.Lock()
+	sm.rangeDescriptor = nil
+	sm.mappedRange = nil
+	sm.rangeLease = nil
+	sm.rangeMu.Unlock()
+
+	sm.prepared = make(map[string]pebble.Batch)
+	sm.lockedKeys = make(map[string][]byte)
+	sm.lastAppliedIndex = 0
+
+	sm.partitionMetadataMu.Lock()
+	sm.partitionMetadata = make(map[string]*rfpb.PartitionMetadata)
+	sm.partitionMetadataMu.Unlock()
+}
+
+// clearInMemoryReplicaState clears in-memory and on-disk replica state.
+func (sm *Replica) clearReplicaState() error {
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	wb := db.NewIndexedBatch()
+	iterOpts := &pebble.IterOptions{
+		LowerBound: constants.LocalPrefix,
+		UpperBound: constants.MetaRangePrefix,
+	}
+	iter := db.NewIter(iterOpts)
+	defer iter.Close()
+	prefix := sm.replicaPrefix()
+	replicaLocalPrefix := append(prefix, []byte(constants.LocalPrefix)...)
+	start, end := keys.Range(replicaLocalPrefix)
+	if err := wb.DeleteRange(start, end, nil /*ignored write options*/); err != nil {
+		return err
+	}
+	if err := wb.Commit(pebble.Sync); err != nil {
+		return err
+	}
+
+	sm.clearInMemoryReplicaState()
+	return nil
+}
+
 // loadReplicaState loads any in-memory replica state from the DB.
 func (sm *Replica) loadReplicaState(db ReplicaReader) error {
 	sm.loadRangeDescriptor(db)
@@ -1969,6 +2014,8 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return err
 	}
 	defer readDB.Close()
+
+	sm.clearReplicaState()
 	return sm.loadReplicaState(db)
 }
 

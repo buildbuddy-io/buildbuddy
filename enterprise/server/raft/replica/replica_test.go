@@ -613,6 +613,86 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 }
 
+func TestClearStateBeforeApplySnapshot(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl := newTestReplica(t, rootDir, 1, 1, store)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("bar"),
+		},
+	}))
+	entries := []dbsm.Entry{entry}
+	rsp, err := repl.Update(entries)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+
+	// Create a snapshot of the replica.
+	snapI, err := repl.PrepareSnapshot()
+	require.NoError(t, err)
+
+	baseDir := testfs.MakeTempDir(t)
+	snapFile, err := os.CreateTemp(baseDir, "snapfile-*")
+	require.NoError(t, err)
+	snapFileName := snapFile.Name()
+	defer os.Remove(snapFileName)
+
+	err = repl.SaveSnapshot(snapI, snapFile, nil /*=quitChan*/)
+	require.NoError(t, err)
+	snapFile.Seek(0, 0)
+
+	// Restore a new replica from the created snapshot.
+	rootDir2 := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir2, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+	repl2 := replica.New(leaser, 1, 2, store, nil /*=usageUpdates=*/)
+	require.NotNil(t, repl2)
+	_, err = repl2.Open(stopc)
+	require.NoError(t, err)
+
+	em2 := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em2, repl2)
+
+	// Prepare a transaction
+	wb := db.NewBatch()
+	txid := []byte("TX1")
+	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("bar2"),
+		},
+	}).ToProto()
+	_, err = repl2.PrepareTransaction(wb, txid, cmd)
+	require.NoError(t, err)
+
+	require.NoError(t, wb.Commit(pebble.Sync))
+	require.NoError(t, wb.Close())
+
+	// Recover from the snapshot
+	err = repl2.RecoverFromSnapshot(snapFile, nil /*=quitChan*/)
+	require.NoError(t, err)
+
+	// Verify that we should not be able to commit the transaction.
+	err = repl2.CommitTransaction(txid)
+	require.True(t, status.IsNotFoundError(err), "CommitTransaction should return NotFound error")
+}
+
 func TestReplicaFileWriteDelete(t *testing.T) {
 	fs := filestore.New()
 	rootDir := testfs.MakeTempDir(t)
