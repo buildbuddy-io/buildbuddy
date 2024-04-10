@@ -5,6 +5,7 @@ import { CommentModel, DraftReviewModel, ThreadModel } from "./draft_review_mode
 
 interface FileContentComponentProps {
   reviewModel: DraftReviewModel;
+  disabled: boolean;
   handler: CommentEditHandler;
   viewerLogin: string;
   owner: string;
@@ -72,9 +73,11 @@ export default class FileContentComponent extends React.Component<FileContentCom
         <div className="thread-container">
           <ReviewThreadComponent
             threadId={thread.getId()}
+            reviewId={this.props.reviewModel.getDraftReviewId()}
+            viewerLogin={this.props.reviewModel.getViewerLogin()}
             comments={comments}
             draftComment={draft}
-            disabled={Boolean(this.props.reviewModel.hasPendingRequest())}
+            disabled={Boolean(this.props.disabled)}
             updating={Boolean(draft && !draft.isSubmittedToGithub())}
             editing={Boolean(this.props.reviewModel.isCommentInProgress(draft?.getId()))}
             saving={/* TODO(jdhollen */ false}

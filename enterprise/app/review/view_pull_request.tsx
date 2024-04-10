@@ -158,27 +158,22 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         console.log(r);
         error_service.handleError("posted!");
         if (this.state.reviewModel) {
+          if (!r.comment) {
+            // TODO(jdhollen): Refresh page? I dunno. This shouldn't happen.
+            return;
+          }
           const oldId = comment.getId();
           let newModel = this.state.reviewModel;
-
-          const newComment = this.state.reviewModel.getComment(comment.getId())?.toProtoComment();
-          if (newComment) {
-            newComment.id = r.commentId;
-            newComment.body = comment.getBody();
-            newComment.reviewId = r.reviewId;
-            newModel = newModel.updateComment(oldId, CommentModel.fromComment(newComment));
-          } else {
-            const commentsInThread = this.state.reviewModel.getCommentsForThread(req.threadId);
-            if (commentsInThread.length > 0) {
-              const newComment = commentsInThread[0].toProtoComment();
-              newComment.createdAtUsec = Long.fromNumber(Date.now() * 1000);
-              newComment.id = r.commentId;
-              newComment.body = req.body;
-              newComment.reviewId = r.reviewId;
-              newModel = newModel.addComment(CommentModel.fromComment(newComment));
+          if (r.comment) {
+            const newComment: CommentModel = CommentModel.fromComment(r.comment);
+            if (this.state.reviewModel.getComment(oldId)) {
+              newModel = newModel.updateComment(oldId, newComment);
+            } else {
+              newModel = newModel.addComment(newComment);
             }
+            newModel.setDraftReviewId(r.reviewId);
           }
-          newModel.setDraftReviewId(r.reviewId).removeCommentFromPending(oldId);
+          newModel.removeCommentFromPending(oldId);
           this.setState({ reviewModel: newModel });
         }
       })
@@ -205,9 +200,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           const comment = this.state.reviewModel.getComment(commentId);
           let newModel = this.state.reviewModel;
           if (comment) {
-            const newComment = comment.toProtoComment();
-            newComment.body = newBody;
-            newModel = newModel.updateComment(commentId, CommentModel.fromComment(newComment));
+            newModel = newModel.updateComment(commentId, comment.updateBody(newBody));
           }
           newModel = newModel.removeCommentFromPending(commentId);
           this.setState({ reviewModel: newModel });
@@ -310,6 +303,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         <td colSpan={6}>
           <FileContentComponent
             reviewModel={this.state.reviewModel}
+            disabled={this.state.pendingRequest}
             viewerLogin={this.state.reviewModel.getViewerLogin()}
             owner={this.props.owner}
             repo={this.props.repo}
@@ -529,6 +523,8 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
               <div className="reply-modal-thread-container">
                 <ReviewThreadComponent
                   threadId={c.getThreadId()}
+                  reviewId={reviewModel.getDraftReviewId()}
+                  viewerLogin={reviewModel.getViewerLogin()}
                   comments={[]}
                   draftComment={c}
                   disabled={Boolean(this.state.pendingRequest)}

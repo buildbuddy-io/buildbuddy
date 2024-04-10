@@ -14,6 +14,8 @@ export interface CommentEditHandler {
 
 interface ReviewThreadComponentProps {
   threadId: string;
+  reviewId: string;
+  viewerLogin: string;
   comments: readonly CommentModel[];
   draftComment?: CommentModel;
   updating: boolean;
@@ -32,15 +34,17 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
     if (commentBody === "") {
       return;
     }
-    // XXX: Can just add a utility function to copy it nicely...
-    // TODO(jdhollen): This is probably a little janky if Github cares about the replyTo fields etc.
-    const commentToSubmit = (this.props.draftComment ?? this.props.comments[0]).toProtoComment();
-    if (!this.props.draftComment) {
-      // commentToSubmit.position = undefined;
-      commentToSubmit.id = "";
+    let commentToSubmit: CommentModel;
+    if (this.props.draftComment) {
+      commentToSubmit = this.props.draftComment.updateBody(commentBody);
+      // TODO(jdhollen): Make this a little bit cleaner.  This is currently just
+      // blowing away the copied comment's ID, which is weird.
+    } else {
+      commentToSubmit = this.props.comments[0]
+        .createReply(this.props.reviewId, this.props.viewerLogin)
+        .updateBody(commentBody);
     }
-    commentToSubmit.body = commentBody;
-    this.props.handler.handleCreateComment(CommentModel.fromComment(commentToSubmit));
+    this.props.handler.handleCreateComment(commentToSubmit);
   }
 
   handleUpdate() {

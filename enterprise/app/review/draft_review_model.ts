@@ -90,10 +90,17 @@ export class CommentModel {
     return this.comment.id !== "" && !this.comment.id.startsWith(FAKE_ID_PREFIX);
   }
 
-  // XXX: Line editing, etc. is bad.
-  // You know, for editing.
-  toProtoComment(): github.Comment {
+  // Careful! This is only a shallow copy, so if you are mucking with nested fields you need
+  // to actually set them (or else you'll mess with other people holding a ref to this proto)
+  // TODO(jdhollen): Maybe, someday, make this actually a deep copy.
+  private toProtoComment(): github.Comment {
     return new github.Comment(this.comment);
+  }
+
+  public updateBody(newBody: string): CommentModel {
+    const proto = this.toProtoComment();
+    proto.body = newBody;
+    return new CommentModel(proto);
   }
 
   createReply(reviewId: string, author: string): CommentModel {
@@ -239,19 +246,13 @@ export class ThreadModel {
 
 export class DraftReviewModel {
   private state: State;
-  private pendingRequest: boolean;
 
   private constructor(state: State) {
     this.state = state;
-    this.pendingRequest = false; /* XXX */
   }
 
   getDraftReviewId(): string {
     return this.state.draftReviewId;
-  }
-
-  hasPendingRequest(): boolean {
-    return this.pendingRequest;
   }
 
   isCommentInProgress(id?: string): boolean {
@@ -347,21 +348,21 @@ export class DraftReviewModel {
     return this.state.files;
   }
 
-  // XXX..
+  // TODO(jdhollen): This needs to be fully locked down / unmodifiable.
   getReviewers(): readonly github.Reviewer[] {
     return this.state.reviewers;
   }
 
-  // XXX
+  // TODO(jdhollen): This needs to be fully locked down / unmodifiable.
   getActionStatuses(): readonly github.ActionStatus[] {
     return this.state.actionStatuses;
   }
 
   private stateCopy(): State {
-    // XXX: fix sets, etc. (esp pending comments).
-    return {
-      ...this.state,
-    };
+    // TODO(jdhollen): Do a better deep copy once all fields are unmodifiable.
+    const copy = { ...this.state };
+    copy.inProgressComments = new Set(copy.inProgressComments);
+    return copy;
   }
 
   addComment(newComment: CommentModel): DraftReviewModel {
@@ -402,7 +403,7 @@ export class DraftReviewModel {
       return this;
     }
     const newState = this.stateCopy();
-    newState.inProgressComments.delete(commentId);
+    newState.inProgressComments.add(commentId);
     return new DraftReviewModel(newState);
   }
 
@@ -446,7 +447,6 @@ export class DraftReviewModel {
       files: response.files.map(FileModel.fromFileSummary),
       githubUrl: response.githubUrl,
       viewerLogin: response.viewerLogin,
-      // XXX
       actionStatuses: [...response.actionStatuses],
       inProgressComments: new Set<string>(),
     });
