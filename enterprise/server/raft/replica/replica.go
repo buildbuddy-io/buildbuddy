@@ -724,18 +724,22 @@ func (sm *Replica) clearInMemoryReplicaState() {
 
 // clearInMemoryReplicaState clears in-memory and on-disk replica state.
 func (sm *Replica) clearReplicaState() error {
+	// Remove range from the store
+	sm.rangeMu.Lock()
+	rangeDescriptor := sm.rangeDescriptor
+	sm.rangeMu.Unlock()
+
+	if sm.store != nil && rangeDescriptor != nil {
+		sm.store.RemoveRange(rangeDescriptor, sm)
+	}
+
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 	wb := db.NewIndexedBatch()
-	iterOpts := &pebble.IterOptions{
-		LowerBound: constants.LocalPrefix,
-		UpperBound: constants.MetaRangePrefix,
-	}
-	iter := db.NewIter(iterOpts)
-	defer iter.Close()
+
 	prefix := sm.replicaPrefix()
 	replicaLocalPrefix := append(prefix, []byte(constants.LocalPrefix)...)
 	start, end := keys.Range(replicaLocalPrefix)
