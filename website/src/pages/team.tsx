@@ -119,7 +119,7 @@ const teamMembers = [
     twitter: "fhenneke",
     linkedin: "fhenneke",
     blurb:
-      "Previously Software Engineer at Code Intelligence. Maintainer of Bazel's rules_go and bazel-gazelle. Studied Mathematics and Computer Science at The University of Bonn.",
+      "Previously Software Engineer at Code Intelligence. Maintainer of Bazel's rules_go and gazelle. Studied Mathematics and Computer Science at The University of Bonn.",
     image: "fabian.jpg",
   },
 ];
