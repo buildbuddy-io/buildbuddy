@@ -1,10 +1,16 @@
 import Long from "long";
 import moment from "moment";
 import { isSameDay } from "date-fns";
+import { google as google_duration } from "../../proto/duration_ts_proto";
+import { durationToMillis } from "../util/proto";
 
 export function percent(percent: number | Long) {
   if (!percent) return "0";
   return `${(+percent * 100).toFixed(0)}`;
+}
+
+export function durationProto(duration: google_duration.protobuf.IDuration) {
+  return durationMillis(durationToMillis(duration));
 }
 
 export function durationUsec(duration: number | Long) {
@@ -387,6 +393,7 @@ export function enumLabel(e: string) {
 export default {
   compactDurationSec,
   durationSec,
+  durationProto,
   roundedDurationSec,
   durationMillis,
   durationUsec,

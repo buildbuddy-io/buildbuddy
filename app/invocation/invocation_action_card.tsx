@@ -10,7 +10,7 @@ import rpcService from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
 import TerminalComponent from "../terminal/terminal";
-import { parseDigest, parseActionDigest, digestToString } from "../util/cache";
+import { parseActionDigest, digestToString } from "../util/cache";
 import UserPreferences from "../preferences/preferences";
 import alert_service from "../alert/alert_service";
 
@@ -458,10 +458,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div className="action-property-title">Digest</div>
                       <DigestComponent digest={digest} expanded={true} />
                     </div>
-                    <div className="action-section">
-                      <div className="action-property-title">Cacheable</div>
-                      <div>{!this.state.action.doNotCache ? "True" : "False"}</div>
-                    </div>
                     {this.state.action.inputRootDigest && (
                       <div className="action-section">
                         <div className="action-property-title">Input root digest</div>
@@ -470,22 +466,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         </div>
                       </div>
                     )}
-                    <div className="action-section">
-                      <div
-                        title="List of required supported NodeProperty [build.bazel.remote.execution.v2.NodeProperty] keys."
-                        className="action-property-title">
-                        Output node properties
-                      </div>
-                      {this.state.action.outputNodeProperties.length ? (
-                        <div>
-                          {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
-                            <div className="output-node">{outputNodeProperty}</div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div>Default</div>
-                      )}
-                    </div>
                     <div className="action-section">
                       <div className="action-property-title">Input files</div>
                       {this.state.inputDirs.length ? (
@@ -503,6 +483,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       ) : (
                         <div>None found</div>
                       )}
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Cacheable</div>
+                      <div>{!this.state.action.doNotCache ? "Yes" : "No"}</div>
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Timeout</div>
+                      <div>{this.state.action.timeout ? format.durationProto(this.state.action.timeout) : "None"}</div>
                     </div>
                   </div>
                   <div className="action-line">
