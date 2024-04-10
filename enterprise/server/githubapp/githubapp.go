@@ -1685,7 +1685,8 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 	}
 
 	reviewId := req.GetReviewId()
-	var commentId string
+	var comment reviewComment
+	var threadId string
 
 	var side githubv4.DiffSide
 	if req.GetSide() == ghpb.CommentSide_LEFT_SIDE {
@@ -1721,9 +1722,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		var m struct {
 			PullRequestReviewThreadReply struct {
 				ClientMutationId string
-				Comment          struct {
-					Id string
-				}
+				Comment          reviewComment
 			} `graphql:"addPullRequestReviewThreadReply(input: $input)"`
 		}
 
@@ -1737,7 +1736,8 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		if err != nil {
 			return nil, err
 		}
-		commentId = m.PullRequestReviewThreadReply.Comment.Id
+		comment = m.PullRequestReviewThreadReply.Comment
+		threadId = req.GetThreadId()
 	} else {
 		// This is a comment in a new thread, create it.
 		var m struct {
@@ -1765,12 +1765,15 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 		if err != nil {
 			return nil, err
 		}
-		commentId = m.AddPullRequestReviewThread.Thread.Comments.Nodes[0].Id
+		comment = m.AddPullRequestReviewThread.Thread.Comments.Nodes[0]
+		threadId = m.AddPullRequestReviewThread.Thread.Id
 	}
 
 	return &ghpb.CreateGithubPullRequestCommentResponse{
 		ReviewId:  reviewId,
-		CommentId: commentId,
+		CommentId: comment.Id,
+		// TODO(jdhollen): Set resolved and side properly.
+		Comment: graphQLCommentToProto(&comment, int64(comment.OriginalStartLine), int64(comment.OriginalLine), side, req.GetPath(), threadId, false),
 	}, nil
 }
 
@@ -1871,6 +1874,12 @@ type comment struct {
 	BodyText  string
 	CreatedAt time.Time
 	Id        string
+
+	// We don't strictly need these fields for normal requests, but they make it
+	// easier to build replies to mutates, and we're talking about a few ints,
+	// so whatever.
+	OriginalLine      int
+	OriginalStartLine int
 }
 
 type commentLink struct {
@@ -1984,9 +1993,6 @@ type prDetailsQuery struct {
 			Reviews struct {
 				Nodes []review
 			} `graphql:"reviews(first: 100)"`
-			Comments struct {
-				Nodes []comment
-			} `graphql:"comments(first: 100)"`
 			Commits struct {
 				Nodes []prCommit
 			} `graphql:"commits(first: 100)"`
@@ -2140,6 +2146,37 @@ type combinedChecksForApp struct {
 	URL    string
 }
 
+func graphQLCommentToProto(c *reviewComment, startLine int64, endLine int64, diffSide githubv4.DiffSide, path string, threadId string, resolved bool) *ghpb.Comment {
+	comment := &ghpb.Comment{}
+	comment.Id = c.Id
+	comment.Body = c.BodyText
+	comment.Path = path
+	comment.CommitSha = c.OriginalCommit.Oid
+	comment.ReviewId = c.PullRequestReview.Id
+	comment.CreatedAtUsec = c.CreatedAt.UnixMicro()
+	comment.ParentCommentId = c.ReplyTo.Id
+	comment.ThreadId = threadId
+	comment.IsResolved = resolved
+
+	position := &ghpb.CommentPosition{}
+	position.StartLine = int64(startLine)
+	position.EndLine = int64(endLine)
+
+	if diffSide == "LEFT" {
+		position.Side = ghpb.CommentSide_LEFT_SIDE
+	} else {
+		position.Side = ghpb.CommentSide_RIGHT_SIDE
+	}
+	comment.Position = position
+
+	commenter := &ghpb.ReviewUser{}
+	commenter.Login = getLogin(&c.Author)
+	commenter.Bot = isBot(&c.Author)
+	comment.Commenter = commenter
+
+	return comment
+}
+
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
@@ -2192,33 +2229,8 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	fileCommentCount := make(map[string]int64)
 	for _, thread := range pr.ReviewThreads.Nodes {
 		for _, c := range thread.Comments.Nodes {
-			comment := &ghpb.Comment{}
-			comment.Id = c.Id
-			comment.Body = c.BodyText
-			comment.Path = thread.Path
-			comment.CommitSha = c.OriginalCommit.Oid
-			comment.ReviewId = c.PullRequestReview.Id
-			comment.CreatedAtUsec = c.CreatedAt.UnixMicro()
-			comment.ParentCommentId = c.ReplyTo.Id
-			comment.ThreadId = thread.Id
-			comment.IsResolved = thread.IsResolved
-
-			position := &ghpb.CommentPosition{}
-			position.StartLine = int64(thread.OriginalStartLine)
-			position.EndLine = int64(thread.OriginalLine)
-
-			if thread.DiffSide == "LEFT" {
-				position.Side = ghpb.CommentSide_LEFT_SIDE
-			} else {
-				position.Side = ghpb.CommentSide_RIGHT_SIDE
-			}
-			comment.Position = position
-
-			commenter := &ghpb.ReviewUser{}
-			commenter.Login = getLogin(&c.Author)
-			commenter.Bot = isBot(&c.Author)
-			comment.Commenter = commenter
-
+			comment := graphQLCommentToProto(
+				&c, int64(thread.OriginalStartLine), int64(thread.OriginalLine), thread.DiffSide, thread.Path, thread.Id, thread.IsResolved)
 			if thread.Path != "" {
 				fileCommentCount[thread.Path]++
 			}
