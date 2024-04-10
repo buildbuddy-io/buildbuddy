@@ -1,7 +1,7 @@
 import React from "react";
 import { github } from "../../../proto/github_ts_proto";
 import moment from "moment";
-import { CommentModel } from "./draft_review_model";
+import { CommentModel } from "./review_model";
 
 export interface CommentEditHandler {
   startComment: (side: github.CommentSide, path: string, commitSha: string, lineNumber: number) => void;
@@ -37,8 +37,6 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
     let commentToSubmit: CommentModel;
     if (this.props.draftComment) {
       commentToSubmit = this.props.draftComment.updateBody(commentBody);
-      // TODO(jdhollen): Make this a little bit cleaner.  This is currently just
-      // blowing away the copied comment's ID, which is weird.
     } else {
       commentToSubmit = this.props.comments[0]
         .createReply(this.props.reviewId, this.props.viewerLogin)

@@ -17,7 +17,7 @@ import ReviewThreadComponent from "./review_thread";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 import FileContentComponent from "./file_content";
-import { CommentModel, DraftReviewModel, FileModel } from "./draft_review_model";
+import { CommentModel, ReviewModel, FileModel } from "./review_model";
 
 interface ViewPullRequestComponentProps {
   owner: string;
@@ -27,7 +27,7 @@ interface ViewPullRequestComponentProps {
 }
 
 interface State {
-  reviewModel?: DraftReviewModel;
+  reviewModel?: ReviewModel;
   displayedDiffs: string[];
   replyDialogOpen: boolean;
   draftReplyText: string;
@@ -74,7 +74,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         pull: Long.fromInt(this.props.pull),
       })
       .then((r) => {
-        this.setState({ reviewModel: DraftReviewModel.fromResponse(r) });
+        this.setState({ reviewModel: ReviewModel.fromResponse(r) });
       })
       .catch((e) => error_service.handleError(e));
   }
@@ -396,7 +396,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     );
   }
 
-  getPrStatusClass(r?: DraftReviewModel) {
+  getPrStatusClass(r?: ReviewModel) {
     if (!r) {
       return "pending";
     }
@@ -409,7 +409,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     }
   }
 
-  getPrStatusString(r: DraftReviewModel) {
+  getPrStatusString(r: ReviewModel) {
     if (r.isSubmitted()) {
       return "Merged";
     } else if (r.isMergeable()) {

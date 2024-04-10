@@ -8,29 +8,6 @@ function newFakeId(): string {
   return FAKE_ID_PREFIX + fakeReviewIdCounter;
 }
 
-interface State {
-  draftReviewId: string;
-  title: string;
-  body: string;
-  owner: string;
-  repo: string;
-  pullNumber: number;
-  pullId: string;
-  branch: string;
-  githubUrl: string;
-  viewerLogin: string;
-  author: string;
-  submitted: boolean;
-  mergeable: boolean;
-  createdAtUsec: number;
-  updatedAtUsec: number;
-  files: readonly FileModel[];
-  comments: readonly CommentModel[];
-  actionStatuses: readonly github.ActionStatus[];
-  reviewers: readonly github.Reviewer[];
-  inProgressComments: Set<string>;
-}
-
 export class CommentModel {
   private comment: github.Comment;
 
@@ -244,7 +221,33 @@ export class ThreadModel {
   }
 }
 
-export class DraftReviewModel {
+// This little nightmare makes it easier to modify the otherwise-immutable
+// state of a model: we can just make a copy and replace the necessary fields
+// instead of exposing a modifiable structure to callers.
+interface State {
+  draftReviewId: string;
+  title: string;
+  body: string;
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  pullId: string;
+  branch: string;
+  githubUrl: string;
+  viewerLogin: string;
+  author: string;
+  submitted: boolean;
+  mergeable: boolean;
+  createdAtUsec: number;
+  updatedAtUsec: number;
+  files: readonly FileModel[];
+  comments: readonly CommentModel[];
+  actionStatuses: readonly github.ActionStatus[];
+  reviewers: readonly github.Reviewer[];
+  inProgressComments: Set<string>;
+}
+
+export class ReviewModel {
   private state: State;
 
   private constructor(state: State) {
@@ -365,15 +368,15 @@ export class DraftReviewModel {
     return copy;
   }
 
-  addComment(newComment: CommentModel): DraftReviewModel {
+  addComment(newComment: CommentModel): ReviewModel {
     const newState = this.stateCopy();
     const newComments = [...newState.comments];
     newComments.push(newComment);
     newState.comments = newComments;
-    return new DraftReviewModel(newState);
+    return new ReviewModel(newState);
   }
 
-  updateComment(commentId: string, newComment: CommentModel): DraftReviewModel {
+  updateComment(commentId: string, newComment: CommentModel): ReviewModel {
     const newState = this.stateCopy();
     const newComments = [...newState.comments];
     const oldCommentIndex = newComments.findIndex((c) => c.getId() === commentId) ?? -1;
@@ -384,10 +387,10 @@ export class DraftReviewModel {
     }
     newState.comments = newComments;
 
-    return new DraftReviewModel(newState);
+    return new ReviewModel(newState);
   }
 
-  deleteComment(commentId: string): DraftReviewModel {
+  deleteComment(commentId: string): ReviewModel {
     const newState = this.stateCopy();
     const newComments = [...newState.comments];
     const oldCommentIndex = newComments.findIndex((c) => c.getId() === commentId) ?? -1;
@@ -395,16 +398,16 @@ export class DraftReviewModel {
       newComments.splice(oldCommentIndex, 1);
     }
     newState.comments = newComments;
-    return new DraftReviewModel(newState);
+    return new ReviewModel(newState);
   }
 
-  setCommentToPending(commentId: string): DraftReviewModel {
+  setCommentToPending(commentId: string): ReviewModel {
     if (this.isCommentInProgress(commentId)) {
       return this;
     }
     const newState = this.stateCopy();
     newState.inProgressComments.add(commentId);
-    return new DraftReviewModel(newState);
+    return new ReviewModel(newState);
   }
 
   removeCommentFromPending(commentId: string) {
@@ -413,7 +416,7 @@ export class DraftReviewModel {
     }
     const newState = this.stateCopy();
     newState.inProgressComments.delete(commentId);
-    return new DraftReviewModel(newState);
+    return new ReviewModel(newState);
   }
 
   setDraftReviewId(draftReviewId: string) {
@@ -422,13 +425,13 @@ export class DraftReviewModel {
     }
     const newState = this.stateCopy();
     newState.draftReviewId = draftReviewId;
-    return new DraftReviewModel(newState);
+    return new ReviewModel(newState);
   }
 
-  static fromResponse(response: github.GetGithubPullRequestDetailsResponse): DraftReviewModel {
+  static fromResponse(response: github.GetGithubPullRequestDetailsResponse): ReviewModel {
     const reviewers = [...response.reviewers];
     reviewers.sort((a, b) => (a.login.toLowerCase() < b.login.toLowerCase() ? -1 : 1));
-    return new DraftReviewModel({
+    return new ReviewModel({
       draftReviewId: response.draftReviewId ? response.draftReviewId : newFakeId(),
       title: response.title,
       body: response.body,
