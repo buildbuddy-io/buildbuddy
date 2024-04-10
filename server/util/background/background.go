@@ -2,23 +2,60 @@ package background
 
 import (
 	"context"
+	"sync"
 	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 )
 
 type disconnectedContext struct {
 	parent context.Context
+	done   chan struct{}
+
+	mu  sync.Mutex
+	err error
 }
 
-func (ctx disconnectedContext) Deadline() (deadline time.Time, ok bool) {
+func newDisconnectedContext(parent context.Context) *disconnectedContext {
+	return &disconnectedContext{
+		parent: parent,
+		done:   make(chan struct{}),
+	}
+}
+
+// Deadline cannot be accurately computed for contexts that are extended
+// for finalization, because the timeout takes effect once the parent
+// context is canceled. This means that the deadline is variable. For now,
+// just report no deadline.
+// TODO: this behavior seems potentially problematic, maybe figure out
+// something better.
+func (ctx *disconnectedContext) Deadline() (deadline time.Time, ok bool) {
+	log.CtxDebugf(ctx, "Called Deadline() on disconnected context - this may not work as expected")
 	return
 }
-func (ctx disconnectedContext) Done() <-chan struct{} {
-	return nil
+
+func (ctx *disconnectedContext) Done() <-chan struct{} {
+	return ctx.done
 }
-func (ctx disconnectedContext) Err() error {
-	return nil
+
+func (ctx *disconnectedContext) Err() error {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+	return ctx.err
 }
-func (ctx disconnectedContext) Value(key interface{}) interface{} {
+
+func (ctx *disconnectedContext) cancel(err error) {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+	// Once err is set, it cannot be re-set
+	if ctx.err != nil {
+		return
+	}
+	ctx.err = err
+	close(ctx.done)
+}
+func (ctx *disconnectedContext) Value(key interface{}) interface{} {
 	return ctx.parent.Value(key)
 }
 
@@ -26,7 +63,7 @@ func (ctx disconnectedContext) Value(key interface{}) interface{} {
 // any cancellation and deadlines associated with the context, but preserving
 // all context values such as auth info and outgoing gRPC metadata.
 func ToBackground(ctx context.Context) context.Context {
-	return disconnectedContext{parent: ctx}
+	return newDisconnectedContext(ctx)
 }
 
 // Long story short: sometimes you need just a little more time to do a write
@@ -35,14 +72,23 @@ func ToBackground(ctx context.Context) context.Context {
 // other values stored in the context. For that, we have this beauty. Use it
 // to make a copy of your expired context and do your cleanup work.
 func ExtendContextForFinalization(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	ctx := disconnectedContext{parent: parent}
-	// If the original context already had a deadline, ensure that the given timeout
-	// doesn't result in a new deadline that's even shorter.
-	if originalDeadline, ok := parent.Deadline(); ok {
-		remainingTime := time.Until(originalDeadline)
-		if remainingTime > timeout {
-			timeout = remainingTime
+	ctx := newDisconnectedContext(parent)
+	go func() {
+		// Wait for the parent context to be canceled, then after the grace
+		// period, cancel the extended context.
+		select {
+		case <-ctx.Done():
+			return // cancelled manually
+		case <-parent.Done():
 		}
-	}
-	return context.WithTimeout(ctx, timeout)
+		t := time.NewTimer(timeout)
+		defer timeutil.StopAndDrainTimer(t)
+		select {
+		case <-ctx.Done():
+			return // cancelled manually
+		case <-t.C:
+		}
+		ctx.cancel(context.DeadlineExceeded)
+	}()
+	return ctx, func() { ctx.cancel(context.Canceled) }
 }
