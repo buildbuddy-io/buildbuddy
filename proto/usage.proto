@@ -18,10 +18,7 @@ message GetUsageResponse {
   context.ResponseContext response_context = 1;
 
   // Usage numbers for the requested UTC month.
-  //
-  // TODO(bduffany): make this non-repeated once the client and server are
-  // updated.
-  repeated Usage usage = 2;
+  Usage usage = 2;
 
   // The available usage periods that may be specified in a subsequent
   // GetUsageRequest.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -79,18 +78,8 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 		start = p.Start()
 		end = addCalendarMonths(start, 1)
 	} else {
-		// TODO(bduffany): after the next rollout, just return the current usage
-		// period if the usage_period field is empty, instead of the last 6.
-
-		// Get the timestamp corresponding to the start of the current month in UTC,
-		// with a month offset so that we return the desired number of months of
-		// usage.
-		maxNumHistoricalMonths := maxNumMonthsOfUsageToReturn - 1
-		start = addCalendarMonths(getUsagePeriod(now).Start(), -maxNumHistoricalMonths)
-		// Limit the start date to the start of the month in which we began collecting
-		// usage data.
-		start = maxTime(start, getUsagePeriod(s.start).Start())
-		end = addCalendarMonths(getUsagePeriod(now).Start(), 1)
+		start = getUsagePeriod(now).Start()
+		end = addCalendarMonths(start, 1)
 	}
 
 	usages, err := s.scanUsages(ctx, groupID, start, end)
@@ -98,29 +87,22 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 		return nil, err
 	}
 
-	// Build the response list from scanned rows, inserting explicit zeroes for
-	// periods with no data.
 	rsp := &usagepb.GetUsageResponse{
 		AvailableUsagePeriods: availableUsagePeriods,
 	}
-	for t := start; !(t.After(end) || t.Equal(end)); t = addCalendarMonths(t, 1) {
-		period := getUsagePeriod(t).String()
+	period := getUsagePeriod(start).String()
 
-		if len(usages) > 0 && usages[0].Period == period {
-			rsp.Usage = append(rsp.Usage, usages[0])
-			usages = usages[1:]
-		} else {
-			rsp.Usage = append(rsp.Usage, &usagepb.Usage{Period: period})
-		}
+	if len(usages) > 1 {
+		log.Warningf("Scan returned more than one usage period! Start: %s, End: %s", start, end)
 	}
-	// Make sure we always return at least one month (to make the client simpler).
-	if len(rsp.Usage) == 0 {
-		rsp.Usage = append(rsp.Usage, &usagepb.Usage{
-			Period: getUsagePeriod(now).String(),
-		})
+
+	// If there are no rows in the response, there's no usage for the requested
+	// time period--just shove in some zeroes instead.
+	if len(usages) > 0 && usages[0].Period == period {
+		rsp.Usage = usages[0]
+	} else {
+		rsp.Usage = &usagepb.Usage{Period: period}
 	}
-	// Return in reverse-chronological order.
-	slices.Reverse(rsp.Usage)
 	return rsp, nil
 }
 
