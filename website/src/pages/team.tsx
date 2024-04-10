@@ -128,9 +128,9 @@ const emeriti = [
   {
     name: "Pari Parajuli",
     email: "pari@buildbuddy.io",
-    linkedin: "grace2chuang",
-    blurb:
-      "Previously Finance, Operations, and Product Strategy at Google & J.P. Morgan. Studied Commerce, Finance and Marketing at UVA.",
+    github: "pariparajuli",
+    linkedin: "pari-parajuli",
+    blurb: "Software Engineering Intern studying Computer Science at University of California, Berkeley.",
     image: "pari.png",
   },
   {
