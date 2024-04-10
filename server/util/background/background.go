@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 )
 
 type disconnectedContext struct {
@@ -82,7 +81,7 @@ func ExtendContextForFinalization(parent context.Context, timeout time.Duration)
 		case <-parent.Done():
 		}
 		t := time.NewTimer(timeout)
-		defer timeutil.StopAndDrainTimer(t)
+		defer t.Stop()
 		select {
 		case <-ctx.Done():
 			return // cancelled manually
