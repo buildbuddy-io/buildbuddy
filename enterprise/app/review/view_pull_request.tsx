@@ -74,6 +74,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         pull: Long.fromInt(this.props.pull),
       })
       .then((r) => {
+        console.log(r);
         this.setState({ reviewModel: ReviewModel.fromResponse(r) });
       })
       .catch((e) => error_service.handleError(e));

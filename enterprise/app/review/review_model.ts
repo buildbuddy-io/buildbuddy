@@ -52,7 +52,7 @@ export class CommentModel {
   }
 
   getLine(): number {
-    return +(this.comment.position?.startLine ?? this.comment.position?.endLine ?? 0);
+    return +(this.comment.position?.startLine || this.comment.position?.endLine || 0);
   }
 
   getSide(): github.CommentSide {

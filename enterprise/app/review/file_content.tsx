@@ -16,8 +16,6 @@ interface FileContentComponentProps {
   commitSha: string;
 }
 
-interface State {}
-
 interface DiffLineInfo {
   startLine: number;
   lineCount: number;
@@ -41,16 +39,6 @@ interface Hunk {
 export default class FileContentComponent extends React.Component<FileContentComponentProps> {
   replyBodyTextRef: React.RefObject<HTMLTextAreaElement> = React.createRef();
   replyApprovalCheckRef: React.RefObject<HTMLInputElement> = React.createRef();
-
-  state: State = {
-    displayedDiffs: [],
-    replyDialogOpen: false,
-    draftReplyText: "",
-    inProgressCommentsById: new Set<string>(),
-    pendingRequest: false,
-  };
-
-  componentWillMount() {}
 
   renderThread(thread: ThreadModel) {
     const comments = thread.getComments();
@@ -95,9 +83,10 @@ export default class FileContentComponent extends React.Component<FileContentCom
   }
 
   renderComments(comments: CommentModel[]) {
-    if (comments.length > 0) {
-    }
-    const threads: Map<String, ThreadModel> = ThreadModel.threadsFromComments(comments);
+    const threads: Map<String, ThreadModel> = ThreadModel.threadsFromComments(
+      comments,
+      this.props.reviewModel.getDraftReviewId()
+    );
     const outs: JSX.Element[] = [];
 
     threads.forEach((t) => {
