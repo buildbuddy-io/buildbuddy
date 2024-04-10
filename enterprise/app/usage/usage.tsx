@@ -43,7 +43,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
     rpcService.service
       .getUsage(new usage.GetUsageRequest({ usagePeriod: period }))
       .then((response) => {
-        if (response.usage.length === 0) {
+        if (!response.usage) {
           throw new Error("Server did not return usage data.");
         }
         this.setState({ response, selectedPeriod: period });
@@ -55,7 +55,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
   render() {
     const orgName = this.props.user?.selectedGroup.name;
     // Selected period may not be found because of a pending or failed RPC.
-    const selection = this.state.response?.usage.find((v) => v.period === this.state.selectedPeriod);
+    const selection = this.state.response?.usage;
 
     return (
       <div className="usage-page">

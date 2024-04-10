@@ -65,12 +65,10 @@ func TestGetUsage(t *testing.T) {
 	require.NoError(t, err)
 
 	expectedResponse := &usagepb.GetUsageResponse{
-		Usage: []*usagepb.Usage{
-			{
-				Period:       "2024-02",
-				Invocations:  13,
-				CasCacheHits: 10_000,
-			},
+		Usage: &usagepb.Usage{
+			Period:       "2024-02",
+			Invocations:  13,
+			CasCacheHits: 10_000,
 		},
 		AvailableUsagePeriods: []string{
 			"2024-02",
