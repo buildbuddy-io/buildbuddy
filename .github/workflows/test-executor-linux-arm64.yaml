@@ -54,7 +54,7 @@ jobs:
             --color=yes
             --test_env=CONTAINERS_CONF=/tmp/containers.conf
           )
-          bazel test "${BUILD_FLAGS[@]}" \
+          bazel test "${BUILD_FLAGS[@]}" --test_tag_filters=-performance,-docker \
             //enterprise/server/remote_execution/... \
             //enterprise/server/test/integration/remote_execution/...
 
