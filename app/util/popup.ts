@@ -1,5 +1,5 @@
 export default {
-  open: (url: string, timeout = 360, width = 400, height = 600) => {
+  open: (url: string, timeout = 360, width = 432, height = 600) => {
     return new Promise<any>((resolve, reject) => {
       const left = window.screenX + (window.innerWidth - width) / 2;
       const top = window.screenY + (window.innerHeight - height) / 2;
