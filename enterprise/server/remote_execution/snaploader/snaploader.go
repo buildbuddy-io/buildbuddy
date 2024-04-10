@@ -399,18 +399,40 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 
 func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInstanceName string, snapshotActionResult *repb.ActionResult, tmpDir string, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
 	snapMetadata := snapshotActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
-	if len(snapMetadata) != 2 {
+	if len(snapMetadata) < 1 {
 		return nil, status.InternalErrorf("expected vm config in snapshot auxiliary metadata")
 	}
-
 	vmConfig := &fcpb.VMConfiguration{}
 	if err := snapMetadata[0].UnmarshalTo(vmConfig); err != nil {
 		return nil, status.WrapErrorf(err, "unmarshall vm config")
 	}
 
-	vmMetadata := &fcpb.VMMetadata{}
-	if err := snapMetadata[1].UnmarshalTo(vmMetadata); err != nil {
-		return nil, status.WrapErrorf(err, "unmarshall vm metadata")
+	// TODO(Maggie): Clean this up after #6341 has been rolled out
+	var vmMetadata *fcpb.VMMetadata
+	if len(snapMetadata) == 2 {
+		vmMetadata = &fcpb.VMMetadata{}
+		if err := snapMetadata[1].UnmarshalTo(vmMetadata); err != nil {
+			return nil, status.WrapErrorf(err, "unmarshall vm metadata")
+		}
+	} else {
+		reMetadata := snapshotActionResult.GetExecutionMetadata().GetVmMetadata()
+		if reMetadata != nil {
+			var lastTask *fcpb.VMMetadata_VMTask
+			if reMetadata.LastExecutedTask != nil {
+				lastTask = &fcpb.VMMetadata_VMTask{
+					InvocationId:          reMetadata.LastExecutedTask.InvocationId,
+					ExecutionId:           reMetadata.LastExecutedTask.ExecutionId,
+					ActionDigest:          reMetadata.LastExecutedTask.ActionDigest,
+					ExecuteResponseDigest: reMetadata.LastExecutedTask.ExecuteResponseDigest,
+					SnapshotId:            reMetadata.LastExecutedTask.SnapshotId,
+				}
+			}
+			vmMetadata = &fcpb.VMMetadata{
+				VmId:             reMetadata.VmId,
+				LastExecutedTask: lastTask,
+				SnapshotId:       reMetadata.SnapshotId,
+			}
+		}
 	}
 
 	manifest := &fcpb.SnapshotManifest{

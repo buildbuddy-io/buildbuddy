@@ -463,7 +463,7 @@ func makeFakeSnapshot(t *testing.T, workDir string, remoteEnabled bool, chunkedF
 		ContainerFSPath:     makeRandomFile(t, workDir, "containerfs", 1_000),
 		Remote:              remoteEnabled,
 		ChunkedFiles:        chunkedFiles,
-		VMMetadata:          &repb.VMMetadata{SnapshotId: snapshotID},
+		VMMetadata:          &fcpb.VMMetadata{SnapshotId: snapshotID},
 	}
 }
 

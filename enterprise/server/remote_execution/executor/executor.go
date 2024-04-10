@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"google.golang.org/protobuf/types/known/anypb"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -300,10 +300,11 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	md.UsageStats = cmdResult.UsageStats
 	if cmdResult.VMMetadata != nil {
 		vmMetadata, err := anypb.New(cmdResult.VMMetadata)
-		if err != nil {
-			// TODO
+		if err == nil {
+			md.AuxiliaryMetadata = []*anypb.Any{vmMetadata}
+		} else {
+			log.CtxErrorf(ctx, "Could not encode VMMetadata to `any` type: %s", err)
 		}
-		md.AuxiliaryMetadata = []*anypb.Any{vmMetadata}
 	}
 	md.ExecutionCompletedTimestamp = timestamppb.Now()
 	md.OutputUploadStartTimestamp = timestamppb.Now()

@@ -6,7 +6,6 @@ import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
-import {google} from "../../proto/any_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
@@ -397,17 +396,22 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   // For firecracker actions, VM metadata is stored in the auxiliary metadata field
   // of the execution metadata. Try to decode it into an object if it exists.
-  private getFirecrackerVMMetadata(): firecracker.VMMetadata | null {
+  private getFirecrackerVMMetadata(): firecracker.VMMetadata | null | undefined {
     const auxiliaryMetadata = this.state.actionResult?.executionMetadata?.auxiliaryMetadata;
     if (!auxiliaryMetadata) {
-      return null;
+      return this.getDeprecatedFirecrackerVMMetadata();
     }
     for (const metadata of auxiliaryMetadata) {
       if (metadata.typeUrl.includes("firecracker.VMMetadata")) {
         return firecracker.VMMetadata.decode(metadata.value);
       }
-    };
+    }
     return null;
+  }
+
+  // TODO(Maggie): Clean up after #6341 has been rolled out
+  private getDeprecatedFirecrackerVMMetadata(): firecracker.VMMetadata | null | undefined {
+    return this.state.actionResult?.executionMetadata?.vmMetadata;
   }
 
   private getVMPreviousTaskHref(): string {
@@ -586,37 +590,25 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             {vmMetadata && (
                               <>
                                 <div className="metadata-title">VM ID</div>
-                                <div className="metadata-detail">
-                                  {vmMetadata.vmId}
-                                </div>
+                                <div className="metadata-detail">{vmMetadata.vmId}</div>
                                 {vmMetadata.lastExecutedTask && (
                                   <>
                                     <div className="metadata-title">VM resumed from invocation</div>
                                     <div className="metadata-detail">
                                       <TextLink
                                         href={this.getVMPreviousTaskHref()}
-                                        title={
-                                          vmMetadata.lastExecutedTask
-                                            .executionId
-                                        }>
-                                        {
-                                          vmMetadata.lastExecutedTask
-                                            .invocationId
-                                        }
+                                        title={vmMetadata.lastExecutedTask.executionId}>
+                                        {vmMetadata.lastExecutedTask.invocationId}
                                       </TextLink>
                                     </div>
                                     <div className="metadata-title">VM resumed from snapshot ID</div>
-                                    <div className="metadata-detail">
-                                      {vmMetadata.lastExecutedTask.snapshotId}
-                                    </div>
+                                    <div className="metadata-detail">{vmMetadata.lastExecutedTask.snapshotId}</div>
                                   </>
                                 )}
                                 {vmMetadata.snapshotId && (
                                   <>
                                     <div className="metadata-title">Saved to snapshot ID</div>
-                                    <div className="metadata-detail">
-                                      {vmMetadata.snapshotId}
-                                    </div>
+                                    <div className="metadata-detail">{vmMetadata.snapshotId}</div>
                                   </>
                                 )}
                               </>
