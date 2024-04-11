@@ -35,7 +35,7 @@ const (
 
 var (
 	bazel5_1_0             = bazel_request.MustParseVersion("5.1.0")
-	maxSizeForDirectWrites = flag.Int64("cache.max_direct_write_size", 0, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
+	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 0, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
 )
 
 type ByteStreamServer struct {
@@ -259,7 +259,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		casRN.SetCompressor(r.GetCompressor())
 	}
 
-	if r.GetDigest().GetSizeBytes() >= *maxSizeForDirectWrites {
+	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
 		// The protocol says it is *optional* to allow overwriting, but does
 		// not specify what errors should be returned in that case. We would
 		// like to return an "AlreadyExists" error here, but it causes errors

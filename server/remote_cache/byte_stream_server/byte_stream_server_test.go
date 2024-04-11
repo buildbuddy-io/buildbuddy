@@ -196,7 +196,7 @@ func TestRPCWrite(t *testing.T) {
 }
 
 func TestRPCWriteWithDirectWrite(t *testing.T) {
-	flags.Set(t, "cache.max_direct_write_size", 1024)
+	flags.Set(t, "cache.max_direct_write_size_bytes", 1024)
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
 	clientConn := runByteStreamServer(ctx, te, t)
