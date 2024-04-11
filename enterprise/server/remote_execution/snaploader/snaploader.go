@@ -399,7 +399,7 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 
 func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInstanceName string, snapshotActionResult *repb.ActionResult, tmpDir string, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
 	snapMetadata := snapshotActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
-	if len(snapMetadata) != 1 {
+	if len(snapMetadata) < 1 {
 		return nil, status.InternalErrorf("expected vm config in snapshot auxiliary metadata")
 	}
 
