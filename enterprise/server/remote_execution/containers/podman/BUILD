@@ -59,9 +59,10 @@ go_test(
 #
 # - Replaces the registry config with our custom one. This way, we don't have to
 #   override it separately.
-# - Strips the top-level podman-static directory. This is needed because the
-#   'tars' attribute of container_layer does not seem to support stripping
-#   components, currently.
+# - Strips the top-level podman-static directory, so that the archive will contain
+#   paths like ./usr/bin/podman rather than ./podman-static/usr/bin/podman.
+#   This is needed because the 'tars' attribute of container_layer does not seem to
+#   support stripping components, currently.
 genrule(
     name = "podman-static",
     srcs = select({

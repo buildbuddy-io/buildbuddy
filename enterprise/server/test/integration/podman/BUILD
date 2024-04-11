@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//platforms/podman:version.bzl", "PODMAN_VERSION")
+load("//deps.bzl", "PODMAN_VERSION")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
