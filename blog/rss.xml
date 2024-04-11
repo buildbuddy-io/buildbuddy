@@ -4,10 +4,19 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Tue, 02 Apr 2024 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Thu, 11 Apr 2024 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Welcoming Fabian Meumertzheim]]></title>
+            <link>https://www.buildbuddy.io/blog/welcoming-fabian-meumertzheim</link>
+            <guid>https://www.buildbuddy.io/blog/welcoming-fabian-meumertzheim</guid>
+            <pubDate>Thu, 11 Apr 2024 12:00:00 GMT</pubDate>
+            <description><![CDATA[At BuildBuddy, our mission is to bring the world's best developer tools to every company. A core part of that mission involves building around the open source Bazel ecosystem to give every engineer fast, reproducible, and correct builds.]]></description>
+            <category>company</category>
+            <category>team</category>
+        </item>
         <item>
             <title><![CDATA[Why is my Bazel build so slow?]]></title>
             <link>https://www.buildbuddy.io/blog/debugging-slow-bazel-builds</link>
@@ -172,15 +181,6 @@
             <description><![CDATA[Earlier this month we wrapped up the 2022 Bazelcon conference in New York City. The conference featured talks by many prominent Bazel users including Lyft, Spotify, Tesla, Slack, Stripe, Tinder, Tecton, Coinbase, Uber, more.]]></description>
             <category>bazelcon</category>
             <category>company</category>
-        </item>
-        <item>
-            <title><![CDATA[How We Use ClickHouse to Analyze Trends Across Millions of Builds]]></title>
-            <link>https://www.buildbuddy.io/blog/clickhouse-build-trends</link>
-            <guid>https://www.buildbuddy.io/blog/clickhouse-build-trends</guid>
-            <pubDate>Tue, 22 Nov 2022 12:00:00 GMT</pubDate>
-            <description><![CDATA[When you use Buildbuddy with Bazel to build and test software, Buildbuddy]]></description>
-            <category>product</category>
-            <category>engineering</category>
         </item>
     </channel>
 </rss>

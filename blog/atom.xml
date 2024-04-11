@@ -2,11 +2,24 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2024-04-02T12:00:00.000Z</updated>
+    <updated>2024-04-11T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Welcoming Fabian Meumertzheim]]></title>
+        <id>https://www.buildbuddy.io/blog/welcoming-fabian-meumertzheim</id>
+        <link href="https://www.buildbuddy.io/blog/welcoming-fabian-meumertzheim"/>
+        <updated>2024-04-11T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[At BuildBuddy, our mission is to bring the world's best developer tools to every company. A core part of that mission involves building around the open source Bazel ecosystem to give every engineer fast, reproducible, and correct builds.]]></summary>
+        <author>
+            <name>Siggi Simonarson</name>
+            <uri>https://www.linkedin.com/in/siggisim/</uri>
+        </author>
+        <category label="company" term="company"/>
+        <category label="team" term="team"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Why is my Bazel build so slow?]]></title>
         <id>https://www.buildbuddy.io/blog/debugging-slow-bazel-builds</id>
@@ -247,18 +260,5 @@
         </author>
         <category label="bazelcon" term="bazelcon"/>
         <category label="company" term="company"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[How We Use ClickHouse to Analyze Trends Across Millions of Builds]]></title>
-        <id>https://www.buildbuddy.io/blog/clickhouse-build-trends</id>
-        <link href="https://www.buildbuddy.io/blog/clickhouse-build-trends"/>
-        <updated>2022-11-22T12:00:00.000Z</updated>
-        <summary type="html"><![CDATA[When you use Buildbuddy with Bazel to build and test software, Buildbuddy]]></summary>
-        <author>
-            <name>Lulu Zhang</name>
-            <uri>https://www.linkedin.com/in/luluzhang66</uri>
-        </author>
-        <category label="product" term="product"/>
-        <category label="engineering" term="engineering"/>
     </entry>
 </feed>
