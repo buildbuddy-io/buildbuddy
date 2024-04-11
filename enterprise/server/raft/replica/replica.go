@@ -2016,7 +2016,6 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return err
 	}
 	defer readDB.Close()
-
 	return sm.loadReplicaState(db)
 }
 
