@@ -4,14 +4,11 @@ import (
 	"context"
 	"sync"
 	"time"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 type disconnectedContext struct {
-	parent                  context.Context
-	done                    chan struct{}
-	extendedForFinalization bool
+	parent context.Context
+	done   chan struct{}
 
 	mu  sync.Mutex
 	err error
@@ -24,16 +21,13 @@ func newDisconnectedContext(parent context.Context) *disconnectedContext {
 	}
 }
 
+// Deadline cannot be accurately computed for contexts that are extended
+// for finalization, because the timeout takes effect once the parent
+// context is canceled. This means that the deadline is variable. For now,
+// just report no deadline.
+// TODO: this behavior seems potentially problematic, maybe figure out
+// something better.
 func (ctx *disconnectedContext) Deadline() (deadline time.Time, ok bool) {
-	// Deadline cannot be accurately computed for contexts that are extended
-	// for finalization, because the timeout takes effect once the parent
-	// context is canceled. This means that the deadline is variable. For now,
-	// just report no deadline.
-	// TODO: this behavior seems potentially problematic, maybe figure out
-	// something better.
-	if ctx.extendedForFinalization {
-		log.CtxDebugf(ctx, "Called Deadline() on context created with background.ExtendContextForFinalization() - this may not work as expected.")
-	}
 	return
 }
 
@@ -75,7 +69,6 @@ func ToBackground(ctx context.Context) context.Context {
 // to make a copy of your expired context and do your cleanup work.
 func ExtendContextForFinalization(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	ctx := newDisconnectedContext(parent)
-	ctx.extendedForFinalization = true
 	go func() {
 		// Wait for the parent context to be canceled, then after the grace
 		// period, cancel the extended context.
