@@ -69,15 +69,7 @@ const teamMembers = [
       "Previously Senior Software Engineer at Google & Thumbtack. Studied Computer Science at University of California, Irvine.",
     image: "lulu.jpg",
   },
-  {
-    name: "Brentley Jones",
-    email: "brentley@buildbuddy.io",
-    github: "brentleyjones",
-    twitter: "brentleyjones",
-    linkedin: "brentleyjones",
-    blurb: "Previously Staff Software Engineer at Lyft & Target. Maintainer of Bazel's rules_apple and rules_swift.",
-    image: "brentley.jpg",
-  },
+
   {
     name: "Maggie Lou",
     email: "maggie@buildbuddy.io",
@@ -120,6 +112,36 @@ const teamMembers = [
       "Previously Finance, Operations, and Product Strategy at Google & J.P. Morgan. Studied Commerce, Finance and Marketing at UVA.",
     image: "grace.jpg",
   },
+  {
+    name: "Fabian Meumertzheim",
+    email: "fabian@buildbuddy.io",
+    github: "fmeum",
+    twitter: "fhenneke",
+    linkedin: "fhenneke",
+    blurb:
+      "Previously Software Engineer at Code Intelligence. Maintainer of Bazel's rules_go and gazelle. Studied Mathematics and Computer Science at The University of Bonn.",
+    image: "fabian.jpg",
+  },
+];
+
+const emeriti = [
+  {
+    name: "Pari Parajuli",
+    email: "pari@buildbuddy.io",
+    github: "pariparajuli",
+    linkedin: "pari-parajuli",
+    blurb: "Software Engineering Intern studying Computer Science at University of California, Berkeley.",
+    image: "pari.png",
+  },
+  {
+    name: "Brentley Jones",
+    email: "brentley@buildbuddy.io",
+    github: "brentleyjones",
+    twitter: "brentleyjones",
+    linkedin: "brentleyjones",
+    blurb: "Previously Staff Software Engineer at Lyft & Target. Maintainer of Bazel's rules_apple and rules_swift.",
+    image: "brentley.jpg",
+  },
 ];
 
 function Team() {
@@ -152,7 +174,6 @@ function Team() {
                 </div>
                 <div className={styles.teamMemberHeading}>
                   <div className={styles.teamMemberName}>{teamMember.name}</div>
-
                   <div className={styles.teamMemberContact}>
                     {teamMember.email && (
                       <a target="_blank" href={`mailto:${teamMember.email}`}>
@@ -177,6 +198,41 @@ function Team() {
                   </div>
                 </div>
                 <div className={styles.teamMemberBlurb}>{teamMember.blurb}</div>
+              </div>
+            ))}
+          </div>
+          <h2 className={styles.title}>Emeriti</h2>
+          <div className={styles.team}>
+            {shuffle(emeriti).map((emeritus) => (
+              <div className={styles.teamMember} key={emeritus.name}>
+                <div className={styles.teamMemberImage}>
+                  <Image
+                    img={require(`../../static/img/team/${emeritus.image}`)}
+                    shouldAutoDownload={() => true}
+                    threshold={10000}
+                  />
+                </div>
+                <div className={styles.teamMemberHeading}>
+                  <div className={styles.teamMemberName}>{emeritus.name}</div>
+                  <div className={styles.teamMemberContact}>
+                    {emeritus.github && (
+                      <a target="_blank" href={`https://github.com/${emeritus.github}`}>
+                        <Github />
+                      </a>
+                    )}
+                    {emeritus.twitter && (
+                      <a target="_blank" href={`https://twitter.com/${emeritus.twitter}`}>
+                        <Twitter />
+                      </a>
+                    )}
+                    {emeritus.linkedin && (
+                      <a target="_blank" href={`https://www.linkedin.com/in/${emeritus.linkedin}`}>
+                        <Linkedin />
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <div className={styles.teamMemberBlurb}>{emeritus.blurb}</div>
               </div>
             ))}
           </div>
