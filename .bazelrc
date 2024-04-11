@@ -185,7 +185,6 @@ common --noremote_upload_local_results # Uploads logs & artifacts without writin
 # Populate workspace info like commit sha and repo name to your invocation.
 common:linux --workspace_status_command=$(pwd)/workspace_status.sh
 common:macos --workspace_status_command=$(pwd)/workspace_status.sh
-common:windows --workspace_status_command="bash workspace_status.sh"
 
 # Misc remote cache/BES optimizations
 common --experimental_remote_cache_async

@@ -7,6 +7,7 @@ genrule(
     srcs = ["//enterprise/server/cmd/github_actions_runner"],
     outs = [":buildbuddy_github_actions_runner"],
     cmd_bash = "cp $(SRCS) $@",
+    cmd_ps = "Copy-Item -Path $(SRCS) -Destination $@",
 )
 
 # Gazelle does not handle generated embedsrcs properly; ignore this target for now.

@@ -10,6 +10,7 @@ genrule(
             printf '%s' $$version > $@;
         """,
     }),
+    cmd_ps = "echo $$null >> $@",
     stamp = 1,
 )
 
@@ -23,6 +24,7 @@ genrule(
             printf '%s' $$commit > $@;
         """,
     }),
+    cmd_ps = "echo $$null >> $@",
     stamp = 1,
 )
 

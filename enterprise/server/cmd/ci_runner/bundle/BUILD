@@ -12,6 +12,7 @@ genrule(
     srcs = ["//enterprise/server/cmd/ci_runner"],
     outs = ["buildbuddy_ci_runner"],
     cmd_bash = "cp $(SRCS) $@",
+    cmd_ps = "Copy-Item -Path $(SRCS) -Destination $@",
 )
 
 go_library(

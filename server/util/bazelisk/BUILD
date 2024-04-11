@@ -9,6 +9,7 @@ genrule(
     }),
     outs = ["bazelisk-1.17.0"],
     cmd_bash = "cp $(SRCS) $@",
+    cmd_ps = "Copy-Item -Path $(SRCS) -Destination $@",
     visibility = ["//visibility:public"],
 )
 
