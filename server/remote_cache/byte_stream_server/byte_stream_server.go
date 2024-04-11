@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"runtime/debug"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
