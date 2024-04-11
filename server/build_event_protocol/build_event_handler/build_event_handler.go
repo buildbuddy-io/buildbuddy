@@ -162,7 +162,21 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	b.cancelFnsByInvID.Store(iid, cancel)
 
 	b.openChannels.Add(1)
+
+	enqueueStatsOnce := &sync.Once{}
 	onClose := func() {
+		enqueueStatsOnce.Do(func() {
+			persist := &PersistArtifacts{}
+			if !*disablePersistArtifacts {
+				testOutputURIs := buildEventAccumulator.TestOutputURIs()
+				persist.URIs = make([]*url.URL, 0, len(testOutputURIs))
+				persist.URIs = append(persist.URIs, buildEventAccumulator.BuildToolLogURIs()...)
+				persist.URIs = append(persist.URIs, testOutputURIs...)
+			}
+
+			b.statsRecorder.Enqueue(ctx, invocation, persist)
+			log.CtxInfo(ctx, "Enqueued for stats recording in close.")
+		})
 		b.openChannels.Done()
 		b.cancelFnsByInvID.Delete(iid)
 	}
@@ -186,6 +200,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		logWriter:                   nil,
 		onClose:                     onClose,
 		attempt:                     1,
+		enqueueStatsOnce:            enqueueStatsOnce,
 	}
 }
 
@@ -754,6 +769,8 @@ type EventChannel struct {
 	// when we're retrying an invocation that is already complete, or is
 	// incomplete but was created too far in the past.
 	isVoid bool
+
+	enqueueStatsOnce *sync.Once
 }
 
 func (e *EventChannel) Context() context.Context {
@@ -815,16 +832,19 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
-	persist := &PersistArtifacts{}
-	if !*disablePersistArtifacts {
-		testOutputURIs := e.beValues.TestOutputURIs()
-		persist.URIs = make([]*url.URL, 0, len(testOutputURIs))
-		persist.URIs = append(persist.URIs, e.beValues.BuildToolLogURIs()...)
-		persist.URIs = append(persist.URIs, testOutputURIs...)
-	}
+	e.enqueueStatsOnce.Do(func() {
+		persist := &PersistArtifacts{}
+		if !*disablePersistArtifacts {
+			testOutputURIs := e.beValues.TestOutputURIs()
+			persist.URIs = make([]*url.URL, 0, len(testOutputURIs))
+			persist.URIs = append(persist.URIs, e.beValues.BuildToolLogURIs()...)
+			persist.URIs = append(persist.URIs, testOutputURIs...)
+		}
 
-	e.statsRecorder.Enqueue(ctx, invocation, persist)
-	log.CtxInfof(ctx, "Finalized invocation in primary DB and enqueued for stats recording (status: %s)", invocation.GetInvocationStatus())
+		e.statsRecorder.Enqueue(ctx, invocation, persist)
+		log.CtxInfo(ctx, "Enqueued for stats recording in finalize.")
+	})
+	log.CtxInfof(ctx, "Finalized invocation in primary DB (status: %s)", invocation.GetInvocationStatus())
 	return nil
 }
 
