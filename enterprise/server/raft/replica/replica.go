@@ -723,7 +723,7 @@ func (sm *Replica) clearInMemoryReplicaState() {
 }
 
 // clearInMemoryReplicaState clears in-memory and on-disk replica state.
-func (sm *Replica) clearReplicaState() error {
+func (sm *Replica) clearReplicaState(db ReplicaWriter) error {
 	// Remove range from the store
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
@@ -733,11 +733,6 @@ func (sm *Replica) clearReplicaState() error {
 		sm.store.RemoveRange(rangeDescriptor, sm)
 	}
 
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
 	wb := db.NewIndexedBatch()
 
 	prefix := sm.replicaPrefix()
@@ -2008,6 +2003,8 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 	if err != nil {
 		return err
 	}
+
+	sm.clearReplicaState(db)
 	err = sm.ApplySnapshotFromReader(r, db)
 	db.Close() // close the DB before handling errors or checking keys.
 	if err != nil {
@@ -2019,7 +2016,6 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 	}
 	defer readDB.Close()
 
-	sm.clearReplicaState()
 	return sm.loadReplicaState(db)
 }
 
