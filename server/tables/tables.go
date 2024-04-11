@@ -589,7 +589,7 @@ type GitRepository struct {
 	// DefaultNonRootRunner decides whether workflow and remote bazel runs
 	// within this repository should run as a non-root user by default.
 	// TODO(http://go/b/3286): Remove this field after completing migration.
-	DefaultNonRootRunner bool `gorm:"not null;default:false"`
+	DefaultNonRootRunner bool `gorm:"not null;default:0"`
 }
 
 func (g *GitRepository) TableName() string {
