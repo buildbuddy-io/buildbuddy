@@ -26,6 +26,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -1036,7 +1037,7 @@ type CommandResult struct {
 	UsageStats *repb.UsageStats
 
 	// VMMetadata associated with the VM that ran the task, if applicable.
-	VMMetadata *repb.VMMetadata
+	VMMetadata *fcpb.VMMetadata
 }
 
 type Subscriber interface {

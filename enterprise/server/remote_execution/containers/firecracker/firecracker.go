@@ -937,9 +937,9 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	return nil
 }
 
-func (c *FirecrackerContainer) getVMMetadata() *repb.VMMetadata {
+func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 	if c.snapshot == nil || c.snapshot.GetVMMetadata() == nil {
-		return &repb.VMMetadata{
+		return &fcpb.VMMetadata{
 			VmId:       c.id,
 			SnapshotId: c.snapshotID,
 		}
@@ -947,9 +947,9 @@ func (c *FirecrackerContainer) getVMMetadata() *repb.VMMetadata {
 	return c.snapshot.GetVMMetadata()
 }
 
-func (c *FirecrackerContainer) getVMTask() *repb.VMMetadata_VMTask {
+func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 	d, _ := digest.Compute(strings.NewReader(c.task.GetExecutionId()), c.task.GetExecuteRequest().GetDigestFunction())
-	return &repb.VMMetadata_VMTask{
+	return &fcpb.VMMetadata_VMTask{
 		InvocationId:          c.task.GetInvocationId(),
 		ExecutionId:           c.task.GetExecutionId(),
 		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
@@ -1053,7 +1053,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	// Set unique per-run identifier on the vm metadata so this exact snapshot
 	// run can be identified
 	if snap.GetVMMetadata() == nil {
-		md := &repb.VMMetadata{
+		md := &fcpb.VMMetadata{
 			VmId: c.id,
 		}
 		snap.SetVMMetadata(md)

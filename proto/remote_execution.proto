@@ -1057,6 +1057,7 @@ message ExecutedActionMetadata {
   // Whether the executed Action was marked with `do_not_cache`.
   bool do_not_cache = 1004;
 
+  // TODO(Maggie): Deprecate after #6341 goes out
   // Metadata associated with the VM that this action was executed on.
   VMMetadata vm_metadata = 1005;
 }
@@ -2279,6 +2280,7 @@ message StoredExecution {
   int32 exit_code = 30;
 }
 
+// TODO(Maggie): Deprecate after #6341 goes out
 // Metadata associated with a firecracker VM.
 message VMMetadata {
   // A UUID assigned to the VM upon creation which is preserved across

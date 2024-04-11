@@ -3,6 +3,7 @@ import format from "../format/format";
 import InvocationModel from "./invocation_model";
 import { Download, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
+import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
@@ -393,8 +394,29 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .catch((e) => console.error(e));
   }
 
+  // For firecracker actions, VM metadata is stored in the auxiliary metadata field
+  // of the execution metadata. Try to decode it into an object if it exists.
+  private getFirecrackerVMMetadata(): firecracker.VMMetadata | null | undefined {
+    const auxiliaryMetadata = this.state.actionResult?.executionMetadata?.auxiliaryMetadata;
+    if (!auxiliaryMetadata || auxiliaryMetadata.length == 0) {
+      return this.getDeprecatedFirecrackerVMMetadata();
+    }
+    for (const metadata of auxiliaryMetadata) {
+      if (metadata.typeUrl === "type.googleapis.com/firecracker.VMMetadata") {
+        return firecracker.VMMetadata.decode(metadata.value);
+      }
+    }
+    return null;
+  }
+
+  // TODO(Maggie): Clean up after #6341 has been rolled out
+  private getDeprecatedFirecrackerVMMetadata(): firecracker.VMMetadata | null | undefined {
+    return this.state.actionResult?.executionMetadata?.vmMetadata;
+  }
+
   private getVMPreviousTaskHref(): string {
-    const task = this.state.actionResult?.executionMetadata?.vmMetadata?.lastExecutedTask;
+    const vmMetadata = this.getFirecrackerVMMetadata();
+    const task = vmMetadata?.lastExecutedTask;
     if (!task?.executeResponseDigest || !task?.invocationId || !task?.actionDigest) return "";
     return `/invocation/${task.invocationId}?actionDigest=${digestToString(
       task.actionDigest
@@ -438,6 +460,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
+    const vmMetadata = this.getFirecrackerVMMetadata();
 
     return (
       <div className="invocation-action-card">
@@ -552,40 +575,28 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             <div className="metadata-detail">
                               {this.state.actionResult.executionMetadata.executorId}
                             </div>
-                            {this.state.actionResult.executionMetadata.vmMetadata && (
+                            {vmMetadata && (
                               <>
                                 <div className="metadata-title">VM ID</div>
-                                <div className="metadata-detail">
-                                  {this.state.actionResult.executionMetadata.vmMetadata.vmId}
-                                </div>
-                                {this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask && (
+                                <div className="metadata-detail">{vmMetadata.vmId}</div>
+                                {vmMetadata.lastExecutedTask && (
                                   <>
                                     <div className="metadata-title">VM resumed from invocation</div>
                                     <div className="metadata-detail">
                                       <TextLink
                                         href={this.getVMPreviousTaskHref()}
-                                        title={
-                                          this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask
-                                            .executionId
-                                        }>
-                                        {
-                                          this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask
-                                            .invocationId
-                                        }
+                                        title={vmMetadata.lastExecutedTask.executionId}>
+                                        {vmMetadata.lastExecutedTask.invocationId}
                                       </TextLink>
                                     </div>
                                     <div className="metadata-title">VM resumed from snapshot ID</div>
-                                    <div className="metadata-detail">
-                                      {this.state.actionResult.executionMetadata.vmMetadata.lastExecutedTask.snapshotId}
-                                    </div>
+                                    <div className="metadata-detail">{vmMetadata.lastExecutedTask.snapshotId}</div>
                                   </>
                                 )}
-                                {this.state.actionResult.executionMetadata.vmMetadata.snapshotId && (
+                                {vmMetadata.snapshotId && (
                                   <>
                                     <div className="metadata-title">Saved to snapshot ID</div>
-                                    <div className="metadata-detail">
-                                      {this.state.actionResult.executionMetadata.vmMetadata.snapshotId}
-                                    </div>
+                                    <div className="metadata-detail">{vmMetadata.snapshotId}</div>
                                   </>
                                 )}
                               </>
