@@ -3,6 +3,7 @@ package replica_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"io"
 	"os"
 	"testing"
@@ -634,6 +635,13 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
+	rd := &rfpb.RangeDescriptor{
+		Start:      keys.Key("a"),
+		End:        keys.Key("z"),
+		RangeId:    1,
+		Generation: 2,
+	}
+	writeLocalRangeDescriptor(t, em, repl, rd)
 
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -684,7 +692,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 		leaser2.Close()
 		db2.Close()
 	})
-	repl2 := replica.New(leaser, 1, 2, store, nil /*=usageUpdates=*/)
+	repl2 := replica.New(leaser2, 1, 2, store, nil /*=usageUpdates=*/)
 	require.NotNil(t, repl2)
 	_, err = repl2.Open(stopc)
 	require.NoError(t, err)
@@ -710,6 +718,27 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	// Recover from the snapshot
 	err = repl2.RecoverFromSnapshot(snapFile, nil /*=quitChan*/)
 	require.NoError(t, err)
+
+	// Verify that local range key exists, and the value is the same as the local
+	// range in the snapshot.
+	localRangeKey := keys.MakeKey(constants.LocalPrefix, []byte("c0001n0002-"), constants.LocalRangeKey)
+	buf, closer, err := db2.Get(localRangeKey)
+	require.NotEmpty(t, buf)
+	require.NoError(t, err)
+	gotRD := &rfpb.RangeDescriptor{}
+	err = proto.Unmarshal(buf, gotRD)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(rd, gotRD))
+	closer.Close()
+
+	// Verify that local last applied index key exists, and the value is not zero.
+	localIndexKey := keys.MakeKey(constants.LocalPrefix, []byte("c0001n0002-"), constants.LastAppliedIndexKey)
+	buf, closer, err = db2.Get(localIndexKey)
+	require.NotEmpty(t, buf)
+	require.NoError(t, err)
+	gotIndex := binary.LittleEndian.Uint64(buf)
+	require.Greater(t, gotIndex, uint64(0))
+	closer.Close()
 
 	// Verify that we should not be able to commit the txn in the snapshot.
 	err = repl2.CommitTransaction(txid)
