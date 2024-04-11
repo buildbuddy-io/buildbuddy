@@ -98,6 +98,22 @@ actions:
           - "*"
     bazel_commands:
       - test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare
+  - name: Maggie
+    container_image: ubuntu-20.04
+    triggers:
+      push:
+        branches:
+          - "master"
+    bazel_commands:
+      - help
+  - name: Version
+    container_image: ubuntu-20.04
+    triggers:
+      push:
+        branches:
+          - "master"
+    bazel_commands:
+      - version
   # TODO(http://go/b/2282): delete this workflow.
   - name: Image streaming test
     container_image: ubuntu-20.04
