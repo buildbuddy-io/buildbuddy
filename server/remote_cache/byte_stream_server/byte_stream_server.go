@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"runtime/debug"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -33,7 +35,8 @@ const (
 )
 
 var (
-	bazel5_1_0 = bazel_request.MustParseVersion("5.1.0")
+	bazel5_1_0             = bazel_request.MustParseVersion("5.1.0")
+	maxSizeForDirectWrites = flag.Int64("cache.max_direct_write_size", 0, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
 )
 
 type ByteStreamServer struct {
@@ -256,20 +259,23 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if s.cache.SupportsCompressor(r.GetCompressor()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}
-	// The protocol says it is *optional* to allow overwriting, but does
-	// not specify what errors should be returned in that case. We would
-	// like to return an "AlreadyExists" error here, but it causes errors
-	// with parallel actions during remote execution.
-	//
-	// Protocol does say that if another parallel write had finished while
-	// this one was ongoing, we can immediately return a response with the
-	// committed size, so we'll just do that.
-	exists, err := s.cache.Contains(ctx, casRN.ToProto())
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return nil, status.AlreadyExistsError("Already exists")
+
+	if r.GetDigest().GetSizeBytes() >= *maxSizeForDirectWrites {
+		// The protocol says it is *optional* to allow overwriting, but does
+		// not specify what errors should be returned in that case. We would
+		// like to return an "AlreadyExists" error here, but it causes errors
+		// with parallel actions during remote execution.
+		//
+		// Protocol does say that if another parallel write had finished while
+		// this one was ongoing, we can immediately return a response with the
+		// committed size, so we'll just do that.
+		exists, err := s.cache.Contains(ctx, casRN.ToProto())
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			return nil, status.AlreadyExistsError("Already exists")
+		}
 	}
 
 	var committedWriteCloser interfaces.CommittedWriteCloser
