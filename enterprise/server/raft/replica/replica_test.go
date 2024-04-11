@@ -615,12 +615,21 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
 	store := &fakeStore{}
-	repl := newTestReplica(t, rootDir, 1, 1, store)
+	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	require.NotNil(t, repl)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
-	_, err := repl.Open(stopc)
+	_, err = repl.Open(stopc)
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
@@ -636,6 +645,20 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	rsp, err := repl.Update(entries)
 	require.NoError(t, err)
 	require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+
+	wb := db.NewBatch()
+	txid := []byte("TX1")
+	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("zoo"),
+		},
+	}).ToProto()
+	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	require.NoError(t, err)
+
+	require.NoError(t, wb.Commit(pebble.Sync))
+	require.NoError(t, wb.Close())
 
 	// Create a snapshot of the replica.
 	snapI, err := repl.PrepareSnapshot()
@@ -653,13 +676,13 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 
 	// Restore a new replica from the created snapshot.
 	rootDir2 := testfs.MakeTempDir(t)
-	db, err := pebble.Open(rootDir2, "test", &pebble.Options{})
+	db2, err := pebble.Open(rootDir2, "test", &pebble.Options{})
 	require.NoError(t, err)
 
-	leaser := pebble.NewDBLeaser(db)
+	leaser2 := pebble.NewDBLeaser(db2)
 	t.Cleanup(func() {
-		leaser.Close()
-		db.Close()
+		leaser2.Close()
+		db2.Close()
 	})
 	repl2 := replica.New(leaser, 1, 2, store, nil /*=usageUpdates=*/)
 	require.NotNil(t, repl2)
@@ -669,27 +692,32 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	em2 := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em2, repl2)
 
-	// Prepare a transaction
-	wb := db.NewBatch()
-	txid := []byte("TX1")
-	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+	// Prepare a transaction before recovering from snapshot
+	wb2 := db2.NewBatch()
+	txid2 := []byte("TX2")
+	cmd2, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   []byte("foo"),
-			Value: []byte("bar2"),
+			Value: []byte("zoo2"),
 		},
 	}).ToProto()
-	_, err = repl2.PrepareTransaction(wb, txid, cmd)
+	_, err = repl2.PrepareTransaction(wb2, txid2, cmd2)
 	require.NoError(t, err)
 
-	require.NoError(t, wb.Commit(pebble.Sync))
-	require.NoError(t, wb.Close())
+	require.NoError(t, wb2.Commit(pebble.Sync))
+	require.NoError(t, wb2.Close())
 
 	// Recover from the snapshot
 	err = repl2.RecoverFromSnapshot(snapFile, nil /*=quitChan*/)
 	require.NoError(t, err)
 
-	// Verify that we should not be able to commit the transaction.
+	// Verify that we should not be able to commit the txn in the snapshot.
 	err = repl2.CommitTransaction(txid)
+	require.NoError(t, err)
+
+	// Verify that we should not be able to commit the txn that was not in the
+	// snapshot but created before recovering from the snapshot
+	err = repl2.CommitTransaction(txid2)
 	require.True(t, status.IsNotFoundError(err), "CommitTransaction should return NotFound error")
 }
 
