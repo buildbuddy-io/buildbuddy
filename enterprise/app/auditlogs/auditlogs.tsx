@@ -159,14 +159,14 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
         return "Link GitHub Repo";
       case Action.UNLINK_GITHUB_REPO:
         return "Unlink GitHub Repo";
-      case Action.INVALIDATE_ALL_WORKFLOW_RECYCLED_RUNNERS:
-        return "Invalidate Recycled Runners for All Workflows";
+      case Action.INVALIDATE_ALL_WORKFLOW_VM_SNAPSHOTS:
+        return "Invalidate All Workflow VM Snapshots";
       case Action.CREATE_IMPERSONATION_API_KEY:
         return "Create Impersonation API Key";
       case Action.UPDATE_IP_RULES_CONFIG:
         return "Update IP Rules Config";
-      case Action.INVALIDATE_RECYCLED_RUNNER_SNAPSHOT:
-        return "Invalidate Recycled Runner Snapshot";
+      case Action.INVALIDATE_VM_SNAPSHOT:
+        return "Invalidate VM Snapshot";
     }
     return "";
   }

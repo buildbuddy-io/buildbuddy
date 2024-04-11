@@ -657,6 +657,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
+        "//proto:firecracker_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:workflow_ts_proto",
         "@npm//@types/long",

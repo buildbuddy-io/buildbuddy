@@ -166,6 +166,9 @@ message VMMetadata {
 
   // The snapshot ID of the task that is currently executing.
   string snapshot_id = 3;
+
+  // The snapshot key the currently executing task saved to after execution.
+  SnapshotKey snapshot_key = 4;
 }
 
 // SnapshotVersionMetadata contains the version ID to be used for snapshots.

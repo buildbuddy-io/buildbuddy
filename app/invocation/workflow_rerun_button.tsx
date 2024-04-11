@@ -22,6 +22,7 @@ import Spinner from "../components/spinner/spinner";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import Long from "long";
 import { User } from "../auth/user";
+import { firecracker } from "../../proto/firecracker_ts_proto";
 
 export interface WorkflowRerunButtonProps {
   model: InvocationModel;
@@ -141,19 +142,33 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
 
     // Get the execute response, which contains the snapshot key.
     const executeResponseUrl = this.props.model.getActionCacheURL(executeResponseDigest);
-    const executeResponseBuffer = await rpcService.fetchBytestreamFile(
-      executeResponseUrl,
-      this.props.model.getInvocationId(),
-      "arraybuffer"
-    );
+    const executeResponseBuffer = await rpcService
+      .fetchBytestreamFile(executeResponseUrl, this.props.model.getInvocationId(), "arraybuffer")
+      .catch((e) => {
+        throw new Error(
+          `workflow execute response does not exist in the cache. Try invalidating from a more recent workflow run`
+        );
+      });
 
     const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(executeResponseBuffer));
     // ExecuteResponse is encoded in ActionResult.stdout_raw field. See
     // proto field docs on `Execution.execute_response_digest`.
     const executeResponseBytes = actionResult.stdoutRaw;
     const executeResponse = build.bazel.remote.execution.v2.ExecuteResponse.decode(executeResponseBytes);
-    const snapshotKey = executeResponse.result?.executionMetadata?.vmMetadata?.snapshotKey;
 
+    // Vm metadata is stored in the auxiliary metadata field of the execution metadata.
+    const auxiliaryMetadata = executeResponse.result?.executionMetadata?.auxiliaryMetadata;
+    if (!auxiliaryMetadata || auxiliaryMetadata.length == 0) {
+      throw new Error("empty snapshot key in execute response");
+    }
+    let snapshotKey: firecracker.SnapshotKey | null | undefined;
+    for (const metadata of auxiliaryMetadata) {
+      if (metadata.typeUrl === "type.googleapis.com/firecracker.VMMetadata") {
+        const vmMetadata = firecracker.VMMetadata.decode(metadata.value);
+        snapshotKey = vmMetadata.snapshotKey;
+        break;
+      }
+    }
     if (snapshotKey === null || snapshotKey === undefined) {
       throw new Error("empty snapshot key in execute response");
     }

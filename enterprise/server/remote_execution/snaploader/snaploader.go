@@ -102,7 +102,7 @@ func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.
 	}
 
 	snapMetadata := acResult.GetExecutionMetadata().GetAuxiliaryMetadata()
-	if len(snapMetadata) != 1 {
+	if len(snapMetadata) < 1 {
 		return "", status.InternalErrorf("expected version metadata in auxiliary metadata")
 	}
 	versionMetadata := &fcpb.SnapshotVersionMetadata{}
@@ -1044,14 +1044,4 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	}
 	log.CtxDebugf(ctx, "Converted containerfs to COW in %s", time.Since(start))
 	return cow, nil
-}
-
-func ConvertSnapshotKeyForVMMetadata(k *fcpb.SnapshotKey) *repb.VMMetadata_SnapshotKey {
-	return &repb.VMMetadata_SnapshotKey{
-		InstanceName:      k.InstanceName,
-		PlatformHash:      k.PlatformHash,
-		ConfigurationHash: k.ConfigurationHash,
-		Ref:               k.Ref,
-		SnapshotId:        k.SnapshotId,
-	}
 }

@@ -4,7 +4,7 @@ import "google/protobuf/duration.proto";
 import "google/rpc/status.proto";
 import "proto/context.proto";
 import "proto/invocation_status.proto";
-import "proto/remote_execution.proto";
+import "proto/firecracker.proto";
 
 package workflow;
 
@@ -302,7 +302,7 @@ message GetReposResponse {
 message InvalidateSnapshotRequest {
   context.RequestContext request_context = 1;
 
-  build.bazel.remote.execution.v2.VMMetadata.SnapshotKey snapshot_key = 2;
+  firecracker.SnapshotKey snapshot_key = 2;
 }
 
 message InvalidateSnapshotResponse {

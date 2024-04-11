@@ -100,6 +100,7 @@ message Entry {
     iprules.UpdateRuleRequest update_ip_rule = 16;
     iprules.DeleteRuleRequest delete_ip_rule = 17;
     iprules.SetRulesConfigRequest set_rules_config = 18;
+    workflow.InvalidateSnapshotRequest invalidate_snapshot = 19;
   }
   message Request {
     APIRequest api_request = 1;

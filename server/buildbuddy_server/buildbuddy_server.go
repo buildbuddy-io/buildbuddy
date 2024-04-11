@@ -48,7 +48,6 @@ import (
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
-	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -1322,8 +1321,7 @@ func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb
 			return nil, status.UnauthenticatedError(err.Error())
 		}
 
-		k := request.SnapshotKey
-		if k == nil {
+		if request.SnapshotKey == nil {
 			return nil, status.InvalidArgumentError("snapshot key is required")
 		}
 
@@ -1331,13 +1329,7 @@ func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb
 			al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_VM_SNAPSHOT, request)
 		}
 
-		if _, err := ss.InvalidateSnapshot(ctx, &fcpb.SnapshotKey{
-			InstanceName:      k.GetInstanceName(),
-			PlatformHash:      k.GetPlatformHash(),
-			ConfigurationHash: k.GetConfigurationHash(),
-			Ref:               k.GetRef(),
-			SnapshotId:        k.GetSnapshotId(),
-		}); err != nil {
+		if _, err := ss.InvalidateSnapshot(ctx, request.SnapshotKey); err != nil {
 			return nil, err
 		}
 		return &wfpb.InvalidateSnapshotResponse{}, nil
