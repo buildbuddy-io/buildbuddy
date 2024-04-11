@@ -195,6 +195,26 @@ func TestRPCWrite(t *testing.T) {
 	}
 }
 
+func TestRPCWriteWithDirectWrite(t *testing.T) {
+	flags.Set(t, "cache.max_direct_write_size_bytes", 1024)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runByteStreamServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	// This file is small enough that we'll skip the Contains check.
+	d, readSeeker := testdigest.NewRandomDigestReader(t, 1000)
+	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRPCMalformedWrite(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
