@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync"
 	"time"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 type disconnectedContext struct {
@@ -30,7 +28,6 @@ func newDisconnectedContext(parent context.Context) *disconnectedContext {
 // TODO: this behavior seems potentially problematic, maybe figure out
 // something better.
 func (ctx *disconnectedContext) Deadline() (deadline time.Time, ok bool) {
-	log.CtxDebugf(ctx, "Called Deadline() on disconnected context - this may not work as expected")
 	return
 }
 

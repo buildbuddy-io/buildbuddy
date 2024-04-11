@@ -5,7 +5,6 @@ go_library(
     srcs = ["background.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/background",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/log"],
 )
 
 go_test(
