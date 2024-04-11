@@ -1,6 +1,6 @@
-load("//platforms/podman:version.bzl", "PODMAN_VERSION")
 load("@bazel_gazelle//:deps.bzl", "go_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
+load("//platforms/podman:version.bzl", "PODMAN_STATIC_SHA256_AMD64", "PODMAN_STATIC_SHA256_ARM64", "PODMAN_VERSION")
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies
 def install_go_mod_dependencies(workspace_name = "buildbuddy"):
@@ -6940,11 +6940,11 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     http_file(
         name = "com_github_buildbuddy_io_podman_static_podman-linux-amd64",
         urls = ["https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-{podman_version}/podman-linux-amd64.tar.gz".format(podman_version = PODMAN_VERSION)],
-        sha256 = "ac14152d2ef5cb25abbd615893cd56355f951f075a7ae663f0b2c1bc5d3fb77e",
+        sha256 = PODMAN_STATIC_SHA256_AMD64,
     )
 
     http_file(
         name = "com_github_buildbuddy_io_podman_static_podman-linux-arm64",
         urls = ["https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-{podman_version}/podman-linux-arm64.tar.gz".format(podman_version = PODMAN_VERSION)],
-        sha256 = "72ab4a9c6ae9d5d00200070cb43b0921117898925a284bfacbfb3873aa82e598",
+        sha256 = PODMAN_STATIC_SHA256_ARM64,
     )
