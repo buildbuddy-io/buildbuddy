@@ -91,6 +91,8 @@ func printCompactExecLog(path string) error {
 	}
 }
 
+// SpawnLogReconstructor reconstructs "compact execution log" format back to the original format.
+// As of Bazel 7.1, this is the recommended way to consume the new compact format.
 type SpawnLogReconstructor struct {
 	input *bufio.Reader
 
@@ -203,6 +205,7 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) (*
 	}
 	se.ListedOutputs = listedOutputs
 	se.ActualOutputs = actualOutputs
+
 	return se, nil
 }
 
@@ -253,7 +256,7 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb
 }
 
 func reconstructDir(d *spb.ExecLogEntry_Directory) *reconstructedDir {
-	filesInDir := make([]*spb.File, len(d.GetFiles()))
+	filesInDir := make([]*spb.File, 0, len(d.GetFiles()))
 	for _, file := range d.GetFiles() {
 		filesInDir = append(filesInDir, reconstructFile(d, file))
 	}
