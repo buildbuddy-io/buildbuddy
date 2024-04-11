@@ -398,11 +398,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
   // of the execution metadata. Try to decode it into an object if it exists.
   private getFirecrackerVMMetadata(): firecracker.VMMetadata | null | undefined {
     const auxiliaryMetadata = this.state.actionResult?.executionMetadata?.auxiliaryMetadata;
-    if (!auxiliaryMetadata) {
+    if (!auxiliaryMetadata || auxiliaryMetadata.length == 0) {
       return this.getDeprecatedFirecrackerVMMetadata();
     }
     for (const metadata of auxiliaryMetadata) {
-      if (metadata.typeUrl.includes("firecracker.VMMetadata")) {
+      if (metadata.typeUrl === "type.googleapis.com/firecracker.VMMetadata") {
         return firecracker.VMMetadata.decode(metadata.value);
       }
     }
