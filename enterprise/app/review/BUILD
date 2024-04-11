@@ -5,6 +5,29 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 exports_files(["review.css"])
 
 ts_library(
+    name = "review_model",
+    srcs = ["review_model.ts"],
+    deps = [
+        "//proto:github_ts_proto",
+        "@npm//@types/long",
+        "@npm//long",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "file_content",
+    srcs = ["file_content.tsx"],
+    deps = [
+        "//enterprise/app/review:review_model",
+        "//enterprise/app/review:review_thread",
+        "//proto:github_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
     name = "review",
     srcs = ["review.tsx"],
     deps = [
@@ -37,6 +60,7 @@ ts_library(
     name = "review_thread",
     srcs = ["review_thread.tsx"],
     deps = [
+        "//enterprise/app/review:review_model",
         "//proto:github_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
@@ -57,6 +81,8 @@ ts_library(
         "//app/errors:error_service",
         "//app/format",
         "//app/service:rpc_service",
+        "//enterprise/app/review:file_content",
+        "//enterprise/app/review:review_model",
         "//enterprise/app/review:review_thread",
         "//proto:github_ts_proto",
         "@npm//@types/long",
