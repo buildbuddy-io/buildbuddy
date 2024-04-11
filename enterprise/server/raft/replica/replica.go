@@ -705,6 +705,50 @@ func (sm *Replica) loadRangeLease(db ReplicaReader) {
 	sm.setRangeLease(constants.LocalRangeLeaseKey, buf)
 }
 
+// clearInMemoryReplicaState clears in-memory replica state.
+func (sm *Replica) clearInMemoryReplicaState() {
+	sm.rangeMu.Lock()
+	sm.rangeDescriptor = nil
+	sm.mappedRange = nil
+	sm.rangeLease = nil
+	sm.rangeMu.Unlock()
+
+	sm.prepared = make(map[string]pebble.Batch)
+	sm.lockedKeys = make(map[string][]byte)
+	sm.lastAppliedIndex = 0
+
+	sm.partitionMetadataMu.Lock()
+	sm.partitionMetadata = make(map[string]*rfpb.PartitionMetadata)
+	sm.partitionMetadataMu.Unlock()
+}
+
+// clearInMemoryReplicaState clears in-memory and on-disk replica state.
+func (sm *Replica) clearReplicaState(db ReplicaWriter) error {
+	// Remove range from the store
+	sm.rangeMu.Lock()
+	rangeDescriptor := sm.rangeDescriptor
+	sm.rangeMu.Unlock()
+
+	if sm.store != nil && rangeDescriptor != nil {
+		sm.store.RemoveRange(rangeDescriptor, sm)
+	}
+
+	wb := db.NewIndexedBatch()
+
+	prefix := sm.replicaPrefix()
+	replicaLocalPrefix := append(prefix, []byte(constants.LocalPrefix)...)
+	start, end := keys.Range(replicaLocalPrefix)
+	if err := wb.DeleteRange(start, end, nil /*ignored write options*/); err != nil {
+		return err
+	}
+	if err := wb.Commit(pebble.Sync); err != nil {
+		return err
+	}
+
+	sm.clearInMemoryReplicaState()
+	return nil
+}
+
 // loadReplicaState loads any in-memory replica state from the DB.
 func (sm *Replica) loadReplicaState(db ReplicaReader) error {
 	sm.loadRangeDescriptor(db)
@@ -1955,10 +1999,13 @@ func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-ch
 // RecoverFromSnapshot is not required to synchronize its recovered in-core
 // state with that on disk.
 func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
+	log.Debugf("RecoverFromSnapshot for ShardID=%d, ReplicaID=%d", sm.ShardID, sm.ReplicaID)
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return err
 	}
+
+	sm.clearReplicaState(db)
 	err = sm.ApplySnapshotFromReader(r, db)
 	db.Close() // close the DB before handling errors or checking keys.
 	if err != nil {

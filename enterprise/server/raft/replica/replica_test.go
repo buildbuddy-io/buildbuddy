@@ -3,6 +3,7 @@ package replica_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"io"
 	"os"
 	"testing"
@@ -611,6 +612,142 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	readCloser, err = reader(t, repl2, header, fileRecord)
 	require.NoError(t, err)
 	require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
+}
+
+func TestClearStateBeforeApplySnapshot(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+	store := &fakeStore{}
+	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	require.NotNil(t, repl)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err = repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+	rd := &rfpb.RangeDescriptor{
+		Start:      keys.Key("a"),
+		End:        keys.Key("z"),
+		RangeId:    1,
+		Generation: 2,
+	}
+	writeLocalRangeDescriptor(t, em, repl, rd)
+
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("bar"),
+		},
+	}))
+	entries := []dbsm.Entry{entry}
+	rsp, err := repl.Update(entries)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+
+	wb := db.NewBatch()
+	txid := []byte("TX1")
+	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("zoo"),
+		},
+	}).ToProto()
+	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	require.NoError(t, err)
+
+	require.NoError(t, wb.Commit(pebble.Sync))
+	require.NoError(t, wb.Close())
+
+	// Create a snapshot of the replica.
+	snapI, err := repl.PrepareSnapshot()
+	require.NoError(t, err)
+
+	baseDir := testfs.MakeTempDir(t)
+	snapFile, err := os.CreateTemp(baseDir, "snapfile-*")
+	require.NoError(t, err)
+	snapFileName := snapFile.Name()
+	defer os.Remove(snapFileName)
+
+	err = repl.SaveSnapshot(snapI, snapFile, nil /*=quitChan*/)
+	require.NoError(t, err)
+	snapFile.Seek(0, 0)
+
+	// Restore a new replica from the created snapshot.
+	rootDir2 := testfs.MakeTempDir(t)
+	db2, err := pebble.Open(rootDir2, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser2 := pebble.NewDBLeaser(db2)
+	t.Cleanup(func() {
+		leaser2.Close()
+		db2.Close()
+	})
+	repl2 := replica.New(leaser2, 1, 2, store, nil /*=usageUpdates=*/)
+	require.NotNil(t, repl2)
+	_, err = repl2.Open(stopc)
+	require.NoError(t, err)
+
+	em2 := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em2, repl2)
+
+	// Prepare a transaction before recovering from snapshot
+	wb2 := db2.NewBatch()
+	txid2 := []byte("TX2")
+	cmd2, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("zoo2"),
+		},
+	}).ToProto()
+	_, err = repl2.PrepareTransaction(wb2, txid2, cmd2)
+	require.NoError(t, err)
+
+	require.NoError(t, wb2.Commit(pebble.Sync))
+	require.NoError(t, wb2.Close())
+
+	// Recover from the snapshot
+	err = repl2.RecoverFromSnapshot(snapFile, nil /*=quitChan*/)
+	require.NoError(t, err)
+
+	// Verify that local range key exists, and the value is the same as the local
+	// range in the snapshot.
+	localRangeKey := keys.MakeKey(constants.LocalPrefix, []byte("c0001n0002-"), constants.LocalRangeKey)
+	buf, closer, err := db2.Get(localRangeKey)
+	require.NotEmpty(t, buf)
+	require.NoError(t, err)
+	gotRD := &rfpb.RangeDescriptor{}
+	err = proto.Unmarshal(buf, gotRD)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(rd, gotRD))
+	closer.Close()
+
+	// Verify that local last applied index key exists, and the value is not zero.
+	localIndexKey := keys.MakeKey(constants.LocalPrefix, []byte("c0001n0002-"), constants.LastAppliedIndexKey)
+	buf, closer, err = db2.Get(localIndexKey)
+	require.NotEmpty(t, buf)
+	require.NoError(t, err)
+	gotIndex := binary.LittleEndian.Uint64(buf)
+	require.Greater(t, gotIndex, uint64(0))
+	closer.Close()
+
+	// Verify that we should not be able to commit the txn in the snapshot.
+	err = repl2.CommitTransaction(txid)
+	require.NoError(t, err)
+
+	// Verify that we should not be able to commit the txn that was not in the
+	// snapshot but created before recovering from the snapshot
+	err = repl2.CommitTransaction(txid2)
+	require.True(t, status.IsNotFoundError(err), "CommitTransaction should return NotFound error")
 }
 
 func TestReplicaFileWriteDelete(t *testing.T) {
