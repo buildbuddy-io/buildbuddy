@@ -127,7 +127,6 @@ const teamMembers = [
 const emeriti = [
   {
     name: "Pari Parajuli",
-    email: "pari@buildbuddy.io",
     github: "pariparajuli",
     linkedin: "pari-parajuli",
     blurb: "Software Engineering Intern studying Computer Science at University of California, Berkeley.",
@@ -135,7 +134,6 @@ const emeriti = [
   },
   {
     name: "Brentley Jones",
-    email: "brentley@buildbuddy.io",
     github: "brentleyjones",
     twitter: "brentleyjones",
     linkedin: "brentleyjones",
