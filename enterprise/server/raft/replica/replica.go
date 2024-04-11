@@ -1999,6 +1999,7 @@ func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-ch
 // RecoverFromSnapshot is not required to synchronize its recovered in-core
 // state with that on disk.
 func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
+	log.Debugf("RecoverFromSnapshot for ShardID=%d, ReplicaID=%d", sm.ShardID, sm.ReplicaID)
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return err
