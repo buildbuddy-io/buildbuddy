@@ -3,6 +3,7 @@ package sender
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -405,6 +406,41 @@ func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchC
 	return rsp.GetBatch(), nil
 }
 
+func (s *Sender) DeleteTxnRecord(ctx context.Context, key []byte) error {
+	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
+		Key: key,
+	}).ToProto()
+	if err != nil {
+		return err
+	}
+	rsp, err := s.SyncPropose(ctx, key, batch)
+	if err != nil {
+		return err
+	}
+	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
+}
+
+func (s *Sender) writeTxnRecord(ctx context.Context, key []byte, txnRecord *rfpb.TxnRecord) error {
+	buf, err := proto.Marshal(txnRecord)
+	if err != nil {
+		return err
+	}
+	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   key,
+			Value: buf,
+		},
+	}).ToProto()
+	if err != nil {
+		return err
+	}
+	rsp, err := s.SyncPropose(ctx, key, batch)
+	if err != nil {
+		return err
+	}
+	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
+}
+
 func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 	// TODO(tylerw): make this durable if the coordinator restarts by writing
 	// the TxnRequest proto to durable storage with an enum state-field and
@@ -412,6 +448,18 @@ func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 	// restart.
 	txnProto, err := txn.ToProto()
 	if err != nil {
+		return err
+	}
+
+	txnID := txnProto.GetTransactionId()
+	txnRecord := &rfpb.TxnRecord{
+		TxnRequest:    txnProto,
+		TxnState:      rfpb.TxnRecord_PENDING,
+		CreatedAtUsec: time.Now().UnixMicro(),
+	}
+
+	txnRecordKey := keys.MakeKey(constants.TxnRecordPrefix, txnID)
+	if err = s.writeTxnRecord(ctx, txnRecordKey, txnRecord); err != nil {
 		return err
 	}
 
@@ -429,10 +477,10 @@ func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 	}
 
 	var prepareError error
-	prepared := make([]*rfpb.TxnRequest_Statement, 0)
+	prepared := make([]*rfpb.ReplicaDescriptor, 0)
 	for i, statement := range txnProto.GetStatements() {
 		batch := statement.GetRawBatch()
-		batch.TransactionId = txnProto.GetTransactionId()
+		batch.TransactionId = txnID
 
 		// Prepare each statement.
 		c, err := s.connectionForReplicaDescriptor(ctx, statement.GetReplica())
@@ -456,7 +504,7 @@ func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 			prepareError = err
 			break
 		}
-		prepared = append(prepared, statement)
+		prepared = append(prepared, statement.GetReplica())
 	}
 
 	// Determine whether to ROLLBACK or COMMIT based on whether or not all
@@ -466,40 +514,54 @@ func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 		operation = rfpb.FinalizeOperation_COMMIT
 	}
 
-	for _, statement := range prepared {
+	txnRecord.Op = operation
+	txnRecord.TxnState = rfpb.TxnRecord_PREPARED
+	txnRecord.Prepared = prepared
+	if err = s.writeTxnRecord(ctx, txnRecordKey, txnRecord); err != nil {
+		return err
+	}
+
+	for _, replica := range prepared {
 		// Finalize each statement.
-		batch := rbuilder.NewBatchBuilder().SetTransactionID(txnProto.GetTransactionId())
-		batch.SetFinalizeOperation(operation)
-
-		batchProto, err := batch.ToProto()
-		if err != nil {
-			return err
-		}
-
-		// Prepare each statement.
-		c, err := s.connectionForReplicaDescriptor(ctx, statement.GetReplica())
-		if err != nil {
-			return err
-		}
-		syncRsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-			Header: &rfpb.Header{
-				Replica: statement.GetReplica(),
-			},
-			Batch: batchProto,
-		})
-		if err != nil {
-			return err
-		}
-		rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
-		if err := rsp.AnyError(); err != nil {
+		if err := s.FinalizeTxn(ctx, txnID, operation, replica); err != nil {
 			return err
 		}
 	}
 
+	if err := s.DeleteTxnRecord(ctx, txnID); err != nil {
+		return err
+	}
 	if prepareError != nil {
 		return prepareError
 	}
 	return nil
+}
+
+func (s *Sender) FinalizeTxn(ctx context.Context, txnID []byte, op rfpb.FinalizeOperation, replica *rfpb.ReplicaDescriptor) error {
+	batch := rbuilder.NewBatchBuilder().SetTransactionID(txnID)
+	batch.SetFinalizeOperation(op)
+
+	batchProto, err := batch.ToProto()
+	if err != nil {
+		return err
+	}
+
+	// Prepare each statement.
+	c, err := s.connectionForReplicaDescriptor(ctx, replica)
+	if err != nil {
+		return err
+	}
+	syncRsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+		Header: &rfpb.Header{
+			Replica: replica,
+		},
+		Batch: batchProto,
+	})
+	if err != nil {
+		return err
+	}
+	rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
+	return rsp.AnyError()
 }
 
 func (s *Sender) Increment(ctx context.Context, key []byte, n uint64) (uint64, error) {
