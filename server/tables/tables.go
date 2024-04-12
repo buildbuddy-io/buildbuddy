@@ -585,6 +585,11 @@ type GitRepository struct {
 	// BuildBuddy-initiated invocations within this repo, such as workflows or
 	// remote Bazel.
 	InstanceNameSuffix string `gorm:"not null;default:''"`
+
+	// DefaultNonRootRunner decides whether workflow and remote bazel runs
+	// within this repository should run as a non-root user by default.
+	// TODO(http://go/b/3286): Remove this field after completing migration.
+	DefaultNonRootRunner bool `gorm:"not null;default:0"`
 }
 
 func (g *GitRepository) TableName() string {
