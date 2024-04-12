@@ -88,7 +88,7 @@ If your project depends on Java code, you'll need to set the following flags:
 --java_language_version=11
 --tool_java_language_version=11
 --java_runtime_version=remotejdk_11
---tool_java_runtime_version==remotejdk_11
+--tool_java_runtime_version=remotejdk_11
 ```
 
 Available versions are listed in [Bazel's User Manual](https://bazel.build/docs/user-manual#java-language-version).
@@ -141,7 +141,7 @@ build:remote --extra_toolchains=@buildbuddy_toolchain//:cc_toolchain
 build:remote --java_language_version=11
 build:remote --tool_java_language_version=11
 build:remote --java_runtime_version=remotejdk_11
-build:remote --tool_java_runtime_version==remotejdk_11
+build:remote --tool_java_runtime_version=remotejdk_11
 build:remote --define=EXECUTOR=remote
 ```
 
@@ -330,7 +330,7 @@ build:remote --jobs=50
 build:remote --java_language_version=11
 build:remote --tool_java_language_version=11
 build:remote --java_runtime_version=remotejdk_11
-build:remote --tool_java_runtime_version==remotejdk_11
+build:remote --tool_java_runtime_version=remotejdk_11
 build:remote --crosstool_top=@rbe_default//cc:toolchain
 build:remote --action_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 # Platform flags:
