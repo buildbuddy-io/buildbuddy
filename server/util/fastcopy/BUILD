@@ -30,7 +30,7 @@ go_test(
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
         "test.recycle-runner": "true",
-        "test.runner-recycling-key": "fastcopy_test",
+        "test.runner-recycling-key": "fastcopy_test/1",
     },
     tags = ["docker"],
     deps = [
