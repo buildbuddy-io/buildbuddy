@@ -30,20 +30,10 @@ jobs:
       - name: Install apt packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc g++ podman
-
-          echo "podman version:"
-          podman version
+          sudo apt-get install -y gcc g++
 
       - name: Run tests
         run: |
-          # Have podman use cgroupfs to prevent warnings like
-          # "The cgroupv2 manager is set to systemd but there is no systemd user session available"
-          # TODO: figure out why these warnings are happening
-          echo >/tmp/containers.conf '
-          [engine]
-          cgroup_manager = "cgroupfs"
-          '
           BUILD_FLAGS=(
             --config=cache
             --bes_backend=remote.buildbuddy.io
@@ -52,7 +42,6 @@ jobs:
             --flaky_test_attempts=2
             --build_metadata=ROLE=CI
             --color=yes
-            --test_env=CONTAINERS_CONF=/tmp/containers.conf
           )
           bazel test "${BUILD_FLAGS[@]}" --test_tag_filters=-performance,-docker \
             //enterprise/server/remote_execution/... \

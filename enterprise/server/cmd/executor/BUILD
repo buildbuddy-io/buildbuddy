@@ -100,7 +100,7 @@ genrule(
 )
 
 container_layer(
-    name = "executor_tools",
+    name = "executor_tools_layer",
     directory = "/usr/bin",
     files = select({
         "@platforms//cpu:x86_64": [
@@ -113,10 +113,19 @@ container_layer(
     }),
 )
 
+container_layer(
+    name = "podman_static_layer",
+    directory = "/",
+    tars = ["//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz"],
+)
+
 container_image(
     name = "base_image",
     base = "@executor_image//image:dockerfile_image.tar",
-    layers = [":executor_tools"],
+    layers = [
+        ":executor_tools_layer",
+        ":podman_static_layer",
+    ],
     symlinks = {
         "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy/enterprise/config/executor.release.yaml",
     },

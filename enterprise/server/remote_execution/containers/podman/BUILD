@@ -53,3 +53,40 @@ go_test(
         "@org_golang_x_sync//errgroup",
     ],
 )
+
+# Repackages the podman-static distribution to make it more easily consumable
+# both by the container_layer rule and by tests:
+#
+# - Replaces the registry config with our custom one. This way, we don't have to
+#   override it separately.
+# - Strips the top-level podman-static directory, so that the archive will contain
+#   paths like ./usr/bin/podman rather than ./podman-static/usr/bin/podman.
+#   This is needed because the 'tars' attribute of container_layer does not seem to
+#   support stripping components, currently.
+genrule(
+    name = "podman-static",
+    srcs = select({
+        "@platforms//cpu:x86_64": ["@com_github_buildbuddy_io_podman_static_podman-linux-amd64//file"],
+        "@platforms//cpu:aarch64": ["@com_github_buildbuddy_io_podman_static_podman-linux-arm64//file"],
+    }) + [
+        "//dockerfiles/executor_image:data/registries.conf",
+    ],
+    outs = ["podman-static.tar.gz"],
+    cmd_bash = """
+        TMPDIR=$$(mktemp -d)
+        trap 'rm -rf "$$TMPDIR"' EXIT
+        SRCS=($(SRCS))
+        PODMAN_ARCHIVE=$${SRCS[0]}
+        REGISTRIES_CONF=$${SRCS[1]}
+        tar --extract --file="$$PODMAN_ARCHIVE" --strip-components=1 --directory="$$TMPDIR"
+
+        # Remove README.md (not needed)
+        rm "$$TMPDIR/README.md"
+
+        # Replace /etc/containers/registries.conf with our custom config.
+        rm "$$TMPDIR/etc/containers/registries.conf"
+        cp "$$REGISTRIES_CONF" "$$TMPDIR/etc/containers/registries.conf"
+
+        tar --create --gzip --file="$@" --directory="$$TMPDIR" .
+    """,
+)
