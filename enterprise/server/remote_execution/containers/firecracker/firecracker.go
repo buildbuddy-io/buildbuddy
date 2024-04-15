@@ -2042,6 +2042,20 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	execDone := make(chan struct{})
+	defer close(execDone)
+	go func() {
+		t := time.NewTimer(1 * time.Hour)
+		defer t.Stop()
+		select {
+		case <-execDone:
+			return
+		case <-t.C:
+			log.CtxWarningf(ctx, "execution possibly stuck. vm log:\n%s", string(c.vmLog.Tail()))
+			return
+		}
+	}()
+
 	client := vmxpb.NewExecClient(conn)
 	health := hlpb.NewHealthClient(conn)
 
@@ -2241,19 +2255,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	}()
 
-	execDone := make(chan struct{})
-	go func() {
-		t := time.NewTimer(1 * time.Hour)
-		defer t.Stop()
-		select {
-		case <-execDone:
-			return
-		case <-t.C:
-			log.CtxWarningf(ctx, "execution possibly stuck. vm log:\n%s", string(c.vmLog.Tail()))
-			return
-		}
-	}()
-
 	// Emit metrics to track time spent preparing VM to execute a command
 	if c.memoryStore != nil {
 		c.memoryStore.EmitUsageMetrics("init")
@@ -2276,7 +2277,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer conn.Close()
 
 	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
-	close(execDone)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
