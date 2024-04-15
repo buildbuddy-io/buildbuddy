@@ -97,7 +97,9 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 				// Trust the error code returned by the vmexec server, but
 				// temporarily log the error here for debugging purposes.
 				err := gstatus.ErrorProto(res.GetStatus())
-				log.CtxInfof(ctx, "vmexec stream returned error: %s", err)
+				if err != nil {
+					log.CtxInfof(ctx, "vmexec stream returned error: %s", err)
+				}
 				return err
 			}
 			if err != nil {
