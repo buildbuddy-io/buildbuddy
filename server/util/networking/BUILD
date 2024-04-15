@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "networking",
@@ -10,5 +10,15 @@ go_library(
         "//server/util/random",
         "//server/util/status",
         "@org_golang_x_sys//unix",
+    ],
+)
+
+go_test(
+    name = "networking_test",
+    srcs = ["networking_test.go"],
+    deps = [
+        ":networking",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
