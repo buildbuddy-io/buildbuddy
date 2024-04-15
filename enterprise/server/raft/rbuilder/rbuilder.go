@@ -51,6 +51,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_DirectWrite{
 			DirectWrite: value,
 		}
+	case *rfpb.DirectDeleteRequest:
+		req.Value = &rfpb.RequestUnion_DirectDelete{
+			DirectDelete: value,
+		}
 	case *rfpb.IncrementRequest:
 		req.Value = &rfpb.RequestUnion_Increment{
 			Increment: value,

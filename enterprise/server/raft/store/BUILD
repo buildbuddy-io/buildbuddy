@@ -22,6 +22,7 @@ go_library(
         "//enterprise/server/raft/registry",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
+        "//enterprise/server/raft/txnjanitor",
         "//enterprise/server/raft/usagetracker",
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",

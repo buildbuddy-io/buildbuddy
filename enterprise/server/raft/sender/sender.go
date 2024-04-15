@@ -442,10 +442,6 @@ func (s *Sender) writeTxnRecord(ctx context.Context, key []byte, txnRecord *rfpb
 }
 
 func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
-	// TODO(tylerw): make this durable if the coordinator restarts by writing
-	// the TxnRequest proto to durable storage with an enum state-field and
-	// building a statemachine that will run them to completion even after
-	// restart.
 	txnProto, err := txn.ToProto()
 	if err != nil {
 		return err
@@ -528,7 +524,7 @@ func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 		}
 	}
 
-	if err := s.DeleteTxnRecord(ctx, txnID); err != nil {
+	if err := s.DeleteTxnRecord(ctx, txnRecordKey); err != nil {
 		return err
 	}
 	if prepareError != nil {

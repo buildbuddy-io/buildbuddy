@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	txnLivessnessThreshold = 30 * time.Second
+	txnLivessnessThreshold = 10 * time.Second
+	txnCleanupPeriod       = 15 * time.Second
 )
 
 type IStore interface {
@@ -28,8 +29,48 @@ type TxnJanitor struct {
 	store IStore
 }
 
+func New(store IStore) *TxnJanitor {
+	return &TxnJanitor{
+		store: store,
+	}
+}
+
 func (tj *TxnJanitor) sender() *sender.Sender {
 	return tj.store.Sender()
+}
+
+func (tj *TxnJanitor) Start(ctx context.Context) {
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(txnCleanupPeriod):
+				err := tj.processTxnRecords(ctx)
+				if err != nil {
+					log.Warningf("Failed to processTxnRecords: %s", err)
+				}
+			}
+		}
+	}()
+}
+
+func (tj *TxnJanitor) processTxnRecords(ctx context.Context) error {
+	if !tj.store.IsLeader(constants.InitialShardID) {
+		return nil
+	}
+	txnRecords, err := tj.fetchTxnRecords(ctx)
+	if err != nil {
+		return status.InternalErrorf("failed to fetch txn records: %s", err)
+	}
+
+	log.Infof("fetched %d TxnRecords to process", len(txnRecords))
+	for _, txnRecord := range txnRecords {
+		if err := tj.processTxnRecord(ctx, txnRecord); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (tj *TxnJanitor) fetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, error) {
@@ -66,18 +107,18 @@ func (tj *TxnJanitor) fetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, e
 			log.Errorf("scan returned unparsable kv: %s", err)
 			continue
 		}
+		createdAt := time.UnixMicro(txnRecord.GetCreatedAtUsec())
+		if time.Since(createdAt) < txnLivessnessThreshold {
+			// This txn record is created very recently; skip processing
+			continue
+		}
 		txnRecords = append(txnRecords, txnRecord)
 	}
 	return txnRecords, nil
 }
 
-func (tj *TxnJanitor) processTxnRecords(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
-	createdAt := time.UnixMicro(txnRecord.GetCreatedAtUsec())
+func (tj *TxnJanitor) processTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
 	txnID := txnRecord.GetTxnRequest().GetTransactionId()
-	if time.Since(createdAt) < txnLivessnessThreshold {
-		// This txn record is created very recently; don't process it.
-		return nil
-	}
 	if txnRecord.GetTxnState() == rfpb.TxnRecord_PENDING {
 		// The transaction is not fully prepared. Let's rollback all the statements.
 		for _, statement := range txnRecord.GetTxnRequest().GetStatements() {
@@ -102,5 +143,6 @@ func (tj *TxnJanitor) processTxnRecords(ctx context.Context, txnRecord *rfpb.Txn
 			}
 		}
 	}
-	return tj.sender.DeleteTxnRecord(ctx, txnID)
+	txnRecordKey := keys.MakeKey(constants.TxnRecordPrefix, txnID)
+	return tj.sender().DeleteTxnRecord(ctx, txnRecordKey)
 }

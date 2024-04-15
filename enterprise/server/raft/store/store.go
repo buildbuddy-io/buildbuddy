@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txnjanitor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -101,6 +102,7 @@ type Store struct {
 	egCancel context.CancelFunc
 
 	updateTagsWorker *updateTagsWorker
+	txnJanitor       *txnjanitor.TxnJanitor
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -187,6 +189,9 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	}
 
 	s.updateTagsWorker = updateTagsWorker
+
+	txnJanitor := txnjanitor.New(s)
+	s.txnJanitor = txnJanitor
 
 	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
 	if err != nil {
@@ -406,6 +411,10 @@ func (s *Store) Start() error {
 	})
 	eg.Go(func() error {
 		s.processSplitRequests(gctx)
+		return nil
+	})
+	eg.Go(func() error {
+		s.txnJanitor.Start(gctx)
 		return nil
 	})
 
