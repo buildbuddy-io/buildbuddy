@@ -16,3 +16,5 @@ go_library(
         "//server/util/status",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

@@ -273,13 +273,13 @@ message TxnResponse {
 message TxnRecord {
   TxnRequest txnRequest = 1;
   enum TxnState {
-	UNKNOWN_STATE = 0;
-	// We are preparing the transactions.
-	PENDING = 1;
-	// All statements in the transactions are prepared.
-	PREPARED = 2;
-	// All statements in the transactions are either committed or rolled back.
-	COMPLETED = 3;
+    UNKNOWN_STATE = 0;
+    // We are preparing the transactions.
+    PENDING = 1;
+    // All statements in the transactions are prepared.
+    PREPARED = 2;
+    // All statements in the transactions are either committed or rolled back.
+    COMPLETED = 3;
   }
   TxnState txn_state = 2;
   // When is this record first created
