@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -33,6 +34,8 @@ const (
 	routingTableName = "rt1"
 	// netns prefix to use to identify executor namespaces.
 	netNamespacePrefix = "bb-executor-"
+	// Total number of available host IP ranges that can be allocated to VMs.
+	numAssignableNetworks = 1000
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -251,6 +254,58 @@ func routeExists(ctx context.Context, source string, gateway string) (bool, erro
 	return false, nil
 }
 
+// HostNetAllocator assigns unique /30 networks from the host for use in VMs.
+type HostNetAllocator struct {
+	mu    sync.Mutex
+	inUse [numAssignableNetworks]bool
+}
+
+var hostNetAllocator = &HostNetAllocator{}
+
+// HostNet represents a reserved /30 network from the host for use in a VM.
+type HostNet struct {
+	netIdx int
+	unlock func()
+}
+
+func (n *HostNet) String() string {
+	return fmt.Sprintf("192.168.%d.%d/30", n.netIdx/30, (n.netIdx%30)*8+5)
+}
+
+func (n *HostNet) Unlock() {
+	n.unlock()
+}
+
+// Get assigns a host network IP for the given VM index.
+func (a *HostNetAllocator) Get(vmIdx int) (*HostNet, error) {
+	for attempt := 0; attempt < numAssignableNetworks; attempt++ {
+		netIdx := (vmIdx + attempt) % numAssignableNetworks
+		if a.tryLock(netIdx) {
+			return &HostNet{
+				netIdx: netIdx,
+				unlock: func() { a.unlock(netIdx) },
+			}, nil
+		}
+	}
+	return nil, status.ResourceExhaustedError("host IP address space exhausted")
+}
+
+func (a *HostNetAllocator) tryLock(netIdx int) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.inUse[netIdx] {
+		return false
+	}
+	a.inUse[netIdx] = true
+	return true
+}
+
+func (a *HostNetAllocator) unlock(netIdx int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.inUse[netIdx] = false
+}
+
 // SetupVethPair creates a new veth pair with one end in the given network
 // namespace and the other end in the root namespace. It returns a cleanup
 // function that removes firewall rules associated with the pair.
@@ -290,7 +345,7 @@ func routeExists(ctx context.Context, source string, gateway string) (bool, erro
 //
 //	# add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //	$ sudo ip route add 192.168.0.3 via 10.0.0.2
-func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (func(context.Context) error, error) {
+func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_ func(context.Context) error, err error) {
 	r, err := findRoute(ctx, *routePrefix)
 	device := r.device
 	if err != nil {
@@ -305,9 +360,18 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 
 	// This addr will be used for the host-side of the veth pair, so it
 	// needs to to be unique on the host.
-	hostEndpointNet := fmt.Sprintf("192.168.%d.%d/30", vmIdx/30, (vmIdx%30)*8+5)
-	hostEndpointAddr := strings.SplitN(hostEndpointNet, "/", 2)[0]
-
+	hostEndpointNet, err := hostNetAllocator.Get(vmIdx)
+	if err != nil {
+		return nil, status.WrapError(err, "assign host network to VM")
+	}
+	defer func() {
+		if err != nil {
+			// If we didn't successfully create the veth pair then make
+			// sure to free up the host network IP address for future use.
+			hostEndpointNet.Unlock()
+		}
+	}()
+	hostEndpointAddr := strings.SplitN(hostEndpointNet.String(), "/", 2)[0]
 	// Can be anything because it's in a namespace.
 	cloneEndpointNet := fmt.Sprintf("192.168.%d.%d/30", vmIdx/30, (vmIdx%30)*8+6)
 	cloneEndpointAddr := strings.SplitN(cloneEndpointNet, "/", 2)[0]
@@ -326,7 +390,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 		return nil, err
 	}
 
-	err = attachAddressToVeth(ctx, "" /*no namespace*/, hostEndpointNet, veth1)
+	err = attachAddressToVeth(ctx, "" /*no namespace*/, hostEndpointNet.String(), veth1)
 	if err != nil {
 		return nil, err
 	}
@@ -385,6 +449,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 	}
 
 	return func(ctx context.Context) error {
+		hostEndpointNet.Unlock()
 		return removeForwardAcceptRule(ctx, veth1, device)
 	}, nil
 }
