@@ -176,7 +176,7 @@ func determineDefaultBranch(repo *git.Repository) (string, error) {
 	}
 
 	log.Debugf("Could not determine default git branch locally. Finding the default branch on the 'origin' remote.\n")
-	branch, remoteErr := remoteDefaultRef(repo)
+	branch, remoteErr := remoteDefaultRef()
 	if remoteErr == nil {
 		return branch, nil
 	}
@@ -215,12 +215,12 @@ func localDefaultRef(repo *git.Repository) (string, error) {
 // remoteDefaultRef determines the default ref of a repository
 // by running `git ls-remote origin`. This creates a network call
 // and should use as little as possible.
-func remoteDefaultRef(repo *git.Repository) (string, error) {
-	defaultRef, _, err := getOriginRefs(repo)
+func remoteDefaultRef() (string, error) {
+	remoteInfo, err := getOriginRefs()
 	if err != nil {
-		return "", status.UnknownErrorf("could not ls-remote origin: %s", err)
+		return "", status.UnknownErrorf("could not get origin refs: %s", err)
 	}
-	return defaultRef, nil
+	return remoteInfo.defaultRefName, nil
 }
 
 func runGit(args ...string) (string, error) {
@@ -318,48 +318,40 @@ func Config(path string) (*RepoConfig, error) {
 	return repoConfig, nil
 }
 
-// TODO(sluongng): move this to a dedicated struct wrapping around git.Repository
-var (
-	doneLsRef sync.Once
-
+type gitRemoteInfo struct {
 	defaultRefName string
-	repoRefs       []*plumbing.Reference
-	lsRefErr       error
-)
-
-func getOriginRefs(repo *git.Repository) (string, []*plumbing.Reference, error) {
-	doneLsRef.Do(func() {
-		stdout, err := runGit("ls-remote", "--symref", "origin")
-		if err != nil {
-			lsRefErr = err
-			return
-		}
-		refLines := strings.Split(strings.TrimSpace(stdout), "\n")
-
-		var refs []*plumbing.Reference
-		for i, line := range refLines {
-			// Handle --symref output
-			if i == 0 {
-				if !strings.HasPrefix(line, "ref: ") || !strings.HasSuffix(line, "\tHEAD") {
-					lsRefErr = fmt.Errorf("invalid ls-remote symref output: %s", line)
-					return
-				}
-				defaultRefName = strings.TrimSuffix(strings.TrimPrefix(line, "ref: "), "\tHEAD")
-				continue
-			}
-
-			// Handle ls-remote outputs
-			halves := strings.Split(line, "\t")
-			if len(halves) != 2 {
-				lsRefErr = fmt.Errorf("invalid ls-remote output: %s", line)
-				return
-			}
-			refs = append(refs, plumbing.NewReferenceFromStrings(halves[1], halves[0]))
-		}
-		repoRefs = refs
-	})
-	return defaultRefName, repoRefs, lsRefErr
+	refs           []*plumbing.Reference
 }
+
+var getOriginRefs = sync.OnceValues(func() (*gitRemoteInfo, error) {
+	stdout, err := runGit("ls-remote", "--symref", "origin")
+	if err != nil {
+		return nil, err
+	}
+	refLines := strings.Split(strings.TrimSpace(stdout), "\n")
+
+	var defaultRefName string
+	var refs []*plumbing.Reference
+	for i, line := range refLines {
+		// Handle --symref output
+		if i == 0 {
+			if !strings.HasPrefix(line, "ref: ") || !strings.HasSuffix(line, "\tHEAD") {
+				return nil, fmt.Errorf("invalid ls-remote symref output: %s", line)
+			}
+			defaultRefName = strings.TrimSuffix(strings.TrimPrefix(line, "ref: "), "\tHEAD")
+			continue
+		}
+
+		// Handle ls-remote outputs
+		halves := strings.Split(line, "\t")
+		if len(halves) != 2 {
+			return nil, fmt.Errorf("invalid ls-remote output: %s", line)
+		}
+		refs = append(refs, plumbing.NewReferenceFromStrings(halves[1], halves[0]))
+	}
+
+	return &gitRemoteInfo{defaultRefName: defaultRefName, refs: refs}, nil
+})
 
 // getBaseBranchAndCommit returns the git branch and commit that the remote run
 // should be based off
@@ -380,12 +372,12 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 		}
 		currentBranch = matches[1]
 	}
-	defaultBranch, refs, err := getOriginRefs(repo)
+	remoteInfo, err := getOriginRefs()
 	if err != nil {
 		return "", "", err
 	}
 	currentBranchExistsRemotely := false
-	for _, r := range refs {
+	for _, r := range remoteInfo.refs {
 		if r.Name().Short() == currentBranch {
 			currentBranchExistsRemotely = true
 			break
@@ -403,8 +395,8 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 	if !currentBranchExistsRemotely {
 		// If the current branch does not exist remotely, the remote runner will
 		// not be able to fetch it. In this case, use the default branch for the repo
-		branch = defaultBranch
-		defaultBranchCommitHash, err := repo.ResolveRevision(plumbing.Revision(defaultBranch))
+		branch = remoteInfo.defaultRefName
+		defaultBranchCommitHash, err := repo.ResolveRevision(plumbing.Revision(remoteInfo.defaultRefName))
 		if err != nil {
 			return "", "", status.WrapError(err, "get default branch commit hash")
 		}
