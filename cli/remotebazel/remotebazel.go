@@ -216,20 +216,11 @@ func localDefaultRef(repo *git.Repository) (string, error) {
 // by running `git ls-remote origin`. This creates a network call
 // and should use as little as possible.
 func remoteDefaultRef(repo *git.Repository) (string, error) {
-	refs, err := getOriginRefs(repo)
+	defaultRef, _, err := getOriginRefs(repo)
 	if err != nil {
 		return "", status.UnknownErrorf("could not ls-remote origin: %s", err)
 	}
-
-	for _, ref := range refs {
-		for _, defaultRefName := range defaultRefNames {
-			if ref.Name().String() == defaultRefName {
-				return defaultRefName, nil
-			}
-		}
-	}
-
-	return "", status.NotFoundErrorf("could not determine remote default branch")
+	return defaultRef, nil
 }
 
 func runGit(args ...string) (string, error) {
@@ -331,20 +322,43 @@ func Config(path string) (*RepoConfig, error) {
 var (
 	doneLsRef sync.Once
 
-	repoRefs []*plumbing.Reference
-	lsRefErr error
+	defaultRefName string
+	repoRefs       []*plumbing.Reference
+	lsRefErr       error
 )
 
-func getOriginRefs(repo *git.Repository) ([]*plumbing.Reference, error) {
+func getOriginRefs(repo *git.Repository) (string, []*plumbing.Reference, error) {
 	doneLsRef.Do(func() {
-		originRemote, err := repo.Remote("origin")
+		stdout, err := runGit("ls-remote", "--symref", "origin")
 		if err != nil {
 			lsRefErr = err
 			return
 		}
-		repoRefs, lsRefErr = originRemote.List(&git.ListOptions{})
+		refLines := strings.Split(strings.TrimSpace(stdout), "\n")
+
+		var refs []*plumbing.Reference
+		for i, line := range refLines {
+			// Handle --symref output
+			if i == 0 {
+				if !strings.HasPrefix(line, "ref: ") || !strings.HasSuffix(line, "\tHEAD") {
+					lsRefErr = fmt.Errorf("invalid ls-remote symref output: %s", line)
+					return
+				}
+				defaultRefName = strings.TrimSuffix(strings.TrimPrefix(line, "ref: "), "\tHEAD")
+				continue
+			}
+
+			// Handle ls-remote outputs
+			halves := strings.Split(line, "\t")
+			if len(halves) != 2 {
+				lsRefErr = fmt.Errorf("invalid ls-remote output: %s", line)
+				return
+			}
+			refs = append(refs, plumbing.NewReferenceFromStrings(halves[1], halves[0]))
+		}
+		repoRefs = refs
 	})
-	return repoRefs, lsRefErr
+	return defaultRefName, repoRefs, lsRefErr
 }
 
 // getBaseBranchAndCommit returns the git branch and commit that the remote run
@@ -366,7 +380,7 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 		}
 		currentBranch = matches[1]
 	}
-	refs, err := getOriginRefs(repo)
+	defaultBranch, refs, err := getOriginRefs(repo)
 	if err != nil {
 		return "", "", err
 	}
@@ -389,12 +403,7 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 	if !currentBranchExistsRemotely {
 		// If the current branch does not exist remotely, the remote runner will
 		// not be able to fetch it. In this case, use the default branch for the repo
-		defaultBranch, err := determineDefaultBranch(repo)
-		if err != nil {
-			return "", "", status.WrapError(err, "get default branch")
-		}
 		branch = defaultBranch
-
 		defaultBranchCommitHash, err := repo.ResolveRevision(plumbing.Revision(defaultBranch))
 		if err != nil {
 			return "", "", status.WrapError(err, "get default branch commit hash")
