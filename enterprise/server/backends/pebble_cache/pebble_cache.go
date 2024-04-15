@@ -1934,6 +1934,9 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 	cwc := ioutil.NewCustomCommitWriteCloser(wc)
 	cwc.CloseFn = db.Close
 	cwc.CommitFn = func(bytesWritten int64) error {
+		if fileRecord.GetDigest().Hash == "687ba9efeb60cde77625e461b1bb80ecffe47da5689c9d3de4248155785fd26d" {
+			log.Debugf("CI debug: At top of cdc committed write closer")
+		}
 		if decompressor != nil {
 			if err := decompressor.Close(); err != nil {
 				return status.InternalErrorf("failed to close decompressor: %s", err)
@@ -1954,7 +1957,10 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			// the chunkData. This is because the chunkData can be compressed or
 			// encrypted, so the digest computed from it will be different from
 			// the original digest.
-			return cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, cdcw.firstChunk)
+			if err := cdcw.writeRawChunk(cdcw.fileRecord, cdcw.key, cdcw.firstChunk); err != nil {
+				return status.WrapError(err, "write raw chunk")
+			}
+			return nil
 		}
 		now := p.clock.Now().UnixMicro()
 
@@ -1974,7 +1980,10 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			log.Errorf("[%s] expected to have more than one chunks, but actually have %d for digest %s", p.name, numChunks, fileRecord.GetDigest().GetHash())
 			return status.InternalErrorf("invalid number of chunks (%d)", numChunks)
 		}
-		return p.writeMetadata(ctx, db, key, md)
+		if err := p.writeMetadata(ctx, db, key, md); err != nil {
+			return status.WrapError(err, "write metadata")
+		}
+		return nil
 	}
 	return cwc, nil
 }
@@ -2154,6 +2163,9 @@ func (z *zstdCompressor) Close() error {
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	if r.GetDigest().Hash == "687ba9efeb60cde77625e461b1bb80ecffe47da5689c9d3de4248155785fd26d" {
+		log.Debugf("CI debug: Creating pebble cache writer")
+	}
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -2184,11 +2196,17 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	}
 
 	if p.averageChunkSizeBytes > 0 && r.GetDigest().GetSizeBytes() >= int64(p.averageChunkSizeBytes) {
+		if r.GetDigest().Hash == "687ba9efeb60cde77625e461b1bb80ecffe47da5689c9d3de4248155785fd26d" {
+			log.Debugf("CI debug: Returning cdc commited write closer")
+		}
 		// Files smaller than averageChunkSizeBytes are highly like to only
 		// have one chunk, so we skip cdc-chunking step.
 		return p.newCDCCommitedWriteCloser(ctx, fileRecord, key, shouldCompress, isCompressed)
 	}
 
+	if r.GetDigest().Hash == "687ba9efeb60cde77625e461b1bb80ecffe47da5689c9d3de4248155785fd26d" {
+		log.Debugf("CI debug: Returning new wrapped writer")
+	}
 	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress, rfpb.FileMetadata_COMPLETE_FILE_TYPE)
 }
 
@@ -2221,6 +2239,9 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *rfpb.Fil
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
 	cwc.CloseFn = db.Close
 	cwc.CommitFn = func(bytesWritten int64) error {
+		if fileRecord.GetDigest().Hash == "687ba9efeb60cde77625e461b1bb80ecffe47da5689c9d3de4248155785fd26d" {
+			log.Debugf("CI debug: At top of cdc committed write closer")
+		}
 		now := p.clock.Now().UnixMicro()
 		md := &rfpb.FileMetadata{
 			FileRecord:         fileRecord,
@@ -2231,7 +2252,10 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *rfpb.Fil
 			LastModifyUsec:     now,
 			FileType:           fileType,
 		}
-		return p.writeMetadata(ctx, db, key, md)
+		if err := p.writeMetadata(ctx, db, key, md); err != nil {
+			return status.WrapError(err, "write metadata (newWrappedWriter)")
+		}
+		return nil
 	}
 
 	wc := interfaces.CommittedWriteCloser(cwc)
@@ -2262,7 +2286,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 
 	protoBytes, err := proto.Marshal(md)
 	if err != nil {
-		return err
+		return status.WrapError(err, "proto marshal")
 	}
 
 	if md.GetFileRecord().GetCompressor() == repb.Compressor_ZSTD {
@@ -2279,24 +2303,24 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	if version, err := p.lookupFileMetadataAndVersion(ctx, db, key, oldMD); err == nil {
 		oldKeyBytes, err := key.Bytes(version)
 		if err != nil {
-			return err
+			return status.WrapError(err, "key.Bytes old key")
 		}
 		if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
-			return err
+			return status.WrapError(err, "db.Delete")
 		}
 		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, oldMD, len(oldKeyBytes))
 	}
 
 	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
 	if err != nil {
-		return err
+		return status.WrapError(err, "key.Bytes active")
 	}
 
 	if err = db.Set(keyBytes, protoBytes, pebble.NoSync); err == nil {
 		if key.EncryptionKeyID() != md.GetEncryptionMetadata().GetEncryptionKeyId() && len(md.GetStorageMetadata().GetChunkedMetadata().GetResource()) == 0 {
 			err := status.FailedPreconditionErrorf("key vs metadata encryption mismatch for %q: %q vs %q", string(keyBytes), key.EncryptionKeyID(), md.GetEncryptionMetadata().GetEncryptionKeyId())
 			alert.UnexpectedEvent("key_metadata_encryption_mismatch", err.Error())
-			return err
+			return status.WrapError(err, "metadata encryption mismatch")
 		}
 
 		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
@@ -2322,6 +2346,9 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		}
 	}
 
+	if err != nil {
+		return status.WrapError(err, "final err")
+	}
 	return err
 }
 

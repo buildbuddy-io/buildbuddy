@@ -7,6 +7,7 @@ go_library(
     srcs = ["hostedrunner.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner",
     deps = [
+        "//enterprise/server/backends/migration_cache",
         "//enterprise/server/cmd/ci_runner/bundle",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",

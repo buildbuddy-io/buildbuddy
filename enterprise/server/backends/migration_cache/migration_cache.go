@@ -729,7 +729,7 @@ func (d *doubleWriter) Commit() error {
 	srcErr := d.src.Commit()
 	eg.Wait()
 
-	return srcErr
+	return status.WrapError(srcErr, "migration cache double writer src commit")
 }
 
 func (d *doubleWriter) Close() error {
@@ -751,6 +751,9 @@ func (d *doubleWriter) Close() error {
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	if r.GetDigest().Hash == "687ba9efeb60cde77625e461b1bb80ecffe47da5689c9d3de4248155785fd26d" {
+		log.Debugf("CI debug: Creating migration cache writer")
+	}
 	if err := mc.checkSafeToMigrate(ctx); err != nil {
 		return nil, err
 	}

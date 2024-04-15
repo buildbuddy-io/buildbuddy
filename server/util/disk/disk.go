@@ -239,10 +239,13 @@ func (w *writeMover) Write(p []byte) (int, error) {
 func (w *writeMover) Commit() error {
 	tmpName := w.File.Name()
 	if err := w.File.Close(); err != nil {
-		return err
+		return status.WrapError(err, "disk writeMover file close")
 	}
 	w.tmpFileIsClosed = true
-	return os.Rename(tmpName, w.finalPath)
+	if err := os.Rename(tmpName, w.finalPath); err != nil {
+		status.WrapError(err, "disk writeMover rename")
+	}
+	return nil
 }
 
 func (w *writeMover) Close() error {

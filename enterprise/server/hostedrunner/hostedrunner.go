@@ -69,10 +69,18 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
+
 	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, ci_runner_bundle.CiRunnerBytes)
 	if err != nil {
 		return nil, status.WrapError(err, "upload runner bin")
 	}
+	user, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, status.WrapError(err, "get authenticated user")
+	}
+	gid := user.GetGroupID()
+	log.Debugf("Uploader runner bin digest %v for group ID %s, length of binary is %d", runnerBinDigest, gid, len(ci_runner_bundle.CiRunnerBytes))
+
 	// Save this to use when constructing the command to run below.
 	runnerName := filepath.Base(ci_runner_bundle.RunnerName)
 	dir := &repb.Directory{

@@ -481,7 +481,11 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType r
 	if err != nil {
 		return nil, err
 	}
-	return d, wc.Commit()
+
+	if err := wc.Commit(); err != nil {
+		return nil, status.WrapErrorf(err, "wc.Commit: digest is %v", d)
+	}
+	return d, nil
 }
 
 func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*repb.Digest, error) {

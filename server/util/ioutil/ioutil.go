@@ -1,6 +1,7 @@
 package ioutil
 
 import (
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -60,12 +61,14 @@ func (c *CustomCommitWriteCloser) Commit() error {
 
 	if committer, ok := c.w.(interfaces.Committer); ok {
 		if err := committer.Commit(); err != nil {
-			return err
+			return status.WrapError(err, "committer.commit")
 		}
 	}
 
 	if c.CommitFn != nil {
-		return c.CommitFn(c.bytesWritten)
+		if err := c.CommitFn(c.bytesWritten); err != nil {
+			return status.WrapError(err, "commitFn")
+		}
 	}
 	return nil
 }

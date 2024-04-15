@@ -627,14 +627,17 @@ func (wc *streamWriteCloser) Commit() error {
 	}
 	sendErr := wc.stream.Send(req)
 	if sendErr != nil && sendErr != io.EOF {
-		return sendErr
+		return status.WrapError(sendErr, "send err not EOF")
 	}
 	_, err := wc.stream.CloseAndRecv()
 	if status.IsAlreadyExistsError(err) {
 		return nil
 	}
 	if sendErr != nil {
-		return sendErr
+		return status.WrapErrorf(sendErr, "send err, err is %s", err)
+	}
+	if err != nil {
+		return status.WrapError(err, "normal err")
 	}
 	return err
 }
