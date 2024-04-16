@@ -672,7 +672,6 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       } else {
         error_service.handleError("File not found.");
         // Fall through to landing page below.
-        // XXX: Navigate the file path out of the URL.
       }
     }
 
