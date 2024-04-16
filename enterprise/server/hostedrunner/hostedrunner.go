@@ -69,7 +69,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, ci_runner_bundle.CiRunnerBytes)
+	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, ci_runner_bundle.CiRunnerBytes)
 	if err != nil {
 		return nil, status.WrapError(err, "upload runner bin")
 	}
@@ -82,18 +82,18 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 			IsExecutable: true,
 		}},
 	}
-	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, dir)
+	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, dir)
 	if err != nil {
 		return nil, status.WrapError(err, "upload input root")
 	}
 
 	var patchURIs []string
 	for _, patch := range req.GetRepoState().GetPatch() {
-		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, patch)
+		patchDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, patch)
 		if err != nil {
 			return nil, status.WrapError(err, "upload patch")
 		}
-		rn := digest.NewResourceName(patchDigest, req.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		rn := digest.NewResourceName(patchDigest, req.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
 		uri, err := rn.DownloadString()
 		if err != nil {
 			return nil, status.WrapError(err, "patch download string")
@@ -185,7 +185,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	cmd.Platform.Properties = append(cmd.Platform.Properties, req.GetExecProperties()...)
 	cmd.Platform.Properties = normalizePlatform(cmd.Platform.Properties)
 
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, cmd)
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
 		return nil, status.WrapError(err, "upload command")
 	}
@@ -203,7 +203,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		action.Timeout = durationpb.New(d)
 	}
 
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, action)
 	if err != nil {
 		return nil, status.WrapError(err, "upload action")
 	}
@@ -271,6 +271,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		InstanceName:    req.GetInstanceName(),
 		SkipCacheLookup: true,
 		ActionDigest:    actionDigest,
+		DigestFunction:  repb.DigestFunction_BLAKE3,
 	})
 	if err != nil {
 		return nil, status.WrapError(err, "execute")

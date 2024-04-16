@@ -493,9 +493,17 @@ func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, cacheType r
 	return UploadBytesToCache(ctx, cache, cacheType, instanceName, digestFunction, reader)
 }
 
-func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, blob []byte) (*repb.Digest, error) {
+func UploadBlobToCAS(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, blob []byte) (*repb.Digest, error) {
 	reader := bytes.NewReader(blob)
-	return UploadBytesToCache(ctx, cache, rspb.CacheType_CAS, instanceName, digestFunction, reader)
+	d, err := digest.Compute(reader, digestFunction)
+	if err != nil {
+		return nil, err
+	}
+	resourceName := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)
+	if resourceName.IsEmpty() {
+		return d, nil
+	}
+	return UploadFromReader(ctx, bsClient, resourceName, reader)
 }
 
 func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*repb.Digest, error) {
