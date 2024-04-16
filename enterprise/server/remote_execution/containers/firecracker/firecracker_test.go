@@ -1021,7 +1021,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		}
 	}
 
-	workspaceDirSize, err := disk.DirSize(rootDir)
+	workspaceDirSize, err := ext4.DiskSizeBytes(ctx, rootDir)
 	require.NoError(t, err)
 
 	cmd := &repb.Command{
@@ -1089,10 +1089,12 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 			10_000_000,
 			"used workspace disk size")
 		expectedTotalSize := ext4.MinDiskImageSizeBytes + workspaceDirSize + workspaceDiskSlackSpaceBytes
+		// 5% of blocks are reserved.
+		expectedTotalSize = int64(float64(expectedTotalSize) * 0.95)
 		assert.InDelta(
 			t, expectedTotalSize, workspaceFSU.GetTotalBytes(),
-			60_000_000,
-			"total workspace disk size")
+			40_000_000,
+			"total workspace disk size (expected %d)", expectedTotalSize)
 	}
 	if rootFSU == nil {
 		assert.Fail(t, "root (/) disk usage was not reported")
