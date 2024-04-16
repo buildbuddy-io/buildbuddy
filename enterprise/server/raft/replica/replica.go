@@ -803,6 +803,15 @@ func (sm *Replica) directWrite(wb pebble.Batch, req *rfpb.DirectWriteRequest) (*
 	return &rfpb.DirectWriteResponse{}, err
 }
 
+func (sm *Replica) directDelete(wb pebble.Batch, req *rfpb.DirectDeleteRequest) (*rfpb.DirectDeleteResponse, error) {
+	if !isLocalKey(req.GetKey()) {
+		return nil, status.InvalidArgumentErrorf("cannot direct delete non-local key; use Delete instead")
+	}
+	key := sm.replicaLocalKey(req.GetKey())
+	err := wb.Delete(key, nil /* ignore write options*/)
+	return &rfpb.DirectDeleteResponse{}, err
+}
+
 func (sm *Replica) directRead(db ReplicaReader, req *rfpb.DirectReadRequest) (*rfpb.DirectReadResponse, error) {
 	buf, err := sm.lookup(db, req.GetKey())
 	if err != nil {
@@ -1183,6 +1192,12 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 		r, err := sm.directWrite(wb, value.DirectWrite)
 		rsp.Value = &rfpb.ResponseUnion_DirectWrite{
 			DirectWrite: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_DirectDelete:
+		r, err := sm.directDelete(wb, value.DirectDelete)
+		rsp.Value = &rfpb.ResponseUnion_DirectDelete{
+			DirectDelete: r,
 		}
 		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_Increment:
