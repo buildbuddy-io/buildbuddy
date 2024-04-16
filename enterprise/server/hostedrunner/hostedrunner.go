@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -230,17 +229,13 @@ func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunReques
 		if err != nil {
 			return nil, status.WrapError(err, "normalize git repo url")
 		}
-		isGitRepo := repoURL.Hostname() == "github.com"
 
-		if isGitRepo {
-			gitToken, err := r.getGitToken(ctx, u.GetGroupID(), repoURL.String())
-			if err != nil {
-				log.Warningf("Could not fetch git auth token for %s for hosted runner"+
-					" (Note: The token is not needed for public repos): %s", repoURL, err)
-			}
-			accessToken = gitToken
+		gitToken, err := r.getGitToken(ctx, repoURL.String())
+		if err != nil {
+			log.Warningf("Could not fetch git auth token for %s for hosted runner"+
+				" (Note: The token is not needed for public repos): %s", repoURL, err)
 		}
-
+		accessToken = gitToken
 	}
 
 	// Use env override headers for credentials.
@@ -253,22 +248,24 @@ func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunReques
 	return ctx, nil
 }
 
-func (r *runnerService) getGitToken(ctx context.Context, groupID string, repoURL string) (string, error) {
+func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string, error) {
 	app := r.env.GetGitHubApp()
 	if app == nil {
 		return "", status.UnimplementedError("GitHub App is not configured")
 	}
-	if err := authutil.AuthorizeGroupAccess(ctx, r.env, groupID); err != nil {
+
+	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
 		return "", err
 	}
 
 	gitRepository := &tables.GitRepository{}
-	err := r.env.GetDBHandle().NewQuery(ctx, "hosted_runner_get_for_repo").Raw(`
+	err = r.env.GetDBHandle().NewQuery(ctx, "hosted_runner_get_for_repo").Raw(`
 		SELECT *
 		FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
-	`, groupID, repoURL).Take(gitRepository)
+	`, u.GetGroupID(), repoURL).Take(gitRepository)
 	if err != nil {
 		if db.IsRecordNotFound(err) {
 			return "", status.NotFoundErrorf("workflow not configured for %s", repoURL)
