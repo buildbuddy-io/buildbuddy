@@ -235,7 +235,7 @@ func (f *fileToUpload) ReadSeekCloser() (io.ReadSeekCloser, error) {
 
 func (f *fileToUpload) OutputFile(rootDir string) *repb.OutputFile {
 	return &repb.OutputFile{
-		Path:         trimPathPrefix(f.fullFilePath, rootDir),
+		Path:         filepath.ToSlash(trimPathPrefix(f.fullFilePath, rootDir)),
 		Digest:       f.resourceName.GetDigest(),
 		IsExecutable: f.info.Mode()&0111 != 0,
 	}
@@ -294,13 +294,13 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 		return err
 	}
 	symlink := &repb.OutputSymlink{
-		Path:   trimPathPrefix(fqfn, rootDir),
-		Target: target,
+		Path:   filepath.ToSlash(trimPathPrefix(fqfn, rootDir)),
+		Target: filepath.ToSlash(target),
 	}
 	addSymlinkToDir := func() {
 		directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
-			Name:   symlink.Path,
-			Target: symlink.Target,
+			Name:   filepath.ToSlash(symlink.Path),
+			Target: filepath.ToSlash(symlink.Target),
 		})
 	}
 
@@ -485,7 +485,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 			return nil, err
 		}
 		actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
-			Path:       trimPathPrefix(fullFilePath, rootDir),
+			Path:       filepath.ToSlash(trimPathPrefix(fullFilePath, rootDir)),
 			TreeDigest: td,
 		})
 	}

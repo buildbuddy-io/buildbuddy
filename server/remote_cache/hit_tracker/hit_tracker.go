@@ -709,7 +709,6 @@ func CleanupCacheStats(ctx context.Context, env environment.Env, iid string) {
 		if err := c.Delete(ctx, resultsKey(iid)); err != nil {
 			log.Warningf("Failed to clean up scorecard for invocation %s: %s", iid, err)
 		}
-		return
 	}
 
 	if err := c.Delete(ctx, counterKey(iid)); err != nil {

@@ -19,6 +19,7 @@ go_library(
         "//server/util/bytebufferpool",
         "//server/util/capabilities",
         "//server/util/compression",
+        "//server/util/flag",
         "//server/util/ioutil",
         "//server/util/log",
         "//server/util/prefix",

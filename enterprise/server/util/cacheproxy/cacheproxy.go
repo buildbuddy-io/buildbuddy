@@ -633,10 +633,10 @@ func (wc *streamWriteCloser) Commit() error {
 	if status.IsAlreadyExistsError(err) {
 		return nil
 	}
-	if sendErr != nil {
-		return sendErr
+	if err != nil {
+		return err
 	}
-	return err
+	return sendErr
 }
 
 func (wc *streamWriteCloser) Close() error {

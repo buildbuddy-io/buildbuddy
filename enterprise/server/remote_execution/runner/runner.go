@@ -91,7 +91,7 @@ const (
 	// How long to spend waiting for a runner to be removed before giving up.
 	runnerCleanupTimeout = 30 * time.Second
 	// Allowed time to spend trying to pause a runner and add it to the pool.
-	runnerRecycleTimeout = 30 * time.Second
+	runnerRecycleTimeout = 3 * time.Minute
 	// How long to spend waiting for a persistent worker process to terminate
 	// after we send the shutdown signal before giving up.
 	persistentWorkerShutdownTimeout = 10 * time.Second

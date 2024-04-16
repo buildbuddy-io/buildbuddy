@@ -1,9 +1,11 @@
 import React from "react";
 import { github } from "../../../proto/github_ts_proto";
 import moment from "moment";
+import { CommentModel } from "./review_model";
 
-interface CommentEditHandler {
-  handleCreateComment: (comment: github.Comment) => void;
+export interface CommentEditHandler {
+  startComment: (side: github.CommentSide, path: string, commitSha: string, lineNumber: number) => void;
+  handleCreateComment: (comment: CommentModel) => void;
   handleUpdateComment: (commentId: string, newBody: string) => void;
   handleDeleteComment: (commentId: string) => void;
   handleStartReply: (threadId: string) => void;
@@ -12,8 +14,10 @@ interface CommentEditHandler {
 
 interface ReviewThreadComponentProps {
   threadId: string;
-  comments: github.Comment[];
-  draftComment?: github.Comment;
+  reviewId: string;
+  viewerLogin: string;
+  comments: readonly CommentModel[];
+  draftComment?: CommentModel;
   updating: boolean;
   disabled: boolean;
   editing: boolean;
@@ -30,35 +34,36 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
     if (commentBody === "") {
       return;
     }
-    // TODO(jdhollen): This is probably a little janky if Github cares about the replyTo fields etc.
-    const commentToSubmit = new github.Comment(this.props.draftComment ?? this.props.comments[0]);
-    if (!this.props.draftComment) {
-      // commentToSubmit.position = undefined;
-      commentToSubmit.id = "";
+    let commentToSubmit: CommentModel;
+    if (this.props.draftComment) {
+      commentToSubmit = this.props.draftComment.updateBody(commentBody);
+    } else {
+      commentToSubmit = this.props.comments[0]
+        .createReply(this.props.reviewId, this.props.viewerLogin)
+        .updateBody(commentBody);
     }
-    commentToSubmit.body = commentBody;
     this.props.handler.handleCreateComment(commentToSubmit);
   }
 
   handleUpdate() {
-    if (!this.props.draftComment?.id || !this.commentTextRef.current?.value) {
+    if (!this.props.draftComment || !this.commentTextRef.current?.value) {
       return;
     }
-    this.props.handler.handleUpdateComment(this.props.draftComment.id, this.commentTextRef.current.value);
+    this.props.handler.handleUpdateComment(this.props.draftComment.getId(), this.commentTextRef.current.value);
   }
 
   handleDelete() {
-    if (!this.props.draftComment?.id) {
+    if (!this.props.draftComment?.getId()) {
       return;
     }
-    this.props.handler.handleDeleteComment(this.props.draftComment.id);
+    this.props.handler.handleDeleteComment(this.props.draftComment.getId());
   }
 
   handleCancel() {
-    if (!this.props.draftComment?.id) {
+    if (!this.props.draftComment?.getId()) {
       return;
     }
-    this.props.handler.handleCancelComment(this.props.draftComment.id);
+    this.props.handler.handleCancelComment(this.props.draftComment.getId());
   }
 
   handleStartReply() {
@@ -79,7 +84,7 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
       return <></>;
     }
 
-    const isBot = Boolean(comments.length === 1 && comments[0].commenter?.bot);
+    const isBot = Boolean(comments.length === 1 && comments[0].isBot());
 
     return (
       <div className="thread">
@@ -88,10 +93,12 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
             <>
               <div className="thread-comment">
                 <div className="comment-author">
-                  <div className="comment-author-text">{c.commenter?.login}</div>
-                  <div className="comment-timestamp">{moment(+c.createdAtUsec / 1000).format("HH:mm, MMM DD")}</div>
+                  <div className="comment-author-text">{c.getCommenter()}</div>
+                  <div className="comment-timestamp">
+                    {moment(+c.getCreatedAtUsec() / 1000).format("HH:mm, MMM DD")}
+                  </div>
                 </div>
-                <div className="comment-body">{c.body}</div>
+                <div className="comment-body">{c.getBody()}</div>
               </div>
               <div className="comment-divider"></div>
             </>
@@ -110,7 +117,7 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
                   autoFocus
                   ref={this.commentTextRef}
                   className="comment-input"
-                  defaultValue={draft.body}></textarea>
+                  defaultValue={draft.getBody()}></textarea>
               </div>
             </div>
           </div>

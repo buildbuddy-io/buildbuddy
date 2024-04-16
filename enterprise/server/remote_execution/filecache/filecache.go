@@ -164,24 +164,21 @@ func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (strin
 }
 
 func (c *fileCache) scanDir() {
-	scanCount := 0
+	dirCount := 0
+	fileCount := 0
 	scanStart := time.Now()
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		scanCount += 1
 		if d.IsDir() {
+			dirCount += 1
 			return nil
 		}
-		info, err := d.Info()
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
-		}
-		groupID, node, err := c.nodeFromPathAndSize(path, info.Size())
+		fileCount += 1
+		// addFileToGroup uses the physical size, not the digest size, so just
+		// pass 0 for size here.
+		groupID, node, err := c.nodeFromPathAndSize(path, 0)
 		if err != nil {
 			return err
 		}
@@ -194,7 +191,7 @@ func (c *fileCache) scanDir() {
 	lruSize := c.l.Size()
 	c.lock.Unlock()
 
-	log.Infof("filecache(%q) scanned %d files in %s. Total tracked bytes: %d", c.rootDir, scanCount, time.Since(scanStart), lruSize)
+	log.Infof("filecache(%q) scanned %d dirs, %d files in %s. Total tracked bytes: %d", c.rootDir, dirCount, fileCount, time.Since(scanStart), lruSize)
 	close(c.dirScanDone)
 }
 
@@ -261,6 +258,15 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	// which is not good.
 	k := groupSpecificKey(groupID, node)
 
+	info, err := os.Stat(existingFilePath)
+	if err != nil {
+		return status.WrapError(err, "stat")
+	}
+	sizeOnDisk, err := disk.EstimatedFileDiskUsage(info)
+	if err != nil {
+		return status.WrapError(err, "estimate disk usage")
+	}
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -276,7 +282,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	}
 	e := &entry{
 		addedAtUsec: time.Now().UnixMicro(),
-		sizeBytes:   node.GetDigest().GetSizeBytes(),
+		sizeBytes:   sizeOnDisk,
 		value:       fp,
 	}
 	metrics.FileCacheAddedFileSizeBytes.Observe(float64(e.sizeBytes))

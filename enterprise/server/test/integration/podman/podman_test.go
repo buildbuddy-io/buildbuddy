@@ -3,8 +3,10 @@ package podman_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -12,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
@@ -30,6 +33,12 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+var (
+	// rlocationpath for podman-static.tar.gz.
+	// Populated by x_defs in BUILD file.
+	podmanArchiveRlocationpath string
+)
+
 func writeFile(t *testing.T, parentDir, fileName, content string) {
 	path := filepath.Join(parentDir, fileName)
 	if err := os.WriteFile(path, []byte(content), 0660); err != nil {
@@ -44,7 +53,66 @@ func getTestEnv(t *testing.T) *testenv.TestEnv {
 	return env
 }
 
+func installPodman() error {
+	// TODO: make this work even when not running inside a VM. We should be able
+	// to run podman-static directly from the runfiles directory and configure
+	// podman to only use the tools/configs from this directory rather than the
+	// system directories.
+
+	// Install the podman version at HEAD by extracting the podman-static
+	// distribution under /.
+	existenceFile := "/.podman_test.podman_installed"
+	if _, err := os.Stat(existenceFile); err == nil {
+		return nil // Podman is already installed
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	// We haven't installed podman. First check that the execution image we're
+	// using doesn't have podman installed already, otherwise it may conflict
+	// with the one we're trying to install.
+	if path, err := exec.LookPath("podman"); err == nil {
+		return fmt.Errorf("install podman: %s already installed in runner", path)
+	}
+
+	podmanArchiveAbspath, err := runfiles.Rlocation(podmanArchiveRlocationpath)
+	if err != nil {
+		return fmt.Errorf("locate podman in runfiles: %w", err)
+	}
+	cmd := exec.Command("tar", "--extract", "--file", podmanArchiveAbspath, "--directory=/")
+	b, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("extract podman-static: %w (output: %q)", err, string(b))
+	}
+	if err := os.WriteFile(existenceFile, nil, 0644); err != nil {
+		return fmt.Errorf("create %s: %w", existenceFile, err)
+	}
+	return nil
+}
+
 func TestMain(m *testing.M) {
+	// When running on arm64 github runners, execute the test using sudo.
+	// This is for two reasons:
+	// - Tests on amd64 (firecracker) run as root, and ideally we'd run as
+	//   root on both amd64 and arm64 for consistency.
+	// - We need root in order to install podman-static under /.
+	if runtime.GOARCH == "arm64" && os.Getuid() != 0 {
+		args := append([]string{"sudo", "--non-interactive", "--preserve-env"}, os.Args...)
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			if cmd.Process != nil && cmd.ProcessState.Exited() {
+				os.Exit(cmd.ProcessState.ExitCode())
+			}
+			log.Fatal(err)
+		}
+		os.Exit(0)
+	}
+
+	// Install podman-static in the test VM if it isn't installed already.
+	if err := installPodman(); err != nil {
+		log.Fatalf("Failed to install podman: %s", err)
+	}
 	// Prevent podman from reading ~/.docker/config.json which causes the gcr
 	// credential helper to be used, which causes authentication to fail when
 	// pulling our custom test images.
@@ -84,7 +152,6 @@ func TestRunHelloWorld(t *testing.T) {
 	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	require.NoError(t, result.Error)
-	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
 	assert.Equal(t, "Hello world!", string(result.Stdout),
 		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
 			"tempfile containing 'world' should be readable.)",
@@ -126,7 +193,6 @@ func TestHelloWorldExec(t *testing.T) {
 	result := c.Exec(ctx, cmd, &interfaces.Stdio{})
 	assert.NoError(t, result.Error)
 
-	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
 	assert.Equal(t, "Hello world!", string(result.Stdout),
 		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
 			"tempfile containing 'world' should be readable.)",
@@ -397,11 +463,6 @@ func TestForceRoot(t *testing.T) {
 }
 
 func TestUser(t *testing.T) {
-	if runtime.GOARCH == "arm64" {
-		// TODO: build podman ourselves, and remove this
-		t.Skipf("--passwd arg is not yet supported by podman 3.4.4 (the version available on GitHub actions runner)")
-	}
-
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	ctx := context.Background()

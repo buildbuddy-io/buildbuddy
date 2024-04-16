@@ -30,21 +30,6 @@ RUN apt-get update && \
     apt-get install -y skopeo umoci iproute2 amazon-ecr-credential-helper && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
-# Install podman.
-# See README in this directory for instructions on how to update podman versions.
-RUN ARCH=$(dpkg --print-architecture) && \
-    SHASUM=$(case $ARCH in \
-        amd64) echo 'ac14152d2ef5cb25abbd615893cd56355f951f075a7ae663f0b2c1bc5d3fb77e' ;; \
-        arm64) echo '72ab4a9c6ae9d5d00200070cb43b0921117898925a284bfacbfb3873aa82e598' ;; \
-    esac) && \
-    curl -o podman.tar.gz -fsSL "https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-v4.9.4/podman-linux-${ARCH}.tar.gz" && \
-    echo "$SHASUM podman.tar.gz" | sha256sum -c && \
-    tar -xz -f podman.tar.gz --strip-components 1 --directory / && \
-    rm podman.tar.gz
-
-# Copy podman registries configuration.
-COPY data/registries.conf /etc/containers/registries.conf
-
 # Install gVisor
 #RUN curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" >>  /etc/apt/sources.list.d/gvisor.list && apt-get update && apt-get install -y runsc
 # ALTERNATIVE non-apt method:

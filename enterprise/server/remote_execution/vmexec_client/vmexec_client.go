@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"golang.org/x/sync/errgroup"
@@ -61,11 +62,11 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 
 	stream, err := client.ExecStreamed(ctx)
 	if err != nil {
-		return commandutil.ErrorResult(err)
+		return commandutil.ErrorResult(status.UnavailableErrorf("create execution stream: %s", err))
 	}
 	startMsg := &vmxpb.ExecStreamedRequest{Start: req}
 	if err := stream.Send(startMsg); err != nil {
-		return commandutil.ErrorResult(err)
+		return commandutil.ErrorResult(status.UnavailableErrorf("send execution start request: %s", err))
 	}
 	var res *vmxpb.ExecResponse
 	var stats *repb.UsageStats
@@ -73,16 +74,16 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	if stdio.Stdin != nil {
 		eg.Go(func() error {
 			if _, err := io.Copy(&stdinWriter{stream}, stdio.Stdin); err != nil {
-				return status.InternalErrorf("failed to write stdin: %s", err)
+				return status.UnavailableErrorf("failed to write stdin: %s", err)
 			}
 			if err := stream.CloseSend(); err != nil {
-				return status.InternalErrorf("failed to close send direction of stream: %s", err)
+				return status.UnavailableErrorf("failed to close send direction of stream: %s", err)
 			}
 			return nil
 		})
 	} else {
 		if err := stream.CloseSend(); err != nil {
-			return commandutil.ErrorResult(status.InternalErrorf("failed to close send direction of stream: %s", err))
+			return commandutil.ErrorResult(status.UnavailableErrorf("failed to close send direction of stream: %s", err))
 		}
 	}
 
@@ -91,9 +92,15 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 			msg, err := stream.Recv()
 			if err == io.EOF {
 				if res == nil {
-					return status.InternalErrorf("unexpected EOF before receiving command result: %s", err)
+					return status.UnavailableErrorf("unexpected EOF before receiving command result: %s", err)
 				}
-				return gstatus.ErrorProto(res.GetStatus())
+				// Trust the error code returned by the vmexec server, but
+				// temporarily log the error here for debugging purposes.
+				err := gstatus.ErrorProto(res.GetStatus())
+				if err != nil {
+					log.CtxInfof(ctx, "vmexec stream returned error: %s", err)
+				}
+				return err
 			}
 			if err != nil {
 				if ctx.Err() == context.DeadlineExceeded {
@@ -102,13 +109,13 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 				if ctx.Err() == context.Canceled {
 					return status.CanceledError("context canceled")
 				}
-				return status.InternalErrorf("failed to receive from stream: %s", status.Message(err))
+				return status.UnavailableErrorf("failed to receive from stream: %s", status.Message(err))
 			}
 			if _, err := stdoutw.Write(msg.Stdout); err != nil {
-				return status.InternalErrorf("failed to write stdout: %s", status.Message(err))
+				return status.UnavailableErrorf("failed to write stdout: %s", status.Message(err))
 			}
 			if _, err := stderrw.Write(msg.Stderr); err != nil {
-				return status.InternalErrorf("failed to write stderr: %s", status.Message(err))
+				return status.UnavailableErrorf("failed to write stderr: %s", status.Message(err))
 			}
 			if msg.Response != nil {
 				res = msg.Response
