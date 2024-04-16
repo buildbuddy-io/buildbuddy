@@ -21,8 +21,10 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/setup"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -825,9 +827,27 @@ func HandleRemoteBazel(args []string) (int, error) {
 		runner = "grpcs://" + runner
 	}
 
+	apiKey := arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key")
+	if apiKey == "" {
+		apiKey, err = storage.ReadRepoConfig("api-key")
+		if err != nil {
+			return 1, status.WrapError(err, "read api key from bb config")
+		}
+	}
+	// If an API key is not set, prompt the user to set it in their cli config.
+	if apiKey == "" {
+		if _, err := login.HandleLogin([]string{}); err != nil {
+			return 1, status.WrapError(err, "handle login")
+		}
+		apiKey, err = storage.ReadRepoConfig("api-key")
+		if err != nil {
+			return 1, status.WrapError(err, "read api key from bb config")
+		}
+	}
+
 	return Run(ctx, RunOpts{
 		Server:            runner,
-		APIKey:            arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key"),
+		APIKey:            apiKey,
 		Args:              arg.JoinExecutableArgs(bazelArgs, execArgs),
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
