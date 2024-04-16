@@ -5,6 +5,8 @@ export type AnsiTextSpan = {
   text: string;
   /** Parsed ANSI style. */
   style: AnsiStyle;
+  /** Parsed link, if any.  */
+  link: string;
 };
 
 type AnsiStyle = {
@@ -89,7 +91,7 @@ function applyCode(span: AnsiTextSpan, code: number) {
 }
 
 export default function parseAnsi(text: string): AnsiTextSpan[] {
-  let span = { text: "", style: {} };
+  let span = { text: "", style: {}, link: "" };
   const spans: AnsiTextSpan[] = [];
   let code = "";
 
@@ -133,7 +135,7 @@ export default function parseAnsi(text: string): AnsiTextSpan[] {
       // Begin a new span only if the current one already has text.
       // Preserve styles from the current span.
       if (span.text) {
-        span = { text: "", style: { ...span.style } };
+        span = { text: "", style: { ...span.style }, link: "" };
       }
       continue;
     }
@@ -142,6 +144,33 @@ export default function parseAnsi(text: string): AnsiTextSpan[] {
     span.text += char;
     if (spans[spans.length - 1] !== span) {
       spans.push(span);
+    }
+  }
+  let linkSpans = [];
+  for (let span of spans) {
+    linkSpans.push(...parseLinks(span));
+  }
+  return linkSpans;
+}
+
+const LINK_REGEX = /(http(s)?:\/\/)?(www\.)?([-a-zA-Z0-9@:%._\+~#=]{2,256})(\.[a-z]{2,6}|:[0-9]+)\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)/g;
+
+function parseLinks(span: AnsiTextSpan): AnsiTextSpan[] {
+  let matches = [...span.text.matchAll(LINK_REGEX)];
+  if (matches.length == 0) {
+    return [span];
+  }
+  let spans = [];
+  for (let match of matches) {
+    // If there's any text before the link, create a span for that.
+    if (match.index && match.index > 0) {
+      spans.push({ text: span.text.substr(0, match.index), style: span.style, link: "" });
+    }
+    // Create a link span for the link itself.
+    spans.push({ text: match[0], style: { ...span.style, underline: true }, link: match[0] });
+    // If there's any text after the link, create a span for that.
+    if (match.index && match.index + match[0].length < span.text.length) {
+      spans.push({ text: span.text.substr(match.index + match[0].length), style: span.style, link: "" });
     }
   }
   return spans;
