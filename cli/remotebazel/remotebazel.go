@@ -21,6 +21,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/setup"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -833,8 +834,15 @@ func HandleRemoteBazel(args []string) (int, error) {
 			return 1, status.WrapError(err, "read api key from bb config")
 		}
 	}
+	// If an API key is not set, prompt the user to set it in their cli config.
 	if apiKey == "" {
-		return 1, status.UnauthenticatedError("missing API key - run `bb login` to authorize")
+		if _, err := login.HandleLogin([]string{}); err != nil {
+			return 1, status.WrapError(err, "handle login")
+		}
+		apiKey, err = storage.ReadRepoConfig("api-key")
+		if err != nil {
+			return 1, status.WrapError(err, "read api key from bb config")
+		}
 	}
 
 	return Run(ctx, RunOpts{
