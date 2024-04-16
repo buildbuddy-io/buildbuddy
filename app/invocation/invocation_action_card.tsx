@@ -399,7 +399,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   private getFirecrackerVMMetadata(): firecracker.VMMetadata | null | undefined {
     const auxiliaryMetadata = this.state.actionResult?.executionMetadata?.auxiliaryMetadata;
     if (!auxiliaryMetadata || auxiliaryMetadata.length == 0) {
-      return this.getDeprecatedFirecrackerVMMetadata();
+      return null;
     }
     for (const metadata of auxiliaryMetadata) {
       if (metadata.typeUrl === "type.googleapis.com/firecracker.VMMetadata") {
@@ -407,19 +407,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
       }
     }
     return null;
-  }
-
-  // TODO(Maggie): Clean up after #6341 has been rolled out
-  private getDeprecatedFirecrackerVMMetadata(): firecracker.VMMetadata | null | undefined {
-    const deprecatedVMMetadata = this.state.actionResult?.executionMetadata?.vmMetadata;
-    if (!deprecatedVMMetadata) {
-      return null;
-    }
-    const vmMetadata = new firecracker.VMMetadata();
-    vmMetadata.vmId = deprecatedVMMetadata?.vmId;
-    vmMetadata.snapshotId = deprecatedVMMetadata.snapshotId;
-    vmMetadata.lastExecutedTask = deprecatedVMMetadata.lastExecutedTask;
-    return vmMetadata;
   }
 
   private getVMPreviousTaskHref(): string {
