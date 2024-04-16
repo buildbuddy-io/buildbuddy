@@ -2,7 +2,13 @@
 
 package disk
 
-import "golang.org/x/sys/unix"
+import (
+	"os"
+	"syscall"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sys/unix"
+)
 
 func GetDirUsage(path string) (*DirUsage, error) {
 	fs := unix.Statfs_t{}
@@ -15,4 +21,14 @@ func GetDirUsage(path string) (*DirUsage, error) {
 		FreeBytes:  fs.Bfree * uint64(fs.Bsize),
 		AvailBytes: fs.Bavail * uint64(fs.Bsize),
 	}, nil
+}
+
+// EstimatedFileDiskUsage returns an estimate of the disk usage required for
+// the given regular file info.
+func EstimatedFileDiskUsage(info os.FileInfo) (int64, error) {
+	if !info.Mode().IsRegular() {
+		return 0, status.InvalidArgumentError("not a regular file")
+	}
+	// stat() block units are always 512 bytes.
+	return info.Sys().(*syscall.Stat_t).Blocks * 512, nil
 }

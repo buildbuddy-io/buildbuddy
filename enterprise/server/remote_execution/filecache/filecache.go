@@ -258,14 +258,14 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	// which is not good.
 	k := groupSpecificKey(groupID, node)
 
-	sizeOnDisk := node.GetDigest().GetSizeBytes()
 	info, err := os.Stat(existingFilePath)
 	if err != nil {
 		return status.WrapError(err, "stat")
 	}
-	// Stat always returns number of 512 byte blocks, regardless of the FS
-	// settings.
-	sizeOnDisk = info.Sys().(*syscall.Stat_t).Blocks * 512
+	sizeOnDisk, err := disk.EstimatedFileDiskUsage(info)
+	if err != nil {
+		return status.WrapError(err, "estimate disk usage")
+	}
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
