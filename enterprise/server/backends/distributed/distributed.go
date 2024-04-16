@@ -992,7 +992,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 
 	// For every digest we didn't find, record an observation indicating how
 	// many lookups we did.
-	count := 0
 	for _, r := range resources {
 		if _, ok := foundMap[r.GetDigest().GetHash()]; ok {
 			continue
@@ -1001,7 +1000,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			metrics.DistributedCacheOperation: "FindMissing",
 			metrics.CacheHitMissStatus:        "miss",
 		}).Observe(float64(lookups))
-		count++
 	}
 
 	// For every digest we found, if we did not find it
