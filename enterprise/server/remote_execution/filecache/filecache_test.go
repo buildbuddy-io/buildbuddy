@@ -239,6 +239,79 @@ func TestFileCacheOverwrite(t *testing.T) {
 	}
 }
 
+func TestFileCacheEviction(t *testing.T) {
+	ctx := context.Background()
+	// For now just assume the disk block size is 4096
+	const fsBlockSize = 4096
+	// Create a filecache that can only fit 1 physical block
+	filecacheRoot := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	tempDir := fc.TempDir()
+
+	node1 := nodeFromString("A", false)
+	node2 := nodeFromString("B", false)
+	// Write a file that takes up 1 block, containing 1 byte
+	{
+		writeFileContent(t, tempDir, "file1", "A", false)
+		err := fc.AddFile(ctx, node1, filepath.Join(tempDir, "file1"))
+		require.NoError(t, err)
+		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link1"))
+		require.True(t, linked)
+	}
+	// Write a different file that takes up 1 block, containing 1 byte
+	{
+		writeFileContent(t, tempDir, "file2", "B", false)
+		err := fc.AddFile(ctx, node2, filepath.Join(tempDir, "file2"))
+		require.NoError(t, err)
+		linked := fc.FastLinkFile(ctx, node2, filepath.Join(tempDir, "file2-link1"))
+		require.True(t, linked)
+	}
+	// The first file should now be evicted, so linking it should fail.
+	{
+		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link2"))
+		require.False(t, linked)
+	}
+}
+
+func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
+	ctx := context.Background()
+	// For now just assume the disk block size is 4096
+	const fsBlockSize = 4096
+	// Create a filecache that can fit 1 physical block plus one byte.
+	// Initialize it with a file that takes up 1 block, containing 1 byte.
+	filecacheRoot := testfs.MakeTempDir(t)
+	writeFileContent(t, filecacheRoot, "ANON/"+hash.String("A"), "A", false)
+	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize+1, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	tempDir := fc.TempDir()
+
+	node1 := nodeFromString("A", false)
+	node2 := nodeFromString("B", false)
+	// Linking node1 should succeed
+	{
+		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link1"))
+		require.True(t, linked)
+	}
+	// Write a different file that takes up 1 block, containing 1 byte
+	{
+		writeFileContent(t, tempDir, "file2", "B", false)
+		err := fc.AddFile(ctx, node2, filepath.Join(tempDir, "file2"))
+		require.NoError(t, err)
+		linked := fc.FastLinkFile(ctx, node2, filepath.Join(tempDir, "file2-link1"))
+		require.True(t, linked)
+	}
+	// The first file should now be evicted, so linking it should fail. If the
+	// startup scan incorrectly used content size rather than size on disk, this
+	// test would fail, since the cache has 4097 bytes of capacity.
+	{
+		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link2"))
+		require.False(t, linked)
+	}
+}
+
 func BenchmarkFilecacheLink(b *testing.B) {
 	ctx := context.TODO()
 	flags.Set(b, "app.log_level", "warn")
@@ -249,23 +322,26 @@ func BenchmarkFilecacheLink(b *testing.B) {
 		Ops          int
 		ReadFraction float64
 	}{
-		{Name: "100%Link/0%Add/5K", Ops: 5000, ReadFraction: 1},
-		{Name: "95%Link/5%Add/5K", Ops: 5000, ReadFraction: 0.95},
+		{Name: "100%Link/0%Add/1K", Ops: 1000, ReadFraction: 1},
+		{Name: "95%Link/5%Add/1K", Ops: 1000, ReadFraction: 0.95},
 	} {
 		b.Run(test.Name, func(b *testing.B) {
 			root := testfs.MakeTempDir(b)
-			fc, err := filecache.NewFileCache(root, 1_000_000, false /*=delete*/)
+			fc, err := filecache.NewFileCache(testfs.MakeDirAll(b, root, "cache"), 100_000_000, false /*=delete*/)
 			require.NoError(b, err)
 			fc.WaitForDirectoryScanToComplete()
 			tmp := fc.TempDir()
 
-			// Create 1K small files
-			g := digest.RandomGenerator(0)
+			// Create 1K small files. Use UniformRandomGenerator to ensure
+			// uniqueness, otherwise Add() may result in temporary eviction
+			// which can cause the test to fail. (In practice, this eviction is
+			// fine/expected).
+			g := digest.UniformRandomGenerator(0)
 			var nodes []*repb.FileNode
 			for i := 0; i < test.Ops; i++ {
 				d, buf, err := g.RandomDigestBuf(20)
 				require.NoError(b, err)
-				name := fmt.Sprint(i)
+				name := fmt.Sprintf("file_%d", i)
 				path := filepath.Join(tmp, name)
 				err = os.WriteFile(path, buf, 0644)
 				require.NoError(b, err)
@@ -278,10 +354,15 @@ func BenchmarkFilecacheLink(b *testing.B) {
 				require.NoError(b, err)
 			}
 
+			var outDirs []string
+			for i := 0; i < b.N; i++ {
+				outDirs = append(outDirs, testfs.MakeDirAll(b, root, fmt.Sprintf("outdir_%d", i)))
+			}
+
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Fast link all of the files we created
-				out := testfs.MakeTempDir(b)
+				out := outDirs[i]
 				eg := &errgroup.Group{}
 				eg.SetLimit(100)
 				for _, node := range nodes {
@@ -290,7 +371,7 @@ func BenchmarkFilecacheLink(b *testing.B) {
 						if rand.Float64() > test.ReadFraction {
 							err := fc.AddFile(ctx, node, filepath.Join(tmp, node.GetName()))
 							if err != nil {
-								require.FailNowf(b, "fast link failed", "%s", err)
+								require.FailNowf(b, "add failed", "%s", err)
 							}
 							return nil
 						}
@@ -301,6 +382,9 @@ func BenchmarkFilecacheLink(b *testing.B) {
 						}
 						return nil
 					})
+					if b.Failed() {
+						break
+					}
 				}
 				eg.Wait()
 			}

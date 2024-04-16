@@ -1021,7 +1021,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		}
 	}
 
-	workspaceDirSize, err := disk.DirSize(rootDir)
+	workspaceDirSize, err := ext4.DiskSizeBytes(ctx, rootDir)
 	require.NoError(t, err)
 
 	cmd := &repb.Command{
