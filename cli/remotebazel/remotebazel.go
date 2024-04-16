@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/setup"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -825,9 +826,20 @@ func HandleRemoteBazel(args []string) (int, error) {
 		runner = "grpcs://" + runner
 	}
 
+	apiKey := arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key")
+	if apiKey == "" {
+		apiKey, err = storage.ReadRepoConfig("api-key")
+		if err != nil {
+			return 1, status.WrapError(err, "read api key from bb config")
+		}
+	}
+	if apiKey == "" {
+		return 1, status.UnauthenticatedError("missing API key - run `bb login` to authorize")
+	}
+
 	return Run(ctx, RunOpts{
 		Server:            runner,
-		APIKey:            arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key"),
+		APIKey:            apiKey,
 		Args:              arg.JoinExecutableArgs(bazelArgs, execArgs),
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
