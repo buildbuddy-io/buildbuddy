@@ -54,7 +54,7 @@ var (
 	enableRootfs            = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
 	enableVFS               = flag.Bool("enable_vfs", false, "Whether to run the VFS client.")
 	debugMode               = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
-	logLevel                = flag.String("log_level", "info", "The loglevel to emit logs at")
+	enableLogging           = flag.Bool("enable_logging", false, "If true, output logs to the console. By default, only kernel logs are output to the console.")
 	setDefaultRoute         = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
 	initDockerd             = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
 	enableDockerdTCP        = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
@@ -191,8 +191,12 @@ func startDockerd(ctx context.Context) error {
 	}
 
 	cmd := exec.CommandContext(ctx, "dockerd", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3306):
+	// enable logging by default
+	if *enableLogging {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 	return cmd.Start()
 }
 
@@ -226,13 +230,22 @@ func main() {
 	start := time.Now()
 	rootContext := context.Background()
 
+	flag.Parse()
+
 	// setup logging
+
+	// Temporarily disable non-fatal logs unless explicitly enabled.
+	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3306):
+	// figure out why logging causes the VM to hang and re-enable logging.
+	*log.LogLevel = "fatal"
+	if *enableLogging {
+		*log.LogLevel = "debug"
+	}
+
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1) // in case log.Fatalf does not work.
 	}
-
-	flag.Parse()
 
 	if *enableRootfs {
 		rootDevice = "/dev/vda"
