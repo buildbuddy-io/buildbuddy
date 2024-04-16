@@ -415,6 +415,16 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     }
   }
 
+  getPrStatusString(r: ReviewModel) {
+    if (r.isSubmitted()) {
+      return "Merged";
+    } else if (r.isMergeable()) {
+      return "Ready to merge";
+    } else {
+      return "Pending";
+    }
+  }
+
   startReviewReply(approveAndSubmitNow: boolean) {
     if (!this.state.reviewModel) {
       return;
@@ -628,7 +638,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           <div className="review-cell">
             <div className="attr-grid">
               <div className="attr-label">Status</div>
-              <div>{getPrStatusString(model)}</div>
+              <div>{this.getPrStatusString(model)}</div>
               <div className="attr-label">Analysis</div>
               <div>{this.renderAnalysisResults(model.getActionStatuses())}</div>
             </div>
@@ -685,15 +695,5 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         {pageContent}
       </div>
     );
-  }
-}
-
-function getPrStatusString(r: ReviewModel) {
-  if (r.isSubmitted()) {
-    return "Merged";
-  } else if (r.isMergeable()) {
-    return "Ready to merge";
-  } else {
-    return "Pending";
   }
 }
