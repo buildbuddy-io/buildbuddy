@@ -333,7 +333,9 @@ func BenchmarkFilecacheLink(b *testing.B) {
 			tmp := fc.TempDir()
 
 			// Create 1K small files. Use UniformRandomGenerator to ensure
-			// uniqueness.
+			// uniqueness, otherwise Add() may result in temporary eviction
+			// which can cause the test to fail. (In practice, this eviction is
+			// fine/expected).
 			g := digest.UniformRandomGenerator(0)
 			var nodes []*repb.FileNode
 			for i := 0; i < test.Ops; i++ {
