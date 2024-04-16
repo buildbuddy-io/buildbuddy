@@ -137,6 +137,12 @@ message DirectWriteRequest {
 
 message DirectWriteResponse {}
 
+message DirectDeleteRequest {
+  bytes key = 1;
+}
+
+message DirectDeleteResponse {}
+
 message DirectReadRequest {
   bytes key = 1;
 }
@@ -199,6 +205,7 @@ message RequestUnion {
   oneof value {
     DirectWriteRequest direct_write = 1;
     DirectReadRequest direct_read = 2;
+    DirectDeleteRequest direct_delete = 15;
     IncrementRequest increment = 3;
     ScanRequest scan = 4;
     CASRequest cas = 5;
@@ -226,6 +233,7 @@ message ResponseUnion {
   oneof value {
     DirectWriteResponse direct_write = 2;
     DirectReadResponse direct_read = 3;
+    DirectDeleteResponse direct_delete = 16;
     IncrementResponse increment = 4;
     ScanResponse scan = 5;
     CASResponse cas = 6;
