@@ -805,7 +805,7 @@ func (sm *Replica) directWrite(wb pebble.Batch, req *rfpb.DirectWriteRequest) (*
 
 func (sm *Replica) directDelete(wb pebble.Batch, req *rfpb.DirectDeleteRequest) (*rfpb.DirectDeleteResponse, error) {
 	if !isLocalKey(req.GetKey()) {
-		return nil, status.InvalidArgumentErrorf("cannot direct delete non-local key")
+		return nil, status.InvalidArgumentErrorf("cannot direct delete non-local key; use Delete instead")
 	}
 	key := sm.replicaLocalKey(req.GetKey())
 	err := wb.Delete(key, nil /* ignore write options*/)
