@@ -75,7 +75,10 @@ var (
 	// The last rangeID that was generated.
 	LastRangeIDKey = keys.MakeKey(SystemPrefix, []byte("last_range_id"))
 
-	// A prefix to prepend to transaction records.
+	// A prefix to prepend to transaction records. Transaction Records were written
+	// by the transaction coordinator when the transaction state changes. They
+	// were used to recover stuck transactions. They are different from shard-specific
+	// transaction entries written by replicas when preparing the transactions.
 	TxnRecordPrefix = keys.MakeKey(SystemPrefix, []byte("txn-record-"))
 
 	// When the cluster was created.
