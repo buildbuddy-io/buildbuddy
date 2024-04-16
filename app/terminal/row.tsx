@@ -45,7 +45,7 @@ interface RowSpanProps extends SpanData {
 
 /**
  * Renders a `<span>` with one or more ANSI styles applied to the whole span.
- * 
+ *
  * If the span is a link, an `<a>` tag will be used instead.
  */
 function RowSpan({ text, matchIndex, isActiveMatch, style, link }: RowSpanProps) {

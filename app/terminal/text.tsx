@@ -269,7 +269,7 @@ export function updatedMatchIndexForSearch(
   return 0;
 }
 
-const BLANK_LINE_DATA: SpanData[][] = [[{ text: "", style: {}, matchIndex: null }]];
+const BLANK_LINE_DATA: SpanData[][] = [[{ text: "", style: {}, matchIndex: null, link: "" }]];
 /**
  * Splits an ANSI line into multiple wrapped rows, with matched ranges
  * annotated.
