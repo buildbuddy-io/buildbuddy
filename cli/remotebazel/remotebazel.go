@@ -46,7 +46,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	bbflag "github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -643,15 +642,9 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return 0, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
 	}
 
-	gitToken := ""
-	if u, err := gitutil.NormalizeRepoURL(repoConfig.URL); err == nil && u.Hostname() == "github.com" {
-		gitToken = os.Getenv("GITHUB_TOKEN")
-	}
-
 	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
-			RepoUrl:     repoConfig.URL,
-			AccessToken: gitToken,
+			RepoUrl: repoConfig.URL,
 		},
 		RepoState: &rnpb.RunRequest_RepoState{
 			CommitSha: repoConfig.CommitSHA,
