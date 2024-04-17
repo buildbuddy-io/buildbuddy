@@ -106,7 +106,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "9"
+	GuestAPIVersion = "10"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -449,6 +449,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 			NumCpus:           numCPUs,
 			MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 			ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+			EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(task.GetExecutionTask(), "debug-enable-vm-logs")),
 			EnableNetworking:  true,
 			InitDockerd:       props.InitDockerd,
 			EnableDockerdTcp:  props.EnableDockerdTCP,
@@ -1413,6 +1414,9 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	var initArgs []string
 	if vmConfig.DebugMode {
 		initArgs = append(initArgs, "-debug_mode")
+	}
+	if vmConfig.EnableLogging {
+		initArgs = append(initArgs, "-enable_logging")
 	}
 	if vmConfig.EnableNetworking {
 		initArgs = append(initArgs, "-set_default_route")
