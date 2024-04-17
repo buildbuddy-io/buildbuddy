@@ -378,8 +378,11 @@ export default class EnterpriseRootComponent extends React.Component {
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                   {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}
                   {codesearch && <CodeSearchComponent path={this.state.path} />}
-                  {review && 
-                    <Suspense fallback={<div className="loading" />}><CodeReviewComponent path={this.state.path} /></Suspense>}
+                  {review && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <CodeReviewComponent path={this.state.path} />
+                    </Suspense>
+                  )}
                   {code && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeComponent
