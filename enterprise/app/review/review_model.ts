@@ -351,6 +351,10 @@ export class ReviewModel {
     return this.state.files;
   }
 
+  getFile(path: string): FileModel | undefined {
+    return this.state.files.find((f) => f.getFullPath() === path);
+  }
+
   // TODO(jdhollen): This needs to be fully locked down / unmodifiable.
   getReviewers(): readonly github.Reviewer[] {
     return this.state.reviewers;
@@ -359,6 +363,10 @@ export class ReviewModel {
   // TODO(jdhollen): This needs to be fully locked down / unmodifiable.
   getActionStatuses(): readonly github.ActionStatus[] {
     return this.state.actionStatuses;
+  }
+
+  viewerIsPrAuthor(): boolean {
+    return this.state.author === this.state.viewerLogin;
   }
 
   private stateCopy(): State {

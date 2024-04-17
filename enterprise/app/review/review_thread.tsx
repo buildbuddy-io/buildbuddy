@@ -1,16 +1,7 @@
 import React from "react";
-import { github } from "../../../proto/github_ts_proto";
 import moment from "moment";
 import { CommentModel } from "./review_model";
-
-export interface CommentEditHandler {
-  startComment: (side: github.CommentSide, path: string, commitSha: string, lineNumber: number) => void;
-  handleCreateComment: (comment: CommentModel) => void;
-  handleUpdateComment: (commentId: string, newBody: string) => void;
-  handleDeleteComment: (commentId: string) => void;
-  handleStartReply: (threadId: string) => void;
-  handleCancelComment: (commentId: string) => void;
-}
+import { ReviewController } from "./review_controller";
 
 interface ReviewThreadComponentProps {
   threadId: string;
@@ -22,7 +13,7 @@ interface ReviewThreadComponentProps {
   disabled: boolean;
   editing: boolean;
   saving: boolean;
-  handler: CommentEditHandler;
+  handler: ReviewController;
   activeUsername: string;
 }
 
