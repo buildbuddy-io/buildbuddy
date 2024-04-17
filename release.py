@@ -170,7 +170,10 @@ def update_docker_images(images, version_tag, skip_update_latest_tag, arch_speci
         executor_tag = 'enterprise-' + version_tag
         if arch_specific_executor_tag:
             executor_tag += '-' + get_cpu_architecture()
-        push_image_for_project("flame-public/buildbuddy-executor-enterprise", executor_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
+        # Skip "latest" tag for arch-specific images, since the latest tag
+        # should only apply to the multiarch one.
+        skip_latest_tag = skip_update_latest_tag or arch_specific_executor_tag
+        push_image_for_project("flame-public/buildbuddy-executor-enterprise", executor_tag, '//enterprise/deployment:release_executor_enterprise', skip_latest_tag)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
