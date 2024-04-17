@@ -1,16 +1,13 @@
-//go:build linux && !android
-
 package ext4
 
 import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"syscall"
+	"strconv"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -21,13 +18,10 @@ const (
 	// MinDiskImageSizeBytes is the approximate minimum size needed for an ext4
 	// image. The functions in this package which create disk images will fail
 	// if the provided size is any smaller.
-	MinDiskImageSizeBytes = 225 * iecKilobyte
+	MinDiskImageSizeBytes = 225e3
 
 	// The number of bytes in one IEC kilobyte (K).
 	iecKilobyte = 1024
-
-	// FS block size that we always use when creating ext4 images.
-	blockSize = 4096
 )
 
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
@@ -48,10 +42,10 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		"-d", inputDir,
 		"-m", "5",
 		"-r", "1",
-		"-b", fmt.Sprintf("%d", blockSize),
+		"-b", "4096",
 		"-t", "ext4",
 		outputFile,
-		fmt.Sprintf("%dK", sizeBytes/iecKilobyte),
+		fmt.Sprintf("%dK", sizeBytes/1e3),
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -78,10 +72,10 @@ func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) err
 		"-O", "^64bit",
 		"-m", "5",
 		"-r", "1",
-		"-b", fmt.Sprintf("%d", blockSize),
+		"-b", "4096",
 		"-t", "ext4",
 		outputFile,
-		fmt.Sprintf("%dK", sizeBytes/iecKilobyte),
+		fmt.Sprintf("%dK", sizeBytes/1e3),
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -104,31 +98,23 @@ func checkImageOutputPath(path string) error {
 	return nil
 }
 
-// DiskSizeBytes returns the disk space required to create an ext4 image from
-// the given directory.
+// DiskSizeBytes returns the size in bytes of a directory according to "du -sk".
+// It can be used when creating ext4 images -- to ensure they are large enough.
 func DiskSizeBytes(ctx context.Context, inputDir string) (int64, error) {
-	// Some images like alpine include a lot of symbolic links which `du`
-	// does not report. So we calculate the size ourselves here.
-	var total int64
-	err := filepath.WalkDir(inputDir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		info, err := os.Stat(path)
-		if err != nil {
-			return err
-		}
-		// stat() does not account for file or symlink metadata, so add an extra
-		// disk block for each entry as a rough way to offset this. Also note
-		// that stat() blocks are always 512 bytes regardless of the FS
-		// settings.
-		total += blockSize + info.Sys().(*syscall.Stat_t).Blocks*512
-		return nil
-	})
+	out, err := exec.CommandContext(ctx, "du", "-sk", inputDir).CombinedOutput()
 	if err != nil {
-		return 0, err
+		return 0, status.InternalErrorf("%s: %s", err, out)
 	}
-	return total, nil
+
+	parts := strings.Split(string(out), "\t")
+	if len(parts) != 2 {
+		return 0, status.InternalErrorf("du output %q did not match 'SIZE  /file/path'", out)
+	}
+	s, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, status.InternalErrorf("du output %q did not match 'SIZE  /file/path': %s", out, err)
+	}
+	return int64(s * iecKilobyte), nil
 }
 
 // DirectoryToImageAutoSize is like DirectoryToImage, but it will attempt to

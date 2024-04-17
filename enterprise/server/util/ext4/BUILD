@@ -6,31 +6,23 @@ go_library(
     name = "ext4",
     srcs = ["ext4.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4",
-    target_compatible_with = ["@platforms//os:linux"],
-    deps = select({
-        "@io_bazel_rules_go//go/platform:linux": [
-            "//server/util/log",
-            "//server/util/status",
-            "//server/util/tracing",
-        ],
-        "//conditions:default": [],
-    }),
+    deps = [
+        "//server/util/log",
+        "//server/util/status",
+        "//server/util/tracing",
+    ],
 )
 
 go_test(
     name = "ext4_test",
     srcs = ["ext4_test.go"],
     tags = ["manual"],  # This won't work on mac.
-    target_compatible_with = ["@platforms//os:linux"],
-    deps = select({
-        "@io_bazel_rules_go//go/platform:linux": [
-            ":ext4",
-            "//proto:remote_execution_go_proto",
-            "//server/remote_cache/digest",
-            "//server/testutil/testdigest",
-            "//server/testutil/testfs",
-            "//server/util/disk",
-        ],
-        "//conditions:default": [],
-    }),
+    deps = [
+        ":ext4",
+        "//proto:remote_execution_go_proto",
+        "//server/remote_cache/digest",
+        "//server/testutil/testdigest",
+        "//server/testutil/testfs",
+        "//server/util/disk",
+    ],
 )
