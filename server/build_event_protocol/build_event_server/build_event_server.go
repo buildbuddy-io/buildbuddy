@@ -159,15 +159,12 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 				streamID = in.OrderedBuildEvent.StreamId
 				ctx = log.EnrichContext(ctx, log.InvocationIDKey, streamID.InvocationId)
 				channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
+				log.CtxInfof(ctx, "Opened a channel for stream ID %s.", streamID)
 				channelDone = channel.Context().Done()
 				defer channel.Close()
 			}
 
 			if err := channel.HandleEvent(in); err != nil {
-				if status.IsAlreadyExistsError(err) {
-					log.CtxWarningf(ctx, "AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
-					return err
-				}
 				log.CtxWarningf(ctx, "Error handling event; this means a broken build command: %s", err)
 				return disconnectWithErr(err)
 			}
@@ -184,7 +181,12 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 }
 
 func postProcessStream(ctx context.Context, channel interfaces.BuildEventChannel, streamID *bepb.StreamId, acks []int, stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
-	if channel != nil && channel.GetNumDroppedEvents() > 0 {
+	if channel == nil {
+		log.CtxInfo(ctx, "Closing empty channel.")
+		return nil
+	}
+
+	if channel.GetNumDroppedEvents() > 0 {
 		log.CtxWarningf(ctx, "We got over 100 build events before an event with options for invocation %s. Dropped the %d earliest event(s).",
 			streamID.InvocationId, channel.GetNumDroppedEvents())
 	}
@@ -195,10 +197,7 @@ func postProcessStream(ctx context.Context, channel interfaces.BuildEventChannel
 	// cross-server consistency of messages in an invocation.
 	sort.Ints(acks)
 
-	expectedSeqNo := int64(1)
-	if channel != nil {
-		expectedSeqNo = channel.GetInitialSequenceNumber()
-	}
+	expectedSeqNo := channel.GetInitialSequenceNumber()
 	for _, ack := range acks {
 		if ack != int(expectedSeqNo) {
 			log.CtxWarningf(ctx, "Missing ack: saw %d and wanted %d. Bailing!", ack, expectedSeqNo)
@@ -207,11 +206,9 @@ func postProcessStream(ctx context.Context, channel interfaces.BuildEventChannel
 		expectedSeqNo++
 	}
 
-	if channel != nil {
-		if err := channel.FinalizeInvocation(streamID.GetInvocationId()); err != nil {
-			log.CtxWarningf(ctx, "Error finalizing invocation %q: %s", streamID.GetInvocationId(), err)
-			return err
-		}
+	if err := channel.FinalizeInvocation(streamID.GetInvocationId()); err != nil {
+		log.CtxWarningf(ctx, "Error finalizing invocation %q: %s", streamID.GetInvocationId(), err)
+		return err
 	}
 
 	// Finally, ack everything.
