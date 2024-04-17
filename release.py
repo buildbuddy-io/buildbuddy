@@ -132,9 +132,18 @@ def push_image_for_project(project, version_tag, bazel_target, skip_update_lates
     if skip_update_latest_tag:
         return
 
-    # Note: this command it idempotent
-    add_tag_cmd = f"echo 'yes' | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
-    run_or_die(add_tag_cmd)
+    version_image = version_image or get_image(project, version_tag)
+    if version_image is None:
+        die(f"Could not fetch image with tag {version_tag} from project {project}.")
+
+    latest_image = get_image(project, "latest")
+    if latest_image is None:
+        die(f"Could not fetch image with latest tag from project {project}.")
+
+    should_update_latest_tag = version_image["config"]["digest"] != latest_image["config"]["digest"]
+    if should_update_latest_tag:
+        add_tag_cmd = f"echo 'yes' | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
+        run_or_die(add_tag_cmd)
 
 def push_image_with_bazel(bazel_target, image_tag):
     print(f"Pushing docker image target {bazel_target} tag {image_tag}")
@@ -161,7 +170,10 @@ def update_docker_images(images, version_tag, skip_update_latest_tag, arch_speci
         executor_tag = 'enterprise-' + version_tag
         if arch_specific_executor_tag:
             executor_tag += '-' + get_cpu_architecture()
-        push_image_for_project("flame-public/buildbuddy-executor-enterprise", executor_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
+        # Skip "latest" tag for arch-specific images, since the latest tag
+        # should only apply to the multiarch one.
+        skip_latest_tag = skip_update_latest_tag or arch_specific_executor_tag
+        push_image_for_project("flame-public/buildbuddy-executor-enterprise", executor_tag, '//enterprise/deployment:release_executor_enterprise', skip_latest_tag)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
