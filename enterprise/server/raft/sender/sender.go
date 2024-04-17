@@ -406,7 +406,8 @@ func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchC
 	return rsp.GetBatch(), nil
 }
 
-func (s *Sender) DeleteTxnRecord(ctx context.Context, key []byte) error {
+func (s *Sender) DeleteTxnRecord(ctx context.Context, txnID []byte) error {
+	key := keys.MakeKey(constants.TxnRecordPrefix, txnID)
 	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
 		Key: key,
 	}).ToProto()
@@ -420,7 +421,8 @@ func (s *Sender) DeleteTxnRecord(ctx context.Context, key []byte) error {
 	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
 }
 
-func (s *Sender) writeTxnRecord(ctx context.Context, key []byte, txnRecord *rfpb.TxnRecord) error {
+func (s *Sender) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
+	key := keys.MakeKey(constants.TxnRecordPrefix, txnRecord.GetTxnRequest().GetTransactionId())
 	buf, err := proto.Marshal(txnRecord)
 	if err != nil {
 		return err
@@ -454,8 +456,7 @@ func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 		CreatedAtUsec: time.Now().UnixMicro(),
 	}
 
-	txnRecordKey := keys.MakeKey(constants.TxnRecordPrefix, txnID)
-	if err = s.writeTxnRecord(ctx, txnRecordKey, txnRecord); err != nil {
+	if err = s.WriteTxnRecord(ctx, txnRecord); err != nil {
 		return err
 	}
 
@@ -513,7 +514,7 @@ func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 	txnRecord.Op = operation
 	txnRecord.TxnState = rfpb.TxnRecord_PREPARED
 	txnRecord.Prepared = prepared
-	if err = s.writeTxnRecord(ctx, txnRecordKey, txnRecord); err != nil {
+	if err = s.WriteTxnRecord(ctx, txnRecord); err != nil {
 		return err
 	}
 
@@ -524,7 +525,7 @@ func (s *Sender) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 		}
 	}
 
-	if err := s.DeleteTxnRecord(ctx, txnRecordKey); err != nil {
+	if err := s.DeleteTxnRecord(ctx, txnID); err != nil {
 		return err
 	}
 	if prepareError != nil {

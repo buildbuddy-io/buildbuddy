@@ -53,7 +53,10 @@ const (
 	RTTMillisecond = 10
 )
 
-const CASErrorMessage = "CAS expected value did not match"
+const (
+	CASErrorMessage    = "CAS expected value did not match"
+	TxnNotFoundMessage = "Transaction not found"
+)
 
 // Key constants (some of these have to be vars because of how they are made.
 var (

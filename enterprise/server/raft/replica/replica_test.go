@@ -627,7 +627,6 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	store := &fakeStore{}
 	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
 	require.NotNil(t, repl)
-	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
 	_, err = repl.Open(stopc)

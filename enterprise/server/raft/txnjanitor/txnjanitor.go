@@ -2,6 +2,7 @@ package txnjanitor
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -11,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -27,11 +29,13 @@ type IStore interface {
 
 type TxnJanitor struct {
 	store IStore
+	clock clockwork.Clock
 }
 
-func New(store IStore) *TxnJanitor {
+func New(store IStore, clock clockwork.Clock) *TxnJanitor {
 	return &TxnJanitor{
 		store: store,
+		clock: clock,
 	}
 }
 
@@ -45,7 +49,7 @@ func (tj *TxnJanitor) Start(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(txnCleanupPeriod):
+			case <-tj.clock.After(txnCleanupPeriod):
 				err := tj.processTxnRecords(ctx)
 				if err != nil {
 					log.Warningf("Failed to processTxnRecords: %s", err)
@@ -59,21 +63,21 @@ func (tj *TxnJanitor) processTxnRecords(ctx context.Context) error {
 	if !tj.store.IsLeader(constants.InitialShardID) {
 		return nil
 	}
-	txnRecords, err := tj.fetchTxnRecords(ctx)
+	txnRecords, err := tj.FetchTxnRecords(ctx)
 	if err != nil {
 		return status.InternalErrorf("failed to fetch txn records: %s", err)
 	}
 
 	log.Infof("fetched %d TxnRecords to process", len(txnRecords))
 	for _, txnRecord := range txnRecords {
-		if err := tj.processTxnRecord(ctx, txnRecord); err != nil {
+		if err := tj.ProcessTxnRecord(ctx, txnRecord); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (tj *TxnJanitor) fetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, error) {
+func (tj *TxnJanitor) FetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, error) {
 	start, end := keys.Range(constants.TxnRecordPrefix)
 
 	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
@@ -108,7 +112,7 @@ func (tj *TxnJanitor) fetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, e
 			continue
 		}
 		createdAt := time.UnixMicro(txnRecord.GetCreatedAtUsec())
-		if time.Since(createdAt) < txnLivessnessThreshold {
+		if tj.clock.Since(createdAt) < txnLivessnessThreshold {
 			// This txn record is created very recently; skip processing
 			continue
 		}
@@ -117,13 +121,17 @@ func (tj *TxnJanitor) fetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, e
 	return txnRecords, nil
 }
 
-func (tj *TxnJanitor) processTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
+func isTxnNotFoundError(err error) bool {
+	return status.IsNotFoundError(err) && strings.Contains(err.Error(), constants.TxnNotFoundMessage)
+}
+
+func (tj *TxnJanitor) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
 	txnID := txnRecord.GetTxnRequest().GetTransactionId()
 	if txnRecord.GetTxnState() == rfpb.TxnRecord_PENDING {
 		// The transaction is not fully prepared. Let's rollback all the statements.
 		for _, statement := range txnRecord.GetTxnRequest().GetStatements() {
 			err := tj.sender().FinalizeTxn(ctx, txnID, rfpb.FinalizeOperation_ROLLBACK, statement.GetReplica())
-			if err != nil && !status.IsNotFoundError(err) {
+			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is not prepared, we will get NotFound Error when we rollback and this is fine.
 				return err
 			}
@@ -137,12 +145,11 @@ func (tj *TxnJanitor) processTxnRecord(ctx context.Context, txnRecord *rfpb.TxnR
 
 		for _, replica := range txnRecord.GetPrepared() {
 			err := tj.sender().FinalizeTxn(ctx, txnID, txnRecord.GetOp(), replica)
-			if err != nil && !status.IsNotFoundError(err) {
+			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is already finalized, we will get NotFound Error when we finalize and this is fine.
 				return err
 			}
 		}
 	}
-	txnRecordKey := keys.MakeKey(constants.TxnRecordPrefix, txnID)
-	return tj.sender().DeleteTxnRecord(ctx, txnRecordKey)
+	return tj.sender().DeleteTxnRecord(ctx, txnID)
 }

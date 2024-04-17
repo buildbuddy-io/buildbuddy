@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -144,7 +145,10 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 			MaxSizeBytes: int64(1_000_000_000), // 1G
 		},
 	}
-	s, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, partitions)
+	db, err := pebble.Open(ts.RootDir, "raft_store", &pebble.Options{})
+	require.NoError(t, err)
+	leaser := pebble.NewDBLeaser(db)
+	s, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser)
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	s.Start()

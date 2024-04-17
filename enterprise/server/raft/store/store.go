@@ -43,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
+	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/prometheus/client_golang/prometheus"
@@ -144,11 +145,16 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 	registry := regHolder.r
 	apiClient := client.NewAPIClient(env, nodeHost.ID())
 	sender := sender.New(rangeCache, registry, apiClient)
+	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
+	if err != nil {
+		return nil, err
+	}
+	leaser := pebble.NewDBLeaser(db)
 
-	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions)
+	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions, db, leaser)
 }
 
-func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition) (*Store, error) {
+func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser) (*Store, error) {
 	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
@@ -180,6 +186,9 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
+
+		db:     db,
+		leaser: leaser,
 	}
 
 	updateTagsWorker := &updateTagsWorker{
@@ -190,15 +199,8 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	s.updateTagsWorker = updateTagsWorker
 
-	txnJanitor := txnjanitor.New(s)
+	txnJanitor := txnjanitor.New(s, clockwork.NewRealClock())
 	s.txnJanitor = txnJanitor
-
-	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
-	if err != nil {
-		return nil, err
-	}
-	s.db = db
-	s.leaser = pebble.NewDBLeaser(db)
 
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
 	if err != nil {
@@ -435,6 +437,15 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.eg.Wait()
 	}
 	s.updateTagsWorker.Stop()
+
+	if err := s.db.Flush(); err != nil {
+		return err
+	}
+	log.Info("Store: db flushed")
+
+	// Wait for all active requests to be finished.
+	s.leaser.Close()
+
 	s.log.Info("Store: waitgroups finished")
 	s.nodeHost.Close()
 
