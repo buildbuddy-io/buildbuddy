@@ -621,6 +621,9 @@ type Workflow struct {
 	// registering the webhook. This will only be set for the case where we
 	// successfully auto-registered the webhook.
 	GitProviderWebhookID string
+
+	// Set if this workflow was adapted from a GitRepository.
+	GitRepository *GitRepository `gorm:"-"`
 }
 
 func (wf *Workflow) TableName() string {
