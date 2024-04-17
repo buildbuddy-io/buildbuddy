@@ -1220,7 +1220,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 			return err
 		}
 	} else {
-		workspaceSizeBytes, err := ext4.DiskSizeBytes(ctx, workspaceDir)
+		workspaceSizeBytes, err := disk.DirSize(workspaceDir)
 		if err != nil {
 			return err
 		}
