@@ -86,6 +86,9 @@ const (
 	// "synthetic" workflow adapted from a GitRepository.
 	repoWorkflowIDPrefix = "WF#GitRepository"
 
+	// Non-root user that has been pre-provisioned in workflow images.
+	nonRootUser = "buildbuddy"
+
 	// Number of workers to work on processing webhook events in the background.
 	webhookWorkerCount = 64
 
@@ -1082,6 +1085,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			Value: v,
 		})
 	}
+	workflowUser := workflowAction.User
+	if workflowUser == "" && wf.GitRepository != nil && wf.GitRepository.DefaultNonRootRunner {
+		workflowUser = nonRootUser
+	}
+
 	containerImage := ""
 	isolationType := ""
 	os := strings.ToLower(workflowAction.OS)
@@ -1096,7 +1104,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			// When using Firecracker, write all outputs to the scratch disk, which
 			// has more space than the workspace disk and doesn't need to be extracted
 			// to the executor between action runs.
-			wd := filepath.Join(workflowHomeDir(workflowAction.User), "workspace")
+			wd := filepath.Join(workflowHomeDir(workflowUser), "workspace")
 			envVars = append(envVars, &repb.Command_EnvironmentVariable{Name: "WORKDIR_OVERRIDE", Value: wd})
 		}
 	}
@@ -1160,7 +1168,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: "Pool", Value: ws.poolForAction(workflowAction)},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
-				{Name: platform.DockerUserPropertyName, Value: workflowAction.User},
+				{Name: platform.DockerUserPropertyName, Value: workflowUser},
 				{Name: "workload-isolation-type", Value: isolationType},
 				{Name: "container-image", Value: containerImage},
 				// Reuse the container/VM for the CI runner across executions if
@@ -1549,7 +1557,7 @@ func isGitHubURL(s string) bool {
 }
 
 func workflowHomeDir(user string) string {
-	if user == "buildbuddy" {
+	if user == nonRootUser {
 		return "/home/buildbuddy"
 	}
 	return "/root"
@@ -1590,6 +1598,7 @@ func (ws *workflowService) gitRepositoryWorkflow(repo *tables.GitRepository, acc
 		RepoURL:            repo.RepoURL,
 		InstanceNameSuffix: repo.InstanceNameSuffix,
 		AccessToken:        accessToken,
+		GitRepository:      repo,
 	}
 	return &repositoryWorkflow{GitRepository: repo, Workflow: wf}
 }

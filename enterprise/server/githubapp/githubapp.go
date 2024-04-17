@@ -667,10 +667,11 @@ func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoReques
 		return nil, err
 	}
 	repo := &tables.GitRepository{
-		UserID:  p.UserID,
-		GroupID: p.GroupID,
-		Perms:   p.Perms,
-		RepoURL: repoURL.String(),
+		UserID:               p.UserID,
+		GroupID:              p.GroupID,
+		Perms:                p.Perms,
+		RepoURL:              repoURL.String(),
+		DefaultNonRootRunner: true,
 	}
 	if err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_create_repo").Create(repo); err != nil {
 		return nil, status.InternalErrorf("failed to link repo: %s", err)
