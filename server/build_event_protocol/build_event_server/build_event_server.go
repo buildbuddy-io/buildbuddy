@@ -159,7 +159,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 				streamID = in.OrderedBuildEvent.StreamId
 				ctx = log.EnrichContext(ctx, log.InvocationIDKey, streamID.InvocationId)
 				channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
-				log.CtxInfof(ctx, "Opened a channel for stream ID %s.", streamID)
+				log.CtxInfo(ctx, "Opened invocation channel")
 				channelDone = channel.Context().Done()
 				defer channel.Close()
 			}
