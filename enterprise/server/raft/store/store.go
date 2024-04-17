@@ -80,6 +80,7 @@ type Store struct {
 	db     pebble.IPebbleDB
 	leaser pebble.Leaser
 
+	clusterCountMu     sync.Mutex // protects configuredClusters
 	configuredClusters int
 	rangeMu            sync.RWMutex
 	openRanges         map[uint64]*rfpb.RangeDescriptor
@@ -225,18 +226,29 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	// rejoin configured clusters
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	eg := errgroup.Group{}
+	eg.SetLimit(50)
 
 	logSize := len(nodeHostInfo.LogInfo)
 	for i, logInfo := range nodeHostInfo.LogInfo {
 		if nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
 			s.log.Infof("Had info for cluster: %d, node: %d. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, i+1, logSize)
-			r := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
-			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, r); err != nil {
-				return nil, err
-			}
-			s.configuredClusters++
-			s.log.Infof("Recreated cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
+			shardID, replicaID := logInfo.ShardID, logInfo.ReplicaID
+			eg.Go(func() error {
+				r := raftConfig.GetRaftConfig(shardID, replicaID)
+				if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, r); err != nil {
+					return status.InternalErrorf("failed to create cluster: %d, node: %d. %s", shardID, replicaID, err)
+				}
+				s.clusterCountMu.Lock()
+				s.configuredClusters++
+				s.clusterCountMu.Unlock()
+				s.log.Infof("Recreated cluster: %d, node: %d.", shardID, replicaID)
+				return nil
+			})
 		}
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 
 	gossipManager.AddListener(s)
@@ -671,6 +683,8 @@ func (s *Store) APIClient() *client.APIClient {
 }
 
 func (s *Store) ConfiguredClusters() int {
+	s.clusterCountMu.Lock()
+	defer s.clusterCountMu.Unlock()
 	return s.configuredClusters
 }
 
