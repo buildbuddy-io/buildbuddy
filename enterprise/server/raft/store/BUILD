@@ -70,6 +70,7 @@ go_test(
         "//enterprise/server/raft/registry",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
+        "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//server/gossip",
         "//server/testutil/testdigest",
