@@ -26,7 +26,7 @@ import UsageComponent from "../usage/usage";
 import GroupSearchComponent from "../group_search/group_search";
 import AuditLogsComponent from "../auditlogs/auditlogs";
 import { AlertCircle, Check, Copy, LogOut } from "lucide-react";
-import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -36,18 +36,16 @@ import Dialog, {
 } from "../../../app/components/dialog/dialog";
 const CodeComponent = React.lazy(() => import("../code/code"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
+const CodeReviewComponent = React.lazy(() => import("../review/review"));
 
 import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
-import Modal from "../../../app/components/modal/modal";
 import OrgAccessDeniedComponent from "../org/org_access_denied";
 import rpc_service from "../../../app/service/rpc_service";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import alert_service from "../../../app/alert/alert_service";
-import InvocationModel from "../../../app/invocation/invocation_model";
 import PickerComponent from "../../../app/picker/picker";
-import CodeReviewComponent from "../review/review";
 import CodeSearchComponent from "../codesearch/codesearch";
 
 interface State {
@@ -380,7 +378,11 @@ export default class EnterpriseRootComponent extends React.Component {
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                   {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}
                   {codesearch && <CodeSearchComponent path={this.state.path} />}
-                  {review && <CodeReviewComponent path={this.state.path} />}
+                  {review && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <CodeReviewComponent path={this.state.path} />
+                    </Suspense>
+                  )}
                   {code && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeComponent
