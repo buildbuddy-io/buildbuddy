@@ -241,7 +241,7 @@ func (s *ExecutionServer) insertInvocationLinkInRedis(ctx context.Context, execu
 
 func trimStatus(statusMessage string) string {
 	if len(statusMessage) > 255 {
-		return statusMessage[:255]
+		return statusMessage[:252] + "..."
 	}
 	return statusMessage
 }
