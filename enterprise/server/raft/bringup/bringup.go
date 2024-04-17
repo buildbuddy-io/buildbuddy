@@ -2,7 +2,9 @@ package bringup
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"math/big"
 	"net"
 	"sort"
 	"sync"
@@ -21,6 +23,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+)
+
+var (
+	numStarterRanges = flag.Int("cache.raft.num_starter_ranges", 2, "The number of starter ranges. should be at least 2.")
 )
 
 type IStore interface {
@@ -320,20 +326,66 @@ func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo 
 	return eg.Wait()
 }
 
+func splitRange(left, right keys.Key, count int) ([]*rfpb.RangeDescriptor, error) {
+	leftInt := big.NewInt(0).SetBytes(left)
+	rightInt := big.NewInt(0).SetBytes(right)
+	delta := new(big.Int).Sub(rightInt, leftInt)
+	interval := new(big.Int).Div(delta, big.NewInt(int64(count)))
+	if interval.Sign() != 1 {
+		return nil, status.InvalidArgumentErrorf("delta (%s) < count (%d)", delta, count)
+	}
+
+	ranges := make([]*rfpb.RangeDescriptor, 0, count)
+
+	l := leftInt
+	for i := 0; i < count; i++ {
+		r := new(big.Int).Add(l, interval)
+		ranges = append(ranges, &rfpb.RangeDescriptor{
+			Start:      l.Bytes(),
+			End:        r.Bytes(),
+			Generation: 1,
+		})
+		l = r
+	}
+	return ranges, nil
+}
+
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bring up initial cluster(s).
 func SendStartShardRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {
-	startingRanges := []*rfpb.RangeDescriptor{
-		&rfpb.RangeDescriptor{
-			Start:      keys.MinByte,
-			End:        keys.Key{constants.UnsplittableMaxByte},
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
+	if *numStarterRanges < 2 {
+		return status.InvalidArgumentErrorf("--cache.raft.num_starter_ranges is %d, should be >=2", *numStarterRanges)
+	}
+
+	startingRanges := make([]*rfpb.RangeDescriptor, 0, *numStarterRanges)
+	startingRanges = append(startingRanges, &rfpb.RangeDescriptor{
+		Start:      keys.MinByte,
+		End:        keys.Key{constants.UnsplittableMaxByte},
+		Generation: 1,
+	})
+
+	if *numStarterRanges == 2 {
+		startingRanges = append(startingRanges, &rfpb.RangeDescriptor{
 			Start:      keys.Key{constants.UnsplittableMaxByte},
 			End:        keys.MaxByte,
 			Generation: 1,
-		},
+		})
+	} else {
+		ranges, err := splitRange([]byte("a"), []byte("z"), *numStarterRanges-2)
+		if err != nil {
+			return status.InternalErrorf("failed to split ranges: %s", err)
+		}
+		startingRanges = append(startingRanges, &rfpb.RangeDescriptor{
+			Start:      keys.Key{constants.UnsplittableMaxByte},
+			End:        []byte("a"),
+			Generation: 1,
+		})
+		startingRanges = append(startingRanges, ranges...)
+		startingRanges = append(startingRanges, &rfpb.RangeDescriptor{
+			Start:      []byte("z"),
+			End:        keys.MaxByte,
+			Generation: 1,
+		})
 	}
 	return SendStartShardRequestsWithRanges(ctx, nodeHost, apiClient, nodeGrpcAddrs, startingRanges)
 }
