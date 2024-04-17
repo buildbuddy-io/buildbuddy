@@ -34,7 +34,6 @@ go_test(
         "//enterprise/server/raft/rangecache",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/registry",
-        "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
         "//enterprise/server/raft/store",
         "//enterprise/server/util/pebble",
