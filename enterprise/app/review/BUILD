@@ -5,6 +5,15 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 exports_files(["review.css"])
 
 ts_library(
+    name = "review_controller",
+    srcs = ["review_controller.ts"],
+    deps = [
+        "//enterprise/app/review:review_model",
+        "//proto:github_ts_proto",
+    ],
+)
+
+ts_library(
     name = "review_model",
     srcs = ["review_model.ts"],
     deps = [
@@ -19,10 +28,27 @@ ts_library(
     name = "file_content",
     srcs = ["file_content.tsx"],
     deps = [
+        "//enterprise/app/review:review_controller",
         "//enterprise/app/review:review_model",
         "//enterprise/app/review:review_thread",
         "//proto:github_ts_proto",
         "@npm//@types/react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "pull_request_header",
+    srcs = ["pull_request_header.tsx"],
+    deps = [
+        "//app/components/button",
+        "//app/components/link",
+        "//app/router",
+        "//enterprise/app/review:review_controller",
+        "//enterprise/app/review:review_model",
+        "//proto:github_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
     ],
 )
@@ -60,8 +86,8 @@ ts_library(
     name = "review_thread",
     srcs = ["review_thread.tsx"],
     deps = [
+        "//enterprise/app/review:review_controller",
         "//enterprise/app/review:review_model",
-        "//proto:github_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//moment",
@@ -77,11 +103,14 @@ ts_library(
         "//app/components/button",
         "//app/components/button:checkbox_button",
         "//app/components/dialog",
+        "//app/components/link",
         "//app/components/modal",
         "//app/errors:error_service",
         "//app/format",
+        "//app/router",
         "//app/service:rpc_service",
         "//enterprise/app/review:file_content",
+        "//enterprise/app/review:pull_request_header",
         "//enterprise/app/review:review_model",
         "//enterprise/app/review:review_thread",
         "//proto:github_ts_proto",

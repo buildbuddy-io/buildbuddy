@@ -22,6 +22,7 @@ message VMConfiguration {
   string kernel_version = 8;
   string firecracker_version = 9;
   string guest_api_version = 10;
+  bool enable_logging = 12;
 
   // Guest kernel boot args.
   string boot_args = 11;

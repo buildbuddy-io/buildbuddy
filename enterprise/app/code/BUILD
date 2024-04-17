@@ -19,6 +19,7 @@ ts_library(
         "//app/components/modal",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/icons:github",
         "//app/picker:picker_service",
         "//app/router",
         "//app/service:rpc_service",

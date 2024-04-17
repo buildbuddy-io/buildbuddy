@@ -38,22 +38,27 @@ export default class BazelrcSidekick extends React.Component<Props, State> {
 
   async componentDidMount() {
     this.setState({ flags: await (await fetch(flagsDataURL)).json() });
-
-    document.onkeydown = (e) => {
-      switch (e.keyCode) {
-        case 27: // Esc
-          this.setState({ showModal: false });
-          break;
-        case 66: // Meta + B
-          if (!e.metaKey) break;
-          this.setState({ showModal: true, selectIndex: 0 }, () => {
-            document.getElementById("flag-input")?.focus();
-          });
-          e.preventDefault();
-          break;
-      }
-    };
+    document.addEventListener("keydown", this.onKeydown);
   }
+
+  componentWillUnmount() {
+    document.removeEventListener("keydown", this.onKeydown);
+  }
+
+  private onKeydown = (e: KeyboardEvent) => {
+    switch (e.keyCode) {
+      case 27: // Esc
+        this.setState({ showModal: false });
+        break;
+      case 66: // Meta + B
+        if (!e.metaKey) break;
+        this.setState({ showModal: true, selectIndex: 0 }, () => {
+          document.getElementById("flag-input")?.focus();
+        });
+        e.preventDefault();
+        break;
+    }
+  };
 
   add(m: Flag) {
     let snippet = `${this.state.selectedCommand || "common"}${

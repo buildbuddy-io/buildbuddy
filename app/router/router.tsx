@@ -291,8 +291,8 @@ class Router {
     this.navigateTo(Path.createOrgPath);
   }
 
-  getReviewUrl(owner: string, repo: string, pull: number) {
-    return `${Path.reviewsPath}${owner}/${repo}/${pull}`;
+  getReviewUrl(owner: string, repo: string, pull: number, filePath?: string) {
+    return `${Path.reviewsPath}${owner}/${repo}/${pull}${filePath ? "/" + filePath : ""}`;
   }
 
   updateParams(params: Record<string, string>) {

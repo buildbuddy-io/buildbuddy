@@ -7,8 +7,10 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
+        "//cli/login",
         "//cli/parser",
         "//cli/setup",
+        "//cli/storage",
         "//cli/terminal",
         "//enterprise/server/remote_execution/dirtools",
         "//proto:build_event_stream_go_proto",
@@ -23,7 +25,6 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/bazel",
         "//server/util/flag",
-        "//server/util/git",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
         "//server/util/rexec",

@@ -18,6 +18,9 @@ import FilledButton, { OutlinedButton } from "../../../app/components/button/but
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 import FileContentComponent from "./file_content";
 import { CommentModel, ReviewModel, FileModel } from "./review_model";
+import Link from "../../../app/components/link/link";
+import router from "../../../app/router/router";
+import PullRequestHeaderComponent from "./pull_request_header";
 
 interface ViewPullRequestComponentProps {
   owner: string;
@@ -338,7 +341,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           <td className="viewed">
             <input type="checkbox"></input>
           </td>
-          <td className="diff-file-name">{path}</td>
+          <td className="diff-file-name">
+            <Link href={router.getReviewUrl(this.props.owner, this.props.repo, +this.props.pull, path)}>{path}</Link>
+          </td>
           <td>{file.getCommentCount()}</td>
           <td>{expanded ? "Hide" : "Diff"}</td>
           <td>{file.getAdditions() + file.getDeletions()}</td>
@@ -420,11 +425,11 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     }
   }
 
-  handleReviewReplyClick(approve: boolean) {
+  startReviewReply(approveAndSubmitNow: boolean) {
     if (!this.state.reviewModel) {
       return;
     }
-    if (!approve) {
+    if (!approveAndSubmitNow) {
       this.showReplyDialog();
     } else {
       this.submitReview("", true);
@@ -461,7 +466,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       .finally(() => this.setState({ pendingRequest: false }));
   }
 
-  submit() {
+  submitPr() {
     if (!this.state.reviewModel) {
       return;
     }
@@ -563,179 +568,131 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     );
   }
 
+  renderSingleFileView(file: FileModel): JSX.Element | undefined {
+    if (!this.state.reviewModel) {
+      return undefined;
+    }
+    return (
+      <>
+        <div className="single-file-header">
+          <div className="single-file-name">{file.getFullPath()}</div>
+          <div>
+            <Link
+              href={router.getReviewUrl(
+                this.state.reviewModel.getOwner(),
+                this.state.reviewModel.getRepo(),
+                this.state.reviewModel.getPullNumber()
+              )}>
+              BACK
+            </Link>
+          </div>
+        </div>
+        <FileContentComponent
+          reviewModel={this.state.reviewModel}
+          disabled={this.state.pendingRequest}
+          viewerLogin={this.state.reviewModel.getViewerLogin()}
+          owner={this.props.owner}
+          repo={this.props.repo}
+          pull={this.props.pull}
+          patch={file.getPatch()}
+          path={file.getFullPath()}
+          commitSha={file.getCommitSha()}
+          handler={this}></FileContentComponent>
+      </>
+    );
+  }
+
+  renderReviewLandingPage(model: ReviewModel): JSX.Element {
+    return (
+      <>
+        <div className="summary-section">
+          <div className="review-cell">
+            <div className="attr-grid">
+              <div className="attr-label">Reviewers</div>
+              <div>{this.renderReviewers(model.getReviewers())}</div>
+              <div className="attr-label">Issues</div>
+              <div></div>
+              <div className="attr-label">Mentions</div>
+              <div></div>
+              <div></div>
+            </div>
+          </div>
+          <div className="review-cell">
+            <div className="description">
+              {model.getTitle()}
+              <br />
+              <br />
+              {model.getBody()}
+            </div>
+          </div>
+          <div className="review-cell">
+            <div className="attr-grid">
+              <div className="attr-label">Created</div>
+              <div>{format.formatTimestampUsec(model.getCreatedAtUsec())}</div>
+              <div className="attr-label">Modified</div>
+              <div>{format.formatTimestampUsec(model.getUpdatedAtUsec())}</div>
+              <div className="attr-label">Branch</div>
+              <div>{model.getBranch()}</div>
+            </div>
+          </div>
+          <div className="review-cell">
+            <div className="attr-grid">
+              <div className="attr-label">Status</div>
+              <div>{this.getPrStatusString(model)}</div>
+              <div className="attr-label">Analysis</div>
+              <div>{this.renderAnalysisResults(model.getActionStatuses())}</div>
+            </div>
+          </div>
+          <div className="review-cell header">Files</div>
+          <div className="review-cell header"></div>
+        </div>
+        <div className="file-section">
+          <table>
+            {this.renderFileHeader()}
+            {model.getFiles().map((f) => this.renderFileRow(f))}
+          </table>
+        </div>
+        {this.renderReplyModal()}
+      </>
+    );
+  }
+
+  renderPageContent(): JSX.Element | undefined {
+    if (this.state.reviewModel === undefined) {
+      return undefined;
+    }
+    const pathParts = this.props.path.split("/");
+    let filePath: string | undefined = undefined;
+
+    if (pathParts.length > 5) {
+      filePath = pathParts.slice(5).join("/");
+      const file = this.state.reviewModel.getFile(filePath);
+      if (file !== undefined) {
+        return this.renderSingleFileView(file);
+      } else {
+        error_service.handleError("File not found.");
+        // Fall through to landing page below.
+      }
+    }
+
+    return this.renderReviewLandingPage(this.state.reviewModel);
+  }
+
   render() {
-    const userIsPrAuthor = this.userIsPrAuthor();
+    const pageContent = this.renderPageContent();
+    if (!this.state.reviewModel) {
+      // TODO(jdhollen): Error state.
+      return <></>;
+    }
 
     return (
       <div className={"pr-view " + this.getPrStatusClass(this.state.reviewModel)}>
-        {this.state.reviewModel !== undefined && (
-          <>
-            <div className="summary-section">
-              <div className="review-header">
-                <span className="review-title">
-                  <span className="review-number">Change #{this.state.reviewModel.getPullNumber()}&nbsp;</span>
-                  <span className="review-details">
-                    by <span className="review-author">{this.state.reviewModel.getAuthor()}</span> in{" "}
-                    <span className="review-repo">
-                      {this.state.reviewModel.getOwner()}/{this.state.reviewModel.getRepo()}
-                    </span>
-                  </span>
-                  <a href={this.state.reviewModel.getGithubUrl()} className="review-gh-link">
-                    <Github size="16" className="icon" />
-                  </a>
-                </span>
-                <div className="review-actions">
-                  {userIsPrAuthor && !this.state.reviewModel.isSubmitted() && (
-                    <OutlinedButton disabled={!this.state.reviewModel.isMergeable()} onClick={() => this.submit()}>
-                      Submit
-                    </OutlinedButton>
-                  )}
-                  {!userIsPrAuthor && (
-                    <OutlinedButton onClick={() => this.handleReviewReplyClick(true)}>Approve</OutlinedButton>
-                  )}
-                  <FilledButton onClick={() => this.handleReviewReplyClick(false)}>Reply</FilledButton>
-                </div>
-              </div>
-              <div className="header-separator"></div>
-              <div className="review-cell">
-                <div className="attr-grid">
-                  <div className="attr-label">Reviewers</div>
-                  <div>{this.renderReviewers(this.state.reviewModel.getReviewers())}</div>
-                  <div className="attr-label">Issues</div>
-                  <div></div>
-                  <div className="attr-label">Mentions</div>
-                  <div></div>
-                  <div></div>
-                </div>
-              </div>
-              <div className="review-cell">
-                <div className="description">
-                  {this.state.reviewModel.getTitle()}
-                  <br />
-                  <br />
-                  {this.state.reviewModel.getBody()}
-                </div>
-              </div>
-              <div className="review-cell">
-                <div className="attr-grid">
-                  <div className="attr-label">Created</div>
-                  <div>{format.formatTimestampUsec(this.state.reviewModel.getCreatedAtUsec())}</div>
-                  <div className="attr-label">Modified</div>
-                  <div>{format.formatTimestampUsec(this.state.reviewModel.getUpdatedAtUsec())}</div>
-                  <div className="attr-label">Branch</div>
-                  <div>{this.state.reviewModel.getBranch()}</div>
-                </div>
-              </div>
-              <div className="review-cell">
-                <div className="attr-grid">
-                  <div className="attr-label">Status</div>
-                  <div>{this.getPrStatusString(this.state.reviewModel)}</div>
-                  <div className="attr-label">Analysis</div>
-                  <div>{this.renderAnalysisResults(this.state.reviewModel.getActionStatuses())}</div>
-                </div>
-              </div>
-              <div className="review-cell header">Files</div>
-              <div className="review-cell header"></div>
-            </div>
-            <div className="file-section">
-              <table>
-                {this.renderFileHeader()}
-                {this.state.reviewModel.getFiles().map((f) => this.renderFileRow(f))}
-              </table>
-            </div>
-            {this.renderReplyModal()}
-          </>
-        )}
+        <PullRequestHeaderComponent
+          reviewModel={this.state.reviewModel}
+          path={this.props.path}
+          controller={this}></PullRequestHeaderComponent>
+        {pageContent}
       </div>
     );
   }
-}
-
-function getDiffLineInfo(input: string): DiffLineInfo {
-  const breakdown = input.slice(1).split(",");
-  return { startLine: Number(breakdown[0]) || 0, lineCount: Number(breakdown[1]) || 0 };
-}
-
-function readNextHunk(patchLines: string[], startIndex: number): [Hunk, number] {
-  // Parse the hunk start line.
-  const hunkSummary = patchLines[startIndex].split("@@");
-  if (hunkSummary.length < 3) {
-    return [{ header: "", lines: [] }, startIndex];
-  }
-  const diffLineInfo = hunkSummary[1].trim().split(" ");
-  let leftInfo: DiffLineInfo | undefined, rightInfo: DiffLineInfo | undefined;
-  for (let i = 0; i < diffLineInfo.length; i++) {
-    const value = diffLineInfo[i];
-    if (value.length < 4) {
-      continue;
-    }
-    if (value[0] === "+") {
-      rightInfo = getDiffLineInfo(value);
-    } else if (value[0] === "-") {
-      leftInfo = getDiffLineInfo(value);
-    }
-  }
-
-  let leftLinesRead = 0;
-  let rightLinesRead = 0;
-  let currentLineOffset = 0;
-  let currentIndex = startIndex + 1;
-
-  let leftLines: SourceLine[] = [];
-  let rightLines: SourceLine[] = [];
-  while (
-    (leftLinesRead < (leftInfo?.lineCount || 1) || rightLinesRead < (rightInfo?.lineCount || 1)) &&
-    currentIndex < patchLines.length
-  ) {
-    let line = patchLines[currentIndex];
-    if (line[0] === "+") {
-      rightLines.push({ source: line.slice(1), lineNumber: (rightInfo?.startLine ?? 0) + rightLinesRead });
-      rightLinesRead += 1;
-      currentLineOffset += 1;
-    } else if (line[0] === "-") {
-      leftLines.push({ source: line.slice(1), lineNumber: (leftInfo?.startLine ?? 0) + leftLinesRead });
-      leftLinesRead += 1;
-      currentLineOffset -= 1;
-    } else {
-      rightLines.push({ source: line.slice(1), lineNumber: (rightInfo?.startLine ?? 0) + rightLinesRead });
-      leftLines.push({ source: line.slice(1), lineNumber: (leftInfo?.startLine ?? 0) + leftLinesRead });
-      leftLinesRead += 1;
-      rightLinesRead += 1;
-      const arrayToGrow = currentLineOffset < 0 ? rightLines : leftLines;
-      for (let i = 0; i < Math.abs(currentLineOffset); i++) {
-        arrayToGrow.push({});
-      }
-      currentLineOffset = 0;
-    }
-    currentIndex++;
-  }
-  const finalOffset = rightLines.length - leftLines.length;
-  if (finalOffset !== 0) {
-    const arrayToGrow = finalOffset < 0 ? rightLines : leftLines;
-    for (let i = 0; i < Math.abs(finalOffset); i++) {
-      arrayToGrow.push({});
-    }
-  }
-
-  let output: DiffLinePair[] = [];
-  for (let i = rightLines.length - 1; i >= 0; i--) {
-    if (leftLines[i].source === undefined) {
-      let j = i - 1;
-      while (j >= 0) {
-        if (leftLines[j].source !== undefined) {
-          if (leftLines[j].source === rightLines[i].source) {
-            leftLines[i] = leftLines[j];
-            leftLines[j] = {};
-          }
-          break;
-        }
-        j--;
-      }
-    }
-  }
-  for (let i = 0; i < rightLines.length; i++) {
-    output.push({ left: leftLines[i], right: rightLines[i] });
-  }
-
-  return [{ header: patchLines[startIndex], lines: output }, currentIndex];
 }

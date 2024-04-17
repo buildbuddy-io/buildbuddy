@@ -45,8 +45,10 @@ interface RowSpanProps extends SpanData {
 
 /**
  * Renders a `<span>` with one or more ANSI styles applied to the whole span.
+ *
+ * If the span is a link, an `<a>` tag will be used instead.
  */
-function RowSpan({ text, matchIndex, isActiveMatch, style }: RowSpanProps) {
+function RowSpan({ text, matchIndex, isActiveMatch, style, link }: RowSpanProps) {
   if (!style) style = {};
   const className = [
     style.background && `ansi-bg-${style.background}`,
@@ -59,5 +61,12 @@ function RowSpan({ text, matchIndex, isActiveMatch, style }: RowSpanProps) {
   ]
     .filter(Boolean)
     .join(" ");
+  if (link) {
+    return (
+      <a href={link} target="_blank" className={className}>
+        {text}
+      </a>
+    );
+  }
   return <span className={className}>{text}</span>;
 }

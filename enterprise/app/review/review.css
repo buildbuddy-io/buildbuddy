@@ -181,11 +181,13 @@
   overflow-y: auto;
 }
 
-.pr-view.submitted .review-cell {
+.pr-view.submitted .review-cell,
+.pr-view.submitted .single-file-header {
   background-color: #fafafa;
 }
 
-.pr-view.approved .review-cell {
+.pr-view.approved .review-cell,
+.pr-view.approved .single-file-header {
   background-color: #f1f8e9;
 }
 
@@ -465,4 +467,16 @@
 
 .pr-view .file-list-diff td {
   padding: 0;
+}
+
+.pr-view .single-file-header {
+  padding: 8px 32px;
+  background-color: #ffecb3;
+  grid-column: span 2;
+  display: flex;
+  justify-content: space-between;
+}
+
+.pr-view .single-file-name {
+  font-weight: 600;
 }

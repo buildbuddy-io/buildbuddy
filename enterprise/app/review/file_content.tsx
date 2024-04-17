@@ -1,12 +1,13 @@
 import React from "react";
 import { github } from "../../../proto/github_ts_proto";
-import ReviewThreadComponent, { CommentEditHandler } from "./review_thread";
+import ReviewThreadComponent from "./review_thread";
 import { CommentModel, ReviewModel, ThreadModel } from "./review_model";
+import { ReviewController } from "./review_controller";
 
 interface FileContentComponentProps {
   reviewModel: ReviewModel;
   disabled: boolean;
-  handler: CommentEditHandler;
+  handler: ReviewController;
   viewerLogin: string;
   owner: string;
   repo: string;

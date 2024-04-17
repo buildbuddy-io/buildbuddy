@@ -10,8 +10,9 @@ interface CodeReviewComponentProps {
 export default class CodeReviewComponent extends React.Component<CodeReviewComponentProps> {
   render() {
     const route = this.props.path.substring(Path.reviewsPath.length).split("/");
-    // Checking route.length here because a code review path is "org/repo/pull" (3 parts)
-    if (route.length === 3) {
+    // Checking route.length here because a code review path starts with
+    //  "org/repo/pull", and the remainder is the file path, if any.
+    if (route.length >= 3) {
       return (
         <ViewPullRequestComponent
           path={this.props.path}

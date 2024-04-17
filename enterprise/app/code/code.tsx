@@ -8,7 +8,7 @@ import * as diff from "diff";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import { ArrowLeft, ArrowUpCircle, ChevronRight, Download, Key, Link, PlusCircle, Send, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowUpCircle, ChevronRight, Download, Key, Send, XCircle } from "lucide-react";
 import Spinner from "../../../app/components/spinner/spinner";
 import { OutlinedButton, FilledButton } from "../../../app/components/button/button";
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
@@ -36,6 +36,7 @@ import OrgPicker from "../org_picker/org_picker";
 import capabilities from "../../../app/capabilities/capabilities";
 import router from "../../../app/router/router";
 import picker_service, { PickerModel } from "../../../app/picker/picker_service";
+import { GithubIcon } from "../../../app/icons/github";
 
 interface Props {
   user: User;
@@ -165,21 +166,23 @@ export default class CodeComponent extends React.Component<Props, State> {
       this.fetchInitialContent();
     }
 
-    document.onkeydown = (e) => {
-      switch (e.keyCode) {
-        case 70: // Meta + F
-          if (!e.metaKey) break;
-          this.editor?.focus();
-          this.editor?.trigger("find", "editor.actions.findWithArgs", { searchString: "" });
-          e.preventDefault();
-          break;
-        case 80: // Meta + P
-          if (!e.metaKey) break;
-          e.preventDefault();
-          this.showFileSearch();
-      }
-    };
+    document.addEventListener("keydown", this.onKeydown);
   }
+
+  private onKeydown = (e: KeyboardEvent) => {
+    switch (e.keyCode) {
+      case 70: // Meta + F
+        if (!e.metaKey) break;
+        this.editor?.focus();
+        this.editor?.trigger("find", "editor.actions.findWithArgs", { searchString: "" });
+        e.preventDefault();
+        break;
+      case 80: // Meta + P
+        if (!e.metaKey) break;
+        e.preventDefault();
+        this.showFileSearch();
+    }
+  };
 
   showFileSearch() {
     let picker: PickerModel = {
@@ -393,6 +396,7 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   componentWillUnmount() {
     window.removeEventListener("resize", () => this.handleWindowResize());
+    document.removeEventListener("keydown", this.onKeydown);
     this.subscription?.unsubscribe();
     this.editor?.dispose();
   }
@@ -764,7 +768,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       redirect_url: window.location.href,
       ...(this.props.user.displayUser.userId && { user_id: this.props.user.displayUser.userId.id }),
     });
-    window.location.href = `/auth/github/link/?${params}`;
+    window.location.href = `/auth/github/app/link/?${params}`;
   }
 
   handleUpdatePR() {
@@ -1154,29 +1158,33 @@ export default class CodeComponent extends React.Component<Props, State> {
                     {this.currentRepo()}
                   </a>
                 </div>
-                <ChevronRight />
-                {this.state.commitSHA != this.getBranch() && (
+                {this.getBranch() && this.state.commitSHA != this.getBranch() && (
                   <>
+                    <ChevronRight />
                     <a
                       href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/tree/${
                         this.state.prBranch || this.getBranch()
                       }`}>
                       {this.state.prBranch || this.getBranch()}
                     </a>
-                    <ChevronRight />
                   </>
                 )}
-                <a
-                  target="_blank"
-                  title={this.state.commitSHA}
-                  href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${
-                    this.state.commitSHA
-                  }`}>
-                  {this.state.commitSHA?.slice(0, 7)}
-                </a>{" "}
-                <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
-                  <ArrowUpCircle className="code-update-commit" />
-                </span>{" "}
+                {this.state.commitSHA && (
+                  <>
+                    <ChevronRight />
+                    <a
+                      target="_blank"
+                      title={this.state.commitSHA}
+                      href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${
+                        this.state.commitSHA
+                      }`}>
+                      {this.state.commitSHA?.slice(0, 7)}
+                    </a>{" "}
+                    <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
+                      <ArrowUpCircle className="code-update-commit" />
+                    </span>{" "}
+                  </>
+                )}
                 {this.currentPath() && (
                   <>
                     <ChevronRight />
@@ -1282,13 +1290,6 @@ export default class CodeComponent extends React.Component<Props, State> {
                       />
                     ))}
               </div>
-              {!this.props.user.githubLinked && (
-                <div className="code-sidebar-actions">
-                  <button onClick={this.handleGitHubClicked.bind(this)}>
-                    <Link className="icon" /> Link GitHub
-                  </button>
-                </div>
-              )}
             </div>
           )}
           <div className="code-container">
@@ -1312,6 +1313,13 @@ export default class CodeComponent extends React.Component<Props, State> {
             )}
             <div className="code-viewer-container">
               {!this.currentRepo() && !this.isSingleFile() && <CodeEmptyStateComponent />}
+              {this.currentRepo() && !this.isSingleFile() && !this.props.user.githubLinked && (
+                <div className="code-editor-link-github github-button">
+                  <button onClick={this.handleGitHubClicked.bind(this)}>
+                    <GithubIcon /> Continue with GitHub
+                  </button>
+                </div>
+              )}
               <div className={`code-viewer ${showDiffView ? "hidden-viewer" : ""}`} ref={this.codeViewer} />
               <div className={`diff-viewer ${showDiffView ? "" : "hidden-viewer"}`} ref={this.diffViewer} />
             </div>

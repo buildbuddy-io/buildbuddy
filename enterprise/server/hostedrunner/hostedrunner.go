@@ -16,7 +16,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -220,14 +222,58 @@ func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunReques
 		return nil, err
 	}
 
+	// If no access token is provided explicitly, try fetching the token.
+	accessToken := req.GetGitRepo().GetAccessToken()
+	if accessToken == "" {
+		repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
+		if err != nil {
+			return nil, status.WrapError(err, "normalize git repo url")
+		}
+
+		gitToken, err := r.getGitToken(ctx, repoURL.String())
+		if err != nil {
+			log.Warningf("Could not fetch git auth token for %s for hosted runner"+
+				" (Note: The token is not needed for public repos): %s", repoURL, err)
+		}
+		accessToken = gitToken
+	}
+
 	// Use env override headers for credentials.
 	envOverrides := []*repb.Command_EnvironmentVariable{
 		{Name: "BUILDBUDDY_API_KEY", Value: apiKey.Value},
 		{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
-		{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
+		{Name: "REPO_TOKEN", Value: accessToken},
 	}
 	ctx = withEnvOverrides(ctx, envOverrides)
 	return ctx, nil
+}
+
+func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string, error) {
+	app := r.env.GetGitHubApp()
+	if app == nil {
+		return "", status.UnimplementedError("GitHub App is not configured")
+	}
+
+	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	gitRepository := &tables.GitRepository{}
+	err = r.env.GetDBHandle().NewQuery(ctx, "hosted_runner_get_for_repo").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, u.GetGroupID(), repoURL).Take(gitRepository)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return "", status.NotFoundErrorf("workflow not configured for %s", repoURL)
+		}
+		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+	}
+
+	return app.GetRepositoryInstallationToken(ctx, gitRepository)
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run
