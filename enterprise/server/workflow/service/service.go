@@ -1075,6 +1075,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		{Name: "GIT_BASE_BRANCH", Value: wd.TargetBranch},
 		{Name: "GIT_REPO_DEFAULT_BRANCH", Value: wd.TargetRepoDefaultBranch},
 		{Name: "GIT_PR_NUMBER", Value: fmt.Sprintf("%d", wd.PullRequestNumber)},
+		{Name: "BUILDBUDDY_INVOCATION_ID", Value: invocationID},
 	}
 	for k, v := range env {
 		envVars = append(envVars, &repb.Command_EnvironmentVariable{
