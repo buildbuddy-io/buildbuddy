@@ -165,21 +165,23 @@ export default class CodeComponent extends React.Component<Props, State> {
       this.fetchInitialContent();
     }
 
-    document.onkeydown = (e) => {
-      switch (e.keyCode) {
-        case 70: // Meta + F
-          if (!e.metaKey) break;
-          this.editor?.focus();
-          this.editor?.trigger("find", "editor.actions.findWithArgs", { searchString: "" });
-          e.preventDefault();
-          break;
-        case 80: // Meta + P
-          if (!e.metaKey) break;
-          e.preventDefault();
-          this.showFileSearch();
-      }
-    };
+    document.addEventListener("keydown", this.onKeydown);
   }
+
+  private onKeydown = (e: KeyboardEvent) => {
+    switch (e.keyCode) {
+      case 70: // Meta + F
+        if (!e.metaKey) break;
+        this.editor?.focus();
+        this.editor?.trigger("find", "editor.actions.findWithArgs", { searchString: "" });
+        e.preventDefault();
+        break;
+      case 80: // Meta + P
+        if (!e.metaKey) break;
+        e.preventDefault();
+        this.showFileSearch();
+    }
+  };
 
   showFileSearch() {
     let picker: PickerModel = {
@@ -393,6 +395,7 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   componentWillUnmount() {
     window.removeEventListener("resize", () => this.handleWindowResize());
+    document.removeEventListener("keydown", this.onKeydown);
     this.subscription?.unsubscribe();
     this.editor?.dispose();
   }
