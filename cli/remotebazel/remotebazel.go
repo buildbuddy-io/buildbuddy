@@ -585,6 +585,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 }
 
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
+	log.Debugf("MAGGIE TEST")
 	healthChecker := healthcheck.NewHealthChecker("remote-bazel-client")
 	env := real_environment.NewRealEnv(healthChecker)
 

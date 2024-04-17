@@ -1,9 +1,11 @@
-name: Test with Remote Bazel
+name: Remote Bazel CI
 
 on:
   pull_request:
     branches:
       - master
+    paths:
+      - "cli/remotebazel/**"
 
 jobs:
   build:
@@ -16,13 +18,15 @@ jobs:
         with:
           token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
 
-      - name: Download bb cli
+      - name: Build the cli from the pushed ref
         run: |
-          cli/install.sh
+          bazelisk build cli \
+            --config=remote \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
 
-      - name: Test
+      - name: Run remote bazel using locally built cli
         run: |
-          bb remote --env=GIT_REPO_DEFAULT_BRANCH=master test //... \
+          $PWD/bazel-bin/cli/cmd/bb/bb_/bb --verbose=1 remote --env=GIT_REPO_DEFAULT_BRANCH=master test //... \
             --config=linux-workflows --config=race \
             --remote_executor=grpcs://buildbuddy.buildbuddy.io \
             --test_tag_filters=-performance,-webdriver,-docker,-bare \
