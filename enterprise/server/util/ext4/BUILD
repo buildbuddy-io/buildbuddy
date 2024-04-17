@@ -20,7 +20,6 @@ go_library(
 go_test(
     name = "ext4_test",
     srcs = ["ext4_test.go"],
-    tags = ["manual"],  # This won't work on mac.
     target_compatible_with = ["@platforms//os:linux"],
     deps = select({
         "@io_bazel_rules_go//go/platform:linux": [
@@ -30,6 +29,7 @@ go_test(
             "//server/testutil/testdigest",
             "//server/testutil/testfs",
             "//server/util/disk",
+            "@com_github_stretchr_testify//require",
         ],
         "//conditions:default": [],
     }),

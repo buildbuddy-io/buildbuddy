@@ -21,7 +21,10 @@ const (
 	// MinDiskImageSizeBytes is the approximate minimum size needed for an ext4
 	// image. The functions in this package which create disk images will fail
 	// if the provided size is any smaller.
-	MinDiskImageSizeBytes = 225 * iecKilobyte
+	//
+	// `man mkfs.ext4` says the journal size must be at least 1024 file system
+	// blocks, so use that as the min disk image size for now.
+	MinDiskImageSizeBytes = 1024 * blockSize
 
 	// The number of bytes in one IEC kilobyte (K).
 	iecKilobyte = 1024
@@ -114,14 +117,18 @@ func DiskSizeBytes(ctx context.Context, inputDir string) (int64, error) {
 		if err != nil {
 			return err
 		}
-		info, err := os.Stat(path)
+		// Use lstat to avoid following symlinks. This avoids double-counting
+		// symlink target files, and also makes sure we don't return an error
+		// for dangling symlinks.
+		info, err := os.Lstat(path)
 		if err != nil {
 			return err
 		}
-		// stat() does not account for file or symlink metadata, so add an extra
-		// disk block for each entry as a rough way to offset this. Also note
-		// that stat() blocks are always 512 bytes regardless of the FS
-		// settings.
+		// stat() does not account for file or symlink metadata or for
+		// filesystem data structures like indirect blocks which consume disk
+		// space, so add 2 extra disk blocks for each entry as a rough way to
+		// account for this. Also note that stat() blocks are always 512 bytes
+		// regardless of the FS settings.
 		total += blockSize + info.Sys().(*syscall.Stat_t).Blocks*512
 		return nil
 	})
@@ -136,7 +143,7 @@ func DiskSizeBytes(ctx context.Context, inputDir string) (int64, error) {
 func DirectoryToImageAutoSize(ctx context.Context, inputDir, outputFile string) error {
 	dirSizeBytes, err := DiskSizeBytes(ctx, inputDir)
 	if err != nil {
-		return nil
+		return status.WrapError(err, "estimate disk usage")
 	}
 
 	imageSizeBytes := int64(float64(dirSizeBytes)*1.2) + MinDiskImageSizeBytes
