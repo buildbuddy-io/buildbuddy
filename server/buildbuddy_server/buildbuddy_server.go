@@ -1187,7 +1187,7 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			req.WorkflowId = wfs.GetLegacyWorkflowIDForGitRepository(authenticatedUser.GetGroupID(), req.GetTargetRepoUrl())
 		}
 		if al := s.env.GetAuditLogger(); al != nil && req.GetClean() {
-			al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_EXECUTE_CLEAN_WORKFLOW, req)
+			al.LogForGroup(ctx, req.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_ALL_WORKFLOW_VM_SNAPSHOTS, req)
 		}
 		return wfs.ExecuteWorkflow(ctx, req)
 	}
@@ -1313,6 +1313,43 @@ func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.Unlin
 		al.LogForGroup(ctx, req.GetRequestContext().GroupId, alpb.Action_UNLINK_GITHUB_REPO, req)
 	}
 	return rsp, nil
+}
+
+func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb.InvalidateSnapshotRequest) (*wfpb.InvalidateSnapshotResponse, error) {
+	if ss := s.env.GetSnapshotService(); ss != nil {
+		if err := s.checkInvalidateSnapshotPerms(ctx); err != nil {
+			return nil, status.UnauthenticatedError(err.Error())
+		}
+
+		if request.SnapshotKey == nil {
+			return nil, status.InvalidArgumentError("snapshot key is required")
+		}
+
+		if al := s.env.GetAuditLogger(); al != nil {
+			al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_VM_SNAPSHOT, request)
+		}
+
+		if _, err := ss.InvalidateSnapshot(ctx, request.SnapshotKey); err != nil {
+			return nil, err
+		}
+		return &wfpb.InvalidateSnapshotResponse{}, nil
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) checkInvalidateSnapshotPerms(ctx context.Context) error {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return err
+	}
+	if g.RestrictCleanWorkflowRunsToAdmins {
+		return authutil.AuthorizeOrgAdmin(u, u.GetGroupID())
+	}
+	return nil
 }
 
 func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {

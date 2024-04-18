@@ -57,9 +57,10 @@ enum Action {
   UPDATE_ENCRYPTION_CONFIG = 8;
   LINK_GITHUB_REPO = 9;
   UNLINK_GITHUB_REPO = 10;
-  EXECUTE_CLEAN_WORKFLOW = 11;
+  INVALIDATE_ALL_WORKFLOW_VM_SNAPSHOTS = 11;
   CREATE_IMPERSONATION_API_KEY = 12;
   UPDATE_IP_RULES_CONFIG = 13;
+  INVALIDATE_VM_SNAPSHOT = 14;
 }
 
 message ResourceID {
@@ -99,6 +100,7 @@ message Entry {
     iprules.UpdateRuleRequest update_ip_rule = 16;
     iprules.DeleteRuleRequest delete_ip_rule = 17;
     iprules.SetRulesConfigRequest set_rules_config = 18;
+    workflow.InvalidateSnapshotRequest invalidate_snapshot = 19;
   }
   message Request {
     APIRequest api_request = 1;

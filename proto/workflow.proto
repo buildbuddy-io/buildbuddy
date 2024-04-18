@@ -4,6 +4,7 @@ import "google/protobuf/duration.proto";
 import "google/rpc/status.proto";
 import "proto/context.proto";
 import "proto/invocation_status.proto";
+import "proto/firecracker.proto";
 
 package workflow;
 
@@ -296,4 +297,14 @@ message GetReposResponse {
 
   // Repos fetched from the provider.
   repeated Repo repo = 2;
+}
+
+message InvalidateSnapshotRequest {
+  context.RequestContext request_context = 1;
+
+  firecracker.SnapshotKey snapshot_key = 2;
+}
+
+message InvalidateSnapshotResponse {
+  context.ResponseContext response_context = 1;
 }

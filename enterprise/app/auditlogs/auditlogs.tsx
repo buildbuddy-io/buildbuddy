@@ -159,12 +159,14 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
         return "Link GitHub Repo";
       case Action.UNLINK_GITHUB_REPO:
         return "Unlink GitHub Repo";
-      case Action.EXECUTE_CLEAN_WORKFLOW:
-        return "Execute Clean Workflow";
+      case Action.INVALIDATE_ALL_WORKFLOW_VM_SNAPSHOTS:
+        return "Invalidate All Workflow VM Snapshots";
       case Action.CREATE_IMPERSONATION_API_KEY:
         return "Create Impersonation API Key";
       case Action.UPDATE_IP_RULES_CONFIG:
         return "Update IP Rules Config";
+      case Action.INVALIDATE_VM_SNAPSHOT:
+        return "Invalidate VM Snapshot";
     }
     return "";
   }

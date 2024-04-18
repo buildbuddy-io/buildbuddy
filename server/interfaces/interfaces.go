@@ -610,6 +610,10 @@ type WorkflowService interface {
 	GetLegacyWorkflowIDForGitRepository(groupID string, repoURL string) string
 }
 
+type SnapshotService interface {
+	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
+}
+
 type GitHubApp interface {
 	// TODO(bduffany): Add webhook handler and repo management API
 

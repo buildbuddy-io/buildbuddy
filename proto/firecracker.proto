@@ -67,6 +67,12 @@ message SnapshotKey {
   // If not set, this key should fetch the newest snapshot matching the other
   // parameters.
   string snapshot_id = 6;
+
+  // If set, corresponds to a specific version of the snapshot. Updating this
+  // can be used to invalidate earlier snapshots (Ex. you may want to do this
+  // if there's a breaking change to the vmexec API or firecracker version,
+  // or if an earlier snapshot has been corrupted)
+  string version_id = 7;
 }
 
 // Manifest represents a snapshot's VM configuration along with
@@ -161,4 +167,14 @@ message VMMetadata {
 
   // The snapshot ID of the task that is currently executing.
   string snapshot_id = 3;
+
+  // The snapshot key the currently executing task saved to after execution.
+  SnapshotKey snapshot_key = 4;
+}
+
+// SnapshotVersionMetadata contains the version ID to be used for snapshots.
+// This can be updated to invalidate all earlier snapshots on a different
+// version.
+message SnapshotVersionMetadata {
+  string version_id = 1;
 }

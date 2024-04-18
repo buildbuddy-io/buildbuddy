@@ -122,4 +122,5 @@ type Env interface {
 	GetGossipService() interfaces.GossipService
 	GetCommandRunner() interfaces.CommandRunner
 	GetCodesearchService() interfaces.CodesearchService
+	GetSnapshotService() interfaces.SnapshotService
 }

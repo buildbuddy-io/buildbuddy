@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -46,25 +47,28 @@ const (
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
 // as well as the key that should be written to.
-//
-// TODO: include a version number in the key somehow, so that
-// if we make breaking changes e.g. to the vmexec API or firecracker
-// version etc., we can ensure that incompatible snapshots don't get reused.
-func SnapshotKeySet(task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb.SnapshotKeySet, error) {
+func (l *FileCacheLoader) SnapshotKeySet(ctx context.Context, task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb.SnapshotKeySet, error) {
 	pd, err := digest.ComputeForMessage(task.GetCommand().GetPlatform(), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, status.WrapErrorf(err, "failed to compute platform hash")
 	}
-
 	branchRef, fallbackRefs := gitRefs(task)
+	branchKey := &fcpb.SnapshotKey{
+		InstanceName:      task.GetExecuteRequest().GetInstanceName(),
+		PlatformHash:      pd.GetHash(),
+		ConfigurationHash: configurationHash,
+		Ref:               branchRef,
+		RunnerId:          runnerID,
+	}
+
+	snapshotVersion, err := l.currentSnapshotVersion(ctx, branchKey)
+	if err != nil {
+		return nil, status.WrapError(err, "get snapshot version")
+	}
+	branchKey.VersionId = snapshotVersion
+
 	keys := &fcpb.SnapshotKeySet{
-		BranchKey: &fcpb.SnapshotKey{
-			InstanceName:      task.GetExecuteRequest().GetInstanceName(),
-			PlatformHash:      pd.GetHash(),
-			ConfigurationHash: configurationHash,
-			Ref:               branchRef,
-			RunnerId:          runnerID,
-		},
+		BranchKey: branchKey,
 	}
 	for _, ref := range fallbackRefs {
 		fallbackKey := keys.BranchKey.CloneVT()
@@ -72,6 +76,40 @@ func SnapshotKeySet(task *repb.ExecutionTask, configurationHash, runnerID string
 		keys.FallbackKeys = append(keys.FallbackKeys, fallbackKey)
 	}
 	return keys, nil
+}
+
+// currentSnapshotVersion returns the current valid snapshot version. Snapshots on
+// different versions should not be used.
+func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.SnapshotKey) (string, error) {
+	versionKey, err := SnapshotVersionKey(key)
+	if err != nil {
+		return "", err
+	}
+	rn := digest.NewResourceName(versionKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
+	if status.IsNotFoundError(err) {
+		// Version metadata might not exist in the cache if:
+		// * The snapshot version has never been set (Ex. if you've never invalidated
+		//   a snapshot with this key)
+		// * The version metadata has expired from the cache
+		// In the latter case, we want to be careful to not fallback to an older,
+		// invalid snapshot. So here we generate a new version ID to guarantee
+		// we start from a clean snapshot.
+		ss := NewSnapshotService(l.env)
+		return ss.InvalidateSnapshot(ctx, key)
+	} else if err != nil {
+		return "", err
+	}
+
+	snapMetadata := acResult.GetExecutionMetadata().GetAuxiliaryMetadata()
+	if len(snapMetadata) < 1 {
+		return "", status.InternalErrorf("expected version metadata in auxiliary metadata")
+	}
+	versionMetadata := &fcpb.SnapshotVersionMetadata{}
+	if err := snapMetadata[0].UnmarshalTo(versionMetadata); err != nil {
+		return "", status.WrapErrorf(err, "unmarshal version metadata")
+	}
+	return versionMetadata.VersionId, nil
 }
 
 func gitRefs(task *repb.ExecutionTask) (branchRef string, fallbackRefs []string) {
@@ -125,7 +163,7 @@ func LocalManifestKey(gid string, s *fcpb.SnapshotKey) (*repb.Digest, error) {
 	// Note: .manifest is not a real file that we ever create on disk, it's
 	// effectively just part of the cache key used to locate the manifest.
 	return &repb.Digest{
-		Hash:      hashStrings(gid, kd.GetHash(), s.SnapshotId, ".manifest"),
+		Hash:      hashStrings(gid, kd.GetHash(), s.SnapshotId, s.VersionId, ".manifest"),
 		SizeBytes: 1, /*=arbitrary size*/
 	}, nil
 }
@@ -142,7 +180,20 @@ func RemoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 	// Note: .manifest is not a real file that we ever create on disk, it's
 	// effectively just part of the cache key used to locate the manifest.
 	return &repb.Digest{
-		Hash:      hashStrings(kd.GetHash(), s.SnapshotId, ".manifest"),
+		Hash:      hashStrings(kd.GetHash(), s.SnapshotId, s.VersionId, ".manifest"),
+		SizeBytes: 1, /*=arbitrary size*/
+	}, nil
+}
+
+// SnapshotVersionKey returns the key to fetch snapshot version metadata.
+//
+// This key intentionally does not include the ref, so that all related
+// branch and fallback keys are invalidated simultaneously.
+func SnapshotVersionKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
+	// Note: .version is not a real file that we ever create, it's
+	// effectively just part of the cache key used to locate the version metadata.
+	return &repb.Digest{
+		Hash:      hashStrings(s.InstanceName, s.PlatformHash, s.ConfigurationHash, ".version"),
 		SizeBytes: 1, /*=arbitrary size*/
 	}, nil
 }
@@ -884,6 +935,45 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}
 
 	return treeDigest, nil
+}
+
+type SnapshotService struct {
+	env environment.Env
+}
+
+func NewSnapshotService(env environment.Env) *SnapshotService {
+	return &SnapshotService{env: env}
+}
+
+// InvalidateSnapshot returns the new valid version ID for snapshots to be based off.
+func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error) {
+	// Update the snapshot version to a random value. This will invalidate all past
+	// snapshots that have a different version.
+	newVersion, err := random.RandomString(10)
+	if err != nil {
+		return "", err
+	}
+	versionMetadata, err := anypb.New(&fcpb.SnapshotVersionMetadata{VersionId: newVersion})
+	if err != nil {
+		return "", err
+	}
+	versionMetadataActionResult := &repb.ActionResult{
+		ExecutionMetadata: &repb.ExecutedActionMetadata{
+			AuxiliaryMetadata: []*anypb.Any{versionMetadata},
+		},
+	}
+
+	versionKey, err := SnapshotVersionKey(key)
+	if err != nil {
+		return "", err
+	}
+
+	acDigest := digest.NewResourceName(versionKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, versionMetadataActionResult); err != nil {
+		return "", err
+	}
+	log.CtxInfof(ctx, "Invalidated all snapshots for key %s", key)
+	return newVersion, nil
 }
 
 func hashStrings(strs ...string) string {

@@ -411,7 +411,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   // TODO(Maggie): Clean up after #6341 has been rolled out
   private getDeprecatedFirecrackerVMMetadata(): firecracker.VMMetadata | null | undefined {
-    return this.state.actionResult?.executionMetadata?.vmMetadata;
+    const deprecatedVMMetadata = this.state.actionResult?.executionMetadata?.vmMetadata;
+    if (!deprecatedVMMetadata) {
+      return null;
+    }
+    const vmMetadata = new firecracker.VMMetadata();
+    vmMetadata.vmId = deprecatedVMMetadata?.vmId;
+    vmMetadata.snapshotId = deprecatedVMMetadata.snapshotId;
+    vmMetadata.lastExecutedTask = deprecatedVMMetadata.lastExecutedTask;
+    return vmMetadata;
   }
 
   private getVMPreviousTaskHref(): string {

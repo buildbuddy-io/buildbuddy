@@ -122,6 +122,7 @@ type RealEnv struct {
 	gossipService                    interfaces.GossipService
 	commandRunner                    interfaces.CommandRunner
 	codesearchService                interfaces.CodesearchService
+	snapshotService                  interfaces.SnapshotService
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -394,6 +395,12 @@ func (r *RealEnv) GetWorkflowService() interfaces.WorkflowService {
 }
 func (r *RealEnv) SetWorkflowService(wf interfaces.WorkflowService) {
 	r.workflowService = wf
+}
+func (r *RealEnv) GetSnapshotService() interfaces.SnapshotService {
+	return r.snapshotService
+}
+func (r *RealEnv) SetSnapshotService(s interfaces.SnapshotService) {
+	r.snapshotService = s
 }
 func (r *RealEnv) GetRunnerService() interfaces.RunnerService {
 	return r.runnerService
