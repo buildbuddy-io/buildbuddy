@@ -162,7 +162,9 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>
-                <div className="settings-tab-group-subtitle">{this.props.user.displayUser.name?.full}</div>
+                <div className="settings-tab-group-subtitle" title={this.props.user.displayUser.email}>
+                  {this.props.user.displayUser.name?.full}
+                </div>
               </div>
               <div className="settings-tab-group">
                 <SettingsTab id={TabId.PersonalPreferences} activeTabId={activeTabId} debugId="personal-preferences">

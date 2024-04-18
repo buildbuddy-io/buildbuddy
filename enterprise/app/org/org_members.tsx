@@ -373,7 +373,9 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
               <div className="org-member-email">
                 {member?.user?.email || member?.user?.name?.full} {iconFromAccountType(member.user?.accountType)}
               </div>
-              <div className="org-member-role">{getRoleLabel(member?.role || 0)}</div>
+              <div className="org-member-role">
+                {getRoleLabel(member?.role || 0)} {this.isLoggedInUser(member) && <>(You)</>}
+              </div>
             </div>
           ))}
         </div>
