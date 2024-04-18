@@ -668,18 +668,23 @@ func (ws *workflowService) GetLegacyWorkflowIDForGitRepository(groupID string, r
 // InvalidateAllSnapshotsForRepo updates the instance name suffix for the repo.
 // As the instance name suffix is used in the snapshot key, this invalidates
 // all previous workflows.
-func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, groupID string, repoURL string) error {
+func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, repoURL string) error {
+	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+
 	suffix, err := random.RandomString(10)
 	if err != nil {
 		return err
 	}
 
-	log.CtxInfof(ctx, "Workflow clean run requested for repo %q (group %s)", repoURL, groupID)
+	log.CtxInfof(ctx, "Workflow clean run requested for repo %q (group %s)", repoURL, u.GetGroupID())
 	err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_update_repo_instance_name").Raw(`
 				UPDATE GitRepositories
 				SET instance_name_suffix = ?
 				WHERE group_id = ? AND repo_url = ?`,
-		suffix, groupID, repoURL,
+		suffix, u.GetGroupID(), repoURL,
 	).Exec().Error
 
 	return err

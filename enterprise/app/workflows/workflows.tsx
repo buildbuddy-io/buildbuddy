@@ -201,12 +201,12 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       .finally(() => this.setState({ isUnlinkingRepo: false }));
   }
 
-  private onClickInvalidateAllRecycledRunners() {
+  private onClickInvalidateAllWorkflowVMSnapshots() {
     const repoUrl = this.state.repoToInvalidate!;
     rpcService.service
       .invalidateAllSnapshotsForRepo(new workflow.InvalidateAllSnapshotsForRepoRequest({ repoUrl }))
       .then(() => {
-        alert_service.success(`Successfully invalidated all snapshots for ${repoUrl}`);
+        alert_service.success(`Successfully invalidated all VM snapshots for ${repoUrl}`);
       })
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ repoToInvalidate: null }));
@@ -280,7 +280,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     user={this.props.user}
                     repoUrl={repoUrl}
                     onClickUnlinkItem={() => this.setState({ repoToUnlink: repoUrl })}
-                    onClickInvalildateAllItem={() => this.setState({ repoToInvalidate: repoUrl })}
+                    onClickInvalidateAllItem={() => this.setState({ repoToInvalidate: repoUrl })}
                     history={this.renderActionList(repoUrl)}
                   />
                 </>
@@ -293,7 +293,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     repoUrl={workflow.repoUrl}
                     webhookUrl={workflow.webhookUrl}
                     onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
-                    onClickInvalildateAllItem={null} /* Not implemented for legacy workflows */
+                    onClickInvalidateAllItem={null} /* Not implemented for legacy workflows */
                     history={null}
                   />
                   {workflow.repoUrl && this.renderActionList(workflow.repoUrl)}
@@ -328,16 +328,16 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
             </p>
           </SimpleModalDialog>
           <SimpleModalDialog
-            title="Invalidate all recycled runners"
+            title="Invalidate all workflow VM snapshots"
             isOpen={Boolean(this.state.repoToInvalidate)}
             onRequestClose={() => this.setState({ repoToInvalidate: null })}
             submitLabel="Okay"
             destructive
-            onSubmit={() => this.onClickInvalidateAllRecycledRunners()}>
-            <p>Are you sure you want to invalidate recycled runners for all workflows for this repo?</p>
+            onSubmit={() => this.onClickInvalidateAllWorkflowVMSnapshots()}>
+            <p>Are you sure you want to invalidate all workflow VM snapshots for this repo?</p>
             <p>
-              This will prevent all existing recycled workflow containers from being reused by other workflow runs,
-              making them slower, so this flag is not encouraged.
+              This will prevent all existing recycled workflow VMs from being reused. This will make future workflow
+              runs slower, so this flag is not encouraged.
             </p>
           </SimpleModalDialog>
         </div>
@@ -351,7 +351,7 @@ type RepoItemProps = {
   repoUrl: string;
   webhookUrl?: string;
   onClickUnlinkItem: (url: string) => void;
-  onClickInvalildateAllItem: ((url: string) => void) | null;
+  onClickInvalidateAllItem: ((url: string) => void) | null;
   history: React.ReactNode;
 };
 
@@ -396,11 +396,11 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   }
 
   private onClickInvalidateAllMenuItem() {
-    if (!this.props.onClickInvalildateAllItem) {
+    if (!this.props.onClickInvalidateAllItem) {
       return;
     }
     this.setState({ isMenuOpen: false });
-    this.props.onClickInvalildateAllItem(this.props.repoUrl);
+    this.props.onClickInvalidateAllItem(this.props.repoUrl);
   }
 
   private showRunWorkflowInput() {
@@ -538,9 +538,9 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                         <MenuItem onClick={this.onClickCopyWebhookUrl.bind(this)}>Copy webhook URL</MenuItem>
                       )}
                       <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
-                      {this.props.onClickInvalildateAllItem && (
+                      {this.props.onClickInvalidateAllItem && (
                         <MenuItem onClick={this.onClickInvalidateAllMenuItem.bind(this)}>
-                          Invalidate all recycled runners
+                          Invalidate all workflow VM snapshots
                         </MenuItem>
                       )}
                     </Menu>

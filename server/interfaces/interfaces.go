@@ -611,7 +611,7 @@ type WorkflowService interface {
 
 	// InvalidateAllSnapshotsForRepo invalidates all snapshots for a repo. Any future workflow
 	// runs will be executed on a clean runner.
-	InvalidateAllSnapshotsForRepo(ctx context.Context, groupID string, repoURL string) error
+	InvalidateAllSnapshotsForRepo(ctx context.Context, repoURL string) error
 }
 
 type SnapshotService interface {

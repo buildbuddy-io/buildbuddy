@@ -13,7 +13,6 @@ go_library(
         "//proto:encryption_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:execution_stats_go_proto",
-        "//proto:firecracker_go_proto",
         "//proto:gcp_go_proto",
         "//proto:github_go_proto",
         "//proto:group_go_proto",
