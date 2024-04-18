@@ -118,7 +118,7 @@ export default class OrgPicker extends React.Component<Props, State> {
               }`}
               src={this.props.user?.displayUser?.profileImageUrl || "/image/user-regular.svg"}
             />
-            <div className="org-picker-profile-name">
+            <div className="org-picker-profile-name" title={this.props.user?.displayUser?.email}>
               <div className="org-picker-profile-user">{name}</div>
               {name != this.props.user?.selectedGroupName() && (
                 <div className="org-picker-profile-org">{this.props.user?.selectedGroupName()}</div>
