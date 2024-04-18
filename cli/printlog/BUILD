@@ -7,10 +7,9 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
+        "//cli/printlog/compact",
         "//proto:remote_execution_log_go_proto",
-        "//proto:spawn_go_proto",
         "//server/util/proto",
-        "@com_github_klauspost_compress//zstd",
         "@org_golang_google_protobuf//encoding/protodelim",
         "@org_golang_google_protobuf//encoding/protojson",
     ],
