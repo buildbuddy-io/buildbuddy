@@ -218,7 +218,7 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 		}
 		bootstrapInfo[br.GetNhid()] = br.GetGrpcAddress()
 		if len(bootstrapInfo) == len(cs.join) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer cancel()
 			return SendStartShardRequests(ctx, nodeHost, apiClient, bootstrapInfo)
 		}
@@ -371,18 +371,20 @@ func SendStartShardRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, 
 			Generation: 1,
 		})
 	} else {
-		ranges, err := splitRange([]byte("a"), []byte("z"), *numStarterRanges-2)
+		start := []byte("00")
+		end := []byte("zz")
+		ranges, err := splitRange(start, end, *numStarterRanges-2)
 		if err != nil {
 			return status.InternalErrorf("failed to split ranges: %s", err)
 		}
 		startingRanges = append(startingRanges, &rfpb.RangeDescriptor{
 			Start:      keys.Key{constants.UnsplittableMaxByte},
-			End:        []byte("a"),
+			End:        start,
 			Generation: 1,
 		})
 		startingRanges = append(startingRanges, ranges...)
 		startingRanges = append(startingRanges, &rfpb.RangeDescriptor{
-			Start:      []byte("z"),
+			Start:      end,
 			End:        keys.MaxByte,
 			Generation: 1,
 		})
@@ -395,7 +397,7 @@ func SendStartShardRequestsWithRanges(ctx context.Context, nodeHost *dragonboat.
 	replicaID := uint64(constants.InitialReplicaID)
 	rangeID := uint64(constants.InitialRangeID)
 
-	for _, rangeDescriptor := range startingRanges {
+	for i, rangeDescriptor := range startingRanges {
 		bootstrapInfo := MakeBootstrapInfo(shardID, replicaID, nodeGrpcAddrs)
 		rangeDescriptor.Replicas = bootstrapInfo.Replicas
 		rangeDescriptor.RangeId = rangeID
@@ -439,21 +441,17 @@ func SendStartShardRequestsWithRanges(ctx context.Context, nodeHost *dragonboat.
 				},
 			})
 		}
-		log.Debugf("Attempting to start cluster %d on: %+v", shardID, bootstrapInfo)
+		log.Debugf("%d: Attempting to start cluster %d range descriptor: %+v, on: %+v", i, shardID, rangeDescriptor, bootstrapInfo)
 		if err := StartShard(ctx, apiClient, bootstrapInfo, batch); err != nil {
 			return err
 		}
-		log.Debugf("Cluster %d started on: %+v", shardID, bootstrapInfo)
+		log.Debugf("%d: Cluster %d started on: %+v", i, shardID, bootstrapInfo)
 
 		// Increment shardID, replicaID and rangeID before creating the next cluster.
 		metaRangeBatch := rbuilder.NewBatchBuilder()
 		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
 			Key:   constants.LastShardIDKey,
 			Delta: 1,
-		})
-		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
-			Key:   constants.LastReplicaIDKey,
-			Delta: uint64(len(bootstrapInfo.Replicas)),
 		})
 		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
 			Key:   constants.LastRangeIDKey,
@@ -481,12 +479,7 @@ func SendStartShardRequestsWithRanges(ctx context.Context, nodeHost *dragonboat.
 			return err
 		}
 		shardID = clusterIncrResponse.GetValue()
-		nodeIncrResponse, err := rsp.IncrementResponse(1)
-		if err != nil {
-			return err
-		}
-		replicaID = nodeIncrResponse.GetValue()
-		rangeIncrResponse, err := rsp.IncrementResponse(2)
+		rangeIncrResponse, err := rsp.IncrementResponse(1)
 		if err != nil {
 			return err
 		}

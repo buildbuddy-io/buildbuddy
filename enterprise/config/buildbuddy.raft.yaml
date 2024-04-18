@@ -17,6 +17,7 @@ cache:
   raft:
     max_range_size_bytes: 1000000
     atime_update_threshold: 1m
+    num_starter_ranges: 1000
 auth:
   enable_anonymous_usage: true
   enable_self_auth: true
