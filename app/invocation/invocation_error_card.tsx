@@ -39,32 +39,17 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
   state: State = {};
 
   componentDidMount() {
-    this.fetchModelData(this.getModel());
+    this.fetchModelData(getModel(this.props));
   }
 
   componentDidUpdate(prevProps: Props): void {
-    const model = this.getModel(this.props);
-    if (!modelsEqual(this.getModel(this.props), this.getModel(prevProps))) {
+    const model = getModel(this.props);
+    if (!modelsEqual(model, getModel(prevProps))) {
       this.fetchModelData(model);
     }
   }
 
-  getModel(props = this.props): CardModel {
-    const model: CardModel = { errors: [] };
-    if (props.model.failedAction?.action?.failureDetail?.message) {
-      model.errors.push({ action: props.model.failedAction.action });
-    }
-    for (const event of props.model.aborted) {
-      if (!event.aborted) continue;
-      model.errors.push({ aborted: event });
-    }
-    if (props.model.finished?.failureDetail?.message) {
-      model.errors.push({ finished: props.model.finished });
-    }
-    return model;
-  }
-
-  inFlightFetch: CancelablePromise | null = null;
+  private inFlightFetch: CancelablePromise | null = null;
   fetchModelData(model: CardModel) {
     this.inFlightFetch?.cancel();
 
@@ -100,7 +85,9 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
     // If there was a failed action with a non-zero exit code, use that as the title.
     for (const error of model.errors) {
       if ((error.action?.exitCode ?? 0) !== 0) {
-        return `${this.props.model.failedAction?.action?.type} action failed with exit code ${this.props.model.failedAction?.action?.exitCode}`;
+        return `${this.props.model.failedAction?.action?.type ?? "Build"} action failed with exit code ${
+          this.props.model.failedAction?.action?.exitCode
+        }`;
       }
     }
     // If the finished event exists and there's a non-zero exit code, use that as the card title.
@@ -181,6 +168,21 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
       </div>
     );
   }
+}
+
+function getModel(props: Props): CardModel {
+  const model: CardModel = { errors: [] };
+  if (props.model.failedAction?.action?.failureDetail?.message) {
+    model.errors.push({ action: props.model.failedAction.action });
+  }
+  for (const event of props.model.aborted) {
+    if (!event.aborted) continue;
+    model.errors.push({ aborted: event });
+  }
+  if (props.model.finished?.failureDetail?.message) {
+    model.errors.push({ finished: props.model.finished });
+  }
+  return model;
 }
 
 function formatFailureDescription(failureDetail: failure_details.IFailureDetail): string {
