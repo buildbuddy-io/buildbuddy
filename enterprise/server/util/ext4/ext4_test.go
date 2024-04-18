@@ -1,3 +1,5 @@
+//go:build linux && !android
+
 package ext4_test
 
 import (
@@ -13,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -78,4 +81,25 @@ func TestE2E(t *testing.T) {
 			t.Fatalf("File content mismatch: %q != %q, %q", d.GetHash(), hash, newPath)
 		}
 	}
+}
+
+func TestDirectoryToImageAutoSize_NonExistentDir(t *testing.T) {
+	ctx := context.Background()
+	root := testfs.MakeTempDir(t)
+
+	err := ext4.DirectoryToImageAutoSize(ctx, "/does/not/exist", filepath.Join(root, "/image.ext4"))
+
+	require.Error(t, err)
+}
+
+func TestDirectoryToImageAutoSize_DanglingSymlink(t *testing.T) {
+	ctx := context.Background()
+	root := testfs.MakeTempDir(t)
+	workspace := testfs.MakeDirAll(t, root, "workspace")
+	err := os.Symlink("/does/not/exist", filepath.Join(workspace, "a"))
+	require.NoError(t, err)
+
+	err = ext4.DirectoryToImageAutoSize(ctx, workspace, filepath.Join(root, "workspace.ext4"))
+
+	require.NoError(t, err)
 }
