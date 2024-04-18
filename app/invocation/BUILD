@@ -296,6 +296,8 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//app/terminal",
+        "//app/util:exit_codes",
+        "//proto:build_event_stream_ts_proto",
         "//proto:failure_details_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
