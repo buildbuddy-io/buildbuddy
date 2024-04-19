@@ -34,7 +34,9 @@ export default class FileContentMonacoComponent extends React.Component<
     modifiedContent: "",
     modifiedLoaded: false,
   };
+
   componentWillMount() {
+    // Fetch full files rather than using github diff patch.
     // TODO(jdhollen): Check for existing monaco model first.
     const changeType = this.props.fileModel.getChangeType();
     if (changeType !== github.FileChangeType.FILE_CHANGE_TYPE_REMOVED) {
@@ -91,7 +93,7 @@ export default class FileContentMonacoComponent extends React.Component<
     }
 
     if (!this.state.originalLoaded || !this.state.modifiedLoaded) {
-      return <div>LOADING</div>;
+      return <div className="loading"></div>;
     }
 
     // TODO(jdhollen): Need to get comments for both left and right side.
@@ -145,6 +147,7 @@ interface MonacoDiffViewerComponentState {
   modifiedEditorThreadZones: AutoZone[];
 }
 
+// A mouse listener for starting comments when the user clicks on a source line.
 class EditorMouseListener implements monaco.IDisposable {
   private readonly path: string;
   private readonly side: github.CommentSide;
@@ -194,12 +197,14 @@ class EditorMouseListener implements monaco.IDisposable {
   }
 
   onMouseMove(e: monaco.editor.IEditorMouseEvent) {
+    // If the user's mouse drifts, don't count this as a click to add a comment.
     const currentLine = e.target.position ? e.target.position.lineNumber : 0;
     if (currentLine !== this.startLine) {
       this.startLine = 0;
     }
   }
   onMouseLeave(e: monaco.editor.IEditorMouseEvent) {
+    // If the user's mouse drifts, don't count this as a click to add a comment.
     this.startLine = 0;
   }
 
@@ -209,6 +214,14 @@ class EditorMouseListener implements monaco.IDisposable {
   }
 }
 
+// OKAY, so, we need to render comments directly inside the Monaco editor.
+// Monaco has "overlay widgets" (which are interactive and absolutely
+// positioned) and "zones" which are blank placeholder spaces that push down
+// editor content.  To make interactive content that sits in the flow of the
+// editor, you need to position an overlay widget directly over a properly sized
+// zone.  This class coordiantes between the two and provides a convenience
+// function to update the overlay/zone combination's height when the content
+// changes.
 class AutoZone {
   readonly threadId: string;
   readonly zoneId: string;
@@ -338,6 +351,7 @@ class MonacoDiffViewerComponent extends React.Component<
     });
     this.setState({ editor });
 
+    // TODO(jdhollen): switch this to be by sha, probably.
     const originalUri = monaco.Uri.file(`original-${this.props.path}`);
     const modifiedUri = monaco.Uri.file(`modified-${this.props.path}`);
     const originalModel =
@@ -371,24 +385,27 @@ class MonacoDiffViewerComponent extends React.Component<
     };
     editor.getOriginalEditor().onDidContentSizeChange(updateHeight);
     editor.getModifiedEditor().onDidContentSizeChange(updateHeight);
-    const listener = new EditorMouseListener(
-      this.props.path,
-      github.CommentSide.RIGHT_SIDE,
-      this.props.commitSha,
-      editor.getModifiedEditor(),
-      this.props.handler
-    );
-    const listener2 = new EditorMouseListener(
+    // TODO(jdhollen): Unregister these at the appropriate moment.
+    const originalListener = new EditorMouseListener(
       this.props.path,
       github.CommentSide.LEFT_SIDE,
       this.props.baseSha,
       editor.getOriginalEditor(),
       this.props.handler
     );
+    const modifiedListener = new EditorMouseListener(
+      this.props.path,
+      github.CommentSide.RIGHT_SIDE,
+      this.props.commitSha,
+      editor.getModifiedEditor(),
+      this.props.handler
+    );
 
     updateHeight();
   }
 
+  // I don't like to use this, but this is the nicest way to add junk to Monaco
+  // while still tracking it with React.
   static getDerivedStateFromProps(props: MonacoDiffViewerComponentProps, state: MonacoDiffViewerComponentState) {
     const editor = state.editor;
     if (!editor) {
