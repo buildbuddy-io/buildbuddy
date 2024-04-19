@@ -26,7 +26,6 @@ realpath() {
 function paths_to_format() {
   git merge-base HEAD refs/remotes/origin/master |
     xargs git diff --name-only --diff-filter=AMRCT |
-    grep -v 'testdata/' |
     while read -r path; do
       if [[ "$path" =~ \.(js|jsx|ts|tsx|html|css|yaml|json|md|xml)$ ]]; then
         echo "$path"
