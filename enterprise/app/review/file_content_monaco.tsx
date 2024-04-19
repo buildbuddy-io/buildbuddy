@@ -20,6 +20,7 @@ interface FileContentMonacoComponentProps {
   patch: string;
   baseSha: string;
   commitSha: string;
+  changeType: github.FileChangeType;
 }
 
 interface FileContentMonacoComponentState {
@@ -43,39 +44,53 @@ export default class FileContentMonacoComponent extends React.Component<
   };
   componentWillMount() {
     // TODO(jdhollen): Check for existing model first.
-    rpc_service.service
-      .getGithubContent(
-        new github.GetGithubContentRequest({
-          owner: this.props.owner,
-          repo: this.props.repo,
-          path: this.props.path,
-          ref: this.props.commitSha,
+    const changeType = this.props.changeType;
+    if (changeType !== github.FileChangeType.FILE_CHANGE_TYPE_REMOVED) {
+      rpc_service.service
+        .getGithubContent(
+          new github.GetGithubContentRequest({
+            owner: this.props.owner,
+            repo: this.props.repo,
+            path: this.props.path,
+            ref: this.props.commitSha,
+          })
+        )
+        .then((r) => {
+          const modifiedContent = textDecoder.decode(r.content);
+          this.setState({ modifiedContent, modifiedLoaded: true });
         })
-      )
-      .then((r) => {
-        const modifiedContent = textDecoder.decode(r.content);
-        this.setState({ modifiedContent, modifiedLoaded: true });
-      })
-      .catch((e) => {
-        error_service.handleError("Failed to fetch source: " + e);
-      });
+        .catch((e) => {
+          error_service.handleError("Failed to fetch source: " + e);
+        });
+    } else {
+      // TODO(jdhollen): better support for added / removed files.
+      this.setState({ modifiedContent: "", modifiedLoaded: true });
+    }
 
-    rpc_service.service
-      .getGithubContent(
-        new github.GetGithubContentRequest({
-          owner: this.props.owner,
-          repo: this.props.repo,
-          path: this.props.path,
-          ref: this.props.baseSha,
+    if (
+      changeType !== github.FileChangeType.FILE_CHANGE_TYPE_ADDED &&
+      changeType !== github.FileChangeType.FILE_CHANGE_TYPE_UNKNOWN
+    ) {
+      rpc_service.service
+        .getGithubContent(
+          new github.GetGithubContentRequest({
+            owner: this.props.owner,
+            repo: this.props.repo,
+            path: this.props.path,
+            ref: this.props.baseSha,
+          })
+        )
+        .then((r) => {
+          const originalContent = textDecoder.decode(r.content);
+          this.setState({ originalContent, originalLoaded: true });
         })
-      )
-      .then((r) => {
-        const originalContent = textDecoder.decode(r.content);
-        this.setState({ originalContent, originalLoaded: true });
-      })
-      .catch((e) => {
-        error_service.handleError("Failed to fetch source: " + e);
-      });
+        .catch((e) => {
+          error_service.handleError("Failed to fetch source: " + e);
+        });
+    } else {
+      // TODO(jdhollen): better support for added / removed files.
+      this.setState({ originalContent: "", originalLoaded: true });
+    }
   }
 
   render(): JSX.Element {
@@ -126,13 +141,6 @@ interface MonacoDiffViewerComponentProps {
   path: string;
   baseSha: string;
   commitSha: string;
-}
-
-interface ThreadZoneAndOverlay {
-  id: string;
-  element: HTMLDivElement;
-  overlayElement: HTMLDivElement;
-  thread: ThreadModel;
 }
 
 interface MonacoDiffViewerComponentState {

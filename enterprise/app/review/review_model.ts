@@ -161,6 +161,10 @@ export class FileModel {
     return this.file.commitSha;
   }
 
+  getChangeType(): github.FileChangeType {
+    return this.file.changeType;
+  }
+
   static fromFileSummary(f: github.FileSummary) {
     return new FileModel(new github.FileSummary(f));
   }

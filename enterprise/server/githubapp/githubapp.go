@@ -2180,6 +2180,17 @@ func graphQLCommentToProto(c *reviewComment, startLine int64, endLine int64, dif
 	return comment
 }
 
+func FileStatusToChangeType(status string) ghpb.FileChangeType {
+	if status == "added" {
+		return ghpb.FileChangeType_FILE_CHANGE_TYPE_ADDED;
+	} else if status == "removed" {
+		return ghpb.FileChangeType_FILE_CHANGE_TYPE_REMOVED;
+	} else if status == "changed" || status == "modified" {
+		return ghpb.FileChangeType_FILE_CHANGE_TYPE_MODIFIED;
+	}
+	return ghpb.FileChangeType_FILE_CHANGE_TYPE_UNKNOWN;
+}
+
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
@@ -2285,6 +2296,8 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		summary.Additions = int64(f.GetAdditions())
 		summary.Deletions = int64(f.GetDeletions())
 		summary.Patch = f.GetPatch()
+		summary.ChangeType = FileStatusToChangeType(f.GetStatus())
+		
 		url, err := url.Parse(f.GetContentsURL())
 		if err != nil {
 			return nil, err
