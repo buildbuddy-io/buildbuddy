@@ -38,6 +38,9 @@ interface Hunk {
 }
 
 export default class FileContentComponent extends React.Component<FileContentComponentProps> {
+  replyBodyTextRef: React.RefObject<HTMLTextAreaElement> = React.createRef();
+  replyApprovalCheckRef: React.RefObject<HTMLInputElement> = React.createRef();
+
   renderThread(thread: ThreadModel) {
     const comments = thread.getComments();
     const draft = thread.getDraft();
