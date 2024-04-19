@@ -13,6 +13,13 @@
   "platform": {},
   "inputs": [
     {
+      "path": "external/bazel_tools/tools/genrule/genrule-setup.sh",
+      "digest": {
+        "hash": "ecbd7e347af9b7a4ddc4ea397b195bd0c794e1dbfd666ee29ef98dd779cf8439",
+        "sizeBytes": "858"
+      }
+    },
+    {
       "path": "bazel-out/stable-status.txt",
       "digest": {
         "hash": "360e2eaf3ae813baac4904bed231da9bb12bcd785832e6438229df0920c37188",
@@ -24,13 +31,6 @@
       "digest": {
         "hash": "5215d4bcddbfbcff78cbbb9efe08b37461eaa73fba42651f520a76dc0f94b40a",
         "sizeBytes": "226"
-      }
-    },
-    {
-      "path": "external/bazel_tools/tools/genrule/genrule-setup.sh",
-      "digest": {
-        "hash": "ecbd7e347af9b7a4ddc4ea397b195bd0c794e1dbfd666ee29ef98dd779cf8439",
-        "sizeBytes": "858"
       }
     }
   ],
@@ -71,6 +71,13 @@
   "platform": {},
   "inputs": [
     {
+      "path": "external/bazel_tools/tools/genrule/genrule-setup.sh",
+      "digest": {
+        "hash": "ecbd7e347af9b7a4ddc4ea397b195bd0c794e1dbfd666ee29ef98dd779cf8439",
+        "sizeBytes": "858"
+      }
+    },
+    {
       "path": "bazel-out/stable-status.txt",
       "digest": {
         "hash": "360e2eaf3ae813baac4904bed231da9bb12bcd785832e6438229df0920c37188",
@@ -82,13 +89,6 @@
       "digest": {
         "hash": "5215d4bcddbfbcff78cbbb9efe08b37461eaa73fba42651f520a76dc0f94b40a",
         "sizeBytes": "226"
-      }
-    },
-    {
-      "path": "external/bazel_tools/tools/genrule/genrule-setup.sh",
-      "digest": {
-        "hash": "ecbd7e347af9b7a4ddc4ea397b195bd0c794e1dbfd666ee29ef98dd779cf8439",
-        "sizeBytes": "858"
       }
     }
   ],

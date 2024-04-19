@@ -9,8 +9,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"slices"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/klauspost/compress/zstd"
@@ -55,7 +53,7 @@ func PrintCompactExecLog(path string, sort bool) error {
 
 	var spawns []*spb.SpawnExec
 	for {
-		s, err := slr.GetSpawnExec(sort)
+		s, err := slr.GetSpawnExec()
 		if err == io.EOF {
 			break
 		}
@@ -253,7 +251,7 @@ func NewSpawnLogReconstructor(input io.Reader) *SpawnLogReconstructor {
 	}
 }
 
-func (slr *SpawnLogReconstructor) GetSpawnExec(sort bool) (*spb.SpawnExec, error) {
+func (slr *SpawnLogReconstructor) GetSpawnExec() (*spb.SpawnExec, error) {
 	entry := &spb.ExecLogEntry{}
 	for {
 		err := protodelim.UnmarshalFrom(slr.input, entry)
@@ -276,14 +274,14 @@ func (slr *SpawnLogReconstructor) GetSpawnExec(sort bool) (*spb.SpawnExec, error
 		case *spb.ExecLogEntry_InputSet_:
 			slr.sets[entry.GetId()] = e.InputSet
 		case *spb.ExecLogEntry_Spawn_:
-			return slr.reconstructSpawn(e.Spawn, sort), nil
+			return slr.reconstructSpawn(e.Spawn), nil
 		default:
 			log.Warnf("unknown exec log entry: %v", entry)
 		}
 	}
 }
 
-func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn, sort bool) *spb.SpawnExec {
+func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) *spb.SpawnExec {
 	se := &spb.SpawnExec{
 		CommandArgs:          s.GetArgs(),
 		EnvironmentVariables: s.GetEnvVars(),
@@ -313,9 +311,6 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn, so
 		}
 		spawnInputs = append(spawnInputs, file)
 	}
-	if sort {
-		slices.SortFunc(spawnInputs, sortFile)
-	}
 	se.Inputs = spawnInputs
 
 	// Handle outputs
@@ -340,11 +335,6 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn, so
 		default:
 			log.Warnf("unknown output type: %v", output)
 		}
-	}
-	if sort {
-		// Note that we only sort ActualOutputs and not ListedOutputs because
-		// the first ListedOutputs file is used to compare 2 SpawnExec
-		slices.SortFunc(actualOutputs, sortFile)
 	}
 	se.ListedOutputs = listedOutputs
 	se.ActualOutputs = actualOutputs
@@ -428,8 +418,4 @@ func reconstructSymlink(s *spb.ExecLogEntry_UnresolvedSymlink) *spb.File {
 		Path:              s.GetPath(),
 		SymlinkTargetPath: s.GetTargetPath(),
 	}
-}
-
-func sortFile(a, b *spb.File) int {
-	return strings.Compare(a.Path, b.Path)
 }
