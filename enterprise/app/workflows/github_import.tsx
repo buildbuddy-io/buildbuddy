@@ -5,6 +5,7 @@ import alertService from "../../../app/alert/alert_service";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
+import { git } from "../../../proto/git_ts_proto";
 import { workflow } from "../../../proto/workflow_ts_proto";
 import { ArrowRight, Check, ChevronsDown } from "lucide-react";
 import { TextLink } from "../../../app/components/link/link";
@@ -45,7 +46,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
 
   private onClickLinkRepo(url: string) {
     const createRequest = new workflow.CreateWorkflowRequest({
-      gitRepo: new workflow.CreateWorkflowRequest.GitRepo({ repoUrl: url }),
+      gitRepo: new git.GitRepo({ repoUrl: url }),
     });
     this.setState({ createRequest });
     rpcService.service

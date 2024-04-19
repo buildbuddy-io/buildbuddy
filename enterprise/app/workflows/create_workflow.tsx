@@ -15,6 +15,7 @@ import errorService from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { workflow } from "../../../proto/workflow_ts_proto";
+import { git } from "../../../proto/git_ts_proto";
 
 export type CreateWorkflowComponentProps = {
   user: User;
@@ -31,7 +32,7 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
   state: State = {
     submitting: false,
     submitted: false,
-    request: new workflow.CreateWorkflowRequest({ gitRepo: new workflow.CreateWorkflowRequest.GitRepo() }),
+    request: new workflow.CreateWorkflowRequest({ gitRepo: new git.GitRepo() }),
   };
 
   private handleRepoUrlChange(e: React.ChangeEvent<HTMLInputElement>) {

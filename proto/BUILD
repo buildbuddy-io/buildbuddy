@@ -187,6 +187,11 @@ proto_library(
 )
 
 proto_library(
+    name = "git_proto",
+    srcs = ["git.proto"],
+)
+
+proto_library(
     name = "github_proto",
     srcs = ["github.proto"],
     deps = [":context_proto"],
@@ -339,6 +344,7 @@ proto_library(
     deps = [
         ":context_proto",
         ":firecracker_proto",
+        ":git_proto",
         ":invocation_status_proto",
         "@com_google_protobuf//:duration_proto",
         "@googleapis//google/rpc:status_proto",
@@ -353,6 +359,7 @@ proto_library(
     deps = [
         ":context_proto",
         ":firecracker_proto",
+        ":git_proto",
         ":remote_execution_proto",
     ],
 )
@@ -879,6 +886,18 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "git_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/git",
+    proto = ":git_proto",
+    deps = [
+    ],
+)
+
+go_proto_library(
     name = "github_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
@@ -1139,6 +1158,7 @@ go_proto_library(
     deps = [
         ":context_go_proto",
         ":firecracker_go_proto",
+        ":git_go_proto",
         ":invocation_status_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
@@ -1171,6 +1191,7 @@ go_proto_library(
     deps = [
         ":context_go_proto",
         ":firecracker_go_proto",
+        ":git_go_proto",
         ":remote_execution_go_proto",
     ],
 )
@@ -1751,6 +1772,13 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "git_ts_proto",
+    proto = ":git_proto",
+    deps = [
+    ],
+)
+
+ts_proto_library(
     name = "github_ts_proto",
     proto = ":github_proto",
     deps = [
@@ -1900,6 +1928,7 @@ ts_proto_library(
         ":context_ts_proto",
         ":duration_ts_proto",
         ":firecracker_ts_proto",
+        ":git_ts_proto",
         ":grpc_status_ts_proto",
         ":invocation_status_ts_proto",
     ],
@@ -2168,6 +2197,7 @@ ts_proto_library(
     deps = [
         ":context_ts_proto",
         ":firecracker_ts_proto",
+        ":git_ts_proto",
         ":remote_execution_ts_proto",
     ],
 )

@@ -61,6 +61,7 @@ go_test(
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:git_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:workflow_go_proto",

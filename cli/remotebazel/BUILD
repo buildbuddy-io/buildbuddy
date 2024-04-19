@@ -16,6 +16,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:eventlog_go_proto",
+        "//proto:git_go_proto",
         "//proto:invocation_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",

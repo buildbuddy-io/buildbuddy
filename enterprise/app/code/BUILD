@@ -33,6 +33,7 @@ ts_library(
         "//enterprise/app/sidekick/bazelversion",
         "//enterprise/app/sidekick/buildfile",
         "//enterprise/app/sidekick/module",
+        "//proto:git_ts_proto",
         "//proto:github_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:runner_ts_proto",
