@@ -183,12 +183,16 @@ export class ThreadModel {
     this.draft = draft;
   }
 
+  private getFirstCommentModel(): CommentModel | undefined {
+    return this.comments.length > 0 ? this.comments[0] : this.draft;
+  }
+
   getLine(): number {
-    return this.comments.length > 0 ? this.comments[0].getLine() : 0;
+    return this.getFirstCommentModel()?.getLine() ?? 0;
   }
 
   getSide(): github.CommentSide {
-    return this.comments.length > 0 ? this.comments[0].getSide() : github.CommentSide.RIGHT_SIDE;
+    return this.getFirstCommentModel()?.getSide() ?? github.CommentSide.RIGHT_SIDE;
   }
 
   getComments(): readonly CommentModel[] {

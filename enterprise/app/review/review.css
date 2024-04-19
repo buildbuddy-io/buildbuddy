@@ -483,6 +483,10 @@
 
 .pr-view .monaco-thread {
   box-sizing: border-box;
-  padding: 12px 18px 12px 50px;
+  padding: 12px 2px 12px 50px;
   width: 100%;
+}
+
+.pr-view .monaco-editor .cursors-layer > .cursor {
+	display: none !important;
 }

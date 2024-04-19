@@ -97,9 +97,6 @@ export default class FileContentMonacoComponent extends React.Component<
       }
     });
 
-    console.log(leftThreads);
-    console.log(rightThreads);
-
     return (
       <MonacoDiffViewerComponent
         handler={this.props.handler}
@@ -109,6 +106,8 @@ export default class FileContentMonacoComponent extends React.Component<
         modifiedThreads={rightThreads}
         disabled={this.props.disabled}
         path={this.props.path}
+        baseSha={this.props.baseSha}
+        commitSha={this.props.commitSha}
         reviewModel={this.props.reviewModel}></MonacoDiffViewerComponent>
     );
   }
@@ -123,6 +122,8 @@ interface MonacoDiffViewerComponentProps {
   modifiedContent: string;
   modifiedThreads: ThreadModel[];
   path: string;
+  baseSha: string;
+  commitSha: string;
 }
 
 interface ThreadZoneAndOverlay {
@@ -133,7 +134,74 @@ interface ThreadZoneAndOverlay {
 }
 
 interface MonacoDiffViewerComponentState {
-  threadZones: AutoZone[];
+  editor?: monaco.editor.IStandaloneDiffEditor;
+  originalEditorThreadZones: AutoZone[];
+  modifiedEditorThreadZones: AutoZone[];
+}
+
+class EditorMouseListener implements monaco.IDisposable {
+  private readonly path: string;
+  private readonly side: github.CommentSide;
+  private readonly commitSha: string;
+
+  private disposables: monaco.IDisposable[];
+  private handler: ReviewController;
+  private startLine: number;
+
+  constructor(
+    path: string,
+    side: github.CommentSide,
+    commitSha: string,
+    editor: monaco.editor.ICodeEditor,
+    handler: ReviewController
+  ) {
+    this.path = path;
+    this.side = side;
+    this.commitSha = commitSha;
+    this.disposables = [];
+    this.handler = handler;
+    this.startLine = 0;
+
+    this.disposables.push(editor.onMouseDown((e) => this.onMouseDown(e)));
+    this.disposables.push(editor.onMouseUp((e) => this.onMouseUp(e)));
+    this.disposables.push(editor.onMouseMove((e) => this.onMouseMove(e)));
+    this.disposables.push(editor.onMouseMove((e) => this.onMouseLeave(e)));
+  }
+
+  onMouseDown(e: monaco.editor.IEditorMouseEvent) {
+    if (e.target.position === null) {
+      this.startLine = 0;
+    } else {
+      this.startLine = e.target.position.lineNumber;
+    }
+  }
+
+  onMouseUp(e: monaco.editor.IEditorMouseEvent) {
+    if (e.target.position === null) {
+      this.startLine = 0;
+    } else {
+      const line = e.target.position.lineNumber;
+      if (line > 0 && line === this.startLine) {
+        // !!! Time to fire.
+        this.handler.startComment(this.side, this.path, this.commitSha, this.startLine);
+      }
+    }
+  }
+
+  onMouseMove(e: monaco.editor.IEditorMouseEvent) {
+    const currentLine = e.target.position ? e.target.position.lineNumber : 0;
+    if (currentLine !== this.startLine) {
+      this.startLine = 0;
+    }
+  }
+  onMouseLeave(e: monaco.editor.IEditorMouseEvent) {
+    this.startLine = 0;
+  }
+
+  dispose() {
+    this.disposables.forEach((d) => d.dispose());
+    this.disposables = [];
+  }
 }
 
 class AutoZone {
@@ -230,45 +298,11 @@ class MonacoDiffViewerComponent extends React.Component<
   MonacoDiffViewerComponentState
 > {
   monacoElement: React.RefObject<HTMLDivElement> = React.createRef();
-  editor: monaco.editor.IDiffEditor | undefined;
 
   state: MonacoDiffViewerComponentState = {
-    threadZones: [],
+    originalEditorThreadZones: [],
+    modifiedEditorThreadZones: [],
   };
-
-  insertThreads() {
-    const { props, editor } = this;
-    console.log("aaa");
-    if (!editor) {
-      return;
-    }
-
-    // 1: Compute editor available area.
-    // 2: Buffer comments off-screen to compute height.
-    // 3: Create zones and overlay widgets, attach.
-    const newThreadZones: AutoZone[] = [];
-    console.log("bbb");
-    // XXX: Extract fn..
-    editor.getOriginalEditor().changeViewZones(function (changeAccessor) {
-      props.originalThreads.forEach((t) => {
-        console.log("Yes");
-        console.log(t.getId() + " " + t.getLine());
-        newThreadZones.push(AutoZone.create(t.getId(), t.getLine(), editor.getOriginalEditor(), changeAccessor));
-      });
-    });
-
-    console.log("ccc");
-
-    editor.getModifiedEditor().changeViewZones(function (changeAccessor) {
-      props.modifiedThreads.forEach((t) => {
-        console.log("Yes");
-        console.log(t.getId() + " " + t.getLine());
-        newThreadZones.push(AutoZone.create(t.getId(), t.getLine(), editor.getModifiedEditor(), changeAccessor));
-      });
-    });
-
-    this.setState({ threadZones: newThreadZones });
-  }
 
   componentDidMount() {
     // Element is always part of the render() result.
@@ -278,21 +312,29 @@ class MonacoDiffViewerComponent extends React.Component<
       scrollBeyondLastLine: false,
       scrollbar: {
         alwaysConsumeMouseWheel: false,
+        handleMouseWheel: false,
+        horizontal: "hidden",
+        vertical: "hidden",
       },
       wordWrap: "on",
       wrappingStrategy: "advanced",
       minimap: {
         enabled: false,
       },
+      renderLineHighlight: "none",
       renderOverviewRuler: false,
       readOnly: true,
+      cursorStyle: "line",
+      cursorWidth: 0,
+      overviewRulerLanes: 0,
       hideUnchangedRegions: {
         enabled: true,
       },
     });
-    this.editor = editor;
+    this.setState({ editor });
 
-    this.editor.setModel({
+    // XXX: Need to not re-create on back etc.
+    editor.setModel({
       original: monaco.editor.createModel(
         this.props.originalContent,
         undefined,
@@ -310,7 +352,6 @@ class MonacoDiffViewerComponent extends React.Component<
       return Math.max(editor.getOriginalEditor().getContentHeight(), editor.getModifiedEditor().getContentHeight());
     };
     const trueWidth = () => {
-      console.log(editor);
       return editor.getContainerDomNode().getBoundingClientRect().width;
     };
     const updateHeight = () => {
@@ -329,24 +370,76 @@ class MonacoDiffViewerComponent extends React.Component<
     };
     editor.getOriginalEditor().onDidContentSizeChange(updateHeight);
     editor.getModifiedEditor().onDidContentSizeChange(updateHeight);
-
-    console.log("Hi there");
-    this.insertThreads();
+    const listener = new EditorMouseListener(
+      this.props.path,
+      github.CommentSide.RIGHT_SIDE,
+      this.props.commitSha,
+      editor.getModifiedEditor(),
+      this.props.handler
+    );
+    const listener2 = new EditorMouseListener(
+      this.props.path,
+      github.CommentSide.LEFT_SIDE,
+      this.props.baseSha,
+      editor.getOriginalEditor(),
+      this.props.handler
+    );
 
     updateHeight();
   }
 
+  static getDerivedStateFromProps(props: MonacoDiffViewerComponentProps, state: MonacoDiffViewerComponentState) {
+    console.log("Deriving state...");
+    console.log(props);
+    console.log(state);
+    const editor = state.editor;
+    if (!editor) {
+      return;
+    }
+    const originalUpdates = getAddedAndRemovedThreads(props.originalThreads, state.originalEditorThreadZones);
+    const modifiedUpdates = getAddedAndRemovedThreads(props.modifiedThreads, state.modifiedEditorThreadZones);
+
+    if (
+      originalUpdates.added.length === 0 &&
+      originalUpdates.removed.length === 0 &&
+      modifiedUpdates.added.length === 0 &&
+      modifiedUpdates.removed.length === 0
+    ) {
+      // Nothing to update.
+      return null;
+    }
+    const newOriginalZones: AutoZone[] = originalUpdates.kept;
+    const newModifiedZones: AutoZone[] = modifiedUpdates.kept;
+
+    editor.getOriginalEditor().changeViewZones(function (changeAccessor) {
+      originalUpdates.added.forEach((t) => {
+        newOriginalZones.push(AutoZone.create(t.getId(), t.getLine(), editor.getOriginalEditor(), changeAccessor));
+      });
+    });
+    originalUpdates.removed.forEach((z) => z.removeFromEditor());
+    editor.getModifiedEditor().changeViewZones(function (changeAccessor) {
+      modifiedUpdates.added.forEach((t) => {
+        newOriginalZones.push(AutoZone.create(t.getId(), t.getLine(), editor.getModifiedEditor(), changeAccessor));
+      });
+    });
+    modifiedUpdates.removed.forEach((z) => z.removeFromEditor());
+    return {
+      originalEditorThreadZones: newOriginalZones,
+      modifiedEditorThreadZones: newModifiedZones,
+    };
+  }
+
   componentDidUpdate() {
-    this.state.threadZones.forEach((z) => z.updateHeight());
+    this.state.originalEditorThreadZones.forEach((z) => z.updateHeight());
+    this.state.modifiedEditorThreadZones.forEach((z) => z.updateHeight());
   }
 
   render() {
     // XXX: Iterate through existing zone portals.  if the thread exists, use it.
     // Otherwise, make a new one.
     // And remove all the dead ones, too.
-    console.log("ZONES!");
-    console.log(this.props);
-    const zonePortals = this.state.threadZones.map((tz) => {
+    const zonesToRender = [...this.state.originalEditorThreadZones, ...this.state.modifiedEditorThreadZones];
+    const zonePortals = zonesToRender.map((tz) => {
       const thread =
         this.props.modifiedThreads.find((t) => t.getId() === tz.threadId) ??
         this.props.originalThreads.find((t) => t.getId() === tz.threadId);
@@ -362,8 +455,6 @@ class MonacoDiffViewerComponent extends React.Component<
 
       const comments = thread.getComments();
       const draft = thread.getDraft();
-      console.log("Creating");
-      console.log(draft);
 
       return createPortal(
         <ReviewThreadComponent
@@ -389,4 +480,20 @@ class MonacoDiffViewerComponent extends React.Component<
       </>
     );
   }
+}
+
+function getAddedAndRemovedThreads(
+  threads: ThreadModel[],
+  existingZones: AutoZone[]
+): { added: ThreadModel[]; removed: AutoZone[]; kept: AutoZone[] } {
+  const existingZoneSet: Set<string> = new Set();
+  existingZones.forEach((z) => existingZoneSet.add(z.threadId));
+  const newThreadMap: Map<string, ThreadModel> = new Map();
+  threads.forEach((t) => newThreadMap.set(t.getId(), t));
+
+  const added = [...newThreadMap.values()].filter((v) => !existingZoneSet.has(v.getId()));
+  const removed = [...existingZones].filter((v) => !newThreadMap.has(v.threadId));
+  const kept = existingZones.filter((v) => newThreadMap.has(v.threadId));
+
+  return { added, removed, kept };
 }
