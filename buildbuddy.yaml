@@ -1,4 +1,15 @@
 actions:
+  - name: Maggie
+    container_image: ubuntu-20.04
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    bazel_commands:
+      - test cli/remotebazel/integration/... --test_env=BB_PROBER_ORG_API_KEY --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
   - name: Test
     container_image: ubuntu-20.04
     triggers:
