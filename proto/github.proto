@@ -517,13 +517,23 @@ message ActionStatus {
   string url = 3;
 }
 
+enum FileChangeType {
+  FILE_CHANGE_TYPE_UNKNOWN = 0;
+  FILE_CHANGE_TYPE_ADDED = 1;
+  FILE_CHANGE_TYPE_REMOVED = 2;
+  FILE_CHANGE_TYPE_MODIFIED = 3;
+  // TODO(jdhollen): support more change types.
+}
+
 message FileSummary {
   string name = 1;
   int64 additions = 2;
   int64 deletions = 3;
   int64 comments = 4;
   string patch = 5;
+  string base_sha = 7;
   string commit_sha = 6;
+  FileChangeType change_type = 8;
 }
 
 message ReviewUser {

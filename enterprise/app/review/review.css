@@ -480,3 +480,13 @@
 .pr-view .single-file-name {
   font-weight: 600;
 }
+
+.pr-view .monaco-thread {
+  box-sizing: border-box;
+  padding: 12px 2px 12px 50px;
+  width: 100%;
+}
+
+.pr-view .monaco-editor .cursors-layer > .cursor {
+  display: none !important;
+}

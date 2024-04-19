@@ -153,8 +153,16 @@ export class FileModel {
     return +this.file.comments;
   }
 
+  getBaseSha(): string {
+    return this.file.baseSha;
+  }
+
   getCommitSha(): string {
     return this.file.commitSha;
+  }
+
+  getChangeType(): github.FileChangeType {
+    return this.file.changeType;
   }
 
   static fromFileSummary(f: github.FileSummary) {
@@ -179,6 +187,18 @@ export class ThreadModel {
     this.draft = draft;
   }
 
+  private getFirstCommentModel(): CommentModel | undefined {
+    return this.comments.length > 0 ? this.comments[0] : this.draft;
+  }
+
+  getLine(): number {
+    return this.getFirstCommentModel()?.getLine() ?? 0;
+  }
+
+  getSide(): github.CommentSide {
+    return this.getFirstCommentModel()?.getSide() ?? github.CommentSide.RIGHT_SIDE;
+  }
+
   getComments(): readonly CommentModel[] {
     return this.comments;
   }
@@ -195,7 +215,10 @@ export class ThreadModel {
     return this.threadId;
   }
 
-  static threadsFromComments(comments: readonly CommentModel[], draftReviewId?: string): Map<string, ThreadModel> {
+  static threadsFromComments(
+    comments: readonly CommentModel[],
+    draftReviewId: string | undefined
+  ): Map<string, ThreadModel> {
     const threads: Map<string, ThreadAndDraft> = new Map();
     comments.forEach((c) => {
       const thread = c.getThreadId();

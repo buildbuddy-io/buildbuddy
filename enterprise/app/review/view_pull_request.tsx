@@ -11,16 +11,15 @@ import Modal from "../../../app/components/modal/modal";
 import format from "../../../app/format/format";
 import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
-import { Github } from "lucide-react";
 import error_service from "../../../app/errors/error_service";
 import ReviewThreadComponent from "./review_thread";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
-import FileContentComponent from "./file_content";
 import { CommentModel, ReviewModel, FileModel } from "./review_model";
 import Link from "../../../app/components/link/link";
 import router from "../../../app/router/router";
 import PullRequestHeaderComponent from "./pull_request_header";
+import FileContentMonacoComponent from "./file_content_monaco";
 
 interface ViewPullRequestComponentProps {
   owner: string;
@@ -298,24 +297,18 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     });
   }
 
-  renderFileDiffs(patch: string, filename: string, commitSha: string) {
+  renderFileDiffs(file: FileModel) {
     if (!this.state.reviewModel) {
       return <></>;
     }
     return (
       <tr className="file-list-diff">
         <td colSpan={6}>
-          <FileContentComponent
+          <FileContentMonacoComponent
+            fileModel={file}
             reviewModel={this.state.reviewModel}
             disabled={this.state.pendingRequest}
-            viewerLogin={this.state.reviewModel.getViewerLogin()}
-            owner={this.props.owner}
-            repo={this.props.repo}
-            pull={this.props.pull}
-            patch={patch}
-            path={filename}
-            commitSha={commitSha}
-            handler={this}></FileContentComponent>
+            handler={this}></FileContentMonacoComponent>
         </td>
       </tr>
     );
@@ -349,7 +342,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           <td>{file.getAdditions() + file.getDeletions()}</td>
           <td>{this.renderDiffBar(file.getAdditions(), file.getDeletions(), 0)}</td>
         </tr>
-        {expanded && this.renderFileDiffs(file.getPatch(), path, file.getCommitSha())}
+        {expanded && this.renderFileDiffs(file)}
       </>
     );
   }
@@ -587,17 +580,11 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
             </Link>
           </div>
         </div>
-        <FileContentComponent
+        <FileContentMonacoComponent
+          fileModel={file}
           reviewModel={this.state.reviewModel}
           disabled={this.state.pendingRequest}
-          viewerLogin={this.state.reviewModel.getViewerLogin()}
-          owner={this.props.owner}
-          repo={this.props.repo}
-          pull={this.props.pull}
-          patch={file.getPatch()}
-          path={file.getFullPath()}
-          commitSha={file.getCommitSha()}
-          handler={this}></FileContentComponent>
+          handler={this}></FileContentMonacoComponent>
       </>
     );
   }
