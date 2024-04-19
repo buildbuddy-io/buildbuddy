@@ -523,6 +523,7 @@ message FileSummary {
   int64 deletions = 3;
   int64 comments = 4;
   string patch = 5;
+  string base_sha = 7;
   string commit_sha = 6;
 }
 

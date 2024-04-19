@@ -21,6 +21,7 @@ import { CommentModel, ReviewModel, FileModel } from "./review_model";
 import Link from "../../../app/components/link/link";
 import router from "../../../app/router/router";
 import PullRequestHeaderComponent from "./pull_request_header";
+import FileContentMonacoComponent from "./file_content_monaco";
 
 interface ViewPullRequestComponentProps {
   owner: string;
@@ -298,14 +299,14 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     });
   }
 
-  renderFileDiffs(patch: string, filename: string, commitSha: string) {
+  renderFileDiffs(patch: string, filename: string, commitSha: string, baseSha: string) {
     if (!this.state.reviewModel) {
       return <></>;
     }
     return (
       <tr className="file-list-diff">
         <td colSpan={6}>
-          <FileContentComponent
+          <FileContentMonacoComponent
             reviewModel={this.state.reviewModel}
             disabled={this.state.pendingRequest}
             viewerLogin={this.state.reviewModel.getViewerLogin()}
@@ -314,8 +315,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
             pull={this.props.pull}
             patch={patch}
             path={filename}
+            baseSha={baseSha}
             commitSha={commitSha}
-            handler={this}></FileContentComponent>
+            handler={this}></FileContentMonacoComponent>
         </td>
       </tr>
     );
@@ -349,7 +351,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           <td>{file.getAdditions() + file.getDeletions()}</td>
           <td>{this.renderDiffBar(file.getAdditions(), file.getDeletions(), 0)}</td>
         </tr>
-        {expanded && this.renderFileDiffs(file.getPatch(), path, file.getCommitSha())}
+        {expanded && this.renderFileDiffs(file.getPatch(), path, file.getCommitSha(), file.getBaseSha())}
       </>
     );
   }

@@ -38,6 +38,20 @@ ts_library(
 )
 
 ts_library(
+    name = "file_content_monaco",
+    srcs = ["file_content_monaco.tsx"],
+    deps = [
+        "//enterprise/app/review:review_controller",
+        "//enterprise/app/review:review_model",
+        "//enterprise/app/review:review_thread",
+        "//proto:github_ts_proto",
+        "@npm//@types/react",
+        "@npm//monaco-editor",
+        "@npm//react",
+    ],
+)
+
+ts_library(
     name = "pull_request_header",
     srcs = ["pull_request_header.tsx"],
     deps = [
@@ -110,6 +124,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//enterprise/app/review:file_content",
+        "//enterprise/app/review:file_content_monaco",
         "//enterprise/app/review:pull_request_header",
         "//enterprise/app/review:review_model",
         "//enterprise/app/review:review_thread",

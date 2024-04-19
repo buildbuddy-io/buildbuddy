@@ -1981,6 +1981,8 @@ type prDetailsQuery struct {
 			Merged         bool
 			URL            string `graphql:"url"`
 			ChecksURL      string `graphql:"checksUrl"`
+			BaseRefOid     string
+			HeadRefOid     string
 			HeadRefName    string
 			TimelineItems  struct {
 				Nodes []timelineItem
@@ -2291,7 +2293,8 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		if ref == "" {
 			return nil, status.InternalErrorf("Couldn't find SHA for file.")
 		}
-		summary.CommitSha = ref
+		summary.BaseSha = pr.BaseRefOid
+		summary.CommitSha = pr.HeadRefOid
 		summary.Comments = fileCommentCount[f.GetFilename()]
 		fileSummaries = append(fileSummaries, summary)
 	}
