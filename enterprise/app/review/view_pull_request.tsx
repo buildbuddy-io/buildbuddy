@@ -11,12 +11,10 @@ import Modal from "../../../app/components/modal/modal";
 import format from "../../../app/format/format";
 import rpc_service from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
-import { Github } from "lucide-react";
 import error_service from "../../../app/errors/error_service";
 import ReviewThreadComponent from "./review_thread";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
-import FileContentComponent from "./file_content";
 import { CommentModel, ReviewModel, FileModel } from "./review_model";
 import Link from "../../../app/components/link/link";
 import router from "../../../app/router/router";
@@ -589,7 +587,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
             </Link>
           </div>
         </div>
-        <FileContentComponent
+        <FileContentMonacoComponent
           reviewModel={this.state.reviewModel}
           disabled={this.state.pendingRequest}
           viewerLogin={this.state.reviewModel.getViewerLogin()}
@@ -598,8 +596,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           pull={this.props.pull}
           patch={file.getPatch()}
           path={file.getFullPath()}
+          baseSha={file.getBaseSha()}
           commitSha={file.getCommitSha()}
-          handler={this}></FileContentComponent>
+          handler={this}></FileContentMonacoComponent>
       </>
     );
   }

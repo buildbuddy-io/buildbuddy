@@ -24,7 +24,9 @@ interface FileContentMonacoComponentProps {
 
 interface FileContentMonacoComponentState {
   originalContent: string;
+  originalLoaded: boolean;
   modifiedContent: string;
+  modifiedLoaded: boolean;
 }
 
 const textDecoder = new TextDecoder();
@@ -35,12 +37,12 @@ export default class FileContentMonacoComponent extends React.Component<
 > {
   state: FileContentMonacoComponentState = {
     originalContent: "",
+    originalLoaded: false,
     modifiedContent: "",
+    modifiedLoaded: false,
   };
   componentWillMount() {
-    // 1. Fetch file content.
-    // 2. When content ready, render subcomponent using static values.
-    // XXX: Need to cache.
+    // TODO(jdhollen): Check for existing model first.
     rpc_service.service
       .getGithubContent(
         new github.GetGithubContentRequest({
@@ -52,7 +54,7 @@ export default class FileContentMonacoComponent extends React.Component<
       )
       .then((r) => {
         const modifiedContent = textDecoder.decode(r.content);
-        this.setState({ modifiedContent });
+        this.setState({ modifiedContent, modifiedLoaded: true });
       })
       .catch((e) => {
         error_service.handleError("Failed to fetch source: " + e);
@@ -69,7 +71,7 @@ export default class FileContentMonacoComponent extends React.Component<
       )
       .then((r) => {
         const originalContent = textDecoder.decode(r.content);
-        this.setState({ originalContent });
+        this.setState({ originalContent, originalLoaded: true });
       })
       .catch((e) => {
         error_service.handleError("Failed to fetch source: " + e);
@@ -80,8 +82,8 @@ export default class FileContentMonacoComponent extends React.Component<
     if (this.props.patch.length === 0) {
       return <div>No diff info available (binary file?)</div>;
     }
-    // XXX: Added / removed files.
-    if (!this.state.originalContent || !this.state.modifiedContent) {
+
+    if (!this.state.originalLoaded || !this.state.modifiedLoaded) {
       return <div>LOADING</div>;
     }
 
@@ -211,7 +213,7 @@ class AutoZone {
   overlayWidget?: monaco.editor.IOverlayWidget;
   editor?: monaco.editor.ICodeEditor;
 
-  // XXX: Is it ok to hold editor ref here?
+  // TODO(jdhollen): Is it ok to hold editor ref here?  Check for leaks.
   constructor(
     threadId: string,
     zoneId: string,
@@ -333,19 +335,15 @@ class MonacoDiffViewerComponent extends React.Component<
     });
     this.setState({ editor });
 
-    // XXX: Need to not re-create on back etc.
-    editor.setModel({
-      original: monaco.editor.createModel(
-        this.props.originalContent,
-        undefined,
-        monaco.Uri.file(`original-${this.props.path}`)
-      ),
-      modified: monaco.editor.createModel(
-        this.props.modifiedContent,
-        undefined,
-        monaco.Uri.file(`modified-${this.props.path}`)
-      ),
-    });
+    const originalUri = monaco.Uri.file(`original-${this.props.path}`);
+    const modifiedUri = monaco.Uri.file(`modified-${this.props.path}`);
+    const originalModel =
+      monaco.editor.getModel(originalUri) ??
+      monaco.editor.createModel(this.props.originalContent, undefined, originalUri);
+    const modifiedModel =
+      monaco.editor.getModel(modifiedUri) ??
+      monaco.editor.createModel(this.props.modifiedContent, undefined, modifiedUri);
+    editor.setModel({ original: originalModel, modified: modifiedModel });
 
     let ignoreEvent = false;
     const maxHeight = () => {
@@ -435,17 +433,13 @@ class MonacoDiffViewerComponent extends React.Component<
   }
 
   render() {
-    // XXX: Iterate through existing zone portals.  if the thread exists, use it.
-    // Otherwise, make a new one.
-    // And remove all the dead ones, too.
     const zonesToRender = [...this.state.originalEditorThreadZones, ...this.state.modifiedEditorThreadZones];
     const zonePortals = zonesToRender.map((tz) => {
       const thread =
         this.props.modifiedThreads.find((t) => t.getId() === tz.threadId) ??
         this.props.originalThreads.find((t) => t.getId() === tz.threadId);
       if (thread === undefined) {
-        // It's gone!
-        // XXX: Remove
+        // This shouldn't happen, but whatever, we'll just not render anything.
         return undefined;
       }
       const portalRoot = tz.overlayWidget?.getDomNode();
