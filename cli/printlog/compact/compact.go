@@ -330,7 +330,8 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn, so
 		}
 	}
 	if sort {
-		slices.Sort(listedOutputs)
+		// Note that we only sort ActualOutputs and not ListedOutputs because
+		// the first ListedOutputs file is used to compare 2 SpawnExec
 		slices.SortFunc(actualOutputs, sortFile)
 	}
 	se.ListedOutputs = listedOutputs
