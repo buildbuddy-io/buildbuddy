@@ -47,7 +47,7 @@ export default class InvocationModel {
   timeoutTest: build_event_stream.BuildEvent[] = [];
   structuredCommandLine: command_line.CommandLine[] = [];
   finished?: build_event_stream.BuildFinished;
-  aborted?: build_event_stream.BuildEvent;
+  aborted: build_event_stream.BuildEvent[] = [];
   failedAction?: build_event_stream.BuildEvent;
   workflowConfigured?: build_event_stream.WorkflowConfigured;
   childInvocationsConfigured?: build_event_stream.ChildInvocationsConfigured;
@@ -132,7 +132,7 @@ export default class InvocationModel {
           this.skippedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
         }
       } else if (buildEvent.aborted) {
-        this.aborted = buildEvent as build_event_stream.BuildEvent;
+        this.aborted.push(buildEvent);
       }
       if (buildEvent.workspaceStatus) {
         this.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
@@ -563,7 +563,10 @@ export default class InvocationModel {
 
   getAllPatterns(patternLimit?: number) {
     let patterns =
-      this.invocation.pattern || this.expanded?.id?.pattern?.pattern || this.aborted?.id?.pattern?.pattern || [];
+      this.invocation.pattern ||
+      this.expanded?.id?.pattern?.pattern ||
+      this.aborted?.[this.aborted.length - 1]?.id?.pattern?.pattern ||
+      [];
     if (patternLimit && patterns.length > patternLimit) {
       return `${patterns.slice(0, patternLimit).join(", ")} and ${patterns.length - 3} more`;
     }
