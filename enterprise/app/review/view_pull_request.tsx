@@ -305,17 +305,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       <tr className="file-list-diff">
         <td colSpan={6}>
           <FileContentMonacoComponent
+            fileModel={file}
             reviewModel={this.state.reviewModel}
             disabled={this.state.pendingRequest}
-            viewerLogin={this.state.reviewModel.getViewerLogin()}
-            owner={this.props.owner}
-            repo={this.props.repo}
-            pull={this.props.pull}
-            patch={file.getPatch()}
-            path={file.getFullPath()}
-            baseSha={file.getBaseSha()}
-            commitSha={file.getCommitSha()}
-            changeType={file.getChangeType()}
             handler={this}></FileContentMonacoComponent>
         </td>
       </tr>
@@ -589,17 +581,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           </div>
         </div>
         <FileContentMonacoComponent
+          fileModel={file}
           reviewModel={this.state.reviewModel}
           disabled={this.state.pendingRequest}
-          viewerLogin={this.state.reviewModel.getViewerLogin()}
-          owner={this.props.owner}
-          repo={this.props.repo}
-          pull={this.props.pull}
-          patch={file.getPatch()}
-          path={file.getFullPath()}
-          baseSha={file.getBaseSha()}
-          commitSha={file.getCommitSha()}
-          changeType={file.getChangeType()}
           handler={this}></FileContentMonacoComponent>
       </>
     );
