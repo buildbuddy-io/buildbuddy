@@ -6,6 +6,7 @@ import { Subscription } from "rxjs";
 import * as monaco from "monaco-editor";
 import * as diff from "diff";
 import { runner } from "../../../proto/runner_ts_proto";
+import { git } from "../../../proto/git_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
 import { ArrowLeft, ArrowUpCircle, ChevronRight, Download, Key, Send, XCircle } from "lucide-react";
@@ -567,7 +568,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     newCommands = newCommands.slice(0, 10);
 
     let request = new runner.RunRequest();
-    request.gitRepo = new runner.RunRequest.GitRepo();
+    request.gitRepo = new git.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.currentOwner()}/${this.currentRepo()}.git`;
     request.bazelCommand = args + (this.state.defaultConfig ? ` --config=${this.state.defaultConfig}` : "");
     request.repoState = this.getRepoState();
@@ -592,7 +593,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   getRepoState() {
-    let state = new runner.RunRequest.RepoState();
+    let state = new git.RepoState();
     state.commitSha = this.state.commitSHA;
     state.branch = this.getBranch()!;
     for (let path of this.state.changes.keys()) {

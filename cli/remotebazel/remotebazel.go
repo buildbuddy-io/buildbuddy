@@ -44,6 +44,7 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -645,10 +646,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	req := &rnpb.RunRequest{
-		GitRepo: &rnpb.RunRequest_GitRepo{
+		GitRepo: &gitpb.GitRepo{
 			RepoUrl: repoConfig.URL,
 		},
-		RepoState: &rnpb.RunRequest_RepoState{
+		RepoState: &gitpb.RepoState{
 			CommitSha: repoConfig.CommitSHA,
 			Branch:    repoConfig.Ref,
 		},
