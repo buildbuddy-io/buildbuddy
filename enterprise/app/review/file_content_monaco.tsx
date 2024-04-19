@@ -1,7 +1,7 @@
 import React from "react";
 import { github } from "../../../proto/github_ts_proto";
 import ReviewThreadComponent from "./review_thread";
-import { CommentModel, ReviewModel, ThreadModel } from "./review_model";
+import { FileModel, ReviewModel, ThreadModel } from "./review_model";
 import { ReviewController } from "./review_controller";
 import * as monaco from "monaco-editor";
 import { createPortal } from "react-dom";
@@ -9,18 +9,10 @@ import rpc_service from "../../../app/service/rpc_service";
 import error_service from "../../../app/errors/error_service";
 
 interface FileContentMonacoComponentProps {
+  fileModel: FileModel;
   reviewModel: ReviewModel;
   disabled: boolean;
   handler: ReviewController;
-  viewerLogin: string;
-  owner: string;
-  repo: string;
-  pull: number;
-  path: string;
-  patch: string;
-  baseSha: string;
-  commitSha: string;
-  changeType: github.FileChangeType;
 }
 
 interface FileContentMonacoComponentState {
@@ -43,16 +35,16 @@ export default class FileContentMonacoComponent extends React.Component<
     modifiedLoaded: false,
   };
   componentWillMount() {
-    // TODO(jdhollen): Check for existing model first.
-    const changeType = this.props.changeType;
+    // TODO(jdhollen): Check for existing monaco model first.
+    const changeType = this.props.fileModel.getChangeType();
     if (changeType !== github.FileChangeType.FILE_CHANGE_TYPE_REMOVED) {
       rpc_service.service
         .getGithubContent(
           new github.GetGithubContentRequest({
-            owner: this.props.owner,
-            repo: this.props.repo,
-            path: this.props.path,
-            ref: this.props.commitSha,
+            owner: this.props.reviewModel.getOwner(),
+            repo: this.props.reviewModel.getRepo(),
+            path: this.props.fileModel.getFullPath(),
+            ref: this.props.fileModel.getCommitSha(),
           })
         )
         .then((r) => {
@@ -74,10 +66,10 @@ export default class FileContentMonacoComponent extends React.Component<
       rpc_service.service
         .getGithubContent(
           new github.GetGithubContentRequest({
-            owner: this.props.owner,
-            repo: this.props.repo,
-            path: this.props.path,
-            ref: this.props.baseSha,
+            owner: this.props.reviewModel.getOwner(),
+            repo: this.props.reviewModel.getRepo(),
+            path: this.props.fileModel.getFullPath(),
+            ref: this.props.fileModel.getBaseSha(),
           })
         )
         .then((r) => {
@@ -94,7 +86,7 @@ export default class FileContentMonacoComponent extends React.Component<
   }
 
   render(): JSX.Element {
-    if (this.props.patch.length === 0) {
+    if (this.props.fileModel.getPatch().length === 0) {
       return <div>No diff info available (binary file?)</div>;
     }
 
@@ -102,7 +94,11 @@ export default class FileContentMonacoComponent extends React.Component<
       return <div>LOADING</div>;
     }
 
-    const comments = this.props.reviewModel.getCommentsForFile(this.props.path, this.props.commitSha);
+    // TODO(jdhollen): Need to get comments for both left and right side.
+    const comments = this.props.reviewModel.getCommentsForFile(
+      this.props.fileModel.getFullPath(),
+      this.props.fileModel.getCommitSha()
+    );
     const threads = ThreadModel.threadsFromComments(comments, this.props.reviewModel.getDraftReviewId());
     const leftThreads: ThreadModel[] = [];
     const rightThreads: ThreadModel[] = [];
@@ -122,9 +118,9 @@ export default class FileContentMonacoComponent extends React.Component<
         modifiedContent={this.state.modifiedContent}
         modifiedThreads={rightThreads}
         disabled={this.props.disabled}
-        path={this.props.path}
-        baseSha={this.props.baseSha}
-        commitSha={this.props.commitSha}
+        path={this.props.fileModel.getFullPath()}
+        baseSha={this.props.fileModel.getBaseSha()}
+        commitSha={this.props.fileModel.getCommitSha()}
         reviewModel={this.props.reviewModel}></MonacoDiffViewerComponent>
     );
   }
@@ -192,7 +188,6 @@ class EditorMouseListener implements monaco.IDisposable {
     } else {
       const line = e.target.position.lineNumber;
       if (line > 0 && line === this.startLine) {
-        // !!! Time to fire.
         this.handler.startComment(this.side, this.path, this.commitSha, this.startLine);
       }
     }
