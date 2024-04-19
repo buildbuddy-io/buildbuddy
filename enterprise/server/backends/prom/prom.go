@@ -28,7 +28,8 @@ import (
 )
 
 const (
-	podNameLabel = "pod_name"
+	podNameLabel           = "pod_name"
+	inventoryHostnameLabel = "inventory_hostname"
 )
 
 var (
@@ -40,6 +41,7 @@ var (
 		{
 			sourceMetricName: "buildbuddy_remote_execution_queue_length",
 			LabelNames:       []string{podNameLabel},
+			LabelFallback:    map[string]string{podNameLabel: inventoryHostnameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_execution_queue_length"),
 				Help: proto.String("Number of actions currently waiting in the executor queue."),
@@ -101,6 +103,7 @@ sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))`,
 		{
 			sourceMetricName: "buildbuddy_remote_execution_duration_usec_exported",
 			LabelNames:       []string{metrics.OS, podNameLabel},
+			LabelFallback:    map[string]string{podNameLabel: inventoryHostnameLabel},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_execution_duration_usec"),
 				Help: proto.String("The total duration of remote execution, in **microseconds**."),
@@ -136,7 +139,11 @@ type promQuerier struct {
 type MetricConfig struct {
 	sourceMetricName string
 	LabelNames       []string
-	ExportedFamily   *dto.MetricFamily
+	// A map from dest label names to source label names. When dest label names
+	// are not present in source metrics, we will check the provided source
+	// labels intead.
+	LabelFallback  map[string]string
+	ExportedFamily *dto.MetricFamily
 	// The examples should be in promql, and is going to be shown in the docs.
 	Examples string
 }
@@ -268,28 +275,33 @@ func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[str
 
 	queryParams := make([]*promQueryParams, 0, 3*len(MetricConfigs))
 	for _, config := range MetricConfigs {
+		sumByFields := make([]string, 0, len(config.LabelNames)+len(config.LabelFallback))
+		sumByFields = append(sumByFields, config.LabelNames...)
+		for _, val := range config.LabelFallback {
+			sumByFields = append(sumByFields, val)
+		}
 		switch config.ExportedFamily.GetType() {
 		case dto.MetricType_GAUGE:
 			queryParams = append(queryParams, &promQueryParams{
-				metricName: config.sourceMetricName, sumByFields: config.LabelNames,
+				metricName: config.sourceMetricName, sumByFields: sumByFields,
 			})
 		case dto.MetricType_COUNTER:
 			queryParams = append(queryParams, &promQueryParams{
-				metricName: config.sourceMetricName, sumByFields: config.LabelNames,
+				metricName: config.sourceMetricName, sumByFields: sumByFields,
 			})
 		case dto.MetricType_HISTOGRAM:
 			queryParams = append(queryParams,
 				&promQueryParams{
 					metricName:  config.sourceMetricName + countSuffix,
-					sumByFields: config.LabelNames,
+					sumByFields: sumByFields,
 				},
 				&promQueryParams{
 					metricName:  config.sourceMetricName + sumSuffix,
-					sumByFields: config.LabelNames,
+					sumByFields: sumByFields,
 				},
 				&promQueryParams{
 					metricName:  config.sourceMetricName + bucketSuffix,
-					sumByFields: append(config.LabelNames, leLabel),
+					sumByFields: append(sumByFields, leLabel),
 				},
 			)
 		default:
@@ -351,7 +363,7 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 			if !ok {
 				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
 			}
-			metric, err := counterVecToMetrics(vector, config.LabelNames)
+			metric, err := counterVecToMetrics(vector, config)
 			if err != nil {
 				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
 			}
@@ -361,7 +373,7 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 			if !ok {
 				return nil, status.InternalErrorf("miss metric %q", config.sourceMetricName)
 			}
-			metric, err := gaugeVecToMetrics(vector, config.LabelNames)
+			metric, err := gaugeVecToMetrics(vector, config)
 			if err != nil {
 				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
 			}
@@ -373,7 +385,7 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 			if !countExists || !sumExists || !bucketExists {
 				return nil, status.InternalErrorf("missing metric %q for histogram", config.sourceMetricName)
 			}
-			metric, err := histogramVecToMetrics(countVector, sumVector, bucketVector, config.LabelNames)
+			metric, err := histogramVecToMetrics(countVector, sumVector, bucketVector, config)
 			if err != nil {
 				return nil, status.InternalErrorf("failed to parse metric %q: %s", config.sourceMetricName, err)
 			}
@@ -390,25 +402,41 @@ func queryResultsToMetrics(vectors map[string]model.Vector) (*mpb.Metrics, error
 	return res, nil
 }
 
-func makeLabelPairs(labelNames []string, sample *model.Sample) ([]*dto.LabelPair, error) {
-	labelPairs := make([]*dto.LabelPair, 0, len(labelNames))
-	for _, ln := range labelNames {
-		lv, ok := sample.Metric[model.LabelName(ln)]
-		if !ok {
-			return nil, status.InternalErrorf("miss label name %q", ln)
-		}
-		labelPairs = append(labelPairs, &dto.LabelPair{
+func makeLabelPair(ln string, config *MetricConfig, sample *model.Sample) (*dto.LabelPair, error) {
+	makePair := func(ln string, lv model.LabelValue) *dto.LabelPair {
+		return &dto.LabelPair{
 			Name:  proto.String(ln),
 			Value: proto.String(string(lv)),
-		})
+		}
+	}
+	lv, ok := sample.Metric[model.LabelName(ln)]
+	if ok {
+		return makePair(ln, lv), nil
+	}
+	fallbackName := config.LabelFallback[ln]
+	val, ok := sample.Metric[model.LabelName(fallbackName)]
+	if !ok {
+		return nil, status.InternalErrorf("miss label name %q", ln)
+	}
+	return makePair(ln, val), nil
+}
+
+func makeLabelPairs(config *MetricConfig, sample *model.Sample) ([]*dto.LabelPair, error) {
+	labelPairs := make([]*dto.LabelPair, 0, len(config.LabelNames))
+	for _, ln := range config.LabelNames {
+		lp, err := makeLabelPair(ln, config, sample)
+		if err != nil {
+			return nil, err
+		}
+		labelPairs = append(labelPairs, lp)
 	}
 	return labelPairs, nil
 }
 
-func counterVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric, error) {
+func counterVecToMetrics(vector model.Vector, config *MetricConfig) ([]*dto.Metric, error) {
 	res := make([]*dto.Metric, 0, len(vector))
 	for _, promSample := range vector {
-		labelPairs, err := makeLabelPairs(labelNames, promSample)
+		labelPairs, err := makeLabelPairs(config, promSample)
 		if err != nil {
 			return nil, err
 		}
@@ -423,10 +451,10 @@ func counterVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metri
 	return res, nil
 }
 
-func gaugeVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric, error) {
+func gaugeVecToMetrics(vector model.Vector, config *MetricConfig) ([]*dto.Metric, error) {
 	res := make([]*dto.Metric, 0, len(vector))
 	for _, promSample := range vector {
-		labelPairs, err := makeLabelPairs(labelNames, promSample)
+		labelPairs, err := makeLabelPairs(config, promSample)
 		if err != nil {
 			return nil, err
 		}
@@ -441,7 +469,7 @@ func gaugeVecToMetrics(vector model.Vector, labelNames []string) ([]*dto.Metric,
 	return res, nil
 }
 
-func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames []string) ([]*dto.Metric, error) {
+func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, config *MetricConfig) ([]*dto.Metric, error) {
 	sumByFingerprint := make(map[model.Fingerprint]float64)
 	for _, sample := range sumVec {
 		footprint := sample.Metric.Fingerprint()
@@ -477,7 +505,7 @@ func histogramVecToMetrics(countVec, sumVec, bucketVec model.Vector, labelNames 
 		if !ok {
 			return nil, status.InternalErrorf("miss sum value for metric, label set %s", sample.Metric)
 		}
-		labelPairs, err := makeLabelPairs(labelNames, sample)
+		labelPairs, err := makeLabelPairs(config, sample)
 		if err != nil {
 			return nil, err
 		}
