@@ -2,6 +2,9 @@ package compact
 
 import (
 	"bufio"
+	"bytes"
+	"container/heap"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +18,27 @@ import (
 	spb "github.com/buildbuddy-io/buildbuddy/proto/spawn"
 )
 
-func PrintCompactExecLog(path string) error {
+func printSpawnExec(s *spb.SpawnExec) error {
+	b, err := protojson.MarshalOptions{Multiline: true}.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("failed to marshal remote gRPC log entry: %s", err)
+	}
+	// protojson output is unstable so we need to reformat the json output
+	// to make sure it's stable
+	var bb bytes.Buffer
+	if err = json.Indent(&bb, b, "", "  "); err != nil {
+		return fmt.Errorf("failed to format json outputs: %s", err)
+	}
+	if _, err = bb.WriteString("\n"); err != nil {
+		return fmt.Errorf("failed to format json outputs: %s", err)
+	}
+	if _, err = io.Copy(os.Stdout, &bb); err != nil {
+		return fmt.Errorf("failed to write to stdout: %s", err)
+	}
+	return nil
+}
+
+func PrintCompactExecLog(path string, sort bool) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -28,20 +51,174 @@ func PrintCompactExecLog(path string) error {
 	defer r.Close()
 	slr := NewSpawnLogReconstructor(r)
 
+	var spawns []*spb.SpawnExec
 	for {
-		sr, err := slr.GetSpawnExec()
+		s, err := slr.GetSpawnExec()
 		if err == io.EOF {
-			return nil
+			break
 		}
 		if err != nil {
 			return fmt.Errorf("failed getting spawn exec: %s", err)
 		}
-		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(sr)
-		if err != nil {
-			return fmt.Errorf("failed to marshal remote gRPC log entry: %s", err)
+		if sort {
+			spawns = append(spawns, s)
+			continue
 		}
-		if _, err := os.Stdout.Write(append(b, []byte{'\n'}...)); err != nil {
-			return fmt.Errorf("failed to write to stdout: %s", err)
+
+		if err := printSpawnExec(s); err != nil {
+			return err
+		}
+	}
+
+	if sort {
+		return StableSortExec(spawns, printSpawnExec)
+	}
+	return nil
+}
+
+// StableSortExec reimplements the sorting logic from Bazel's StableSort.java.
+//
+// https://cs.opensource.google/bazel/bazel/+/master:src/main/java/com/google/devtools/build/lib/exec/StableSort.java;l=40;drc=5d4feefed7e39b20a6c5deb5f74394abbf622a52
+//
+// Assuming there is no cyclic dependencies between spawns, the sort order has
+// the following properties:
+//   - If an output of spawn A is an input to spawn B, A sorts before B.
+//   - When not constrained by the above, spawns sort in lexicographic order of their primary output path.
+func StableSortExec(spawns []*spb.SpawnExec, forEachFn func(*spb.SpawnExec) error) error {
+	outputToSpawns := make(map[string][]*spb.SpawnExec)
+	for _, s := range spawns {
+		for _, o := range s.GetActualOutputs() {
+			ss, ok := outputToSpawns[o.GetPath()]
+			if !ok {
+				outputToSpawns[o.GetPath()] = []*spb.SpawnExec{s}
+				continue
+			}
+			outputToSpawns[o.GetPath()] = append(ss, s)
+		}
+	}
+
+	blockedBy := newSpawnSetMultiMap()
+	blocking := newSpawnSetMultiMap()
+
+	queue := make(priorityQueue, 0, len(spawns))
+
+	for _, s := range spawns {
+		blocked := false
+		for _, input := range s.GetInputs() {
+			for _, blocker := range outputToSpawns[input.GetPath()] {
+				blockedBy.put(s, blocker)
+				blocking.put(blocker, s)
+				blocked = true
+			}
+		}
+		if !blocked {
+			heap.Push(&queue, s)
+		}
+	}
+
+	for queue.Len() > 0 {
+		s := heap.Pop(&queue).(*spb.SpawnExec)
+		if err := forEachFn(s); err != nil {
+			return err
+		}
+
+		for blocked := range blocking.get(s) {
+			blockedBy.remove(blocked, s)
+			if !blockedBy.contains(blocked) {
+				heap.Push(&queue, blocked)
+			}
+		}
+	}
+
+	return nil
+}
+
+// priorityQueue implements container/heap.PriorityQueue
+type priorityQueue []*spb.SpawnExec
+
+func (q priorityQueue) Len() int {
+	return len(q)
+}
+
+func (q priorityQueue) Less(i, j int) bool {
+	return toCompareString(q[i]) < toCompareString(q[j])
+}
+
+func toCompareString(s *spb.SpawnExec) string {
+	// Sort by comparing the path of the first output. We don't want the sorting to
+	// rely on file hashes because we want the same action graph to be sorted in the
+	// same way regardless of file contents.
+	if len(s.GetListedOutputs()) > 0 {
+		return "1_" + s.GetListedOutputs()[0]
+	}
+
+	// Get a proto with only stable information from this proto
+	stripped := &spb.SpawnExec{
+		CommandArgs:          s.GetCommandArgs(),
+		EnvironmentVariables: s.GetEnvironmentVariables(),
+		Platform:             s.GetPlatform(),
+		Inputs:               s.GetInputs(),
+		Mnemonic:             s.GetMnemonic(),
+	}
+	return "2_" + stripped.String()
+}
+
+func (q priorityQueue) Swap(i, j int) {
+	q[i], q[j] = q[j], q[i]
+}
+
+func (q *priorityQueue) Push(s any) {
+	if len(*q) == 0 {
+		*q = []*spb.SpawnExec{s.(*spb.SpawnExec)}
+		return
+	}
+	*q = append(*q, s.(*spb.SpawnExec))
+}
+
+func (q *priorityQueue) Pop() any {
+	old := *q
+	n := len(old)
+	s := old[n-1]
+	old[n-1] = nil
+	*q = old[0 : n-1]
+	return s
+}
+
+type spawnSet map[*spb.SpawnExec]struct{}
+
+type spawnSetMultiMap struct {
+	m map[*spb.SpawnExec]spawnSet
+}
+
+func newSpawnSetMultiMap() spawnSetMultiMap {
+	return spawnSetMultiMap{
+		m: make(map[*spb.SpawnExec]spawnSet),
+	}
+}
+
+func (ismm spawnSetMultiMap) contains(key *spb.SpawnExec) bool {
+	_, ok := ismm.m[key]
+	return ok
+}
+
+func (ismm spawnSetMultiMap) get(key *spb.SpawnExec) spawnSet {
+	return ismm.m[key]
+}
+
+func (ismm spawnSetMultiMap) put(key *spb.SpawnExec, val *spb.SpawnExec) {
+	s, ok := ismm.m[key]
+	if !ok || len(s) == 0 {
+		s = make(spawnSet)
+		ismm.m[key] = s
+	}
+	s[val] = struct{}{}
+}
+
+func (ismm spawnSetMultiMap) remove(key *spb.SpawnExec, val *spb.SpawnExec) {
+	if s, ok := ismm.m[key]; ok {
+		delete(s, val)
+		if len(s) == 0 {
+			delete(ismm.m, key)
 		}
 	}
 }
@@ -97,14 +274,14 @@ func (slr *SpawnLogReconstructor) GetSpawnExec() (*spb.SpawnExec, error) {
 		case *spb.ExecLogEntry_InputSet_:
 			slr.sets[entry.GetId()] = e.InputSet
 		case *spb.ExecLogEntry_Spawn_:
-			return slr.reconstructSpawn(e.Spawn)
+			return slr.reconstructSpawn(e.Spawn), nil
 		default:
 			log.Warnf("unknown exec log entry: %v", entry)
 		}
 	}
 }
 
-func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) (*spb.SpawnExec, error) {
+func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) *spb.SpawnExec {
 	se := &spb.SpawnExec{
 		CommandArgs:          s.GetArgs(),
 		EnvironmentVariables: s.GetEnvVars(),
@@ -124,10 +301,11 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) (*
 	}
 
 	// Handle inputs
-	inputs := slr.reconstructInputs(s.GetInputSetId())
-	toolInputs := slr.reconstructInputs(s.GetToolSetId())
+	order, inputs := slr.reconstructInputs(s.GetInputSetId())
+	_, toolInputs := slr.reconstructInputs(s.GetToolSetId())
 	var spawnInputs []*spb.File
-	for path, file := range inputs {
+	for _, path := range order {
+		file := inputs[path]
 		if _, ok := toolInputs[path]; ok {
 			file.IsTool = true
 		}
@@ -161,10 +339,11 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) (*
 	se.ListedOutputs = listedOutputs
 	se.ActualOutputs = actualOutputs
 
-	return se, nil
+	return se
 }
 
-func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb.File {
+func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) ([]string, map[string]*spb.File) {
+	var order []string
 	inputs := make(map[string]*spb.File)
 	setsToVisit := []int32{}
 	visited := make(map[int32]struct{})
@@ -181,6 +360,7 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb
 			if _, ok := visited[fileID]; !ok {
 				visited[fileID] = struct{}{}
 				f := slr.files[fileID]
+				order = append(order, f.GetPath())
 				inputs[f.GetPath()] = f
 			}
 		}
@@ -189,6 +369,7 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb
 				visited[dirID] = struct{}{}
 				d := slr.dirs[dirID]
 				for _, f := range d.files {
+					order = append(order, f.GetPath())
 					inputs[f.GetPath()] = f
 				}
 			}
@@ -197,6 +378,7 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb
 			if _, ok := visited[symlinkID]; !ok {
 				visited[symlinkID] = struct{}{}
 				s := slr.symlinks[symlinkID]
+				order = append(order, s.GetPath())
 				inputs[s.GetPath()] = s
 			}
 		}
@@ -207,7 +389,7 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb
 			}
 		}
 	}
-	return inputs
+	return order, inputs
 }
 
 func reconstructDir(d *spb.ExecLogEntry_Directory) *reconstructedDir {

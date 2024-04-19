@@ -19,12 +19,13 @@ import (
 
 const (
 	usage = `
-usage: bb print --grpc_log=PATH
+usage: bb print [--grpc_log=PATH] [--compact_execution_log=PATH] [--sort=true]
 
 Prints a human-readable representation of log files output by Bazel.
 
 Currently supported log types:
   --grpc_log: Path to a file saved with --experimental_remote_grpc_log.
+  --compact_execution_log: Path to a file saved with --experimental_execution_log_compact_file.
 `
 )
 
@@ -32,6 +33,7 @@ var (
 	flags          = flag.NewFlagSet("print", flag.ContinueOnError)
 	grpcLog        = flags.String("grpc_log", "", "gRPC log path.")
 	compactExecLog = flags.String("compact_execution_log", "", "compact execution log path.")
+	sort           = flags.Bool("sort", false, "apply sorting to log output, only applicable with --compact_execution_log")
 )
 
 func HandlePrint(args []string) (int, error) {
@@ -49,7 +51,7 @@ func HandlePrint(args []string) (int, error) {
 		return 0, nil
 	}
 	if *compactExecLog != "" {
-		if err := compact.PrintCompactExecLog(*compactExecLog); err != nil {
+		if err := compact.PrintCompactExecLog(*compactExecLog, *sort); err != nil {
 			return -1, err
 		}
 		return 0, nil

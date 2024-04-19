@@ -1,0 +1,116 @@
+{
+  "commandArgs": [
+    "/bin/bash",
+    "-c",
+    "source external/bazel_tools/tools/genrule/genrule-setup.sh; touch bazel-out/darwin_arm64-fastbuild/bin/server/version/commit.txt"
+  ],
+  "environmentVariables": [
+    {
+      "name": "PATH",
+      "value": "/bin:/usr/bin:/usr/local/bin"
+    }
+  ],
+  "platform": {},
+  "inputs": [
+    {
+      "path": "external/bazel_tools/tools/genrule/genrule-setup.sh",
+      "digest": {
+        "hash": "ecbd7e347af9b7a4ddc4ea397b195bd0c794e1dbfd666ee29ef98dd779cf8439",
+        "sizeBytes": "858"
+      }
+    },
+    {
+      "path": "bazel-out/stable-status.txt",
+      "digest": {
+        "hash": "aaca31393fa0043ba63c61b6240f4f81da3708143863107ffc1167a49b9add6e",
+        "sizeBytes": "154"
+      }
+    },
+    {
+      "path": "bazel-out/volatile-status.txt",
+      "digest": {
+        "hash": "4a326985aed96c4155b057cf0375f1a5fa564501b059301face13e18eb9369cc",
+        "sizeBytes": "226"
+      }
+    }
+  ],
+  "listedOutputs": [
+    "bazel-out/darwin_arm64-fastbuild/bin/server/version/commit.txt"
+  ],
+  "remotable": true,
+  "cacheable": true,
+  "mnemonic": "Genrule",
+  "actualOutputs": [
+    {
+      "path": "bazel-out/darwin_arm64-fastbuild/bin/server/version/commit.txt",
+      "digest": {
+        "hash": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+      }
+    }
+  ],
+  "runner": "darwin-sandbox",
+  "remoteCacheable": true,
+  "targetLabel": "//server/version:populate_commit",
+  "metrics": {
+    "totalTime": "0.015s",
+    "executionWallTime": "0.015s"
+  }
+}
+{
+  "commandArgs": [
+    "/bin/bash",
+    "-c",
+    "source external/bazel_tools/tools/genrule/genrule-setup.sh; touch bazel-out/darwin_arm64-fastbuild/bin/server/version/version.txt"
+  ],
+  "environmentVariables": [
+    {
+      "name": "PATH",
+      "value": "/bin:/usr/bin:/usr/local/bin"
+    }
+  ],
+  "platform": {},
+  "inputs": [
+    {
+      "path": "external/bazel_tools/tools/genrule/genrule-setup.sh",
+      "digest": {
+        "hash": "ecbd7e347af9b7a4ddc4ea397b195bd0c794e1dbfd666ee29ef98dd779cf8439",
+        "sizeBytes": "858"
+      }
+    },
+    {
+      "path": "bazel-out/stable-status.txt",
+      "digest": {
+        "hash": "aaca31393fa0043ba63c61b6240f4f81da3708143863107ffc1167a49b9add6e",
+        "sizeBytes": "154"
+      }
+    },
+    {
+      "path": "bazel-out/volatile-status.txt",
+      "digest": {
+        "hash": "4a326985aed96c4155b057cf0375f1a5fa564501b059301face13e18eb9369cc",
+        "sizeBytes": "226"
+      }
+    }
+  ],
+  "listedOutputs": [
+    "bazel-out/darwin_arm64-fastbuild/bin/server/version/version.txt"
+  ],
+  "remotable": true,
+  "cacheable": true,
+  "mnemonic": "Genrule",
+  "actualOutputs": [
+    {
+      "path": "bazel-out/darwin_arm64-fastbuild/bin/server/version/version.txt",
+      "digest": {
+        "hash": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+      }
+    }
+  ],
+  "runner": "darwin-sandbox",
+  "remoteCacheable": true,
+  "targetLabel": "//server/version:populate_version",
+  "metrics": {
+    "totalTime": "0.015s",
+    "executionWallTime": "0.015s"
+  }
+}
