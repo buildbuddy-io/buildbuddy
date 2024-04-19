@@ -166,7 +166,9 @@ func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (strin
 func (c *fileCache) scanDir() {
 	dirCount := 0
 	fileCount := 0
+	errCount := 0
 	scanStart := time.Now()
+	var addErr error
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -182,7 +184,19 @@ func (c *fileCache) scanDir() {
 		if err != nil {
 			return err
 		}
-		return c.addFileToGroup(groupID, node, path)
+		if err := c.addFileToGroup(groupID, node, path); err != nil {
+			// Ignore NotFound - it's fine if files disappear while we're
+			// scanning.
+			if status.IsNotFoundError(err) {
+				return nil
+			}
+			// Record other errors to be logged at the end - but continue the
+			// scan.
+			errCount++
+			addErr = err
+			return nil
+		}
+		return nil
 	}
 	if err := filepath.WalkDir(c.rootDir, walkFn); err != nil {
 		log.Errorf("Error reading existing filecache dir: %q: %s", c.rootDir, err)
@@ -192,6 +206,9 @@ func (c *fileCache) scanDir() {
 	c.lock.Unlock()
 
 	log.Infof("filecache(%q) scanned %d dirs, %d files in %s. Total tracked bytes: %d", c.rootDir, dirCount, fileCount, time.Since(scanStart), lruSize)
+	if addErr != nil {
+		log.Errorf("filecache(%q) failed to add %d files. Last error: %s", c.rootDir, errCount, addErr)
+	}
 	close(c.dirScanDone)
 }
 
@@ -260,11 +277,11 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 
 	info, err := os.Stat(existingFilePath)
 	if err != nil {
-		return status.WrapError(err, "stat")
+		return wrapOSError(err, "stat")
 	}
 	sizeOnDisk, err := disk.EstimatedFileDiskUsage(info)
 	if err != nil {
-		return status.WrapError(err, "estimate disk usage")
+		return wrapOSError(err, "estimate disk usage")
 	}
 
 	c.lock.Lock()
@@ -277,8 +294,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		return err
 	}
 	if err := fastcopy.FastCopy(existingFilePath, fp); err != nil {
-		log.Errorf("Error fastcopying %q => %q: %s", existingFilePath, fp, err)
-		return status.WrapError(err, "adding file to filecache")
+		return wrapOSError(err, "fastcopy file to filecache")
 	}
 	e := &entry{
 		addedAtUsec: time.Now().UnixMicro(),
@@ -367,4 +383,11 @@ func (c *fileCache) tempPath(name string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(c.TempDir(), fmt.Sprintf("%s.%s.tmp", name, randStr)), nil
+}
+
+func wrapOSError(err error, message string) error {
+	if os.IsNotExist(err) {
+		return status.NotFoundErrorf("%s: %s", message, err)
+	}
+	return status.InternalErrorf("%s: %s", message, err)
 }

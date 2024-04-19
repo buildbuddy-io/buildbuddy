@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -17,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +45,6 @@ func writeFileContent(t *testing.T, base, path, content string, executable bool)
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0777); err != nil {
 		t.Fatal(err)
 	}
-	log.Printf("Writing file %q", fullPath)
 	if err := os.WriteFile(fullPath, []byte(content), mod); err != nil {
 		t.Fatal(err)
 	}
@@ -309,6 +311,78 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 	{
 		linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link2"))
 		require.False(t, linked)
+	}
+}
+
+func TestScanWithConcurrentRemove(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		ctx := context.Background()
+		filecacheRoot := testfs.MakeTempDir(t)
+
+		const n = 100
+		var nodes [n]*repb.FileNode
+		for i := 0; i < n; i++ {
+			name := fmt.Sprint(i)
+			nodes[i] = nodeFromString(name, false)
+			writeFileContent(t, filecacheRoot, "ANON/"+nodes[i].GetDigest().GetHash(), name, false)
+		}
+
+		i := rand.Intn(n)
+		pathToDelete := filepath.Join(filecacheRoot, "ANON/"+nodes[i].GetDigest().GetHash())
+
+		var fc interfaces.FileCache
+		var eg errgroup.Group
+		eg.Go(func() error {
+			time.Sleep(time.Duration(rand.Intn(100)) * time.Microsecond)
+			var err error
+			fc, err = filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+			if err != nil {
+				return err
+			}
+			fc.WaitForDirectoryScanToComplete()
+			return nil
+		})
+		// While the directory scan is in progress, delete a random file.
+		eg.Go(func() error {
+			time.Sleep(time.Duration(rand.Intn(100)) * time.Microsecond)
+			return os.Remove(pathToDelete)
+		})
+		err := eg.Wait()
+		require.NoError(t, err)
+
+		// The directory scan should be resilient to this deletion - linking any
+		// other random file should work.
+		j := (i + 1 + rand.Intn(n-1)) % n
+		ok := fc.FastLinkFile(ctx, nodes[j], filepath.Join(fc.TempDir(), "out"))
+		require.True(t, ok)
+	}
+}
+
+func TestAddWithConcurrentRemove(t *testing.T) {
+	ctx := context.Background()
+	filecacheRoot := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	tempDir := fc.TempDir()
+
+	for i := 0; i < 100; i++ {
+		name := fmt.Sprint(i)
+		node := nodeFromString(name, false)
+		path := filepath.Join(tempDir, name)
+		writeFileContent(t, tempDir, name, name, false)
+
+		var eg errgroup.Group
+		eg.Go(func() error {
+			time.Sleep(time.Duration(rand.Intn(5)) * time.Microsecond)
+			return os.Remove(path)
+		})
+		eg.Go(func() error {
+			time.Sleep(time.Duration(rand.Intn(5)) * time.Microsecond)
+			return fc.AddFile(ctx, node, path)
+		})
+		err := eg.Wait()
+		require.True(t, err == nil || status.IsNotFoundError(err), "expected NotFound or nil error, got %v", err)
 	}
 }
 
