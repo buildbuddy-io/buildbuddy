@@ -297,13 +297,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     });
   }
 
-  renderFileDiffs(
-    patch: string,
-    filename: string,
-    commitSha: string,
-    baseSha: string,
-    changeType: github.FileChangeType
-  ) {
+  renderFileDiffs(file: FileModel) {
     if (!this.state.reviewModel) {
       return <></>;
     }
@@ -317,11 +311,11 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
             owner={this.props.owner}
             repo={this.props.repo}
             pull={this.props.pull}
-            patch={patch}
-            path={filename}
-            baseSha={baseSha}
-            commitSha={commitSha}
-            changeType={changeType}
+            patch={file.getPatch()}
+            path={file.getFullPath()}
+            baseSha={file.getBaseSha()}
+            commitSha={file.getCommitSha()}
+            changeType={file.getChangeType()}
             handler={this}></FileContentMonacoComponent>
         </td>
       </tr>
@@ -356,8 +350,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           <td>{file.getAdditions() + file.getDeletions()}</td>
           <td>{this.renderDiffBar(file.getAdditions(), file.getDeletions(), 0)}</td>
         </tr>
-        {expanded &&
-          this.renderFileDiffs(file.getPatch(), path, file.getCommitSha(), file.getBaseSha(), file.getChangeType())}
+        {expanded && this.renderFileDiffs(file)}
       </>
     );
   }
