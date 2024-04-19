@@ -108,6 +108,7 @@ export default class FileContentMonacoComponent extends React.Component<
         modifiedContent={this.state.modifiedContent}
         modifiedThreads={rightThreads}
         disabled={this.props.disabled}
+        path={this.props.path}
         reviewModel={this.props.reviewModel}></MonacoDiffViewerComponent>
     );
   }
@@ -121,6 +122,7 @@ interface MonacoDiffViewerComponentProps {
   originalThreads: ThreadModel[];
   modifiedContent: string;
   modifiedThreads: ThreadModel[];
+  path: string;
 }
 
 interface ThreadZoneAndOverlay {
@@ -182,7 +184,7 @@ class AutoZone {
     const zoneElement = document.createElement("div");
     const overlayElement = document.createElement("div");
 
-    overlayElement.style.width = "100%";
+    overlayElement.classList.add("monaco-thread");
 
     const overlay: monaco.editor.IOverlayWidget = {
       getId: function () {
@@ -291,13 +293,25 @@ class MonacoDiffViewerComponent extends React.Component<
     this.editor = editor;
 
     this.editor.setModel({
-      original: monaco.editor.createModel(this.props.originalContent),
-      modified: monaco.editor.createModel(this.props.modifiedContent),
+      original: monaco.editor.createModel(
+        this.props.originalContent,
+        undefined,
+        monaco.Uri.file(`original-${this.props.path}`)
+      ),
+      modified: monaco.editor.createModel(
+        this.props.modifiedContent,
+        undefined,
+        monaco.Uri.file(`modified-${this.props.path}`)
+      ),
     });
 
     let ignoreEvent = false;
     const maxHeight = () => {
       return Math.max(editor.getOriginalEditor().getContentHeight(), editor.getModifiedEditor().getContentHeight());
+    };
+    const trueWidth = () => {
+      console.log(editor);
+      return editor.getContainerDomNode().getBoundingClientRect().width;
     };
     const updateHeight = () => {
       if (ignoreEvent) {
@@ -307,12 +321,8 @@ class MonacoDiffViewerComponent extends React.Component<
       container.style.height = `${contentHeight}px`;
       try {
         ignoreEvent = true;
-        editor
-          .getModifiedEditor()
-          .layout({ width: editor.getModifiedEditor().getScrollWidth(), height: contentHeight });
-        editor
-          .getOriginalEditor()
-          .layout({ width: editor.getOriginalEditor().getScrollWidth(), height: contentHeight });
+        editor.getModifiedEditor().layout({ width: trueWidth() / 2, height: contentHeight });
+        editor.getOriginalEditor().layout({ width: trueWidth() / 2, height: contentHeight });
       } finally {
         ignoreEvent = false;
       }
