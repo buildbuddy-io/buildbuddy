@@ -29,6 +29,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -255,7 +256,7 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 	}
 	createResp, err := bb.CreateWorkflow(ctx, &wfpb.CreateWorkflowRequest{
 		RequestContext: reqCtx,
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	})
 	require.NoError(t, err)
 
@@ -286,7 +287,7 @@ func TestCreateAndExecute(t *testing.T) {
 
 	createResp, err := bb.CreateWorkflow(ctx, &wfpb.CreateWorkflowRequest{
 		RequestContext: reqCtx,
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	})
 
 	require.NoError(t, err)
@@ -355,7 +356,7 @@ func TestCreateAndExecuteAsync(t *testing.T) {
 
 	createResp, err := bb.CreateWorkflow(ctx, &wfpb.CreateWorkflowRequest{
 		RequestContext: reqCtx,
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	})
 
 	require.NoError(t, err)
@@ -410,7 +411,7 @@ func TestCancel(t *testing.T) {
 	}
 	createResp, err := bb.CreateWorkflow(ctx, &wfpb.CreateWorkflowRequest{
 		RequestContext: reqCtx,
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	})
 	require.NoError(t, err)
 
@@ -447,7 +448,7 @@ func TestInvalidYAML(t *testing.T) {
 	}
 	createResp, err := bb.CreateWorkflow(ctx, &wfpb.CreateWorkflowRequest{
 		RequestContext: reqCtx,
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	})
 	require.NoError(t, err)
 

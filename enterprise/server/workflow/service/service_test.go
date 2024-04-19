@@ -34,6 +34,7 @@ import (
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -233,7 +234,7 @@ func TestCreate_SuccessfullyRegisterWebhook(t *testing.T) {
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
 		Name:           "BuildBuddy OS Workflow",
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	}
 	rsp, err := bbClient.CreateWorkflow(ctx, req)
 
@@ -270,7 +271,7 @@ func TestCreate_NoWebhookPermissions(t *testing.T) {
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
 		Name:           "BuildBuddy OS Workflow",
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	}
 	rsp, err := bbClient.CreateWorkflow(ctx, req)
 
@@ -305,7 +306,7 @@ func TestCreate_NonNormalizedRepoURL(t *testing.T) {
 
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo: &wfpb.CreateWorkflowRequest_GitRepo{
+		GitRepo: &gitpb.GitRepo{
 			// Access token is required for GitHub URLs
 			AccessToken: "test-access-token",
 			RepoUrl:     repoURL,
@@ -433,7 +434,7 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	}
 	wfRes, err := bbClient.CreateWorkflow(ctx, req)
 	require.NoError(t, err)
@@ -482,7 +483,7 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	}
 	wfRes, err := bbClient.CreateWorkflow(ctx, req)
 	require.NoError(t, err)
@@ -531,7 +532,7 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	}
 	wfRes, err := bbClient.CreateWorkflow(ctx, req)
 	require.NoError(t, err)
@@ -581,7 +582,7 @@ func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	}
 	wfRes, err := bbClient.CreateWorkflow(ctx, req)
 	require.NoError(t, err)
@@ -619,7 +620,7 @@ func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	}
 	wfRes, err := bbClient.CreateWorkflow(ctx, req)
 	require.NoError(t, err)
@@ -657,7 +658,7 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
 	}
 	wfRes, err := bbClient.CreateWorkflow(ctx, req)
 	require.NoError(t, err)

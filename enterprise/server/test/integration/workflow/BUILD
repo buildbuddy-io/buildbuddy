@@ -23,6 +23,7 @@ go_test(
         "//proto:buildbuddy_service_go_proto",
         "//proto:context_go_proto",
         "//proto:eventlog_go_proto",
+        "//proto:git_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:user_id_go_proto",
