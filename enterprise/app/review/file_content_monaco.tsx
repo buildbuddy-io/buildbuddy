@@ -395,9 +395,6 @@ class MonacoDiffViewerComponent extends React.Component<
   }
 
   static getDerivedStateFromProps(props: MonacoDiffViewerComponentProps, state: MonacoDiffViewerComponentState) {
-    console.log("Deriving state...");
-    console.log(props);
-    console.log(state);
     const editor = state.editor;
     if (!editor) {
       return;
