@@ -292,10 +292,11 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn, so
 	}
 
 	// Handle inputs
-	inputs := slr.reconstructInputs(s.GetInputSetId())
-	toolInputs := slr.reconstructInputs(s.GetToolSetId())
+	order, inputs := slr.reconstructInputs(s.GetInputSetId())
+	_, toolInputs := slr.reconstructInputs(s.GetToolSetId())
 	var spawnInputs []*spb.File
-	for path, file := range inputs {
+	for _, path := range order {
+		file := inputs[path]
 		if _, ok := toolInputs[path]; ok {
 			file.IsTool = true
 		}
@@ -340,7 +341,8 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn, so
 	return se
 }
 
-func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb.File {
+func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) ([]string, map[string]*spb.File) {
+	var order []string
 	inputs := make(map[string]*spb.File)
 	setsToVisit := []int32{}
 	visited := make(map[int32]struct{})
@@ -357,6 +359,7 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb
 			if _, ok := visited[fileID]; !ok {
 				visited[fileID] = struct{}{}
 				f := slr.files[fileID]
+				order = append(order, f.GetPath())
 				inputs[f.GetPath()] = f
 			}
 		}
@@ -365,6 +368,7 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb
 				visited[dirID] = struct{}{}
 				d := slr.dirs[dirID]
 				for _, f := range d.files {
+					order = append(order, f.GetPath())
 					inputs[f.GetPath()] = f
 				}
 			}
@@ -373,6 +377,7 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb
 			if _, ok := visited[symlinkID]; !ok {
 				visited[symlinkID] = struct{}{}
 				s := slr.symlinks[symlinkID]
+				order = append(order, s.GetPath())
 				inputs[s.GetPath()] = s
 			}
 		}
@@ -383,7 +388,7 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) map[string]*spb
 			}
 		}
 	}
-	return inputs
+	return order, inputs
 }
 
 func reconstructDir(d *spb.ExecLogEntry_Directory) *reconstructedDir {
