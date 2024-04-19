@@ -2,7 +2,9 @@ package compact
 
 import (
 	"bufio"
+	"bytes"
 	"container/heap"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -23,7 +25,16 @@ func printSpawnExec(s *spb.SpawnExec) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal remote gRPC log entry: %s", err)
 	}
-	if _, err := os.Stdout.Write(append(b, []byte{'\n'}...)); err != nil {
+	// protojson output is unstable so we need to reformat the json output
+	// to make sure it's stable
+	var bb bytes.Buffer
+	if err = json.Indent(&bb, b, "", "  "); err != nil {
+		return fmt.Errorf("failed to format json outputs: %s", err)
+	}
+	if _, err = bb.WriteString("\n"); err != nil {
+		return fmt.Errorf("failed to format json outputs: %s", err)
+	}
+	if _, err = io.Copy(os.Stdout, &bb); err != nil {
 		return fmt.Errorf("failed to write to stdout: %s", err)
 	}
 	return nil
