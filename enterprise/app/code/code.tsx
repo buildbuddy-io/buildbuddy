@@ -1260,7 +1260,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               )}
               <CodeBuildButton
                 onCommandClicked={this.handleBuildClicked.bind(this)}
-                onDefaultConfig={(config) => this.setState({ defaultConfig: config })}
+                onDefaultConfig={(config) => this.updateState({ defaultConfig: config })}
                 isLoading={this.state.isBuilding}
                 project={`${this.currentOwner()}/${this.currentRepo()}}`}
                 commands={this.state.commands}
@@ -1536,7 +1536,7 @@ function getOrCreateModel(url: string, value: string) {
     existingModel.setValue(value);
     return existingModel;
   }
-  return monaco.editor.createModel(value, "text/plain", monaco.Uri.file(url));
+  return monaco.editor.createModel(value, langFromPath(url), monaco.Uri.file(url));
 }
 
 // This revives any non-serializable objects in state from their seralized form.

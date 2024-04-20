@@ -408,7 +408,7 @@
   background-color: #fafafa;
   width: 100%;
   border-top-left-radius: 8px;
-  min-height: 2px;
+  min-height: 36px;
 }
 
 .code-editor .code-viewer-tab {
