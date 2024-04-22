@@ -125,7 +125,8 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
 def push_image_for_project(project, version_tag, bazel_target, skip_update_latest_tag):
     version_image = get_image(project, version_tag)
     if version_image is None:
-        push_image_with_bazel(bazel_target, version_tag)
+        build_image_with_bazel(bazel_target)
+        tag_and_push_image_with_docker(bazel_target, project, version_tag)
     else:
         print(f'Image gcr.io/{project}:{version_tag} already exists, skipping bazel build.')
 
@@ -145,15 +146,22 @@ def push_image_for_project(project, version_tag, bazel_target, skip_update_lates
         add_tag_cmd = f"echo 'yes' | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
         run_or_die(add_tag_cmd)
 
-def push_image_with_bazel(bazel_target, image_tag):
-    print(f"Pushing docker image target {bazel_target} tag {image_tag}")
-    command = (
-        'bazel run -c opt --stamp '+
-        '--define=release=true '+
-        '--//deployment:image_tag={image_tag} '+
-        '{target}'
-    ).format(image_tag=image_tag, target=bazel_target)
-    run_or_die(command)
+def build_image_with_bazel(bazel_target):
+    print(f"Building docker image target {bazel_target}")
+    # Note: we are not using container_push targets here, because it has a bug
+    # where it uses "application/vnd.oci.image.layer.v1.tar" mediaType for some
+    # image layers on arm64, which podman and containerd cannot handle.
+    # https://github.com/buildbuddy-io/buildbuddy-internal/issues/3316
+    run_or_die(f'bazel run -c opt --stamp --define=release=true {bazel_target}')
+
+def tag_and_push_image_with_docker(bazel_target, project, version_tag):
+    # rules_docker uses a convention where "//PACKAGE:LABEL" gets locally tagged
+    # with "bazel/PACKAGE:LABEL".
+    local_image_ref = bazel_target.replace('//', 'bazel/')
+    remote_image_ref = f'gcr.io/{project}:{version_tag}'
+    print(f'Tagging and pushing {remote_image_ref}')
+    run_or_die(f'docker tag {local_image_ref} {remote_image_ref}')
+    run_or_die(f'docker push {remote_image_ref}')
 
 def update_docker_images(images, version_tag, skip_update_latest_tag, arch_specific_executor_tag):
     clean_cmd = 'bazel clean --expunge'
@@ -161,10 +169,10 @@ def update_docker_images(images, version_tag, skip_update_latest_tag, arch_speci
 
     # OSS app
     if 'buildbuddy-app-onprem' in images:
-        push_image_for_project("flame-public/buildbuddy-app-onprem", version_tag, '//deployment:release_onprem', skip_update_latest_tag)
+        push_image_for_project("flame-public/buildbuddy-app-onprem", version_tag, '//server:buildbuddy_image', skip_update_latest_tag)
     # Enterprise app
     if 'buildbuddy-app-enterprise' in images:
-        push_image_for_project("flame-public/buildbuddy-app-enterprise", 'enterprise-' + version_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
+        push_image_for_project("flame-public/buildbuddy-app-enterprise", 'enterprise-' + version_tag, '//enterprise/server/cmd/server:buildbuddy_image', skip_update_latest_tag)
     # Enterprise executor
     if 'buildbuddy-executor-enterprise' in images:
         executor_tag = 'enterprise-' + version_tag
@@ -173,7 +181,7 @@ def update_docker_images(images, version_tag, skip_update_latest_tag, arch_speci
         # Skip "latest" tag for arch-specific images, since the latest tag
         # should only apply to the multiarch one.
         skip_latest_tag = skip_update_latest_tag or arch_specific_executor_tag
-        push_image_for_project("flame-public/buildbuddy-executor-enterprise", executor_tag, '//enterprise/deployment:release_executor_enterprise', skip_latest_tag)
+        push_image_for_project("flame-public/buildbuddy-executor-enterprise", executor_tag, '//enterprise/server/cmd/executor:executor_image', skip_latest_tag)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
