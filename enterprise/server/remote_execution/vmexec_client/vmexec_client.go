@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"golang.org/x/sync/errgroup"
@@ -25,6 +26,14 @@ const (
 	// Timeout used for the explicit Sync() call in the case where the command
 	// is cancelled or times out.
 	syncTimeout = 5 * time.Second
+
+	// Timeout applied to each exec stream recv, after which we assume that
+	// something has gone wrong in the VM and cancel execution.
+	streamRecvTimeout = 1 * time.Minute
+)
+
+var (
+	errRecvTimeout = status.UnavailableErrorf("stream recv timed out after %s", streamRecvTimeout)
 )
 
 // Execute executes the command using the ExecStreamed API.
@@ -88,8 +97,9 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	}
 
 	eg.Go(func() error {
+		receiver := rpcutil.NewReceiver[*vmxpb.ExecStreamedResponse](ctx, stream)
 		for {
-			msg, err := stream.Recv()
+			msg, err := receiver.RecvWithTimeoutCause(streamRecvTimeout, errRecvTimeout)
 			if err == io.EOF {
 				if res == nil {
 					return status.UnavailableErrorf("unexpected EOF before receiving command result: %s", err)
