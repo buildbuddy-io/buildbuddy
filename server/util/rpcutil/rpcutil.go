@@ -31,7 +31,7 @@ func (r *Receiver[T]) RecvWithTimeoutCause(timeout time.Duration, cause error) (
 	case msg := <-r.recvChan:
 		return msg.Data, msg.Error
 	case <-ctx.Done():
-		return *new(T), ctx.Err()
+		return *new(T), context.Cause(ctx)
 	}
 }
 
@@ -90,7 +90,7 @@ func (s *Sender[T]) SendWithTimeoutCause(msg T, timeout time.Duration, cause err
 	case err := <-s.errChan:
 		return err
 	case <-ctx.Done():
-		return ctx.Err()
+		return context.Cause(ctx)
 	}
 }
 
