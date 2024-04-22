@@ -2397,22 +2397,23 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 }
 
 type searchPR struct {
-	Title        string
-	TitleHTML    string `graphql:"titleHTML"`
-	Body         string
-	BodyHTML     string `graphql:"bodyHTML"`
-	Author       actor
-	CreatedAt    time.Time
-	Id           string
-	Number       int
-	UpdatedAt    time.Time
-	Merged       bool
-	URL          string `graphql:"url"`
-	HeadRefName  string
-	Additions    int
-	Deletions    int
-	ChangedFiles int
-	Repository   struct {
+	Title            string
+	TitleHTML        string `graphql:"titleHTML"`
+	Body             string
+	BodyHTML         string `graphql:"bodyHTML"`
+	Author           actor
+	CreatedAt        time.Time
+	Id               string
+	Number           int
+	UpdatedAt        time.Time
+	MergeStateStatus string
+	Merged           bool
+	URL              string `graphql:"url"`
+	HeadRefName      string
+	Additions        int
+	Deletions        int
+	ChangedFiles     int
+	Repository       struct {
 		Name  string
 		Owner struct {
 			Login string
@@ -2555,6 +2556,7 @@ func issueToPullRequestProto(i *searchPR, requestedUser string) *ghpb.PullReques
 		Additions:     int64(i.Additions),
 		Deletions:     int64(i.Deletions),
 		ChangedFiles:  int64(i.ChangedFiles),
+		Mergeable:     i.MergeStateStatus == "CLEAN",
 	}
 	for _, r := range i.ReviewRequests.Nodes {
 		review, ok := p.Reviews[r.RequestedReviewer.User.Login]
