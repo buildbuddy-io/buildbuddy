@@ -21,8 +21,9 @@ var DeprecatedTag = flagtags.DeprecatedTag
 
 type yamlIgnoreTag struct{}
 
-func (_ *yamlIgnoreTag) Tag(flagset *flag.FlagSet, name string, f flagtags.Tagged) {
+func (_ *yamlIgnoreTag) Tag(flagset *flag.FlagSet, name string, f flagtags.Tagged) flag.Value {
 	flagyaml.IgnoreFlagForYAML(name)
+	return nil
 }
 
 var YAMLIgnoreTag = &yamlIgnoreTag{}
@@ -49,36 +50,51 @@ func Var[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, us
 	switch v := any(value).(type) {
 	case *bool:
 		flagset.BoolVar(v, name, any(defaultValue).(bool), usage)
+		Tag[T, flag.Value](flagset, name, tags...)
 	case *time.Duration:
 		flagset.DurationVar(v, name, any(defaultValue).(time.Duration), usage)
+		Tag[T, flag.Value](flagset, name, tags...)
 	case *float64:
 		flagset.Float64Var(v, name, any(defaultValue).(float64), usage)
+		Tag[T, flag.Value](flagset, name, tags...)
 	case *int:
 		flagset.IntVar(v, name, any(defaultValue).(int), usage)
+		Tag[T, flag.Value](flagset, name, tags...)
 	case *int64:
 		flagset.Int64Var(v, name, any(defaultValue).(int64), usage)
+		Tag[T, flag.Value](flagset, name, tags...)
 	case *uint:
 		flagset.UintVar(v, name, any(defaultValue).(uint), usage)
+		Tag[T, flag.Value](flagset, name, tags...)
 	case *uint64:
 		flagset.Uint64Var(v, name, any(defaultValue).(uint64), usage)
+		Tag[T, flag.Value](flagset, name, tags...)
 	case *string:
 		flagset.StringVar(v, name, any(defaultValue).(string), usage)
+		Tag[T, flag.Value](flagset, name, tags...)
 	case *[]string:
 		flagtypes.StringSliceVar(flagset, v, name, any(defaultValue).([]string), usage)
+		Tag[T, *flagtypes.StringSliceFlag](flagset, name, tags...)
 	case *url.URL:
 		flagtypes.URLVar(flagset, v, name, any(defaultValue).(url.URL), usage)
+		Tag[T, *flagtypes.URLFlag](flagset, name, tags...)
 	default:
 		if reflect.TypeOf(value).Elem().Kind() == reflect.Slice {
 			flagtypes.JSONSliceVar(flagset, value, name, defaultValue, usage)
+			Tag[T, *flagtypes.JSONSliceFlag[T]](flagset, name, tags...)
 			break
 		}
 		if reflect.TypeOf(value).Elem().Kind() == reflect.Struct {
 			flagtypes.JSONStructVar(flagset, value, name, defaultValue, usage)
+			Tag[T, *flagtypes.JSONStructFlag[T]](flagset, name, tags...)
 			break
 		}
 		log.Fatalf("Var was called from flag registry for flag %s with value %v of unrecognized type %T.", name, defaultValue, defaultValue)
 	}
+}
+
+func Tag[T any, FV flag.Value](flagset *flag.FlagSet, name string, tags ...Taggable) {
 	for _, tg := range tags {
-		flagtags.Tag[T](flagset, name, tg)
+		flagtags.Tag[T, FV](flagset, name, tg)
 	}
 }
