@@ -1968,23 +1968,22 @@ type prDetailsQuery struct {
 	}
 	Repository struct {
 		PullRequest struct {
-			Title          string
-			TitleHTML      string `graphql:"titleHTML"`
-			Body           string
-			BodyHTML       string `graphql:"bodyHTML"`
-			Author         actor
-			CreatedAt      time.Time
-			Id             string
-			UpdatedAt      time.Time
-			Mergeable      githubv4.MergeableState
-			ReviewDecision githubv4.PullRequestReviewDecision
-			Merged         bool
-			URL            string `graphql:"url"`
-			ChecksURL      string `graphql:"checksUrl"`
-			BaseRefOid     string
-			HeadRefOid     string
-			HeadRefName    string
-			TimelineItems  struct {
+			Title            string
+			TitleHTML        string `graphql:"titleHTML"`
+			Body             string
+			BodyHTML         string `graphql:"bodyHTML"`
+			Author           actor
+			CreatedAt        time.Time
+			Id               string
+			UpdatedAt        time.Time
+			MergeStateStatus string
+			Merged           bool
+			URL              string `graphql:"url"`
+			ChecksURL        string `graphql:"checksUrl"`
+			BaseRefOid       string
+			HeadRefOid       string
+			HeadRefName      string
+			TimelineItems    struct {
 				Nodes []timelineItem
 			} `graphql:"timelineItems(first: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, REVIEW_DISMISSED_EVENT, PULL_REQUEST_REVIEW])"`
 			ReviewRequests struct {
@@ -2387,7 +2386,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		ActionStatuses: actionStatuses,
 		Comments:       outputComments,
 		// TODO(jdhollen): Switch to MergeStateStatus when it's stable. https://docs.github.com/en/graphql/reference/enums#mergestatestatus
-		Mergeable:     pr.Mergeable == "MERGEABLE" && pr.ReviewDecision == githubv4.PullRequestReviewDecisionApproved,
+		Mergeable:     pr.MergeStateStatus == "CLEAN",
 		Submitted:     pr.Merged,
 		GithubUrl:     pr.URL,
 		DraftReviewId: draftReviewId,
@@ -2398,24 +2397,22 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 }
 
 type searchPR struct {
-	Title          string
-	TitleHTML      string `graphql:"titleHTML"`
-	Body           string
-	BodyHTML       string `graphql:"bodyHTML"`
-	Author         actor
-	CreatedAt      time.Time
-	Id             string
-	Number         int
-	UpdatedAt      time.Time
-	Mergeable      githubv4.MergeableState
-	ReviewDecision githubv4.PullRequestReviewDecision
-	Merged         bool
-	URL            string `graphql:"url"`
-	HeadRefName    string
-	Additions      int
-	Deletions      int
-	ChangedFiles   int
-	Repository     struct {
+	Title        string
+	TitleHTML    string `graphql:"titleHTML"`
+	Body         string
+	BodyHTML     string `graphql:"bodyHTML"`
+	Author       actor
+	CreatedAt    time.Time
+	Id           string
+	Number       int
+	UpdatedAt    time.Time
+	Merged       bool
+	URL          string `graphql:"url"`
+	HeadRefName  string
+	Additions    int
+	Deletions    int
+	ChangedFiles int
+	Repository   struct {
 		Name  string
 		Owner struct {
 			Login string
