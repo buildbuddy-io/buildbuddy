@@ -313,7 +313,7 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 		if err != nil {
 			return nil, status.UnavailableErrorf("failed to compute checksum digest: %s", err)
 		}
-		if expectedChecksum != "" && checksumDigestRN.GetDigest().Hash != expectedChecksum {
+		if expectedChecksum != "" && checksumDigestRN.GetDigest().GetHash() != expectedChecksum {
 			return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, checksumDigestRN.GetDigest().Hash, expectedChecksum)
 		}
 	}
@@ -321,7 +321,7 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
 	}
-	// If the requsted digestFunc is supplied is the same with the checksum sri,
+	// If the requested digestFunc is supplied is the same with the checksum sri,
 	// verify the expected checksum of the downloaded file after storing it in our cache.
 	if checksumFunc == storageFunc && expectedChecksum != "" && blobDigest.Hash != expectedChecksum {
 		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedChecksum)
