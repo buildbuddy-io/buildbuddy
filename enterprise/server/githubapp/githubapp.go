@@ -2417,7 +2417,7 @@ type searchPR struct {
 			Login string
 		}
 	}
-    ReviewRequests struct {
+	ReviewRequests struct {
 		Nodes []reviewRequest
 	} `graphql:"reviewRequests(first: 100)"`
 	Reviews struct {
