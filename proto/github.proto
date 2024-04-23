@@ -465,6 +465,7 @@ message PullRequest {
   int64 additions = 8;
   int64 deletions = 9;
   int64 changed_files = 10;
+  bool mergeable = 13;
 }
 
 message Review {

@@ -89,7 +89,8 @@
   background-color: #ffc107;
 }
 
-.reviews .pr-status-approved:before {
+.reviews .pr-status-approved:before,
+.reviews .pr-status-mergeable:before {
   background-color: #4caf50;
 }
 

@@ -187,6 +187,8 @@ class PR extends React.Component<PRProps> {
       status = "unresolved";
     } else if (approved) {
       status = "approved";
+    } else if (this.props.pr.mergeable) {
+      status = "mergeable";
     }
 
     return (
