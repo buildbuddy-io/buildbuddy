@@ -451,9 +451,6 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 
 	if env.GetSSLService().IsEnabled() {
 		tlsConfig, sslHandler := env.GetSSLService().ConfigureTLS(server.Handler)
-		if err != nil {
-			log.Fatalf("Error configuring TLS: %s", err)
-		}
 		sslServer := &http.Server{
 			Addr:      fmt.Sprintf("%s:%d", *listen, *sslPort),
 			Handler:   server.Handler,
