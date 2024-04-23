@@ -14,6 +14,7 @@ go_library(
         "//enterprise/server/vmvfs:vmvfs_lib",
         "//proto:health_go_proto",
         "//proto:vmexec_go_proto",
+        "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/retry",
