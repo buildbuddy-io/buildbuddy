@@ -536,17 +536,17 @@ export default class HistoryComponent extends React.Component<Props, State> {
                 {this.props.username && (
                   <span>
                     <span className="history-title">{this.props.username}'s builds</span>
-                    <a className="history-button" href={`/trends/?user=${this.props.username}`}>
+                    <Link className="history-button" href={`/trends/?user=${this.props.username}`}>
                       <BarChart2 /> View trends
-                    </a>
+                    </Link>
                   </span>
                 )}
                 {this.props.hostname && (
                   <span>
                     <span className="history-title">Builds on {this.props.hostname}</span>
-                    <a className="history-button" href={`/trends/?host=${this.props.hostname}`}>
+                    <Link className="history-button" href={`/trends/?host=${this.props.hostname}`}>
                       <BarChart2 /> View trends
-                    </a>
+                    </Link>
                   </span>
                 )}
                 {this.props.repo && !this.isFilteredToWorkflows() && (
@@ -557,9 +557,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
                         <Github /> View repo
                       </a>
                     )}
-                    <a className="history-button" href={`/trends/?repo=${this.props.repo}`}>
+                    <Link className="history-button" href={`/trends/?repo=${this.props.repo}`}>
                       <BarChart2 /> View trends
-                    </a>
+                    </Link>
                   </>
                 )}
                 {this.props.repo && this.isFilteredToWorkflows() && (
@@ -580,9 +580,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
                         <GitBranch /> View branch
                       </a>
                     )}
-                    <a className="history-button" href={`/trends/?branch=${this.props.branch}`}>
+                    <Link className="history-button" href={`/trends/?branch=${this.props.branch}`}>
                       <BarChart2 /> View trends
-                    </a>
+                    </Link>
                   </>
                 )}
                 {this.props.commit && (
@@ -595,9 +595,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
                         <GitCommit /> View commit
                       </a>
                     )}
-                    <a className="history-button" href={`/trends/?commit=${this.props.commit}`}>
+                    <Link className="history-button" href={`/trends/?commit=${this.props.commit}`}>
                       <BarChart2 /> View trends
-                    </a>
+                    </Link>
                   </span>
                 )}
                 {!this.props.hostname &&
