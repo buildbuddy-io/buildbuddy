@@ -231,7 +231,7 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 		SizeBytes: 1,
 	}
 	cacheRN := digest.NewResourceName(blobDigest, instanceName, rspb.CacheType_CAS, checksumFunc)
-	log.CtxInfof(ctx, "Looking up %s in cache", blobDigest.Hash)
+	log.CtxDebugf(ctx, "Looking up %s in cache", blobDigest.Hash)
 
 	// Lookup metadata to get the correct digest size to be returned to
 	// the client.
@@ -257,7 +257,7 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 		return nil
 	}
 
-	log.CtxInfof(ctx, "FetchServer found %s in cache", digest.String(blobDigest))
+	log.CtxDebugf(ctx, "FetchServer found %s in cache", digest.String(blobDigest))
 	return blobDigest
 }
 
@@ -266,7 +266,7 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 // expectedChecksum (if non-empty), and if there is a mismatch then an error is
 // returned.
 func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteInstanceName string, httpClient *http.Client, uri string, storageFunc repb.DigestFunction_Value, checksumFunc repb.DigestFunction_Value, expectedChecksum string) (*repb.Digest, error) {
-	log.CtxInfof(ctx, "Fetching %s", uri)
+	log.CtxDebugf(ctx, "Fetching %s", uri)
 	rsp, err := httpClient.Get(uri)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
@@ -326,7 +326,7 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 	if checksumFunc == storageFunc && expectedChecksum != "" && blobDigest.Hash != expectedChecksum {
 		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedChecksum)
 	}
-	log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(blobDigest))
+	log.CtxDebugf(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(blobDigest))
 	return blobDigest, nil
 }
 
