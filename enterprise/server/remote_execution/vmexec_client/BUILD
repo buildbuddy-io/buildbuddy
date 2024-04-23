@@ -14,6 +14,7 @@ go_library(
         "//server/interfaces",
         "//server/util/background",
         "//server/util/log",
+        "//server/util/rpcutil",
         "//server/util/status",
         "//server/util/tracing",
         "@org_golang_google_grpc//status",
