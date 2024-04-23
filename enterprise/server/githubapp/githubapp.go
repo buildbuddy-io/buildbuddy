@@ -2411,7 +2411,6 @@ type searchPR struct {
 	HeadRefName      string
 	Additions        int
 	Deletions        int
-	// ChangedFiles     int
 	Repository       struct {
 		Name  string
 		Owner struct {
