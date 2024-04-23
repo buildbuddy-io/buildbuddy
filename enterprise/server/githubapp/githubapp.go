@@ -2487,7 +2487,7 @@ func (a *GitHubApp) populatePRMetadata(ctx context.Context, client *github.Clien
 	prs := make(map[string]*ghpb.PullRequest, len(prIssues))
 	for _, i := range prIssues {
 		i := &i.PR
-		prs["a"] = issueToPullRequestProto(i, requestedUser)
+		prs[i.Id] = issueToPullRequestProto(i, requestedUser)
 	}
 	return prs, nil
 }
