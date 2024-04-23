@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"google.golang.org/grpc/metadata"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -105,24 +104,6 @@ func inactivityStreamInterceptor() grpc.StreamServerInterceptor {
 	}
 }
 
-func propagateAPIKeyFromIncomingToOutgoing(ctx context.Context) context.Context {
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		keys := md.Get("x-buildbuddy-api-key")
-		if len(keys) > 0 {
-			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", keys[len(keys)-1])
-		}
-	}
-	return ctx
-}
-
-func propagateAPIKeyUnaryInterceptor() grpc.UnaryServerInterceptor {
-	return interceptors.ContextReplacingUnaryServerInterceptor(propagateAPIKeyFromIncomingToOutgoing)
-}
-
-func propagateAPIKeyStreamInterceptor() grpc.StreamServerInterceptor {
-	return interceptors.ContextReplacingStreamServerInterceptor(propagateAPIKeyFromIncomingToOutgoing)
-}
-
 func initializeEnv() *real_environment.RealEnv {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(healthChecker)
@@ -147,8 +128,8 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 	grpcOptions := []grpc.ServerOption{
 		interceptors.GetUnaryInterceptor(env),
 		interceptors.GetStreamInterceptor(env),
-		grpc.ChainUnaryInterceptor(inactivityUnaryInterceptor(), propagateAPIKeyUnaryInterceptor()),
-		grpc.ChainStreamInterceptor(inactivityStreamInterceptor(), propagateAPIKeyStreamInterceptor()),
+		grpc.ChainUnaryInterceptor(inactivityUnaryInterceptor(), interceptors.PropagateAPIKeyUnaryInterceptor()),
+		grpc.ChainStreamInterceptor(inactivityStreamInterceptor(), interceptors.PropagateAPIKeyStreamInterceptor()),
 		grpc.MaxRecvMsgSize(grpc_server.MaxRecvMsgSizeBytes()),
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
