@@ -199,6 +199,9 @@ const (
 	// The path in the guest where VFS is mounted.
 	guestVFSMountDir = "/vfs"
 
+	// Timeout when mounting/unmounting the workspace within the guest.
+	mountTimeout = 1 * time.Minute
+
 	// How long to allow for the VM to be finalized (paused, outputs copied, etc.)
 	finalizationTimeout = 10 * time.Second
 )
@@ -1279,7 +1282,7 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if _, err := execClient.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
+	if _, err := c.unmountWorkspace(ctx, execClient); err != nil {
 		return status.WrapError(err, "failed to unmount workspace")
 	}
 
@@ -1335,7 +1338,7 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
 
-	if _, err := execClient.MountWorkspace(ctx, &vmxpb.MountWorkspaceRequest{}); err != nil {
+	if err := c.mountWorkspace(ctx, execClient); err != nil {
 		return status.WrapError(err, "failed to remount workspace after update")
 	}
 	return nil
@@ -2304,7 +2307,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		// and unmounting will most likely not work - skip unmounting, but still
 		// do a best-effort attempt to copy outputs from the image.
 		if vmHealthy {
-			if rsp, err := client.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
+			if rsp, err := c.unmountWorkspace(ctx, client); err != nil {
 				log.CtxWarningf(ctx, "Failed to unmount workspace - not recycling VM")
 				result.DoNotRecycle = true
 			} else {
@@ -2331,7 +2334,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 		if unmounted {
-			if _, err := client.MountWorkspace(ctx, &vmxpb.MountWorkspaceRequest{}); err != nil {
+			if err := c.mountWorkspace(ctx, client); err != nil {
 				result.Error = status.WrapErrorf(err, "copy action outputs: re-mount workspace")
 				return result
 			}
@@ -2684,6 +2687,19 @@ func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
 	execClient := vmxpb.NewExecClient(conn)
 
 	return c.hotSwapWorkspace(ctx, execClient)
+}
+
+func (c *FirecrackerContainer) mountWorkspace(ctx context.Context, client vmxpb.ExecClient) error {
+	ctx, cancel := context.WithTimeout(ctx, mountTimeout)
+	defer cancel()
+	_, err := client.MountWorkspace(ctx, &vmxpb.MountWorkspaceRequest{})
+	return err
+}
+
+func (c *FirecrackerContainer) unmountWorkspace(ctx context.Context, client vmxpb.ExecClient) (*vmxpb.UnmountWorkspaceResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, mountTimeout)
+	defer cancel()
+	return client.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{})
 }
 
 // Wait waits until the underlying VM exits. It returns an error if one is
