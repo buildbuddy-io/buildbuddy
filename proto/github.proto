@@ -459,13 +459,13 @@ message PullRequest {
   string title = 2;
   string body = 3;
   string author = 4;
-  string url = 5;
   map<string, Review> reviews = 6;
   int64 updated_at_usec = 7;
   int64 additions = 8;
   int64 deletions = 9;
-  int64 changed_files = 10;
   bool mergeable = 13;
+
+  reserved 5, 10;
 }
 
 message Review {
