@@ -33,8 +33,8 @@ var (
 	gRPCOverHTTPPortEnabled = flag.Bool("app.grpc_over_http_port_enabled", false, "Cloud-Only")
 
 	// Support large BEP messages: https://github.com/bazelbuild/bazel/issues/12050
-	gRPCMaxRecvMsgSizeBytes           = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
-	deprecatedGRPCMaxRecvMsgSizeBytes = flag.Int("app.grpc_max_recv_msg_size_bytes", 50000000, "DEPRECATED: use --grpc_max_recv_msg_size_bytes instead")
+	gRPCMaxRecvMsgSizeBytes           = flag.Int("grpc_max_recv_msg_size_bytes", 50_000_000, "Configures the max GRPC receive message size [bytes]")
+	deprecatedGRPCMaxRecvMsgSizeBytes = flag.Int("app.grpc_max_recv_msg_size_bytes", 50_000_000, "DEPRECATED: use --grpc_max_recv_msg_size_bytes instead")
 
 	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
@@ -254,7 +254,7 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.RecvBufferPool(grpc.NewSharedBufferPool()),
-		grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes),
+		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
 		keepaliveEnforcementPolicy(),
 	}
 }
