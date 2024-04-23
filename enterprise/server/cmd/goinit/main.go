@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -49,16 +50,15 @@ const (
 )
 
 var (
-	path                    = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
-	vmExecPort              = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
-	enableRootfs            = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
-	enableVFS               = flag.Bool("enable_vfs", false, "Whether to run the VFS client.")
-	debugMode               = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
-	enableLogging           = flag.Bool("enable_logging", false, "If true, output logs to the console. By default, only kernel logs are output to the console.")
-	setDefaultRoute         = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
-	initDockerd             = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
-	enableDockerdTCP        = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
-	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
+	path             = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
+	vmExecPort       = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
+	enableRootfs     = flag.Bool("enable_rootfs", false, "Whether the rootfs disk is enabled instead of separate containerfs + scratchfs disks")
+	enableVFS        = flag.Bool("enable_vfs", false, "Whether to run the VFS client.")
+	debugMode        = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
+	enableLogging    = flag.Bool("enable_logging", false, "If true, output logs to the console. By default, only kernel logs are output to the console.")
+	setDefaultRoute  = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
+	initDockerd      = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
+	enableDockerdTCP = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
 
 	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
 	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
@@ -484,7 +484,7 @@ func runVMExecServer(ctx context.Context) error {
 		return err
 	}
 	log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
-	server := grpc.NewServer(grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes))
+	server := grpc.NewServer(grpc.MaxRecvMsgSize(grpc_server.MaxRecvMsgSizeBytes()))
 
 	vmService, err := vmexec.NewServer(workspaceDevice)
 	if err != nil {

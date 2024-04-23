@@ -31,8 +31,10 @@ import (
 
 var (
 	gRPCOverHTTPPortEnabled = flag.Bool("app.grpc_over_http_port_enabled", false, "Cloud-Only")
+
 	// Support large BEP messages: https://github.com/bazelbuild/bazel/issues/12050
-	gRPCMaxRecvMsgSizeBytes = flag.Int("app.grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
+	gRPCMaxRecvMsgSizeBytes           = flag.Int("grpc_max_recv_msg_size_bytes", 50_000_000, "Configures the max GRPC receive message size [bytes]")
+	deprecatedGRPCMaxRecvMsgSizeBytes = flag.Int("app.grpc_max_recv_msg_size_bytes", 50_000_000, "DEPRECATED: use --grpc_max_recv_msg_size_bytes instead")
 
 	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
@@ -43,8 +45,12 @@ var (
 	enablePrometheusHistograms = flag.Bool("app.enable_prometheus_histograms", true, "If true, collect prometheus histograms for all RPCs")
 )
 
-func Port() int {
+func GRPCPort() int {
 	return *gRPCPort
+}
+
+func GRPCSPort() int {
+	return *gRPCSPort
 }
 
 func InternalPort() int {
@@ -55,10 +61,17 @@ func InternalGRPCSPort() int {
 	return *internalGRPCSPort
 }
 
+func MaxRecvMsgSizeBytes() int {
+	if *deprecatedGRPCMaxRecvMsgSizeBytes > *gRPCMaxRecvMsgSizeBytes {
+		return *deprecatedGRPCMaxRecvMsgSizeBytes
+	}
+	return *gRPCMaxRecvMsgSizeBytes
+}
+
 type RegisterServices func(server *grpc.Server, env *real_environment.RealEnv)
 
 func RegisterGRPCServer(env *real_environment.RealEnv, regServices RegisterServices) error {
-	grpcServer, err := NewGRPCServer(env, *gRPCPort, nil, regServices)
+	grpcServer, err := newGRPCServer(env, *gRPCPort, nil, regServices)
 	if err != nil {
 		return err
 	}
@@ -80,7 +93,7 @@ func RegisterGRPCSServer(env *real_environment.RealEnv, regServices RegisterServ
 	if err != nil {
 		return status.InternalErrorf("Error getting SSL creds: %s", err)
 	}
-	grpcsServer, err := NewGRPCServer(env, *gRPCSPort, grpc.Creds(creds), regServices)
+	grpcsServer, err := newGRPCServer(env, *gRPCSPort, grpc.Creds(creds), regServices)
 	if err != nil {
 		return err
 	}
@@ -93,7 +106,7 @@ func RegisterInternalGRPCServer(env *real_environment.RealEnv, regServices Regis
 		return nil
 	}
 
-	grpcServer, err := NewGRPCServer(env, *internalGRPCPort, nil, regServices)
+	grpcServer, err := newGRPCServer(env, *internalGRPCPort, nil, regServices)
 	if err != nil {
 		return err
 	}
@@ -113,7 +126,7 @@ func RegisterInternalGRPCSServer(env *real_environment.RealEnv, regServices Regi
 	if err != nil {
 		return status.InternalErrorf("Error getting SSL creds: %s", err)
 	}
-	grpcsServer, err := NewGRPCServer(env, *internalGRPCSPort, grpc.Creds(creds), regServices)
+	grpcsServer, err := newGRPCServer(env, *internalGRPCSPort, grpc.Creds(creds), regServices)
 	if err != nil {
 		return err
 	}
@@ -121,7 +134,7 @@ func RegisterInternalGRPCSServer(env *real_environment.RealEnv, regServices Regi
 	return nil
 }
 
-func NewGRPCServer(env *real_environment.RealEnv, port int, credentialOption grpc.ServerOption, regServices RegisterServices) (*grpc.Server, error) {
+func newGRPCServer(env *real_environment.RealEnv, port int, credentialOption grpc.ServerOption, regServices RegisterServices) (*grpc.Server, error) {
 	// Initialize our gRPC server (and fail early if that doesn't happen).
 	hostAndPort := fmt.Sprintf("%s:%d", env.GetListenAddr(), port)
 
@@ -241,21 +254,17 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.RecvBufferPool(grpc.NewSharedBufferPool()),
-		grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes),
-		KeepaliveEnforcementPolicy(),
+		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
+		keepaliveEnforcementPolicy(),
 	}
 }
 
-func KeepaliveEnforcementPolicy() grpc.ServerOption {
+func keepaliveEnforcementPolicy() grpc.ServerOption {
 	// Set to avoid errors: Bandwidth exhausted HTTP/2 error code: ENHANCE_YOUR_CALM Received Goaway too_many_pings
 	return grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 		MinTime:             10 * time.Second, // If a client pings more than once every 10 seconds, terminate the connection
 		PermitWithoutStream: true,             // Allow pings even when there are no active streams
 	})
-}
-
-func MaxRecvMsgSizeBytes() int {
-	return *gRPCMaxRecvMsgSizeBytes
 }
 
 type gRPCMux struct {
@@ -270,12 +279,4 @@ func (g *gRPCMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		g.HttpServeMux.ServeHTTP(w, r)
 	}
-}
-
-func GRPCPort() int {
-	return *gRPCPort
-}
-
-func GRPCSPort() int {
-	return *gRPCSPort
 }
