@@ -2407,21 +2407,16 @@ type searchPR struct {
 	Number           int
 	UpdatedAt        time.Time
 	MergeStateStatus string
-	Merged           bool
 	URL              string `graphql:"url"`
 	HeadRefName      string
 	Additions        int
 	Deletions        int
-	ChangedFiles     int
 	Repository       struct {
 		Name  string
 		Owner struct {
 			Login string
 		}
 	}
-	TimelineItems struct {
-		Nodes []timelineItem
-	} `graphql:"timelineItems(first: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, REVIEW_DISMISSED_EVENT, PULL_REQUEST_REVIEW])"`
 	ReviewRequests struct {
 		Nodes []reviewRequest
 	} `graphql:"reviewRequests(first: 100)"`
@@ -2548,14 +2543,12 @@ func issueToPullRequestProto(i *searchPR, requestedUser string) *ghpb.PullReques
 		Title:         i.Title,
 		Body:          i.Body,
 		Author:        i.Author.User.Login,
-		Url:           i.URL,
 		Owner:         i.Repository.Owner.Login,
 		Repo:          i.Repository.Name,
 		UpdatedAtUsec: i.UpdatedAt.UnixMicro(),
 		Reviews:       map[string]*ghpb.Review{},
 		Additions:     int64(i.Additions),
 		Deletions:     int64(i.Deletions),
-		ChangedFiles:  int64(i.ChangedFiles),
 		Mergeable:     i.MergeStateStatus == "CLEAN",
 	}
 	for _, r := range i.ReviewRequests.Nodes {
