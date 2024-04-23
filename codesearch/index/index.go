@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/postinglist"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -25,7 +25,7 @@ import (
 
 var fieldNameRegex = regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9_]*)$`)
 
-const batchFlushSizeBytes = 100_000_000 // flush batch every 100MB
+const batchFlushSizeBytes = 1_000_000_000 // flush batch every 1G
 
 type postingLists map[string][]uint64
 
@@ -198,7 +198,7 @@ func (w *Writer) flushBatch() error {
 		return nil
 	}
 	w.log.Infof("Batch size is %d", w.batch.Len())
-	if err := w.batch.Commit(pebble.Sync); err != nil {
+	if err := w.batch.Commit(pebble.NoSync); err != nil {
 		return err
 	}
 	w.log.Debugf("flushed batch")
@@ -211,15 +211,17 @@ func (w *Writer) Flush() error {
 	eg := new(errgroup.Group)
 	eg.SetLimit(runtime.GOMAXPROCS(0))
 	writePLs := func(key []byte, ids []uint64) error {
-		buf := new(bytes.Buffer)
-		pl := roaring64.BitmapOf(ids...)
-		if _, err := pl.WriteTo(buf); err != nil {
+		pl := postinglist.New(ids...)
+
+		buf, err := pl.Marshal()
+		if err != nil {
 			return err
 		}
+
 		mu.Lock()
 		defer mu.Unlock()
 		w.log.Debugf("Set %q", string(key))
-		if err := w.batch.Set(key, buf.Bytes(), nil); err != nil {
+		if err := w.batch.Set(key, buf, nil); err != nil {
 			return err
 		}
 		if w.batch.Len() >= batchFlushSizeBytes {
@@ -231,8 +233,16 @@ func (w *Writer) Flush() error {
 	}
 	for fieldName, postingLists := range w.fieldPostingLists {
 		for ngram, docIDs := range postingLists {
-			writePLs(w.postingListKey(ngram, fieldName), docIDs)
+			ngram := ngram
+			fieldName := fieldName
+			docIDs := docIDs
+			eg.Go(func() error {
+				return writePLs(w.postingListKey(ngram, fieldName), docIDs)
+			})
 		}
+	}
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 	return w.flushBatch()
 }
@@ -259,17 +269,16 @@ func (r *Reader) DumpPosting() {
 		UpperBound: []byte{math.MaxUint8},
 	})
 	defer iter.Close()
-	postingList := roaring64.New()
+	postingList := postinglist.New()
 	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
-		log.Printf("dump key: %q", iter.Key())
 		if err := k.FromBytes(iter.Key()); err != nil {
 			return
 		}
 		if k.keyType != ngramField {
 			continue
 		}
-		if _, err := postingList.ReadFrom(bytes.NewReader(iter.Value())); err != nil {
+		if _, err := postingList.Unmarshal(iter.Value()); err != nil {
 			return
 		}
 		fmt.Printf("%q: %d\n", k.NGram(), postingList.GetCardinality())
@@ -284,13 +293,13 @@ func (r *Reader) deletedDocPrefix(docID uint64) []byte {
 	return []byte(fmt.Sprintf("%s:del:%d::", r.namespace, docID))
 }
 
-func (r *Reader) allDocIDs() (*roaring64.Bitmap, error) {
+func (r *Reader) allDocIDs() (postinglist.PostingList, error) {
 	iter := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: r.storedFieldKey(0, types.DocIDField),
 		UpperBound: []byte(fmt.Sprintf("%s:doc:\xff", r.namespace)),
 	})
 	defer iter.Close()
-	resultSet := roaring64.New()
+	resultSet := postinglist.New()
 	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
 		if err := k.FromBytes(iter.Key()); err != nil {
@@ -304,13 +313,25 @@ func (r *Reader) allDocIDs() (*roaring64.Bitmap, error) {
 	return resultSet, nil
 }
 
-func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
+func (r *Reader) GetStoredDocument(docID uint64, fieldNames ...string) (types.Document, error) {
 	docIDStart := r.storedFieldKey(docID, "")
 	iter := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: docIDStart,
 		UpperBound: r.storedFieldKey(docID, "\xff"),
 	})
 	defer iter.Close()
+
+	shouldCopyField := func(fieldName string) bool {
+		if len(fieldNames) == 0 {
+			return true
+		}
+		for _, allowedFieldName := range fieldNames {
+			if allowedFieldName == fieldName {
+				return true
+			}
+		}
+		return false
+	}
 
 	fields := make(map[string]types.NamedField, 0)
 	k := key{}
@@ -322,6 +343,10 @@ func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
 			// Skip docID -- we already have it from args.
 			continue
 		}
+
+		if !shouldCopyField(k.field) {
+			continue
+		}
 		fieldVal := make([]byte, len(iter.Value()))
 		copy(fieldVal, iter.Value())
 		fields[k.field] = types.NewNamedField(types.TrigramField, k.field, fieldVal, true /*=stored*/)
@@ -330,34 +355,12 @@ func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
 	return doc, nil
 }
 
-func (r *Reader) GetStoredFieldValue(docID uint64, field string) ([]byte, error) {
-	docIDStart := r.storedFieldKey(docID, field)
-	iter := r.db.NewIter(&pebble.IterOptions{
-		LowerBound: docIDStart,
-		UpperBound: r.storedFieldKey(docID, "\xff"),
-	})
-	defer iter.Close()
-
-	k := key{}
-	for iter.First(); iter.Valid(); iter.Next() {
-		if err := k.FromBytes(iter.Key()); err != nil {
-			return nil, err
-		}
-		if k.keyType == docField && k.field == field {
-			fieldVal := make([]byte, len(iter.Value()))
-			copy(fieldVal, iter.Value())
-			return fieldVal, nil
-		}
-	}
-	return nil, status.NotFoundErrorf("doc %d (field %q) not found", docID, field)
-}
-
 // postingList looks up the set of docIDs matching the provided ngram.
 // If `field` is set to a non-empty value, matches are restricted to just the
 // specified field. Otherwise, all fields are searched.
 // If `restrict` is set to a non-empty value, matches will only be returned if
 // they are both found and also are present in the restrict set.
-func (r *Reader) postingList(ngram []byte, restrict *roaring64.Bitmap, field string) (*roaring64.Bitmap, error) {
+func (r *Reader) postingList(ngram []byte, restrict postinglist.PostingList, field string) (postinglist.PostingList, error) {
 	minKey := []byte(fmt.Sprintf("%s:gra:%s", r.namespace, ngram))
 	if field != types.AllFields {
 		minKey = []byte(fmt.Sprintf("%s:gra:%s:%s", r.namespace, ngram, field))
@@ -369,8 +372,8 @@ func (r *Reader) postingList(ngram []byte, restrict *roaring64.Bitmap, field str
 	})
 	defer iter.Close()
 
-	resultSet := roaring64.New()
-	postingList := roaring64.New()
+	resultSet := postinglist.New()
+	postingList := postinglist.New()
 
 	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
@@ -380,14 +383,13 @@ func (r *Reader) postingList(ngram []byte, restrict *roaring64.Bitmap, field str
 		if k.keyType != ngramField {
 			continue
 		}
-		if _, err := postingList.ReadFrom(bytes.NewReader(iter.Value())); err != nil {
+		if _, err := postingList.Unmarshal(iter.Value()); err != nil {
 			return nil, err
 		}
-		r.log.Infof("%q matched tok %q [%d]", ngram, iter.Key(), postingList.GetCardinality())
 		resultSet.Or(postingList)
 		postingList.Clear()
 	}
-	if !restrict.IsEmpty() {
+	if restrict.GetCardinality() > 0 {
 		resultSet.And(restrict)
 	}
 	return resultSet, nil
@@ -422,14 +424,14 @@ func qOp(expr *ast.Node) (string, error) {
 	return atomString, nil
 }
 
-func (r *Reader) postingQuery(q *ast.Node, restrict *roaring64.Bitmap) (*roaring64.Bitmap, error) {
+func (r *Reader) postingQuery(q *ast.Node, restrict postinglist.PostingList) (postinglist.PostingList, error) {
 	op, err := qOp(q)
 	if err != nil {
 		return nil, err
 	}
 	switch op {
 	case QNone:
-		return roaring64.NewBitmap(), nil
+		return postinglist.New(), nil
 	case QAll:
 		if restrict != nil && restrict.GetCardinality() > 0 {
 			return restrict, nil
@@ -445,7 +447,7 @@ func (r *Reader) postingQuery(q *ast.Node, restrict *roaring64.Bitmap) (*roaring
 		}
 		return list, nil
 	case QOr:
-		var list = new(roaring64.Bitmap)
+		list := postinglist.New()
 		for _, subQuery := range q.List()[1:] {
 			l, err := r.postingQuery(subQuery, restrict)
 			if err != nil {
@@ -478,7 +480,7 @@ func (r *Reader) postingQuery(q *ast.Node, restrict *roaring64.Bitmap) (*roaring
 	}
 }
 
-func (r *Reader) removeDeletedDocIDs(docids *roaring64.Bitmap) error {
+func (r *Reader) removeDeletedDocIDs(docids postinglist.PostingList) error {
 	if docids.GetCardinality() == 0 {
 		return nil
 	}
@@ -520,7 +522,7 @@ func (r *Reader) RawQuery(squery []byte) ([]uint64, error) {
 	}
 	r.log.Infof("Took %s to parse squery", time.Since(start))
 	start = time.Now()
-	bm, err := r.postingQuery(root, roaring64.NewBitmap())
+	bm, err := r.postingQuery(root, postinglist.New())
 	if err != nil {
 		return nil, err
 	}
