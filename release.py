@@ -169,7 +169,7 @@ def update_docker_images(images, version_tag, skip_update_latest_tag, arch_speci
 
     # OSS app
     if 'buildbuddy-app-onprem' in images:
-        push_image_for_project("flame-public/buildbuddy-app-onprem", version_tag, '//server:buildbuddy_image', skip_update_latest_tag)
+        push_image_for_project("flame-public/buildbuddy-app-onprem", version_tag, '//server/cmd/buildbuddy:buildbuddy_image', skip_update_latest_tag)
     # Enterprise app
     if 'buildbuddy-app-enterprise' in images:
         push_image_for_project("flame-public/buildbuddy-app-enterprise", 'enterprise-' + version_tag, '//enterprise/server/cmd/server:buildbuddy_image', skip_update_latest_tag)
