@@ -53,13 +53,21 @@ const (
 	RTTMillisecond = 10
 )
 
-const CASErrorMessage = "CAS expected value did not match"
+const (
+	CASErrorMessage    = "CAS expected value did not match"
+	TxnNotFoundMessage = "Transaction not found"
+)
 
 // Key constants (some of these have to be vars because of how they are made.
 var (
-	LocalPrefix     = keys.Key{localPrefixByte}
+	LocalPrefix = keys.Key{localPrefixByte}
+
+	// MetaRangePrefix is exclusively for range descriptors.
 	MetaRangePrefix = keys.Key{metaPrefixByte}
-	SystemPrefix    = keys.Key{systemPrefixByte}
+
+	// SystemPrefix is for data that should live in meta range but are not range
+	// descriptors.
+	SystemPrefix = keys.Key{systemPrefixByte}
 
 	// The last shardID that was generated.
 	LastShardIDKey = keys.MakeKey(SystemPrefix, []byte("last_shard_id"))
@@ -69,6 +77,12 @@ var (
 
 	// The last rangeID that was generated.
 	LastRangeIDKey = keys.MakeKey(SystemPrefix, []byte("last_range_id"))
+
+	// A prefix to prepend to transaction records. Transaction Records were written
+	// by the transaction coordinator when the transaction state changes. They
+	// were used to recover stuck transactions. They are different from shard-specific
+	// transaction entries written by replicas when preparing the transactions.
+	TxnRecordPrefix = keys.MakeKey(SystemPrefix, []byte("txn-record-"))
 
 	// When the cluster was created.
 	ClusterSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("cluster_setup_time"))

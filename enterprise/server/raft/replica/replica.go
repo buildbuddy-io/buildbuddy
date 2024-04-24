@@ -588,7 +588,7 @@ func (sm *Replica) PrepareTransaction(wb pebble.Batch, txid []byte, batchReq *rf
 func (sm *Replica) CommitTransaction(txid []byte) error {
 	txn, ok := sm.prepared[string(txid)]
 	if !ok {
-		return status.NotFoundErrorf("Transaction %q not found", string(txid))
+		return status.NotFoundErrorf("%s: txid=%q", constants.TxnNotFoundMessage, txid)
 	}
 	defer txn.Close()
 	delete(sm.prepared, string(txid))
@@ -623,7 +623,7 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 func (sm *Replica) RollbackTransaction(txid []byte) error {
 	txn, ok := sm.prepared[string(txid)]
 	if !ok {
-		return status.NotFoundErrorf("Transaction %q not found", string(txid))
+		return status.NotFoundErrorf("%s: txid=%q", constants.TxnNotFoundMessage, txid)
 	}
 	defer txn.Close()
 	delete(sm.prepared, string(txid))

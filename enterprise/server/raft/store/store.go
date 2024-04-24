@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -42,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
+	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/prometheus/client_golang/prometheus"
@@ -101,6 +103,7 @@ type Store struct {
 	egCancel context.CancelFunc
 
 	updateTagsWorker *updateTagsWorker
+	txnCoordinator   *txn.Coordinator
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -195,6 +198,9 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	}
 
 	s.updateTagsWorker = updateTagsWorker
+
+	txnCoordinator := txn.NewCoordinator(s, registry, apiClient, clockwork.NewRealClock())
+	s.txnCoordinator = txnCoordinator
 
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
 	if err != nil {
@@ -407,6 +413,10 @@ func (s *Store) Start() error {
 	})
 	eg.Go(func() error {
 		s.processSplitRequests(gctx)
+		return nil
+	})
+	eg.Go(func() error {
+		s.txnCoordinator.Start(gctx)
 		return nil
 	})
 
@@ -701,7 +711,7 @@ func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
 	return r, nil
 }
 
-func (s *Store) isLeader(shardID uint64) bool {
+func (s *Store) IsLeader(shardID uint64) bool {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
 	})
@@ -1387,7 +1397,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	txn := rbuilder.NewTxn().AddStatement(leftRange.GetReplicas()[0], leftBatch)
 	txn = txn.AddStatement(newRightRange.GetReplicas()[0], rightBatch)
 	txn = txn.AddStatement(mrd.GetReplicas()[0], metaBatch)
-	if err := s.sender.RunTxn(ctx, txn); err != nil {
+	if err := s.txnCoordinator.RunTxn(ctx, txn); err != nil {
 		return nil, err
 	}
 
@@ -1800,7 +1810,7 @@ func (s *Store) updateRangeDescriptor(ctx context.Context, shardID uint64, old, 
 	mrd := s.sender.GetMetaRangeDescriptor()
 	txn := rbuilder.NewTxn().AddStatement(new.GetReplicas()[0], localBatch)
 	txn = txn.AddStatement(mrd.GetReplicas()[0], metaRangeBatch)
-	return s.sender.RunTxn(ctx, txn)
+	return s.txnCoordinator.RunTxn(ctx, txn)
 }
 
 func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, shardID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {

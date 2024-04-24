@@ -270,6 +270,24 @@ message TxnResponse {
   repeated BatchCmdResponse responses = 1;
 }
 
+message TxnRecord {
+  TxnRequest txnRequest = 1;
+  enum TxnState {
+    UNKNOWN_STATE = 0;
+    // We are preparing the transactions.
+    PENDING = 1;
+    // All statements in the transactions are prepared.
+    PREPARED = 2;
+    // All statements in the transactions are either committed or rolled back.
+    COMPLETED = 3;
+  }
+  TxnState txn_state = 2;
+  // When is this record first created
+  int64 created_at_usec = 3;
+  repeated ReplicaDescriptor prepared = 4;
+  FinalizeOperation op = 5;
+}
+
 enum FinalizeOperation {
   UNKNOWN_OPERATION = 0;
   ROLLBACK = 1;
