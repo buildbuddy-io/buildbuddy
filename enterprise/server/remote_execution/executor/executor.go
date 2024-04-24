@@ -42,15 +42,12 @@ var (
 	// just repeat the last state change message after every
 	// execProgressCallbackPeriod. If this is set to 0, it is disabled.
 	execProgressCallbackPeriod = flag.Duration("executor.task_progress_publish_interval", 60*time.Second, "How often tasks should publish progress updates to the app.")
-
-	slowTaskThreshold = flag.Duration("executor.slow_task_threshold", 1*time.Hour, "Warn about tasks that take longer than this threshold.")
+	defaultTaskTimeout         = flag.Duration("executor.default_task_timeout", 8*time.Hour, "Timeout to use for tasks that do not have a timeout set explicitly.")
+	maxTaskTimeout             = flag.Duration("executor.max_task_timeout", 24*time.Hour, "Max timeout that can be requested by a task. A value <= 0 means unlimited. An error will be returned if a task requests a timeout greater than this value.")
+	slowTaskThreshold          = flag.Duration("executor.slow_task_threshold", 1*time.Hour, "Warn about tasks that take longer than this threshold.")
 )
 
 const (
-	// 7 days? Forever. This is the duration returned when no max duration
-	// has been set in the config and no timeout was set in the client
-	// request. It's basically the same as "no-timeout".
-	infiniteDuration = time.Hour * 24 * 7
 	// Allowed deadline extension for uploading action outputs.
 	// The deadline of the original request may be extended by up to this amount
 	// in order to give enough time to upload action outputs.
@@ -92,16 +89,13 @@ func timevalDuration(tv syscall.Timeval) time.Duration {
 	return time.Duration(tv.Sec)*time.Second + time.Duration(tv.Usec)*time.Microsecond
 }
 
-func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time.Duration, error) {
+func parseTimeout(timeout *durationpb.Duration) (time.Duration, error) {
 	if timeout == nil {
-		if maxDuration == 0 {
-			return infiniteDuration, nil
-		}
-		return maxDuration, nil
+		return *defaultTaskTimeout, nil
 	}
 	requestDuration := timeout.AsDuration()
-	if maxDuration != 0 && requestDuration > maxDuration {
-		return 0, status.InvalidArgumentErrorf("Specified timeout (%s) longer than allowed maximum (%s).", requestDuration, maxDuration)
+	if *maxTaskTimeout > 0 && requestDuration > *maxTaskTimeout {
+		return 0, status.InvalidArgumentErrorf("requested timeout (%s) is longer than allowed maximum (%s)", requestDuration, *maxTaskTimeout)
 	}
 	return requestDuration, nil
 }
@@ -243,16 +237,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return true, err
 	}
 	md.ExecutionStartTimestamp = timestamppb.Now()
-	maxDuration := infiniteDuration
-	if currentDeadline, ok := ctx.Deadline(); ok {
-		maxDuration = time.Until(currentDeadline)
-	}
-	execDuration, err := parseTimeout(task.GetAction().Timeout, maxDuration)
+	execTimeout, err := parseTimeout(task.GetAction().Timeout)
 	if err != nil {
 		// These errors are failure-specific. Pass through unchanged.
 		return finishWithErrFn(err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, execDuration)
+	ctx, cancel := context.WithTimeout(ctx, execTimeout)
 	defer cancel()
 
 	log.CtxDebugf(ctx, "Executing task.")
