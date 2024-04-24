@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//codesearch/query",
+        "//codesearch/result",
         "//codesearch/types",
         "//server/util/log",
         "//server/util/status",

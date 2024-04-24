@@ -177,7 +177,6 @@ func (c *CodeSearcher) parse(q string) (*reScorer, []byte, error) {
 	q = strings.Join(regexOpts, "") + q
 	c.log.Infof("parsed query: [%s]", q)
 
-	
 	syn, err := syntax.Parse(q, syntax.Perl)
 	if err != nil {
 		return nil, nil, err
