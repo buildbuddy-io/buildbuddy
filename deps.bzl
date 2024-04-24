@@ -1662,6 +1662,18 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.6.3",
     )
     go_repository(
+        name = "com_github_go_enry_go_enry_v2",
+        importpath = "github.com/go-enry/go-enry/v2",
+        sum = "h1:vbab0pcf5Yo1cHQLzbWZ+QomUh3EfEU8EiR5n7W0lnQ=",
+        version = "v2.8.7",
+    )
+    go_repository(
+        name = "com_github_go_enry_go_oniguruma",
+        importpath = "github.com/go-enry/go-oniguruma",
+        sum = "h1:k8aAMuJfMrqm/56SG2lV9Cfti6tC4x8673aHCcBk+eo=",
+        version = "v1.2.1",
+    )
+    go_repository(
         name = "com_github_go_errors_errors",
         importpath = "github.com/go-errors/errors",
         sum = "h1:J6MZopCL4uSllY1OfXM374weqZFFItUbrImctkmUxIA=",
