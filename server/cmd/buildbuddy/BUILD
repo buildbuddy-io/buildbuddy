@@ -1,6 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 # Use the go_binary rule to create an executable from our main file. Depend on
 # the static_content we created above so they are included.
@@ -40,10 +40,20 @@ container_image(
     visibility = ["//visibility:public"],
 )
 
+# The go_image below can be used to build and run the server image.
+# The container_image target just builds and tags the image without running it.
+
 go_image(
-    name = "buildbuddy_image",
+    name = "buildbuddy_go_image",
     base = ":base_image",
     binary = ":buildbuddy",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+container_image(
+    name = "buildbuddy_image",
+    base = ":buildbuddy_go_image",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
