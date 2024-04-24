@@ -1,6 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//go:image.bzl", "go_image")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
 package(default_visibility = [
@@ -109,11 +109,19 @@ container_image(
     tags = ["manual"],
 )
 
-# Build a docker image similar to the go_binary above, but use the "go_image"
-# rule from @io_bazel_rules_docker instead, which creates a docker image.
+# The go_image below can be used to build and run the server image.
+# The container_image target just builds and tags the image without running it.
+
 go_image(
-    name = "buildbuddy_image",
+    name = "buildbuddy_go_image",
     base = ":base_image",
     binary = ":buildbuddy",
     tags = ["manual"],
+)
+
+container_image(
+    name = "buildbuddy_image",
+    base = ":buildbuddy_go_image",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
