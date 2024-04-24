@@ -59,6 +59,7 @@ require (
 	github.com/dop251/goja v0.0.0-20230626124041-ba8a63e79201
 	github.com/elastic/gosigar v0.14.2
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-00010101000000-000000000000
+	github.com/go-enry/go-enry/v2 v2.8.7
 	github.com/go-faker/faker/v4 v4.0.0-beta.3
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.11.5
@@ -224,6 +225,7 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/getsentry/sentry-go v0.22.0 // indirect
 	github.com/go-chi/chi/v5 v5.0.7 // indirect
+	github.com/go-enry/go-oniguruma v1.2.1 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.6.1 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
