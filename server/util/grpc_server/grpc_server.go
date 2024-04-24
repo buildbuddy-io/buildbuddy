@@ -84,7 +84,7 @@ func (b *Builder) GetServer() *grpc.Server {
 func NewBuilder(env environment.Env, port int, ssl bool) (*Builder, error) {
 	b := &Builder{env: env, port: port, ssl: ssl}
 	if ssl && !env.GetSSLService().IsEnabled() {
-		return nil, status.InvalidArgumentError("GRPCS Server requested without SSL Service enabled")
+		return nil, status.InvalidArgumentError("GRPCS requires SSL Service")
 	}
 	b.hostPort = fmt.Sprintf("%s:%d", b.env.GetListenAddr(), b.port)
 
