@@ -1,16 +1,19 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "txnjanitor",
-    srcs = ["txnjanitor.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txnjanitor",
+    name = "txn",
+    srcs = ["txn.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
+        "//enterprise/server/raft/registry",
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
+        "//proto:raft_service_go_proto",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
@@ -18,13 +21,11 @@ go_library(
     ],
 )
 
-package(default_visibility = ["//enterprise:__subpackages__"])
-
 go_test(
-    name = "txnjanitor_test",
-    srcs = ["txnjanitor_test.go"],
+    name = "txn_test",
+    srcs = ["txn_test.go"],
     deps = [
-        ":txnjanitor",
+        ":txn",
         "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
@@ -51,3 +52,5 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

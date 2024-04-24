@@ -1,4 +1,4 @@
-package txnjanitor_test
+package txn_test
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txnjanitor"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -43,6 +43,7 @@ type fakeStore struct {
 	leaser      pebble.Leaser
 	grpcAddress string
 	apiClient   *client.APIClient
+	reg         registry.NodeRegistry
 }
 
 func localAddr(t *testing.T) string {
@@ -97,6 +98,7 @@ func newFakeStore(t *testing.T, rootDir string) *fakeStore {
 		nhid:        nodeHost.ID(),
 		grpcAddress: grpcAddress,
 		apiClient:   apiClient,
+		reg:         reg,
 	}
 	reg.AddNode(nodeHost.ID(), raftAddress, grpcAddress)
 	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
@@ -176,7 +178,8 @@ func TestRollbackPendingTxn(t *testing.T) {
 		CreatedAtUsec: clock.Now().UnixMicro(),
 	}
 
-	err = store.sender.WriteTxnRecord(ctx, txnRecord)
+	tc := txn.NewCoordinator(store, store.reg, store.apiClient, clock)
+	err = tc.WriteTxnRecord(ctx, txnRecord)
 	require.NoError(t, err)
 
 	{ // Do a DirectRead and verify the txn record exists
@@ -191,8 +194,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 		require.NoError(t, readBatch.AnyError())
 	}
 
-	tj := txnjanitor.New(store, clock)
-	err = tj.ProcessTxnRecord(ctx, txnRecord)
+	err = tc.ProcessTxnRecord(ctx, txnRecord)
 	require.NoError(t, err)
 
 	{ // Do a DirectRead and verify the txn record doesn't exist
@@ -282,8 +284,9 @@ func TestCommitPreparedTxn(t *testing.T) {
 			txnProto.GetStatements()[0].GetReplica(),
 		},
 	}
+	tc := txn.NewCoordinator(store, store.reg, store.apiClient, clock)
 
-	err = store.sender.WriteTxnRecord(ctx, txnRecord)
+	err = tc.WriteTxnRecord(ctx, txnRecord)
 	require.NoError(t, err)
 
 	{ // Do a DirectRead and verify the txn record exists
@@ -298,8 +301,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 		require.NoError(t, readBatch.AnyError())
 	}
 
-	tj := txnjanitor.New(store, clock)
-	err = tj.ProcessTxnRecord(ctx, txnRecord)
+	err = tc.ProcessTxnRecord(ctx, txnRecord)
 	require.NoError(t, err)
 
 	{ // Do a DirectRead and verify the txn record doesn't exist
@@ -351,31 +353,31 @@ func TestFetchTxnRecordsSkipRecent(t *testing.T) {
 	store := newFakeStore(t, rootDir)
 	ctx := context.Background()
 	clock := clockwork.NewFakeClock()
+	tc := txn.NewCoordinator(store, store.reg, store.apiClient, clock)
 
-	err := store.sender.WriteTxnRecord(ctx, &rfpb.TxnRecord{
+	err := tc.WriteTxnRecord(ctx, &rfpb.TxnRecord{
 		TxnRequest:    &rfpb.TxnRequest{TransactionId: []byte("a")},
 		CreatedAtUsec: clock.Now().Add(-15 * time.Second).UnixMicro(),
 	})
 	require.NoError(t, err)
-	err = store.sender.WriteTxnRecord(ctx, &rfpb.TxnRecord{
+	err = tc.WriteTxnRecord(ctx, &rfpb.TxnRecord{
 		TxnRequest:    &rfpb.TxnRequest{TransactionId: []byte("b")},
 		CreatedAtUsec: clock.Now().Add(-10 * time.Second).UnixMicro(),
 	})
 	require.NoError(t, err)
-	err = store.sender.WriteTxnRecord(ctx, &rfpb.TxnRecord{
+	err = tc.WriteTxnRecord(ctx, &rfpb.TxnRecord{
 		TxnRequest:    &rfpb.TxnRequest{TransactionId: []byte("c")},
 		CreatedAtUsec: clock.Now().Add(-5 * time.Second).UnixMicro(),
 	})
 	require.NoError(t, err)
-	err = store.sender.WriteTxnRecord(ctx, &rfpb.TxnRecord{
+	err = tc.WriteTxnRecord(ctx, &rfpb.TxnRecord{
 		TxnRequest:    &rfpb.TxnRequest{TransactionId: []byte("d")},
 		CreatedAtUsec: clock.Now().UnixMicro(),
 	})
 	require.NoError(t, err)
 
 	clock.Advance(6 * time.Second)
-	tj := txnjanitor.New(store, clock)
-	txnRecords, err := tj.FetchTxnRecords(ctx)
+	txnRecords, err := tc.FetchTxnRecords(ctx)
 	gotTxnIDs := make([][]byte, 0, 3)
 	for _, txnRecord := range txnRecords {
 		gotTxnIDs = append(gotTxnIDs, txnRecord.GetTxnRequest().GetTransactionId())
