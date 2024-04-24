@@ -2,6 +2,8 @@ common --noenable_bzlmod
 common --lockfile_mode=update
 
 common --enable_platform_specific_config=true
+# TODO(http://go/b/3325): re-enable after bazel 7.2.0
+common --experimental_worker_for_repo_fetching=off
 
 # Skymeld merges the analysis phase and execution phase.
 # This allows build and test executions to start before the analysis phase finishes,
