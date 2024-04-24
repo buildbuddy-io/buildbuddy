@@ -34,7 +34,7 @@ type IStore interface {
 	Sender() *sender.Sender
 }
 
-type TxnCoordinator struct {
+type Coordinator struct {
 	store IStore
 	// Keeps track of which raft nodes live on which machines.
 	nodeRegistry registry.NodeRegistry
@@ -43,8 +43,8 @@ type TxnCoordinator struct {
 	clock     clockwork.Clock
 }
 
-func NewCoordinator(store IStore, reg registry.NodeRegistry, apiClient *client.APIClient, clock clockwork.Clock) *TxnCoordinator {
-	return &TxnCoordinator{
+func NewCoordinator(store IStore, reg registry.NodeRegistry, apiClient *client.APIClient, clock clockwork.Clock) *Coordinator {
+	return &Coordinator{
 		store:        store,
 		nodeRegistry: reg,
 		apiClient:    apiClient,
@@ -52,11 +52,11 @@ func NewCoordinator(store IStore, reg registry.NodeRegistry, apiClient *client.A
 	}
 }
 
-func (tc *TxnCoordinator) sender() *sender.Sender {
+func (tc *Coordinator) sender() *sender.Sender {
 	return tc.store.Sender()
 }
 
-func (tc *TxnCoordinator) getClientForReplicaDescriptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
+func (tc *Coordinator) getClientForReplicaDescriptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
 	addr, _, err := tc.nodeRegistry.ResolveGRPC(rd.GetShardId(), rd.GetReplicaId())
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (tc *TxnCoordinator) getClientForReplicaDescriptor(ctx context.Context, rd 
 	return tc.apiClient.Get(ctx, addr)
 }
 
-func (tc *TxnCoordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
+func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 	txnProto, err := txn.ToProto()
 	if err != nil {
 		return err
@@ -155,7 +155,7 @@ func (tc *TxnCoordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) 
 	return nil
 }
 
-func (tc *TxnCoordinator) DeleteTxnRecord(ctx context.Context, txnID []byte) error {
+func (tc *Coordinator) DeleteTxnRecord(ctx context.Context, txnID []byte) error {
 	key := keys.MakeKey(constants.TxnRecordPrefix, txnID)
 	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
 		Key: key,
@@ -170,7 +170,7 @@ func (tc *TxnCoordinator) DeleteTxnRecord(ctx context.Context, txnID []byte) err
 	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
 }
 
-func (tc *TxnCoordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
+func (tc *Coordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
 	key := keys.MakeKey(constants.TxnRecordPrefix, txnRecord.GetTxnRequest().GetTransactionId())
 	buf, err := proto.Marshal(txnRecord)
 	if err != nil {
@@ -192,7 +192,7 @@ func (tc *TxnCoordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.Tx
 	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
 }
 
-func (tc *TxnCoordinator) FinalizeTxn(ctx context.Context, txnID []byte, op rfpb.FinalizeOperation, replica *rfpb.ReplicaDescriptor) error {
+func (tc *Coordinator) FinalizeTxn(ctx context.Context, txnID []byte, op rfpb.FinalizeOperation, replica *rfpb.ReplicaDescriptor) error {
 	batch := rbuilder.NewBatchBuilder().SetTransactionID(txnID)
 	batch.SetFinalizeOperation(op)
 
@@ -219,7 +219,7 @@ func (tc *TxnCoordinator) FinalizeTxn(ctx context.Context, txnID []byte, op rfpb
 	return rsp.AnyError()
 }
 
-func (tj *TxnCoordinator) Start(ctx context.Context) {
+func (tj *Coordinator) Start(ctx context.Context) {
 	go func() {
 		for {
 			select {
@@ -235,7 +235,7 @@ func (tj *TxnCoordinator) Start(ctx context.Context) {
 	}()
 }
 
-func (tc *TxnCoordinator) processTxnRecords(ctx context.Context) error {
+func (tc *Coordinator) processTxnRecords(ctx context.Context) error {
 	if !tc.store.IsLeader(constants.InitialShardID) {
 		return nil
 	}
@@ -253,7 +253,7 @@ func (tc *TxnCoordinator) processTxnRecords(ctx context.Context) error {
 	return nil
 }
 
-func (tc *TxnCoordinator) FetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, error) {
+func (tc *Coordinator) FetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, error) {
 	start, end := keys.Range(constants.TxnRecordPrefix)
 
 	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
@@ -301,7 +301,7 @@ func isTxnNotFoundError(err error) bool {
 	return status.IsNotFoundError(err) && strings.Contains(err.Error(), constants.TxnNotFoundMessage)
 }
 
-func (tc *TxnCoordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
+func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
 	txnID := txnRecord.GetTxnRequest().GetTransactionId()
 	if txnRecord.GetTxnState() == rfpb.TxnRecord_PENDING {
 		// The transaction is not fully prepared. Let's rollback all the statements.

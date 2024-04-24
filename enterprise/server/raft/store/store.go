@@ -103,7 +103,7 @@ type Store struct {
 	egCancel context.CancelFunc
 
 	updateTagsWorker *updateTagsWorker
-	txnCoordinator   *txn.TxnCoordinator
+	txnCoordinator   *txn.Coordinator
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
