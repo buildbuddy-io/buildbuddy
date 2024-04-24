@@ -57,9 +57,17 @@ type IndexWriter interface {
 }
 
 type IndexReader interface {
-	GetStoredFieldValue(docID uint64, field string) ([]byte, error)
-	GetStoredDocument(docID uint64) (Document, error)
+	GetStoredDocument(docID uint64, fieldNames ...string) (Document, error)
 	RawQuery(squery []byte) ([]uint64, error)
+}
+
+type Scorer interface {
+	Score(docs Document) float64
+}
+
+type RegionMatch struct {
+	Start int
+	End   int
 }
 
 type NamedField struct {
