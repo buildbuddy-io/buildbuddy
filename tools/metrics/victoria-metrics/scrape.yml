@@ -1,8 +1,7 @@
-# Keep in sync with tools/metrics/victoria-metrics/scrape.yml
+# Keep in sync with tools/metrics/prometheus/prometheus.yml
 
 global:
   scrape_interval: 1s
-  evaluation_interval: 1s
 
 scrape_configs:
   - job_name: buildbuddy-app

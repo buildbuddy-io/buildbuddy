@@ -11,3 +11,13 @@ datasources:
     editable: false
     jsonData:
       timeInterval: 1s
+  - name: VictoriaMetrics
+    type: prometheus
+    access: proxy
+    uid: vm
+    isDefault: false # TODO: make VM the default
+    url: http://host.docker.internal:8428
+    version: 1
+    editable: false
+    jsonData:
+      timeInterval: 1s

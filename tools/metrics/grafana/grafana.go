@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -25,6 +26,7 @@ import (
 
 var (
 	kube = flag.Bool("kube", false, "Use kubectl port-forward to point Grafana at real data.")
+	vm   = flag.Bool("vm", false, "Use VictoriaMetrics instead of Prometheus")
 
 	// Note: these flags only take effect when setting -kube=true:
 	namespace  = flag.String("namespace", "monitor-dev", "k8s namespace")
@@ -34,7 +36,9 @@ var (
 const (
 	dockerComposeDir = "tools/metrics"
 	dashboardsDir    = "tools/metrics/grafana/dashboards"
+	vmDashboardsDir  = "bazel-bin/tools/metrics/grafana/dashboards-vm"
 	normalizeScript  = "tools/metrics/process_dashboard.py"
+	dashboardsBzl    = "tools/metrics/grafana/dashboards.bzl"
 
 	grafanaAPIURL = "http://admin:admin@localhost:4500/api"
 	grafanaUIURL  = "http://localhost:4500/d/1rsE5yoGz?orgId=1&refresh=5s"
@@ -50,7 +54,8 @@ func main() {
 func run() error {
 	flag.Parse()
 	// cd to the repo root
-	if err := os.Chdir(os.Getenv("BUILD_WORKSPACE_DIRECTORY")); err != nil {
+	workspaceRoot := os.Getenv("BUILD_WORKSPACE_DIRECTORY")
+	if err := os.Chdir(workspaceRoot); err != nil {
 		return err
 	}
 	ctx := context.Background()
@@ -64,7 +69,13 @@ func run() error {
 		args := []string{"--file", "docker-compose.grafana.yml"}
 		if !*kube {
 			args = append(args, "--file", "docker-compose.redis-exporter.yml")
-			args = append(args, "--file", "docker-compose.prometheus.yml")
+			if *vm {
+				os.Setenv("DASHBOARDS_DIR", filepath.Join(workspaceRoot, vmDashboardsDir))
+				args = append(args, "--file", "docker-compose.victoria-metrics.yml")
+			} else {
+				os.Setenv("DASHBOARDS_DIR", filepath.Join(workspaceRoot, dashboardsDir))
+				args = append(args, "--file", "docker-compose.prometheus.yml")
+			}
 		}
 		args = append(args, "up")
 		// Note: CommandContext kills with SIGKILL - we don't want that since it
@@ -101,15 +112,22 @@ func run() error {
 				log.Printf("Failed to list grafana dashboards: %s", err)
 				continue
 			}
-			var dashboards []*Dashboard
+			var dashboards []DashboardMetadata
 			if err := json.Unmarshal(b, &dashboards); err != nil {
 				log.Printf("Invalid JSON in grafana response: %s", err)
 				continue
 			}
+			var fileNames []string
 			for _, d := range dashboards {
-				if err := exportNormalizedDashboard(d); err != nil {
+				fileName, err := exportNormalizedDashboard(d)
+				if err != nil {
 					log.Printf("Failed to export dashboard: %s", err)
 				}
+				fileNames = append(fileNames, fileName)
+			}
+			slices.Sort(fileNames)
+			if err := writeDashboardsBzl(fileNames); err != nil {
+				log.Printf("Failed to write %s: %s", dashboardsBzl, err)
 			}
 		}
 	})
@@ -134,55 +152,105 @@ func run() error {
 	return eg.Wait()
 }
 
-type Dashboard struct {
-	UID  string   `json:"uid"`
-	URL  string   `json:"url"`
-	Tags []string `json:"tags"`
-}
+type DashboardMetadata map[string]any
+
+type Dashboard map[string]any
 
 type DashboardResponse struct {
-	Dashboard *Dashboard `json:"dashboard"`
+	Dashboard Dashboard `json:"dashboard"`
 }
 
-func exportNormalizedDashboard(d *Dashboard) error {
-	b, err := httpGetBody(grafanaAPIURL + "/dashboards/uid/" + d.UID)
+func exportNormalizedDashboard(md DashboardMetadata) (fileName string, _ error) {
+	b, err := httpGetBody(grafanaAPIURL + "/dashboards/uid/" + md["uid"].(string))
 	if err != nil {
-		return err
+		return "", err
 	}
 	// Unmarshal the response to get the slug field (this is how we determine
 	// the JSON file name)
 	rsp := &DashboardResponse{}
 	if err := json.Unmarshal(b, rsp); err != nil {
-		return err
+		return "", err
 	}
-	var normalized bytes.Buffer
-	fileName := path.Base(d.URL) + ".json"
-	for _, t := range d.Tags {
+	d := rsp.Dashboard
+	fileName = path.Base(md["url"].(string)) + ".json"
+	for _, t := range d["tags"].([]any) {
 		// Use the existing "file:" tag as the file name if it exists, this way
 		// the file name does not have to match the dashboard title, and so we
 		// can rename dashboards without changing the file name.
-		if strings.HasPrefix(t, "file:") {
-			fileName = strings.TrimPrefix(t, "file:")
+		tag := t.(string)
+		if strings.HasPrefix(tag, "file:") {
+			fileName = strings.TrimPrefix(tag, "file:")
 			break
 		}
 	}
-	cmd := exec.Command(normalizeScript, "--name="+fileName)
-	cmd.Stdin = bytes.NewReader(b)
-	cmd.Stdout = &normalized
+	outPath := filepath.Join(dashboardsDir, fileName)
+	dashboardJSON, err := json.Marshal(d)
+	if err != nil {
+		return "", err
+	}
+	// If the dashboard already has a uid then preserve it to avoid breaking
+	// go links.
+	uid, err := existingDashboardUID(outPath)
+	if err != nil {
+		return "", err
+	}
+	processedJSON, err := processDashboard(dashboardJSON, fileName, uid)
+	if err != nil {
+		return "", err
+	}
+	if err := ensureFileContents(outPath, processedJSON); err != nil {
+		return "", err
+	}
+	return fileName, nil
+}
+
+func existingDashboardUID(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	var d Dashboard
+	if err := json.Unmarshal(b, &d); err != nil {
+		return "", err
+	}
+	if uid, ok := d["uid"]; ok {
+		return uid.(string), nil
+	}
+	return "", nil
+}
+
+func processDashboard(dashboardJSON []byte, fileName, uid string) ([]byte, error) {
+	cmd := exec.Command(normalizeScript, "--name", fileName, "--uid", uid, "--data_source_uid=prom")
+	cmd.Stdin = bytes.NewReader(dashboardJSON)
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return err
+		return nil, err
 	}
-	outPath := filepath.Join(dashboardsDir, fileName)
-	oldContent, err := os.ReadFile(outPath)
+	return buf.Bytes(), nil
+}
+
+func writeDashboardsBzl(fileNames []string) error {
+	var lines []string
+	lines = append(lines, "# This file is automatically updated by grafana.go - DO NOT EDIT")
+	lines = append(lines, "DASHBOARD_NAMES = [")
+	for _, name := range fileNames {
+		lines = append(lines, fmt.Sprintf(`    %q,`, strings.TrimSuffix(name, ".json")))
+	}
+	lines = append(lines, "]")
+	return ensureFileContents(dashboardsBzl, []byte(strings.Join(lines, "\n")+"\n"))
+}
+
+// Writes the given file contents, avoiding a file modification if the file
+// already contains the given contents.
+func ensureFileContents(path string, contents []byte) error {
+	oldContent, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-
-	// Write file only if different, to avoid updating mtime and triggering file
-	// watchers etc.
-	if oldContent == nil || !bytes.Equal(oldContent, normalized.Bytes()) {
-		return os.WriteFile(outPath, normalized.Bytes(), 0644)
+	if oldContent == nil || !bytes.Equal(oldContent, contents) {
+		return os.WriteFile(path, contents, 0644)
 	}
 	return nil
 }

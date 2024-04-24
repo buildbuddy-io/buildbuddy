@@ -10,7 +10,7 @@ services:
       - GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1s
     volumes:
       - ./grafana/provisioning/local:/etc/grafana/provisioning
-      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ${DASHBOARDS_DIR}:/var/lib/grafana/dashboards
     ports:
       - "4500:4500"
     extra_hosts:
