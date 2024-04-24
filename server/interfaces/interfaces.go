@@ -1080,6 +1080,22 @@ type MetricsCollector interface {
 	Flush(ctx context.Context) error
 }
 
+type HitTrackerManager interface {
+	Track(ctx context.Context, actionCache bool) HitTracker
+}
+
+type HitTracker interface {
+	SetExecutedActionMetadata(md *repb.ExecutedActionMetadata)	
+	TrackMiss(d *repb.Digest) error
+	TrackEmptyHit() error
+	TrackDownload(d *repb.Digest) TransferTimer
+	TrackUpload(d *repb.Digest) TransferTimer
+}
+
+type TransferTimer interface {
+	CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error
+}
+
 // A KeyValStore allows for storing ephemeral values globally.
 //
 // No guarantees are made about durability of KeyValStores -- they may be

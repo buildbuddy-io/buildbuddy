@@ -123,6 +123,7 @@ type RealEnv struct {
 	commandRunner                    interfaces.CommandRunner
 	codesearchService                interfaces.CodesearchService
 	snapshotService                  interfaces.SnapshotService
+	hitTrackerManager                interfaces.HitTrackerManager
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -732,6 +733,15 @@ func (r *RealEnv) SetCommandRunner(c interfaces.CommandRunner) {
 func (r *RealEnv) GetCodesearchService() interfaces.CodesearchService {
 	return r.codesearchService
 }
+
 func (r *RealEnv) SetCodesearchService(css interfaces.CodesearchService) {
 	r.codesearchService = css
+}
+
+func (r * RealEnv) GetHitTrackerManager() interfaces.HitTrackerManager {
+	return r.hitTrackerManager
+}
+
+func (r *RealEnv) SetHitTrackerManager(htm interfaces.HitTrackerManager) {
+	r.hitTrackerManager = htm
 }

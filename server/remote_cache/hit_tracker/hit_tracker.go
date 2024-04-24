@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -138,6 +139,41 @@ func counterField(actionCache bool, ct counterType) string {
 	}
 }
 
+type HitTrackerManager struct {
+	env                 environment.Env
+	updateExpiryChannel chan string
+}
+
+func NewHitTrackerManager(env environment.Env) *HitTrackerManager {
+	updateExpiryChannel := make(chan string)
+	go func() {
+		expiryMap := make(map[string]time.Time)
+		var iidUpdate string
+		wakeUp := time.Minute * 30
+		for {
+			select {
+			case updateExpiryChannel <- iidUpdate:
+				expiryMap[iidUpdate] = time.Now().Add(time.Minute * 30)
+			case <- time.After(wakeUp):
+				for iid, expiry := range(expiryMap) {
+					if expiry.Before(time.Now()) {
+						CleanupCacheStats(env.GetServerContext(), env, iid)
+					}
+				}
+			}
+		}
+	}()
+	return &HitTrackerManager{
+		env:                 env,
+		updateExpiryChannel: updateExpiryChannel,
+	}
+}
+
+func RegisterHitTrackerManager(realEnv *real_environment.RealEnv) error {
+	realEnv.SetHitTrackerManager(NewHitTrackerManager(realEnv))
+	return nil
+}
+
 type HitTracker struct {
 	env         environment.Env
 	c           interfaces.MetricsCollector
@@ -151,9 +187,26 @@ type HitTracker struct {
 
 	// The metadata for an executed action, may be nil
 	executedActionMetadata *repb.ExecutedActionMetadata
+
+	// The channel to inform when to update the expiry on scorecards/counters for
+	// the related invocation.
+	updateExpiryChannel chan string
 }
 
-func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
+func (h *HitTrackerManager) Track(ctx context.Context, actionCache bool) interfaces.HitTracker {
+	return &HitTracker{
+		env:             h.env,
+		c:               h.env.GetMetricsCollector(),
+		usage:           h.env.GetUsageTracker(),
+		ctx:             ctx,
+		iid:             bazel_request.GetInvocationID(ctx),
+		actionCache:     actionCache,
+		requestMetadata: bazel_request.GetRequestMetadata(ctx),
+		updateExpiryChannel: h.updateExpiryChannel,
+	}
+}
+
+func Track(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
 	return &HitTracker{
 		env:             env,
 		c:               env.GetMetricsCollector(),
@@ -503,7 +556,7 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 // dlt := ht.TrackDownload(d)
 // defer dlt.Close()
 // ... body of download logic ...
-func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
+func (h *HitTracker) TrackDownload(d *repb.Digest) interfaces.TransferTimer {
 	start := time.Now()
 	return &transferTimer{
 		h:                   h,
@@ -522,7 +575,7 @@ func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 // ult := ht.TrackUpload(d)
 // defer ult.Close()
 // ... body of download logic ...
-func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
+func (h *HitTracker) TrackUpload(d *repb.Digest) interfaces.TransferTimer {
 	start := time.Now()
 	return &transferTimer{
 		h:                   h,

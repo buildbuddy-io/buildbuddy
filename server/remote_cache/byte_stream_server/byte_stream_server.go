@@ -101,7 +101,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		return err
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
+	ht := s.env.GetHitTrackerManager().Track(ctx, false /*=ac*/)
 	if r.IsEmpty() {
 		if err := ht.TrackEmptyHit(); err != nil {
 			log.Debugf("ByteStream Read: hit tracker TrackEmptyHit error: %s", err)
@@ -384,7 +384,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 
-			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+			ht := s.env.GetHitTrackerManager().Track(ctx, false)
 
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
@@ -464,7 +464,7 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 	}, nil
 }
 
-func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht *hit_tracker.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
+func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interfaces.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
 	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
 	if err != nil {
 		return err

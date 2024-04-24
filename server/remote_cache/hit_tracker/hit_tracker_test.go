@@ -27,6 +27,8 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 	require.NoError(t, err)
 	env.SetMetricsCollector(mc)
+	err = hit_tracker.RegisterHitTrackerManager(env)
+	require.NoError(t, err)
 	actionCache := false
 	ctx := context.Background()
 	iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
@@ -43,7 +45,7 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	compressedSize := int64(123)
 	ctx = withRequestMetadata(t, ctx, rmd)
 	require.NoError(t, err)
-	ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
+	ht := env.GetHitTrackerManager().Track(ctx, actionCache)
 
 	dl := ht.TrackDownload(d)
 	dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
@@ -79,6 +81,8 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 	env.SetMetricsCollector(mc)
 	ut := &fakeUsageTracker{}
 	env.SetUsageTracker(ut)
+	err = hit_tracker.RegisterHitTrackerManager(env)
+	require.NoError(t, err)
 	ctx := context.Background()
 	iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
 
@@ -98,7 +102,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		ctx = withRequestMetadata(t, ctx, rmd)
 		require.NoError(t, err)
 		actionCache := false
-		ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
+		ht := env.GetHitTrackerManager().Track(ctx, actionCache)
 
 		dl := ht.TrackDownload(d)
 		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
@@ -127,7 +131,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		ctx = withRequestMetadata(t, ctx, rmd)
 		require.NoError(t, err)
 		actionCache := false
-		ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
+		ht := env.GetHitTrackerManager().Track(ctx, actionCache)
 
 		dl := ht.TrackDownload(d)
 		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
@@ -153,7 +157,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		ctx = withRequestMetadata(t, ctx, rmd)
 		require.NoError(t, err)
 		actionCache := true
-		ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
+		ht := env.GetHitTrackerManager().Track(ctx, actionCache)
 
 		dl := ht.TrackDownload(d)
 		dl.CloseWithBytesTransferred(d.SizeBytes, d.SizeBytes, repb.Compressor_IDENTITY, "test")
