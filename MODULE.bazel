@@ -211,6 +211,7 @@ use_repo(
     "com_github_dop251_goja",
     "com_github_elastic_gosigar",
     "com_github_firecracker_microvm_firecracker_go_sdk",
+    "com_github_go_enry_go_enry_v2",
     "com_github_go_faker_faker_v4",
     "com_github_go_git_go_git_v5",
     "com_github_go_redis_redis_extra_redisotel_v8",
