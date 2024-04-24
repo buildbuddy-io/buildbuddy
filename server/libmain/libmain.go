@@ -238,7 +238,7 @@ func registerInternalGRPCServices(env *real_environment.RealEnv) error {
 		if err = sb.Start(); err != nil {
 			return err
 		}
-		env.SetInternalGRPCSServer(b.GetServer())
+		env.SetInternalGRPCSServer(sb.GetServer())
 	}
 	return nil
 }
@@ -271,7 +271,7 @@ func registerGRPCServices(env *real_environment.RealEnv) error {
 		if err = sb.Start(); err != nil {
 			return err
 		}
-		env.SetGRPCSServer(b.GetServer())
+		env.SetGRPCSServer(sb.GetServer())
 	}
 	return nil
 }
