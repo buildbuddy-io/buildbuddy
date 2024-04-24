@@ -13,7 +13,7 @@ alias(
     tags = ["manual"],
 ) for t in [
     "base_image",  # container_image
-    "buildbuddy_image",  # go_image
+    "buildbuddy_image",  # container_image
 ]]
 
 alias(
