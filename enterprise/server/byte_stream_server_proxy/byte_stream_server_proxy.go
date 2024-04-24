@@ -14,9 +14,9 @@ import (
 )
 
 type ByteStreamServerProxy struct {
-	env          environment.Env
-	local_cache  interfaces.Cache
-	remote_cache bspb.ByteStreamClient
+	env         environment.Env
+	localCache  interfaces.Cache
+	remoteCache bspb.ByteStreamClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -29,23 +29,23 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewByteStreamServerProxy(env environment.Env) (*ByteStreamServerProxy, error) {
-	local_cache := env.GetCache()
-	if local_cache == nil {
+	localCache := env.GetCache()
+	if localCache == nil {
 		return nil, status.FailedPreconditionError("A cache is required to enable the ByteStreamServerProxy")
 	}
-	remote_cache := env.GetByteStreamClient()
-	if remote_cache == nil {
+	remoteCache := env.GetByteStreamClient()
+	if remoteCache == nil {
 		return nil, fmt.Errorf("A ByteStreamClient is required to enable ByteStreamServerProxy")
 	}
 	return &ByteStreamServerProxy{
-		env:          env,
-		local_cache:  local_cache,
-		remote_cache: remote_cache,
+		env:         env,
+		localCache:  localCache,
+		remoteCache: remoteCache,
 	}, nil
 }
 
 func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	remoteStream, err := s.remote_cache.Read(stream.Context(), req)
+	remoteStream, err := s.remoteCache.Read(stream.Context(), req)
 	if err != nil {
 		return err
 	}
@@ -57,13 +57,15 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		if err != nil {
 			return err
 		}
-		stream.Send(rsp)
+		if err = stream.Send(rsp); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
-	remote_stream, err := s.remote_cache.Write(stream.Context())
+	remoteStream, err := s.remoteCache.Write(stream.Context())
 	if err != nil {
 		return err
 	}
@@ -73,7 +75,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 			return err
 		}
 		writeDone := req.GetFinishWrite()
-		if err := remote_stream.Send(req); err != nil {
+		if err := remoteStream.Send(req); err != nil {
 			if err == io.EOF {
 				writeDone = true
 			} else {
@@ -81,7 +83,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 			}
 		}
 		if writeDone {
-			lastRsp, err := remote_stream.CloseAndRecv()
+			lastRsp, err := remoteStream.CloseAndRecv()
 			if err != nil {
 				return err
 			}
@@ -91,5 +93,5 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 }
 
 func (s *ByteStreamServerProxy) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
-	return s.remote_cache.QueryWriteStatus(ctx, req)
+	return s.remoteCache.QueryWriteStatus(ctx, req)
 }

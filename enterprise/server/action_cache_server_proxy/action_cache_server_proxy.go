@@ -13,9 +13,9 @@ import (
 )
 
 type ActionCacheServerProxy struct {
-	env          environment.Env
-	local_cache  interfaces.Cache
-	remote_cache repb.ActionCacheClient
+	env         environment.Env
+	localCache  interfaces.Cache
+	remoteCache repb.ActionCacheClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -28,27 +28,27 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, error) {
-	local_cache := env.GetCache()
-	if local_cache == nil {
+	localCache := env.GetCache()
+	if localCache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the ActionCacheServerProxy")
 	}
-	remote_cache := env.GetActionCacheClient()
-	if remote_cache == nil {
+	remoteCache := env.GetActionCacheClient()
+	if remoteCache == nil {
 		return nil, fmt.Errorf("An ActionCacheClient is required to enable the ActionCacheServerProxy")
 	}
 	return &ActionCacheServerProxy{
-		env:          env,
-		local_cache:  local_cache,
-		remote_cache: remote_cache,
+		env:         env,
+		localCache:  localCache,
+		remoteCache: remoteCache,
 	}, nil
 }
 
 // TODO(iain): don't cache these locally
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
-	return s.remote_cache.GetActionResult(ctx, req)
+	return s.remoteCache.GetActionResult(ctx, req)
 }
 
 // TODO(iain): don't cache these locally
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
-	return s.remote_cache.UpdateActionResult(ctx, req)
+	return s.remoteCache.UpdateActionResult(ctx, req)
 }

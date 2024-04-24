@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 
@@ -34,11 +33,10 @@ import (
 )
 
 var (
-	listen           = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port             = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	sslPort          = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
-	internalHTTPPort = flag.Int("internal_http_port", 0, "The port to listen for internal HTTP traffic")
-	monitoringPort   = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
+	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
@@ -67,7 +65,6 @@ func main() {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(healthChecker)
 	env.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
-	env.SetInternalHTTPMux(tracing.NewHttpServeMux(http.NewServeMux()))
 	env.SetAuthenticator(&nullauth.NullAuthenticator{})
 
 	// Configure a local cache.
@@ -112,28 +109,6 @@ func main() {
 		err := server.Shutdown(ctx)
 		return err
 	})
-
-	if *internalHTTPPort != 0 {
-		addr := fmt.Sprintf("%s:%d", *listen, *internalHTTPPort)
-		lis, err := net.Listen("tcp", addr)
-		if err != nil {
-			log.Fatalf("could not listen on internal HTTP port: %s", err)
-		}
-
-		internalHTTPServer := &http.Server{
-			Handler: env.GetInternalHTTPMux(),
-		}
-
-		env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-			err := internalHTTPServer.Shutdown(ctx)
-			return err
-		})
-
-		go func() {
-			log.Debugf("Listening for internal HTTP traffic on %s", addr)
-			_ = internalHTTPServer.Serve(lis)
-		}()
-	}
 
 	if env.GetSSLService().IsEnabled() {
 		tlsConfig, sslHandler := env.GetSSLService().ConfigureTLS(server.Handler)

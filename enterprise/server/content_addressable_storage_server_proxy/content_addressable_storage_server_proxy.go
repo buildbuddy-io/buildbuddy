@@ -14,9 +14,9 @@ import (
 )
 
 type CASServerProxy struct {
-	env          environment.Env
-	local_cache  interfaces.Cache
-	remote_cache repb.ContentAddressableStorageClient
+	env         environment.Env
+	localCache  interfaces.Cache
+	remoteCache repb.ContentAddressableStorageClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -29,35 +29,35 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewCASServerProxy(env environment.Env) (*CASServerProxy, error) {
-	local_cache := env.GetCache()
-	if local_cache == nil {
+	localCache := env.GetCache()
+	if localCache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the ContentAddressableStorageServerProxy")
 	}
-	remote_cache := env.GetContentAddressableStorageClient()
-	if remote_cache == nil {
+	remoteCache := env.GetContentAddressableStorageClient()
+	if remoteCache == nil {
 		return nil, fmt.Errorf("A ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}
 	return &CASServerProxy{
-		env:          env,
-		local_cache:  local_cache,
-		remote_cache: remote_cache,
+		env:         env,
+		localCache:  localCache,
+		remoteCache: remoteCache,
 	}, nil
 }
 
 func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
-	return s.remote_cache.FindMissingBlobs(ctx, req)
+	return s.remoteCache.FindMissingBlobs(ctx, req)
 }
 
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
-	return s.remote_cache.BatchUpdateBlobs(ctx, req)
+	return s.remoteCache.BatchUpdateBlobs(ctx, req)
 }
 
 func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
-	return s.remote_cache.BatchReadBlobs(ctx, req)
+	return s.remoteCache.BatchReadBlobs(ctx, req)
 }
 
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
-	remoteStream, err := s.remote_cache.GetTree(context.Background(), req)
+	remoteStream, err := s.remoteCache.GetTree(context.Background(), req)
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,9 @@ func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAd
 		if err != nil {
 			return err
 		}
-		stream.Send(rsp)
+		if err = stream.Send(rsp); err != nil {
+			return err
+		}
 	}
 	return nil
 }
