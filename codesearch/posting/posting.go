@@ -1,23 +1,23 @@
-package postinglist
+package posting
 
 import (
 	"encoding/binary"
 	"slices"
 )
 
-type PostingList interface {
-	Or(PostingList)
-	And(PostingList)
+type List interface {
+	Or(List)
+	And(List)
 	Add(uint64)
 	Remove(uint64)
 	Marshal() ([]byte, error)
-	Unmarshal([]byte) (PostingList, error)
+	Unmarshal([]byte) (List, error)
 	GetCardinality() uint64
 	ToArray() []uint64
 	Clear()
 }
 
-func New(ids ...uint64) PostingList {
+func NewList(ids ...uint64) List {
 	if len(ids) > 0 {
 		slices.Sort(ids)
 		ids = slices.Compact(ids)
@@ -30,7 +30,7 @@ func New(ids ...uint64) PostingList {
 
 type uint64PostingList []uint64
 
-func (pl *uint64PostingList) Or(pl2 PostingList) {
+func (pl *uint64PostingList) Or(pl2 List) {
 	var l []uint64
 	l1 := *pl
 	l2 := pl2.ToArray()
@@ -52,7 +52,7 @@ func (pl *uint64PostingList) Or(pl2 PostingList) {
 	}
 	*pl = l
 }
-func (pl *uint64PostingList) And(pl2 PostingList) {
+func (pl *uint64PostingList) And(pl2 List) {
 	var l []uint64
 	l1 := *pl
 	l2 := pl2.ToArray()
@@ -92,7 +92,7 @@ func (pl *uint64PostingList) Marshal() ([]byte, error) {
 	}
 	return buf, nil
 }
-func (pl *uint64PostingList) Unmarshal(buf []byte) (PostingList, error) {
+func (pl *uint64PostingList) Unmarshal(buf []byte) (List, error) {
 	l := make([]uint64, 0)
 	for len(buf) > 0 {
 		u, n := binary.Uvarint(buf)

@@ -1,14 +1,14 @@
-package postinglist_test
+package posting_test
 
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/postinglist"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestAdd(t *testing.T) {
-	pl := postinglist.New()
+	pl := posting.NewList()
 	pl.Add(3)
 	pl.Add(3)
 	pl.Add(3)
@@ -20,11 +20,11 @@ func TestAdd(t *testing.T) {
 }
 
 func TestOr(t *testing.T) {
-	pl := postinglist.New()
+	pl := posting.NewList()
 	pl.Add(1)
 	pl.Add(2)
 
-	pl2 := postinglist.New()
+	pl2 := posting.NewList()
 	pl2.Add(3)
 	pl2.Add(4)
 
@@ -33,12 +33,12 @@ func TestOr(t *testing.T) {
 }
 
 func TestAnd(t *testing.T) {
-	pl := postinglist.New()
+	pl := posting.NewList()
 	pl.Add(1)
 	pl.Add(2)
 	pl.Add(3)
 
-	pl2 := postinglist.New()
+	pl2 := posting.NewList()
 	pl2.Add(3)
 	pl2.Add(4)
 	pl2.Add(5)
@@ -48,7 +48,7 @@ func TestAnd(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	pl := postinglist.New()
+	pl := posting.NewList()
 	pl.Add(1)
 	pl.Add(2)
 	pl.Add(3)
@@ -60,18 +60,18 @@ func TestRemove(t *testing.T) {
 }
 
 func TestAddMany(t *testing.T) {
-	pl := postinglist.New(3, 4, 5)
+	pl := posting.NewList(3, 4, 5)
 	pl.Add(1)
 	pl.Add(2)
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5}, pl.ToArray())
 }
 
 func TestMarshal(t *testing.T) {
-	pl := postinglist.New(1, 2, 3, 4, 5)
+	pl := posting.NewList(1, 2, 3, 4, 5)
 	buf, err := pl.Marshal()
 	assert.NoError(t, err)
 
-	pl2 := postinglist.New()
+	pl2 := posting.NewList()
 	_, err = pl2.Unmarshal(buf)
 	assert.NoError(t, err)
 
@@ -80,7 +80,7 @@ func TestMarshal(t *testing.T) {
 }
 
 func TestClear(t *testing.T) {
-	pl := postinglist.New(1, 2, 3, 4, 5)
+	pl := posting.NewList(1, 2, 3, 4, 5)
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5}, pl.ToArray())
 	pl.Clear()
 	assert.Equal(t, []uint64{}, pl.ToArray())

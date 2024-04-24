@@ -9,7 +9,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/index",
     visibility = ["//visibility:public"],
     deps = [
-        "//codesearch/postinglist",
+        "//codesearch/posting",
         "//codesearch/types",
         "//server/util/log",
         "//server/util/status",
