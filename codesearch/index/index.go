@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/postinglist"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -211,7 +211,7 @@ func (w *Writer) Flush() error {
 	eg := new(errgroup.Group)
 	eg.SetLimit(runtime.GOMAXPROCS(0))
 	writePLs := func(key []byte, ids []uint64) error {
-		pl := postinglist.New(ids...)
+		pl := posting.NewList(ids...)
 
 		buf, err := pl.Marshal()
 		if err != nil {
@@ -269,7 +269,7 @@ func (r *Reader) DumpPosting() {
 		UpperBound: []byte{math.MaxUint8},
 	})
 	defer iter.Close()
-	postingList := postinglist.New()
+	postingList := posting.NewList()
 	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
 		if err := k.FromBytes(iter.Key()); err != nil {
@@ -293,13 +293,13 @@ func (r *Reader) deletedDocPrefix(docID uint64) []byte {
 	return []byte(fmt.Sprintf("%s:del:%d::", r.namespace, docID))
 }
 
-func (r *Reader) allDocIDs() (postinglist.PostingList, error) {
+func (r *Reader) allDocIDs() (posting.List, error) {
 	iter := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: r.storedFieldKey(0, types.DocIDField),
 		UpperBound: []byte(fmt.Sprintf("%s:doc:\xff", r.namespace)),
 	})
 	defer iter.Close()
-	resultSet := postinglist.New()
+	resultSet := posting.NewList()
 	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
 		if err := k.FromBytes(iter.Key()); err != nil {
@@ -360,7 +360,7 @@ func (r *Reader) GetStoredDocument(docID uint64, fieldNames ...string) (types.Do
 // specified field. Otherwise, all fields are searched.
 // If `restrict` is set to a non-empty value, matches will only be returned if
 // they are both found and also are present in the restrict set.
-func (r *Reader) postingList(ngram []byte, restrict postinglist.PostingList, field string) (postinglist.PostingList, error) {
+func (r *Reader) postingList(ngram []byte, restrict posting.List, field string) (posting.List, error) {
 	minKey := []byte(fmt.Sprintf("%s:gra:%s", r.namespace, ngram))
 	if field != types.AllFields {
 		minKey = []byte(fmt.Sprintf("%s:gra:%s:%s", r.namespace, ngram, field))
@@ -372,8 +372,8 @@ func (r *Reader) postingList(ngram []byte, restrict postinglist.PostingList, fie
 	})
 	defer iter.Close()
 
-	resultSet := postinglist.New()
-	postingList := postinglist.New()
+	resultSet := posting.NewList()
+	postingList := posting.NewList()
 
 	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
@@ -424,14 +424,14 @@ func qOp(expr *ast.Node) (string, error) {
 	return atomString, nil
 }
 
-func (r *Reader) postingQuery(q *ast.Node, restrict postinglist.PostingList) (postinglist.PostingList, error) {
+func (r *Reader) postingQuery(q *ast.Node, restrict posting.List) (posting.List, error) {
 	op, err := qOp(q)
 	if err != nil {
 		return nil, err
 	}
 	switch op {
 	case QNone:
-		return postinglist.New(), nil
+		return posting.NewList(), nil
 	case QAll:
 		if restrict != nil && restrict.GetCardinality() > 0 {
 			return restrict, nil
@@ -447,7 +447,7 @@ func (r *Reader) postingQuery(q *ast.Node, restrict postinglist.PostingList) (po
 		}
 		return list, nil
 	case QOr:
-		list := postinglist.New()
+		list := posting.NewList()
 		for _, subQuery := range q.List()[1:] {
 			l, err := r.postingQuery(subQuery, restrict)
 			if err != nil {
@@ -480,7 +480,7 @@ func (r *Reader) postingQuery(q *ast.Node, restrict postinglist.PostingList) (po
 	}
 }
 
-func (r *Reader) removeDeletedDocIDs(docids postinglist.PostingList) error {
+func (r *Reader) removeDeletedDocIDs(docids posting.List) error {
 	if docids.GetCardinality() == 0 {
 		return nil
 	}
@@ -522,7 +522,7 @@ func (r *Reader) RawQuery(squery []byte) ([]uint64, error) {
 	}
 	r.log.Infof("Took %s to parse squery", time.Since(start))
 	start = time.Now()
-	bm, err := r.postingQuery(root, postinglist.New())
+	bm, err := r.postingQuery(root, posting.NewList())
 	if err != nil {
 		return nil, err
 	}
