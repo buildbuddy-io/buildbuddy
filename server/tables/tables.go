@@ -1101,7 +1101,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 					continue
 				}
 				query := fmt.Sprintf(`CREATE INDEX "%s" ON "%s" %s`, indexName, tableName, cols)
-				if (db.Dialector.Name() == mysqlDialect) {
+				if db.Dialector.Name() == mysqlDialect {
 					query = query + ", ALGORITHM=INPLACE, LOCK=NONE"
 				}
 				err := db.Exec(query).Error
