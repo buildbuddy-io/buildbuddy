@@ -218,7 +218,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 	return realEnv
 }
 
-func startInternalGRPCServer(env *real_environment.RealEnv) error {
+func startInternalGRPCServers(env *real_environment.RealEnv) error {
 	b, err := grpc_server.New(env, grpc_server.InternalGRPCPort(), false /*=ssl*/)
 	if err != nil {
 		return err
@@ -250,7 +250,7 @@ func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Se
 	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 }
 
-func startGRPCServer(env *real_environment.RealEnv) error {
+func startGRPCServers(env *real_environment.RealEnv) error {
 	b, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/)
 	if err != nil {
 		return err
@@ -394,11 +394,11 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 
-	if err := startInternalGRPCServer(env); err != nil {
+	if err := startInternalGRPCServers(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	if err := startGRPCServer(env); err != nil {
+	if err := startGRPCServers(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 
