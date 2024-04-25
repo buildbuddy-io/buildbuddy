@@ -491,3 +491,23 @@
 .pr-view .monaco-editor .cursors-layer > .cursor {
   display: none !important;
 }
+
+.pr-view .monaco-mouse-cursor-text,
+.pr-view .monaco-editor .margin-view-overlays,
+.pr-view .monaco-editor .margin-view-overlays .line-numbers {
+  cursor: pointer;
+}
+
+.line-with-comment-indicator::before {
+  content: "+";
+  background-color: #1e88e5;
+  color: #fff;
+  font-weight: bolder;
+  cursor: pointer;
+  border-radius: 4px;
+  display: inline-block;
+  text-align: center;
+  line-height: 16px;
+  width: 16px;
+  height: 16px;
+}

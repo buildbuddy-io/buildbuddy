@@ -155,7 +155,10 @@ class EditorMouseListener implements monaco.IDisposable {
 
   private disposables: monaco.IDisposable[];
   private handler: ReviewController;
+  private previousLineClick: number;
   private startLine: number;
+  private editor: monaco.editor.ICodeEditor;
+  private currentDecorations: string[];
 
   constructor(
     path: string,
@@ -169,12 +172,15 @@ class EditorMouseListener implements monaco.IDisposable {
     this.commitSha = commitSha;
     this.disposables = [];
     this.handler = handler;
+    this.previousLineClick = 0;
     this.startLine = 0;
+    this.editor = editor;
+    this.currentDecorations = [];
 
     this.disposables.push(editor.onMouseDown((e) => this.onMouseDown(e)));
     this.disposables.push(editor.onMouseUp((e) => this.onMouseUp(e)));
     this.disposables.push(editor.onMouseMove((e) => this.onMouseMove(e)));
-    this.disposables.push(editor.onMouseMove((e) => this.onMouseLeave(e)));
+    this.disposables.push(editor.onMouseLeave((e) => this.onMouseLeave(e)));
   }
 
   onMouseDown(e: monaco.editor.IEditorMouseEvent) {
@@ -185,13 +191,40 @@ class EditorMouseListener implements monaco.IDisposable {
     }
   }
 
+  setDecorations() {
+    const newDecorations: monaco.editor.IModelDeltaDecoration[] = [];
+    if (this.previousLineClick !== 0) {
+      newDecorations.push({
+        options: {
+          isWholeLine: true,
+          lineNumberClassName: "line-with-comment-indicator",
+        },
+        range: new monaco.Range(this.previousLineClick, 1, this.previousLineClick, 1),
+      });
+    }
+    this.currentDecorations = this.editor.deltaDecorations(this.currentDecorations, newDecorations);
+  }
+
   onMouseUp(e: monaco.editor.IEditorMouseEvent) {
     if (e.target.position === null) {
       this.startLine = 0;
+      this.previousLineClick = 0;
+      this.setDecorations();
     } else {
       const line = e.target.position.lineNumber;
       if (line > 0 && line === this.startLine) {
-        this.handler.startComment(this.side, this.path, this.commitSha, this.startLine);
+        if (this.previousLineClick === line) {
+          // Will need to click twice again to start a new comment.
+          this.previousLineClick = 0;
+          this.handler.startComment(this.side, this.path, this.commitSha, this.startLine);
+          this.setDecorations();
+        } else {
+          this.previousLineClick = line;
+          this.setDecorations();
+        }
+      } else {
+        this.previousLineClick = 0;
+        this.setDecorations();
       }
     }
   }
@@ -203,9 +236,11 @@ class EditorMouseListener implements monaco.IDisposable {
       this.startLine = 0;
     }
   }
-  onMouseLeave(e: monaco.editor.IEditorMouseEvent) {
+  onMouseLeave(e: monaco.editor.IPartialEditorMouseEvent) {
     // If the user's mouse drifts, don't count this as a click to add a comment.
     this.startLine = 0;
+    this.previousLineClick = 0;
+    this.setDecorations();
   }
 
   dispose() {
@@ -339,7 +374,10 @@ class MonacoDiffViewerComponent extends React.Component<
       minimap: {
         enabled: false,
       },
-      renderLineHighlight: "none",
+      renderLineHighlight: "all",
+      renderLineHighlightOnlyWhenFocus: true,
+      mouseStyle: "default",
+      occurrencesHighlight: "off",
       renderOverviewRuler: false,
       readOnly: true,
       cursorStyle: "line",
