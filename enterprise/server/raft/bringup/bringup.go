@@ -213,8 +213,9 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 		bootstrapInfo[br.GetNhid()] = br.GetGrpcAddress()
 		if len(bootstrapInfo) == len(cs.join) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			return SendStartShardRequests(ctx, nodeHost, apiClient, bootstrapInfo)
+			err = SendStartShardRequests(ctx, nodeHost, apiClient, bootstrapInfo)
+			cancel()
+			return err
 		}
 	}
 	return status.FailedPreconditionErrorf("Unable to find other join nodes: %+s", bootstrapInfo)

@@ -134,7 +134,6 @@ nogo(
     ] + staticcheck_analyzers(ANALYZERS + [
         "-SA1019",
         "-SA1029",
-        "-SA9001",
         "-ST1000",
         "-ST1003",
         "-ST1005",
