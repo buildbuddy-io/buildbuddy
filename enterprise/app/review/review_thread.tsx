@@ -102,7 +102,7 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
                 <div className="comment-author-text">{this.props.activeUsername}</div>
                 <div className="comment-timestamp">Draft</div>
               </div>
-              <div className="comment-body">
+              <div className="comment-body" id={draft.getId()}>
                 <textarea
                   disabled={this.props.disabled}
                   autoFocus

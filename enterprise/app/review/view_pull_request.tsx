@@ -15,7 +15,7 @@ import error_service from "../../../app/errors/error_service";
 import ReviewThreadComponent from "./review_thread";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
-import { CommentModel, ReviewModel, FileModel } from "./review_model";
+import { CommentModel, ReviewModel, FileModel, ThreadModel } from "./review_model";
 import Link from "../../../app/components/link/link";
 import router from "../../../app/router/router";
 import PullRequestHeaderComponent from "./pull_request_header";
@@ -290,6 +290,24 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       return;
     }
     const reviewId = this.state.reviewModel.getDraftReviewId();
+    const existingCommentsForLine = this.state.reviewModel
+      .getCommentsForFile(path, commitSha)
+      .filter((c) => c.getLine() === lineNumber);
+    const inProgressComment = existingCommentsForLine.find(
+      (c) => c.getParentCommentId() === "" && this.state.reviewModel?.isCommentInProgress(c.getId())
+    );
+    if (inProgressComment) {
+      // Focus the comment that the user already has open for editing instead
+      // of creating new empty comments ad nauseum.  Maybe a little clunky,
+      // but anxious quadruple-clicking is more common than wanting two active
+      // text areas to write comments in.
+      const el = document.querySelector(`.pr-view .monaco-editor #${inProgressComment.getId()} .comment-input`);
+      if (el) {
+        (el as HTMLElement).focus();
+        return;
+      }
+    }
+
     const newComment = CommentModel.newComment(reviewId, path, commitSha, lineNumber, side);
 
     this.setState({

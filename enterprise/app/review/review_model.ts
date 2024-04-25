@@ -1,7 +1,7 @@
 import Long from "long";
 import { github } from "../../../proto/github_ts_proto";
 
-const FAKE_ID_PREFIX = "bb-tmp/";
+const FAKE_ID_PREFIX = "bb-tmp_";
 let fakeReviewIdCounter = 0;
 function newFakeId(): string {
   fakeReviewIdCounter++;
@@ -29,6 +29,10 @@ export class CommentModel {
 
   getCommitSha(): string {
     return this.comment.commitSha;
+  }
+
+  getParentCommentId(): string {
+    return this.comment.parentCommentId;
   }
 
   getThreadId(): string {
