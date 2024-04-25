@@ -1828,6 +1828,17 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "spawn_ts_proto",
+    proto = ":spawn_proto",
+    deps = [
+        ":context_ts_proto",
+        ":duration_ts_proto",
+        ":invocation_status_ts_proto",
+        ":stat_filter_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "stat_filter_ts_proto",
     proto = ":stat_filter_proto",
 )

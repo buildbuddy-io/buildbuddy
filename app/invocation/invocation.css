@@ -941,6 +941,19 @@
   grid-gap: 8px;
 }
 
+.invocation-content-header .title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.download-exec-log-button {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  color: #888;
+}
+
 .metadata-title {
   font-weight: 600;
   color: #212121;

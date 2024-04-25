@@ -1,6 +1,7 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
 import InvocationExecutionTable from "./invocation_execution_table";
+import InvocationExecLogCardComponent from "./invocation_exec_log_card";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
@@ -189,9 +190,19 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     }
     if (!this.state.executions.length) {
       return (
-        <div className="invocation-execution-empty-state">
-          No actions remotely executed by BuildBuddy RBE for this invocation{this.props.inProgress && <span> yet</span>}
-          .
+        <div>
+          {this.props.model.getIsExecutionLogEnabled() && (
+            <InvocationExecLogCardComponent
+              inProgress={this.props.inProgress}
+              model={this.props.model}
+              search={this.props.search}
+              filter={this.props.filter}
+            />
+          )}
+          <div className="invocation-execution-empty-state">
+            No actions remotely executed by BuildBuddy RBE for this invocation
+            {this.props.inProgress && <span> yet</span>}.
+          </div>
         </div>
       );
     }
@@ -223,6 +234,14 @@ export default class ExecutionCardComponent extends React.Component<Props, State
 
     return (
       <div>
+        {this.props.model.getIsExecutionLogEnabled() && (
+          <InvocationExecLogCardComponent
+            inProgress={this.props.inProgress}
+            model={this.props.model}
+            search={this.props.search}
+            filter={this.props.filter}
+          />
+        )}
         <div className={`card expanded`}>
           <div className="content">
             <div className="invocation-content-header">

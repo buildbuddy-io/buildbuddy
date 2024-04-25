@@ -10,7 +10,6 @@ import format from "../format/format";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import capabilities from "../capabilities/capabilities";
 import TraceViewer from "../trace/trace_viewer";
 
 interface Props {
@@ -75,7 +74,9 @@ export default class InvocationTimingCardComponent extends React.Component<Props
   }
 
   getProfileFile(): build_event_stream.File | undefined {
-    return this.props.model.buildToolLogs?.log.find((log: build_event_stream.File) => log.uri);
+    return this.props.model.buildToolLogs?.log.find(
+      (log: build_event_stream.File) => log.name != "execution.log" && log.uri
+    );
   }
 
   isTimingEnabled() {
