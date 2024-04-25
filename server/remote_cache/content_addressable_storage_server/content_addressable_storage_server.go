@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"

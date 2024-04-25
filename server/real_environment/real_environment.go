@@ -738,7 +738,7 @@ func (r *RealEnv) SetCodesearchService(css interfaces.CodesearchService) {
 	r.codesearchService = css
 }
 
-func (r * RealEnv) GetHitTrackerManager() interfaces.HitTrackerManager {
+func (r *RealEnv) GetHitTrackerManager() interfaces.HitTrackerManager {
 	return r.hitTrackerManager
 }
 

@@ -1085,7 +1085,7 @@ type HitTrackerManager interface {
 }
 
 type HitTracker interface {
-	SetExecutedActionMetadata(md *repb.ExecutedActionMetadata)	
+	SetExecutedActionMetadata(md *repb.ExecutedActionMetadata)
 	TrackMiss(d *repb.Digest) error
 	TrackEmptyHit() error
 	TrackDownload(d *repb.Digest) TransferTimer

@@ -2,6 +2,7 @@ package hit_tracker
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"regexp"
@@ -23,6 +24,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/gorm"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -144,21 +146,256 @@ type HitTrackerManager struct {
 	updateExpiryChannel chan string
 }
 
+type lookupNode[K comparable, T any] struct {
+	prevKey K
+	nextKey K
+	value   T
+}
+
+type DoublyLinkedListWithKeyLookup[K comparable, V any] struct {
+	headKey K
+	tailKey K
+	m       map[K]*lookupNode[K, V]
+}
+
+// Empty returns whether or not the list is empty.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) Empty() bool {
+	return len(d.m) == 0
+}
+
+// PeekFront returns the key associated with the head node and the value stored
+// in the head node if the list is not empty, and the zero-values of K and V if
+// not. The returned bool indicates if the call succeeded.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) PeekFront() (K, V, bool) {
+	if d.Empty() {
+		return d.zeroKey(), d.zeroValue(), false
+	}
+	return d.headKey, d.m[d.headKey].value, true
+}
+
+// PeekBack returns the key associated with the tail node and the value stored
+// in the tail node if the list is not empty, and the zero-values of K and V if
+// not. The returned bool indicates if the call succeeded.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) PeekTail() (K, V, bool) {
+	if d.Empty() {
+		return d.zeroKey(), d.zeroValue(), false
+	}
+	return d.tailKey, d.m[d.tailKey].value, true
+}
+
+// Lookup looks up a value by key and returns the value, or the zero value of V
+// if the key is not found. The returned bool indicates whether or not the key
+// was found.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) Lookup(key K) (V, bool) {
+	v, ok := d.m[key]
+	if !ok {
+		return d.zeroValue(), ok
+	}
+	return v.value, ok
+}
+
+// PopFront removes the head node and returns the head key and the head value.
+// If the list is empty, it returns the zero-values of K and V. The returned
+// bool indicates whether or not the head element was successfully popped.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) PopFront() (K, V, bool) {
+	key := d.headKey
+	value, ok := d.Remove(key)
+	if !ok {
+		return d.zeroKey(), d.zeroValue(), false
+	}
+	return key, value, true
+}
+
+// PopBack removes the tail node and returns the tail key and the tail value.
+// If the list is empty, it returns the zero-values of K and V. The returned
+// bool indicates whether or not the tail element was successfully popped.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) PopBack() (K, V, bool) {
+	key := d.tailKey
+	value, ok := d.Remove(key)
+	if !ok {
+		return d.zeroKey(), d.zeroValue(), false
+	}
+	return key, value, true
+}
+
+// PushBack appends the passed value to the end of the list and sets its key to
+// the passed key, removing any value previously associated with that key from
+// the list if one exists.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) PushBack(key K, value V) {
+	if key == d.tailKey {
+		node := d.m[key]
+		node.value = value
+		return
+	}
+	node := d.removeFromInnerList(key)
+	if node == nil {
+		if d.Empty() {
+			d.headKey = key
+		}
+		d.m[key] = &lookupNode[K, V]{
+			prevKey: d.tailKey,
+			value:   value,
+		}
+	} else {
+		node.value = value
+		node.prevKey = d.tailKey
+	}
+	d.tailKey = key
+}
+
+// PushFront prepends the passed value to the start of the list and sets its key to
+// the passed key, removing any value previously associated with that key from
+// the list if one exists.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) PushFront(key K, value V) {
+	if key == d.headKey {
+		node := d.m[key]
+		node.value = value
+		return
+	}
+	node := d.removeFromInnerList(key)
+	if node == nil {
+		if d.Empty() {
+			d.tailKey = key
+		}
+		d.m[key] = &lookupNode[K, V]{
+			nextKey: d.headKey,
+			value:   value,
+		}
+	} else {
+		node.value = value
+		node.nextKey = d.headKey
+	}
+	d.headKey = key
+}
+
+// Remove removes the value at the passed key from the list, returning the value
+// that was at that key if one existed, or the zero-value of V if not. The
+// returned bool indicates whether or not a value existed at that key.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) Remove(key K) (V, bool) {
+	node := d.removeFromInnerList(key)
+	if node == nil {
+		return d.zeroValue(), false
+	}
+	delete(d.m, key)
+	return node.value, true
+}
+
+// zeroValue returns the zero-value of V. This is abstracted for readability.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) zeroValue() V {
+	var zero V
+	return zero
+}
+
+// zeroKey returns the zero-value of K. This is abstracted for readability.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) zeroKey() K {
+	var zero K
+	return zero
+}
+
+// previous returns the key and node that precede this key, if they exist, and
+// returns the zero-value of K and nil if they do not.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) previous(node *lookupNode[K, V]) (K, *lookupNode[K, V]) {
+	// check explicitly for the prevKey, as the head node's nextKey is not
+	// guaranteed valid.
+	if node.prevKey == d.tailKey {
+		// prevKey cannot be the tailKey, so prevKey is invalid and this must be the
+		// head node.
+		return d.zeroKey(), nil
+	}
+	prevNode, ok := d.m[node.prevKey]
+	if !ok {
+		// prevKey was not found in the map, so prevKey is invalid and this must be
+		// the head node.
+		return d.zeroKey(), nil
+	}
+	if d.m[prevNode.nextKey] != node {
+		// the previous node is guaranteed to not be the tail node, so its nextKey
+		// is valid. If its nextKey does not point to this node, then node.prevKey
+		// is invalid this must be the head node.
+		return d.zeroKey(), nil
+	}
+	return node.prevKey, prevNode
+}
+
+// next returns the key and node that follow this key, if they exist, and
+// returns the zero-value of K and nil if they do not.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) next(node *lookupNode[K, V]) (K, *lookupNode[K, V]) {
+	// check explicitly for the nextKey, as the tail node's prevKey is not
+	// guaranteed valid.
+	if node.nextKey == d.headKey {
+		// nextKey cannot be the headKey, so nextKey is invalid and this must be the
+		// tail node.
+		return d.zeroKey(), nil
+	}
+	nextNode, ok := d.m[node.nextKey]
+	if !ok {
+		// nextKey was not found in the map, so nextKey is invalid and this must be
+		// the tail node.
+		return d.zeroKey(), nil
+	}
+	if d.m[nextNode.prevKey] != node {
+		// the next node is guaranteed to not be the head node, so its prevKey
+		// is valid. If its prevKey does not point to this node, then node.nextKey
+		// is invalid this must be the tail node.
+		return d.zeroKey(), nil
+	}
+	return node.nextKey, nextNode
+}
+
+// removeFromInnerList removes the node from the inner list only, not from the
+// inner map, returning the node if it existed or nil if it did not.
+func (d *DoublyLinkedListWithKeyLookup[K, V]) removeFromInnerList(key K) *lookupNode[K, V] {
+	node, ok := d.m[key]
+	if !ok {
+		return nil
+	}
+	if len(d.m) != 0 {
+		// headKey and tailKey are meaningless for an empty list, and there are no
+		// nodes to modify. Nothing to do.
+		return node
+	}
+	if _, nextNode := d.next(node); nextNode != nil {
+		nextNode.prevKey = node.prevKey
+		if key == d.headKey {
+			d.headKey = node.nextKey
+		}
+	}
+	if _, prevNode := d.previous(node); prevNode != nil {
+		prevNode.nextKey = node.nextKey
+		if key == d.tailKey {
+			d.tailKey = node.prevKey
+		}
+	}
+	return node
+}
+
+func NewDoublyLinkedListWithKeyLookup[K comparable, V any]() *DoublyLinkedListWithKeyLookup[K, V] {
+	return &DoublyLinkedListWithKeyLookup[K, V]{
+		m: make(map[K]*lookupNode[K, V]),
+	}
+}
+
 func NewHitTrackerManager(env environment.Env) *HitTrackerManager {
 	updateExpiryChannel := make(chan string)
 	go func() {
-		expiryMap := make(map[string]time.Time)
-		var iidUpdate string
-		wakeUp := time.Minute * 30
+		expiryList := NewDoublyLinkedListWithKeyLookup[string, time.Time]()
+		var iid string
+		wakeUpAt := time.Now().Add(time.Minute * 30)
 		for {
 			select {
-			case updateExpiryChannel <- iidUpdate:
-				expiryMap[iidUpdate] = time.Now().Add(time.Minute * 30)
-			case <- time.After(wakeUp):
-				for iid, expiry := range(expiryMap) {
-					if expiry.Before(time.Now()) {
-						CleanupCacheStats(env.GetServerContext(), env, iid)
-					}
+			case updateExpiryChannel <- iid:
+				expiryList.PushBack(iid, time.Now().Add(time.Minute*30))
+				_, wakeUpAt, _ = expiryList.PeekFront()
+			case <-time.After(time.Until(wakeUpAt)):
+				iid, _, ok := expiryList.PopFront()
+				if !ok {
+					// expiryList is empty
+					wakeUpAt = time.Now().Add(time.Minute * 30)
+					continue
+				}
+				_, err := env.GetInvocationDB().LookupInvocation(env.GetServerContext(), iid)
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					CleanupCacheStats(env.GetServerContext(), env, iid)
 				}
 			}
 		}
@@ -195,13 +432,13 @@ type HitTracker struct {
 
 func (h *HitTrackerManager) Track(ctx context.Context, actionCache bool) interfaces.HitTracker {
 	return &HitTracker{
-		env:             h.env,
-		c:               h.env.GetMetricsCollector(),
-		usage:           h.env.GetUsageTracker(),
-		ctx:             ctx,
-		iid:             bazel_request.GetInvocationID(ctx),
-		actionCache:     actionCache,
-		requestMetadata: bazel_request.GetRequestMetadata(ctx),
+		env:                 h.env,
+		c:                   h.env.GetMetricsCollector(),
+		usage:               h.env.GetUsageTracker(),
+		ctx:                 ctx,
+		iid:                 bazel_request.GetInvocationID(ctx),
+		actionCache:         actionCache,
+		requestMetadata:     bazel_request.GetRequestMetadata(ctx),
 		updateExpiryChannel: h.updateExpiryChannel,
 	}
 }

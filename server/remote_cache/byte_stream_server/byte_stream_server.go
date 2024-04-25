@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
