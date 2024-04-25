@@ -352,6 +352,17 @@ proto_library(
 )
 
 proto_library(
+    name = "workspace_proto",
+    srcs = [
+        "workspace.proto",
+    ],
+    deps = [
+        ":context_proto",
+        ":git_proto",
+    ],
+)
+
+proto_library(
     name = "runner_proto",
     srcs = [
         "runner.proto",
@@ -527,6 +538,7 @@ proto_library(
         ":usage_proto",
         ":user_proto",
         ":workflow_proto",
+        ":workspace_proto",
         ":zip_proto",
     ],
 )
@@ -1165,6 +1177,20 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "workspace_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/workspace",
+    proto = ":workspace_proto",
+    deps = [
+        ":context_go_proto",
+        ":git_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "raft_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
@@ -1346,6 +1372,7 @@ go_proto_library(
         ":usage_go_proto",
         ":user_go_proto",
         ":workflow_go_proto",
+        ":workspace_go_proto",
         ":zip_go_proto",
     ],
 )
@@ -1828,6 +1855,17 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "spawn_ts_proto",
+    proto = ":spawn_proto",
+    deps = [
+        ":context_ts_proto",
+        ":duration_ts_proto",
+        ":invocation_status_ts_proto",
+        ":stat_filter_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "stat_filter_ts_proto",
     proto = ":stat_filter_proto",
 )
@@ -1931,6 +1969,15 @@ ts_proto_library(
         ":git_ts_proto",
         ":grpc_status_ts_proto",
         ":invocation_status_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "workspace_ts_proto",
+    proto = ":workspace_proto",
+    deps = [
+        ":context_ts_proto",
+        ":git_ts_proto",
     ],
 )
 
@@ -2158,6 +2205,7 @@ ts_proto_library(
         ":usage_ts_proto",
         ":user_ts_proto",
         ":workflow_ts_proto",
+        ":workspace_ts_proto",
         ":zip_ts_proto",
     ],
 )
