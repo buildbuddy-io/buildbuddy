@@ -192,7 +192,6 @@ class EditorMouseListener implements monaco.IDisposable {
   }
 
   setDecorations() {
-    console.log("hi");
     const newDecorations: monaco.editor.IModelDeltaDecoration[] = [];
     if (this.previousLineClick !== 0) {
       newDecorations.push({
