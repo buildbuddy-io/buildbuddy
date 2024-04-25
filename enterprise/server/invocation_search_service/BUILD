@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
+        "//proto:stat_filter_go_proto",
         "//server/build_event_protocol/build_event_handler",
         "//server/build_event_protocol/invocation_format",
         "//server/environment",
@@ -20,7 +21,9 @@ go_library(
         "//server/util/db",
         "//server/util/filter",
         "//server/util/git",
+        "//server/util/log",
         "//server/util/perms",
+        "//server/util/proto",
         "//server/util/query_builder",
         "//server/util/status",
         "//server/util/uuid",
