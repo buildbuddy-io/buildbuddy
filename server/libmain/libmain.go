@@ -218,14 +218,65 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 	return realEnv
 }
 
-func registerInternalGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) {
+func startInternalGRPCServers(env *real_environment.RealEnv) error {
+	b, err := grpc_server.New(env, grpc_server.InternalGRPCPort(), false /*=ssl*/)
+	if err != nil {
+		return err
+	}
+	registerInternalServices(env, b.GetServer())
+	if err = b.Start(); err != nil {
+		return err
+	}
+	env.SetInternalGRPCServer(b.GetServer())
+
+	if env.GetSSLService().IsEnabled() {
+		sb, err := grpc_server.New(env, grpc_server.InternalGRPCSPort(), true /*=ssl*/)
+		if err != nil {
+			return err
+		}
+		registerInternalServices(env, sb.GetServer())
+		if err = sb.Start(); err != nil {
+			return err
+		}
+		env.SetInternalGRPCSServer(sb.GetServer())
+	}
+	return nil
+}
+
+func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	if sociArtifactStoreServer := env.GetSociArtifactStoreServer(); sociArtifactStoreServer != nil {
 		socipb.RegisterSociArtifactStoreServer(grpcServer, sociArtifactStoreServer)
 	}
 	channelzservice.RegisterChannelzServiceToServer(grpcServer)
 }
 
-func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) {
+func startGRPCServers(env *real_environment.RealEnv) error {
+	b, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/)
+	if err != nil {
+		return err
+	}
+	registerServices(env, b.GetServer())
+	if err = b.Start(); err != nil {
+		return err
+	}
+	env.SetGRPCServer(b.GetServer())
+	grpc_server.EnableGRPCOverHTTP(env, b.GetServer())
+
+	if env.GetSSLService().IsEnabled() {
+		sb, err := grpc_server.New(env, grpc_server.GRPCSPort(), true /*=ssl*/)
+		if err != nil {
+			return err
+		}
+		registerServices(env, sb.GetServer())
+		if err = sb.Start(); err != nil {
+			return err
+		}
+		env.SetGRPCSServer(sb.GetServer())
+	}
+	return nil
+}
+
+func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	// Start Build-Event-Protocol and Remote-Cache services.
 	pepb.RegisterPublishBuildEventServer(grpcServer, env.GetBuildEventServer())
 
@@ -343,16 +394,11 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 
-	if err := grpc_server.RegisterInternalGRPCServer(env, registerInternalGRPCServices); err != nil {
+	if err := startInternalGRPCServers(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := grpc_server.RegisterInternalGRPCSServer(env, registerInternalGRPCServices); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := grpc_server.RegisterGRPCServer(env, registerGRPCServices); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := grpc_server.RegisterGRPCSServer(env, registerGRPCServices); err != nil {
+
+	if err := startGRPCServers(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 
