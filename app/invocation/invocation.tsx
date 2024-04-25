@@ -421,6 +421,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
             executionsEnabled={
+              this.state.model.getIsExecutionLogEnabled() ||
               this.state.model.getIsRBEEnabled() ||
               this.state.model.isWorkflowInvocation() ||
               this.state.model.isHostedBazelInvocation()

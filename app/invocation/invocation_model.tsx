@@ -457,6 +457,13 @@ export default class InvocationModel {
     return this.getIsRBEEnabled() ? "Remote execution on" : "Remote execution off";
   }
 
+  getIsExecutionLogEnabled() {
+    return (
+      this.buildToolLogs?.log.find((l) => l.name == "execution.log" && l.uri.startsWith("bytestream://")) &&
+      this.stringCommandLineOption("remote_build_event_upload") == "all"
+    );
+  }
+
   getFetchURLs() {
     return this.fetchEventURLs;
   }
