@@ -68,28 +68,25 @@ func MaxRecvMsgSizeBytes() int {
 	return *gRPCMaxRecvMsgSizeBytes
 }
 
-type Builder struct {
-	env  environment.Env
-	port int
-	ssl  bool
-
+type GRPCServer struct {
+	env      environment.Env
 	hostPort string
 	server   *grpc.Server
 }
 
-func (b *Builder) GetServer() *grpc.Server {
+func (b *GRPCServer) GetServer() *grpc.Server {
 	return b.server
 }
 
-func NewBuilder(env environment.Env, port int, ssl bool) (*Builder, error) {
-	b := &Builder{env: env, port: port, ssl: ssl}
+func New(env environment.Env, port int, ssl bool) (*GRPCServer, error) {
+	b := &GRPCServer{env: env}
 	if ssl && !env.GetSSLService().IsEnabled() {
 		return nil, status.InvalidArgumentError("GRPCS requires SSL Service")
 	}
-	b.hostPort = fmt.Sprintf("%s:%d", b.env.GetListenAddr(), b.port)
+	b.hostPort = fmt.Sprintf("%s:%d", b.env.GetListenAddr(), port)
 
 	var credentialOption grpc.ServerOption = nil
-	if b.ssl {
+	if ssl {
 		creds, err := b.env.GetSSLService().GetGRPCSTLSCreds()
 		if err != nil {
 			return nil, status.InternalErrorf("Error getting SSL creds: %s", err)
@@ -123,7 +120,7 @@ func NewBuilder(env environment.Env, port int, ssl bool) (*Builder, error) {
 	return b, nil
 }
 
-func (b *Builder) Start() error {
+func (b *GRPCServer) Start() error {
 	lis, err := net.Listen("tcp", b.hostPort)
 	if err != nil {
 		return status.InternalErrorf("Failed to listen: %s", err)

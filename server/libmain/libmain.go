@@ -219,7 +219,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 }
 
 func registerInternalGRPCServices(env *real_environment.RealEnv) error {
-	b, err := grpc_server.NewBuilder(env, grpc_server.InternalGRPCPort(), false /*=ssl*/)
+	b, err := grpc_server.New(env, grpc_server.InternalGRPCPort(), false /*=ssl*/)
 	if err != nil {
 		return err
 	}
@@ -230,7 +230,7 @@ func registerInternalGRPCServices(env *real_environment.RealEnv) error {
 	env.SetInternalGRPCServer(b.GetServer())
 
 	if env.GetSSLService().IsEnabled() {
-		sb, err := grpc_server.NewBuilder(env, grpc_server.InternalGRPCSPort(), true /*=ssl*/)
+		sb, err := grpc_server.New(env, grpc_server.InternalGRPCSPort(), true /*=ssl*/)
 		if err != nil {
 			return err
 		}
@@ -251,7 +251,7 @@ func registerInternalServices(env *real_environment.RealEnv, grpcServer *grpc.Se
 }
 
 func registerGRPCServices(env *real_environment.RealEnv) error {
-	b, err := grpc_server.NewBuilder(env, grpc_server.GRPCPort(), false /*=ssl*/)
+	b, err := grpc_server.New(env, grpc_server.GRPCPort(), false /*=ssl*/)
 	if err != nil {
 		return err
 	}
@@ -263,7 +263,7 @@ func registerGRPCServices(env *real_environment.RealEnv) error {
 	grpc_server.EnableGRPCOverHTTP(env, b.GetServer())
 
 	if env.GetSSLService().IsEnabled() {
-		sb, err := grpc_server.NewBuilder(env, grpc_server.GRPCSPort(), true /*=ssl*/)
+		sb, err := grpc_server.New(env, grpc_server.GRPCSPort(), true /*=ssl*/)
 		if err != nil {
 			return err
 		}
