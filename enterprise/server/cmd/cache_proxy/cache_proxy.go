@@ -80,17 +80,7 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	// Add the API-Key propagating interceptors.
-	// TODO(iain): improve auth story so we can run beyond dev.
-	grpcServerConfig := grpc_server.GRPCServerConfig{
-		ExtraChainedUnaryInterceptors:  []grpc.UnaryServerInterceptor{interceptors.PropagateAPIKeyUnaryInterceptor()},
-		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{interceptors.PropagateAPIKeyStreamInterceptor()},
-	}
-
-	if err := grpc_server.RegisterGRPCServer(env, grpcServerConfig, registerGRPCServices); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := grpc_server.RegisterGRPCSServer(env, grpcServerConfig, registerGRPCServices); err != nil {
+	if err := startGRPCServers(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 
@@ -136,6 +126,34 @@ func main() {
 	}
 
 	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+func startGRPCServers(env *real_environment.RealEnv) error {
+	// Add the API-Key propagating interceptors.
+	// TODO(iain): improve auth story so we can run beyond dev.
+	grpcServerConfig := grpc_server.GRPCServerConfig{
+		ExtraChainedUnaryInterceptors:  []grpc.UnaryServerInterceptor{interceptors.PropagateAPIKeyUnaryInterceptor()},
+		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{interceptors.PropagateAPIKeyStreamInterceptor()},
+	}
+
+	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)
+	if err != nil {
+		return err
+	}
+	registerGRPCServices(s.GetServer(), env)
+	if err := s.Start(); err != nil {
+		return err
+	}
+
+	s, err = grpc_server.New(env, grpc_server.GRPCSPort(), true, grpcServerConfig)
+	if err != nil {
+		return err
+	}
+	registerGRPCServices(s.GetServer(), env)
+	if err := s.Start(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) {
