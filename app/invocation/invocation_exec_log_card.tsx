@@ -214,7 +214,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
           !l.spawn?.args.join(" ").toLowerCase().includes(this.props.filter.toLowerCase()) &&
           !l.spawn?.digest?.hash.toLowerCase().includes(this.props.filter.toLowerCase())
         ) {
-          return;
+          return false;
         }
 
         return true;
