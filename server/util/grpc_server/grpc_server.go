@@ -68,6 +68,11 @@ func MaxRecvMsgSizeBytes() int {
 	return *gRPCMaxRecvMsgSizeBytes
 }
 
+type GRPCServerConfig struct {
+	ExtraChainedUnaryInterceptors  []grpc.UnaryServerInterceptor
+	ExtraChainedStreamInterceptors []grpc.StreamServerInterceptor
+}
+
 type GRPCServer struct {
 	env      environment.Env
 	hostPort string
@@ -78,7 +83,7 @@ func (b *GRPCServer) GetServer() *grpc.Server {
 	return b.server
 }
 
-func New(env environment.Env, port int, ssl bool) (*GRPCServer, error) {
+func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRPCServer, error) {
 	b := &GRPCServer{env: env}
 	if ssl && !env.GetSSLService().IsEnabled() {
 		return nil, status.InvalidArgumentError("GRPCS requires SSL Service")
@@ -94,7 +99,7 @@ func New(env environment.Env, port int, ssl bool) (*GRPCServer, error) {
 		credentialOption = grpc.Creds(creds)
 	}
 
-	grpcOptions := CommonGRPCServerOptions(b.env)
+	grpcOptions := CommonGRPCServerOptionsWithConfig(env, config)
 	if credentialOption != nil {
 		grpcOptions = append(grpcOptions, credentialOption)
 		log.Infof("gRPCS listening on %s", b.hostPort)
@@ -212,11 +217,25 @@ func propagateRequestMetadataIDsToSpanStreamServerInterceptor() grpc.StreamServe
 }
 
 func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
+	return CommonGRPCServerOptionsWithConfig(env, GRPCServerConfig{})
+}
+
+func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerConfig) []grpc.ServerOption {
+	chainedUnaryInterceptors := []grpc.UnaryServerInterceptor{otelgrpc.UnaryServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())), propagateRequestMetadataIDsToSpanUnaryServerInterceptor()}
+	if len(config.ExtraChainedUnaryInterceptors) > 0 {
+		chainedUnaryInterceptors = append(chainedUnaryInterceptors, config.ExtraChainedUnaryInterceptors...)
+	}
+
+	chainedStreamInterceptors := []grpc.StreamServerInterceptor{otelgrpc.StreamServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())), propagateRequestMetadataIDsToSpanStreamServerInterceptor()}
+	if len(config.ExtraChainedStreamInterceptors) > 0 {
+		chainedStreamInterceptors = append(chainedStreamInterceptors, config.ExtraChainedStreamInterceptors...)
+	}
+
 	return []grpc.ServerOption{
 		interceptors.GetUnaryInterceptor(env),
 		interceptors.GetStreamInterceptor(env),
-		grpc.ChainUnaryInterceptor(otelgrpc.UnaryServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())), propagateRequestMetadataIDsToSpanUnaryServerInterceptor()),
-		grpc.ChainStreamInterceptor(otelgrpc.StreamServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())), propagateRequestMetadataIDsToSpanStreamServerInterceptor()),
+		grpc.ChainUnaryInterceptor(chainedUnaryInterceptors...),
+		grpc.ChainStreamInterceptor(chainedStreamInterceptors...),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.RecvBufferPool(grpc.NewSharedBufferPool()),
