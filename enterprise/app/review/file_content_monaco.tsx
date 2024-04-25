@@ -377,7 +377,7 @@ class MonacoDiffViewerComponent extends React.Component<
       renderLineHighlight: "all",
       renderLineHighlightOnlyWhenFocus: true,
       mouseStyle: "default",
-      occurrencesHighlight: false,
+      occurrencesHighlight: "off",
       renderOverviewRuler: false,
       readOnly: true,
       cursorStyle: "line",
