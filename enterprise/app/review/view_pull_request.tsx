@@ -159,7 +159,6 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       .createGithubPullRequestComment(req)
       .then((r) => {
         console.log(r);
-        error_service.handleError("posted!");
         if (this.state.reviewModel) {
           if (!r.comment) {
             // TODO(jdhollen): Refresh page? I dunno. This shouldn't happen.
@@ -198,7 +197,6 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       .updateGithubPullRequestComment(req)
       .then((r) => {
         console.log(r);
-        error_service.handleError("posted!");
         if (this.state.reviewModel) {
           const comment = this.state.reviewModel.getComment(commentId);
           let newModel = this.state.reviewModel;
@@ -227,7 +225,6 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       .deleteGithubPullRequestComment(req)
       .then((r) => {
         console.log(r);
-        error_service.handleError("posted!");
         if (this.state.reviewModel) {
           let newModel = this.state.reviewModel.deleteComment(commentId).removeCommentFromPending(commentId);
           this.setState({ reviewModel: newModel });
