@@ -16,6 +16,7 @@ go_library(
         "//server/remote_execution/config",
         "//server/scheduling/scheduler_server/config",
         "//server/util/flag",
+        "//server/util/log",
         "//server/util/region",
         "//server/util/status",
         "//server/util/subdomain",

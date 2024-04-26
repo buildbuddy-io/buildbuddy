@@ -149,7 +149,7 @@ message FrontendConfig {
   bool org_admin_api_key_creation_enabled = 49;
 
   // Whether the codesearch UI is enabled.
-  bool codesearch_enabled = 50;
+  bool code_search_enabled = 50;
 
   // Enables reader/writer roles in the UI.
   bool reader_writer_roles_enabled = 51;

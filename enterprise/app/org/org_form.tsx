@@ -235,6 +235,19 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             <span>Enable "Ask Buddy" button</span>
           </label>
         )}
+        {capabilities.config.codeSearchEnabled && (
+          <label className="form-row input-label">
+            <input
+              autoComplete="off"
+              onFocus={this.onFocus.bind(this)}
+              onChange={this.onChange.bind(this)}
+              type="checkbox"
+              name="codeSearchEnabled"
+              checked={request.codeSearchEnabled}
+            />
+            <span>Enable Code Search</span>
+          </label>
+        )}
         {this.showAdvancedSettings() && (
           <label className="form-row input-label">
             <input
