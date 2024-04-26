@@ -446,7 +446,13 @@
 .pr-view .review-cell.header {
   padding: 8px 32px;
   background-color: #e1f5fe;
+  display: flex;
+  align-items: center;
   font-weight: 600;
+}
+
+.pr-view .review-cell.header.button-bar {
+  justify-content: flex-end;
 }
 
 .pr-view .file-list-header {

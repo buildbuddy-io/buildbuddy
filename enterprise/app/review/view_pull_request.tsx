@@ -511,6 +511,15 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     this.setState({ draftReplyText: e.target.value });
   }
 
+  handleExpandDiffsClicked() {
+    if (this.state.displayedDiffs.length === 0) {
+      // TODO(jdhollen): Should we kill in-progress, unsaved comments here?
+      this.setState({ displayedDiffs: (this.state.reviewModel?.getFiles() ?? []).map((f) => f.getFullPath()) });
+    } else {
+      this.setState({ displayedDiffs: [] });
+    }
+  }
+
   renderReplyModal() {
     const reviewModel = this.state.reviewModel;
     if (!reviewModel) {
@@ -649,7 +658,11 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
             </div>
           </div>
           <div className="review-cell header">Files</div>
-          <div className="review-cell header"></div>
+          <div className="review-cell header button-bar">
+            <OutlinedButton className="small-button" onClick={() => this.handleExpandDiffsClicked()}>
+              {this.state.displayedDiffs.length === 0 ? "Expand diffs" : "Collapse diffs"}
+            </OutlinedButton>
+          </div>
         </div>
         <div className="file-section">
           <table>
