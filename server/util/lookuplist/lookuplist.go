@@ -10,7 +10,7 @@ type LookupNode[K comparable, V any] struct {
 
 type DoublyLinkedListWithKeyLookup[K comparable, V any] struct {
 	endpoints internal.Endpoints[K]
-	m       map[K]*internal.LookupNode[K, V]
+	m         map[K]*internal.LookupNode[K, V]
 }
 
 func NewDoublyLinkedListWithKeyLookup[K comparable, V any]() *DoublyLinkedListWithKeyLookup[K, V] {
@@ -122,7 +122,6 @@ func (d *DoublyLinkedListWithKeyLookup[K, V]) push(key K, value V, o internal.Or
 	d.endpoints.SetTailKey(key, o)
 }
 
-
 // PushBack appends the passed value to the end of the list and sets its key to
 // the passed key, removing any value previously associated with that key from
 // the list if one exists.
@@ -150,7 +149,7 @@ func (d *DoublyLinkedListWithKeyLookup[K, V]) removeFromInnerList(key K) *intern
 		// list, and there are no nodes to modify. Nothing to do.
 		return node
 	}
-	for _, o := range([]internal.Orientation{internal.Forward, internal.Reverse}) {
+	for _, o := range []internal.Orientation{internal.Forward, internal.Reverse} {
 		if key != d.endpoints.TailKey(o) {
 			// all nodes except the tail are guaranteed to have a valid prevKey
 			nextNode := d.m[node.NextKey(o)]

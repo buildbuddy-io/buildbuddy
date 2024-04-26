@@ -81,4 +81,3 @@ func (e *Endpoints[K]) SetTailKey(key K, o Orientation) {
 		e.headKey = key
 	}
 }
-

@@ -35,7 +35,7 @@ import (
 
 var (
 	detailedStatsEnabled = flag.Bool("cache.detailed_stats_enabled", false, "Whether to enable detailed stats recording for all cache requests.")
-	orphanScorecardTTL = flag.Duration("cache.orphan_scorecard_ttl", time.Minute * 30, "How long to hold on to scorecards after the last cache request if there is no related entry in the invocation database.")
+	orphanScorecardTTL   = flag.Duration("cache.orphan_scorecard_ttl", time.Minute*30, "How long to hold on to scorecards after the last cache request if there is no related entry in the invocation database.")
 
 	// Example: "GoLink(//merger:merger_test)/16f1152b7b260f690ea06f8b938a1b60712b5ee41a1c125ecad8ed9416481fbb"
 	actionRegexp = regexp.MustCompile(`^(?P<action_mnemonic>[[:alnum:]]*)\((?P<target_id>.+)\)/(?P<action_id>[[:alnum:]]+)$`)
@@ -149,10 +149,10 @@ type HitTrackerManager struct {
 }
 
 func NewHitTrackerManager(env environment.Env) *HitTrackerManager {
-	updateExpiryChannel := make(chan string)
+	updateExpiryChannel := make(chan string, 100)
 	go func() {
 		expiryList := lookuplist.NewDoublyLinkedListWithKeyLookup[string, time.Time]()
-		
+
 		// How often to wake up if the expiryList is empty. This value is completely
 		// arbitrary, and could be much longer, but it's not going to affect
 		// performance much either way.
@@ -288,6 +288,7 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Miss), 1); err != nil {
 		return err
 	}
+	defer func() { h.updateExpiryChannel <- h.iid }()
 	if *detailedStatsEnabled {
 		stats := &detailedStats{
 			Status:    Miss,
@@ -317,6 +318,7 @@ func (h *HitTracker) TrackEmptyHit() error {
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Hit), 1); err != nil {
 		return err
 	}
+	defer func() { h.updateExpiryChannel <- h.iid }()
 	if *detailedStatsEnabled {
 		emptyDigest := &repb.Digest{Hash: digest.EmptySha256}
 		stats := &detailedStats{
@@ -524,6 +526,7 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.actionCounter), 1); err != nil {
 		return err
 	}
+	defer func() { h.updateExpiryChannel <- h.iid }()
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.sizeCounter), t.d.GetSizeBytes()); err != nil {
 		return err
 	}
