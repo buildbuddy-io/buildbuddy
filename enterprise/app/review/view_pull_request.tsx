@@ -332,7 +332,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           <td className="diff-file-name">
             <Link href={router.getReviewUrl(this.props.owner, this.props.repo, +this.props.pull, path)}>{path}</Link>
           </td>
-          <td>{file.getCommentCount()}</td>
+          <td>{this.state.reviewModel?.getAllCommentsForFile(path).length}</td>
           <td>{expanded ? "Hide" : "Diff"}</td>
           <td>{file.getAdditions() + file.getDeletions()}</td>
           <td>{this.renderDiffBar(file.getAdditions(), file.getDeletions(), 0)}</td>
