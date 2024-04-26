@@ -145,3 +145,10 @@
 .big-button {
   padding: 16px 32px;
 }
+
+.small-button {
+  font-size: 14px;
+  padding: 4px 16px;
+  line-height: 14px;
+  min-height: 28px;
+}
