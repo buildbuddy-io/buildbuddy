@@ -409,6 +409,14 @@ class Router {
     return user?.selectedGroup.developerOrgCreationEnabled;
   }
 
+  canAccessCodeSearchPage(user?: User) {
+    if (!user?.canCall("search")) {
+      return false;
+    }
+
+    return user?.selectedGroup.codeSearchEnabled;
+  }
+
   canAccessOrgGitHubLinkPage(user?: User) {
     // GitHub linking does not call updateGroup, but the required permissions
     // are equivalent.

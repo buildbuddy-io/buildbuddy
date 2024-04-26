@@ -36,6 +36,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
       sharingEnabled: group.sharingEnabled,
       userOwnedKeysEnabled: group.userOwnedKeysEnabled,
       botSuggestionsEnabled: group.botSuggestionsEnabled,
+      codeSearchEnabled: group.codeSearchEnabled,
       developerOrgCreationEnabled: group.developerOrgCreationEnabled,
       useGroupOwnedExecutors: group.useGroupOwnedExecutors,
       suggestionPreference: group.suggestionPreference,
