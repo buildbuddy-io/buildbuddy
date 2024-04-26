@@ -209,7 +209,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 	}
 	realEnv.SetMetricsCollector(collector)
 
-	hit_tracker.RegisterHitTrackerManager(realEnv)
+	hit_tracker.Register(realEnv)
 
 	keyValStore, err := memory_kvstore.NewMemoryKeyValStore()
 	if err != nil {

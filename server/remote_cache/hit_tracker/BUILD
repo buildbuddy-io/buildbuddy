@@ -17,6 +17,7 @@ go_library(
         "//server/tables",
         "//server/util/bazel_request",
         "//server/util/log",
+        "//server/util/lookuplist",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/usageutil",
