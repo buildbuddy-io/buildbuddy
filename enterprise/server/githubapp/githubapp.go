@@ -2155,7 +2155,7 @@ func graphQLCommentToProto(c *reviewComment, startLine int64, endLine int64, dif
 	comment.Path = path
 	// TODO(jdhollen): This commit sha is the commit of the right hand side
 	// of the diff.  GitHub only gives us the diff hunk as a way to match
-	// the comment with the left hand side commit (). Even if the GitHub UI's
+	// the comment with the left hand side commit. Even if the GitHub UI's
 	// behavior is internally-consistent (big if, doesn't seem like it), the
 	// behavior is definitely opaque to users.  We should strive to match
 	// comments to specific commits and *always* show the comment on that
