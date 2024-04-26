@@ -36,26 +36,6 @@ interface State {
   pendingRequest: boolean;
 }
 
-interface DiffLineInfo {
-  startLine: number;
-  lineCount: number;
-}
-
-interface SourceLine {
-  source?: string;
-  lineNumber?: number;
-}
-
-interface DiffLinePair {
-  left: SourceLine;
-  right: SourceLine;
-}
-
-interface Hunk {
-  header: string;
-  lines: DiffLinePair[];
-}
-
 export default class ViewPullRequestComponent extends React.Component<ViewPullRequestComponentProps, State> {
   replyBodyTextRef: React.RefObject<HTMLTextAreaElement> = React.createRef();
   replyApprovalCheckRef: React.RefObject<HTMLInputElement> = React.createRef();
@@ -159,7 +139,6 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       .createGithubPullRequestComment(req)
       .then((r) => {
         console.log(r);
-        error_service.handleError("posted!");
         if (this.state.reviewModel) {
           if (!r.comment) {
             // TODO(jdhollen): Refresh page? I dunno. This shouldn't happen.
@@ -198,7 +177,6 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       .updateGithubPullRequestComment(req)
       .then((r) => {
         console.log(r);
-        error_service.handleError("posted!");
         if (this.state.reviewModel) {
           const comment = this.state.reviewModel.getComment(commentId);
           let newModel = this.state.reviewModel;
@@ -227,7 +205,6 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       .deleteGithubPullRequestComment(req)
       .then((r) => {
         console.log(r);
-        error_service.handleError("posted!");
         if (this.state.reviewModel) {
           let newModel = this.state.reviewModel.deleteComment(commentId).removeCommentFromPending(commentId);
           this.setState({ reviewModel: newModel });
