@@ -25,19 +25,6 @@ ts_library(
 )
 
 ts_library(
-    name = "file_content",
-    srcs = ["file_content.tsx"],
-    deps = [
-        "//enterprise/app/review:review_controller",
-        "//enterprise/app/review:review_model",
-        "//enterprise/app/review:review_thread",
-        "//proto:github_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-    ],
-)
-
-ts_library(
     name = "file_content_monaco",
     srcs = ["file_content_monaco.tsx"],
     deps = [

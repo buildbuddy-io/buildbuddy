@@ -36,26 +36,6 @@ interface State {
   pendingRequest: boolean;
 }
 
-interface DiffLineInfo {
-  startLine: number;
-  lineCount: number;
-}
-
-interface SourceLine {
-  source?: string;
-  lineNumber?: number;
-}
-
-interface DiffLinePair {
-  left: SourceLine;
-  right: SourceLine;
-}
-
-interface Hunk {
-  header: string;
-  lines: DiffLinePair[];
-}
-
 export default class ViewPullRequestComponent extends React.Component<ViewPullRequestComponentProps, State> {
   replyBodyTextRef: React.RefObject<HTMLTextAreaElement> = React.createRef();
   replyApprovalCheckRef: React.RefObject<HTMLInputElement> = React.createRef();
