@@ -5,6 +5,7 @@ load("@io_bazel_rules_go//go:def.bzl", "nogo")
 load("@npm//@bazel/typescript:index.bzl", "ts_config")
 load("//rules/go:index.bzl", "go_sdk_tool")
 
+
 package(default_visibility = ["//visibility:public"])
 
 alias(
