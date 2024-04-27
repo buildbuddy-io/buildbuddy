@@ -57,7 +57,7 @@ var (
 	popupAuthEnabled                       = flag.Bool("app.popup_auth_enabled", false, "Whether popup windows should be used for authentication.")
 	streamingHTTPEnabled                   = flag.Bool("app.streaming_http_enabled", false, "Whether to support server-streaming http requests between server and web UI.")
 	codeReviewEnabled                      = flag.Bool("app.code_review_enabled", false, "If set, show the code review UI.")
-	codesearchEnabled                      = flag.Bool("app.codesearch_enabled", false, "If set, show the code search UI.")
+	codeSearchEnabled                      = flag.Bool("app.codesearch_enabled", false, "If set, show the code search UI.")
 	orgAdminApiKeyCreationEnabled          = flag.Bool("app.org_admin_api_key_creation_enabled", false, "If set, SCIM API keys will be able to be created in the UI.")
 	readerWriterRolesEnabled               = flag.Bool("app.reader_writer_roles_enabled", false, "If set, Reader/Writer roles will be enabled in the user management UI.")
 
@@ -194,7 +194,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		PopupAuthEnabled:                       *popupAuthEnabled,
 		StreamingHttpEnabled:                   *streamingHTTPEnabled,
 		CodeReviewEnabled:                      *codeReviewEnabled,
-		CodesearchEnabled:                      *codesearchEnabled,
+		CodeSearchEnabled:                      *codeSearchEnabled,
 		OrgAdminApiKeyCreationEnabled:          *orgAdminApiKeyCreationEnabled,
 		ReaderWriterRolesEnabled:               *readerWriterRolesEnabled,
 	}

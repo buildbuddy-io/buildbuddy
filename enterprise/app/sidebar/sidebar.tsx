@@ -196,7 +196,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <span className="sidebar-item-text">Reviews</span>
             </SidebarLink>
           )}
-          {capabilities.config.codesearchEnabled && (
+          {capabilities.config.codeSearchEnabled && router.canAccessCodeSearchPage(this.props.user) && (
             <SidebarLink selected={this.isCodeSearchSelected()} href={Path.codesearchPath} title="Search">
               <SearchCode className="icon" />
               <span className="sidebar-item-text">Search</span>

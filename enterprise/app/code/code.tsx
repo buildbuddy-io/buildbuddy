@@ -191,7 +191,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       placeholder: "",
       // TODO: add debounce support
     };
-    if (capabilities.config.codesearchEnabled) {
+    if (capabilities.config.codeSearchEnabled) {
       picker.fetchOptions = async (query) => {
         // TODO: include repo info once supported
         // TODO: kick off indexing on page load

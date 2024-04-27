@@ -102,6 +102,9 @@ message Group {
   // currently authenticated user, not to
   // the group as a whole.
   repeated api_key.ApiKey.Capability allowed_user_api_key_capabilities = 18;
+
+  // Whether to enable codesearch.
+  bool code_search_enabled = 19;
 }
 
 message JoinGroupRequest {
@@ -256,6 +259,9 @@ message CreateGroupRequest {
   // Whether developers in this organization are allowed to create
   // organizations.
   bool developer_org_creation_enabled = 9;
+
+  // Whether to enable codesearch.
+  bool code_search_enabled = 10;
 }
 
 message CreateGroupResponse {
@@ -318,6 +324,9 @@ message UpdateGroupRequest {
   // Whether developers in this organization are allowed to create
   // organizations.
   bool developer_org_creation_enabled = 12;
+
+  // Whether to enable codesearch.
+  bool code_search_enabled = 13;
 }
 
 message UpdateGroupResponse {

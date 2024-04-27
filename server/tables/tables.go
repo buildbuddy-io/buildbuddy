@@ -223,6 +223,7 @@ type Group struct {
 	SharingEnabled                    bool `gorm:"default:1"`
 	UserOwnedKeysEnabled              bool `gorm:"not null;default:0"`
 	BotSuggestionsEnabled             bool `gorm:"not null;default:1"`
+	CodeSearchEnabled                 bool `gorm:"not null;default:1"`
 	DeveloperOrgCreationEnabled       bool `gorm:"not null;default:1"`
 	RestrictCleanWorkflowRunsToAdmins bool `gorm:"not null;default:0"`
 	ExternalUserManagement            bool `gorm:"not null;default:0"`

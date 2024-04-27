@@ -261,6 +261,7 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 			SharingEnabled:                    g.SharingEnabled,
 			UserOwnedKeysEnabled:              g.UserOwnedKeysEnabled,
 			BotSuggestionsEnabled:             g.BotSuggestionsEnabled,
+			CodeSearchEnabled:                 g.CodeSearchEnabled,
 			DeveloperOrgCreationEnabled:       g.DeveloperOrgCreationEnabled,
 			UseGroupOwnedExecutors:            g.UseGroupOwnedExecutors,
 			RestrictCleanWorkflowRunsToAdmins: g.RestrictCleanWorkflowRunsToAdmins,
@@ -484,6 +485,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		SharingEnabled:              req.GetSharingEnabled(),
 		UserOwnedKeysEnabled:        req.GetUserOwnedKeysEnabled(),
 		BotSuggestionsEnabled:       req.GetBotSuggestionsEnabled(),
+		CodeSearchEnabled:           req.GetCodeSearchEnabled(),
 		DeveloperOrgCreationEnabled: req.GetDeveloperOrgCreationEnabled(),
 		UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
 	}
@@ -529,6 +531,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	group.SharingEnabled = req.GetSharingEnabled()
 	group.UserOwnedKeysEnabled = req.GetUserOwnedKeysEnabled()
 	group.BotSuggestionsEnabled = req.GetBotSuggestionsEnabled()
+	group.CodeSearchEnabled = req.GetCodeSearchEnabled()
 	group.DeveloperOrgCreationEnabled = req.GetDeveloperOrgCreationEnabled()
 	group.UseGroupOwnedExecutors = req.GetUseGroupOwnedExecutors()
 	group.SuggestionPreference = req.GetSuggestionPreference()
