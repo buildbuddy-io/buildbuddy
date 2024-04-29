@@ -2312,6 +2312,8 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		if ref == "" {
 			return nil, status.InternalErrorf("Couldn't find SHA for file.")
 		}
+		// TODO(jdhollen): Put original filename here for moves.
+		summary.OriginalName = f.GetFilename()
 		summary.OriginalCommitSha = pr.BaseRefOid
 		summary.ModifiedCommitSha = pr.HeadRefOid
 		fileSummaries = append(fileSummaries, summary)
