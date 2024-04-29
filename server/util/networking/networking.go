@@ -335,10 +335,10 @@ func (a *HostNetAllocator) unlock(netIdx int) {
 //	# add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //	$ sudo ip route add 192.168.0.3 via 10.0.0.2
 func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_ func(context.Context) error, err error) {
-	// Keep a list of cleanup work to be done. For each resource we create in
-	// this func that needs to be explicitly cleaned up, we append a cleanup
-	// task to this list. Cleanup work is done in the reverse order in which
-	// it's added to this list (i.e., it's a stack).
+	// Keep a list of cleanup work to be done. This list follows a similar
+	// execution order to `defer` (LIFO order), which models the dependency
+	// ordering between cleanup tasks (if A is created before B then A should be
+	// cleaned up after B).
 	var cleanupStack []func(ctx context.Context) error
 	cleanup := func(ctx context.Context) error {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, networkingCleanupTimeout)
