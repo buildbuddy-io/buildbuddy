@@ -1,7 +1,7 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { Download, Info } from "lucide-react";
+import { Download, Info, MoreVertical } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
@@ -14,6 +14,19 @@ import TerminalComponent from "../terminal/terminal";
 import { parseActionDigest, digestToString } from "../util/cache";
 import UserPreferences from "../preferences/preferences";
 import alert_service from "../alert/alert_service";
+import Popup from "../components/popup/popup";
+import Menu, { MenuItem } from "../components/menu/menu";
+import { workflow } from "../../proto/workflow_ts_proto";
+import errorService from "../errors/error_service";
+import Dialog, {
+  DialogBody,
+  DialogFooter,
+  DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
+} from "../components/dialog/dialog";
+import Button, { OutlinedButton } from "../components/button/button";
+import Modal from "../components/modal/modal";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -35,6 +48,8 @@ interface State {
   error?: string;
   inputRoot?: build.bazel.remote.execution.v2.Directory;
   inputDirs: InputNode[];
+  isMenuOpen: boolean;
+  showInvalidateSnapshotModal: boolean;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, InputNode[]>;
   stderr?: string;
@@ -55,6 +70,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     serverLogs: [],
     inputDirs: [],
     loadingAction: true,
+    isMenuOpen: false,
+    showInvalidateSnapshotModal: false,
   };
 
   componentDidMount() {
@@ -453,6 +470,24 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  private onClickInvalidateSnapshot(snapshotKey: firecracker.SnapshotKey) {
+    rpcService.service
+      .invalidateSnapshot(
+        new workflow.InvalidateSnapshotRequest({
+          snapshotKey: snapshotKey,
+        })
+      )
+      .then(() => {
+        alert_service.success(`Successfully invalidated the VM snapshot.`);
+      })
+      .catch((e) => {
+        errorService.handleError(e);
+      })
+      .finally(() => {
+        this.setState({ showInvalidateSnapshotModal: false, isMenuOpen: false });
+      });
+  }
+
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
     const vmMetadata = this.getFirecrackerVMMetadata();
@@ -591,7 +626,59 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 {vmMetadata.snapshotId && (
                                   <>
                                     <div className="metadata-title">Saved to snapshot ID</div>
-                                    <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                    <div className="snapshot-container">
+                                      <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                      {vmMetadata.snapshotKey && (
+                                        <div className="invocation-menu-container">
+                                          <a
+                                            className="invalidate-button"
+                                            onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>
+                                            Invalidate VM snapshot
+                                          </a>
+                                          <Modal
+                                            isOpen={this.state.showInvalidateSnapshotModal}
+                                            onRequestClose={() =>
+                                              this.setState({ showInvalidateSnapshotModal: false, isMenuOpen: false })
+                                            }>
+                                            <Dialog>
+                                              <DialogHeader>
+                                                <DialogTitle>Confirm invalidate VM snapshot</DialogTitle>
+                                              </DialogHeader>
+                                              <DialogBody>
+                                                <p>
+                                                  Are you sure you want to invalidate the VM snapshot used for this
+                                                  action?
+                                                </p>
+                                                <p>
+                                                  A new VM, instead of a recycled VM, will be used for the next run of
+                                                  this action, which may result in longer execution time.
+                                                </p>
+                                              </DialogBody>
+                                              <DialogFooter>
+                                                <DialogFooterButtons>
+                                                  <OutlinedButton
+                                                    onClick={() =>
+                                                      this.setState({
+                                                        showInvalidateSnapshotModal: false,
+                                                        isMenuOpen: false,
+                                                      })
+                                                    }>
+                                                    Cancel
+                                                  </OutlinedButton>
+                                                  <Button
+                                                    onClick={this.onClickInvalidateSnapshot.bind(
+                                                      this,
+                                                      vmMetadata.snapshotKey
+                                                    )}>
+                                                    Invalidate
+                                                  </Button>
+                                                </DialogFooterButtons>
+                                              </DialogFooter>
+                                            </Dialog>
+                                          </Modal>
+                                        </div>
+                                      )}
+                                    </div>
                                   </>
                                 )}
                               </>
