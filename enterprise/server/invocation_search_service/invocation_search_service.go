@@ -37,8 +37,8 @@ const (
 )
 
 var (
-	blendedInvocationSearchEnabled = flag.Bool("app.blended_invocation_search_enabled", false, "If true, InvocationSearchService will query clickhouse *and* the regular db.")
-	olapInvocationSearchEnabled    = flag.Bool("app.olap_invocation_search_enabled", true, "If true, InvocationSearchService will query clickhouse for some queries.")
+	blendedInvocationSearchEnabled = flag.Bool("app.blended_invocation_search_enabled", false, "If true, InvocationSearchService will query clickhouse for all searches, filling in in-progress invocations from the regular DB.")
+	olapInvocationSearchEnabled    = flag.Bool("app.olap_invocation_search_enabled", true, "If true, InvocationSearchService will query clickhouse for a few impossibly slow queries (i.e., tags), but mostly use the regular DB.")
 )
 
 type InvocationSearchService struct {
