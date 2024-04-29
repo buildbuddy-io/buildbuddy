@@ -267,11 +267,11 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       return;
     }
     const reviewId = this.state.reviewModel.getDraftReviewId();
-    const existingCommentsForLine = this.state.reviewModel
-      .getCommentsForFile(path, commitSha)
-      .filter((c) => c.getLine() === lineNumber);
-    const inProgressComment = existingCommentsForLine.find(
-      (c) => c.getParentCommentId() === "" && this.state.reviewModel?.isCommentInProgress(c.getId())
+    const existingThreadsForLine = this.state.reviewModel
+      .getThreadsForFileRevision(path, commitSha, side)
+      .filter((t) => t.getLine() === lineNumber);
+    const inProgressComment = existingThreadsForLine.find(
+      (t) => t.getComments().length === 0 && this.state.reviewModel?.isCommentInProgress(t.getDraft()?.getId())
     );
     if (inProgressComment) {
       // Focus the comment that the user already has open for editing instead
@@ -332,7 +332,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           <td className="diff-file-name">
             <Link href={router.getReviewUrl(this.props.owner, this.props.repo, +this.props.pull, path)}>{path}</Link>
           </td>
-          <td>{file.getCommentCount()}</td>
+          <td>{this.state.reviewModel?.getAllCommentsForFile(path).length}</td>
           <td>{expanded ? "Hide" : "Diff"}</td>
           <td>{file.getAdditions() + file.getDeletions()}</td>
           <td>{this.renderDiffBar(file.getAdditions(), file.getDeletions(), 0)}</td>

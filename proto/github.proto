@@ -526,15 +526,29 @@ enum FileChangeType {
   // TODO(jdhollen): support more change types.
 }
 
+// A summary of the changes to a file contained in a PR.
+// All fields are computed between original and modified files as specified in
+// this message, which is not necessarily the base commit / head commit for the
+// pull request.
 message FileSummary {
   string name = 1;
-  int64 additions = 2;
-  int64 deletions = 3;
-  int64 comments = 4;
+  string modified_commit_sha = 6;
+
+  // The original name of the file, if the file moved--otherwise this will be
+  // the same as "name" above.
+  string original_name = 9;
+  string original_commit_sha = 7;
+
+  // The git-diff of modified_commit_sha and original_commit_sha for this file.
   string patch = 5;
-  string base_sha = 7;
-  string commit_sha = 6;
+  // Lines added between modified_commit_sha and original_commit_sha.
+  int64 additions = 2;
+  // Lines deleted between modified_commit_sha and original_commit_sha.
+  int64 deletions = 3;
+
   FileChangeType change_type = 8;
+
+  reserved 4;  // formerly pr-level comment count.
 }
 
 message ReviewUser {
@@ -622,6 +636,7 @@ message DeleteGithubPullRequestCommentResponse {
   context.ResponseContext response_context = 1;
 }
 
+// Next ID: 23
 message GetGithubPullRequestDetailsResponse {
   context.ResponseContext response_context = 1;
 
@@ -646,6 +661,8 @@ message GetGithubPullRequestDetailsResponse {
   int64 updated_at_usec = 15;
 
   string branch = 16;
+  string base_commit_sha = 21;
+  string head_commit_sha = 22;
 
   repeated Comment comments = 17;
 

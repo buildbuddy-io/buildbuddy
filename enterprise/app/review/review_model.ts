@@ -153,16 +153,16 @@ export class FileModel {
     return +this.file.deletions;
   }
 
-  getCommentCount(): number {
-    return +this.file.comments;
+  getOriginalFullPath(): string {
+    return this.file.originalName;
   }
 
-  getBaseSha(): string {
-    return this.file.baseSha;
+  getOriginalCommitSha(): string {
+    return this.file.originalCommitSha;
   }
 
-  getCommitSha(): string {
-    return this.file.commitSha;
+  getModifiedCommitSha(): string {
+    return this.file.modifiedCommitSha;
   }
 
   getChangeType(): github.FileChangeType {
@@ -260,6 +260,7 @@ interface State {
   pullNumber: number;
   pullId: string;
   branch: string;
+  baseCommitSha: string;
   githubUrl: string;
   viewerLogin: string;
   author: string;
@@ -357,9 +358,22 @@ export class ReviewModel {
     return this.state.comments.find((c) => c.getId() === commentId);
   }
 
-  getCommentsForFile(path: string, commitSha: string): readonly CommentModel[] {
-    // TODO(jdhollen): filter on commitSha.
+  getAllCommentsForFile(path: string): readonly CommentModel[] {
     return this.state.comments.filter((v) => v.getPath() === path);
+  }
+
+  getThreadsForFileRevision(path: string, commitSha: string, side: github.CommentSide): ThreadModel[] {
+    // First, find all comments at this rev.
+    const commentsAtCommit = this.state.comments.filter(
+      (v) => v.getPath() === path && v.getCommitSha() === commitSha && v.getSide() === side
+    );
+
+    // Then, find all comments that are part of the same threads thread so we can show them as context.
+    const threadIds = new Set<string>(commentsAtCommit.map((c) => c.getThreadId()));
+    const allCommentsInThreads = this.state.comments.filter((c) => threadIds.has(c.getThreadId()));
+
+    // Turn those comments into thread objects and spit them back as an array.
+    return [...ThreadModel.threadsFromComments(allCommentsInThreads, this.state.draftReviewId).values()];
   }
 
   getCommentsForThread(threadId: string): readonly CommentModel[] {
@@ -475,6 +489,7 @@ export class ReviewModel {
       pullNumber: +response.pull,
       pullId: response.pullId,
       branch: response.branch,
+      baseCommitSha: response.baseCommitSha,
       submitted: response.submitted,
       mergeable: response.mergeable,
       createdAtUsec: +response.createdAtUsec,

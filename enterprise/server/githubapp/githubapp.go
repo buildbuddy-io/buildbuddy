@@ -1997,7 +1997,7 @@ type prDetailsQuery struct {
 			} `graphql:"reviews(first: 100)"`
 			Commits struct {
 				Nodes []prCommit
-			} `graphql:"commits(first: 100)"`
+			} `graphql:"commits(last: 100)"`
 			// TODO(jdhollen): Fetch files here
 		} `graphql:"pullRequest(number: $pullNumber)"`
 	} `graphql:"repository(owner: $repoOwner, name: $repoName)"`
@@ -2153,6 +2153,13 @@ func graphQLCommentToProto(c *reviewComment, startLine int64, endLine int64, dif
 	comment.Id = c.Id
 	comment.Body = c.BodyText
 	comment.Path = path
+	// TODO(jdhollen): This commit sha is the commit of the right hand side
+	// of the diff.  GitHub only gives us the diff hunk as a way to match
+	// the comment with the left hand side commit. Even if the GitHub UI's
+	// behavior is internally-consistent (big if, doesn't seem like it), the
+	// behavior is definitely opaque to users.  We should strive to match
+	// comments to specific commits and *always* show the comment on that
+	// revision of the file (effectively ignoring the "side" attribute).
 	comment.CommitSha = c.OriginalCommit.Oid
 	comment.ReviewId = c.PullRequestReview.Id
 	comment.CreatedAtUsec = c.CreatedAt.UnixMicro()
@@ -2305,9 +2312,10 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		if ref == "" {
 			return nil, status.InternalErrorf("Couldn't find SHA for file.")
 		}
-		summary.BaseSha = pr.BaseRefOid
-		summary.CommitSha = pr.HeadRefOid
-		summary.Comments = fileCommentCount[f.GetFilename()]
+		// TODO(jdhollen): Put original filename here for moves.
+		summary.OriginalName = f.GetFilename()
+		summary.OriginalCommitSha = pr.BaseRefOid
+		summary.ModifiedCommitSha = pr.HeadRefOid
 		fileSummaries = append(fileSummaries, summary)
 	}
 
@@ -2381,6 +2389,8 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		CreatedAtUsec:  pr.CreatedAt.UnixMicro(),
 		UpdatedAtUsec:  pr.UpdatedAt.UnixMicro(),
 		Branch:         pr.HeadRefName,
+		BaseCommitSha:  pr.BaseRefOid,
+		HeadCommitSha:  pr.HeadRefOid,
 		Reviewers:      reviewers,
 		Files:          fileSummaries,
 		ActionStatuses: actionStatuses,

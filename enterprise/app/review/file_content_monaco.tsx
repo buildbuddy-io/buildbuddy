@@ -46,7 +46,7 @@ export default class FileContentMonacoComponent extends React.Component<
             owner: this.props.reviewModel.getOwner(),
             repo: this.props.reviewModel.getRepo(),
             path: this.props.fileModel.getFullPath(),
-            ref: this.props.fileModel.getCommitSha(),
+            ref: this.props.fileModel.getModifiedCommitSha(),
           })
         )
         .then((r) => {
@@ -70,8 +70,8 @@ export default class FileContentMonacoComponent extends React.Component<
           new github.GetGithubContentRequest({
             owner: this.props.reviewModel.getOwner(),
             repo: this.props.reviewModel.getRepo(),
-            path: this.props.fileModel.getFullPath(),
-            ref: this.props.fileModel.getBaseSha(),
+            path: this.props.fileModel.getOriginalFullPath(),
+            ref: this.props.fileModel.getOriginalCommitSha(),
           })
         )
         .then((r) => {
@@ -96,33 +96,37 @@ export default class FileContentMonacoComponent extends React.Component<
       return <div className="loading"></div>;
     }
 
-    // TODO(jdhollen): Need to get comments for both left and right side.
-    const comments = this.props.reviewModel.getCommentsForFile(
+    const originalThreads = this.props.reviewModel.getThreadsForFileRevision(
       this.props.fileModel.getFullPath(),
-      this.props.fileModel.getCommitSha()
+      this.props.fileModel.getOriginalCommitSha(),
+      github.CommentSide.RIGHT_SIDE
     );
-    const threads = ThreadModel.threadsFromComments(comments, this.props.reviewModel.getDraftReviewId());
-    const leftThreads: ThreadModel[] = [];
-    const rightThreads: ThreadModel[] = [];
-    threads.forEach((t) => {
-      if (t.getSide() === github.CommentSide.LEFT_SIDE) {
-        leftThreads.push(t);
-      } else {
-        rightThreads.push(t);
-      }
-    });
+    // TODO(jdhollen): Do work to make sure that these comments actually line up right
+    // with the selected revision.
+    originalThreads.push(
+      ...this.props.reviewModel.getThreadsForFileRevision(
+        this.props.fileModel.getFullPath(),
+        this.props.fileModel.getModifiedCommitSha(),
+        github.CommentSide.LEFT_SIDE
+      )
+    );
+    const modifiedThreads = this.props.reviewModel.getThreadsForFileRevision(
+      this.props.fileModel.getFullPath(),
+      this.props.fileModel.getModifiedCommitSha(),
+      github.CommentSide.RIGHT_SIDE
+    );
 
     return (
       <MonacoDiffViewerComponent
         handler={this.props.handler}
         originalContent={this.state.originalContent}
-        originalThreads={leftThreads}
+        originalThreads={originalThreads}
         modifiedContent={this.state.modifiedContent}
-        modifiedThreads={rightThreads}
+        modifiedThreads={modifiedThreads}
         disabled={this.props.disabled}
         path={this.props.fileModel.getFullPath()}
-        baseSha={this.props.fileModel.getBaseSha()}
-        commitSha={this.props.fileModel.getCommitSha()}
+        baseSha={this.props.fileModel.getOriginalCommitSha()}
+        commitSha={this.props.fileModel.getModifiedCommitSha()}
         reviewModel={this.props.reviewModel}></MonacoDiffViewerComponent>
     );
   }
@@ -424,7 +428,6 @@ class MonacoDiffViewerComponent extends React.Component<
     };
     editor.getOriginalEditor().onDidContentSizeChange(updateHeight);
     editor.getModifiedEditor().onDidContentSizeChange(updateHeight);
-    // TODO(jdhollen): Unregister these at the appropriate moment.
     const originalListener = new EditorMouseListener(
       this.props.path,
       github.CommentSide.LEFT_SIDE,
