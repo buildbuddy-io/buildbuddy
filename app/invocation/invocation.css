@@ -985,6 +985,22 @@
   opacity: 0.7;
 }
 
+.snapshot-container {
+  display: flex;
+  justify-content: space-between;
+}
+
+.invalidate-button {
+  font-weight: bold;
+  color: #d32f2f;
+  text-decoration: underline;
+  cursor: default;
+}
+
+.invalidate-button:hover {
+  color: #af2626;
+}
+
 .prop-name {
   color: #212121;
   font-weight: 600;
