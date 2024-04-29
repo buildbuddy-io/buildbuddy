@@ -329,6 +329,7 @@ class AutoZone {
     const zoneForMonaco: monaco.editor.IViewZone = {
       afterLineNumber: line,
       heightInLines: 10,
+      showInHiddenAreas: true,
       domNode: zoneElement,
       onDomNodeTop: (top) => {
         overlayElement.style.top = top + "px";
@@ -505,6 +506,7 @@ class MonacoDiffViewerComponent extends React.Component<
       const comments = thread.getComments();
       const draft = thread.getDraft();
 
+      // TODO(jdhollen): Make sure comments show a few lines of context
       return createPortal(
         <ReviewThreadComponent
           threadId={thread.getId()}
