@@ -163,18 +163,14 @@ func NewHitTrackerManager(env environment.Env) *HitTrackerManager {
 			if !ok {
 				wakeUpAt = time.Now().Add(emptyWakeUpPeriod)
 			}
-			log.Infof("top of loop")
 			select {
 			case iid, ok := <-updateExpiryChannel:
 				if !ok {
 					// channel closed, we're shutting down
 					break
 				}
-				log.Infof("woke up to push back")
 				expiryList.PushBack(iid, time.Now().Add(*orphanScorecardTTL))
-				log.Infof("pushed back")
 			case <-time.After(time.Until(wakeUpAt)):
-				log.Infof("woke up to timer")
 				iid, _, ok := expiryList.PopFront()
 				if !ok {
 					// expiryList was empty
