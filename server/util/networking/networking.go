@@ -39,10 +39,9 @@ const (
 	netNamespacePrefix = "bb-executor-"
 	// Total number of available host IP ranges that can be allocated to VMs.
 	numAssignableNetworks = 1000
-	// Minimum time to allow for networking cleanup. We intentionally use a
-	// long-ish timeout here because if cleanup fails then we might leave the
-	// network in a bad state, preventing a host IP from being
-	// usable.
+	// Time to allow for networking cleanup. We intentionally use a long-ish
+	// timeout here because if cleanup fails then we might leave the network in
+	// a bad state, preventing a host IP from being usable.
 	networkingCleanupTimeout = 1 * time.Minute
 )
 
