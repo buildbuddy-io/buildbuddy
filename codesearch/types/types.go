@@ -62,12 +62,27 @@ type IndexReader interface {
 }
 
 type Scorer interface {
-	Score(docs Document) float64
+	Score(doc Document) float64
 }
 
-type RegionMatch struct {
-	Start int
-	End   int
+type HighlightedRegion interface {
+	FieldName() string
+	String() string
+}
+
+type Highlighter interface {
+	Highlight(doc Document) []HighlightedRegion
+}
+
+type Query interface {
+	SQuery() []byte
+	NumResults() int
+	GetScorer() Scorer
+	GetHighlighter() Highlighter
+}
+
+type Searcher interface {
+	Search(q Query) ([]Document, error)
 }
 
 type NamedField struct {
