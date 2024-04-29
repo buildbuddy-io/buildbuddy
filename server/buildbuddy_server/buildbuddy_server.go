@@ -1320,8 +1320,18 @@ func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.Unlin
 
 func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb.InvalidateSnapshotRequest) (*wfpb.InvalidateSnapshotResponse, error) {
 	if ss := s.env.GetSnapshotService(); ss != nil {
-		if err := s.checkInvalidateSnapshotPerms(ctx); err != nil {
-			return nil, status.UnauthenticatedError(err.Error())
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+		if err != nil {
+			return nil, err
+		}
+		if g.RestrictCleanWorkflowRunsToAdmins {
+			if err := authutil.AuthorizeOrgAdmin(u, u.GetGroupID()); err != nil {
+				return nil, err
+			}
 		}
 
 		if request.SnapshotKey == nil {
@@ -1329,7 +1339,7 @@ func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb
 		}
 
 		if al := s.env.GetAuditLogger(); al != nil {
-			al.LogForGroup(ctx, request.GetRequestContext().GetGroupId(), alpb.Action_INVALIDATE_VM_SNAPSHOT, request)
+			al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_INVALIDATE_VM_SNAPSHOT, request)
 		}
 
 		if _, err := ss.InvalidateSnapshot(ctx, request.SnapshotKey); err != nil {
@@ -1340,19 +1350,32 @@ func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb
 	return nil, status.UnimplementedError("Not implemented")
 }
 
-func (s *BuildBuddyServer) checkInvalidateSnapshotPerms(ctx context.Context) error {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return err
+func (s *BuildBuddyServer) InvalidateAllSnapshotsForRepo(ctx context.Context, req *wfpb.InvalidateAllSnapshotsForRepoRequest) (*wfpb.InvalidateAllSnapshotsForRepoResponse, error) {
+	if wfs := s.env.GetWorkflowService(); wfs != nil {
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+		if err != nil {
+			return nil, err
+		}
+		if g.RestrictCleanWorkflowRunsToAdmins {
+			if err := authutil.AuthorizeOrgAdmin(u, u.GetGroupID()); err != nil {
+				return nil, err
+			}
+		}
+
+		if al := s.env.GetAuditLogger(); al != nil {
+			al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_INVALIDATE_ALL_WORKFLOW_VM_SNAPSHOTS, req)
+		}
+
+		if err := wfs.InvalidateAllSnapshotsForRepo(ctx, req.RepoUrl); err != nil {
+			return nil, err
+		}
+		return &wfpb.InvalidateAllSnapshotsForRepoResponse{}, nil
 	}
-	g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
-	if err != nil {
-		return err
-	}
-	if g.RestrictCleanWorkflowRunsToAdmins {
-		return authutil.AuthorizeOrgAdmin(u, u.GetGroupID())
-	}
-	return nil
+	return nil, status.UnimplementedError("Not implemented")
 }
 
 func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {

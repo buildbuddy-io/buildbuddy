@@ -79,7 +79,7 @@ type State = {
   repoToUnlink: string | null;
   isUnlinkingRepo: boolean;
 
-  showCleanWorkflowWarning: boolean;
+  repoToInvalidate: string | null;
 };
 
 export type ListWorkflowsProps = {
@@ -105,7 +105,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
     repoToUnlink: null,
     isUnlinkingRepo: false,
 
-    showCleanWorkflowWarning: false,
+    repoToInvalidate: null,
   };
 
   private fetchWorkflowsRPC?: CancelablePromise;
@@ -201,6 +201,17 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       .finally(() => this.setState({ isUnlinkingRepo: false }));
   }
 
+  private onClickInvalidateAllWorkflowVMSnapshots() {
+    const repoUrl = this.state.repoToInvalidate!;
+    rpcService.service
+      .invalidateAllSnapshotsForRepo(new workflow.InvalidateAllSnapshotsForRepoRequest({ repoUrl }))
+      .then(() => {
+        alert_service.success(`Successfully invalidated all VM snapshots for ${repoUrl}`);
+      })
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ repoToInvalidate: null }));
+  }
+
   renderActionList(repoUrl: string): JSX.Element | null {
     const history = this.state.workflowHistoryResponse?.workflowHistory.find(
       (h: workflow.GetWorkflowHistoryResponse.WorkflowHistory) => h.repoUrl === repoUrl
@@ -269,7 +280,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     user={this.props.user}
                     repoUrl={repoUrl}
                     onClickUnlinkItem={() => this.setState({ repoToUnlink: repoUrl })}
-                    showCleanWorkflowWarning={() => this.setState({ showCleanWorkflowWarning: true })}
+                    onClickInvalidateAllItem={() => this.setState({ repoToInvalidate: repoUrl })}
                     history={this.renderActionList(repoUrl)}
                   />
                 </>
@@ -282,6 +293,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     repoUrl={workflow.repoUrl}
                     webhookUrl={workflow.webhookUrl}
                     onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
+                    onClickInvalidateAllItem={null} /* Not implemented for legacy workflows */
                     history={null}
                   />
                   {workflow.repoUrl && this.renderActionList(workflow.repoUrl)}
@@ -316,16 +328,16 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
             </p>
           </SimpleModalDialog>
           <SimpleModalDialog
-            title="Run workflow in clean container"
-            isOpen={Boolean(this.state.showCleanWorkflowWarning)}
-            onRequestClose={() => this.setState({ showCleanWorkflowWarning: false })}
+            title="Invalidate all workflow VM snapshots"
+            isOpen={Boolean(this.state.repoToInvalidate)}
+            onRequestClose={() => this.setState({ repoToInvalidate: null })}
             submitLabel="Okay"
             destructive
-            onSubmit={() => this.setState({ showCleanWorkflowWarning: false })}>
-            <p>Are you sure you want to run the workflow in a clean container?</p>
+            onSubmit={() => this.onClickInvalidateAllWorkflowVMSnapshots()}>
+            <p>Are you sure you want to invalidate all workflow VM snapshots for this repo?</p>
             <p>
-              This will prevent all existing workflow containers from being reused by other workflow runs, making them
-              slower, so this flag is not encouraged.
+              A new VM, as opposed to a recycled VM, will be used for the next workflow run, which can significantly
+              increase workflow execution time.
             </p>
           </SimpleModalDialog>
         </div>
@@ -339,7 +351,7 @@ type RepoItemProps = {
   repoUrl: string;
   webhookUrl?: string;
   onClickUnlinkItem: (url: string) => void;
-  showCleanWorkflowWarning?: () => void;
+  onClickInvalidateAllItem: ((url: string) => void) | null;
   history: React.ReactNode;
 };
 
@@ -349,7 +361,6 @@ type RepoItemState = {
   showRunWorkflowInput: boolean;
   runWorkflowBranch: string;
   runWorkflowVisibility: string;
-  runClean: boolean;
   isWorkflowRunning: boolean;
   runWorkflowActionStatuses: workflow.ExecuteWorkflowResponse.ActionStatus[] | null;
   startTime: Date | null;
@@ -361,7 +372,6 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     showRunWorkflowInput: false,
     runWorkflowBranch: "",
     runWorkflowVisibility: "",
-    runClean: false,
     isWorkflowRunning: false,
     runWorkflowActionStatuses: null,
     startTime: null,
@@ -385,15 +395,16 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     this.props.onClickUnlinkItem(this.props.repoUrl);
   }
 
-  private showRunWorkflowInput() {
-    this.setState({ showRunWorkflowInput: true });
+  private onClickInvalidateAllMenuItem() {
+    if (!this.props.onClickInvalidateAllItem) {
+      return;
+    }
+    this.setState({ isMenuOpen: false });
+    this.props.onClickInvalidateAllItem(this.props.repoUrl);
   }
 
-  onClickRunClean() {
-    if (!this.state.runClean && this.props.showCleanWorkflowWarning) {
-      this.props.showCleanWorkflowWarning();
-    }
-    this.setState({ runClean: !this.state.runClean });
+  private showRunWorkflowInput() {
+    this.setState({ showRunWorkflowInput: true });
   }
 
   private runWorkflow() {
@@ -407,7 +418,6 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
           pushedBranch: this.state.runWorkflowBranch,
           targetRepoUrl: this.props.repoUrl,
           targetBranch: this.state.runWorkflowBranch,
-          clean: this.state.runClean,
           visibility: this.state.runWorkflowVisibility,
           async: true,
         })
@@ -460,15 +470,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     });
   }
 
-  renderActionErrorCard(actionResult: workflow.ExecuteWorkflowResponse.ActionStatus) {
-    return <div className="action-error-hovercard">{actionResult.status?.message || "Error"}</div>;
-  }
-
   render() {
-    const showCleanRerun = Boolean(
-      this.props.user?.isGroupAdmin() || !this.props.user?.selectedGroup?.restrictCleanWorkflowRunsToAdmins
-    );
-
     return (
       <div className="workflow-item container">
         <div className="workflow-item-row">
@@ -515,15 +517,6 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                         placeholder={"e.g. PUBLIC (optional)"}
                         onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
                       />
-                      {/*The Popup component has e.preventDefault in its onClick handler, which messes up the checkbox.
-                  We need e.stopPropagation to prevent the parent Popup's onClick handler from triggering
-                  */}
-                      {showCleanRerun && (
-                        <label className="run-clean-container" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox checked={this.state.runClean} onChange={this.onClickRunClean.bind(this)} />
-                          <span>Run in a clean container</span>
-                        </label>
-                      )}
                       <FilledButton
                         onClick={this.runWorkflow.bind(this)}
                         disabled={this.state.runWorkflowBranch === ""}>
@@ -545,6 +538,11 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                         <MenuItem onClick={this.onClickCopyWebhookUrl.bind(this)}>Copy webhook URL</MenuItem>
                       )}
                       <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
+                      {this.props.onClickInvalidateAllItem && (
+                        <MenuItem onClick={this.onClickInvalidateAllMenuItem.bind(this)}>
+                          Invalidate all workflow VM snapshots
+                        </MenuItem>
+                      )}
                     </Menu>
                   </Popup>
                 </div>

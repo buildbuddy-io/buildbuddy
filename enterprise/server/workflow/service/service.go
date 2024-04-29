@@ -503,6 +503,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
+	// TODO(Maggie): Delete after all usages are cleaned up
 	if req.GetClean() {
 		err = ws.useCleanWorkflow(ctx, wf)
 		if err != nil {
@@ -664,6 +665,33 @@ func (ws *workflowService) GetLegacyWorkflowIDForGitRepository(groupID string, r
 	return fmt.Sprintf("%s:%s:%s", repoWorkflowIDPrefix, groupID, repoURL)
 }
 
+// InvalidateAllSnapshotsForRepo updates the instance name suffix for the repo.
+// As the instance name suffix is used in the snapshot key, this invalidates
+// all previous workflows.
+func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, repoURL string) error {
+	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+
+	suffix, err := random.RandomString(10)
+	if err != nil {
+		return err
+	}
+
+	log.CtxInfof(ctx, "Workflow clean run requested for repo %q (group %s)", repoURL, u.GetGroupID())
+	err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_update_repo_instance_name").Raw(`
+				UPDATE GitRepositories
+				SET instance_name_suffix = ?
+				WHERE group_id = ? AND repo_url = ?`,
+		suffix, u.GetGroupID(), repoURL,
+	).Exec().Error
+
+	return err
+}
+
+// TODO(Maggie): Delete useCleanWorkflow and checkCleanWorkflowPermissions after
+// all references to ExecuteWorkflowRequest.clean have been cleaned up
 func (ws *workflowService) checkCleanWorkflowPermissions(ctx context.Context, wf *tables.Workflow) error {
 	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {

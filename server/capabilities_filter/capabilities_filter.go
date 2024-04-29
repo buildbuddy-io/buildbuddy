@@ -146,6 +146,7 @@ var (
 		// Workflow management
 		"CreateWorkflow",
 		"DeleteWorkflow",
+		"InvalidateAllSnapshotsForRepo",
 		// RBE deployment view
 		"GetExecutionNodes",
 		// BuildBuddy usage data

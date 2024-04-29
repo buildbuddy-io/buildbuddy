@@ -192,10 +192,8 @@ message ExecuteWorkflowRequest {
   // Ex. "main"
   string target_branch = 9;
 
-  // Whether to run the workflow in a clean container. This prevents all
-  // existing workflow containers from being reused, so using this flag is not
-  // encouraged.
-  bool clean = 10;
+  // TODO(Maggie): Clean up when all references are cleaned up
+  bool clean = 10 [deprecated = true];
 
   // VISIBILITY build metadata used for the workflow invocation.
   string visibility = 11;
@@ -280,5 +278,15 @@ message InvalidateSnapshotRequest {
 }
 
 message InvalidateSnapshotResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message InvalidateAllSnapshotsForRepoRequest {
+  context.RequestContext request_context = 1;
+
+  string repo_url = 2;
+}
+
+message InvalidateAllSnapshotsForRepoResponse {
   context.ResponseContext response_context = 1;
 }
