@@ -20,6 +20,11 @@ http_archive(
 # keep in sync with go.mod
 http_archive(
     name = "io_bazel_rules_go",
+    patch_args = ["-p1"],
+    patches = [
+        # TODO(sluongng): remove after https://github.com/bazelbuild/rules_go/pull/3929
+        "//buildpatches:rules_go_signal.patch",
+    ],
     sha256 = "af47f30e9cbd70ae34e49866e201b3f77069abb111183f2c0297e7e74ba6bbc0",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.47.0/rules_go-v0.47.0.zip",
