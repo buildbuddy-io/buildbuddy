@@ -165,7 +165,7 @@ func NewHitTrackerManager(env environment.Env) *HitTrackerManager {
 			}
 			log.Infof("top of loop")
 			select {
-			case iid, ok := <- updateExpiryChannel:
+			case iid, ok := <-updateExpiryChannel:
 				if !ok {
 					// channel closed, we're shutting down
 					break
@@ -187,10 +187,14 @@ func NewHitTrackerManager(env environment.Env) *HitTrackerManager {
 			}
 		}
 	}()
-	return &HitTrackerManager{
+	htm := &HitTrackerManager{
 		env:                 env,
 		updateExpiryChannel: updateExpiryChannel,
 	}
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		return htm.Stop(ctx)
+	})
+	return htm
 }
 
 func Register(realEnv *real_environment.RealEnv) error {
@@ -230,16 +234,9 @@ func (h *HitTrackerManager) Track(ctx context.Context, actionCache bool) interfa
 	}
 }
 
-func Track(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
-	return &HitTracker{
-		env:             env,
-		c:               env.GetMetricsCollector(),
-		usage:           env.GetUsageTracker(),
-		ctx:             ctx,
-		iid:             bazel_request.GetInvocationID(ctx),
-		actionCache:     actionCache,
-		requestMetadata: bazel_request.GetRequestMetadata(ctx),
-	}
+func (h *HitTrackerManager) Stop(ctx context.Context) error {
+	close(h.updateExpiryChannel)
+	return nil
 }
 
 func (h *HitTracker) counterKey() string {
