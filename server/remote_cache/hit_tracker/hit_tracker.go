@@ -158,18 +158,26 @@ func NewHitTrackerManager(env environment.Env) *HitTrackerManager {
 		// performance much either way.
 		emptyWakeUpPeriod := time.Minute * 30
 
-		var iid string
-		wakeUpAt := time.Now().Add(emptyWakeUpPeriod)
 		for {
+			_, wakeUpAt, ok := expiryList.PeekFront()
+			if !ok {
+				wakeUpAt = time.Now().Add(emptyWakeUpPeriod)
+			}
+			log.Infof("top of loop")
 			select {
-			case updateExpiryChannel <- iid:
+			case iid, ok := <- updateExpiryChannel:
+				if !ok {
+					// channel closed, we're shutting down
+					break
+				}
+				log.Infof("woke up to push back")
 				expiryList.PushBack(iid, time.Now().Add(*orphanScorecardTTL))
-				_, wakeUpAt, _ = expiryList.PeekFront()
+				log.Infof("pushed back")
 			case <-time.After(time.Until(wakeUpAt)):
+				log.Infof("woke up to timer")
 				iid, _, ok := expiryList.PopFront()
 				if !ok {
-					// expiryList is empty
-					wakeUpAt = time.Now().Add(emptyWakeUpPeriod)
+					// expiryList was empty
 					continue
 				}
 				_, err := env.GetInvocationDB().LookupInvocation(env.GetServerContext(), iid)
