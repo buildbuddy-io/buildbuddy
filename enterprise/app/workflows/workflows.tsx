@@ -336,8 +336,8 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
             onSubmit={() => this.onClickInvalidateAllWorkflowVMSnapshots()}>
             <p>Are you sure you want to invalidate all workflow VM snapshots for this repo?</p>
             <p>
-              This will prevent all existing recycled workflow VMs from being reused. This will make future workflow
-              runs slower, so this flag is not encouraged.
+              A new VM, as opposed to a recycled VM, will be used for the next workflow run, which can significantly
+              increase workflow execution time.
             </p>
           </SimpleModalDialog>
         </div>
