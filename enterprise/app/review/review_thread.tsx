@@ -70,15 +70,19 @@ export default class ReviewThreadComponent extends React.Component<ReviewThreadC
       comments.push(draft);
     }
 
-    if (comments.length == 0 && !draft) {
+    if (comments.length === 0 && !draft) {
       // Shouldn't happen, but fine.
       return <></>;
     }
 
     const isBot = Boolean(comments.length === 1 && comments[0].isBot());
+    let classNames = "thread";
+    if (draft || (comments.length > 0 && comments[comments.length - 1].getCommenter() === this.props.activeUsername)) {
+      classNames += " user-replied";
+    }
 
     return (
-      <div className="thread">
+      <div className={classNames}>
         {comments.map((c) => {
           return (
             <>

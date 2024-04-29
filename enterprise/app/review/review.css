@@ -352,8 +352,16 @@
   box-shadow: 0 0 4px #ccc;
 }
 
+.pr-view .thread.user-replied {
+  background-color: #fff8e1;
+}
+
 .pr-view .thread.resolved {
   background-color: #e0e0e0;
+}
+
+.pr-view .thread.resolved.user-replied {
+  background-color: #eee;
 }
 
 .pr-view .resolution-pill-box {
@@ -370,9 +378,17 @@
   font-weight: 600;
 }
 
+.pr-view .user-replied .resolution-pill {
+  background-color: #ffe082;
+}
+
 .pr-view .resolution-pill.resolved {
   background-color: #bdbdbd;
   color: #616161;
+}
+
+.pr-view .user-replied .resolution-pill.resolved {
+  background-color: #e0e0e0;
 }
 
 .pr-view .thread-comment {
