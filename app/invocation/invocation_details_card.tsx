@@ -112,7 +112,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 )}
                 <div className="invocation-section">
                   <div className="invocation-section-title">Pushed branch</div>
-                  <div>{this.props.model.workflowConfigured.pushedBranch}</div>
+                  <div>{this.props.model.getGithubBranch()}</div>
                 </div>
                 <div className="invocation-section">
                   <div className="invocation-section-title">Target branch</div>

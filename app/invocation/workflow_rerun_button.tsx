@@ -86,9 +86,10 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           workflowId: configuredEvent.workflowId,
           actionNames: [configuredEvent.actionName],
           pushedRepoUrl: configuredEvent.pushedRepoUrl,
-          pushedRef: configuredEvent.commitSha,
-          pushedBranch: configuredEvent.pushedBranch,
-          commitSha: configuredEvent.commitSha,
+          // TODO: Add this in a later PR
+          pushedRef: this.props.model.getGithubSHA(),
+          pushedBranch: this.props.model.getGithubBranch(),
+          commitSha: this.props.model.getGithubSHA(),
           targetRepoUrl: configuredEvent.targetRepoUrl,
           targetBranch: configuredEvent.targetBranch,
           visibility: this.props.model.buildMetadataMap.get("VISIBILITY") || "",
