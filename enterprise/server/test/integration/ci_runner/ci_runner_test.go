@@ -193,19 +193,27 @@ actions:
 `,
 	}
 
-	workspaceContentsWithExitScriptAndGitFetchDepth = map[string]string{
+	workspaceContentsWithGitFetchDepth = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
-		"BUILD":     `sh_binary(name = "exit", srcs = ["exit.sh"])`,
-		"exit.sh":   `exit "$1"`,
+		"BUILD":     `sh_binary(name = "fetch_depth_test", srcs = ["fetch_depth_test.sh"])`,
+		"fetch_depth_test.sh": `
+			cd "$BUILD_WORKSPACE_DIRECTORY"
+			# We should not have fetched the merge-base commit between the
+			# current branch and master, since the branches should have diverged
+			# and we're fetching with --depth=1.
+			MERGE_BASE=$(git merge-base origin/master origin/pr-branch)
+			echo "merge-base: '$MERGE_BASE' (should be empty)"
+			test -z "$MERGE_BASE" || exit 1
+`,
 		"buildbuddy.yaml": `
 actions:
   - name: "Test"
     triggers:
-      pull_request: { branches: [ master ] }
+      pull_request: { branches: [ master ], merge_with_base: false }
       push: { branches: [ master ] }
     git_fetch_depth: 1
     bazel_commands:
-      - run :exit -- 0
+      - run :fetch_depth_test
 `,
 	}
 
@@ -1089,15 +1097,14 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 
 func TestFetchDepth1(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
-	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithExitScriptAndGitFetchDepth)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithGitFetchDepth)
 	testshell.Run(t, repoPath, `
 		# Create a PR branch
 		git checkout -b pr-branch
 
 		# Add a bad commit to the master branch;
-		# since we're fetching with --depth=1 this should disable
-		# the merge-with-base behavior, so this change should not break our
-		# CI run on the PR branch which doesn't have this change yet.
+		# this should not break our CI run on the PR branch which doesn't have
+		# this change yet.
 		git checkout master
 		echo 'exit 1' > exit.sh
 		git add .

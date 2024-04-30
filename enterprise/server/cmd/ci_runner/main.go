@@ -1648,11 +1648,6 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return err
 	}
 	merge := action.GetTriggers().GetPullRequestTrigger().GetMergeWithBase()
-	if *gitFetchDepth > 0 {
-		// If not fetching the full commit history, then we might not have the
-		// merge-base commit available, so we can't reliably merge.
-		merge = false
-	}
 	// If enabled by the config, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
