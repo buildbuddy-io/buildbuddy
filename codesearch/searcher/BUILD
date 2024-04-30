@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/searcher",
     visibility = ["//visibility:public"],
     deps = [
-        "//codesearch/posting",
         "//codesearch/types",
         "//server/util/log",
         "@org_golang_x_sync//errgroup",
