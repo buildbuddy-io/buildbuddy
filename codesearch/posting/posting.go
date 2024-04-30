@@ -111,3 +111,65 @@ func (pl *uint64PostingList) ToArray() []uint64 {
 func (pl *uint64PostingList) Clear() {
 	*pl = (*pl)[:0]
 }
+
+// A fieldMap is a collection of postingLists that are keyed by the field that
+// was matched.
+//
+// For example, if a document {"a": "aaa", "b": "bbb"} matches a
+// query like (:eq * "bbb") or (:eq "b" "bbb"), then the fieldmap will store
+// that docID in a postinglist for the field "b". It's normal for a document
+// to be in multiple fields of the fieldmap at once if that document has
+// multiple fields that matched the query.
+
+type FieldMap map[string]List
+
+func NewFieldMap() FieldMap {
+	return make(map[string]List)
+}
+
+func (fm *FieldMap) OrField(fieldName string, pl2 List) {
+	if pl, ok := (*fm)[fieldName]; ok {
+		pl.Or(pl2)
+	} else {
+		(*fm)[fieldName] = pl2
+	}
+}
+func (fm *FieldMap) Or(fm2 FieldMap) {
+	for fieldName, pl2 := range fm2 {
+		fm.OrField(fieldName, pl2)
+	}
+}
+func (fm *FieldMap) And(fm2 FieldMap) {
+	mergedPL := fm.ToPosting()
+	mergedPL.And(fm2.ToPosting())
+
+	for fieldName, pl2 := range fm2 {
+		fm.OrField(fieldName, pl2)
+	}
+	for _, pl := range *fm {
+		pl.And(mergedPL)
+	}
+}
+func (fm *FieldMap) ToPosting() List {
+	pl := NewList()
+	for _, pl2 := range *fm {
+		pl.Or(pl2)
+	}
+	return pl
+}
+func (fm *FieldMap) GetCardinality() uint64 {
+	return fm.ToPosting().GetCardinality()
+}
+func (fm *FieldMap) Remove(docid uint64) {
+	f := (*fm)
+	for _, pl := range f {
+		pl.Remove(docid)
+	}
+}
+func (fm *FieldMap) Map() map[string][]uint64 {
+	m := make(map[string][]uint64)
+	for f, pl := range *fm {
+		m[f] = pl.ToArray()
+	}
+	return m
+}

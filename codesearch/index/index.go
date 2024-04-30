@@ -293,7 +293,7 @@ func (r *Reader) deletedDocPrefix(docID uint64) []byte {
 	return []byte(fmt.Sprintf("%s:del:%d::", r.namespace, docID))
 }
 
-func (r *Reader) allDocIDs() (posting.List, error) {
+func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 	iter := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: r.storedFieldKey(0, types.DocIDField),
 		UpperBound: []byte(fmt.Sprintf("%s:doc:\xff", r.namespace)),
@@ -310,7 +310,9 @@ func (r *Reader) allDocIDs() (posting.List, error) {
 		}
 		continue
 	}
-	return resultSet, nil
+	fm := posting.NewFieldMap()
+	fm.OrField("", resultSet)
+	return fm, nil
 }
 
 func (r *Reader) GetStoredDocument(docID uint64, fieldNames ...string) (types.Document, error) {
@@ -360,7 +362,7 @@ func (r *Reader) GetStoredDocument(docID uint64, fieldNames ...string) (types.Do
 // specified field. Otherwise, all fields are searched.
 // If `restrict` is set to a non-empty value, matches will only be returned if
 // they are both found and also are present in the restrict set.
-func (r *Reader) postingList(ngram []byte, restrict posting.List, field string) (posting.List, error) {
+func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field string) (posting.FieldMap, error) {
 	minKey := []byte(fmt.Sprintf("%s:gra:%s", r.namespace, ngram))
 	if field != types.AllFields {
 		minKey = []byte(fmt.Sprintf("%s:gra:%s:%s", r.namespace, ngram, field))
@@ -372,8 +374,7 @@ func (r *Reader) postingList(ngram []byte, restrict posting.List, field string) 
 	})
 	defer iter.Close()
 
-	resultSet := posting.NewList()
-	postingList := posting.NewList()
+	resultSet := posting.NewFieldMap()
 
 	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
@@ -383,11 +384,11 @@ func (r *Reader) postingList(ngram []byte, restrict posting.List, field string) 
 		if k.keyType != ngramField {
 			continue
 		}
+		postingList := posting.NewList()
 		if _, err := postingList.Unmarshal(iter.Value()); err != nil {
 			return nil, err
 		}
-		resultSet.Or(postingList)
-		postingList.Clear()
+		resultSet.OrField(k.field, postingList)
 	}
 	if restrict.GetCardinality() > 0 {
 		resultSet.And(restrict)
@@ -424,14 +425,14 @@ func qOp(expr *ast.Node) (string, error) {
 	return atomString, nil
 }
 
-func (r *Reader) postingQuery(q *ast.Node, restrict posting.List) (posting.List, error) {
+func (r *Reader) postingQuery(q *ast.Node, restrict posting.FieldMap) (posting.FieldMap, error) {
 	op, err := qOp(q)
 	if err != nil {
 		return nil, err
 	}
 	switch op {
 	case QNone:
-		return posting.NewList(), nil
+		return posting.NewFieldMap(), nil
 	case QAll:
 		if restrict != nil && restrict.GetCardinality() > 0 {
 			return restrict, nil
@@ -447,7 +448,7 @@ func (r *Reader) postingQuery(q *ast.Node, restrict posting.List) (posting.List,
 		}
 		return list, nil
 	case QOr:
-		list := posting.NewList()
+		list := posting.NewFieldMap()
 		for _, subQuery := range q.List()[1:] {
 			l, err := r.postingQuery(subQuery, restrict)
 			if err != nil {
@@ -474,13 +475,19 @@ func (r *Reader) postingQuery(q *ast.Node, restrict posting.List) (posting.List,
 		if s, err := strconv.Unquote(ngram); err == nil {
 			ngram = s
 		}
-		return r.postingList([]byte(ngram), restrict, field)
+		pl, err := r.postingList([]byte(ngram), restrict, field)
+		if err != nil {
+			return nil, err
+		}
+
+		return pl, nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown query op: %q", op)
 	}
 }
 
-func (r *Reader) removeDeletedDocIDs(docids posting.List) error {
+func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
+	docids := results.ToPosting()
 	if docids.GetCardinality() == 0 {
 		return nil
 	}
@@ -504,13 +511,13 @@ func (r *Reader) removeDeletedDocIDs(docids posting.List) error {
 			return err
 		}
 		if k.keyType == deleteField && k.DocID() == docID {
-			docids.Remove(docID)
+			results.Remove(docID)
 		}
 	}
 	return nil
 }
 
-func (r *Reader) RawQuery(squery []byte) ([]uint64, error) {
+func (r *Reader) RawQuery(squery []byte) (map[string][]uint64, error) {
 	start := time.Now()
 	root, err := parser.Parse(squery)
 	if err != nil {
@@ -522,13 +529,14 @@ func (r *Reader) RawQuery(squery []byte) ([]uint64, error) {
 	}
 	r.log.Infof("Took %s to parse squery", time.Since(start))
 	start = time.Now()
-	bm, err := r.postingQuery(root, posting.NewList())
+	bm, err := r.postingQuery(root, posting.NewFieldMap())
 	if err != nil {
 		return nil, err
 	}
+
 	r.log.Infof("Took %s to query posts", time.Since(start))
 	start = time.Now()
 	err = r.removeDeletedDocIDs(bm)
 	r.log.Infof("Took %s to remove deleted docs", time.Since(start))
-	return bm.ToArray(), err
+	return bm.Map(), err
 }
