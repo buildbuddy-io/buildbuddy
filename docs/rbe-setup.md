@@ -29,9 +29,9 @@ To get started with the BuildBuddy Toolchain, add the following lines to your `W
 ```python
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "b12273608db627eb14051eb75f8a2134590172cd69392086d392e25f3954ea6e",
-    strip_prefix = "buildbuddy-toolchain-8d5d18373adfca9d8e33b4812915abc9b132f1ee",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/8d5d18373adfca9d8e33b4812915abc9b132f1ee.tar.gz"],
+    sha256 = "a3492ce5357425eedd4ba0af0571f6b7e70d9c343319fe49f98ef24291e62649",
+    strip_prefix = "buildbuddy-toolchain-5b47b1252d6bff48d1087c3ebebc798247ea2635",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/5b47b1252d6bff48d1087c3ebebc798247ea2635.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
