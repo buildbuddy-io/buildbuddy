@@ -119,6 +119,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--pushed_repo_url=" + repoURL.String(),
 		"--pushed_ref=" + req.GetRepoState().GetCommitSha(),
 		"--pushed_branch=" + req.GetRepoState().GetBranch(),
+		// TODO(Maggie): Remove target fields
 		"--target_repo_url=" + repoURL.String(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
 		"--bazel_sub_command=" + req.GetBazelCommand(),

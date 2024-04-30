@@ -807,6 +807,12 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	log.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
 
+	// Initialize git metadata to be used in WorkflowConfigured event
+	// Set fetchData=false, because at this point the git remote may not be configured yet
+	if err := ws.initializeGitMetadata(ctx, false /* fetchData */); err != nil {
+		return err
+	}
+
 	wfc := &bespb.WorkflowConfigured{
 		WorkflowId:         *workflowID,
 		ActionName:         getActionNameForWorkflowConfiguredEvent(),
@@ -1573,9 +1579,8 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
-	handleBackwardsCompatability()
-	if *pushedRef == "" {
-		return status.InvalidArgumentError("expected `pushed_ref` to be set")
+	if err := ws.initializeGitMetadata(ctx, true /* fetchData */); err != nil {
+		return status.WrapError(err, "initialize git metadata")
 	}
 
 	if err := ws.fetchRefs(ctx); err != nil {
@@ -1600,15 +1605,6 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return status.WrapError(err, "checkout ref")
 	}
 
-	// If commit sha is not set, pull the sha that is checked out so that it can be used in Github Status reporting
-	if *commitSHA == "" {
-		headCommitSHA, err := git(ctx, ws.log, "rev-parse", "HEAD")
-		if err != nil {
-			return err
-		}
-		*commitSHA = headCommitSHA
-	}
-
 	action, err := getActionToRun()
 	if err != nil {
 		return err
@@ -1628,7 +1624,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 			// one will just fail with the merge conflict error.
 			ws.setupError = status.FailedPreconditionErrorf(
 				"Merge conflict between branches %q and %q.\n\n%s",
-				*pushedRef, *targetBranch, errMsg,
+				*pushedBranch, *targetBranch, errMsg,
 			)
 		}
 	}
@@ -1646,6 +1642,65 @@ func (ws *workspace) sync(ctx context.Context) error {
 		}
 	}
 
+	return nil
+}
+
+// initializeGitMetadata sets pushedBranch and commitSHA based on pushedRef (which
+// can be either a branch or commit sha)
+// If fetchData is true, will fetch missing data from git (i.e. if pushedRef
+// is a commit, it will fetch the corresponding branch name). If fetchData is false,
+// it will leave missing data unset
+func (ws *workspace) initializeGitMetadata(ctx context.Context, fetchData bool) error {
+	handleBackwardsCompatability()
+	if *pushedRef == "" {
+		return status.InvalidArgumentError("expected `pushed_ref` to be set")
+	}
+
+	pushedRefIsBranch := ws.isBranch(ctx, *pushedRef)
+
+	if *commitSHA == "" {
+		if pushedRefIsBranch {
+			if fetchData {
+				// Pull HEAD commit sha for the branch
+				branchInfo, err := git(ctx, ws.log, "ls-remote", *pushedRepoURL, *pushedRef)
+				if err != nil {
+					return err
+				}
+				branchInfoSplit := strings.Fields(branchInfo)
+				if len(branchInfoSplit) != 2 {
+					return status.InternalErrorf("ls-remote expected to return commit sha and branch name, returned %s", branchInfo)
+				}
+				*commitSHA = branchInfoSplit[0]
+			}
+		} else {
+			*commitSHA = *pushedRef
+		}
+	}
+
+	if *pushedBranch == "" {
+		if pushedRefIsBranch {
+			*pushedBranch = *pushedRef
+		} else {
+			if fetchData {
+				// Get branch name from the commit SHA
+				// NOTE: This requires the repo to be cloned locally
+				branchInfo, err := git(ctx, ws.log, "name-rev", "--name-only", *pushedRef)
+				if err != nil {
+					return err
+				}
+				// Match a string of the pattern remotes/origin/<branch name>,
+				// or if the commit is not the HEAD of the branch, remotes/origin/<branch name>~num_commits_from_head
+				// The regex should extract `branch_name`
+				re := regexp.MustCompile(`^remotes\/origin\/([^~]+)~?\d*$`)
+				matches := re.FindStringSubmatch(branchInfo)
+				if len(matches) < 1 {
+					return status.InternalErrorf("expected branch info %s to contain branch name", branchInfo)
+				}
+
+				*pushedBranch = matches[0]
+			}
+		}
+	}
 	return nil
 }
 
