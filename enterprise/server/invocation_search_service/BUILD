@@ -33,7 +33,6 @@ go_library(
 go_test(
     name = "invocation_search_service_test",
     srcs = ["invocation_search_service_test.go"],
-    tags = ["docker"],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
         "test.init-dockerd": "true",
@@ -43,15 +42,16 @@ go_test(
         # default disk limit.
         "test.runner-recycling-key": "clickhouse",
     },
+    tags = ["docker"],
     deps = [
         ":invocation_search_service",
         "//proto:context_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:stat_filter_go_proto",
         "//server/real_environment",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
-        "//server/testutil/testolapdb",
         "//server/util/perms",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",

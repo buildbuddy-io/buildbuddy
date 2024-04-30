@@ -417,6 +417,9 @@ func getFilterValue(inv *inpb.Invocation, sortField inpb.InvocationSort_SortFiel
 }
 
 func getExtraFilterForBlendedQuery(firstResult *inpb.Invocation, lastResult *inpb.Invocation, sort *inpb.InvocationSort) *sfpb.StatFilter {
+	if firstResult == nil && lastResult == nil {
+		return nil
+	}
 	f := &sfpb.StatFilter{}
 	switch sort.SortField {
 	case inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD:
@@ -497,7 +500,9 @@ func (s *InvocationSearchService) mergeUnfinishedBuildsFromMysql(ctx context.Con
 			lastResult = olapInvocations[len(olapInvocations)-1]
 		}
 
-		sqlReq.GetQuery().Filter = append(sqlReq.GetQuery().Filter, getExtraFilterForBlendedQuery(firstResult, lastResult, req.GetSort()))
+		if f := getExtraFilterForBlendedQuery(firstResult, lastResult, req.GetSort()); f != nil {
+			sqlReq.GetQuery().Filter = append(sqlReq.GetQuery().Filter, f)
+		}
 	}
 
 	// Add filters for pending + disconnected only.
@@ -530,6 +535,11 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	offset, limit, err := computeOffsetAndLimit(req)
 	if err != nil {
 		return nil, err
+	}
+	if req.Sort == nil {
+		req.Sort = defaultSortParams()
+	} else if req.Sort.SortField == inpb.InvocationSort_UNKNOWN_SORT_FIELD {
+		req.Sort.SortField = defaultSortParams().SortField
 	}
 
 	var invocations []*inpb.Invocation
