@@ -1,6 +1,7 @@
 package login
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -12,15 +13,47 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"google.golang.org/grpc/metadata"
+
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 )
 
 const (
-	apiKeyRepoSetting = "api-key"
+	ApiKeyRepoSetting = "api-key"
 	apiKeyHeader      = "remote_header=x-buildbuddy-api-key"
 	loginURL          = "https://app.buildbuddy.io/settings/cli-login"
+	apiTarget         = "grpcs://remote.buildbuddy.io"
 )
 
+func hasValidApiKey() bool {
+	apiKey, err := storage.ReadRepoConfig(ApiKeyRepoSetting)
+	if err != nil {
+		return false
+	}
+	log.Printf("Found an API key in your .git/config. Verifying it's validity.")
+
+	// Perform a zero byte CAS download with current API key.
+	conn, err := grpc_client.DialSimple(apiTarget)
+	if err != nil {
+		return false
+	}
+	bbsClient := bbspb.NewBuildBuddyServiceClient(conn)
+	ctx := context.Background()
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+
+	_, err = bbsClient.GetUser(ctx, &uspb.GetUserRequest{})
+	return err == nil
+}
+
 func HandleLogin(args []string) (exitCode int, err error) {
+	if hasValidApiKey() {
+		log.Printf("Current API key is valid. Skipping login.")
+		return 0, nil
+	}
+	log.Printf("No valid API key found.")
+
 	if err := openInBrowser(loginURL); err != nil {
 		log.Printf("Failed to open browser: %s", err)
 		log.Printf("Copy and paste the URL below into a browser window:")
@@ -38,7 +71,7 @@ func HandleLogin(args []string) (exitCode int, err error) {
 		return -1, fmt.Errorf("invalid input: API key is empty")
 	}
 
-	if err := storage.WriteRepoConfig(apiKeyRepoSetting, apiKey); err != nil {
+	if err := storage.WriteRepoConfig(ApiKeyRepoSetting, apiKey); err != nil {
 		return -1, fmt.Errorf("failed to write API key to local .git/config: %s", err)
 	}
 
@@ -50,7 +83,7 @@ func HandleLogin(args []string) (exitCode int, err error) {
 }
 
 func HandleLogout(args []string) (exitCode int, err error) {
-	if err := storage.WriteRepoConfig(apiKeyRepoSetting, ""); err != nil {
+	if err := storage.WriteRepoConfig(ApiKeyRepoSetting, ""); err != nil {
 		return -1, fmt.Errorf("failed to clear api key from local .git/config: %s", err)
 	}
 
@@ -77,7 +110,7 @@ func ConfigureAPIKey(args []string) ([]string, error) {
 		return args, nil
 	}
 
-	apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
+	apiKey, err := storage.ReadRepoConfig(ApiKeyRepoSetting)
 	if err != nil {
 		// If we're not in a git repo, we'll fail to read the repo-specific
 		// config.

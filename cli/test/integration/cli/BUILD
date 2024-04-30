@@ -10,6 +10,8 @@ go_test(
     shard_count = 4,
     deps = [
         "//cli/log",
+        "//cli/login",
+        "//cli/storage",
         "//cli/testutil/testcli",
         "//proto:cache_go_proto",
         "//proto:invocation_go_proto",

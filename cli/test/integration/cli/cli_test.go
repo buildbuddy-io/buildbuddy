@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
@@ -343,6 +345,22 @@ func TestFix(t *testing.T) {
 	b, err := testcli.CombinedOutput(cmd)
 
 	require.NoError(t, err, "output:\n%s", string(b))
+}
+
+func TestLoginSkip(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+
+	storage.RepoRootPath = func() (string, error) {
+		return ws, nil
+	}
+	storage.WriteRepoConfig(login.ApiKeyRepoSetting, "some-secret-123@")
+
+	cmd := testcli.Command(t, ws, "login")
+	b, err := testcli.CombinedOutput(cmd)
+	output := string(b)
+
+	require.NoError(t, err, "output:\n%s", output)
+	require.Contains(t, output, "Skipping login")
 }
 
 func retryUntilSuccess(t *testing.T, f func() error) {
