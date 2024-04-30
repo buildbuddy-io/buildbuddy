@@ -54,3 +54,6 @@ buildbuddy-key.pem
 
 # User specific config files
 enterprise/config/user-configs
+
+# Bazel compact execution log
+/bazel_compact_exec_log.binpb.zstd
