@@ -7,6 +7,7 @@ import * as monaco from "monaco-editor";
 import { createPortal } from "react-dom";
 import rpc_service from "../../../app/service/rpc_service";
 import error_service from "../../../app/errors/error_service";
+import { getLangHintFromFilePath } from "../monaco/monaco";
 
 interface FileContentMonacoComponentProps {
   fileModel: FileModel;
@@ -399,10 +400,10 @@ class MonacoDiffViewerComponent extends React.Component<
     const modifiedUri = monaco.Uri.file(`modified-${this.props.path}`);
     const originalModel =
       monaco.editor.getModel(originalUri) ??
-      monaco.editor.createModel(this.props.originalContent, undefined, originalUri);
+      monaco.editor.createModel(this.props.originalContent, getLangHintFromFilePath(this.props.path), originalUri);
     const modifiedModel =
       monaco.editor.getModel(modifiedUri) ??
-      monaco.editor.createModel(this.props.modifiedContent, undefined, modifiedUri);
+      monaco.editor.createModel(this.props.modifiedContent, getLangHintFromFilePath(this.props.path), modifiedUri);
     editor.setModel({ original: originalModel, modified: modifiedModel });
 
     let ignoreEvent = false;

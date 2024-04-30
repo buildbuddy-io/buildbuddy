@@ -30,6 +30,7 @@ ts_library(
     deps = [
         "//app/errors:error_service",
         "//app/service:rpc_service",
+        "//enterprise/app/monaco",
         "//enterprise/app/review:review_controller",
         "//enterprise/app/review:review_model",
         "//enterprise/app/review:review_thread",
