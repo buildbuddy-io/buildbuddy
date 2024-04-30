@@ -38,6 +38,7 @@ import capabilities from "../../../app/capabilities/capabilities";
 import router from "../../../app/router/router";
 import picker_service, { PickerModel } from "../../../app/picker/picker_service";
 import { GithubIcon } from "../../../app/icons/github";
+import { getLangHintFromFilePath } from "../monaco/monaco";
 
 interface Props {
   user: User;
@@ -289,7 +290,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     if (this.isSingleFile() && bytestreamURL) {
       rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text", { zip }).then((result) => {
         let path = monaco.Uri.file(filename || "file");
-        this.setModel(path.path, monaco.editor.createModel(result, langFromPath(path.path), path));
+        this.setModel(path.path, monaco.editor.createModel(result, getLangHintFromFilePath(path.path), path));
       });
       return;
     }
@@ -529,7 +530,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     });
     let model = this.state.fullPathToModelMap.get(fullPath);
     if (!model) {
-      model = monaco.editor.createModel(fileContents, langFromPath(fullPath), monaco.Uri.file(fullPath));
+      model = monaco.editor.createModel(fileContents, getLangHintFromFilePath(fullPath), monaco.Uri.file(fullPath));
       this.state.fullPathToModelMap.set(fullPath, model);
       this.updateState({ fullPathToModelMap: this.state.fullPathToModelMap });
     }
@@ -725,7 +726,7 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     let model = this.state.fullPathToModelMap.get(path);
     if (!model) {
-      model = monaco.editor.createModel(contents, langFromPath(path), monaco.Uri.file(path));
+      model = monaco.editor.createModel(contents, getLangHintFromFilePath(path), monaco.Uri.file(path));
       this.state.fullPathToModelMap.set(path, model);
     }
     this.navigateToPath(path);
@@ -1536,7 +1537,7 @@ function getOrCreateModel(url: string, value: string) {
     existingModel.setValue(value);
     return existingModel;
   }
-  return monaco.editor.createModel(value, langFromPath(url), monaco.Uri.file(url));
+  return monaco.editor.createModel(value, getLangHintFromFilePath(url), monaco.Uri.file(url));
 }
 
 // This revives any non-serializable objects in state from their seralized form.
@@ -1567,20 +1568,4 @@ function stateReviver(key: string, value: any) {
     }
   }
   return value;
-}
-
-function langFromPath(path: string) {
-  if (!path) {
-    return undefined;
-  }
-  if (
-    path.endsWith(".bazel") ||
-    path.endsWith("WORKSPACE") ||
-    path.endsWith("BUILD") ||
-    path.endsWith("MODULE") ||
-    path.endsWith(".bzl")
-  ) {
-    return "python";
-  }
-  return undefined;
 }
