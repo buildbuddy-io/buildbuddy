@@ -35,6 +35,8 @@ type Action struct {
 	ResourceRequests  ResourceRequests  `yaml:"resource_requests"`
 	User              string            `yaml:"user"`
 	GitCleanExclude   []string          `yaml:"git_clean_exclude"`
+	GitFetchFilters   []string          `yaml:"git_fetch_filters"`
+	GitFetchDepth     int               `yaml:"git_fetch_depth"`
 	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
 	Env               map[string]string `yaml:"env"`
 	BazelCommands     []string          `yaml:"bazel_commands"`
@@ -46,6 +48,16 @@ func (a *Action) GetTriggers() *Triggers {
 		return &Triggers{}
 	}
 	return a.Triggers
+}
+
+func (a *Action) GetGitFetchFilters() []string {
+	if a.GitFetchFilters == nil {
+		// Default to blob:none if unspecified.
+		// TODO: this seems to increase fetch time in some cases;
+		// consider removing this as the default.
+		return []string{"blob:none"}
+	}
+	return a.GitFetchFilters
 }
 
 type Triggers struct {

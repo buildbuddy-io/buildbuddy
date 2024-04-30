@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config/test_data"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
@@ -77,5 +78,36 @@ func TestMatchesAnyTrigger_SupportsBasicWildcard(t *testing.T) {
 		match := config.MatchesAnyTrigger(action, event, testCase.branchName)
 
 		assert.Equal(t, testCase.shouldMatch, match, "expected match(%q, %q) => %v", testCase.branchName, testCase.pattern, testCase.shouldMatch)
+	}
+}
+
+func TestGetGitFetchFilters(t *testing.T) {
+	for _, test := range []struct {
+		Name    string
+		YAML    string
+		Filters []string
+	}{
+		{
+			Name:    "Default",
+			YAML:    "",
+			Filters: []string{"blob:none"},
+		},
+		{
+			Name:    "EmptyList",
+			YAML:    "git_fetch_filters: []",
+			Filters: []string{},
+		},
+		{
+			Name:    "NonEmptyList",
+			YAML:    `git_fetch_filters: ["tree:0"]`,
+			Filters: []string{"tree:0"},
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			s := `actions: [ { name: Test, ` + test.YAML + ` } ]`
+			cfg, err := config.NewConfig(strings.NewReader(s))
+			require.NoError(t, err)
+			require.Equal(t, test.Filters, cfg.Actions[0].GetGitFetchFilters())
+		})
 	}
 }
