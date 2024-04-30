@@ -972,7 +972,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		artifactsDir := artifactsPathForCommand(ws, i)
 		namedSetID := filepath.Base(artifactsDir)
 
-		// Note: we don't use ar.action.Env here because it's already
 		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), nil, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 		ar.reporter.Publish(&bespb.BuildEvent{
