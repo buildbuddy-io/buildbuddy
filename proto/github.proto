@@ -523,7 +523,9 @@ enum FileChangeType {
   FILE_CHANGE_TYPE_ADDED = 1;
   FILE_CHANGE_TYPE_REMOVED = 2;
   FILE_CHANGE_TYPE_MODIFIED = 3;
-  // TODO(jdhollen): support more change types.
+  FILE_CHANGE_TYPE_RENAMED = 4;
+  FILE_CHANGE_TYPE_COPIED = 5;
+  FILE_CHANGE_TYPE_UNCHANGED = 6;
 }
 
 // A summary of the changes to a file contained in a PR.
