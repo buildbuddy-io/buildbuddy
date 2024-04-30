@@ -193,6 +193,30 @@ actions:
 `,
 	}
 
+	workspaceContentsWithGitFetchDepth = map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD":     `sh_binary(name = "fetch_depth_test", srcs = ["fetch_depth_test.sh"])`,
+		"fetch_depth_test.sh": `
+			cd "$BUILD_WORKSPACE_DIRECTORY"
+			# We should not have fetched the merge-base commit between the
+			# current branch and master, since the branches should have diverged
+			# and we're fetching with --depth=1.
+			MERGE_BASE=$(git merge-base origin/master origin/pr-branch)
+			echo "merge-base: '$MERGE_BASE' (should be empty)"
+			test -z "$MERGE_BASE" || exit 1
+`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      pull_request: { branches: [ master ], merge_with_base: false }
+      push: { branches: [ master ] }
+    git_fetch_depth: 1
+    bazel_commands:
+      - run :fetch_depth_test
+`,
+	}
+
 	invocationIDPattern = regexp.MustCompile(`Invocation URL:\s+.*?/invocation/([a-f0-9-]+)`)
 )
 
@@ -1015,6 +1039,29 @@ func TestFailedGitSetup_StillPublishesBuildMetadata(t *testing.T) {
 		"should publish workflow invocation metadata to BES despite failed repo setup")
 }
 
+func TestFetchFilters(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
+	app := buildbuddy.Run(t)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Show bazel version",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+		"--git_fetch_filters=blob:none",
+	}
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+}
+
 func TestDisableBaseBranchMerging(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithExitScriptAndMergeDisabled)
@@ -1040,6 +1087,42 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	checkRunnerResult(t, result)
+}
+
+func TestFetchDepth1(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithGitFetchDepth)
+	testshell.Run(t, repoPath, `
+		# Create a PR branch
+		git checkout -b pr-branch
+
+		# Add a bad commit to the master branch;
+		# this should not break our CI run on the PR branch which doesn't have
+		# this change yet.
+		git checkout master
+		echo 'exit 1' > exit.sh
+		git add .
+		git commit -m "Fail"
+	`)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+		// Need to set the fetch_depth flag even though it's set in the config,
+		// since this is required in order to fetch the config.
+		"--git_fetch_depth=1",
 	}
 	app := buildbuddy.Run(t)
 	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)

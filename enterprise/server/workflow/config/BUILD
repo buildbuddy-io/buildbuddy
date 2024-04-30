@@ -20,5 +20,6 @@ go_test(
         ":config",
         "//enterprise/server/workflow/config/test_data",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
