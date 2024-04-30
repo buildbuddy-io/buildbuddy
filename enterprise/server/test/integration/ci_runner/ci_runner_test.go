@@ -748,7 +748,7 @@ actions:
 	assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
 }
 
-func TestRunAction_TargetRepoOnly(t *testing.T) {
+func TestRunAction_PushedRepoOnly(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
 
@@ -770,8 +770,8 @@ func TestRunAction_TargetRepoOnly(t *testing.T) {
 		"--workflow_id=test-workflow",
 		"--action_name=Print args",
 		"--trigger_event=push",
-		"--target_repo_url=file://" + repoPath,
-		"--target_branch=master",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
