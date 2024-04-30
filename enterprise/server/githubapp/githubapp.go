@@ -2193,6 +2193,12 @@ func FileStatusToChangeType(status string) ghpb.FileChangeType {
 		return ghpb.FileChangeType_FILE_CHANGE_TYPE_REMOVED
 	} else if status == "changed" || status == "modified" {
 		return ghpb.FileChangeType_FILE_CHANGE_TYPE_MODIFIED
+	} else if status == "renamed" {
+		return ghpb.FileChangeType_FILE_CHANGE_TYPE_RENAMED
+	} else if status == "copied" {
+		return ghpb.FileChangeType_FILE_CHANGE_TYPE_COPIED
+	} else if status == "unchanged" {
+		return ghpb.FileChangeType_FILE_CHANGE_TYPE_UNCHANGED
 	}
 	return ghpb.FileChangeType_FILE_CHANGE_TYPE_UNKNOWN
 }
@@ -2312,8 +2318,10 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		if ref == "" {
 			return nil, status.InternalErrorf("Couldn't find SHA for file.")
 		}
-		// TODO(jdhollen): Put original filename here for moves.
-		summary.OriginalName = f.GetFilename()
+		summary.OriginalName = f.GetPreviousFilename()
+		if summary.OriginalName == "" {
+			summary.OriginalName = summary.Name
+		}
 		summary.OriginalCommitSha = pr.BaseRefOid
 		summary.ModifiedCommitSha = pr.HeadRefOid
 		fileSummaries = append(fileSummaries, summary)
