@@ -459,8 +459,9 @@ export default class InvocationModel {
 
   getIsExecutionLogEnabled() {
     return (
-      this.buildToolLogs?.log.find((l) => l.name == "execution.log" && l.uri.startsWith("bytestream://")) &&
-      this.stringCommandLineOption("remote_build_event_upload") == "all"
+      this.buildToolLogs?.log.find(
+        (l) => (l.name == "execution.log" || l.name == "execution_log.binpb.zstd") && l.uri.startsWith("bytestream://")
+      ) && this.stringCommandLineOption("remote_build_event_upload") == "all"
     );
   }
 
