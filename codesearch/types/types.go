@@ -58,7 +58,7 @@ type IndexWriter interface {
 
 type IndexReader interface {
 	GetStoredDocument(docID uint64, fieldNames ...string) (Document, error)
-	RawQuery(squery []byte) ([]uint64, error)
+	RawQuery(squery []byte) (map[string][]uint64, error)
 }
 
 type Scorer interface {

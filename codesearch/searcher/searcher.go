@@ -2,6 +2,7 @@ package searcher
 
 import (
 	"runtime"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -46,20 +47,39 @@ func (c *CodeSearcher) retrieveDocs(candidateDocIDs []uint64) ([]types.Document,
 	return docs, nil
 }
 
-func (c *CodeSearcher) scoreDocs(scorer types.Scorer, candidateDocIDs []uint64, numResults int) ([]uint64, error) {
+func (c *CodeSearcher) scoreDocs(scorer types.Scorer, fieldDocidMatches map[string][]uint64, numResults int) ([]uint64, error) {
 	start := time.Now()
-	numCandidateDocIDs := len(candidateDocIDs)
-	scoreMap := make(map[uint64]float64, len(candidateDocIDs))
+
+	allDocIDs := make([]uint64, 0)
+	for _, docIDs := range fieldDocidMatches {
+		allDocIDs = append(allDocIDs, docIDs...)
+	}
+	slices.Sort(allDocIDs)
+
+	numDocs := len(allDocIDs)
+	docIDs := slices.Compact(allDocIDs)
+
+	scoreMap := make(map[uint64]float64, numDocs)
 	var mu sync.Mutex
+
+	docFields := make(map[uint64][]string, numDocs)
+	for fieldName, docs := range fieldDocidMatches {
+		if len(fieldName) == 0 {
+			continue
+		}
+		for _, docid := range docs {
+			docFields[docid] = append(docFields[docid], fieldName)
+		}
+	}
 
 	// TODO(tylerw): use a priority-queue; stop iteration early.
 	g := new(errgroup.Group)
 	g.SetLimit(runtime.GOMAXPROCS(0))
 
-	for _, docID := range candidateDocIDs {
+	for _, docID := range docIDs {
 		docID := docID
 		g.Go(func() error {
-			doc, err := c.indexReader.GetStoredDocument(docID, "filename", "content")
+			doc, err := c.indexReader.GetStoredDocument(docID, docFields[docID]...)
 			if err != nil {
 				return err
 			}
@@ -74,16 +94,16 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, candidateDocIDs []uint64, 
 		log.Errorf("error: %s", err)
 	}
 
-	sort.Slice(candidateDocIDs, func(i, j int) bool {
-		return scoreMap[candidateDocIDs[i]] > scoreMap[candidateDocIDs[j]]
+	sort.Slice(docIDs, func(i, j int) bool {
+		return scoreMap[docIDs[i]] > scoreMap[docIDs[j]]
 	})
 
-	if len(candidateDocIDs) > numResults {
-		candidateDocIDs = candidateDocIDs[:numResults]
+	if len(docIDs) > numResults {
+		docIDs = docIDs[:numResults]
 	}
 
-	c.log.Infof("Scoring %d docs took %s", numCandidateDocIDs, time.Since(start))
-	return candidateDocIDs, nil
+	c.log.Infof("Scoring %d docs took %s", numDocs, time.Since(start))
+	return docIDs, nil
 }
 
 func (c *CodeSearcher) Search(q types.Query) ([]types.Document, error) {
@@ -97,11 +117,11 @@ func (c *CodeSearcher) Search(q types.Query) ([]types.Document, error) {
 		return nil, err
 	}
 
-	candidateDocIDs, err = c.scoreDocs(scorer, candidateDocIDs, q.NumResults())
+	topDocIDs, err := c.scoreDocs(scorer, candidateDocIDs, q.NumResults())
 	if err != nil {
 		return nil, err
 	}
-	docs, err := c.retrieveDocs(candidateDocIDs)
+	docs, err := c.retrieveDocs(topDocIDs)
 	if err != nil {
 		return nil, err
 	}

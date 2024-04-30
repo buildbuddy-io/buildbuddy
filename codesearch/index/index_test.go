@@ -85,7 +85,7 @@ func TestDeletes(t *testing.T) {
 	r := NewReader(db, "testing-namespace")
 	docIDs, err := r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1, 2, 3}, docIDs)
+	assert.Equal(t, map[string][]uint64{"": {1, 2, 3}}, docIDs)
 
 	// Delete a doc
 	w, err = NewWriter(db, "testing-namespace")
@@ -98,7 +98,7 @@ func TestDeletes(t *testing.T) {
 	r = NewReader(db, "testing-namespace")
 	docIDs, err = r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1, 3}, docIDs)
+	assert.Equal(t, map[string][]uint64{"": {1, 3}}, docIDs)
 }
 
 func TestIncrementalIndexing(t *testing.T) {
@@ -121,7 +121,7 @@ func TestIncrementalIndexing(t *testing.T) {
 	r := NewReader(db, "testing-namespace")
 	docIDs, err := r.RawQuery([]byte("(:eq text one)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {1}}, docIDs)
 
 	// Now add some docs and delete others and ensure the returned results
 	// are as expected.
@@ -137,11 +137,11 @@ func TestIncrementalIndexing(t *testing.T) {
 	r = NewReader(db, "testing-namespace")
 	docIDs, err = r.RawQuery([]byte("(:eq text one)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{5}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {5}}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{2, 3, 4, 5}, docIDs)
+	assert.Equal(t, map[string][]uint64{"": {2, 3, 4, 5}}, docIDs)
 }
 
 func TestUnkonwnTokenType(t *testing.T) {
@@ -191,12 +191,17 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	r := NewReader(db, "testing-namespace")
 	docIDs, err := r.RawQuery([]byte(`(:eq field_a stored)`))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1}, docIDs)
+	assert.Equal(t, map[string][]uint64{"field_a": {1}}, docIDs)
 
 	// docs should be searchable by non-stored fields
 	docIDs, err = r.RawQuery([]byte(`(:eq field_b unstored)`))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1}, docIDs)
+	assert.Equal(t, map[string][]uint64{"field_b": {1}}, docIDs)
+
+	// docs should be searchable by both stored and non-stored fields
+	docIDs, err = r.RawQuery([]byte(`(:or (:eq field_b unstored) (:eq field_a stored))`))
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"field_b": {1}, "field_a": {1}}, docIDs)
 
 	// stored document should only contain stored fields
 	rdoc, err := r.GetStoredDocument(1)
@@ -234,20 +239,20 @@ func TestNamespaceSeparation(t *testing.T) {
 	r := NewReader(db, "namespace-a")
 	docIDs, err := r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1, 2, 3}, docIDs)
+	assert.Equal(t, map[string][]uint64{"": {1, 2, 3}}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:eq text one)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {1}}, docIDs)
 
 	r = NewReader(db, "namespace-b")
 	docIDs, err = r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1, 2, 3, 4}, docIDs)
+	assert.Equal(t, map[string][]uint64{"": {1, 2, 3, 4}}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:eq text pab)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{4}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {4}}, docIDs)
 }
 
 func TestSQuery(t *testing.T) {
@@ -269,27 +274,27 @@ func TestSQuery(t *testing.T) {
 	r := NewReader(db, "testing-namespace")
 	docIDs, err := r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1, 2, 3}, docIDs)
+	assert.Equal(t, map[string][]uint64{"": {1, 2, 3}}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:none)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{}, docIDs)
+	assert.Equal(t, map[string][]uint64{}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:eq text one)"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {1}}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:or (:eq text one) (:eq text bar))"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{1, 2}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {1, 2}}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:eq text \" ba\")"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{2, 3}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {2, 3}}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:and (:eq text \" ba\") (:eq text two))"))
 	require.NoError(t, err)
-	assert.Equal(t, []uint64{2}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {2}}, docIDs)
 
 	_, err = r.RawQuery([]byte("(:and (:)")) // invalid q
 	require.Error(t, err)

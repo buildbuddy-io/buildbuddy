@@ -85,3 +85,43 @@ func TestClear(t *testing.T) {
 	pl.Clear()
 	assert.Equal(t, []uint64{}, pl.ToArray())
 }
+
+func TestFieldMap(t *testing.T) {
+	fm := posting.NewFieldMap()
+	fm.OrField("test", posting.NewList(1, 2, 3, 4, 5))
+	assert.Equal(t, map[string][]uint64{"test": []uint64{1, 2, 3, 4, 5}}, fm.Map())
+}
+
+func TestFieldMapOr(t *testing.T) {
+	fm := posting.NewFieldMap()
+	fm.OrField("test", posting.NewList(1, 2))
+	fm.OrField("test2", posting.NewList(3, 4))
+
+	fm2 := posting.NewFieldMap()
+	fm2.OrField("test", posting.NewList(3, 4))
+	fm2.OrField("test2", posting.NewList(5, 6))
+	fm2.OrField("test3", posting.NewList(7, 8))
+	fm.Or(fm2)
+
+	want := map[string][]uint64{
+		"test":  []uint64{1, 2, 3, 4},
+		"test2": []uint64{3, 4, 5, 6},
+		"test3": []uint64{7, 8},
+	}
+	assert.Equal(t, want, fm.Map())
+}
+
+func TestFieldMapAnd(t *testing.T) {
+	fm := posting.NewFieldMap()
+	fm.OrField("test", posting.NewList(1, 2))
+
+	fm2 := posting.NewFieldMap()
+	fm2.OrField("test2", posting.NewList(2, 4))
+	fm.And(fm2)
+
+	want := map[string][]uint64{
+		"test":  []uint64{2},
+		"test2": []uint64{2},
+	}
+	assert.Equal(t, want, fm.Map())
+}
