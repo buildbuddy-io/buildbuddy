@@ -10,7 +10,10 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -36,6 +39,10 @@ const (
 	netNamespacePrefix = "bb-executor-"
 	// Total number of available host IP ranges that can be allocated to VMs.
 	numAssignableNetworks = 1000
+	// Time to allow for networking cleanup. We intentionally use a long-ish
+	// timeout here because if cleanup fails then we might leave the network in
+	// a bad state, preventing a host IP from being usable.
+	networkingCleanupTimeout = 1 * time.Minute
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -182,10 +189,6 @@ func createRandomVethPair(ctx context.Context, netNamespace string) (string, str
 	return veth0, veth1, err
 }
 
-func getCloneIP(vmIdx int) string {
-	return fmt.Sprintf("192.168.%d.%d", vmIdx/30, ((vmIdx%30)*8)+3)
-}
-
 func attachAddressToVeth(ctx context.Context, netNamespace, ipAddr, vethName string) error {
 	if netNamespace != "" {
 		return runCommand(ctx, namespace(netNamespace, "ip", "addr", "add", ipAddr, "dev", vethName)...)
@@ -202,24 +205,6 @@ func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 	// This will delete the veth pair too, and the address attached
 	// to the host-size of the veth pair.
 	return runCommand(ctx, "ip", "netns", "delete", NetNamespace(netNamespace))
-}
-
-func DeleteRoute(ctx context.Context, vmIdx int) error {
-	return runCommand(ctx, "ip", "route", "delete", getCloneIP(vmIdx))
-}
-
-func DeleteRuleIfSecondaryNetworkEnabled(ctx context.Context, vmIdx int) error {
-	if IsSecondaryNetworkEnabled() {
-		return runCommand(ctx, "ip", "rule", "del", "from", getCloneIP(vmIdx))
-	}
-
-	if IsPrivateRangeBlackholingEnabled() {
-		for _, r := range PrivateIPRanges {
-			return runCommand(ctx, "ip", "rule", "del", "from", getCloneIP(vmIdx), "to", r)
-		}
-	}
-
-	return nil
 }
 
 func routeExists(ctx context.Context, source string, gateway string) (bool, error) {
@@ -270,6 +255,10 @@ type HostNet struct {
 
 func (n *HostNet) String() string {
 	return fmt.Sprintf("192.168.%d.%d/30", n.netIdx/30, (n.netIdx%30)*8+5)
+}
+
+func (n *HostNet) CloneIP() string {
+	return fmt.Sprintf("192.168.%d.%d", n.netIdx/30, ((n.netIdx%30)*8)+3)
 }
 
 func (n *HostNet) Unlock() {
@@ -346,6 +335,35 @@ func (a *HostNetAllocator) unlock(netIdx int) {
 //	# add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //	$ sudo ip route add 192.168.0.3 via 10.0.0.2
 func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_ func(context.Context) error, err error) {
+	// Keep a list of cleanup work to be done. This list follows a similar
+	// execution order to `defer` (LIFO order), which models the dependency
+	// ordering between cleanup tasks (if A is created before B then A should be
+	// cleaned up after B).
+	var cleanupStack []func(ctx context.Context) error
+	cleanup := func(ctx context.Context) error {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, networkingCleanupTimeout)
+		defer cancel()
+		// Pop and run cleanup funcs from the stack until empty.
+		for len(cleanupStack) > 0 {
+			f := cleanupStack[len(cleanupStack)-1]
+			cleanupStack = cleanupStack[:len(cleanupStack)-1]
+			if err := f(ctx); err != nil {
+				// Short-circuit on the first error. Note, this means we may not
+				// unlock the host IP, so fire a warning.
+				alert.UnexpectedEvent("vm_network_cleanup_failed", "VM networking cleanup failed. This might keep the VM host IP locked, so if there are a lot of these errors, VM networking may eventually stop functioning. Error: %s", err)
+				return err
+			}
+		}
+		return nil
+	}
+	// If we return an error from this func then we need to clean up any
+	// resources that were created before returning.
+	defer func() {
+		if err != nil {
+			_ = cleanup(ctx)
+		}
+	}()
+
 	r, err := findRoute(ctx, *routePrefix)
 	device := r.device
 	if err != nil {
@@ -364,13 +382,10 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 	if err != nil {
 		return nil, status.WrapError(err, "assign host network to VM")
 	}
-	defer func() {
-		if err != nil {
-			// If we didn't successfully create the veth pair then make
-			// sure to free up the host network IP address for future use.
-			hostEndpointNet.Unlock()
-		}
-	}()
+	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+		hostEndpointNet.Unlock()
+		return nil
+	})
 	hostEndpointAddr := strings.SplitN(hostEndpointNet.String(), "/", 2)[0]
 	// Can be anything because it's in a namespace.
 	cloneEndpointNet := fmt.Sprintf("192.168.%d.%d/30", vmIdx/30, (vmIdx%30)*8+6)
@@ -378,7 +393,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 
 	// This IP will be used as the clone-address so must be unique on the
 	// host.
-	cloneIP := getCloneIP(vmIdx)
+	cloneIP := hostEndpointNet.CloneIP()
 
 	err = attachAddressToVeth(ctx, netNamespace, cloneEndpointNet, veth0)
 	if err != nil {
@@ -395,21 +410,21 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 		return nil, err
 	}
 
+	// Note: these next few commands do not need explicit cleanup because
+	// deleting a net namespace will automatically clean up any resources in it,
+	// including the veth pair.
 	err = runCommand(ctx, "ip", "link", "set", "dev", veth1, "up")
 	if err != nil {
 		return nil, err
 	}
-
 	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", hostEndpointAddr)...)
 	if err != nil {
 		return nil, err
 	}
-
 	err = runCommand(ctx, namespace(netNamespace, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", veth0, "-s", vmIP, "-j", "SNAT", "--to", cloneIP)...)
 	if err != nil {
 		return nil, err
 	}
-
 	err = runCommand(ctx, namespace(netNamespace, "iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", veth0, "-d", cloneIP, "-j", "DNAT", "--to", vmIP)...)
 	if err != nil {
 		return nil, err
@@ -423,6 +438,9 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 		if err != nil {
 			return nil, err
 		}
+		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+			return runCommand(ctx, "ip", "route", "delete", cloneIP)
+		})
 	} else {
 		log.Debugf("ip route %s via %s already exists", cloneIP, cloneEndpointAddr)
 	}
@@ -432,6 +450,9 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 		if err != nil {
 			return nil, err
 		}
+		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+			return runCommand(ctx, "ip", "rule", "del", "from", cloneIP)
+		})
 	}
 
 	if IsPrivateRangeBlackholingEnabled() {
@@ -440,6 +461,9 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 			if err != nil {
 				return nil, err
 			}
+			cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+				return runCommand(ctx, "ip", "rule", "del", "from", cloneIP, "to", r)
+			})
 		}
 	}
 
@@ -447,11 +471,11 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 	if err != nil {
 		return nil, err
 	}
-
-	return func(ctx context.Context) error {
-		hostEndpointNet.Unlock()
+	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
 		return removeForwardAcceptRule(ctx, veth1, device)
-	}, nil
+	})
+
+	return cleanup, nil
 }
 
 // DefaultIP returns the IPv4 address for the primary network.

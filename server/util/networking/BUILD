@@ -6,6 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/networking",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/util/alert",
+        "//server/util/background",
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
