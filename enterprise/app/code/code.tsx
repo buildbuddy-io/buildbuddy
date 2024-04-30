@@ -1537,7 +1537,7 @@ function getOrCreateModel(url: string, value: string) {
     existingModel.setValue(value);
     return existingModel;
   }
-  return monaco.editor.createModel(value, langFromPath(url), monaco.Uri.file(url));
+  return monaco.editor.createModel(value, getLangHintFromFilePath(url), monaco.Uri.file(url));
 }
 
 // This revives any non-serializable objects in state from their seralized form.
