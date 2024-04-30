@@ -382,10 +382,21 @@ A named group of Bazel commands that run when triggered.
   and `"ubuntu-20.04"`. Defaults to `"ubuntu-18.04"`.
 - **`resource_requests`** ([`ResourceRequests`](#resourcerequests)):
   the requested resources for this action.
-- **`user`** (`string`): User to run the workflow as. For Linux workflows,
-  the user `buildbuddy` can be specified here to ensure that the action
-  runs as a non-root user, to accomodate certain Bazel actions that refuse
-  to run as root (like `rules_hermetic_python`).
+- **`user`** (`string`): User to run the workflow as. This can be set to
+  `"root"` to run the workflow as root, but it is recommended to keep the
+  default value, which is a non-root user provisioned in the CI
+  environment (usually named `"buildbuddy"`). Note: some legacy workflows
+  might still have `"root"` as the default user, but we are in the process
+  of migrating all users to non-root by default.
+- **`git_fetch_filters`** (`string` list): list of [`--filter` option](https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filtercodeemltfilter-specgtem)
+  values to the `git fetch` command used when fetching the git commits
+  to build. Defaults to `["blob:none"]`.
+- **`git_fetch_depth`** (`int`): [`--depth` option](https://git-scm.com/docs/git-fetch#Documentation/git-fetch.txt---depthltdepthgt) value used when
+  fetching the git commits to build. When using this option in combination
+  with a `pull_request` trigger, it's recommended to set
+  `merge_with_base: false` in the `pull_request` trigger, since the
+  limited fetch depth might prevent the merge-base commit from being
+  fetched. Defaults to `0` (unset).
 - **`git_clean_exclude`** (`string` list): List of directories within the
   workspace that are excluded when running `git clean` across actions that
   are executed in the same runner instance. This is an advanced option and
@@ -399,8 +410,8 @@ A named group of Bazel commands that run when triggered.
   Environment variables are expanded, which means that the bazel command
   line can reference [secrets](secrets.md) if the workflow execution
   is trusted.
-- **`timeout`** (`time.Duration`): If set, workflow actions that have been
-  running for longer than this timeout will be canceled automatically. This
+- **`timeout`** (`duration` string, e.g. '30m', '1h'): If set, workflow actions that have been
+  running for longer than this duration will be canceled automatically. This
   only applies to a single invocation, and does not include multiple retry attempts.
 
 ### `Triggers`
