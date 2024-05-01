@@ -164,6 +164,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		Triggers: &Triggers{
 			Push: &PushTrigger{Branches: pushTriggerBranches},
 		},
+		ContainerImage: `ubuntu-20.04`,
 		// Note: default Bazel flags are written by the runner to ~/.bazelrc
 		BazelCommands: []string{cmd},
 	}
