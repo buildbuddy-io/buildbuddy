@@ -749,6 +749,190 @@ actions:
 	assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
 }
 
+func TestRunAction_PushedRef(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	testCases := []struct {
+		name                    string
+		repoFlags               []string
+		expectedReportingValues map[string]string
+	}{
+		{
+			name: "Only pushed_ref (branch) set",
+			repoFlags: []string{
+				"--pushed_ref=master",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "master",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Only pushed_ref (commit sha) set",
+			repoFlags: []string{
+				fmt.Sprintf("--pushed_ref=%s", initialCommitSHA),
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Set pushed_ref (commit) and pushed_branch",
+			repoFlags: []string{
+				fmt.Sprintf("--pushed_ref=%s", initialCommitSHA),
+				"--pushed_branch=master",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "master",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Set pushed_ref (branch) and pushed_branch - same value",
+			repoFlags: []string{
+				"--pushed_ref=master",
+				"--pushed_branch=master",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "master",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Set pushed_ref (branch) and pushed_branch - different value",
+			repoFlags: []string{
+				"--pushed_ref=master",
+				"--pushed_branch=diff_branch_name",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "diff_branch_name",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Set pushed_ref (commit) and pushed_branch",
+			repoFlags: []string{
+				fmt.Sprintf("--pushed_ref=%s", initialCommitSHA),
+				"--pushed_branch=master",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "master",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Set pushed_ref (commit sha) and commit_sha - same value",
+			repoFlags: []string{
+				fmt.Sprintf("--pushed_ref=%s", initialCommitSHA),
+				fmt.Sprintf("--commit_sha=%s", initialCommitSHA),
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Set pushed_ref (commit sha) and commit_sha - different value",
+			repoFlags: []string{
+				fmt.Sprintf("--pushed_ref=%s", initialCommitSHA),
+				"--commit_sha=abc123",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "",
+				"commit": "abc123",
+			},
+		},
+		{
+			name: "Set pushed_ref (commit sha), pushed_branch and commit_sha",
+			repoFlags: []string{
+				fmt.Sprintf("--pushed_ref=%s", initialCommitSHA),
+				fmt.Sprintf("--commit_sha=%s", initialCommitSHA),
+				"--pushed_branch=master",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "master",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Set pushed_ref (branch), pushed_branch and commit_sha",
+			repoFlags: []string{
+				"--pushed_ref=master",
+				fmt.Sprintf("--commit_sha=%s", initialCommitSHA),
+				"--pushed_branch=master",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "master",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Set pushed_ref (branch) and target_branch",
+			repoFlags: []string{
+				"--pushed_ref=master",
+				"--target_repo_url=file://" + repoPath,
+				"--target_branch=master",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "master",
+				"commit": initialCommitSHA,
+			},
+		},
+		{
+			name: "Set pushed_ref (commit) and target_branch",
+			repoFlags: []string{
+				fmt.Sprintf("--pushed_ref=%s", initialCommitSHA),
+				"--target_repo_url=file://" + repoPath,
+				"--target_branch=master",
+			},
+			expectedReportingValues: map[string]string{
+				"branch": "",
+				"commit": initialCommitSHA,
+			},
+		},
+	}
+	baselineRunnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+	}
+	// Start the app so the runner can use it as the BES backend.
+	server := buildbuddy.Run(t)
+	baselineRunnerFlags = append(baselineRunnerFlags, server.BESBazelFlags()...)
+
+	for _, tc := range testCases {
+		if len(tc.repoFlags) == 0 {
+			continue
+		}
+		runnerFlags := append(baselineRunnerFlags, tc.repoFlags...)
+		r := invokeRunner(t, runnerFlags, []string{}, wsPath)
+		checkRunnerResult(t, r)
+		require.Contains(t, r.Output, "args: {{ Hello world }}", tc.name)
+
+		// Check that metadata was reported correctly
+		runnerInvocation := singleInvocation(t, server, r)
+		var workspaceStatusEvent *bespb.WorkspaceStatus
+		for _, e := range runnerInvocation.Event {
+			if e.BuildEvent.GetWorkspaceStatus() != nil {
+				workspaceStatusEvent = e.BuildEvent.GetWorkspaceStatus()
+				break
+			}
+		}
+		require.NotNil(t, workspaceStatusEvent, tc.name)
+
+		workspaceStatusMap := make(map[string]string, len(workspaceStatusEvent.Item))
+		for _, i := range workspaceStatusEvent.Item {
+			workspaceStatusMap[i.GetKey()] = i.GetValue()
+		}
+
+		require.Equal(t, tc.expectedReportingValues["branch"], workspaceStatusMap["GIT_BRANCH"], tc.name)
+		require.Equal(t, tc.expectedReportingValues["commit"], workspaceStatusMap["COMMIT_SHA"], tc.name)
+	}
+}
+
 func TestRunAction_PushedRepoOnly(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
@@ -813,7 +997,7 @@ func TestRunAction_PushedAndTargetBranchAreEqual(t *testing.T) {
 		"--action_name=Print args",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
+		"--pushed_ref=master",
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
 	}

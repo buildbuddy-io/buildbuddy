@@ -714,6 +714,26 @@ func parseFlags() error {
 			return err
 		}
 	}
+	if err := handleBackwardsCompatability(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// pushedRef should always be set, but old clients may not set it. Populate from
+// other flags if not set
+func handleBackwardsCompatability() error {
+	if *pushedRef != "" {
+		return nil
+	}
+	if *pushedBranch != "" {
+		pushedRef = pushedBranch
+	} else if *targetBranch != "" {
+		pushedRef = targetBranch
+	}
+	if *pushedRef == "" {
+		return status.InvalidArgumentError("expected `pushed_ref` to be set")
+	}
 	return nil
 }
 
@@ -814,12 +834,13 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	if *prNumber != 0 {
 		buildMetadata.Metadata["PULL_REQUEST_NUMBER"] = fmt.Sprintf("%d", *prNumber)
 	}
-	if *targetRepoURL != "" {
-		buildMetadata.Metadata["REPO_URL"] = *targetRepoURL
-	}
-	if *pushedRepoURL != *targetRepoURL {
+	baseURL := *pushedRepoURL
+	isFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
+	if isFork {
+		baseURL = *targetRepoURL
 		buildMetadata.Metadata["FORK_REPO_URL"] = *pushedRepoURL
 	}
+	buildMetadata.Metadata["REPO_URL"] = baseURL
 	if *visibility != "" {
 		buildMetadata.Metadata["VISIBILITY"] = *visibility
 	}
@@ -834,12 +855,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	log.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
 
-	// Initialize git metadata to be used in WorkflowConfigured event
-	// Set fetchData=false, because at this point the git remote may not be configured yet
-	if err := ws.initializeGitMetadata(ctx, false /* fetchData */); err != nil {
-		return err
-	}
-
+	// Note: pushedBranch and commitSHA may not be set.
+	// The data will be emitted to the BES in the WorkspaceStatus event after
+	// the git repo is setup.
 	wfc := &bespb.WorkflowConfigured{
 		WorkflowId:         *workflowID,
 		ActionName:         getActionNameForWorkflowConfiguredEvent(),
@@ -921,10 +939,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				// repo since we merge the target branch before running the workflow;
 				// we set this for the purpose of reporting statuses to GitHub.
 				{Key: "COMMIT_SHA", Value: *commitSHA},
-				// REPO_URL is used to report statuses, so always set it to the
-				// target repo URL (which should be the same URL on which the workflow
-				// is configured).
-				{Key: "REPO_URL", Value: *targetRepoURL},
+				{Key: "REPO_URL", Value: baseURL},
 			},
 		}},
 	}
@@ -1623,10 +1638,6 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
-	if err := ws.initializeGitMetadata(ctx, true /* fetchData */); err != nil {
-		return status.WrapError(err, "initialize git metadata")
-	}
-
 	if err := ws.fetchRefs(ctx); err != nil {
 		return status.WrapError(err, "fetch refs")
 	}
@@ -1649,6 +1660,17 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return status.WrapError(err, "checkout ref")
 	}
 
+	// If commit sha is not set, pull the sha that is checked out so that it can be used in Github Status reporting
+	if *commitSHA == "" {
+		headCommitSHA, err := git(ctx, ws.log, "rev-parse", "HEAD")
+		if err != nil {
+			return err
+		}
+		*commitSHA = headCommitSHA
+	}
+	// Unfortunately there's no performant way to find the branch name from
+	// a commit sha, so if the branch name is not set, leave it empty
+
 	action, err := getActionToRun()
 	if err != nil {
 		return err
@@ -1657,7 +1679,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 	// If enabled by the config, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
-	if merge && *targetRepoURL != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
+	if merge && *targetRepoURL != "" && *targetBranch != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
@@ -1689,76 +1711,6 @@ func (ws *workspace) sync(ctx context.Context) error {
 	return nil
 }
 
-// initializeGitMetadata sets pushedBranch and commitSHA based on pushedRef (which
-// can be either a branch or commit sha)
-// If fetchData is true, will fetch missing data from git (i.e. if pushedRef
-// is a commit, it will fetch the corresponding branch name). If fetchData is false,
-// it will leave missing data unset
-func (ws *workspace) initializeGitMetadata(ctx context.Context, fetchData bool) error {
-	handleBackwardsCompatability()
-	if *pushedRef == "" {
-		return status.InvalidArgumentError("expected `pushed_ref` to be set")
-	}
-
-	pushedRefIsBranch := ws.isBranch(ctx, *pushedRef)
-
-	if *commitSHA == "" {
-		if pushedRefIsBranch {
-			if fetchData {
-				// Pull HEAD commit sha for the branch
-				branchInfo, err := git(ctx, ws.log, "ls-remote", *pushedRepoURL, *pushedRef)
-				if err != nil {
-					return err
-				}
-				branchInfoSplit := strings.Fields(branchInfo)
-				if len(branchInfoSplit) != 2 {
-					return status.InternalErrorf("ls-remote expected to return commit sha and branch name, returned %s", branchInfo)
-				}
-				*commitSHA = branchInfoSplit[0]
-			}
-		} else {
-			*commitSHA = *pushedRef
-		}
-	}
-
-	if *pushedBranch == "" {
-		if pushedRefIsBranch {
-			*pushedBranch = *pushedRef
-		} else {
-			if fetchData {
-				// Get branch name from the commit SHA
-				// NOTE: This requires the repo to be cloned locally
-				branchInfo, err := git(ctx, ws.log, "name-rev", "--name-only", *pushedRef)
-				if err != nil {
-					return err
-				}
-				// Match a string of the pattern remotes/origin/<branch name>,
-				// or if the commit is not the HEAD of the branch, remotes/origin/<branch name>~num_commits_from_head
-				// The regex should extract `branch_name`
-				re := regexp.MustCompile(`^remotes\/origin\/([^~]+)~?\d*$`)
-				matches := re.FindStringSubmatch(branchInfo)
-				if len(matches) < 1 {
-					return status.InternalErrorf("expected branch info %s to contain branch name", branchInfo)
-				}
-
-				*pushedBranch = matches[0]
-			}
-		}
-	}
-	return nil
-}
-
-func handleBackwardsCompatability() {
-	if *pushedRef != "" {
-		return
-	}
-	if *pushedBranch != "" {
-		pushedRef = pushedBranch
-	} else if *targetBranch != "" {
-		pushedRef = targetBranch
-	}
-}
-
 // fetchRefs fetches the pushed and target refs from their respective remotes
 func (ws *workspace) fetchRefs(ctx context.Context) error {
 	// "base" here is referring to the repo on which the workflow is configured.
@@ -1767,27 +1719,27 @@ func (ws *workspace) fetchRefs(ctx context.Context) error {
 		baseRefs = append(baseRefs, *targetBranch)
 	}
 	// "fork" is referring to the forked repo, if the runner was triggered by a
-	// PR from a fork (forkBranches will be empty otherwise).
-	forkBranches := make([]string, 0)
+	// PR from a fork (forkRefs will be empty otherwise).
+	forkRefs := make([]string, 0)
 
 	// Add the pushed branch to the appropriate list corresponding to the remote
 	// to be fetched (base or fork).
-	isPushedBranchInFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
-	if isPushedBranchInFork {
-		forkBranches = append(forkBranches, *pushedRef)
+	isPushedRefInFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
+	if isPushedRefInFork {
+		forkRefs = append(forkRefs, *pushedRef)
 	} else if *pushedRef != *targetBranch {
 		baseRefs = append(baseRefs, *pushedRef)
 	}
 
 	baseURL := *pushedRepoURL
-	if isPushedBranchInFork {
+	if isPushedRefInFork {
 		baseURL = *targetRepoURL
 	}
 	// TODO: Fetch from remotes in parallel
 	if err := ws.fetch(ctx, baseURL, baseRefs); err != nil {
 		return err
 	}
-	if err := ws.fetch(ctx, *pushedRepoURL, forkBranches); err != nil {
+	if err := ws.fetch(ctx, *pushedRepoURL, forkRefs); err != nil {
 		return err
 	}
 	return nil
@@ -1795,31 +1747,38 @@ func (ws *workspace) fetchRefs(ctx context.Context) error {
 
 // checkoutRef checks out a reference that the rest of the remote run should run off
 func (ws *workspace) checkoutRef(ctx context.Context) error {
-	checkoutRef := *pushedRef
-	checkoutLocalBranchName := *pushedRef
-
-	checkoutRefIsBranch := ws.isBranch(ctx, checkoutRef)
-	if checkoutRefIsBranch {
-		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), checkoutRef)
+	checkoutLocalBranchName := *pushedBranch
+	if checkoutLocalBranchName == "" {
+		checkoutLocalBranchName = *pushedRef
 	}
-	if *pushedBranch != "" {
-		checkoutLocalBranchName = *pushedBranch
+
+	checkoutRef := *pushedRef
+	refIsBranch := isBranch(ctx, *pushedRef, *pushedRepoURL, checkoutLocalBranchName)
+	if refIsBranch {
+		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedRef)
 	}
 
 	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
 	if _, err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
 		return err
 	}
+
+	if refIsBranch && *pushedBranch == "" {
+		*pushedBranch = *pushedRef
+	} else if !refIsBranch && *commitSHA == "" {
+		*commitSHA = *pushedRef
+	}
+
 	return nil
 }
 
-func (ws *workspace) isBranch(ctx context.Context, ref string) bool {
-	refOutput, err := git(ctx, ws.log, "show-ref", ref)
-	if err != nil {
-		// Command will fail if the ref is not a branch
-		return false
-	}
-	return refOutput != ""
+// If the ref is a branch name, you need to append `gitRemoteName/` in order to check it out.
+// If the ref is a commit sha, you can check the ref out as is, and appending `gitRemoteName`
+// will result in the reference not being found.
+func isBranch(ctx context.Context, ref string, repoURL string, checkoutLocalBranchName string) bool {
+	refAsBranch := fmt.Sprintf("%s/%s", gitRemoteName(repoURL), ref)
+	_, err := git(ctx, io.Discard, "checkout", "--force", "-B", checkoutLocalBranchName, refAsBranch)
+	return err == nil
 }
 
 func (ws *workspace) config(ctx context.Context) error {
@@ -1828,6 +1787,9 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"user.email", "ci-runner@buildbuddy.io"},
 		{"user.name", "BuildBuddy"},
 		{"advice.detachedHead", "false"},
+		// Ignore warnings about using a commit sha as a local branch name
+		// We do this when we don't have the branch name
+		{"advice.objectNameWarning", "false"},
 		// With the version of git that we have installed in the CI runner
 		// image, --filter=blob:none requires the partialClone extension to be
 		// enabled.
@@ -1961,13 +1923,18 @@ func writeBazelrc(path, invocationID string) error {
 	}
 	defer f.Close()
 
+	baseURL := *pushedRepoURL
+	isFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
+	if isFork {
+		baseURL = *targetRepoURL
+	}
 	lines := []string{
 		"build --build_metadata=ROLE=CI",
 		"build --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
 		// Note: these pieces of metadata are set to match the WorkspaceStatus event
 		// for the outer (workflow) invocation.
 		"build --build_metadata=COMMIT_SHA=" + *commitSHA,
-		"build --build_metadata=REPO_URL=" + *targetRepoURL,
+		"build --build_metadata=REPO_URL=" + baseURL,
 		"build --build_metadata=BRANCH_NAME=" + *pushedBranch, // corresponds to GIT_BRANCH status key
 		// Don't report commit statuses for individual bazel commands, since the
 		// overall status of all bazel commands is reflected in the status reported
@@ -1988,7 +1955,7 @@ func writeBazelrc(path, invocationID string) error {
 		lines = append(lines, "build --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
 		lines = append(lines, "build --build_metadata=DISABLE_TARGET_TRACKING=true")
 	}
-	if *pushedRepoURL != *targetRepoURL {
+	if isFork {
 		lines = append(lines, "build --build_metadata=FORK_REPO_URL="+*pushedRepoURL)
 	}
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
@@ -2164,14 +2131,19 @@ func getStructuredCommandLine() *clpb.CommandLine {
 }
 
 func configureGlobalCredentialHelper(ctx context.Context) error {
-	if !strings.HasPrefix(*targetRepoURL, "https://") {
+	baseURL := *pushedRepoURL
+	isFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
+	if isFork {
+		baseURL = *targetRepoURL
+	}
+	if !strings.HasPrefix(baseURL, "https://") {
 		return nil
 	}
 	repoToken := os.Getenv(repoTokenEnvVarName)
 	if repoToken == "" {
 		return nil
 	}
-	u, err := url.Parse(*targetRepoURL)
+	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil // if URL is unparseable, do nothing
 	}

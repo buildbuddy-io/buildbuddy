@@ -532,6 +532,7 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 		ActionNames:    req.GetActionNames(),
 		PushedRepoUrl:  req.GetRepoUrl(),
 		PushedRef:      req.GetRef(),
+		PushedBranch:   req.GetRef(),
 		Visibility:     req.GetVisibility(),
 		Async:          req.GetAsync(),
 		Env:            req.GetEnv(),
