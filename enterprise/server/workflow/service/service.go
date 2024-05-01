@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -50,6 +51,7 @@ import (
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"gopkg.in/yaml.v2"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -609,13 +611,20 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 		return nil, err
 	}
 
+	addKythe, err := ws.enableExtraKytheIndexingAction(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var actions []*config.Action
 	for _, a := range cfg.Actions {
 		if len(actionFilter) == 0 || config.MatchesAnyActionName(a, actionFilter) {
 			actions = append(actions, a)
 		}
 	}
-
+	if addKythe {
+		actions = append(actions, config.KytheIndexingAction(wd.TargetRepoDefaultBranch))
+	}
 	if len(actions) == 0 {
 		if len(actionFilter) == 0 {
 			return nil, status.NotFoundError("no workflow actions found")
@@ -688,6 +697,18 @@ func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, re
 	).Exec().Error
 
 	return err
+}
+
+func (ws *workflowService) enableExtraKytheIndexingAction(ctx context.Context) (bool, error) {
+	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return false, err
+	}
+	g, err := ws.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return false, err
+	}
+	return g.CodeSearchEnabled, nil
 }
 
 // TODO(Maggie): Delete useCleanWorkflow and checkCleanWorkflowPermissions after
@@ -1196,6 +1217,20 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--bazel_command=" + ws.ciRunnerBazelCommand(),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 	}
+
+	// HACK: Kythe requires some special args, so if the name of this action
+	// indicates it's a Kythe action, add those args.
+	if workflowAction.Name == config.KytheActionName {
+		yamlBytes, err := yaml.Marshal(workflowAction)
+		if err != nil {
+			return nil, err
+		}
+		serializedAction := base64.StdEncoding.EncodeToString(yamlBytes)
+		args = append(args, "--bazel_startup_flags=--bazelrc=$KYTHE_DIR/extractors.bazelrc")
+		args = append(args, "--serialized_action="+serializedAction)
+		args = append(args, "--install_kythe=true")
+	}
+
 	for _, filter := range workflowAction.GetGitFetchFilters() {
 		args = append(args, "--git_fetch_filters="+filter)
 	}

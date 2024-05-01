@@ -45,6 +45,7 @@ go_library(
         "@com_github_google_go_github_v59//github",
         "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",
+        "@in_gopkg_yaml_v2//:yaml_v2",
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/durationpb",
