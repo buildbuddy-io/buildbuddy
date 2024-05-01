@@ -8,12 +8,15 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -30,21 +33,41 @@ const (
 func hasValidApiKey() bool {
 	apiKey, err := storage.ReadRepoConfig(ApiKeyRepoSetting)
 	if err != nil {
+		log.Debugf("unable to read git repo config: %v", err)
 		return false
 	}
 	log.Printf("Found an API key in your .git/config. Verifying it's validity.")
 
-	// Perform a zero byte CAS download with current API key.
+	return isValidApiKey(apiKey)
+}
+
+var getApiClient = sync.OnceValues(func() (bbspb.BuildBuddyServiceClient, error) {
 	conn, err := grpc_client.DialSimple(apiTarget)
 	if err != nil {
+		return nil, fmt.Errorf("unable to dial BuildBuddy target: %v", err)
+	}
+	return bbspb.NewBuildBuddyServiceClient(conn), nil
+})
+
+func isValidApiKey(apiKey string) bool {
+	bbsClient, err := getApiClient()
+	if err != nil {
+		log.Debugf("unable to get buildbuddy service client: %v", err)
 		return false
 	}
-	bbsClient := bbspb.NewBuildBuddyServiceClient(conn)
 	ctx := context.Background()
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 
 	_, err = bbsClient.GetUser(ctx, &uspb.GetUserRequest{})
-	return err == nil
+	if err != nil && status.IsNotFoundError(err) && strings.Contains(err.Error(), authutil.UserNotFoundMsg) {
+		// Org-level API key is used
+		return true
+	}
+	if err != nil {
+		log.Debugf("fail to get user: %v", err)
+		return false
+	}
+	return true
 }
 
 func HandleLogin(args []string) (exitCode int, err error) {
@@ -52,8 +75,11 @@ func HandleLogin(args []string) (exitCode int, err error) {
 		log.Printf("Current API key is valid. Skipping login.")
 		return 0, nil
 	}
-	log.Printf("No valid API key found.")
 
+	log.Printf("Press Enter to open %s in your browser...", loginURL)
+	if _, err := fmt.Scanln(); err != nil {
+		return -1, fmt.Errorf("failed to read input: %s", err)
+	}
 	if err := openInBrowser(loginURL); err != nil {
 		log.Printf("Failed to open browser: %s", err)
 		log.Printf("Copy and paste the URL below into a browser window:")
@@ -70,13 +96,15 @@ func HandleLogin(args []string) (exitCode int, err error) {
 	if apiKey == "" {
 		return -1, fmt.Errorf("invalid input: API key is empty")
 	}
+	if !isValidApiKey(apiKey) {
+		return -1, fmt.Errorf("invalid input: API key is not valid")
+	}
 
 	if err := storage.WriteRepoConfig(ApiKeyRepoSetting, apiKey); err != nil {
 		return -1, fmt.Errorf("failed to write API key to local .git/config: %s", err)
 	}
 
 	log.Printf("Wrote API key to .git/config")
-
 	log.Printf("You are now logged in!")
 
 	return 0, nil
