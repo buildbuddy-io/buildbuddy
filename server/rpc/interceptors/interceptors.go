@@ -372,10 +372,10 @@ func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerIntercep
 	}
 }
 
-func alertOnPanic() {
+func alertOnPanic(err any) {
 	buf := make([]byte, 1<<20)
 	n := runtime.Stack(buf, true)
-	alert.UnexpectedEvent("recovered_panic", buf[:n])
+	alert.UnexpectedEvent("recovered_panic", "%v\n%s", err, buf[:n])
 }
 
 func unaryRecoveryInterceptor() grpc.UnaryServerInterceptor {
@@ -384,7 +384,7 @@ func unaryRecoveryInterceptor() grpc.UnaryServerInterceptor {
 			if panicErr := recover(); panicErr != nil {
 				rsp = nil
 				err = status.InternalError("A panic occurred")
-				alertOnPanic()
+				alertOnPanic(panicErr)
 			}
 		}()
 		rsp, err = handler(ctx, req)
@@ -397,7 +397,7 @@ func streamRecoveryInterceptor() grpc.StreamServerInterceptor {
 		defer func() {
 			if panicErr := recover(); panicErr != nil {
 				err = status.InternalError("A panic occurred")
-				alertOnPanic()
+				alertOnPanic(panicErr)
 			}
 		}()
 		err = handler(srv, stream)

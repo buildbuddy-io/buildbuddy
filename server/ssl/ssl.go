@@ -109,37 +109,13 @@ func (s *SSLService) populateTLSConfig() error {
 	clientCACertPool := x509.NewCertPool()
 
 	if (*clientCACertFile != "" || *clientCACert != "") && (*clientCAKeyFile != "" || *clientCAKey != "") {
-		if *clientCACertFile != "" && *clientCACert != "" {
-			return status.FailedPreconditionError("Authority cert should be specified as a file or directly, but not both")
-		}
-		if *clientCAKeyFile != "" && *clientCAKey != "" {
-			return status.FailedPreconditionError("Authority key should be specified as a file or directly, but not both")
-		}
-
-		var certData []byte
-		if *clientCACert != "" {
-			certData = []byte(*clientCACert)
-		} else {
-			data, err := os.ReadFile(*clientCACertFile)
-			if err != nil {
-				return err
-			}
-			certData = data
-		}
-		var keyData []byte
-		if *clientCAKey != "" {
-			keyData = []byte(*clientCAKey)
-		} else {
-			data, err := os.ReadFile(*clientCAKeyFile)
-			if err != nil {
-				return err
-			}
-			keyData = data
-		}
-
-		cert, key, err := loadX509KeyPair(certData, keyData)
+		cert, err := LoadCertificate(*clientCACertFile, *clientCACert)
 		if err != nil {
-			return err
+			return status.FailedPreconditionErrorf("could not load CA certificate for mTLS: %s", err)
+		}
+		key, err := LoadCertificateKey(*clientCAKeyFile, *clientCAKey)
+		if err != nil {
+			return status.FailedPreconditionErrorf("could not load CA certificate key for mTLS: %s", err)
 		}
 		s.AuthorityCert = cert
 		s.AuthorityKey = key
@@ -379,18 +355,68 @@ func (s *SSLService) ValidateCert(certString string) (string, string, error) {
 	return cert.Subject.CommonName, cert.Subject.SerialNumber, nil
 }
 
-func loadX509KeyPair(certData, keyData []byte) (*x509.Certificate, *rsa.PrivateKey, error) {
+// LoadCertificate loads a certificate and its key either from files or from
+// raw bytes.
+func LoadCertificate(certFile, cert string) (*x509.Certificate, error) {
+	if certFile == "" && cert == "" {
+		return nil, status.FailedPreconditionErrorf("certificate must be specified either as file or directly")
+	}
+	if certFile != "" && cert != "" {
+		return nil, status.FailedPreconditionError("certificate should be specified as a file or directly, but not both")
+	}
+
+	var certData []byte
+	if cert != "" {
+		certData = []byte(cert)
+	} else {
+		data, err := os.ReadFile(certFile)
+		if err != nil {
+			return nil, status.UnknownErrorf("could not read certificate from %q: %s", certFile, err)
+		}
+		certData = data
+	}
+
 	cpb, _ := pem.Decode(certData)
+	if cpb == nil {
+		return nil, status.InvalidArgumentErrorf("certificate did not contain valid PEM data")
+	}
+	loadedCert, err := x509.ParseCertificate(cpb.Bytes)
+	if err != nil {
+		return nil, status.UnknownErrorf("could not parse certificate: %s", err)
+	}
+	return loadedCert, nil
+}
+
+func LoadCertificateKey(keyFile, key string) (*rsa.PrivateKey, error) {
+	if keyFile == "" && key == "" {
+		return nil, status.FailedPreconditionError("certificate key must be specified either as a file or directly")
+	}
+	if keyFile != "" && key != "" {
+		return nil, status.FailedPreconditionError("certificate key should be specified as a file or directly, but not both")
+	}
+
+	var keyData []byte
+	if key != "" {
+		keyData = []byte(key)
+	} else {
+		data, err := os.ReadFile(keyFile)
+		if err != nil {
+			return nil, status.UnknownErrorf("could not read certificate key from %q: %s", keyFile, err)
+		}
+		keyData = data
+	}
+
 	kpb, _ := pem.Decode(keyData)
-	crt, err := x509.ParseCertificate(cpb.Bytes)
-	if err != nil {
-		return nil, nil, err
+	if kpb == nil {
+		return nil, status.InvalidArgumentErrorf("certificate key did not contain valid PEM data")
 	}
-
-	key, err := x509.ParsePKCS8PrivateKey(kpb.Bytes)
+	loadedKey, err := x509.ParsePKCS8PrivateKey(kpb.Bytes)
 	if err != nil {
-		return nil, nil, err
+		return nil, status.UnknownErrorf("could not parse certificate key: %s", err)
 	}
-
-	return crt, key.(*rsa.PrivateKey), nil
+	rsaKey, ok := loadedKey.(*rsa.PrivateKey)
+	if !ok {
+		return nil, status.FailedPreconditionErrorf("only RSA keys are supported, got %T", loadedKey)
+	}
+	return rsaKey, nil
 }
