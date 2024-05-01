@@ -78,7 +78,7 @@ genrule(
         SRCS=($(SRCS))
         PODMAN_ARCHIVE=$${SRCS[0]}
         REGISTRIES_CONF=$${SRCS[1]}
-        tar --extract --file="$$PODMAN_ARCHIVE" --strip-components=1 --directory="$$TMPDIR"
+        tar --extract --file="$$PODMAN_ARCHIVE" --strip-components=1 --directory="$$TMPDIR" --no-same-owner
 
         # Remove README.md (not needed)
         rm "$$TMPDIR/README.md"
