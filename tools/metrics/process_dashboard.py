@@ -7,18 +7,25 @@ reverting changes which are most likely unintended.
 
 import argparse
 import collections
+import hashlib
 import json
 import sys
 
 
 ARGS = argparse.ArgumentParser()
 ARGS.add_argument("--name", default="", help="Dashboard file name")
+ARGS.add_argument("--uid", default="", help="Force dashboard UID to this value")
+ARGS.add_argument(
+    "--data_source_uid",
+    default="prom",
+    help="Set all prometheus data sources to this data source UID (either 'prom' or 'vm')",
+)
 
 DASHBOARD_REFRESH_INTERVAL = "1m"
 
 
 def main(args):
-    dashboard = json.load(sys.stdin)["dashboard"]
+    dashboard = json.load(sys.stdin)
 
     # Remove volatile versioning info since we use Git for versioning.
     if "version" in dashboard:
@@ -39,6 +46,24 @@ def main(args):
     # Related: https://github.com/grafana/grafana/issues/54126
     remove_dict_none_values(dashboard)
 
+    # Set title suffix based on data source UID.
+    suffix = " (VictoriaMetrics)"
+    if args.data_source_uid == "vm":
+        if not dashboard["title"].endswith(suffix):
+            dashboard["title"] += suffix
+    elif dashboard['title'].endswith(suffix):
+        dashboard['title'] = dashboard['title'][:-len(suffix)]
+
+    # Unless we are preserving a legacy dashboard UID, set the UID
+    # deterministically based on file name + data source. This is done because
+    # we need the UID to be different when generating the VictoriaMetrics
+    # dashboard from the prom dashboard.
+    if args.uid:
+        dashboard["uid"] = args.uid
+    else:
+        dashboard["uid"] = sha256(repr([get_file_tag(dashboard), args.data_source_uid]))[:9]
+
+    dashboard = with_data_source_uids(dashboard, args.data_source_uid)
     dashboard = with_ordered_dicts(dashboard)
 
     # Grafana updates the refresh interval in the JSON when changing it in the
@@ -55,6 +80,25 @@ def main(args):
     # Note: ensure_ascii=False keeps strings like "µs" as-is.
     json.dump(dashboard, sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")
+
+def sha256(text):
+    h = hashlib.sha256()
+    h.update(text.encode('utf-8'))
+    return h.hexdigest()
+
+
+def with_data_source_uids(obj, uid):
+    if isinstance(obj, list):
+        return [with_data_source_uids(item, uid) for item in obj]
+    elif isinstance(obj, dict):
+        datasource = obj.get("datasource")
+        if datasource and isinstance(datasource, dict) and datasource.get("type") == "prometheus":
+            datasource["uid"] = uid
+            obj = dict(obj)
+            obj["datasource"] = datasource
+        return {k: with_data_source_uids(v, uid) for (k, v) in obj.items()}
+    else:
+        return obj
 
 
 def get_file_tag(dash):

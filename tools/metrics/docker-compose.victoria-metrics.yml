@@ -1,0 +1,12 @@
+version: "3.3"
+services:
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:v1.100.1
+    volumes:
+      - ${PWD}/victoria-metrics/scrape.yml:/etc/victoria-metrics/scrape.yml
+    command:
+      - "--promscrape.config=/etc/victoria-metrics/scrape.yml"
+    ports:
+      - "8428:8428"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
