@@ -39,7 +39,10 @@ func (fs *fakeStore) AddPeer(ctx context.Context, sourceShardID, newShardID uint
 func (fs *fakeStore) SnapshotCluster(ctx context.Context, shardID uint64) error {
 	return nil
 }
-func newTestReplica(t testing.TB, rootDir string, shardID, replicaID uint64, store replica.IStore) (*replica.Replica, pebble.IPebbleDB) {
+func (fs *fakeStore) NHID() string {
+	return ""
+}
+func newTestReplica(t testing.TB, rootDir string, shardID, replicaID uint64, store replica.IStore) *replica.Replica {
 	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
 	require.NoError(t, err)
 
@@ -49,7 +52,7 @@ func newTestReplica(t testing.TB, rootDir string, shardID, replicaID uint64, sto
 		db.Close()
 	})
 
-	return replica.New(leaser, shardID, replicaID, "" /*=NHID=*/, store, nil /*=usageUpdates=*/), db
+	return replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/)
 }
 
 const shardID = 1
@@ -129,7 +132,7 @@ func (t *testingSender) SyncRead(ctx context.Context, key []byte, batch *rfpb.Ba
 func newTestingProposerAndSenderAndReplica(t testing.TB) (*testingProposer, *testingSender, *replica.Replica) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	r, _ := newTestReplica(t, rootDir, 1, 1, store)
+	r := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, r)
 
 	randID, err := random.RandomString(10)

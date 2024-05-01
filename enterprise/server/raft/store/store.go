@@ -668,7 +668,7 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 }
 
 func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMachine {
-	r := replica.New(s.leaser, shardID, replicaID, s.nodeHost.ID(), s, s.events)
+	r := replica.New(s.leaser, shardID, replicaID, s, s.events)
 	return r
 }
 
@@ -686,6 +686,10 @@ func (s *Store) ConfiguredClusters() int {
 
 func (s *Store) NodeHost() *dragonboat.NodeHost {
 	return s.nodeHost
+}
+
+func (s *Store) NHID() string {
+	return s.nodeHost.ID()
 }
 
 func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {

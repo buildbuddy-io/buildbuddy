@@ -71,6 +71,7 @@ type IStore interface {
 	Sender() *sender.Sender
 	AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error
 	SnapshotCluster(ctx context.Context, shardID uint64) error
+	NHID() string
 }
 
 // Replica implements the interface IOnDiskStateMachine. More details of
@@ -2077,11 +2078,11 @@ func (sm *Replica) Close() error {
 }
 
 // New creates a new Replica, an on-disk state machine.
-func New(leaser pebble.Leaser, shardID, replicaID uint64, nhid string, store IStore, broadcast chan<- events.Event) *Replica {
+func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
 	return &Replica{
 		ShardID:             shardID,
 		ReplicaID:           replicaID,
-		NHID:                nhid,
+		NHID:                store.NHID(),
 		store:               store,
 		leaser:              leaser,
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
