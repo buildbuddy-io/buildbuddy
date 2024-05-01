@@ -227,37 +227,6 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch
 	return batchResponse, nil
 }
 
-type NodeHostSender struct {
-	*dragonboat.NodeHost
-}
-
-func (nhs *NodeHostSender) SyncProposeLocal(ctx context.Context, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	return SyncProposeLocal(ctx, nhs.NodeHost, shardID, batch)
-}
-func (nhs *NodeHostSender) SyncReadLocal(ctx context.Context, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	return SyncReadLocal(ctx, nhs.NodeHost, shardID, batch)
-}
-
-func SyncProposeLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
-	batch, err := builder.ToProto()
-	if err != nil {
-		return nil, err
-	}
-	rsp, err := SyncProposeLocal(ctx, nodehost, shardID, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp), nil
-}
-
-func SyncProposeLocalBatchNoRsp(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) error {
-	rspBatch, err := SyncProposeLocalBatch(ctx, nodehost, shardID, builder)
-	if err != nil {
-		return err
-	}
-	return rspBatch.AnyError()
-}
-
 func SyncReadLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
 	batch, err := builder.ToProto()
 	if err != nil {

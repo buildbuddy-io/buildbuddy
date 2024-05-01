@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"sync"
@@ -69,7 +68,6 @@ type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	Sender() *sender.Sender
-	AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error
 	SnapshotCluster(ctx context.Context, shardID uint64) error
 	NHID() string
 }
@@ -454,12 +452,6 @@ func (sm *Replica) updateAndFlushPartitionMetadatas(wb pebble.Batch, key, val []
 		return err
 	}
 	return sm.flushPartitionMetadatas(wb)
-}
-
-func (sm *Replica) getDBDir() string {
-	return filepath.Join(sm.rootDir,
-		fmt.Sprintf("cluster-%d", sm.ShardID),
-		fmt.Sprintf("node-%d", sm.ReplicaID))
 }
 
 type ReplicaReader interface {

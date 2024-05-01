@@ -3,7 +3,6 @@ package store_test
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"path/filepath"
@@ -160,6 +159,35 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	return ts, nodeHost
 }
 
+func (ts *TestingStore) getMembership(ctx context.Context, shardID uint64) ([]*rfpb.ReplicaDescriptor, error) {
+	var membership *dragonboat.Membership
+	var err error
+	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		membership, err = ts.NodeHost.SyncGetShardMembership(ctx, shardID)
+		if err != nil {
+			return err
+		}
+		// Trick client.RunNodehostFn into running this again if we got a nil
+		// membership back
+		if membership == nil {
+			return status.OutOfRangeErrorf("cluster not ready")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(membership.Nodes))
+	for replicaID := range membership.Nodes {
+		replicas = append(replicas, &rfpb.ReplicaDescriptor{
+			ShardId:   shardID,
+			ReplicaId: replicaID,
+		})
+	}
+	return replicas, nil
+}
+
 func TestAddGetRemoveRange(t *testing.T) {
 	sf := newStoreFactory(t)
 	s1, _ := sf.NewStore(t)
@@ -256,21 +284,6 @@ func TestAutomaticSplitting(t *testing.T) {
 	waitForRangeLease(t, stores, 4)
 }
 
-func TestGetMembership(t *testing.T) {
-	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
-	ctx := context.Background()
-
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-	})
-	require.NoError(t, err)
-
-	replicas, err := s1.GetMembership(ctx, 1)
-	require.NoError(t, err)
-	require.Equal(t, 1, len(replicas))
-}
-
 func TestAddNodeToCluster(t *testing.T) {
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
@@ -296,9 +309,13 @@ func TestAddNodeToCluster(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicas, err := s.GetMembership(ctx, 2)
+	replicas, err := s.getMembership(ctx, 2)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(replicas))
+
+	s = getStoreWithRangeLease(t, stores, 2)
+	rd = s.GetRange(2)
+	require.Equal(t, 2, len(rd.GetReplicas()))
 }
 
 func TestRemoveNodeFromCluster(t *testing.T) {
@@ -324,9 +341,11 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	require.NoError(t, err)
 
 	s = getStoreWithRangeLease(t, stores, 2)
-	replicas, err := s.GetMembership(ctx, 2)
+	replicas, err := s.getMembership(ctx, 2)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(replicas))
+	rd = s.GetRange(2)
+	require.Equal(t, 1, len(rd.GetReplicas()))
 }
 
 func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID string, sizeBytes int64) *rfpb.FileRecord {
@@ -419,6 +438,7 @@ func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int
 }
 
 func TestSplitMetaRange(t *testing.T) {
+	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	ctx := context.Background()
@@ -472,6 +492,7 @@ func waitForRangeLease(t testing.TB, stores []*TestingStore, rangeID uint64) {
 }
 
 func TestSplitNonMetaRange(t *testing.T) {
+	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -518,7 +539,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	// Expect that a new cluster was added with shardID = 4
 	// having 3 replicas.
-	replicas, err := s1.GetMembership(ctx, 4)
+	replicas, err := s1.getMembership(ctx, 4)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
 
@@ -538,7 +559,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	// Expect that a new cluster was added with shardID = 5
 	// having 3 replicas.
-	replicas, err = s1.GetMembership(ctx, 5)
+	replicas, err = s1.getMembership(ctx, 5)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
 
@@ -570,10 +591,6 @@ func TestListReplicas(t *testing.T) {
 	require.Equal(t, 2, len(list.GetReplicas()))
 }
 
-func bytesToUint64(buf []byte) uint64 {
-	return binary.LittleEndian.Uint64(buf)
-}
-
 func TestPostFactoSplit(t *testing.T) {
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
@@ -600,8 +617,8 @@ func TestPostFactoSplit(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Expect that a new cluster was added with 3 replicas.
-	replicas, err := s1.GetMembership(ctx, 4)
+	// Expect that a new cluster was added with a replica.
+	replicas, err := s1.getMembership(ctx, 4)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(replicas))
 
@@ -713,8 +730,8 @@ func TestManySplits(t *testing.T) {
 			waitForRangeLease(t, stores, rsp.GetRight().GetRangeId())
 
 			// Expect that a new cluster was added with the new
-			// shardID and 3 replicas.
-			replicas, err := s.GetMembership(ctx, shardID)
+			// shardID and the replica.
+			replicas, err := s.getMembership(ctx, shardID)
 			require.NoError(t, err)
 			require.Equal(t, 1, len(replicas))
 		}
@@ -727,6 +744,7 @@ func TestManySplits(t *testing.T) {
 }
 
 func TestSplitAcrossClusters(t *testing.T) {
+	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -803,8 +821,8 @@ func TestSplitAcrossClusters(t *testing.T) {
 	s = getStoreWithRangeLease(t, stores, 3)
 
 	// Expect that a new cluster was added with shardID = 3
-	// having 3 replicas.
-	replicas, err := s.GetMembership(ctx, 3)
+	// having one replica.
+	replicas, err := s.getMembership(ctx, 3)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(replicas))
 
