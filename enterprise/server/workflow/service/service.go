@@ -1228,6 +1228,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		serializedAction := base64.StdEncoding.EncodeToString(yamlBytes)
 		args = append(args, "--bazel_startup_flags=--bazelrc=$KYTHE_DIR/extractors.bazelrc")
 		args = append(args, "--serialized_action="+serializedAction)
+		args = append(args, "--install_kythe=true")
 	}
 
 	for _, filter := range workflowAction.GetGitFetchFilters() {
