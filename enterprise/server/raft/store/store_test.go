@@ -474,21 +474,31 @@ func waitForRangeLease(t testing.TB, stores []*TestingStore, rangeID uint64) {
 func TestSplitNonMetaRange(t *testing.T) {
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
+	s2, nh2 := sf.NewStore(t)
+	s3, nh3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*TestingStore{s1}
+	stores := []*TestingStore{s1, s2, s3}
 	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
+		nh2.ID(): s2.GRPCAddress,
+		nh3.ID(): s3.GRPCAddress,
 	})
 	require.NoError(t, err)
 
 	s := getStoreWithRangeLease(t, stores, 2)
 	rd := s.GetRange(2)
+	// Veirfy that nhid in the rangea descriptor matches the registry.
+	for _, repl := range rd.GetReplicas() {
+		nhid, _, err := sf.reg.ResolveNHID(repl.GetShardId(), repl.GetReplicaId())
+		require.NoError(t, err)
+		require.Equal(t, repl.GetNhid(), nhid)
+	}
 	header := headerFromRangeDescriptor(rd)
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
-	written := writeNRecords(ctx, t, s1, 50)
+	written := writeNRecords(ctx, t, s, 50)
 	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: header,
 		Range:  rd,
@@ -497,13 +507,20 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	s = getStoreWithRangeLease(t, stores, 4)
 	rd = s.GetRange(4)
+	// Veirfy that nhid in the rangea descriptor matches the registry.
+	for _, repl := range rd.GetReplicas() {
+		nhid, _, err := sf.reg.ResolveNHID(repl.GetShardId(), repl.GetReplicaId())
+		require.NoError(t, err)
+		require.Equal(t, repl.GetNhid(), nhid)
+	}
 	header = headerFromRangeDescriptor(rd)
+	require.Equal(t, 3, len(rd.GetReplicas()))
 
 	// Expect that a new cluster was added with shardID = 4
 	// having 3 replicas.
 	replicas, err := s1.GetMembership(ctx, 4)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(replicas))
+	require.Equal(t, 3, len(replicas))
 
 	// Check that all files are still found.
 	for _, fr := range written {
@@ -523,7 +540,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	// having 3 replicas.
 	replicas, err = s1.GetMembership(ctx, 5)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(replicas))
+	require.Equal(t, 3, len(replicas))
 
 	// Check that all files are found.
 	for _, fr := range written {
@@ -741,7 +758,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 		RangeId:    2,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 2, ReplicaId: 1},
+			{ShardId: 2, ReplicaId: 1, Nhid: proto.String(nh2.ID())},
 		},
 	}
 	protoBytes, err := proto.Marshal(initialRD)

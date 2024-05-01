@@ -39,6 +39,9 @@ func (fs *fakeStore) AddPeer(ctx context.Context, sourceShardID, newShardID uint
 func (fs *fakeStore) SnapshotCluster(ctx context.Context, shardID uint64) error {
 	return nil
 }
+func (fs *fakeStore) NHID() string {
+	return ""
+}
 func newTestReplica(t testing.TB, rootDir string, shardID, replicaID uint64, store replica.IStore) *replica.Replica {
 	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
 	require.NoError(t, err)

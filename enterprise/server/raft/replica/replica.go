@@ -71,6 +71,7 @@ type IStore interface {
 	Sender() *sender.Sender
 	AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error
 	SnapshotCluster(ctx context.Context, shardID uint64) error
+	NHID() string
 }
 
 // Replica implements the interface IOnDiskStateMachine. More details of
@@ -82,6 +83,8 @@ type Replica struct {
 	fileDir   string
 	ShardID   uint64
 	ReplicaID uint64
+	// The ID of the node where this replica resided.
+	NHID string
 
 	store               IStore
 	lastAppliedIndex    uint64
@@ -188,6 +191,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 		Replica: &rfpb.ReplicaDescriptor{
 			ShardId:   sm.ShardID,
 			ReplicaId: sm.ReplicaID,
+			Nhid:      proto.String(sm.NHID),
 		},
 		RangeId: rd.GetRangeId(),
 	}
@@ -2078,6 +2082,7 @@ func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, broadcas
 	return &Replica{
 		ShardID:             shardID,
 		ReplicaID:           replicaID,
+		NHID:                store.NHID(),
 		store:               store,
 		leaser:              leaser,
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),

@@ -58,6 +58,9 @@ func (fs *fakeStore) AddPeer(ctx context.Context, sourceShardID, newShardID uint
 func (fs *fakeStore) SnapshotCluster(ctx context.Context, shardID uint64) error {
 	return nil
 }
+func (fs *fakeStore) NHID() string {
+	return ""
+}
 func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 	fs.fileReadFn = fn
 	return fs

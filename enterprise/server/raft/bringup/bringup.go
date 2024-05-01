@@ -273,6 +273,7 @@ func MakeBootstrapInfo(shardID, firstReplicaID uint64, nodeGrpcAddrs map[string]
 		bi.Replicas = append(bi.Replicas, &rfpb.ReplicaDescriptor{
 			ShardId:   shardID,
 			ReplicaId: replicaID,
+			Nhid:      proto.String(nhid),
 		})
 		bi.initialMembers[replicaID] = nhid
 		i += 1
