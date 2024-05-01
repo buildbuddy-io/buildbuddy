@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"gopkg.in/yaml.v2"
 )
 
@@ -21,7 +22,7 @@ const (
 
 	// KytheActionName is the name used for actions automatically
 	// run by us if code search is enabled.
-	KytheActionName = "AutoKythe"
+	KytheActionName = "Generate CodeSearch Index"
 )
 
 type BuildBuddyConfig struct {
@@ -153,13 +154,18 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 	if targetRepoDefaultBranch != "" {
 		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
 	}
+
+	cmd := "build --override_repository kythe_release=$KYTHE_DIR"
+	cmd += " --remote_cache=" + cache_api_url.String()
+	cmd += " //..."
+
 	return &Action{
 		Name: KytheActionName,
 		Triggers: &Triggers{
 			Push: &PushTrigger{Branches: pushTriggerBranches},
 		},
 		// Note: default Bazel flags are written by the runner to ~/.bazelrc
-		BazelCommands: []string{"build --override_repository kythe_release=$KYTHE_DIR //..."},
+		BazelCommands: []string{cmd},
 	}
 }
 

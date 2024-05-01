@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config",
     deps = [
         "//enterprise/server/webhooks/webhook_data",
+        "//server/endpoint_urls/cache_api_url",
         "@in_gopkg_yaml_v2//:yaml_v2",
     ],
 )
