@@ -110,6 +110,13 @@ proto_library(
 )
 
 proto_library(
+    name = "certgenerator_proto",
+    srcs = [
+        "certgenerator.proto",
+    ],
+)
+
+proto_library(
     name = "config_proto",
     srcs = [
         "config.proto",
@@ -1438,6 +1445,19 @@ go_proto_library(
         ":remote_execution_go_proto",
         ":resource_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+go_proto_library(
+    name = "certgenerator_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/certgenerator",
+    proto = ":certgenerator_proto",
+    deps = [
     ],
 )
 

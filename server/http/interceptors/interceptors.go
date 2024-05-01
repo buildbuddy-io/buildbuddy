@@ -273,10 +273,10 @@ func (w *instrumentedResponseWriter) Flush() {
 	}
 }
 
-func alertOnPanic() {
+func alertOnPanic(err any) {
 	buf := make([]byte, 1<<20)
 	n := runtime.Stack(buf, true)
-	alert.UnexpectedEvent("recovered_panic", buf[:n])
+	alert.UnexpectedEvent("recovered_panic", "%v\n%s", err, buf[:n])
 }
 
 func RecoverAndAlert(next http.Handler) http.Handler {
@@ -284,7 +284,7 @@ func RecoverAndAlert(next http.Handler) http.Handler {
 		defer func() {
 			if panicErr := recover(); panicErr != nil {
 				http.Error(w, "A panic occurred", http.StatusInternalServerError)
-				alertOnPanic()
+				alertOnPanic(panicErr)
 			}
 		}()
 		next.ServeHTTP(w, r)

@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package certgenerator;
+
+message GenerateRequest {
+  // OIDC token user to verify the caller's identity.
+  string token = 1;
+  // The SSH public key to be signed, in OpenSSH format.
+  string ssh_public_key = 2;
+}
+
+message GenerateResponse {
+  // Signed SSH certificate, in OpenSSH format.
+  string ssh_cert = 1;
+}
+
+// Service responsible for generating short-lived user certificates.
+service CertGenerator {
+  rpc Generate(GenerateRequest) returns (GenerateResponse);
+}
