@@ -14,7 +14,7 @@ message GenerateResponse {
   string ssh_cert = 1;
 }
 
-// Services responsible for generating short-lived user certificates.
+// Service responsible for generating short-lived user certificates.
 service CertGenerator {
   rpc Generate(GenerateRequest) returns (GenerateResponse);
 }
