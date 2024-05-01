@@ -42,20 +42,6 @@ func requireResolves(t testing.TB, dnr registry.NodeRegistry, shardID, replicaID
 	require.NotNil(t, key)
 }
 
-func requireError(t testing.TB, dnr registry.NodeRegistry, shardID, replicaID uint64, expectedErr error) {
-	addr, key, err := dnr.Resolve(shardID, replicaID)
-	require.Equal(t, "", addr)
-	require.Equal(t, "", key)
-	require.NoError(t, err)
-	require.ErrorIs(t, err, expectedErr)
-
-	addr, key, err = dnr.ResolveGRPC(shardID, replicaID)
-	require.Equal(t, "", addr)
-	require.Equal(t, "", key)
-	require.NoError(t, err)
-	require.ErrorIs(t, err, expectedErr)
-}
-
 func TestStaticRegistryAdd(t *testing.T) {
 	nr := registry.NewStaticNodeRegistry(1, nil)
 	nr.Add(1, 1, "nhid-1")

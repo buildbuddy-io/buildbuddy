@@ -780,37 +780,6 @@ func (s *Store) ListReplicas(ctx context.Context, req *rfpb.ListReplicasRequest)
 	return rsp, nil
 }
 
-func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) error {
-	defer canary.Start("AddPeer", 10*time.Second)()
-	rd := s.lookupRange(sourceShardID)
-	if rd == nil {
-		return status.FailedPreconditionErrorf("cluster %d not found on this node", sourceShardID)
-	}
-	sourceReplica, err := s.GetReplica(rd.GetRangeId())
-	if err != nil || sourceReplica == nil {
-		return status.FailedPreconditionErrorf("range %d not found on this node", rd.GetRangeId())
-	}
-	initialMembers := make(map[uint64]string)
-	for _, replica := range rd.GetReplicas() {
-		nhid := replica.GetNhid()
-		if len(nhid) == 0 {
-			return status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", replica)
-		}
-		initialMembers[replica.GetReplicaId()] = nhid
-	}
-
-	_, err = s.StartShard(ctx, &rfpb.StartShardRequest{
-		ShardId:       newShardID,
-		ReplicaId:     sourceReplica.ReplicaID,
-		InitialMember: initialMembers,
-		Join:          false,
-	})
-	if status.IsAlreadyExistsError(err) {
-		return nil
-	}
-	return err
-}
-
 func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error) {
 	s.log.Infof("Starting new raft node c%dn%d", req.GetShardId(), req.GetReplicaId())
 	rc := raftConfig.GetRaftConfig(req.GetShardId(), req.GetReplicaId())
@@ -1255,35 +1224,6 @@ func (w *updateTagsWorker) updateTags() error {
 	storeTags[constants.StoreUsageTag] = base64.StdEncoding.EncodeToString(buf)
 	err = w.store.gossipManager.SetTags(storeTags)
 	return err
-}
-
-func (s *Store) GetMembership(ctx context.Context, shardID uint64) ([]*rfpb.ReplicaDescriptor, error) {
-	var membership *dragonboat.Membership
-	var err error
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		membership, err = s.nodeHost.SyncGetShardMembership(ctx, shardID)
-		if err != nil {
-			return err
-		}
-		// Trick client.RunNodehostFn into running this again if we got a nil
-		// membership back
-		if membership == nil {
-			return status.OutOfRangeErrorf("cluster not ready")
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(membership.Nodes))
-	for replicaID := range membership.Nodes {
-		replicas = append(replicas, &rfpb.ReplicaDescriptor{
-			ShardId:   shardID,
-			ReplicaId: replicaID,
-		})
-	}
-	return replicas, nil
 }
 
 func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
