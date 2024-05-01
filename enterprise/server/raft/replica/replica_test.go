@@ -63,7 +63,7 @@ func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 	return fs
 }
 
-func newTestReplica(t *testing.T, rootDir string, shardID, replicaID uint64, store replica.IStore) *replica.Replica {
+func newTestReplica(t *testing.T, rootDir string, shardID, replicaID uint64, store replica.IStore) (*replica.Replica, pebble.IPebbleDB) {
 	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
 	require.NoError(t, err)
 
@@ -73,13 +73,13 @@ func newTestReplica(t *testing.T, rootDir string, shardID, replicaID uint64, sto
 		db.Close()
 	})
 
-	return replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/)
+	return replica.New(leaser, shardID, replicaID, "" /*=NHID=*/, store, nil /*=usageUpdates=*/), db
 }
 
 func TestOpenCloseReplica(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := newTestReplica(t, rootDir, 1, 1, store)
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -261,7 +261,7 @@ func (wt *replicaTester) delete(fileRecord *rfpb.FileRecord) {
 func TestReplicaDirectReadWrite(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := newTestReplica(t, rootDir, 1, 1, store)
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -308,7 +308,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 func TestReplicaIncrement(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := newTestReplica(t, rootDir, 1, 1, store)
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -355,7 +355,7 @@ func TestReplicaIncrement(t *testing.T) {
 func TestReplicaCAS(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := newTestReplica(t, rootDir, 1, 1, store)
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -432,7 +432,7 @@ func TestReplicaCAS(t *testing.T) {
 func TestReplicaScan(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := newTestReplica(t, rootDir, 1, 1, store)
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -542,7 +542,7 @@ func TestReplicaScan(t *testing.T) {
 func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := newTestReplica(t, rootDir, 1, 1, store)
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -600,7 +600,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	// Restore a new replica from the created snapshot.
 	rootDir2 := testfs.MakeTempDir(t)
-	repl2 := newTestReplica(t, rootDir2, 2, 2, store)
+	repl2, _ := newTestReplica(t, rootDir2, 2, 2, store)
 	require.NotNil(t, repl2)
 	_, err = repl2.Open(stopc)
 	require.NoError(t, err)
@@ -616,20 +616,12 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
-	require.NoError(t, err)
-
-	leaser := pebble.NewDBLeaser(db)
-	t.Cleanup(func() {
-		leaser.Close()
-		db.Close()
-	})
 	store := &fakeStore{}
-	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	repl, db := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
-	_, err = repl.Open(stopc)
+	_, err := repl.Open(stopc)
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
@@ -683,15 +675,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 
 	// Restore a new replica from the created snapshot.
 	rootDir2 := testfs.MakeTempDir(t)
-	db2, err := pebble.Open(rootDir2, "test", &pebble.Options{})
-	require.NoError(t, err)
-
-	leaser2 := pebble.NewDBLeaser(db2)
-	t.Cleanup(func() {
-		leaser2.Close()
-		db2.Close()
-	})
-	repl2 := replica.New(leaser2, 1, 2, store, nil /*=usageUpdates=*/)
+	repl2, db2 := newTestReplica(t, rootDir2, 1, 2, store)
 	require.NotNil(t, repl2)
 	_, err = repl2.Open(stopc)
 	require.NoError(t, err)
@@ -753,7 +737,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	fs := filestore.New()
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := newTestReplica(t, rootDir, 1, 1, store)
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -816,7 +800,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 func TestUsage(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := newTestReplica(t, rootDir, 1, 1, store)
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -878,21 +862,12 @@ func TestUsage(t *testing.T) {
 
 func TestTransactionPrepareAndCommit(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
-	require.NoError(t, err)
-
-	leaser := pebble.NewDBLeaser(db)
-	t.Cleanup(func() {
-		leaser.Close()
-		db.Close()
-	})
-
 	store := &fakeStore{}
-	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	repl, db := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
-	_, err = repl.Open(stopc)
+	_, err := repl.Open(stopc)
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
@@ -947,21 +922,12 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 
 func TestTransactionPrepareAndRollback(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
-	require.NoError(t, err)
-
-	leaser := pebble.NewDBLeaser(db)
-	t.Cleanup(func() {
-		leaser.Close()
-		db.Close()
-	})
-
 	store := &fakeStore{}
-	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	repl, db := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
-	_, err = repl.Open(stopc)
+	_, err := repl.Open(stopc)
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
@@ -1006,7 +972,7 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 	txid2 := []byte("TX2")
 
 	{
-		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		repl := replica.New(leaser, 1, 1, "" /*=NHID=*/, store, nil /*=usageUpdates=*/)
 		require.NotNil(t, repl)
 
 		stopc := make(chan struct{})
@@ -1043,7 +1009,7 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 	}
 
 	{
-		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		repl := replica.New(leaser, 1, 1, "" /*=NHID=*/, store, nil /*=usageUpdates=*/)
 		require.NotNil(t, repl)
 
 		stopc := make(chan struct{})
@@ -1072,7 +1038,7 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 	}
 
 	{
-		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		repl := replica.New(leaser, 1, 1, "" /*=NHID=*/, store, nil /*=usageUpdates=*/)
 		require.NotNil(t, repl)
 
 		stopc := make(chan struct{})
@@ -1083,21 +1049,12 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 
 func TestBatchTransaction(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
-	require.NoError(t, err)
-
-	leaser := pebble.NewDBLeaser(db)
-	t.Cleanup(func() {
-		leaser.Close()
-		db.Close()
-	})
-
 	store := &fakeStore{}
-	repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
-	_, err = repl.Open(stopc)
+	_, err := repl.Open(stopc)
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
@@ -1202,10 +1159,10 @@ func TestScanSharedDB(t *testing.T) {
 	store := &fakeStore{}
 
 	{
-		repl1 := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		repl1 := replica.New(leaser, 1, 1, "" /*=NHID=*/, store, nil /*=usageUpdates=*/)
 		require.NotNil(t, repl1)
 
-		repl2 := replica.New(leaser, 2, 1, store, nil /*=usageUpdates=*/)
+		repl2 := replica.New(leaser, 2, 1, "" /*=NHID=*/, store, nil /*=usageUpdates=*/)
 		require.NotNil(t, repl1)
 
 		stopc := make(chan struct{})
