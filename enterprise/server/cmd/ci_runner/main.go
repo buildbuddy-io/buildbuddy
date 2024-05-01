@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/fs"
@@ -150,6 +151,7 @@ var (
 	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
 	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
+	serializedAction   = flag.String("serialized_action", "", "If set, run this b64+yaml encoded action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
@@ -1142,6 +1144,17 @@ func getActionNameForWorkflowConfiguredEvent() string {
 }
 
 func getActionToRun() (*config.Action, error) {
+	if *serializedAction != "" {
+		actionYaml, err := base64.StdEncoding.DecodeString(*serializedAction)
+		if err != nil {
+			return nil, err
+		}
+		a := &config.Action{}
+		if err := yaml.Unmarshal(actionYaml, a); err != nil {
+			return nil, err
+		}
+		return a, nil
+	}
 	if *bazelSubCommand != "" {
 		return &config.Action{
 			Name: "run",
