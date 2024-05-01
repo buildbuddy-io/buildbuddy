@@ -776,6 +776,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// because that error is instead surfaced in the caller func when calling
 	// `buildEventPublisher.Wait()`
 
+	if err := ws.initializeGitMetadata(ctx); err != nil {
+		return err
+	}
+
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{},
 	}
@@ -806,12 +810,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	log.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
-
-	// Initialize git metadata to be used in WorkflowConfigured event
-	// Set fetchData=false, because at this point the git remote may not be configured yet
-	if err := ws.initializeGitMetadata(ctx, false /* fetchData */); err != nil {
-		return err
-	}
 
 	wfc := &bespb.WorkflowConfigured{
 		WorkflowId:         *workflowID,
@@ -1579,10 +1577,6 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
-	if err := ws.initializeGitMetadata(ctx, true /* fetchData */); err != nil {
-		return status.WrapError(err, "initialize git metadata")
-	}
-
 	if err := ws.fetchRefs(ctx); err != nil {
 		return status.WrapError(err, "fetch refs")
 	}
@@ -1647,10 +1641,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 
 // initializeGitMetadata sets pushedBranch and commitSHA based on pushedRef (which
 // can be either a branch or commit sha)
-// If fetchData is true, will fetch missing data from git (i.e. if pushedRef
-// is a commit, it will fetch the corresponding branch name). If fetchData is false,
-// it will leave missing data unset
-func (ws *workspace) initializeGitMetadata(ctx context.Context, fetchData bool) error {
+func (ws *workspace) initializeGitMetadata(ctx context.Context) error {
 	handleBackwardsCompatability()
 	if *pushedRef == "" {
 		return status.InvalidArgumentError("expected `pushed_ref` to be set")
@@ -1660,47 +1651,27 @@ func (ws *workspace) initializeGitMetadata(ctx context.Context, fetchData bool) 
 
 	if *commitSHA == "" {
 		if pushedRefIsBranch {
-			if fetchData {
-				// Pull HEAD commit sha for the branch
-				branchInfo, err := git(ctx, ws.log, "ls-remote", *pushedRepoURL, *pushedRef)
-				if err != nil {
-					return err
-				}
-				branchInfoSplit := strings.Fields(branchInfo)
-				if len(branchInfoSplit) != 2 {
-					return status.InternalErrorf("ls-remote expected to return commit sha and branch name, returned %s", branchInfo)
-				}
-				*commitSHA = branchInfoSplit[0]
+			// Pull HEAD commit sha for the branch
+			branchInfo, err := git(ctx, ws.log, "ls-remote", *pushedRepoURL, *pushedRef)
+			if err != nil {
+				return err
 			}
+			branchInfoSplit := strings.Fields(branchInfo)
+			if len(branchInfoSplit) != 2 {
+				return status.InternalErrorf("ls-remote expected to return commit sha and branch name, returned %s", branchInfo)
+			}
+			*commitSHA = branchInfoSplit[0]
 		} else {
 			*commitSHA = *pushedRef
 		}
 	}
 
-	if *pushedBranch == "" {
-		if pushedRefIsBranch {
-			*pushedBranch = *pushedRef
-		} else {
-			if fetchData {
-				// Get branch name from the commit SHA
-				// NOTE: This requires the repo to be cloned locally
-				branchInfo, err := git(ctx, ws.log, "name-rev", "--name-only", *pushedRef)
-				if err != nil {
-					return err
-				}
-				// Match a string of the pattern remotes/origin/<branch name>,
-				// or if the commit is not the HEAD of the branch, remotes/origin/<branch name>~num_commits_from_head
-				// The regex should extract `branch_name`
-				re := regexp.MustCompile(`^remotes\/origin\/([^~]+)~?\d*$`)
-				matches := re.FindStringSubmatch(branchInfo)
-				if len(matches) < 1 {
-					return status.InternalErrorf("expected branch info %s to contain branch name", branchInfo)
-				}
-
-				*pushedBranch = matches[0]
-			}
-		}
+	if *pushedBranch == "" && pushedRefIsBranch {
+		*pushedBranch = *pushedRef
 	}
+	// Unfortunately there's no performant way to find the branch name from
+	// a commit sha, so if the branch name is not set, leave it empty
+
 	return nil
 }
 
@@ -1751,15 +1722,14 @@ func (ws *workspace) fetchRefs(ctx context.Context) error {
 
 // checkoutRef checks out a reference that the rest of the remote run should run off
 func (ws *workspace) checkoutRef(ctx context.Context) error {
-	checkoutRef := *pushedRef
-	checkoutLocalBranchName := *pushedRef
-
-	checkoutRefIsBranch := ws.isBranch(ctx, checkoutRef)
-	if checkoutRefIsBranch {
-		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), checkoutRef)
+	checkoutLocalBranchName := *pushedBranch
+	if checkoutLocalBranchName == "" {
+		checkoutLocalBranchName = *commitSHA
 	}
-	if *pushedBranch != "" {
-		checkoutLocalBranchName = *pushedBranch
+
+	checkoutRef := *commitSHA
+	if checkoutRef == "" {
+		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
 	}
 
 	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref

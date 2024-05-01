@@ -799,11 +799,14 @@ curl -d '{
 -H 'Content-Type: application/json' \
 https://app.buildbuddy.io/api/v1/ExecuteWorkflow
 
-# Execute workflow on commit abc123
+# Execute workflow on commit abc123 on branch cool-feature
+# NOTE: If you do not pass the reporting_metadata field, the branch name will
+# not appear in the BuildBuddy UI
 curl -d '{
   "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
   "ref": "abc123",
   "action_names": ["Build and test (Mac M1)"],
+  "reporting_metadata": {"branch": "cool-feature"}
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
 -H 'Content-Type: application/json' \
@@ -819,6 +822,8 @@ message ExecuteWorkflowRequest {
   string repo_url = 1;
   // Reference for where the workflow should be run (currently branch names and commit shas
   // are supported). If a branch name, will pull the latest version of the branch.
+  // If a commit sha, you must also pass the reporting_metadata.branch field,
+  // or the Buildbuddy UI will not contain the branch name.
   // Ex. "main" (branch) or "abc123" (commit sha)
   string ref = 2;
 
@@ -843,6 +848,18 @@ message ExecuteWorkflowRequest {
   // overrides will take precedence. Otherwise all env vars set in
   // buildbuddy.yaml will still apply.
   map<string, string> env = 7;
+
+  message ReportingMetadata {
+    string branch = 1;
+    string commit_sha = 2;
+  }
+  // This metadata will be used when reporting build metadata to the BuildBuddy UI
+  // and for reporting Github commit statuses.
+  // Can differ from `ref` if you want to check out a commit sha but include
+  // the branch name in the reporting, or if you want to report statuses to
+  // a different commit_sha than the one checked out.
+  // If not set, fields will default to `ref`.
+  ReportingMetadata reporting_metadata = 8;
 }
 ```
 
