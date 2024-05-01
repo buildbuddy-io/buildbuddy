@@ -2,6 +2,7 @@ package login
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -26,23 +27,17 @@ import (
 const (
 	ApiKeyRepoSetting = "api-key"
 	apiKeyHeader      = "remote_header=x-buildbuddy-api-key"
-	loginURL          = "https://app.buildbuddy.io/settings/cli-login"
-	apiTarget         = "grpcs://remote.buildbuddy.io"
 )
 
-func hasValidApiKey() bool {
-	apiKey, err := storage.ReadRepoConfig(ApiKeyRepoSetting)
-	if err != nil {
-		log.Debugf("unable to read git repo config: %v", err)
-		return false
-	}
-	log.Printf("Found an API key in your .git/config. Verifying it's validity.")
+var (
+	loginFlagSet = flag.NewFlagSet("login", flag.ContinueOnError)
 
-	return isValidApiKey(apiKey)
-}
+	apiTarget = loginFlagSet.String("target", "grpcs://remote.buildbuddy.io", "BuildBuddy gRPC target")
+	loginURL  = loginFlagSet.String("login_url", "https://app.buildbuddy.io/settings/cli-login", "URL for user to login")
+)
 
 var getApiClient = sync.OnceValues(func() (bbspb.BuildBuddyServiceClient, error) {
-	conn, err := grpc_client.DialSimple(apiTarget)
+	conn, err := grpc_client.DialSimple(*apiTarget)
 	if err != nil {
 		return nil, fmt.Errorf("unable to dial BuildBuddy target: %v", err)
 	}
@@ -70,23 +65,34 @@ func isValidApiKey(apiKey string) bool {
 	return true
 }
 
+func hasValidApiKey() bool {
+	apiKey, err := storage.ReadRepoConfig(ApiKeyRepoSetting)
+	if err != nil {
+		log.Debugf("unable to read git repo config: %v", err)
+		return false
+	}
+	log.Printf("Found an API key in your .git/config. Verifying it's validity.")
+
+	return isValidApiKey(apiKey)
+}
+
 func HandleLogin(args []string) (exitCode int, err error) {
 	if hasValidApiKey() {
 		log.Printf("Current API key is valid. Skipping login.")
 		return 0, nil
 	}
 
-	log.Printf("Press Enter to open %s in your browser...", loginURL)
+	log.Printf("Press Enter to open %s in your browser...", *loginURL)
 	if _, err := fmt.Scanln(); err != nil {
 		return -1, fmt.Errorf("failed to read input: %s", err)
 	}
-	if err := openInBrowser(loginURL); err != nil {
+	if err := openInBrowser(*loginURL); err != nil {
 		log.Printf("Failed to open browser: %s", err)
 		log.Printf("Copy and paste the URL below into a browser window:")
-		log.Printf("    %s", loginURL)
+		log.Printf("    %s", *loginURL)
 	}
 
-	io.WriteString(os.Stderr, "Enter your API key from "+loginURL+": ")
+	io.WriteString(os.Stderr, "Enter your API key from "+*loginURL+": ")
 
 	var apiKey string
 	if _, err := fmt.Scanln(&apiKey); err != nil {
