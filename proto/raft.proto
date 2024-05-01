@@ -446,6 +446,9 @@ message NodeDescriptor {
 message ReplicaDescriptor {
   uint64 shard_id = 1;
   uint64 replica_id = 2;
+
+  // The identifier of the node the replica resided.
+  optional string nhid = 3;
 }
 
 message Header {

@@ -668,7 +668,7 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 }
 
 func (s *Store) ReplicaFactoryFn(shardID, replicaID uint64) dbsm.IOnDiskStateMachine {
-	r := replica.New(s.leaser, shardID, replicaID, s, s.events)
+	r := replica.New(s.leaser, shardID, replicaID, s.nodeHost.ID(), s, s.events)
 	return r
 }
 
@@ -788,9 +788,9 @@ func (s *Store) AddPeer(ctx context.Context, sourceShardID, newShardID uint64) e
 	}
 	initialMembers := make(map[uint64]string)
 	for _, replica := range rd.GetReplicas() {
-		nhid, _, err := s.registry.ResolveNHID(replica.GetShardId(), replica.GetReplicaId())
-		if err != nil {
-			return status.InternalErrorf("could not resolve node host ID: %s", err)
+		nhid := replica.GetNhid()
+		if len(nhid) == 0 {
+			return status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", replica)
 		}
 		initialMembers[replica.GetReplicaId()] = nhid
 	}
@@ -1342,17 +1342,16 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		},
 	})
 	// Bringup new peers.
-	servers := make(map[string]string)
+	servers := make(map[string]string, len(leftRange.GetReplicas()))
 	for _, r := range leftRange.GetReplicas() {
-		nhid, _, err := s.registry.ResolveNHID(r.GetShardId(), r.GetReplicaId())
-		if err != nil {
-			return nil, err
+		if r.GetNhid() == "" {
+			return nil, status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", r)
 		}
 		grpcAddr, _, err := s.registry.ResolveGRPC(r.GetShardId(), r.GetReplicaId())
 		if err != nil {
 			return nil, err
 		}
-		servers[nhid] = grpcAddr
+		servers[r.GetNhid()] = grpcAddr
 	}
 	bootstrapInfo := bringup.MakeBootstrapInfo(newShardID, 1, servers)
 	if err := bringup.StartShard(ctx, s.apiClient, bootstrapInfo, stubBatch); err != nil {
@@ -1364,10 +1363,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	newRightRange.Start = splitPointResponse.GetSplitKey()
 	newRightRange.RangeId = newRangeID
 	newRightRange.Generation += 1
-	for i, r := range newRightRange.GetReplicas() {
-		r.ReplicaId = uint64(i + 1)
-		r.ShardId = newShardID
-	}
+	newRightRange.Replicas = bootstrapInfo.Replicas
 	newRightRangeBuf, err := proto.Marshal(newRightRange)
 	if err != nil {
 		return nil, err
@@ -1560,7 +1556,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 
 	// Finally, update the range descriptor information to reflect the
 	// membership of this new node in the range.
-	rd, err = s.addReplicaToRangeDescriptor(ctx, shardID, newReplicaID, rd)
+	rd, err = s.addReplicaToRangeDescriptor(ctx, shardID, newReplicaID, node.GetNhid(), rd)
 	if err != nil {
 		return nil, err
 	}
@@ -1813,11 +1809,12 @@ func (s *Store) updateRangeDescriptor(ctx context.Context, shardID uint64, old, 
 	return s.txnCoordinator.RunTxn(ctx, txn)
 }
 
-func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, shardID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, shardID, replicaID uint64, nhid string, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
 	newDescriptor.Replicas = append(newDescriptor.Replicas, &rfpb.ReplicaDescriptor{
 		ShardId:   shardID,
 		ReplicaId: replicaID,
+		Nhid:      proto.String(nhid),
 	})
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	if err := s.updateRangeDescriptor(ctx, shardID, oldDescriptor, newDescriptor); err != nil {

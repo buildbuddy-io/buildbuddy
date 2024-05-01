@@ -82,6 +82,8 @@ type Replica struct {
 	fileDir   string
 	ShardID   uint64
 	ReplicaID uint64
+	// The ID of the node where this replica resided.
+	NHID string
 
 	store               IStore
 	lastAppliedIndex    uint64
@@ -188,6 +190,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 		Replica: &rfpb.ReplicaDescriptor{
 			ShardId:   sm.ShardID,
 			ReplicaId: sm.ReplicaID,
+			Nhid:      proto.String(sm.NHID),
 		},
 		RangeId: rd.GetRangeId(),
 	}
@@ -2074,10 +2077,11 @@ func (sm *Replica) Close() error {
 }
 
 // New creates a new Replica, an on-disk state machine.
-func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
+func New(leaser pebble.Leaser, shardID, replicaID uint64, nhid string, store IStore, broadcast chan<- events.Event) *Replica {
 	return &Replica{
 		ShardID:             shardID,
 		ReplicaID:           replicaID,
+		NHID:                nhid,
 		store:               store,
 		leaser:              leaser,
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
