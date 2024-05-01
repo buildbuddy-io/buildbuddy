@@ -18,6 +18,10 @@ const (
 	// FilePath is the path where we can expect to locate the BuildBuddyConfig
 	// YAML contents, relative to the repository root.
 	FilePath = "buildbuddy.yaml"
+
+	// KytheActionName is the name used for actions automatically
+	// run by us if code search is enabled.
+	KytheActionName = "AutoKythe"
 )
 
 type BuildBuddyConfig struct {
@@ -142,6 +146,21 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
+	var pushTriggerBranches []string
+	if targetRepoDefaultBranch != "" {
+		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
+	}
+	return &Action{
+		Name: KytheActionName,
+		Triggers: &Triggers{
+			Push: &PushTrigger{Branches: pushTriggerBranches},
+		},
+		// Note: default Bazel flags are written by the runner to ~/.bazelrc
+		BazelCommands: []string{"build --override_repository kythe_release=$KYTHE_DIR //..."},
+	}
 }
 
 // GetDefault returns the default workflow config, which tests all targets when
