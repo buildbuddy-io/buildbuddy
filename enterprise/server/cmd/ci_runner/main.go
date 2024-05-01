@@ -578,6 +578,14 @@ func run() error {
 	ws.log = buildEventReporter
 	ws.hostname, ws.username = getHostAndUserName()
 
+	// Set BUILDBUDDY_CI_RUNNER_ABSPATH so that we can re-invoke ourselves
+	// as the git credential helper reliably, even after chdir.
+	absPath, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		return status.WrapError(err, "compute CI runner binary abspath")
+	}
+	os.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", absPath)
+
 	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
 	if wd := os.Getenv("WORKDIR_OVERRIDE"); wd != "" {
 		if err := os.MkdirAll(wd, 0755); err != nil {
@@ -593,14 +601,6 @@ func run() error {
 		return err
 	}
 	ws.rootDir = rootDir
-
-	// Set BUILDBUDDY_CI_RUNNER_ABSPATH so that we can re-invoke ourselves
-	// as the git credential helper reliably, even after chdir.
-	absPath, err := filepath.Abs(os.Args[0])
-	if err != nil {
-		return status.WrapError(err, "compute CI runner binary abspath")
-	}
-	os.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", absPath)
 
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
