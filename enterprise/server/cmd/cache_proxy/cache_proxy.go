@@ -145,13 +145,15 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		return err
 	}
 
-	s, err = grpc_server.New(env, grpc_server.GRPCSPort(), true, grpcServerConfig)
-	if err != nil {
-		return err
-	}
-	registerGRPCServices(s.GetServer(), env)
-	if err := s.Start(); err != nil {
-		return err
+	if env.GetSSLService().IsEnabled() {
+		s, err = grpc_server.New(env, grpc_server.GRPCSPort(), true, grpcServerConfig)
+		if err != nil {
+			return err
+		}
+		registerGRPCServices(s.GetServer(), env)
+		if err := s.Start(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
