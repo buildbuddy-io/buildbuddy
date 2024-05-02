@@ -727,9 +727,9 @@ func handleBackwardsCompatability() error {
 		return nil
 	}
 	if *pushedBranch != "" {
-		pushedRef = pushedBranch
+		*pushedRef = *pushedBranch
 	} else if *targetBranch != "" {
-		pushedRef = targetBranch
+		*pushedRef = *targetBranch
 	}
 	if *pushedRef == "" {
 		return status.InvalidArgumentError("expected `pushed_ref` to be set")
@@ -1722,13 +1722,20 @@ func (ws *workspace) fetchRefs(ctx context.Context) error {
 	// PR from a fork (forkRefs will be empty otherwise).
 	forkRefs := make([]string, 0)
 
-	// Add the pushed branch to the appropriate list corresponding to the remote
+	// Try to fetch a branch if possible, because fetching non-HEAD commits requires
+	// users to set an additional config option (uploadpack.allowAnySHA1InWant)
+	pushedRefToFetch := *pushedBranch
+	if pushedRefToFetch == "" {
+		pushedRefToFetch = *pushedRef
+	}
+
+	// Add the pushed ref to the appropriate list corresponding to the remote
 	// to be fetched (base or fork).
 	isPushedRefInFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
 	if isPushedRefInFork {
-		forkRefs = append(forkRefs, *pushedRef)
-	} else if *pushedRef != *targetBranch {
-		baseRefs = append(baseRefs, *pushedRef)
+		forkRefs = append(forkRefs, pushedRefToFetch)
+	} else if pushedRefToFetch != *targetBranch {
+		baseRefs = append(baseRefs, pushedRefToFetch)
 	}
 
 	baseURL := *pushedRepoURL
@@ -1861,6 +1868,11 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string)
 	fetchArgs = append(fetchArgs, remoteName)
 	fetchArgs = append(fetchArgs, refs...)
 	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
+		if strings.Contains(err.Error(), "Server does not allow request for unadvertised object") {
+			log.Warning("Git does not support fetching non-HEAD commits by default. You must either set the `uploadpack.allowAnySHA1InWant`" +
+				" config option in the repo that is being fetched, or pass a --pushed_branch so the runner can fetch the branch instead." +
+				" If you pass a pushed_branch, the runner will still checkout the commit sha passed in --pushed_ref.")
+		}
 		return err
 	}
 	return nil

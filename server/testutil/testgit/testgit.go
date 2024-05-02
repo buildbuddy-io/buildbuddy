@@ -129,6 +129,10 @@ func ConfigureRemoteOrigin(t testing.TB, dir, url string) {
 	testshell.Run(t, dir, `git remote add origin `+url)
 }
 
+func SetConfigOption(t testing.TB, dir string, configStr string) {
+	testshell.Run(t, dir, `git config `+configStr)
+}
+
 func CurrentBranch(t testing.TB, dir string) string {
 	output := testshell.Run(t, dir, `git rev-parse --abbrev-ref HEAD`)
 	return strings.TrimSpace(output)

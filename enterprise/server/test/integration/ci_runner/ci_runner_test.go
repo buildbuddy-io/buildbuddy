@@ -703,30 +703,48 @@ func TestCIRunner_IgnoresInvalidFlags(t *testing.T) {
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 }
 
-func TestRunAction_CommitShaRef(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t)
-	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
-
-	baselineRunnerFlags := []string{
-		"--workflow_id=test-workflow",
-		"--action_name=Print args",
-		"--trigger_event=push",
-		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
-		"--target_repo_url=file://" + repoPath,
-		"--target_branch=master",
+func TestRunAction_FetchNonHeadCommit(t *testing.T) {
+	testCases := []struct {
+		setBranchName bool
+	}{
+		{
+			setBranchName: true,
+		},
+		{
+			setBranchName: false,
+		},
 	}
-	// Start the app so the runner can use it as the BES backend.
-	app := buildbuddy.Run(t)
-	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
-	runnerFlagsCommit1 := append(baselineRunnerFlags, "--commit_sha="+initialCommitSHA, "--pushed_ref="+initialCommitSHA)
 
-	result := invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
-	checkRunnerResult(t, result)
-	assert.Contains(t, result.Output, "args: {{ Hello world }}")
+	for _, tc := range testCases {
+		wsPath := testfs.MakeTempDir(t)
+		repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
 
-	// Commit changes to the print statement in the workflow config
-	modifiedWorkflowConfig := `
+		baselineRunnerFlags := []string{
+			"--workflow_id=test-workflow",
+			"--action_name=Print args",
+			"--trigger_event=push",
+			"--pushed_repo_url=file://" + repoPath,
+			"--target_repo_url=file://" + repoPath,
+		}
+		// Start the app so the runner can use it as the BES backend.
+		app := buildbuddy.Run(t)
+		baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+		if tc.setBranchName {
+			baselineRunnerFlags = append(baselineRunnerFlags, "--pushed_branch=master", "--target_branch=master")
+		} else {
+			// By default, you cannot fetch commit SHAs that aren't the HEAD of their branch.
+			// Setting this allows the remote runner to fetch non-HEAD shas
+			testgit.SetConfigOption(t, repoPath, "uploadpack.allowReachableSHA1InWant true")
+
+		}
+		runnerFlagsCommit1 := append(baselineRunnerFlags, "--commit_sha="+initialCommitSHA, "--pushed_ref="+initialCommitSHA)
+
+		result := invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
+		checkRunnerResult(t, result)
+		assert.Contains(t, result.Output, "args: {{ Hello world }}")
+
+		// Commit changes to the print statement in the workflow config
+		modifiedWorkflowConfig := `
 actions:
   - name: "Print args"
     triggers:
@@ -735,18 +753,19 @@ actions:
     bazel_commands:
       - run //:print_args -- "Switcheroo!"
 `
-	newCommitSha := testgit.CommitFiles(t, repoPath, map[string]string{"buildbuddy.yaml": modifiedWorkflowConfig})
+		newCommitSha := testgit.CommitFiles(t, repoPath, map[string]string{"buildbuddy.yaml": modifiedWorkflowConfig})
 
-	// When invoked with the initial commit sha, should not contain the modified print statement
-	result = invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
-	checkRunnerResult(t, result)
-	assert.Contains(t, result.Output, "args: {{ Hello world }}")
+		// When invoked with the initial commit sha, should not contain the modified print statement
+		result = invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
+		checkRunnerResult(t, result)
+		assert.Contains(t, result.Output, "args: {{ Hello world }}")
 
-	// When invoked with the new commit sha, should contain the modified print statement
-	runnerFlagsCommit2 := append(baselineRunnerFlags, "--commit_sha="+newCommitSha, "--pushed_ref="+newCommitSha)
-	result = invokeRunner(t, runnerFlagsCommit2, []string{}, wsPath)
-	checkRunnerResult(t, result)
-	assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
+		// When invoked with the new commit sha, should contain the modified print statement
+		runnerFlagsCommit2 := append(baselineRunnerFlags, "--commit_sha="+newCommitSha, "--pushed_ref="+newCommitSha)
+		result = invokeRunner(t, runnerFlagsCommit2, []string{}, wsPath)
+		checkRunnerResult(t, result)
+		assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
+	}
 }
 
 func TestRunAction_PushedRef(t *testing.T) {
@@ -801,17 +820,6 @@ func TestRunAction_PushedRef(t *testing.T) {
 			},
 		},
 		{
-			name: "Set pushed_ref (branch) and pushed_branch - different value",
-			repoFlags: []string{
-				"--pushed_ref=master",
-				"--pushed_branch=diff_branch_name",
-			},
-			expectedReportingValues: map[string]string{
-				"branch": "diff_branch_name",
-				"commit": initialCommitSHA,
-			},
-		},
-		{
 			name: "Set pushed_ref (commit) and pushed_branch",
 			repoFlags: []string{
 				fmt.Sprintf("--pushed_ref=%s", initialCommitSHA),
@@ -837,11 +845,11 @@ func TestRunAction_PushedRef(t *testing.T) {
 			name: "Set pushed_ref (commit sha) and commit_sha - different value",
 			repoFlags: []string{
 				fmt.Sprintf("--pushed_ref=%s", initialCommitSHA),
-				"--commit_sha=abc123",
+				"--commit_sha=newcommit123",
 			},
 			expectedReportingValues: map[string]string{
 				"branch": "",
-				"commit": "abc123",
+				"commit": "newcommit123",
 			},
 		},
 		{
