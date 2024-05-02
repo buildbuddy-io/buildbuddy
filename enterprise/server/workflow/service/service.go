@@ -505,14 +505,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
-	// TODO(Maggie): Delete after all usages are cleaned up
-	if req.GetClean() {
-		err = ws.useCleanWorkflow(ctx, wf)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// TODO: Refactor to avoid using this WebhookData struct in the case of manual
 	// workflow execution, since there are no webhooks involved when executing a
 	// workflow manually.
@@ -709,55 +701,6 @@ func (ws *workflowService) enableExtraKytheIndexingAction(ctx context.Context) (
 		return false, err
 	}
 	return g.CodeSearchEnabled, nil
-}
-
-// TODO(Maggie): Delete useCleanWorkflow and checkCleanWorkflowPermissions after
-// all references to ExecuteWorkflowRequest.clean have been cleaned up
-func (ws *workflowService) checkCleanWorkflowPermissions(ctx context.Context, wf *tables.Workflow) error {
-	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return err
-	}
-	g, err := ws.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
-	if err != nil {
-		return err
-	}
-	if !g.RestrictCleanWorkflowRunsToAdmins {
-		return nil
-	}
-	return authutil.AuthorizeOrgAdmin(u, wf.GroupID)
-}
-
-// To run workflow in a clean container, update the instance name suffix
-func (ws *workflowService) useCleanWorkflow(ctx context.Context, wf *tables.Workflow) error {
-	if err := ws.checkCleanWorkflowPermissions(ctx, wf); err != nil {
-		return err
-	}
-
-	suffix, err := random.RandomString(10)
-	if err != nil {
-		return err
-	}
-	wf.InstanceNameSuffix = suffix
-
-	if isRepositoryWorkflowID(wf.WorkflowID) {
-		log.CtxInfof(ctx, "Workflow clean run requested for repo %q (group %s)", wf.RepoURL, wf.GroupID)
-		err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_update_repo_instance_name").Raw(`
-				UPDATE GitRepositories
-				SET instance_name_suffix = ?
-				WHERE group_id = ? AND repo_url = ?`,
-			suffix, wf.GroupID, wf.RepoURL,
-		).Exec().Error
-	} else {
-		log.CtxInfof(ctx, "Workflow clean run requested for workflow %q (group %s)", wf.WorkflowID, wf.GroupID)
-		err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_update_workflow_instance_name").Raw(`
-				UPDATE Workflows
-				SET instance_name_suffix = ?
-				WHERE workflow_id = ?`,
-			wf.InstanceNameSuffix, wf.WorkflowID,
-		).Exec().Error
-	}
-	return err
 }
 
 func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID string, repoURL *gitutil.RepoURL) (*repositoryWorkflow, error) {
