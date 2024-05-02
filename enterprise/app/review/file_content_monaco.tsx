@@ -5,7 +5,7 @@ import { FileModel, ReviewModel, ThreadModel } from "./review_model";
 import { ReviewController } from "./review_controller";
 import * as monaco from "monaco-editor";
 import { createPortal } from "react-dom";
-import { getModelForErrorText, getMonacoModelForGithubFile } from "./file_content_service";
+import { getModelForText, getMonacoModelForGithubFile } from "./file_content_service";
 
 interface FileContentMonacoComponentProps {
   fileModel: FileModel;
@@ -26,9 +26,9 @@ export default class FileContentMonacoComponent extends React.Component<
   FileContentMonacoComponentState
 > {
   state: FileContentMonacoComponentState = {
-    originalModel: getModelForErrorText("Loading"),
+    originalModel: getModelForText("Loading"),
     originalLoaded: false,
-    modifiedModel: getModelForErrorText("Loading"),
+    modifiedModel: getModelForText("Loading"),
     modifiedLoaded: false,
   };
 
@@ -48,11 +48,11 @@ export default class FileContentMonacoComponent extends React.Component<
         })
         .catch((e) => {
           console.error(e);
-          this.setState({ modifiedModel: getModelForErrorText("Failed to load file content."), modifiedLoaded: true });
+          this.setState({ modifiedModel: getModelForText("Failed to load file content."), modifiedLoaded: true });
         });
     } else {
       // TODO(jdhollen): better support for added / removed files.
-      this.setState({ modifiedModel: getModelForErrorText("(File deleted)"), modifiedLoaded: true });
+      this.setState({ modifiedModel: getModelForText("(File deleted)"), modifiedLoaded: true });
     }
 
     if (
@@ -70,11 +70,11 @@ export default class FileContentMonacoComponent extends React.Component<
         })
         .catch((e) => {
           console.error(e);
-          this.setState({ originalModel: getModelForErrorText("Failed to load file content."), originalLoaded: true });
+          this.setState({ originalModel: getModelForText("Failed to load file content."), originalLoaded: true });
         });
     } else {
       // TODO(jdhollen): better support for added / removed files.
-      this.setState({ originalModel: getModelForErrorText("(New file)"), originalLoaded: true });
+      this.setState({ originalModel: getModelForText("(New file)"), originalLoaded: true });
     }
   }
 
