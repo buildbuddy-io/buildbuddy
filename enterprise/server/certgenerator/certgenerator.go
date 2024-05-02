@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/coreos/go-oidc"
@@ -27,7 +28,10 @@ import (
 )
 
 var (
-	serverType = flag.String("server_type", "certgenerator-server", "The server type to match on health checks")
+	serverType     = flag.String("server_type", "certgenerator-server", "The server type to match on health checks")
+	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
 	tokenIssuer   = flag.String("certgenerator.token.issuer", "", "Issuer of the OIDC token against which it will be validated.")
 	tokenClientID = flag.String("certgenerator.token.client_id", "", "When verifying the OIDC token, only tokens for this client ID will be accepted.")
@@ -165,6 +169,20 @@ func main() {
 			log.Fatalf("Could not start gRPC server: %s", err)
 		}
 	}
+
+	env.GetMux().Handle("/healthz", env.GetHealthChecker().LivenessHandler())
+	env.GetMux().Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
+
+	server := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
+		Handler: env.GetMux(),
+	}
+
+	go func() {
+		server.ListenAndServe()
+	}()
+
+	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	healthChecker.WaitForGracefulShutdown()
 }
