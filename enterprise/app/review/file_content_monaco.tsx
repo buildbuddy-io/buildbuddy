@@ -5,9 +5,7 @@ import { FileModel, ReviewModel, ThreadModel } from "./review_model";
 import { ReviewController } from "./review_controller";
 import * as monaco from "monaco-editor";
 import { createPortal } from "react-dom";
-import rpc_service from "../../../app/service/rpc_service";
-import error_service from "../../../app/errors/error_service";
-import { getLangHintFromFilePath } from "../monaco/monaco";
+import { getModelForErrorText, getMonacoModelForGithubFile } from "./file_content_service";
 
 interface FileContentMonacoComponentProps {
   fileModel: FileModel;
@@ -17,22 +15,20 @@ interface FileContentMonacoComponentProps {
 }
 
 interface FileContentMonacoComponentState {
-  originalContent: string;
+  originalModel: monaco.editor.ITextModel;
   originalLoaded: boolean;
-  modifiedContent: string;
+  modifiedModel: monaco.editor.ITextModel;
   modifiedLoaded: boolean;
 }
-
-const textDecoder = new TextDecoder();
 
 export default class FileContentMonacoComponent extends React.Component<
   FileContentMonacoComponentProps,
   FileContentMonacoComponentState
 > {
   state: FileContentMonacoComponentState = {
-    originalContent: "",
+    originalModel: getModelForErrorText("Loading"),
     originalLoaded: false,
-    modifiedContent: "",
+    modifiedModel: getModelForErrorText("Loading"),
     modifiedLoaded: false,
   };
 
@@ -41,50 +37,44 @@ export default class FileContentMonacoComponent extends React.Component<
     // TODO(jdhollen): Check for existing monaco model first.
     const changeType = this.props.fileModel.getChangeType();
     if (changeType !== github.FileChangeType.FILE_CHANGE_TYPE_REMOVED) {
-      rpc_service.service
-        .getGithubContent(
-          new github.GetGithubContentRequest({
-            owner: this.props.reviewModel.getOwner(),
-            repo: this.props.reviewModel.getRepo(),
-            path: this.props.fileModel.getFullPath(),
-            ref: this.props.fileModel.getModifiedCommitSha(),
-          })
-        )
-        .then((r) => {
-          const modifiedContent = textDecoder.decode(r.content);
-          this.setState({ modifiedContent, modifiedLoaded: true });
+      getMonacoModelForGithubFile({
+        owner: this.props.reviewModel.getOwner(),
+        repo: this.props.reviewModel.getRepo(),
+        path: this.props.fileModel.getFullPath(),
+        ref: this.props.fileModel.getModifiedCommitSha(),
+      })
+        .then((modifiedModel) => {
+          this.setState({ modifiedModel, modifiedLoaded: true });
         })
         .catch((e) => {
-          error_service.handleError("Failed to fetch source: " + e);
+          console.error(e);
+          this.setState({ modifiedModel: getModelForErrorText("Failed to load file content."), modifiedLoaded: true });
         });
     } else {
       // TODO(jdhollen): better support for added / removed files.
-      this.setState({ modifiedContent: "", modifiedLoaded: true });
+      this.setState({ modifiedModel: getModelForErrorText("(File deleted)"), modifiedLoaded: true });
     }
 
     if (
       changeType !== github.FileChangeType.FILE_CHANGE_TYPE_ADDED &&
       changeType !== github.FileChangeType.FILE_CHANGE_TYPE_UNKNOWN
     ) {
-      rpc_service.service
-        .getGithubContent(
-          new github.GetGithubContentRequest({
-            owner: this.props.reviewModel.getOwner(),
-            repo: this.props.reviewModel.getRepo(),
-            path: this.props.fileModel.getOriginalFullPath(),
-            ref: this.props.fileModel.getOriginalCommitSha(),
-          })
-        )
-        .then((r) => {
-          const originalContent = textDecoder.decode(r.content);
-          this.setState({ originalContent, originalLoaded: true });
+      getMonacoModelForGithubFile({
+        owner: this.props.reviewModel.getOwner(),
+        repo: this.props.reviewModel.getRepo(),
+        path: this.props.fileModel.getOriginalFullPath(),
+        ref: this.props.fileModel.getOriginalCommitSha(),
+      })
+        .then((originalModel) => {
+          this.setState({ originalModel, originalLoaded: true });
         })
         .catch((e) => {
-          error_service.handleError("Failed to fetch source: " + e);
+          console.error(e);
+          this.setState({ originalModel: getModelForErrorText("Failed to load file content."), originalLoaded: true });
         });
     } else {
       // TODO(jdhollen): better support for added / removed files.
-      this.setState({ originalContent: "", originalLoaded: true });
+      this.setState({ originalModel: getModelForErrorText("(New file)"), originalLoaded: true });
     }
   }
 
@@ -120,9 +110,9 @@ export default class FileContentMonacoComponent extends React.Component<
     return (
       <MonacoDiffViewerComponent
         handler={this.props.handler}
-        originalContent={this.state.originalContent}
+        originalModel={this.state.originalModel}
         originalThreads={originalThreads}
-        modifiedContent={this.state.modifiedContent}
+        modifiedModel={this.state.modifiedModel}
         modifiedThreads={modifiedThreads}
         disabled={this.props.disabled}
         path={this.props.fileModel.getFullPath()}
@@ -137,9 +127,9 @@ interface MonacoDiffViewerComponentProps {
   reviewModel: ReviewModel;
   disabled: boolean;
   handler: ReviewController;
-  originalContent: string;
+  originalModel: monaco.editor.ITextModel;
   originalThreads: ThreadModel[];
-  modifiedContent: string;
+  modifiedModel: monaco.editor.ITextModel;
   modifiedThreads: ThreadModel[];
   path: string;
   baseSha: string;
@@ -395,16 +385,7 @@ class MonacoDiffViewerComponent extends React.Component<
     });
     this.setState({ editor });
 
-    // TODO(jdhollen): switch this to be by sha, probably.
-    const originalUri = monaco.Uri.file(`original-${this.props.path}`);
-    const modifiedUri = monaco.Uri.file(`modified-${this.props.path}`);
-    const originalModel =
-      monaco.editor.getModel(originalUri) ??
-      monaco.editor.createModel(this.props.originalContent, getLangHintFromFilePath(this.props.path), originalUri);
-    const modifiedModel =
-      monaco.editor.getModel(modifiedUri) ??
-      monaco.editor.createModel(this.props.modifiedContent, getLangHintFromFilePath(this.props.path), modifiedUri);
-    editor.setModel({ original: originalModel, modified: modifiedModel });
+    editor.setModel({ original: this.props.originalModel, modified: this.props.modifiedModel });
 
     let ignoreEvent = false;
     const maxHeight = () => {

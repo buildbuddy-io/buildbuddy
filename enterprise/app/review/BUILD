@@ -28,9 +28,7 @@ ts_library(
     name = "file_content_monaco",
     srcs = ["file_content_monaco.tsx"],
     deps = [
-        "//app/errors:error_service",
-        "//app/service:rpc_service",
-        "//enterprise/app/monaco",
+        "//enterprise/app/review:file_content_service",
         "//enterprise/app/review:review_controller",
         "//enterprise/app/review:review_model",
         "//enterprise/app/review:review_thread",
@@ -40,6 +38,19 @@ ts_library(
         "@npm//monaco-editor",
         "@npm//react",
         "@npm//react-dom",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "file_content_service",
+    srcs = ["file_content_service.ts"],
+    deps = [
+        "//app/service:rpc_service",
+        "//app/util:async",
+        "//enterprise/app/monaco",
+        "//proto:github_ts_proto",
+        "@npm//monaco-editor",
         "@npm//tslib",
     ],
 )
