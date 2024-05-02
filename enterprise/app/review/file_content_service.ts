@@ -33,7 +33,7 @@ export function getMonacoModelForGithubFile(file: GithubFileDescriptor): Cancela
 }
 
 // A convenience function for displaying an error in a readonly editor.
-export function getModelForErrorText(text: string): monaco.editor.ITextModel {
+export function getModelForText(text: string): monaco.editor.ITextModel {
   const uri = monaco.Uri.file(`bb-goofy-error-thing/${text}`);
   return monaco.editor.getModel(uri) ?? monaco.editor.createModel(text, undefined, uri);
 }
