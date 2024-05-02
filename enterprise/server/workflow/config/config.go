@@ -156,7 +156,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 	}
 
 	cmd := "build --override_repository kythe_release=$KYTHE_DIR"
-	cmd += " --remote_cache=" + cache_api_url.String()
+	cmd += " --remote_cache=" + cache_api_url.String() + "--experimental_remote_cache_compression"
 	cmd += " //..."
 
 	return &Action{
@@ -165,7 +165,11 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 			Push: &PushTrigger{Branches: pushTriggerBranches},
 		},
 		ContainerImage: `ubuntu-20.04`,
-		// Note: default Bazel flags are written by the runner to ~/.bazelrc
+		ResourceRequests: ResourceRequests{
+			CPU:    "8",
+			Memory: "16GB",
+			Disk:   "100GB",
+		},
 		BazelCommands: []string{cmd},
 	}
 }
