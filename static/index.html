@@ -29,6 +29,11 @@
       window.buildbuddyConfig = {{.Config}};
       {{/* Monaco loads some libraries using require(), ignore these for now. */}}
       window.require = () => { };
+      self.MonacoEnvironment = {
+        getWorkerUrl: function (moduleId, label) {
+          return "{{.WorkerPath}}";
+        },
+      };
     </script>
 
     {{if .GaEnabled}}

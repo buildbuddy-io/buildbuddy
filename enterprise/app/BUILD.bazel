@@ -1,7 +1,8 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("@build_bazel_rules_nodejs//:index.bzl", "js_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild", "esbuild_config")
 load("//rules/sha:index.bzl", "sha")
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//rules/typescript:index.bzl", "ts_library")
 
 # gazelle:default_visibility //enterprise:__subpackages__
 package(default_visibility = ["//enterprise:__subpackages__"])
@@ -27,6 +28,7 @@ esbuild(
     define = {"process.env.NODE_ENV": '"production"'},
     entry_points = [
         "app.tsx",
+        "monaco_worker.js",
     ],
     metafile = False,
     minify = select({
@@ -36,6 +38,7 @@ esbuild(
     visibility = ["//visibility:public"],
     deps = [
         ":app",
+        ":monaco_worker",
     ],
 )
 
@@ -103,6 +106,14 @@ ts_library(
         "@npm//react",
         "@npm//react-dom",
     ],
+)
+
+js_library(
+    name = "monaco_worker",
+    srcs = ["monaco_worker.js"],
+    deps = [
+        "@npm//monaco-editor",
+    ]
 )
 
 genrule(
