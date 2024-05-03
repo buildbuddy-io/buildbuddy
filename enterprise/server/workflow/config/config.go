@@ -156,7 +156,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 	}
 
 	cmd := "build --override_repository kythe_release=$KYTHE_DIR"
-	cmd += " --remote_cache=" + cache_api_url.String() + "--experimental_remote_cache_compression"
+	cmd += " --remote_cache=" + cache_api_url.String() + " --experimental_remote_cache_compression"
 	cmd += " //..."
 
 	return &Action{
