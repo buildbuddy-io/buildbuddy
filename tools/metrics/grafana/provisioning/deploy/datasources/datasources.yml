@@ -15,6 +15,6 @@ datasources:
     uid: vm
     isDefault: false # TODO: make VM the default
     # TODO: use global cluster
-    url: http://victoria-metrics-cluster-regional-vmselect.monitor-%{ENV}:8481/select/0/prometheus
+    url: http://victoria-metrics-cluster-global-vmselect.monitor-%{ENV}:8481/select/0/prometheus
     version: 1
     editable: false
