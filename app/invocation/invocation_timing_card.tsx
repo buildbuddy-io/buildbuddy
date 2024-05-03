@@ -74,8 +74,16 @@ export default class InvocationTimingCardComponent extends React.Component<Props
   }
 
   getProfileFile(): build_event_stream.File | undefined {
+    const profilePath =
+      this.props.model.structuredCommandLine
+        ?.find((scl) => scl.commandLineLabel == "canonical")
+        ?.sections?.find((s) => s.sectionLabel == "command options")
+        ?.optionList?.option?.find((o) => o.optionName == "profile")?.optionValue ?? "command.profile.gz";
+    const separator = profilePath.includes("\\") ? "\\" : "/";
+    const profileName = profilePath.substring(profilePath.lastIndexOf(separator) + 1);
+
     return this.props.model.buildToolLogs?.log.find(
-      (log: build_event_stream.File) => log.name != "execution.log" && log.uri
+      (log: build_event_stream.File) => log.name == profileName && log.uri
     );
   }
 
