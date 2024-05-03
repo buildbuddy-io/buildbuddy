@@ -124,7 +124,7 @@ You can then pass this configuration to BuildBuddy RBE with the following flag:
 
 This assumes you've placed this rule in your root BUILD file. If you place it elsewhere, make sure to update the path accordingly.
 
-For instructions on how to deploy custom executor pools, we the [RBE Executor Pools docs](rbe-pools.md).
+For instructions on how to deploy custom executor pools, see the [RBE Executor Pools docs](rbe-pools.md).
 
 ## Target level execution properties
 
@@ -187,10 +187,10 @@ are not officially supported and can break at any time.
 
 These execution properties affect how BuildBuddy's scheduler selects an executor for action execution:
 
-- `Pool`: selects which [executor pool](./rbe-pools) to use.
+- `Pool`: selects which [executor pool](rbe-pools) to use.
 - `OSFamily`: selects which operating system the executor must be running. Available options are `linux` (default), `darwin`, and `windows` (`darwin` and `windows` are currently only available for self-hosted executors).
 - `Arch`: selects which CPU architecture the executor must be running on. Available options are `amd64` (default) and `arm64`.
-- `use-self-hosted-executors`: use [self-hosted executors](./enterprise-rbe) instead of BuildBuddy's managed executor pool. Available options are `true` and `false`. The default value is configurable from [organization settings](https://app.buildbuddy.io/settings/).
+- `use-self-hosted-executors`: use [self-hosted executors](enterprise-rbe) instead of BuildBuddy's managed executor pool. Available options are `true` and `false`. The default value is configurable from [organization settings](https://app.buildbuddy.io/settings/).
 
 ### Action isolation and hermeticity properties
 
@@ -299,13 +299,13 @@ just a historical artifact.)
 
 ### Runner secrets
 
-Please consult [RBE secrets](./secrets) for more information on the related properties.
+Please consult [RBE secrets](secrets) for more information on the related properties.
 
 ### Docker daemon support
 
 For `firecracker` isolation, we support starting a [Docker daemon](https://docs.docker.com/config/daemon/)
 (`dockerd`) which allows actions to run Docker containers.
-Check out our [RBE with Firecracker MicroVMs](./rbe-microvms) doc for examples.
+Check out our [RBE with Firecracker MicroVMs](rbe-microvms) doc for examples.
 
 The following `exec_properties` are supported:
 
