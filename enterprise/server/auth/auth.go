@@ -38,7 +38,10 @@ func Register(ctx context.Context, env *real_environment.RealEnv) error {
 	userAuthenticators = append(userAuthenticators, oidc)
 
 	if saml.IsEnabled(env) {
-		samlAuthenticator := saml.NewSAMLAuthenticator(env)
+		samlAuthenticator, err := saml.NewSAMLAuthenticator(env)
+		if err != nil {
+			return status.InternalErrorf("create SAML authenticator: %s", err)
+		}
 		httpAuthenticators = append(httpAuthenticators, samlAuthenticator)
 		userAuthenticators = append(userAuthenticators, samlAuthenticator)
 	}
