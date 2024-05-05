@@ -1109,7 +1109,6 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 		}
 		su.ReadQps += ru.GetReadQps()
 		su.RaftProposeQps += ru.GetRaftProposeQps()
-		su.TotalBytesUsed += ru.GetEstimatedDiskBytesUsed()
 		return true
 	})
 
@@ -1123,6 +1122,12 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 		return nil
 	}
 	su.TotalBytesUsed = int64(diskEstimateBytes)
+
+	capacity := int64(0)
+	for _, p := range s.partitions {
+		capacity += p.MaxSizeBytes
+	}
+	su.TotalBytesFree = capacity - su.TotalBytesUsed
 	return su
 }
 
