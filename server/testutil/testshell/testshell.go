@@ -1,7 +1,6 @@
 package testshell
 
 import (
-	"fmt"
 	"os/exec"
 	"testing"
 
@@ -13,9 +12,6 @@ func Run(t testing.TB, workDir, script string) string {
 	cmd := exec.Command("/usr/bin/env", "bash", "-e", "-c", script)
 	cmd.Dir = workDir
 	b, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Printf("Script %q failed: %s", script, string(b))
-	}
 	require.NoError(t, err, "script %q failed: %s", script, string(b))
 	return string(b)
 }

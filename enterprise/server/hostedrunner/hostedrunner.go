@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/uuid"
 	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -290,11 +291,11 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, status.WrapError(err, "attach user prefix")
 	}
 
-	//guid, err := uuid.NewRandom()
-	//if err != nil {
-	//	return nil, status.WrapError(err, "uuid")
-	//}
-	invocationID := "2c7325e5-b0fc-4c3b-920e-e1fe289043d0"
+	guid, err := uuid.NewRandom()
+	if err != nil {
+		return nil, status.WrapError(err, "uuid")
+	}
+	invocationID := guid.String()
 	actionDigest, err := r.createAction(ctx, req, invocationID)
 	if err != nil {
 		return nil, status.WrapError(err, "create action")
