@@ -35,6 +35,7 @@ type TaskLeaser struct {
 	leaseID           string
 	supportsReconnect bool
 	quit              chan struct{}
+	keepaliveDone     chan struct{}
 	mu                sync.Mutex // protects stream
 	stream            scpb.Scheduler_LeaseTaskClient
 	ttl               time.Duration
@@ -44,12 +45,13 @@ type TaskLeaser struct {
 
 func NewTaskLeaser(env environment.Env, executorID string, taskID string) *TaskLeaser {
 	return &TaskLeaser{
-		env:        env,
-		executorID: executorID,
-		taskID:     taskID,
-		quit:       make(chan struct{}),
-		ttl:        100 * time.Second,
-		closed:     true, // set to false in Claim.
+		env:           env,
+		executorID:    executorID,
+		taskID:        taskID,
+		quit:          make(chan struct{}),
+		keepaliveDone: make(chan struct{}),
+		ttl:           100 * time.Second,
+		closed:        true, // set to false in Claim.
 	}
 }
 
@@ -123,6 +125,7 @@ func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 
 func (t *TaskLeaser) keepLease(ctx context.Context) {
 	go func() {
+		defer close(t.keepaliveDone)
 		for {
 			select {
 			case <-t.quit:
@@ -169,7 +172,12 @@ func (t *TaskLeaser) Close(ctx context.Context, taskErr error, retry bool) {
 	if t.closed {
 		log.CtxInfof(ctx, "TaskLeaser %q was already closed. Short-circuiting.", t.taskID)
 	}
-	close(t.quit) // This cancels our lease-keep-alive background goroutine.
+
+	// Cancel our lease-keep-alive background goroutine.
+	close(t.quit)
+	// Before sending our final stream message, we need to wait for the
+	// keep-alive goroutine to finish using the stream.
+	<-t.keepaliveDone
 
 	req := &scpb.LeaseTaskRequest{
 		ExecutorId: t.executorID,
