@@ -10,6 +10,7 @@ go_library(
         "//server/environment",
         "//server/metrics",
         "//server/real_environment",
+        "//server/util/alert",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
