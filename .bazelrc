@@ -261,6 +261,9 @@ common --combined_report=lcov
 
 # Use BLAKE3 digest function.
 startup --digest_function=BLAKE3
+# Bazel doesn't track the contents of source directories by default, which can result
+# in non-hermeticity.
+startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 
 # Include target names in timing profile so it's clickable.
 common --experimental_profile_include_target_label
