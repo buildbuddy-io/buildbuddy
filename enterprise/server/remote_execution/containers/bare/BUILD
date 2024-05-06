@@ -28,6 +28,7 @@ go_test(
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testfs",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
     ],
 )
