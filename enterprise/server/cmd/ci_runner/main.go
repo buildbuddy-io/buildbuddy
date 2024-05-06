@@ -1746,6 +1746,8 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"user.email", "ci-runner@buildbuddy.io"},
 		{"user.name", "BuildBuddy"},
 		{"advice.detachedHead", "false"},
+		// Disable any credential helpers (in particular, osxkeychain)
+		{"credential.helper", ""},
 		// With the version of git that we have installed in the CI runner
 		// image, --filter=blob:none requires the partialClone extension to be
 		// enabled.
@@ -1807,7 +1809,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 			return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 		}
 	}
-	fetchArgs := []string{"-c", "credential.helper=", "fetch", "--force"}
+	fetchArgs := []string{"fetch", "--force"}
 	for _, filter := range *gitFetchFilters {
 		fetchArgs = append(fetchArgs, "--filter="+filter)
 	}
