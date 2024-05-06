@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -224,7 +225,7 @@ func (c *bbMetricsCollector) Collect(out chan<- prometheus.Metric) {
 
 	metricFamilies, err := promQuerier.FetchMetrics(c.env.GetServerContext(), c.groupID)
 	if err != nil {
-		log.Warningf("error fetch metrics: %v", err)
+		alert.UnexpectedEvent("export_prometheus_metrics_failure", "err: %s", err)
 		return
 	}
 
