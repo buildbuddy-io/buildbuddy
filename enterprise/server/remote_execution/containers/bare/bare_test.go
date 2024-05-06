@@ -2,7 +2,6 @@ package bare_test
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"testing"
@@ -11,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -33,7 +33,6 @@ func makeTempDirWithWorldTxt(t *testing.T) string {
 
 func TestHelloWorldOnBareMetal(t *testing.T) {
 	ctx := context.Background()
-	flag.Parse()
 	tempDir := makeTempDirWithWorldTxt(t)
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -65,4 +64,34 @@ func TestHelloWorldOnBareMetal(t *testing.T) {
 	)
 	assert.Empty(t, string(result.Stderr), "stderr should be empty")
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
+}
+
+func TestLogFiles(t *testing.T) {
+	flags.Set(t, "executor.bare.enable_log_files", true)
+	ctx := context.Background()
+	ctr := bare.NewBareCommandContainer(&bare.Opts{})
+	workDir := testfs.MakeTempDir(t)
+
+	result := ctr.Run(ctx, &repb.Command{Arguments: []string{"bash", "-ec", `
+		echo test-stdout >&1
+		echo test-stderr >&2
+		while true; do
+			logged_stderr=$(cat "$(pwd).stderr")
+			logged_stdout=$(cat "$(pwd).stdout")
+			if [[ $logged_stderr == test-stderr ]] && [[ $logged_stdout == test-stdout ]]; then
+				exit 0
+			fi
+			if [[ -n $logged_stderr ]] && [[ -n $logged_stdout ]]; then
+				echo >&2 "Unexpected contents: stderr='$logged_stderr' stdout='$logged_stdout'"
+				exit 1
+			fi
+			# Wait a little bit and try again in case the log files have not
+			# been flushed yet.
+			sleep 0.01
+		done
+	`}}, workDir, oci.Credentials{})
+
+	assert.Equal(t, "test-stderr\n", string(result.Stderr))
+	assert.Equal(t, "test-stdout\n", string(result.Stdout))
+	assert.Equal(t, 0, result.ExitCode)
 }
