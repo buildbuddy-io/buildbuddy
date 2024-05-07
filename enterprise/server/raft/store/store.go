@@ -333,17 +333,17 @@ func (s *Store) Statusz(ctx context.Context) string {
 		return true
 	})
 	sort.Slice(replicas, func(i, j int) bool {
-		return replicas[i].ShardID < replicas[j].ShardID
+		return replicas[i].ShardID() < replicas[j].ShardID()
 	})
 	for _, r := range replicas {
-		replicaName := fmt.Sprintf("  Shard: %5d   Replica: %5d", r.ShardID, r.ReplicaID)
+		replicaName := fmt.Sprintf("  Shard: %5d   Replica: %5d", r.ShardID(), r.ReplicaID())
 		ru, err := r.Usage()
 		if err != nil {
 			buf += fmt.Sprintf("%s error: %s\n", replicaName, err)
 			continue
 		}
 		isLeader := 0
-		if rd := s.lookupRange(r.ShardID); rd != nil {
+		if rd := s.lookupRange(r.ShardID()); rd != nil {
 			if s.leaseKeeper.HaveLease(rd.GetRangeId()) {
 				isLeader = 1
 			}
@@ -646,7 +646,7 @@ func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.Ran
 
 func (s *Store) HaveLease(rangeID uint64) bool {
 	if r, err := s.GetReplica(rangeID); err == nil {
-		return s.leaseKeeper.HaveLease(r.ShardID)
+		return s.leaseKeeper.HaveLease(r.ShardID())
 	}
 	s.log.Warningf("HaveLease check for unheld range: %d", rangeID)
 	return false
@@ -853,7 +853,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 		if err != nil {
 			return nil, err
 		}
-		shardID = r.ShardID
+		shardID = r.ShardID()
 	}
 
 	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, shardID, req.GetBatch())

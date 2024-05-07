@@ -142,7 +142,7 @@ func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, l.replica.ShardID, casRequest)
+	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, l.replica.ShardID(), casRequest)
 	if err != nil {
 		return nil, err
 	}
