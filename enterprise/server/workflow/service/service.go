@@ -478,14 +478,8 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if req.GetPushedRepoUrl() == "" {
 		return nil, status.InvalidArgumentError("Missing pushed_repo_url")
 	}
-	if req.GetPushedBranch() == "" {
-		return nil, status.InvalidArgumentError("Missing pushed_branch")
-	}
-	if req.GetTargetRepoUrl() == "" {
-		return nil, status.InvalidArgumentError("Missing target_repo_url")
-	}
-	if req.GetTargetBranch() == "" {
-		return nil, status.InvalidArgumentError("Missing target_branch")
+	if req.GetPushedBranch() == "" && req.GetCommitSha() == "" {
+		return nil, status.InvalidArgumentError("At least one of pushed_branch or commit_sha must be set.")
 	}
 
 	// Authenticate
