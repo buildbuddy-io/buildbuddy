@@ -248,6 +248,11 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	gossipManager.AddListener(s)
 	statusz.AddSection("raft_store", "Store", s)
 
+	// Whenever we bring up a brand new store with no ranges, we need to inform
+	// other stores about its existence using store_usage tag, in order to make
+	// it a potentia replication target.
+	updateTagsWorker.Enqueue()
+
 	return s, nil
 }
 
