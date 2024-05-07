@@ -146,7 +146,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(inputRootURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         let inputRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
-        let inputNodes: TreeNode[] = inputRoot.directories.map((node) => ({
+        let inputDirectories: TreeNode[] = inputRoot.directories.map((node) => ({
           obj: node,
           type: "dir",
         }));
@@ -421,7 +421,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .then((buffer) => {
         let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         this.state.treeShaToExpanded.set(digestString, true);
-        let nodes: TreeNode[] = dir.directories.map((child) => ({
+        let directories: TreeNode[] = dir.directories.map((child) => ({
           obj: child,
           type: "dir",
         }));
@@ -429,7 +429,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
           obj: child,
           type: "file",
         }));
-        nodes.push(...files);
         let symlinks: TreeNode[] = dir.symlinks.map((child) => ({
           obj: child,
           type: "symlink",
