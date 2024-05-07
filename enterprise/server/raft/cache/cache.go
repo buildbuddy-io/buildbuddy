@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
@@ -85,7 +84,6 @@ type RaftCache struct {
 
 	store          *store.Store
 	clusterStarter *bringup.ClusterStarter
-	driver         *driver.Driver
 
 	shutdown     chan struct{}
 	shutdownOnce *sync.Once
@@ -180,16 +178,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		return nil, err
 	}
 
-	eventsCh := rc.store.AddEventListener()
-
-	// start the driver once bringup is complete.
-	rc.driver = driver.New(rc.store, rc.gossipManager, eventsCh)
 	go func() {
 		for !rc.clusterStarter.Done() {
 			time.Sleep(100 * time.Millisecond)
-		}
-		if err := rc.driver.Start(); err != nil {
-			log.Errorf("Error starting driver: %s", err)
 		}
 	}()
 
@@ -367,7 +358,6 @@ func (rc *RaftCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfac
 func (rc *RaftCache) Stop() error {
 	rc.shutdownOnce.Do(func() {
 		close(rc.shutdown)
-		rc.driver.Stop()
 		rc.store.Stop(context.Background())
 		rc.gossipManager.Leave()
 		rc.gossipManager.Shutdown()
