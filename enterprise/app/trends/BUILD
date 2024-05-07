@@ -126,6 +126,7 @@ ts_library(
     srcs = ["heatmap.tsx"],
     deps = [
         "//app/components/tooltip",
+        "//app/util:math",
         "//proto:stats_ts_proto",
         "@npm//@types/d3-scale",
         "@npm//@types/long",
