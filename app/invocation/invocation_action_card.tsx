@@ -154,7 +154,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           obj: node,
           type: "symlink",
         }));
-        inputNodes.push(...inputSymlinks);
+        const inputNodes = [...inputDirectories, ...inputSymlinks];
         this.setState({ inputRoot, inputNodes });
       })
       .catch((e) => console.error("Failed to fetch input root:", e));
@@ -434,7 +434,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           obj: child,
           type: "symlink",
         }));
-        nodes.push(...symlinks);
+        const nodes = [...directories, ...files, ...symlinks];
         this.state.treeShaToChildrenMap.set(digestString, nodes);
         this.forceUpdate();
       })

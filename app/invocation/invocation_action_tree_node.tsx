@@ -86,7 +86,7 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
   renderSymlinkNode(node: SymlinkNode) {
     return (
       <div className="input-tree-node">
-        <div className={"input-tree-node-name"}>
+        <div className="input-tree-node-name">
           <span>
             <FileSymlink className="icon symlink-icon" />
           </span>{" "}
