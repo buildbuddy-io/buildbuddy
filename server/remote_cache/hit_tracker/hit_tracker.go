@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expire"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -327,7 +328,7 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 	if err := h.c.ListAppend(h.ctx, key, string(b)); err != nil {
 		return err
 	}
-	if err := h.c.Expire(h.ctx, key, scorecardResultsExpiration); err != nil {
+	if err := h.c.Expire(h.ctx, key, scorecardResultsExpiration, expire.NewOptions(expire.NX, expire.GT)); err != nil {
 		return err
 	}
 	return nil

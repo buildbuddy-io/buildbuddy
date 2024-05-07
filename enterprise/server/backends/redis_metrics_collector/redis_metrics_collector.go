@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expire"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -39,7 +40,7 @@ func New(rdb redis.UniversalClient, rbuf *redisutil.CommandBuffer) *collector {
 	}
 }
 
-func (c *collector) IncrementCountsWithExpiry(ctx context.Context, key string, counts map[string]int64, expiry time.Duration) error {
+func (c *collector) IncrementCountsWithExpiry(ctx context.Context, key string, counts map[string]int64, expiry time.Duration, opts expire.Options) error {
 	// Buffer writes to avoid high load on Redis.
 
 	for field, n := range counts {
@@ -49,28 +50,28 @@ func (c *collector) IncrementCountsWithExpiry(ctx context.Context, key string, c
 	}
 	// Set an expiration so keys don't stick around forever if we fail to clean
 	// up.
-	return c.rbuf.Expire(ctx, key, expiry)
+	return c.Expire(ctx, key, expiry, opts)
 }
 
 func (c *collector) IncrementCounts(ctx context.Context, key string, counts map[string]int64) error {
-	return c.IncrementCountsWithExpiry(ctx, key, counts, countExpiration)
+	return c.IncrementCountsWithExpiry(ctx, key, counts, countExpiration, expire.NewOptions(expire.NX, expire.GT))
 }
 
-func (c *collector) IncrementCountWithExpiry(ctx context.Context, key, field string, n int64, expiry time.Duration) error {
+func (c *collector) IncrementCountWithExpiry(ctx context.Context, key, field string, n int64, expiry time.Duration, opts expire.Options) error {
 	// Buffer writes to avoid high load on Redis.
 	if err := c.rbuf.HIncrBy(ctx, key, field, n); err != nil {
 		return err
 	}
 	// Set an expiration so keys don't stick around forever if we fail to clean
 	// up.
-	return c.rbuf.Expire(ctx, key, expiry)
+	return c.Expire(ctx, key, expiry, opts)
 }
 
 func (c *collector) IncrementCount(ctx context.Context, key, field string, n int64) error {
-	return c.IncrementCountWithExpiry(ctx, key, field, n, countExpiration)
+	return c.IncrementCountWithExpiry(ctx, key, field, n, countExpiration, expire.NewOptions(expire.NX, expire.GT))
 }
 
-func (c *collector) SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, members ...string) error {
+func (c *collector) SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, opts expire.Options, members ...string) error {
 	membersIface := make([]interface{}, len(members))
 	for i, member := range members {
 		membersIface[i] = member
@@ -81,11 +82,11 @@ func (c *collector) SetAddWithExpiry(ctx context.Context, key string, expiry tim
 	}
 	// Set an expiration so keys don't stick around forever if we fail to clean
 	// up.
-	return c.rbuf.Expire(ctx, key, expiry)
+	return c.Expire(ctx, key, expiry, opts)
 }
 
 func (c *collector) SetAdd(ctx context.Context, key string, members ...string) error {
-	return c.SetAddWithExpiry(ctx, key, countExpiration, members...)
+	return c.SetAddWithExpiry(ctx, key, countExpiration, expire.NewOptions(expire.NX, expire.GT), members...)
 }
 
 func (c *collector) SetGetMembers(ctx context.Context, key string) ([]string, error) {
@@ -154,8 +155,8 @@ func (c *collector) Delete(ctx context.Context, key string) error {
 	return c.rdb.Del(ctx, key).Err()
 }
 
-func (c *collector) Expire(ctx context.Context, key string, duration time.Duration) error {
-	return c.rbuf.Expire(ctx, key, duration)
+func (c *collector) Expire(ctx context.Context, key string, duration time.Duration, opts expire.Options) error {
+	return c.rbuf.Expire(ctx, key, duration, opts)
 }
 
 func (c *collector) Flush(ctx context.Context) error {

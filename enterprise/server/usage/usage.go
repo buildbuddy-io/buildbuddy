@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expire"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
@@ -220,11 +221,11 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 	// Increment the hash values
 	encodedCollection := encodeCollection(collection)
 	countsKey := countsRedisKey(t, encodedCollection)
-	if err := ut.env.GetMetricsCollector().IncrementCountsWithExpiry(ctx, countsKey, counts, redisKeyTTL); err != nil {
+	if err := ut.env.GetMetricsCollector().IncrementCountsWithExpiry(ctx, countsKey, counts, redisKeyTTL, expire.NONE); err != nil {
 		return status.WrapError(err, "increment counts in redis")
 	}
 	// Add the collection hash to the set of collections with usage
-	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsRedisKey(t), redisKeyTTL, encodedCollection); err != nil {
+	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsRedisKey(t), redisKeyTTL, expire.NONE, encodedCollection); err != nil {
 		return status.WrapError(err, "add collection hash to set in redis")
 	}
 

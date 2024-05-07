@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expire"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/golang-jwt/jwt"
@@ -1067,11 +1068,11 @@ type PubSub interface {
 // evicted from the backing store that maintains them (usually memcache or
 // redis), so they should *not* be used for data that requires durability.
 type MetricsCollector interface {
-	IncrementCountsWithExpiry(ctx context.Context, key string, counts map[string]int64, expiry time.Duration) error
+	IncrementCountsWithExpiry(ctx context.Context, key string, counts map[string]int64, expiry time.Duration, opt expire.Options) error
 	IncrementCounts(ctx context.Context, key string, counts map[string]int64) error
-	IncrementCountWithExpiry(ctx context.Context, key, field string, n int64, expiry time.Duration) error
+	IncrementCountWithExpiry(ctx context.Context, key, field string, n int64, expiry time.Duration, opt expire.Options) error
 	IncrementCount(ctx context.Context, key, field string, n int64) error
-	SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, members ...string) error
+	SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, opt expire.Options, members ...string) error
 	SetAdd(ctx context.Context, key string, members ...string) error
 	SetGetMembers(ctx context.Context, key string) ([]string, error)
 	Set(ctx context.Context, key, value string, expiration time.Duration) error
@@ -1080,7 +1081,7 @@ type MetricsCollector interface {
 	ListRange(ctx context.Context, key string, start, stop int64) ([]string, error)
 	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
 	Delete(ctx context.Context, key string) error
-	Expire(ctx context.Context, key string, duration time.Duration) error
+	Expire(ctx context.Context, key string, duration time.Duration, opt expire.Options) error
 	Flush(ctx context.Context) error
 }
 

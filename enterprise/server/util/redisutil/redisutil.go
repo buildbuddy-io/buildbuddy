@@ -15,6 +15,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/extra/redisotel/v8"
 	"github.com/go-redis/redis/v8"
+
+	exp "github.com/buildbuddy-io/buildbuddy/server/util/expire"
 )
 
 var (
@@ -282,7 +284,9 @@ type CommandBuffer struct {
 	// Buffer for SADD commands.
 	sadd map[string]map[interface{}]struct{}
 	// Buffer for EXPIRE commands.
-	expire map[string]time.Duration
+	expireNX map[string]time.Duration
+	// Buffer for EXPIRE commands.
+	expire map[string][]*exp.Expiry
 	// Whether the server is shutting down.
 	isShuttingDown bool
 }
@@ -300,7 +304,7 @@ func (c *CommandBuffer) init() {
 	c.hincr = map[string]map[string]int64{}
 	c.rpush = map[string][]interface{}{}
 	c.sadd = map[string]map[interface{}]struct{}{}
-	c.expire = map[string]time.Duration{}
+	c.expire = map[string][]*exp.Expiry{}
 }
 
 func (c *CommandBuffer) shouldFlushSynchronously() bool {
@@ -424,15 +428,34 @@ func (c *CommandBuffer) RPush(ctx context.Context, key string, values ...interfa
 // The `EXPIRE key 0` command is effectively dropped from the buffer since the
 // later `EXPIRE` command overwrites it, whereas Redis would delete the key
 // immediately upon seeing the `EXPIRE key 0` command.
-func (c *CommandBuffer) Expire(ctx context.Context, key string, duration time.Duration) error {
+func (c *CommandBuffer) Expire(ctx context.Context, key string, duration time.Duration, opts exp.Options) error {
+	expandedOpts := exp.ExpandOptions(opts)
 	c.mu.Lock()
 	if c.shouldFlushSynchronously() {
-		c.mu.Unlock()
-		return c.rdb.Expire(ctx, key, duration).Err()
+		for _, opt := range expandedOpts {
+			c.mu.Unlock()
+			switch opt {
+				case exp.NONE:
+					return c.rdb.Expire(ctx, key, duration).Err()
+				case exp.LT:
+					return c.rdb.ExpireLT(ctx, key, duration).Err()
+				case exp.GT:
+					return c.rdb.ExpireGT(ctx, key, duration).Err()
+				case exp.NX:
+					return c.rdb.ExpireNX(ctx, key, duration).Err()
+				case exp.XX:
+					return c.rdb.ExpireXX(ctx, key, duration).Err()
+				default:
+					return status.InvalidArgumentErrorf("Unknown redis expire command option: %v", opt)
+			}
+		}
 	}
 	defer c.mu.Unlock()
 
-	c.expire[key] = duration
+
+	for _, opt := range expandedOpts {
+		c.expire[key] = append(c.expire[key], &exp.Expiry{Duration: duration, Opt: opt})
+	}
 	return nil
 }
 
@@ -476,8 +499,29 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 		}
 		pipe.SAdd(ctx, key, members...)
 	}
-	for key, duration := range expire {
-		pipe.Expire(ctx, key, duration)
+	for key, expiryList := range expire {
+		collapsed, err := exp.Collapse(expiryList)
+		if err != nil {
+			log.CtxErrorf(ctx, "Encountered error collapsing expiries for key %s: %v\nFalling back to full list.", key, err)
+			return err
+		}
+		for _, e := range(collapsed) {
+			switch e.Opt {
+			case exp.NONE:
+				pipe.Expire(ctx, key, e.Duration)
+			case exp.NX:
+				pipe.ExpireNX(ctx, key, e.Duration)
+			case exp.XX:
+				pipe.ExpireXX(ctx, key, e.Duration)
+			case exp.LT:
+				pipe.ExpireLT(ctx, key, e.Duration)
+			case exp.GT:
+				pipe.ExpireGT(ctx, key, e.Duration)
+			default:
+				log.CtxErrorf(ctx, "Unknown redis expire command option: %v\nFalling back to standard Expire.", e.Opt)
+				pipe.Expire(ctx, key, e.Duration)
+			}
+		}
 	}
 
 	_, err := pipe.Exec(ctx)
