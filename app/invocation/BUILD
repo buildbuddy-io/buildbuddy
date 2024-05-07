@@ -123,12 +123,10 @@ ts_library(
         "//app/components/dialog",
         "//app/components/digest",
         "//app/components/link",
-        "//app/components/menu",
         "//app/components/modal",
-        "//app/components/popup",
         "//app/errors:error_service",
         "//app/format",
-        "//app/invocation:invocation_action_input_node",
+        "//app/invocation:invocation_action_tree_node",
         "//app/invocation:invocation_model",
         "//app/preferences",
         "//app/service:rpc_service",
@@ -147,8 +145,8 @@ ts_library(
 )
 
 ts_library(
-    name = "invocation_action_input_node",
-    srcs = ["invocation_action_input_node.tsx"],
+    name = "invocation_action_tree_node",
+    srcs = ["invocation_action_tree_node.tsx"],
     deps = [
         "//app/components/digest",
         "//app/format",

@@ -1,12 +1,12 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { Download, Info, MoreVertical } from "lucide-react";
+import { Download, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
-import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
+import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
 import rpcService from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
@@ -14,8 +14,6 @@ import TerminalComponent from "../terminal/terminal";
 import { parseActionDigest, digestToString } from "../util/cache";
 import UserPreferences from "../preferences/preferences";
 import alert_service from "../alert/alert_service";
-import Popup from "../components/popup/popup";
-import Menu, { MenuItem } from "../components/menu/menu";
 import { workflow } from "../../proto/workflow_ts_proto";
 import errorService from "../errors/error_service";
 import Dialog, {
@@ -47,11 +45,11 @@ interface State {
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
   inputRoot?: build.bazel.remote.execution.v2.Directory;
-  inputDirs: InputNode[];
+  inputNodes: TreeNode[];
   isMenuOpen: boolean;
   showInvalidateSnapshotModal: boolean;
   treeShaToExpanded: Map<string, boolean>;
-  treeShaToChildrenMap: Map<string, InputNode[]>;
+  treeShaToChildrenMap: Map<string, TreeNode[]>;
   stderr?: string;
   stdout?: string;
   serverLogs?: ServerLog[];
@@ -65,10 +63,10 @@ interface ServerLog {
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
   state: State = {
     treeShaToExpanded: new Map<string, boolean>(),
-    treeShaToChildrenMap: new Map<string, InputNode[]>(),
+    treeShaToChildrenMap: new Map<string, TreeNode[]>(),
     treeShaToTotalSizeMap: new Map<string, [Number, Number]>(),
     serverLogs: [],
-    inputDirs: [],
+    inputNodes: [],
     loadingAction: true,
     isMenuOpen: false,
     showInvalidateSnapshotModal: false,
@@ -86,7 +84,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
   }
 
-  componentDidUpdate(prevProps: Readonly<Props>, prevState: Readonly<State>, snapshot?: any): void {
+  componentDidUpdate(prevProps: Readonly<Props>): void {
     if (prevProps.search.get("actionDigest") != this.props.search.get("actionDigest")) {
       this.fetchAction();
       if (!this.props.search.has("executeResponseDigest")) {
@@ -137,7 +135,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         });
         this.setState({ treeShaToTotalSizeMap: sizes });
       })
-      .catch((e) => {
+      .catch(() => {
         this.setState({ treeShaToTotalSizeMap: new Map<string, [Number, Number]>() });
       });
   }
@@ -148,11 +146,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(inputRootURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         let inputRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
-        let inputDirs: InputNode[] = inputRoot.directories.map((node) => ({
+        let inputDirectories: TreeNode[] = inputRoot.directories.map((node) => ({
           obj: node,
           type: "dir",
         }));
-        this.setState({ inputRoot, inputDirs });
+        let inputSymlinks: TreeNode[] = inputRoot.symlinks.map((node) => ({
+          obj: node,
+          type: "symlink",
+        }));
+        const inputNodes = [...inputDirectories, ...inputSymlinks];
+        this.setState({ inputRoot, inputNodes });
       })
       .catch((e) => console.error("Failed to fetch input root:", e));
   }
@@ -398,7 +401,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  handleFileClicked(node: InputNode) {
+  handleFileClicked(node: TreeNode) {
+    if (!("digest" in node.obj)) return;
     if (!node.obj?.digest) return;
 
     let dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
@@ -417,15 +421,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .then((buffer) => {
         let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         this.state.treeShaToExpanded.set(digestString, true);
-        let dirs: InputNode[] = dir.directories.map((child) => ({
+        let directories: TreeNode[] = dir.directories.map((child) => ({
           obj: child,
           type: "dir",
         }));
-        let files: InputNode[] = dir.files.map((child) => ({
+        let files: TreeNode[] = dir.files.map((child) => ({
           obj: child,
           type: "file",
         }));
-        this.state.treeShaToChildrenMap.set(digestString, dirs.concat(files));
+        let symlinks: TreeNode[] = dir.symlinks.map((child) => ({
+          obj: child,
+          type: "symlink",
+        }));
+        const nodes = [...directories, ...files, ...symlinks];
+        this.state.treeShaToChildrenMap.set(digestString, nodes);
         this.forceUpdate();
       })
       .catch((e) => console.error(e));
@@ -541,10 +550,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     )}
                     <div className="action-section">
                       <div className="action-property-title">Input files</div>
-                      {this.state.inputDirs.length ? (
+                      {this.state.inputNodes.length ? (
                         <div className="input-tree">
-                          {this.state.inputDirs.map((node) => (
-                            <InputNodeComponent
+                          {this.state.inputNodes.map((node) => (
+                            <TreeNodeComponent
                               node={node}
                               treeShaToExpanded={this.state.treeShaToExpanded}
                               treeShaToChildrenMap={this.state.treeShaToChildrenMap}
