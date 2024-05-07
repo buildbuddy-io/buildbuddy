@@ -1,6 +1,7 @@
 actions:
   - name: Test
     container_image: ubuntu-20.04
+    git_fetch_filters: []
     triggers:
       push:
         branches:
