@@ -767,7 +767,7 @@ message DeleteFileResponse {}
 
 ## ExecuteWorkflow
 
-The `ExecuteWorkflow` endpoint lets you trigger a Buildbuddy Workflow for the given repository and branch.
+The `ExecuteWorkflow` endpoint lets you trigger a Buildbuddy Workflow for the given repository and branch/commit.
 
 Note: Github App authentication is required. The API does not support running legacy workflows. See
 https://www.buildbuddy.io/docs/workflows-setup/ for more information on how to setup workflows with
@@ -788,11 +788,23 @@ rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
 ### Example cURL request
 
 ```bash
+# Execute workflow on tip of main branch with env vars set
 curl -d '{
   "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
-  "ref": "main",
+  "branch": "main",
   "action_names": ["Build and test (Mac M1)"],
   "env": {"USE_BAZEL_VERSION": "6.4.0"}
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/ExecuteWorkflow
+
+# Execute workflow on commit abc123 on branch cool-feature
+curl -d '{
+  "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
+  "branch": "cool-feature",
+  "commit_sha": "abc123",
+  "action_names": ["Build and test (Mac M1)"],
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
 -H 'Content-Type: application/json' \
@@ -806,9 +818,12 @@ message ExecuteWorkflowRequest {
   // URL of the repo the workflow is running for
   // Ex. "https://github.com/some-user/acme"
   string repo_url = 1;
-  // Reference for where the workflow should be run (currently only branch names
-  // are supported) Ex. "cool-feature" or "main"
-  string ref = 2;
+  // Reference for where the workflow should be run (at least one of `branch` or
+  // `commit_sha` must be set). If only `branch` is set, will run from the tip
+  // of the branch. If only `commit_sha` is set, reporting will not contain the
+  // branch name.
+  string branch = 8;
+  string commit_sha = 9;
 
   // OPTIONAL FIELDS
 
