@@ -341,6 +341,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       filteredEvents[filteredEvents.length - 1].timestamp!
     );
 
+    let offset = 0;
     return (
       <div>
         {filteredEvents.map((event, i) => {
@@ -350,6 +351,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           const next = filteredEvents[i + 1];
           const duration = durationSeconds(event.timestamp!, next.timestamp!);
           const weight = duration / totalDuration;
+          offset += weight;
           return (
             <div>
               <div className="metadata-detail">
@@ -363,13 +365,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
               </div>
               <div className="action-timeline">
                 <div
+                  className="timeline-event-gray"
+                  title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
+                  style={{ flex: `${offset - weight} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
+                <div
                   className="timeline-event"
                   title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
                   style={{ flex: `${weight} 0 0`, backgroundColor: event.color }}></div>
                 <div
                   className="timeline-event-gray"
                   title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                  style={{ flex: `${1 - weight} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
+                  style={{ flex: `${1 - offset} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
               </div>
             </div>
           );
