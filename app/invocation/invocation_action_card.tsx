@@ -335,6 +335,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (filteredEvents.length == 0) {
       return null;
     }
+    const startTimestamp = filteredEvents[0].timestamp;
 
     const totalDuration = durationSeconds(
       filteredEvents[0].timestamp!,
@@ -344,6 +345,19 @@ export default class InvocationActionCardComponent extends React.Component<Props
     let offset = 0;
     return (
       <div>
+        <div className="metadata-detail">
+          <span className="label">
+            Total
+            {startTimestamp && <> @ {format.formatTimestamp(startTimestamp)}</>}
+          </span>
+          <span className="bar-description">{format.durationSec(totalDuration)} (100%)</span>
+        </div>
+        <div className="action-timeline">
+          <div
+            className="timeline-event"
+            title={`Total: (${format.durationSec(totalDuration)}, 100%)`}
+            style={{ flex: `1 0 0`, backgroundColor: "green" }}></div>
+        </div>
         {filteredEvents.map((event, i) => {
           // Don't render the end marker.
           if (i == filteredEvents.length - 1) return null;
@@ -357,7 +371,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
               <div className="metadata-detail">
                 <span className="label">
                   {event.name}
-                  {event.timestamp && <>@ {format.formatTimestamp(event.timestamp)}</>}
+                  {event.timestamp && <> @ {format.formatTimestamp(event.timestamp)}</>}
                 </span>
                 <span className="bar-description">
                   {format.compactDurationSec(duration)} ({(weight * 100).toFixed(1)}%)
