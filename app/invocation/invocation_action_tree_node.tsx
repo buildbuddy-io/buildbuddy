@@ -33,7 +33,7 @@ function getChildCountText(childCount: Number) {
 }
 
 export default class TreeNodeComponent extends React.Component<Props, State> {
-  renderDigestNode(node: FileNode | DirectoryNode) {
+  renderFileOrDirectoryNode(node: FileNode | DirectoryNode) {
     const digestString = node.digest?.hash ?? "";
     const sizeInfo = this.props.treeShaToTotalSizeMap.get(digestString);
     const expanded = this.props.treeShaToExpanded.get(digestString);
@@ -102,7 +102,7 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
 
   render() {
     return "digest" in this.props.node.obj
-      ? this.renderDigestNode(this.props.node.obj)
+      ? this.renderFileOrDirectoryNode(this.props.node.obj)
       : this.renderSymlinkNode(this.props.node.obj);
   }
 }
