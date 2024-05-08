@@ -273,9 +273,9 @@ func (rq *ReplicateQueue) Start() {
 
 	rq.mu.Lock()
 	rq.started = true
+	rq.stop = make(chan struct{})
 	rq.mu.Unlock()
 
-	rq.stop = make(chan struct{})
 	queueDelay := time.NewTicker(queueWaitDuration)
 	defer queueDelay.Stop()
 	for {
