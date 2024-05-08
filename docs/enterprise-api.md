@@ -788,23 +788,24 @@ rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
 ### Example cURL request
 
 ```bash
-# Execute workflow on tip of main branch with env vars set
+# Execute workflow on commit abc123 on branch cool-feature with env vars set
 curl -d '{
   "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
-  "branch": "main",
-  "action_names": ["Build and test (Mac M1)"],
+  "branch": "cool-feature",
+  "commit_sha": "abc123",
+  "action_names": ["Test"],
   "env": {"USE_BAZEL_VERSION": "6.4.0"}
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
 -H 'Content-Type: application/json' \
 https://app.buildbuddy.io/api/v1/ExecuteWorkflow
 
-# Execute workflow on commit abc123 on branch cool-feature
+# Example populating `branch` and `commit_sha` from a Github Actions workflow
 curl -d '{
   "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
-  "branch": "cool-feature",
-  "commit_sha": "abc123",
-  "action_names": ["Build and test (Mac M1)"],
+  "branch": ${{ github.ref_name }},
+  "commit_sha": ${{ github.sha }},
+  "action_names": ["Test"],
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
 -H 'Content-Type: application/json' \
@@ -818,7 +819,7 @@ message ExecuteWorkflowRequest {
   // URL of the repo the workflow is running for
   // Ex. "https://github.com/some-user/acme"
   string repo_url = 1;
-  // Reference for where the workflow should be run (at least one of `branch` or
+  // Git refs at which the workflow should be run (at least one of `branch` or
   // `commit_sha` must be set). If only `branch` is set, will run from the tip
   // of the branch. If only `commit_sha` is set, reporting will not contain the
   // branch name.

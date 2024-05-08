@@ -9,7 +9,7 @@ message ExecuteWorkflowRequest {
   // Ex. "https://github.com/some-user/acme"
   string repo_url = 1;
 
-  // Reference for where the workflow should be run (at least one of `branch` or
+  // Git refs at which the workflow should be run (at least one of `branch` or
   // `commit_sha` must be set). If only `branch` is set, will run from the tip
   // of the branch. If only `commit_sha` is set, reporting will not contain the
   // branch name.
