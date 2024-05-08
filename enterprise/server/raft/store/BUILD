@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/driver",
         "//enterprise/server/raft/events",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/leasekeeper",

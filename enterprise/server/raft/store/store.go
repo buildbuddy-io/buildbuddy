@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper"
@@ -61,6 +62,7 @@ import (
 
 var (
 	zombieNodeScanInterval = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
+	replicaScanInterval    = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
 	maxRangeSizeBytes      = flag.Int64("cache.raft.max_range_size_bytes", 1e8, "If set to a value greater than 0, ranges will be split until smaller than this size")
 )
 
@@ -104,6 +106,8 @@ type Store struct {
 
 	updateTagsWorker *updateTagsWorker
 	txnCoordinator   *txn.Coordinator
+
+	replicateQueue *driver.ReplicateQueue
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -203,6 +207,9 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	s.txnCoordinator = txnCoordinator
 
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
+
+	s.replicateQueue = driver.NewReplicateQueue(s, gossipManager)
+
 	if err != nil {
 		return nil, err
 	}
@@ -424,6 +431,14 @@ func (s *Store) Start() error {
 		s.txnCoordinator.Start(gctx)
 		return nil
 	})
+	eg.Go(func() error {
+		s.scan(gctx)
+		return nil
+	})
+	eg.Go(func() error {
+		s.replicateQueue.Start()
+		return nil
+	})
 
 	return nil
 }
@@ -439,6 +454,7 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.egCancel()
 		s.leaseKeeper.Stop()
 		s.liveness.Release()
+		s.replicateQueue.Stop()
 		s.eg.Wait()
 	}
 	s.updateTagsWorker.Stop()
@@ -784,6 +800,29 @@ func (s *Store) ListReplicas(ctx context.Context, req *rfpb.ListReplicasRequest)
 		})
 	}
 	return rsp, nil
+}
+
+func (s *Store) getLeasedReplicas() []*replica.Replica {
+	s.rangeMu.RLock()
+	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
+	for _, rd := range s.openRanges {
+		openRanges = append(openRanges, rd)
+	}
+	s.rangeMu.RUnlock()
+
+	res := make([]*replica.Replica, 0, len(s.openRanges))
+	for _, rd := range openRanges {
+		header := &rfpb.Header{
+			RangeId:    rd.GetRangeId(),
+			Generation: rd.GetGeneration(),
+		}
+		r, err := s.LeasedRange(header)
+		if err != nil {
+			continue
+		}
+		res = append(res, r)
+	}
+	return res
 }
 
 func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error) {
@@ -1803,4 +1842,20 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, shardID, r
 		return nil, err
 	}
 	return newDescriptor, nil
+}
+
+func (store *Store) scan(ctx context.Context) {
+	scanDelay := time.NewTicker(*replicaScanInterval)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-scanDelay.C:
+		}
+		log.Debug("scan started")
+		replicas := store.getLeasedReplicas()
+		for _, repl := range replicas {
+			store.replicateQueue.MaybeAdd(repl)
+		}
+	}
 }

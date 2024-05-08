@@ -1,0 +1,554 @@
+package driver
+
+import (
+	"container/heap"
+	"context"
+	"flag"
+	"math"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+)
+
+var (
+	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
+	minNumReplicasPerRange = flag.Int("cache.raft.min_num_replicas_per_range", 3, "The minimum number of replicas each range should have")
+)
+
+type DriverAction int
+
+const (
+	_ DriverAction = iota
+	DriverNoop
+	DriverRemoveReplica
+	DriverRemoveDeadReplica
+	DirverAddReplica
+	DriverReplaceDeadReplica
+	DriverConsiderRebalance
+)
+
+const (
+	// how long do we wait until we process the next item
+	queueWaitDuration = 1 * time.Second
+	// This is a ratio used in determining whether a store is above, around or
+	// below the mean. If a store has range count that is greater than the mean
+	// plus the product of the mean and this ratio, it is considered above the
+	// mean; and if the range count is less than the mean minus the product of
+	// the mean and this ratio, it is considered below the mean. Otherwise, it's
+	// considered around the mean.
+	replicaCountMeanRatioThreshold = .05
+	// The minimum number of ranges by which a store must deviate from the mean
+	// to be considerred above or below the mean.
+	minReplicaCountThreshold = 2
+)
+
+func (a DriverAction) Priority() float64 {
+	switch a {
+	case DriverReplaceDeadReplica:
+		return 400
+	case DirverAddReplica:
+		return 300
+	case DriverRemoveDeadReplica:
+		return 200
+	case DriverRemoveReplica:
+		return 100
+	case DriverConsiderRebalance, DriverNoop:
+		return 0
+	default:
+		alert.UnexpectedEvent("unknown-driver-action", "unknown driver action %s", a)
+		return -1
+	}
+}
+
+type IReplica interface {
+	RangeDescriptor() *rfpb.RangeDescriptor
+	ReplicaID() uint64
+	ShardID() uint64
+}
+
+type IStore interface {
+	GetReplica(rangeID uint64) (*replica.Replica, error)
+	AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error)
+	RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error)
+}
+
+func computeQuorum(numNodes int) int {
+	return (numNodes / 2) + 1
+}
+
+func (rq *ReplicateQueue) computeAction(replicas []*rfpb.ReplicaDescriptor) (DriverAction, float64) {
+	if rq.storeMap == nil {
+		action := DriverNoop
+		return action, action.Priority()
+	}
+	curReplicas := len(replicas)
+	desiredQuorum := computeQuorum(*minNumReplicasPerRange)
+	quorum := computeQuorum(curReplicas)
+
+	if curReplicas < *minNumReplicasPerRange {
+		action := DirverAddReplica
+		adjustedPriority := action.Priority() + float64(desiredQuorum-curReplicas)
+		return action, adjustedPriority
+	}
+	replicasByStatus := rq.storeMap.DivideByStatus(replicas)
+	numLiveReplicas := len(replicasByStatus.LiveReplicas) + len(replicasByStatus.SuspectReplicas)
+	numDeadReplicas := len(replicasByStatus.DeadReplicas)
+	if numLiveReplicas < quorum {
+		action := DriverNoop
+		return action, action.Priority()
+	}
+
+	if curReplicas <= *minNumReplicasPerRange && numDeadReplicas > 0 {
+		action := DriverReplaceDeadReplica
+		return action, action.Priority()
+	}
+
+	if numDeadReplicas > 0 {
+		action := DriverRemoveDeadReplica
+		return action, action.Priority()
+	}
+
+	if curReplicas > *minNumReplicasPerRange {
+		action := DriverRemoveDeadReplica
+		ajustedPriority := action.Priority() - float64(curReplicas%2)
+		return action, ajustedPriority
+	}
+
+	action := DriverConsiderRebalance
+	return action, action.Priority()
+}
+
+type pqItem struct {
+	shardID   uint64
+	replicaID uint64
+
+	priority   float64
+	insertTime time.Time
+	// The index is needed by update and is maintained by the heap.Interface methods.
+	index      int // The index of the item in the heap.
+	processing bool
+	requeue    bool
+}
+
+// An priorityQueue implements heap.Interface and holds pqItems.
+type priorityQueue []*pqItem
+
+func (pq priorityQueue) Len() int { return len(pq) }
+func (pq priorityQueue) Less(i, j int) bool {
+	return pq[i].priority > pq[j].priority ||
+		(pq[i].priority == pq[j].priority && pq[i].insertTime.Before(pq[j].insertTime))
+}
+func (pq priorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+	pq[i].index = i
+	pq[j].index = j
+}
+func (pq *priorityQueue) Push(x interface{}) {
+	n := len(*pq)
+	item := x.(*pqItem)
+	item.index = n
+	*pq = append(*pq, item)
+}
+func (pq *priorityQueue) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	item := old[n-1]
+	old[n-1] = nil  // avoid memory leak
+	item.index = -1 // for safety
+	*pq = old[0 : n-1]
+	return item
+}
+func (pq *priorityQueue) update(item *pqItem, priority float64) {
+	item.priority = priority
+	heap.Fix(pq, item.index)
+}
+func (pq *priorityQueue) getItemWithMinPriority() *pqItem {
+	old := *pq
+	n := len(old)
+	return old[n-1]
+}
+
+type ReplicateQueue struct {
+	pq       *priorityQueue
+	storeMap *storemap.StoreMap
+	store    IStore
+
+	pqItemMap sync.Map // rangeID -> *pqItem
+	maxSize   int
+	stop      chan struct{}
+
+	mu      sync.Mutex //protects started
+	started bool
+}
+
+func NewReplicateQueue(store IStore, gossipManager interfaces.GossipService) *ReplicateQueue {
+	storeMap := storemap.New(gossipManager)
+	return &ReplicateQueue{
+		storeMap: storeMap,
+		pq:       &priorityQueue{},
+		store:    store,
+		maxSize:  100,
+	}
+}
+
+func (rq *ReplicateQueue) shouldQueue(repl IReplica) (bool, float64) {
+	rd := repl.RangeDescriptor()
+
+	action, priority := rq.computeAction(rd.GetReplicas())
+	log.Debugf("shouldQueue for replica:%d returns action:%d, with priority %.2f", repl.ShardID(), action, priority)
+	if action == DriverNoop {
+		return false, 0
+	} else if action != DriverConsiderRebalance {
+		return true, priority
+	}
+
+	// TODO: For DriverConsiderRebalance check if there are rebalance targets.
+	return false, 0
+}
+
+func (rq *ReplicateQueue) MaybeAdd(replica IReplica) {
+	shouldQueue, priority := rq.shouldQueue(replica)
+	if !shouldQueue {
+		return
+	}
+
+	rd := replica.RangeDescriptor()
+	itemIface, ok := rq.pqItemMap.Load(rd.GetRangeId())
+	if ok {
+		item, ok := itemIface.(*pqItem)
+		if !ok {
+			alert.UnexpectedEvent("unexpected_pq_item_map_type_error_in_replicate_queue")
+		}
+		// Replica is already processing. Mark to be requeued.
+		if item.processing {
+			item.requeue = true
+			return
+		}
+		if priority > item.priority {
+			rq.pq.update(item, priority)
+		}
+	}
+
+	item := &pqItem{
+		shardID:    replica.ShardID(),
+		replicaID:  replica.ReplicaID(),
+		priority:   priority,
+		insertTime: time.Now(),
+	}
+	heap.Push(rq.pq, item)
+	rq.pqItemMap.Store(item.shardID, item)
+	log.Infof("queued replica shardID=%d", item.shardID)
+
+	// If the priroityQueue if full, let's remove the item with the lowest priority.
+	if pqLen := rq.pq.Len(); pqLen > rq.maxSize {
+		rq.remove(rq.pq.getItemWithMinPriority())
+	}
+}
+
+func (rq *ReplicateQueue) remove(item *pqItem) {
+	if item.processing {
+		item.requeue = false
+		return
+	}
+	if item.index >= 0 {
+		heap.Remove(rq.pq, item.index)
+	}
+	rq.pqItemMap.Delete(item.shardID)
+}
+
+func (rq *ReplicateQueue) Start() {
+	rq.mu.Lock()
+	started := rq.started
+	rq.mu.Unlock()
+	if started {
+		return
+	}
+
+	rq.mu.Lock()
+	rq.started = true
+	rq.mu.Unlock()
+
+	rq.stop = make(chan struct{})
+	queueDelay := time.NewTicker(queueWaitDuration)
+	defer queueDelay.Stop()
+	for {
+		select {
+		case <-rq.stop:
+			return
+		case <-queueDelay.C:
+		}
+		if rq.pq.Len() == 0 {
+			continue
+		}
+		item := heap.Pop(rq.pq).(*pqItem)
+		item.processing = true
+		repl, err := rq.store.GetReplica(item.shardID)
+		if err != nil || repl.ReplicaID() != item.replicaID {
+			log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
+			rq.pqItemMap.Delete(item.shardID)
+			continue
+		}
+
+		requeue, err := rq.processReplica(repl)
+		if err != nil {
+			// TODO: check if err can be retried.
+			log.Errorf("failed to process replica: %s", err)
+		} else {
+			log.Debugf("successfully processed replica: %d", repl.ShardID())
+		}
+		item.requeue = requeue
+		rq.postProcess(repl)
+	}
+}
+
+func (rq *ReplicateQueue) Stop() {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	if !rq.started {
+		return
+	}
+	close(rq.stop)
+	rq.started = false
+}
+
+func findReplacingReplica(replicas []*rfpb.ReplicaDescriptor, replicaByStatus *storemap.ReplicasByStatus) *rfpb.ReplicaDescriptor {
+	if len(replicaByStatus.DeadReplicas) == 0 {
+		// nothing to be removed
+		return nil
+	}
+
+	if len(replicas) == 1 {
+		// only one replica remains, don't remove the replica
+		return nil
+	}
+
+	return replicaByStatus.DeadReplicas[0]
+}
+
+func storeHasReplica(node *rfpb.NodeDescriptor, existing []*rfpb.ReplicaDescriptor) bool {
+	for _, repl := range existing {
+		if repl.GetNhid() == node.GetNhid() {
+			return true
+		}
+	}
+	return false
+}
+
+func (rq *ReplicateQueue) allocateTarget(existing []*rfpb.ReplicaDescriptor) *rfpb.NodeDescriptor {
+	storesWithStats := rq.storeMap.GetStoresWithStats()
+	// Rank stores
+	// check free bytes
+	var candidates []*candidate
+	for _, su := range storesWithStats.Usages {
+		if storeHasReplica(su.GetNode(), existing) {
+			continue
+		}
+		candidates = append(candidates, &candidate{
+			usage:                 su,
+			replicaCount:          su.GetReplicaCount(),
+			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
+		})
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+	sort.Sort(sort.Reverse(byScore(candidates)))
+	return candidates[0].usage.GetNode()
+}
+
+type change struct {
+	addOp    *rfpb.AddReplicaRequest
+	removeOp *rfpb.RemoveReplicaRequest
+}
+
+func (rq *ReplicateQueue) addReplica(rd *rfpb.RangeDescriptor) *change {
+	target := rq.allocateTarget(rd.GetReplicas())
+	if target == nil {
+		log.Debugf("cannot find targets for range descriptor:%+v", rd)
+		return nil
+	}
+
+	return &change{
+		addOp: &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node:  target,
+		},
+	}
+}
+
+func (rq *ReplicateQueue) replaceDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *storemap.ReplicasByStatus) *change {
+	replacing := findReplacingReplica(rd.GetReplicas(), replicasByStatus)
+	if replacing == nil {
+		// nothing to remove
+		return nil
+	}
+	change := rq.addReplica(rd)
+
+	change.removeOp = &rfpb.RemoveReplicaRequest{
+		Range:     rd,
+		ReplicaId: replacing.GetReplicaId(),
+	}
+
+	return change
+}
+
+func (rq *ReplicateQueue) applyChange(ctx context.Context, change *change) error {
+	var rd *rfpb.RangeDescriptor
+	if change.addOp != nil {
+		rsp, err := rq.store.AddReplica(ctx, change.addOp)
+		if err != nil {
+			log.Errorf("AddReplica err: %s", err)
+			return err
+		}
+		log.Infof("AddReplicaRequest finished: %+v", change.addOp)
+		rd = rsp.GetRange()
+	}
+	if change.removeOp != nil {
+		if rd != nil {
+			change.removeOp.Range = rd
+		}
+		_, err := rq.store.RemoveReplica(ctx, change.removeOp)
+		if err != nil {
+			log.Errorf("RemoveReplica err: %s", err)
+			return err
+		}
+		log.Infof("RemoveReplicaRequest finished: %+v", change.removeOp)
+	}
+	return nil
+
+}
+
+func (rq *ReplicateQueue) processReplica(repl IReplica) (bool, error) {
+	log.Debugf("start to process shard_id: %d, replica_id:%d", repl.ReplicaID(), repl.ShardID())
+	// TODO: Check the lease
+	rd := repl.RangeDescriptor()
+	action, _ := rq.computeAction(rd.GetReplicas())
+
+	replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
+	var change *change
+
+	switch action {
+	case DriverNoop:
+	case DirverAddReplica:
+		log.Debugf("add replica: %d", repl.ShardID())
+		change = rq.addReplica(rd)
+	case DriverReplaceDeadReplica:
+		log.Debugf("replace dead replica: %d", repl.ShardID())
+		change = rq.replaceDeadReplica(rd, replicasByStatus)
+	case DriverRemoveReplica:
+		log.Debugf("remove replica: %d", repl.ShardID())
+		// TODO
+	case DriverRemoveDeadReplica:
+		log.Debugf("remove dead replica: %d", repl.ShardID())
+		// TODO
+	case DriverConsiderRebalance:
+		log.Debugf("remove consider rebalance: %d", repl.ShardID())
+		// TODO
+	}
+
+	if change == nil {
+		log.Debugf("nothing to do for replica: %d", repl.ShardID())
+		return false, nil
+	}
+
+	err := rq.applyChange(context.TODO(), change)
+	if err != nil {
+		log.Warningf("Error apply change: %s", err)
+	}
+
+	if action == DriverNoop || action == DriverConsiderRebalance {
+		return false, err
+	}
+	return true, err
+}
+
+func (rq *ReplicateQueue) postProcess(repl IReplica) {
+	itemIface, ok := rq.pqItemMap.Load(repl.ShardID())
+	if !ok {
+		alert.UnexpectedEvent("unexpected_pq_item_not_found")
+	}
+	item, ok := itemIface.(*pqItem)
+	if !ok {
+		alert.UnexpectedEvent("unexpected_pq_item_map_type_error_in_replicate_queue")
+	}
+	if item.requeue {
+		rq.MaybeAdd(repl)
+	}
+	rq.pqItemMap.Delete(item.shardID)
+}
+
+func aboveMeanReplicaCountThreshold(mean float64) float64 {
+	return mean + math.Max(mean*replicaCountMeanRatioThreshold, minReplicaCountThreshold)
+}
+
+func belowMeanReplicaCountThreshold(mean float64) float64 {
+	return mean + math.Max(mean*replicaCountMeanRatioThreshold, minReplicaCountThreshold)
+}
+
+type meanLevel int
+
+const (
+	aboveMean  meanLevel = -1
+	aroundMean meanLevel = 0
+	belowMean  meanLevel = 1
+)
+
+type candidate struct {
+	usage                 *rfpb.StoreUsage
+	replicaCountMeanLevel meanLevel
+	replicaCount          int64
+}
+
+// compare returns
+//   - a positive number if c is a better fit than o;
+//   - 0 if c and o is equivalent
+//   - 0 a negative number if c is a worse fit than o.
+func (c *candidate) compare(o *candidate) float64 {
+	if c.replicaCountMeanLevel != o.replicaCountMeanLevel {
+		score := 10 + math.Abs(float64(c.replicaCountMeanLevel-o.replicaCountMeanLevel))
+		if c.replicaCountMeanLevel > o.replicaCountMeanLevel {
+			return score
+		}
+		return -10
+	}
+
+	diff := math.Abs(float64(c.replicaCount - o.replicaCount))
+	if c.replicaCount < o.replicaCount {
+		return diff / float64(o.replicaCount)
+	} else if c.replicaCount > o.replicaCount {
+		return diff / float64(c.replicaCount)
+	}
+	return 0
+}
+
+type byScore []*candidate
+
+func (x byScore) Len() int { return len(x) }
+func (x byScore) Less(i, j int) bool {
+	res := x[i].compare(x[j])
+	if res != 0 {
+		return res < 0
+	}
+	return x[i].usage.GetNode().GetNhid() < x[j].usage.GetNode().GetNhid()
+}
+func (x byScore) Swap(i, j int) { x[i], x[j] = x[j], x[i] }
+
+func replicaCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.StoreUsage) meanLevel {
+	maxReplicaCount := aboveMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)
+	minReplicaCount := belowMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)
+	curReplicaCount := float64(su.GetReplicaCount())
+	if curReplicaCount < minReplicaCount {
+		return belowMean
+	} else if curReplicaCount >= maxReplicaCount {
+		return aboveMean
+	}
+	return aroundMean
+}
