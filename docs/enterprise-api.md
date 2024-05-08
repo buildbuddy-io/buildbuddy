@@ -803,8 +803,8 @@ https://app.buildbuddy.io/api/v1/ExecuteWorkflow
 # Example populating `branch` and `commit_sha` from a Github Actions workflow
 curl -d '{
   "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
-  "branch": ${{ github.ref_name }},
-  "commit_sha": ${{ github.sha }},
+  "branch": "${{ github.ref_name }}",
+  "commit_sha": "${{ github.sha }}",
   "action_names": ["Test"],
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
