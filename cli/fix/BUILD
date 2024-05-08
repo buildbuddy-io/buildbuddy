@@ -12,7 +12,6 @@ go_library(
         "//cli/add",
         "//cli/arg",
         "//cli/bazelisk",
-        "//cli/bzlmod",
         "//cli/log",
         "//cli/translate",
         "//cli/workspace",

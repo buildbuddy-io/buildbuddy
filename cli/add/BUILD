@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/add",
     deps = [
         "//cli/arg",
-        "//cli/bzlmod",
         "//cli/log",
         "//cli/terminal",
         "//cli/workspace",
