@@ -813,12 +813,13 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	if *prNumber != 0 {
 		buildMetadata.Metadata["PULL_REQUEST_NUMBER"] = fmt.Sprintf("%d", *prNumber)
 	}
-	if *targetRepoURL != "" {
-		buildMetadata.Metadata["REPO_URL"] = *targetRepoURL
-	}
-	if *pushedRepoURL != *targetRepoURL {
+	baseURL := *pushedRepoURL
+	isFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
+	if isFork {
+		baseURL = *targetRepoURL
 		buildMetadata.Metadata["FORK_REPO_URL"] = *pushedRepoURL
 	}
+	buildMetadata.Metadata["REPO_URL"] = baseURL
 	if *visibility != "" {
 		buildMetadata.Metadata["VISIBILITY"] = *visibility
 	}
@@ -914,10 +915,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				// repo since we merge the target branch before running the workflow;
 				// we set this for the purpose of reporting statuses to GitHub.
 				{Key: "COMMIT_SHA", Value: *commitSHA},
-				// REPO_URL is used to report statuses, so always set it to the
-				// target repo URL (which should be the same URL on which the workflow
-				// is configured).
-				{Key: "REPO_URL", Value: *targetRepoURL},
+				{Key: "REPO_URL", Value: baseURL},
 			},
 		}},
 	}
@@ -1616,8 +1614,8 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
-	if *pushedBranch == "" && *targetBranch == "" {
-		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `target_branch` to be set")
+	if *pushedBranch == "" && *commitSHA == "" {
+		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `commit_sha` to be set")
 	}
 
 	if err := ws.fetchRefs(ctx); err != nil {
@@ -1650,6 +1648,8 @@ func (ws *workspace) sync(ctx context.Context) error {
 		}
 		*commitSHA = headCommitSHA
 	}
+	// Unfortunately there's no performant way to find the branch name from
+	// a commit sha, so if the branch name is not set, leave it empty
 
 	action, err := getActionToRun()
 	if err != nil {
@@ -1659,7 +1659,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 	// If enabled by the config, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
-	if merge && *targetRepoURL != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
+	if merge && *targetRepoURL != "" && *targetBranch != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
@@ -1699,27 +1699,38 @@ func (ws *workspace) fetchRefs(ctx context.Context) error {
 		baseRefs = append(baseRefs, *targetBranch)
 	}
 	// "fork" is referring to the forked repo, if the runner was triggered by a
-	// PR from a fork (forkBranches will be empty otherwise).
-	forkBranches := make([]string, 0)
+	// PR from a fork (forkRefs will be empty otherwise).
+	forkRefs := make([]string, 0)
 
-	// Add the pushed branch to the appropriate list corresponding to the remote
+	// Add the pushed ref to the appropriate list corresponding to the remote
 	// to be fetched (base or fork).
-	isPushedBranchInFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
-	if isPushedBranchInFork {
-		forkBranches = append(forkBranches, *pushedBranch)
-	} else if *pushedBranch != *targetBranch {
-		baseRefs = append(baseRefs, *pushedBranch)
+	inFork := isPushedRefInFork()
+	if inFork {
+		// Try to fetch a branch if possible, because fetching
+		// commits that aren't at the tip of a branch requires
+		// users to set an additional config option (uploadpack.allowAnySHA1InWant)
+		pushedRefToFetch := *pushedBranch
+		if pushedRefToFetch == "" {
+			pushedRefToFetch = *commitSHA
+		}
+		forkRefs = append(forkRefs, pushedRefToFetch)
+	} else {
+		if *pushedBranch == "" {
+			baseRefs = append(baseRefs, *commitSHA)
+		} else if *pushedBranch != *targetBranch {
+			baseRefs = append(baseRefs, *pushedBranch)
+		}
 	}
 
 	baseURL := *pushedRepoURL
-	if isPushedBranchInFork {
+	if inFork {
 		baseURL = *targetRepoURL
 	}
 	// TODO: Fetch from remotes in parallel
 	if err := ws.fetch(ctx, baseURL, baseRefs); err != nil {
 		return err
 	}
-	if err := ws.fetch(ctx, *pushedRepoURL, forkBranches); err != nil {
+	if err := ws.fetch(ctx, *pushedRepoURL, forkRefs); err != nil {
 		return err
 	}
 	return nil
@@ -1733,9 +1744,15 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
 	}
 
-	// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
-	if _, err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
-		return err
+	if checkoutLocalBranchName != "" {
+		// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
+		if _, err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
+			return err
+		}
+	} else {
+		if _, err := git(ctx, ws.log, "checkout", checkoutRef); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1785,8 +1802,8 @@ func (ws *workspace) init(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []string) error {
-	if len(branches) == 0 {
+func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string) error {
+	if len(refs) == 0 {
 		return nil
 	}
 	authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
@@ -1817,8 +1834,12 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 		fetchArgs = append(fetchArgs, fmt.Sprintf("--depth=%d", *gitFetchDepth))
 	}
 	fetchArgs = append(fetchArgs, remoteName)
-	fetchArgs = append(fetchArgs, branches...)
+	fetchArgs = append(fetchArgs, refs...)
 	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
+		if strings.Contains(err.Error(), "Server does not allow request for unadvertised object") {
+			log.Warning("Git does not support fetching non-HEAD commits by default. You must either set the `uploadpack.allowAnySHA1InWant`" +
+				" config option in the repo that is being fetched, or set pushed_branch in the request.")
+		}
 		return err
 	}
 	return nil
@@ -1853,6 +1874,10 @@ func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError)
 	return strings.TrimSpace(output), nil
 }
 
+func isPushedRefInFork() bool {
+	return *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
+}
+
 func formatNowUTC() string {
 	return time.Now().UTC().Format("2006-01-02 15:04:05.000 UTC")
 }
@@ -1881,13 +1906,19 @@ func writeBazelrc(path, invocationID string) error {
 	}
 	defer f.Close()
 
+	isFork := isPushedRefInFork()
+
+	baseURL := *pushedRepoURL
+	if isFork {
+		baseURL = *targetRepoURL
+	}
 	lines := []string{
 		"build --build_metadata=ROLE=CI",
 		"build --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
 		// Note: these pieces of metadata are set to match the WorkspaceStatus event
 		// for the outer (workflow) invocation.
 		"build --build_metadata=COMMIT_SHA=" + *commitSHA,
-		"build --build_metadata=REPO_URL=" + *targetRepoURL,
+		"build --build_metadata=REPO_URL=" + baseURL,
 		"build --build_metadata=BRANCH_NAME=" + *pushedBranch, // corresponds to GIT_BRANCH status key
 		// Don't report commit statuses for individual bazel commands, since the
 		// overall status of all bazel commands is reflected in the status reported
@@ -1908,7 +1939,7 @@ func writeBazelrc(path, invocationID string) error {
 		lines = append(lines, "build --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
 		lines = append(lines, "build --build_metadata=DISABLE_TARGET_TRACKING=true")
 	}
-	if *pushedRepoURL != *targetRepoURL {
+	if isFork {
 		lines = append(lines, "build --build_metadata=FORK_REPO_URL="+*pushedRepoURL)
 	}
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
@@ -2084,14 +2115,18 @@ func getStructuredCommandLine() *clpb.CommandLine {
 }
 
 func configureGlobalCredentialHelper(ctx context.Context) error {
-	if !strings.HasPrefix(*targetRepoURL, "https://") {
+	baseURL := *pushedRepoURL
+	if isPushedRefInFork() {
+		baseURL = *targetRepoURL
+	}
+	if !strings.HasPrefix(baseURL, "https://") {
 		return nil
 	}
 	repoToken := os.Getenv(repoTokenEnvVarName)
 	if repoToken == "" {
 		return nil
 	}
-	u, err := url.Parse(*targetRepoURL)
+	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil // if URL is unparseable, do nothing
 	}
