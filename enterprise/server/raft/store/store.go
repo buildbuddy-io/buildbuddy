@@ -443,6 +443,10 @@ func (s *Store) Stop(ctx context.Context) error {
 	}
 	s.updateTagsWorker.Stop()
 
+	s.log.Info("Store: waitgroups finished")
+	s.nodeHost.Close()
+	s.log.Info("Store: nodeHost closed")
+
 	if err := s.db.Flush(); err != nil {
 		return err
 	}
@@ -450,10 +454,7 @@ func (s *Store) Stop(ctx context.Context) error {
 
 	// Wait for all active requests to be finished.
 	s.leaser.Close()
-
-	s.log.Info("Store: waitgroups finished")
-	s.nodeHost.Close()
-
+	log.Info("Store: leaser closed")
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
