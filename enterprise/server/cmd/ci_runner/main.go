@@ -1704,8 +1704,8 @@ func (ws *workspace) fetchRefs(ctx context.Context) error {
 
 	// Add the pushed ref to the appropriate list corresponding to the remote
 	// to be fetched (base or fork).
-	isPushedRefInFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
-	if isPushedRefInFork {
+	inFork := isPushedRefInFork()
+	if inFork {
 		// Try to fetch a branch if possible, because fetching
 		// commits that aren't at the tip of a branch requires
 		// users to set an additional config option (uploadpack.allowAnySHA1InWant)
@@ -1723,7 +1723,7 @@ func (ws *workspace) fetchRefs(ctx context.Context) error {
 	}
 
 	baseURL := *pushedRepoURL
-	if isPushedRefInFork {
+	if inFork {
 		baseURL = *targetRepoURL
 	}
 	// TODO: Fetch from remotes in parallel
@@ -1874,6 +1874,10 @@ func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError)
 	return strings.TrimSpace(output), nil
 }
 
+func isPushedRefInFork() bool {
+	return *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
+}
+
 func formatNowUTC() string {
 	return time.Now().UTC().Format("2006-01-02 15:04:05.000 UTC")
 }
@@ -1902,8 +1906,9 @@ func writeBazelrc(path, invocationID string) error {
 	}
 	defer f.Close()
 
+	isFork := isPushedRefInFork()
+
 	baseURL := *pushedRepoURL
-	isFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
 	if isFork {
 		baseURL = *targetRepoURL
 	}
@@ -2111,8 +2116,7 @@ func getStructuredCommandLine() *clpb.CommandLine {
 
 func configureGlobalCredentialHelper(ctx context.Context) error {
 	baseURL := *pushedRepoURL
-	isFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
-	if isFork {
+	if isPushedRefInFork() {
 		baseURL = *targetRepoURL
 	}
 	if !strings.HasPrefix(baseURL, "https://") {
