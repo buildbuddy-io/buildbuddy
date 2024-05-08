@@ -3,6 +3,7 @@ package testgit
 import (
 	"context"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +15,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-github/v59/github"
+
+	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
+	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 )
 
 const (
@@ -163,4 +168,111 @@ func configure(t testing.TB, repoPath string) {
 		git config user.name "Test"
 		git config user.email "test@buildbuddy.io"
 	`)
+}
+
+// FakeApp implements the git app interface for tests.
+type FakeApp struct {
+	Token string
+}
+
+func (a *FakeApp) LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) LinkGitHubRepo(context.Context, *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) CreateRepo(context.Context, *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
+	return a.Token, nil
+}
+func (a *FakeApp) WebhookHandler() http.Handler { return nil }
+func (a *FakeApp) OAuthHandler() http.Handler   { return nil }
+func (a *FakeApp) GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGithubUser(ctx context.Context, req *ghpb.GetGithubUserRequest) (*ghpb.GetGithubUserResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGithubRepo(ctx context.Context, req *ghpb.GetGithubRepoRequest) (*ghpb.GetGithubRepoResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGithubContent(ctx context.Context, req *ghpb.GetGithubContentRequest) (*ghpb.GetGithubContentResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGithubTree(ctx context.Context, req *ghpb.GetGithubTreeRequest) (*ghpb.GetGithubTreeResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) CreateGithubTree(ctx context.Context, req *ghpb.CreateGithubTreeRequest) (*ghpb.CreateGithubTreeResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGithubBlob(ctx context.Context, req *ghpb.GetGithubBlobRequest) (*ghpb.GetGithubBlobResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) CreateGithubBlob(ctx context.Context, req *ghpb.CreateGithubBlobRequest) (*ghpb.CreateGithubBlobResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) CreateGithubPull(ctx context.Context, req *ghpb.CreateGithubPullRequest) (*ghpb.CreateGithubPullResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) MergeGithubPull(ctx context.Context, req *ghpb.MergeGithubPullRequest) (*ghpb.MergeGithubPullResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGithubCompare(ctx context.Context, req *ghpb.GetGithubCompareRequest) (*ghpb.GetGithubCompareResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGithubForks(ctx context.Context, req *ghpb.GetGithubForksRequest) (*ghpb.GetGithubForksResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) CreateGithubFork(ctx context.Context, req *ghpb.CreateGithubForkRequest) (*ghpb.CreateGithubForkResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGithubCommits(ctx context.Context, req *ghpb.GetGithubCommitsRequest) (*ghpb.GetGithubCommitsResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) CreateGithubCommit(ctx context.Context, req *ghpb.CreateGithubCommitRequest) (*ghpb.CreateGithubCommitResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) UpdateGithubRef(ctx context.Context, req *ghpb.UpdateGithubRefRequest) (*ghpb.UpdateGithubRefResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) CreateGithubRef(ctx context.Context, req *ghpb.CreateGithubRefRequest) (*ghpb.CreateGithubRefResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithubPullRequestRequest) (*ghpb.GetGithubPullRequestResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) CreateGithubPullRequestComment(ctx context.Context, req *ghpb.CreateGithubPullRequestCommentRequest) (*ghpb.CreateGithubPullRequestCommentResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error) {
+	return nil, nil
+}
+func (a *FakeApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error) {
+	return nil, nil
 }

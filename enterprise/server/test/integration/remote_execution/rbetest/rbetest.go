@@ -163,6 +163,10 @@ func (r *Env) GetRedisClient() redis.UniversalClient {
 	return r.testEnv.GetDefaultRedisClient()
 }
 
+func (r *Env) GetDBHandle() interfaces.DBHandle {
+	return r.testEnv.GetDBHandle()
+}
+
 func (r *Env) ShutdownBuildBuddyServers() {
 	r.shutdownBuildBuddyServersOnce.Do(r.shutdownBuildBuddyServers)
 }
