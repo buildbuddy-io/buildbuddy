@@ -30,7 +30,7 @@ Adds the given dependency to your WORKSPACE file.
 	footerTemplate = "###### End auto-generated section for %s ######"
 
 	headerRegex = regexp.MustCompile(`##### Begin auto-generated section for \[https://registry\.build/(.+?)@(.+?)\]`)
-	moduleRegex = regexp.MustCompile(`bazel_dep\(name = "([^"]+?)", version = "([^"]+?)"\)`)
+	moduleRegex = regexp.MustCompile(`bazel_dep\(name = "([^"]+?)", version = "([^"]+?)".*?\)`)
 )
 
 const (
