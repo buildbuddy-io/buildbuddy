@@ -1,10 +1,12 @@
 package driver
 
 import (
+	"cmp"
 	"container/heap"
 	"context"
 	"flag"
 	"math"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -75,6 +77,7 @@ type IReplica interface {
 
 type IStore interface {
 	GetReplica(rangeID uint64) (*replica.Replica, error)
+	HaveLease(rangeID uint64) bool
 	AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error)
 	RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error)
 }
@@ -200,6 +203,11 @@ func NewReplicateQueue(store IStore, gossipManager interfaces.GossipService) *Re
 
 func (rq *ReplicateQueue) shouldQueue(repl IReplica) (bool, float64) {
 	rd := repl.RangeDescriptor()
+
+	if !rq.store.HaveLease(rd.GetRangeId()) {
+		// The store doesn't have lease for this range. do not queue.
+		return false, 0
+	}
 
 	action, priority := rq.computeAction(rd.GetReplicas())
 	log.Debugf("shouldQueue for replica:%d returns action:%d, with priority %.2f", repl.ShardID(), action, priority)
@@ -361,6 +369,17 @@ func (rq *ReplicateQueue) allocateTarget(existing []*rfpb.ReplicaDescriptor) *rf
 		return nil
 	}
 	sort.Sort(sort.Reverse(byScore(candidates)))
+	slices.SortFunc(candidates, func(a, b *candidate) int {
+		if n := a.compare(b); n != 0 {
+			if n < 0 {
+				// b is better than a.
+				return 1
+			} else {
+				return -1
+			}
+		}
+		return cmp.Compare(a.usage.GetNode().GetNhid(), b.usage.GetNode().GetNhid())
+	})
 	return candidates[0].usage.GetNode()
 }
 
@@ -427,9 +446,13 @@ func (rq *ReplicateQueue) applyChange(ctx context.Context, change *change) error
 }
 
 func (rq *ReplicateQueue) processReplica(repl IReplica) (bool, error) {
-	log.Debugf("start to process shard_id: %d, replica_id:%d", repl.ReplicaID(), repl.ShardID())
-	// TODO: Check the lease
 	rd := repl.RangeDescriptor()
+	if !rq.store.HaveLease(rd.GetRangeId()) {
+		// the store doesn't have the lease of this range.
+		log.Debugf("store doesn't have lease for shard_id: %d, replica_id:%d, do not process", repl.ReplicaID(), repl.ShardID())
+		return false, nil
+	}
+	log.Debugf("start to process shard_id: %d, replica_id:%d", repl.ReplicaID(), repl.ShardID())
 	action, _ := rq.computeAction(rd.GetReplicas())
 
 	replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
