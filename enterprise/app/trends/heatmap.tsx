@@ -1,7 +1,7 @@
 import React from "react";
 import moment from "moment";
 import Long from "long";
-
+import { clamp } from "../../../app/util/math";
 import { stats } from "../../../proto/stats_ts_proto";
 import { ScaleBand, scaleBand } from "d3-scale";
 import { withResizeDetector } from "react-resize-detector";
@@ -115,8 +115,10 @@ type SelectionData = {
 class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   state: State = {};
   svgRef: React.RefObject<SVGSVGElement> = React.createRef();
+  chartGroupRef: React.RefObject<SVGGElement> = React.createRef();
   xScaleBand: ScaleBand<number> = scaleBand();
   yScaleBand: ScaleBand<number> = scaleBand();
+  mouseMoveListener = (e: MouseEvent) => this.onMouseMove(e);
 
   // These ordered pairs indicate which cell was first clicked on by the user.
   // By keeping them in order, we ensure that as the user moves their mouse, the
@@ -140,9 +142,15 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   }
 
   private computeBucket(x: number, y: number): SelectedCellData | undefined {
-    if (!this.svgRef.current) {
+    if (!this.svgRef.current || !this.chartGroupRef.current) {
       return undefined;
     }
+
+    // Clamp client x/y to chart area bounding client rect. This allows dragging
+    // the mouse outside the chart bounds while making a selection.
+    const chartRect = this.chartGroupRef.current.getBoundingClientRect();
+    x = clamp(x, chartRect.left + 1, chartRect.left + chartRect.width - 1);
+    y = clamp(y, chartRect.top + 1, chartRect.top + chartRect.height - 1);
 
     const { top, left } = this.svgRef.current.getBoundingClientRect();
     const mouseX = x - left - CHART_MARGINS.left - this.xScaleBand.step() / 2;
@@ -220,12 +228,13 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     if (!data) {
       return;
     }
+    document.addEventListener("mousemove", this.mouseMoveListener);
     document.addEventListener("mouseup", (e) => this.onMouseUp(e), { once: true });
     this.pendingClick = [data, data];
     this.setState({ selectionToRender: this.pendingClick });
   }
 
-  onMouseMove(e: React.MouseEvent<SVGSVGElement, MouseEvent>) {
+  onMouseMove(e: MouseEvent) {
     if (!this.pendingClick) {
       return;
     }
@@ -333,6 +342,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     if (!this.pendingClick) {
       return;
     }
+
+    document.removeEventListener("mousemove", this.mouseMoveListener);
 
     const data = this.computeBucket(e.clientX, e.clientY);
     // If the user has dragged the mouse of the heatmap or only clicked one
@@ -547,11 +558,10 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
             <svg
               className="heatmap-svg"
               onMouseDown={(e) => this.onMouseDown(e)}
-              onMouseMove={(e) => this.onMouseMove(e)}
               width={this.getWidth()}
               height={this.getHeight()}
               ref={this.svgRef}>
-              <g transform={`translate(${CHART_MARGINS.left}, ${CHART_MARGINS.top})`}>
+              <g transform={`translate(${CHART_MARGINS.left}, ${CHART_MARGINS.top})`} ref={this.chartGroupRef}>
                 <rect fill="#f3f3f3" x="0" y="0" width={width} height={height}></rect>
                 {this.props.heatmapData.column.map((column, xIndex) => (
                   <>
