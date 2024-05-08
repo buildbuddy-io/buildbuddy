@@ -855,6 +855,25 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			return nil
 		}
 	}
+	workspaceStatusEvent := &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
+		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bespb.WorkspaceStatus{
+			Item: []*bespb.WorkspaceStatus_Item{
+				{Key: "BUILD_USER", Value: ar.username},
+				{Key: "BUILD_HOST", Value: ar.hostname},
+				{Key: "GIT_BRANCH", Value: *pushedBranch},
+				{Key: "GIT_TREE_STATUS", Value: "Clean"},
+				// Note: COMMIT_SHA may not actually reflect the current state of the
+				// repo since we merge the target branch before running the workflow;
+				// we set this for the purpose of reporting statuses to GitHub.
+				{Key: "COMMIT_SHA", Value: *commitSHA},
+				{Key: "REPO_URL", Value: baseURL},
+			},
+		}},
+	}
+	if err := ar.reporter.Publish(workspaceStatusEvent); err != nil {
+		return nil
+	}
 
 	if err := ws.setup(ctx); err != nil {
 		return status.WrapError(err, "failed to set up git repo")
@@ -900,26 +919,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}
 	if err := ar.reporter.Publish(cicEvent); err != nil {
-		return nil
-	}
-
-	workspaceStatusEvent := &bespb.BuildEvent{
-		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
-		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bespb.WorkspaceStatus{
-			Item: []*bespb.WorkspaceStatus_Item{
-				{Key: "BUILD_USER", Value: ar.username},
-				{Key: "BUILD_HOST", Value: ar.hostname},
-				{Key: "GIT_BRANCH", Value: *pushedBranch},
-				{Key: "GIT_TREE_STATUS", Value: "Clean"},
-				// Note: COMMIT_SHA may not actually reflect the current state of the
-				// repo since we merge the target branch before running the workflow;
-				// we set this for the purpose of reporting statuses to GitHub.
-				{Key: "COMMIT_SHA", Value: *commitSHA},
-				{Key: "REPO_URL", Value: baseURL},
-			},
-		}},
-	}
-	if err := ar.reporter.Publish(workspaceStatusEvent); err != nil {
 		return nil
 	}
 
