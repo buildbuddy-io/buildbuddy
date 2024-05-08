@@ -14,6 +14,11 @@ go_test(
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "remote-bazel-integration",
     },
+    tags = [
+        # Use the "docker" tag to only run this on authenticated BB workflows
+        # to support runner recycling
+        "docker",
+    ],
     deps = [
         "//cli/remotebazel",
         "//enterprise/server/hostedrunner",
