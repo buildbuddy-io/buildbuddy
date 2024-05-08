@@ -107,7 +107,7 @@ type Store struct {
 	updateTagsWorker *updateTagsWorker
 	txnCoordinator   *txn.Coordinator
 
-	replicateQueue *driver.ReplicateQueue
+	driverQueue *driver.Queue
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -208,7 +208,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
 
-	s.replicateQueue = driver.NewReplicateQueue(s, gossipManager)
+	s.driverQueue = driver.NewQueue(s, gossipManager)
 
 	if err != nil {
 		return nil, err
@@ -436,7 +436,7 @@ func (s *Store) Start() error {
 		return nil
 	})
 	eg.Go(func() error {
-		s.replicateQueue.Start()
+		s.driverQueue.Start()
 		return nil
 	})
 
@@ -454,7 +454,7 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.egCancel()
 		s.leaseKeeper.Stop()
 		s.liveness.Release()
-		s.replicateQueue.Stop()
+		s.driverQueue.Stop()
 		s.eg.Wait()
 	}
 	s.updateTagsWorker.Stop()
@@ -1855,7 +1855,7 @@ func (store *Store) scan(ctx context.Context) {
 		log.Debug("scan started")
 		replicas := store.getLeasedReplicas()
 		for _, repl := range replicas {
-			store.replicateQueue.MaybeAdd(repl)
+			store.driverQueue.MaybeAdd(repl)
 		}
 	}
 }
