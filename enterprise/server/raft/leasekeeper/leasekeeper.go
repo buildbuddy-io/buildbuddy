@@ -121,7 +121,6 @@ type leaseAgent struct {
 	l         *rangelease.Lease
 	ctx       context.Context
 	cancel    context.CancelFunc
-	quit      chan struct{}
 	once      *sync.Once
 	updates   chan leaseInstruction
 	broadcast chan<- events.Event
@@ -199,7 +198,6 @@ func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replic
 		l:         rangelease.New(lk.nodeHost, lk.log, lk.liveness, rd, r),
 		ctx:       ctx,
 		cancel:    cancel,
-		quit:      make(chan struct{}),
 		once:      &sync.Once{},
 		updates:   make(chan leaseInstruction, 10),
 		broadcast: lk.broadcast,
