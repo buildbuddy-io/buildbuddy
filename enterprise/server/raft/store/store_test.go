@@ -316,6 +316,26 @@ func TestAddNodeToCluster(t *testing.T) {
 	s = getStoreWithRangeLease(t, stores, 2)
 	rd = s.GetRange(2)
 	require.Equal(t, 2, len(rd.GetReplicas()))
+
+	// Add Replica for meta range
+	mrd := s.GetRange(1)
+	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+		Range: mrd,
+		Node: &rfpb.NodeDescriptor{
+			Nhid:        nh2.ID(),
+			RaftAddress: s2.RaftAddress,
+			GrpcAddress: s2.GRPCAddress,
+		},
+	})
+	require.NoError(t, err)
+
+	replicas, err = s.getMembership(ctx, 1)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(replicas))
+
+	s = getStoreWithRangeLease(t, stores, 1)
+	rd = s.GetRange(1)
+	require.Equal(t, 2, len(rd.GetReplicas()))
 }
 
 func TestRemoveNodeFromCluster(t *testing.T) {
