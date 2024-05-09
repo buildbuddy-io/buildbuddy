@@ -22,6 +22,8 @@ import PullRequestHeaderComponent from "./pull_request_header";
 import FileContentMonacoComponent from "./file_content_monaco";
 import { getMonacoModelForGithubFile } from "./file_content_service";
 
+const FILES_TO_PREFETCH = 3;
+
 interface ViewPullRequestComponentProps {
   owner: string;
   repo: string;
@@ -694,8 +696,6 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     );
   }
 }
-
-const FILES_TO_PREFETCH = 3;
 
 function prefetchFileContent(model: ReviewModel) {
   const files = model.getFiles();
