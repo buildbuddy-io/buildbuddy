@@ -2256,16 +2256,16 @@ message ExecutionProgress {
     DOWNLOADING_INPUTS = 2;
 
     // Booting a new VM.
-    BOOTING_VM = 4;
+    BOOTING_VM = 3;
 
     // Resuming a VM from snapshot.
-    RESUMING_VM = 5;
+    RESUMING_VM = 4;
 
     // Executing the command for the action.
-    EXECUTING_COMMAND = 6;
+    EXECUTING_COMMAND = 5;
 
     // Uploading action outputs.
-    UPLOADING_OUTPUTS = 7; 
+    UPLOADING_OUTPUTS = 6;
   }
 }
 
