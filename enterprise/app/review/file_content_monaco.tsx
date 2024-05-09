@@ -353,40 +353,44 @@ class MonacoDiffViewerComponent extends React.Component<
   heightUpdateInProgress: boolean = false;
   currentContentHeight: number = -1;
   currentContentWidth: number = -1;
+  resizeListener?: any;
 
   state: MonacoDiffViewerComponentState = {
     originalEditorThreadZones: [],
     modifiedEditorThreadZones: [],
   };
 
-  scheduleHeightUpdate() {
+  scheduleSizeUpdate() {
     const editor = this.state.editor;
     const container = this.monacoElement.current;
     if (this.heightUpdateInProgress || !editor || !container) {
       return;
     }
     this.heightUpdateInProgress = true;
-    setTimeout(() => {
-      try {
-        const contentHeight = Math.max(
-          editor.getOriginalEditor().getContentHeight(),
-          editor.getModifiedEditor().getContentHeight()
-        );
-        const contentWidth = container.getBoundingClientRect().width;
+    try {
+      const contentHeight = Math.max(
+        editor.getOriginalEditor().getContentHeight(),
+        editor.getModifiedEditor().getContentHeight()
+      );
+      const contentWidth = container.getBoundingClientRect().width;
 
-        if (contentWidth === this.currentContentWidth && contentHeight === this.currentContentHeight) {
-          return;
-        }
-        this.currentContentWidth = contentWidth;
-        this.currentContentHeight = contentHeight;
-
-        container.style.height = `${contentHeight}px`;
-        editor.getModifiedEditor().layout({ width: contentWidth / 2, height: contentHeight });
-        editor.getOriginalEditor().layout({ width: contentWidth / 2, height: contentHeight });
-      } finally {
-        this.heightUpdateInProgress = false;
+      if (contentWidth === this.currentContentWidth && contentHeight === this.currentContentHeight) {
+        return;
       }
-    });
+      this.currentContentWidth = contentWidth;
+      this.currentContentHeight = contentHeight;
+
+      container.style.height = `${contentHeight}px`;
+      if (contentWidth !== this.currentContentWidth) {
+        this.state.originalEditorThreadZones.forEach((z) => z.updateHeight());
+        this.state.modifiedEditorThreadZones.forEach((z) => z.updateHeight());
+      }
+
+      editor.getModifiedEditor().layout({ width: contentWidth / 2, height: contentHeight });
+      editor.getOriginalEditor().layout({ width: contentWidth / 2, height: contentHeight });
+    } finally {
+      this.heightUpdateInProgress = false;
+    }
   }
 
   componentDidMount() {
@@ -423,8 +427,6 @@ class MonacoDiffViewerComponent extends React.Component<
 
     editor.setModel({ original: this.props.originalModel, modified: this.props.modifiedModel });
 
-    editor.getOriginalEditor().onDidContentSizeChange(() => this.scheduleHeightUpdate());
-    editor.getModifiedEditor().onDidContentSizeChange(() => this.scheduleHeightUpdate());
     const originalListener = new EditorMouseListener(
       this.props.path,
       github.CommentSide.LEFT_SIDE,
@@ -441,7 +443,15 @@ class MonacoDiffViewerComponent extends React.Component<
       this.props.handler
     );
 
-    this.scheduleHeightUpdate();
+    // Boy, does this feel brittle.  Monaco will call this callback once it has
+    // finished rendering all diffs.  At that point, the line breaks, hidden
+    // lines, etc., have all been determined and subsequent height changes are
+    // "legit" in the sense that we should actually update the DOM for them.
+    editor.onDidUpdateDiff(() => {
+      editor.getOriginalEditor().onDidContentSizeChange(() => this.scheduleSizeUpdate());
+      editor.getModifiedEditor().onDidContentSizeChange(() => this.scheduleSizeUpdate());
+      this.scheduleSizeUpdate();
+    });
   }
 
   // I don't like to use this, but this is the nicest way to add junk to Monaco
@@ -490,6 +500,10 @@ class MonacoDiffViewerComponent extends React.Component<
   }
 
   componentWillUnmount(): void {
+    if (this.resizeListener) {
+      window.removeEventListener("resize", this.resizeListener);
+      this.resizeListener = undefined;
+    }
     this.state.editor?.dispose();
   }
 
