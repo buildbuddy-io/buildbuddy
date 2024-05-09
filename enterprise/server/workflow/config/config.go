@@ -200,9 +200,15 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 // MatchesAnyTrigger returns whether the action is triggered by the event
 // published to the given branch.
 func MatchesAnyTrigger(action *Action, event, branch string) bool {
+	// If user has manually requested action dispatch, always run it
+	if event == webhook_data.EventName.ManualDispatch {
+		return true
+	}
+
 	if action.Triggers == nil {
 		return false
 	}
+
 	if pushCfg := action.Triggers.Push; pushCfg != nil && event == webhook_data.EventName.Push {
 		return matchesAnyBranch(pushCfg.Branches, branch)
 	}
