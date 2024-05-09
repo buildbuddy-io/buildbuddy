@@ -128,6 +128,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//enterprise/app/review:file_content_monaco",
+        "//enterprise/app/review:file_content_service",
         "//enterprise/app/review:pull_request_header",
         "//enterprise/app/review:review_model",
         "//enterprise/app/review:review_thread",
