@@ -20,6 +20,9 @@ import Link from "../../../app/components/link/link";
 import router from "../../../app/router/router";
 import PullRequestHeaderComponent from "./pull_request_header";
 import FileContentMonacoComponent from "./file_content_monaco";
+import { getMonacoModelForGithubFile } from "./file_content_service";
+
+const FILES_TO_PREFETCH = 3;
 
 interface ViewPullRequestComponentProps {
   owner: string;
@@ -57,7 +60,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       })
       .then((r) => {
         console.log(r);
-        this.setState({ reviewModel: ReviewModel.fromResponse(r) });
+        const reviewModel = ReviewModel.fromResponse(r);
+        this.setState({ reviewModel });
+        prefetchFileContent(reviewModel);
       })
       .catch((e) => error_service.handleError(e));
   }
@@ -689,5 +694,24 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         {pageContent}
       </div>
     );
+  }
+}
+
+function prefetchFileContent(model: ReviewModel) {
+  const files = model.getFiles();
+  for (let i = 0; i < files.length && i < FILES_TO_PREFETCH; i++) {
+    const file = files[i];
+    getMonacoModelForGithubFile({
+      owner: model.getOwner(),
+      repo: model.getRepo(),
+      path: file.getFullPath(),
+      ref: file.getModifiedCommitSha(),
+    });
+    getMonacoModelForGithubFile({
+      owner: model.getOwner(),
+      repo: model.getRepo(),
+      path: file.getOriginalFullPath(),
+      ref: file.getOriginalCommitSha(),
+    });
   }
 }
