@@ -1,7 +1,6 @@
 package fix
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix/language"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/translate"
@@ -68,37 +66,6 @@ func HandleFix(args []string) (exitCode int, err error) {
 	return 0, nil
 }
 
-const goRepositoryConfigLocation = "@@gazelle~override~go_deps~bazel_gazelle_go_repository_config//:WORKSPACE"
-
-func gazelleConfig() (string, error) {
-	// we intentionally skip stderr here for both
-	// bazelisk and bazel to avoid failing checkstyle.sh
-	bazelArgs := []string{
-		"query",
-		"--ui_event_filters=-info,-debug,-warning,-stderr",
-		"--noshow_progress",
-		"--logging=0",
-		"--output=location",
-		goRepositoryConfigLocation,
-	}
-	stdout := &bytes.Buffer{}
-	opts := &bazelisk.RunOpts{
-		Stdout: stdout,
-	}
-	_, err := bazelisk.Run(bazelArgs, opts)
-	if err != nil {
-		return "", err
-	}
-
-	// output will be in the form of
-	//   /some/path/config/WORKSPACE:1:1 source file <target>
-	// extract `/some/path/config/WORKSPACE` from that.
-	out := stdout.String()
-	fragments := strings.Split(out, " ")
-	locations := strings.Split(fragments[0], ":")
-	return locations[0], nil
-}
-
 func runGazelle(repoRoot, baseFile string) error {
 	originalArgs := os.Args
 	defer func() {
@@ -107,11 +74,7 @@ func runGazelle(repoRoot, baseFile string) error {
 
 	os.Args = []string{"gazelle", "update"}
 	if baseFile == workspace.ModuleFileName {
-		configPath, err := gazelleConfig()
-		if err != nil {
-			return err
-		}
-		os.Args = append(os.Args, "-bzlmod", "-repo_root="+repoRoot, "-repo_config="+configPath)
+		os.Args = append(os.Args, "-bzlmod", "-repo_root="+repoRoot)
 	} else {
 		os.Args = append(os.Args, "-repo_root="+repoRoot, "-go_prefix=")
 	}
