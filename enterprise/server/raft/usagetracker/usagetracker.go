@@ -39,10 +39,6 @@ var (
 )
 
 const (
-	// If a node's disk is fuller than this (by percentage), it is not
-	// eligible to receive ranges moved from other nodes.
-	maximumDiskCapacity = .95
-
 	// evictionCutoffThreshold is the point above which the cache will be
 	// considered to be full and eviction will kick in.
 	evictionCutoffThreshold = .90
