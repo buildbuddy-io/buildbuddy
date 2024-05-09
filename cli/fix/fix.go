@@ -116,7 +116,7 @@ func runGazelle(repoRoot, baseFile string) error {
 		if err != nil {
 			return err
 		}
-		os.Args = append(os.Args, "-bzlmod", "-repo_config="+configPath)
+		os.Args = append(os.Args, "-bzlmod", "-repo_root="+repoRoot, "-repo_config="+configPath)
 	} else {
 		os.Args = append(os.Args, "-repo_root="+repoRoot, "-go_prefix=")
 	}
