@@ -317,6 +317,8 @@ class AutoZone {
     let zoneId: string;
     const updateFunction = (ca: monaco.editor.IViewZoneChangeAccessor) => {
       if (zoneForMonaco.heightInPx !== overlayElement.getBoundingClientRect().height) {
+        const width = editor.getContainerDomNode().getBoundingClientRect().width;
+        overlayElement.style.width = width + "px";
         zoneForMonaco.heightInPx = overlayElement.getBoundingClientRect().height;
         ca.layoutZone(zoneId);
       }
@@ -348,16 +350,50 @@ class MonacoDiffViewerComponent extends React.Component<
 > {
   monacoElement: React.RefObject<HTMLDivElement> = React.createRef();
 
+  heightUpdateInProgress: boolean = false;
+  currentContentHeight: number = -1;
+  currentContentWidth: number = -1;
+
   state: MonacoDiffViewerComponentState = {
     originalEditorThreadZones: [],
     modifiedEditorThreadZones: [],
   };
 
+  scheduleHeightUpdate() {
+    const editor = this.state.editor;
+    const container = this.monacoElement.current;
+    if (this.heightUpdateInProgress || !editor || !container) {
+      return;
+    }
+    this.heightUpdateInProgress = true;
+    setTimeout(() => {
+      try {
+        const contentHeight = Math.max(
+          editor.getOriginalEditor().getContentHeight(),
+          editor.getModifiedEditor().getContentHeight()
+        );
+        const contentWidth = container.getBoundingClientRect().width;
+
+        if (contentWidth === this.currentContentWidth && contentHeight === this.currentContentHeight) {
+          return;
+        }
+        this.currentContentWidth = contentWidth;
+        this.currentContentHeight = contentHeight;
+
+        container.style.height = `${contentHeight}px`;
+        editor.getModifiedEditor().layout({ width: contentWidth / 2, height: contentHeight });
+        editor.getOriginalEditor().layout({ width: contentWidth / 2, height: contentHeight });
+      } finally {
+        this.heightUpdateInProgress = false;
+      }
+    });
+  }
+
   componentDidMount() {
     // Element is always part of the render() result.
     const container = this.monacoElement.current!;
     const editor = monaco.editor.createDiffEditor(container, {
-      automaticLayout: true,
+      enableSplitViewResizing: false,
       scrollBeyondLastLine: false,
       scrollbar: {
         alwaysConsumeMouseWheel: false,
@@ -387,29 +423,8 @@ class MonacoDiffViewerComponent extends React.Component<
 
     editor.setModel({ original: this.props.originalModel, modified: this.props.modifiedModel });
 
-    let ignoreEvent = false;
-    const maxHeight = () => {
-      return Math.max(editor.getOriginalEditor().getContentHeight(), editor.getModifiedEditor().getContentHeight());
-    };
-    const trueWidth = () => {
-      return editor.getContainerDomNode().getBoundingClientRect().width;
-    };
-    const updateHeight = () => {
-      if (ignoreEvent) {
-        return;
-      }
-      const contentHeight = maxHeight();
-      container.style.height = `${contentHeight}px`;
-      try {
-        ignoreEvent = true;
-        editor.getModifiedEditor().layout({ width: trueWidth() / 2, height: contentHeight });
-        editor.getOriginalEditor().layout({ width: trueWidth() / 2, height: contentHeight });
-      } finally {
-        ignoreEvent = false;
-      }
-    };
-    editor.getOriginalEditor().onDidContentSizeChange(updateHeight);
-    editor.getModifiedEditor().onDidContentSizeChange(updateHeight);
+    editor.getOriginalEditor().onDidContentSizeChange(() => this.scheduleHeightUpdate());
+    editor.getModifiedEditor().onDidContentSizeChange(() => this.scheduleHeightUpdate());
     const originalListener = new EditorMouseListener(
       this.props.path,
       github.CommentSide.LEFT_SIDE,
@@ -426,7 +441,7 @@ class MonacoDiffViewerComponent extends React.Component<
       this.props.handler
     );
 
-    updateHeight();
+    this.scheduleHeightUpdate();
   }
 
   // I don't like to use this, but this is the nicest way to add junk to Monaco
@@ -472,6 +487,10 @@ class MonacoDiffViewerComponent extends React.Component<
   componentDidUpdate() {
     this.state.originalEditorThreadZones.forEach((z) => z.updateHeight());
     this.state.modifiedEditorThreadZones.forEach((z) => z.updateHeight());
+  }
+
+  componentWillUnmount(): void {
+    this.state.editor?.dispose();
   }
 
   render() {
