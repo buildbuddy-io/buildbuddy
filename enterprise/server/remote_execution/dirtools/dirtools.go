@@ -297,12 +297,13 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 		Path:   filepath.ToSlash(trimPathPrefix(fqfn, rootDir)),
 		Target: filepath.ToSlash(target),
 	}
-	addSymlinkToDir := func() {
-		directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
-			Name:   filepath.ToSlash(symlink.Path),
-			Target: filepath.ToSlash(symlink.Target),
-		})
+	if !dirHelper.ShouldUploadFile(fqfn) {
+		return nil
 	}
+	directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
+		Name:   filepath.ToSlash(filepath.Base(symlink.Path)),
+		Target: filepath.ToSlash(symlink.Target),
+	})
 
 	// REAPI specification:
 	//   `output_symlinks` will only be populated if the command `output_paths` field
@@ -310,13 +311,8 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	//
 	// Check whether the current client is using REAPI version before or after v2.1.
 	if len(cmd.OutputPaths) > 0 && len(cmd.OutputFiles) == 0 && len(cmd.OutputDirectories) == 0 {
-		if !dirHelper.IsOutputPath(fqfn) {
-			return nil
-		}
 		// REAPI >= v2.1
-		addSymlinkToDir()
 		actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, symlink)
-
 		// REAPI specification:
 		//   Servers that wish to be compatible with v2.0 API should still
 		//   populate `output_file_symlinks` and `output_directory_symlinks`
@@ -348,14 +344,12 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	// REAPI < v2.1
 	for _, expectedFile := range cmd.OutputFiles {
 		if symlink.Path == expectedFile {
-			addSymlinkToDir()
 			actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
 			break
 		}
 	}
 	for _, expectedDir := range cmd.OutputDirectories {
 		if symlink.Path == expectedDir {
-			addSymlinkToDir()
 			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
 			break
 		}
