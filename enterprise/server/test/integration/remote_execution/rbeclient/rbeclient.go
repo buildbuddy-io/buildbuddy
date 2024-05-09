@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -94,6 +95,9 @@ type Command struct {
 	beforeExecuteTime time.Time
 	afterExecuteTime  time.Time
 
+	// Complete list of operations received on the stream.
+	operations []*longrunning.Operation
+
 	mu     sync.Mutex
 	opName string
 }
@@ -108,6 +112,10 @@ func (c *Command) AcceptedChannel() <-chan string {
 
 func (c *Command) GetActionResourceName() *digest.ResourceName {
 	return c.actionResourceName
+}
+
+func (c *Command) GetOperations() []*longrunning.Operation {
+	return c.operations
 }
 
 type StartOpts struct {
@@ -219,6 +227,8 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 				Err:   status.AbortedErrorf("stream to server broken: %v", err)})
 			return
 		}
+
+		c.operations = append(c.operations, op)
 
 		if taskID == "" {
 			taskID = op.GetName()

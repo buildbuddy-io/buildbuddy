@@ -162,18 +162,35 @@ func execute(cmdArgs []string) error {
 		return err
 	}
 	log.Debugf("Waiting for execution to complete")
-	response, err := rexec.Wait(stream)
-	if err != nil {
-		return err
-	}
-	if response.Err != nil {
-		// We failed to execute.
-		return response.Err
+	var rsp *rexec.Response
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if msg.Err != nil {
+			// We failed to execute.
+			return msg.Err
+		}
+		// Log execution state
+		progress := &repb.ExecutionProgress{}
+		ok, _ := rexec.AuxiliaryMetadata(msg.ExecuteOperationMetadata.GetPartialExecutionMetadata(), progress)
+		if ok && progress.GetExecutionState() != 0 {
+			log.Debugf(
+				"Remote: %s @ %s",
+				repb.ExecutionProgress_ExecutionState_name[int32(progress.GetExecutionState())],
+				progress.GetTimestamp().AsTime(),
+			)
+		}
+		if msg.Done {
+			rsp = msg
+			break
+		}
 	}
 	log.Debugf("Execution completed in %s", time.Since(stageStart))
 	stageStart = time.Now()
 	log.Debugf("Downloading result")
-	res, err := rexec.GetResult(ctx, env, *instanceName, df, response.ExecuteResponse.GetResult())
+	res, err := rexec.GetResult(ctx, env, *instanceName, df, rsp.ExecuteResponse.GetResult())
 	if err != nil {
 		return status.WrapError(err, "execution failed")
 	}

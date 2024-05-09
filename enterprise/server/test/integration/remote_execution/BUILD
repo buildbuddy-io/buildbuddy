@@ -35,6 +35,7 @@ go_test(
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/rexec",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_go_redis_redis_v8//:redis",
