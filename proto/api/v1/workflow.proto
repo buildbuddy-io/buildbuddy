@@ -8,9 +8,13 @@ message ExecuteWorkflowRequest {
   // URL of the repo the workflow is running for
   // Ex. "https://github.com/some-user/acme"
   string repo_url = 1;
-  // Reference for where the workflow should be run (currently only branch names
-  // are supported) Ex. "cool-feature"
-  string ref = 2;
+
+  // Git refs at which the workflow should be run (at least one of `branch` or
+  // `commit_sha` must be set). If only `branch` is set, will run from the tip
+  // of the branch. If only `commit_sha` is set, reporting will not contain the
+  // branch name.
+  string branch = 8;
+  string commit_sha = 9;
 
   // OPTIONAL FIELDS
 
@@ -34,6 +38,9 @@ message ExecuteWorkflowRequest {
   // overrides will take precedence. Otherwise all env vars set in
   // buildbuddy.yaml will still apply.
   map<string, string> env = 7;
+
+  // DEPRECATED: Use `branch` and/or `commit_sha` instead.
+  string ref = 2 [deprecated = true];
 }
 
 message ExecuteWorkflowResponse {
