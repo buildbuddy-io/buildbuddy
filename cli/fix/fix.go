@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/cli/bzlmod"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix/language"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/translate"
@@ -51,16 +50,12 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return -1, err
 	}
 
-	bzlmodEnabled, err := bzlmod.Enabled()
-	if err != nil {
-		return 1, err
-	}
-	path, baseFile, err := workspace.CreateWorkspaceIfNotExists(bzlmodEnabled)
+	path, baseFile, err := workspace.CreateModuleIfNotExists()
 	if err != nil {
 		return 1, err
 	}
 
-	// don't run update-repos in bzlmod
+	// Don't run update-repos when bzlmod is enabled
 	updateRepos := baseFile != workspace.ModuleFileName
 	if err := walk(updateRepos); err != nil {
 		log.Printf("Error fixing: %s", err)
