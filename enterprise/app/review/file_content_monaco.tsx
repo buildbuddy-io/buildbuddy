@@ -138,6 +138,7 @@ interface MonacoDiffViewerComponentProps {
 
 interface MonacoDiffViewerComponentState {
   editor?: monaco.editor.IStandaloneDiffEditor;
+  resizeRequestCallback: (zoneId: string) => void;
   originalEditorThreadZones: AutoZone[];
   modifiedEditorThreadZones: AutoZone[];
 }
@@ -255,47 +256,40 @@ class EditorMouseListener implements monaco.IDisposable {
 class AutoZone {
   readonly threadId: string;
   readonly zoneId: string;
-  updateFunction: (ca: monaco.editor.IViewZoneChangeAccessor) => void;
   overlayWidget?: monaco.editor.IOverlayWidget;
-  editor?: monaco.editor.ICodeEditor;
+  resizeObserver: ResizeObserver;
 
-  // TODO(jdhollen): Is it ok to hold editor ref here?  Check for leaks.
   constructor(
     threadId: string,
     zoneId: string,
-    updateFunction: (ca: monaco.editor.IViewZoneChangeAccessor) => void,
     overlayWidget: monaco.editor.IOverlayWidget,
-    editor: monaco.editor.ICodeEditor
+    resizeObserver: ResizeObserver
   ) {
     this.threadId = threadId;
     this.zoneId = zoneId;
-    this.updateFunction = updateFunction;
     this.overlayWidget = overlayWidget;
-    this.editor = editor;
+    this.resizeObserver = resizeObserver;
   }
 
-  updateHeight() {
-    if (!this.editor) {
+  removeFromEditor(editor: monaco.editor.ICodeEditor, ca: monaco.editor.IViewZoneChangeAccessor) {
+    if (!this.overlayWidget) {
       return;
     }
-    this.editor.changeViewZones((ca) => this.updateFunction(ca));
-  }
-
-  removeFromEditor() {
-    if (!this.editor || !this.overlayWidget) {
-      return;
-    }
-    this.editor.removeOverlayWidget(this.overlayWidget);
-    this.editor.changeViewZones((a) => a.removeZone(this.zoneId));
+    this.resizeObserver.disconnect();
+    editor.removeOverlayWidget(this.overlayWidget);
+    ca.removeZone(this.zoneId);
     this.overlayWidget = undefined;
-    this.editor = undefined;
+    // XXX: Blank out resizeRequestCallback, resizeObserver?
   }
 
   static create(
     threadId: string,
     line: number,
     editor: monaco.editor.ICodeEditor,
+    resizeRequestCallback: (zoneId: string) => void,
     changeAccessor: monaco.editor.IViewZoneChangeAccessor
+    // XXX: need to put a height update callback here...?
+    // XXX: and then lock updateheight so that simultaneous calls cant happen.
   ): AutoZone {
     const zoneElement = document.createElement("div");
     const overlayElement = document.createElement("div");
@@ -315,30 +309,37 @@ class AutoZone {
     };
 
     let zoneId: string;
-    const updateFunction = (ca: monaco.editor.IViewZoneChangeAccessor) => {
-      if (zoneForMonaco.heightInPx !== overlayElement.getBoundingClientRect().height) {
-        zoneForMonaco.heightInPx = overlayElement.getBoundingClientRect().height;
-        ca.layoutZone(zoneId);
-      }
-    };
     const zoneForMonaco: monaco.editor.IViewZone = {
       afterLineNumber: line,
-      heightInLines: 10,
+      heightInPx: 0,
       showInHiddenAreas: true,
       domNode: zoneElement,
       onDomNodeTop: (top) => {
         overlayElement.style.top = top + "px";
       },
-      onComputedHeight: (_) => {
-        editor.changeViewZones(function (ca) {
-          updateFunction(ca);
-        });
+      onComputedHeight: () => {
+        console.log("ready" + zoneId);
       },
     };
     zoneId = changeAccessor.addZone(zoneForMonaco);
     editor.addOverlayWidget(overlay);
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.borderBoxSize) {
+          const borderBoxSize = entry.borderBoxSize[0];
+          const height = borderBoxSize.blockSize;
+          if (zoneForMonaco.heightInPx !== height) {
+            zoneForMonaco.heightInPx = height;
+            console.log("resize observer happened");
+            resizeRequestCallback(zoneId);
+          }
+        }
+      }
+    });
 
-    return new AutoZone(threadId, zoneId, updateFunction, overlay, editor);
+    resizeObserver.observe(overlay.getDomNode());
+
+    return new AutoZone(threadId, zoneId, overlay, resizeObserver);
   }
 }
 
@@ -347,17 +348,96 @@ class MonacoDiffViewerComponent extends React.Component<
   MonacoDiffViewerComponentState
 > {
   monacoElement: React.RefObject<HTMLDivElement> = React.createRef();
+  disposed: boolean = false;
 
   state: MonacoDiffViewerComponentState = {
+    resizeRequestCallback: (zoneId) => this.handleResizeRequest(zoneId),
     originalEditorThreadZones: [],
     modifiedEditorThreadZones: [],
   };
 
+  handleResizeRequest(zoneId: string) {
+    if (!this.state.editor) {
+      return;
+    }
+    if (this.state.originalEditorThreadZones.find((v) => v.zoneId === zoneId)) {
+      console.log("yay1");
+      this.state.editor.getOriginalEditor().changeViewZones((ca) => ca.layoutZone(zoneId));
+    } else if (this.state.modifiedEditorThreadZones.find((v) => v.zoneId === zoneId)) {
+      console.log("yay2");
+      this.state.editor.getModifiedEditor().changeViewZones((ca) => ca.layoutZone(zoneId));
+    }
+  }
+
+  updateInProgress: boolean = false;
+  previousHeight: number = -1;
+  previousWidth: number = -1;
+
+  scheduleHeightUpdate() {
+    if (this.updateInProgress || this.disposed || !this.state.editor || !this.monacoElement.current) {
+      return;
+    }
+    this.updateInProgress = true;
+    window.setTimeout(() => {
+      if (this.disposed || !this.state.editor || !this.monacoElement.current) {
+        this.updateInProgress = false;
+        return;
+      }
+      const editor = this.state.editor;
+      const contentHeight = Math.max(
+        editor.getOriginalEditor().getContentHeight(),
+        editor.getModifiedEditor().getContentHeight()
+      );
+      const contentWidth = this.monacoElement.current.getBoundingClientRect().width;
+      if (contentWidth === 0) {
+        return;
+      }
+      console.log("update height");
+      console.log("prev " + this.previousHeight + " " + this.previousWidth);
+      console.log("new " + contentHeight + " " + contentWidth);
+      if (contentHeight === this.previousHeight && contentWidth === this.previousWidth) {
+        console.log("skipped");
+        return;
+      }
+      console.log("proceeding");
+      try {
+        this.previousHeight = contentHeight;
+        this.previousWidth = contentWidth;
+        this.monacoElement.current.style.height = `${contentHeight}px`;
+        editor.getModifiedEditor().layout({ width: contentWidth / 2, height: contentHeight });
+        editor.getOriginalEditor().layout({ width: contentWidth / 2, height: contentHeight });
+      } finally {
+        this.updateInProgress = false;
+      }
+    });
+  }
+
+  addInComments(editor: monaco.editor.IStandaloneDiffEditor) {
+    editor.getOriginalEditor().onDidContentSizeChange(() => this.scheduleHeightUpdate());
+    editor.getModifiedEditor().onDidContentSizeChange(() => this.scheduleHeightUpdate());
+    const originalListener = new EditorMouseListener(
+      this.props.path,
+      github.CommentSide.LEFT_SIDE,
+      // TODO(jdhollen): Pass base commit sha here instead and make it work.
+      this.props.commitSha,
+      editor.getOriginalEditor(),
+      this.props.handler
+    );
+    const modifiedListener = new EditorMouseListener(
+      this.props.path,
+      github.CommentSide.RIGHT_SIDE,
+      this.props.commitSha,
+      editor.getModifiedEditor(),
+      this.props.handler
+    );
+  }
+
   componentDidMount() {
     // Element is always part of the render() result.
     const container = this.monacoElement.current!;
+    console.log("WIDTH: " + container.getBoundingClientRect().width);
     const editor = monaco.editor.createDiffEditor(container, {
-      automaticLayout: true,
+      enableSplitViewResizing: false,
       scrollBeyondLastLine: false,
       scrollbar: {
         alwaysConsumeMouseWheel: false,
@@ -384,48 +464,13 @@ class MonacoDiffViewerComponent extends React.Component<
       },
     });
     this.setState({ editor });
-
+    editor.onDidUpdateDiff(() => this.addInComments(editor));
     editor.setModel({ original: this.props.originalModel, modified: this.props.modifiedModel });
+  }
 
-    let ignoreEvent = false;
-    const maxHeight = () => {
-      return Math.max(editor.getOriginalEditor().getContentHeight(), editor.getModifiedEditor().getContentHeight());
-    };
-    const trueWidth = () => {
-      return editor.getContainerDomNode().getBoundingClientRect().width;
-    };
-    const updateHeight = () => {
-      if (ignoreEvent) {
-        return;
-      }
-      const contentHeight = maxHeight();
-      container.style.height = `${contentHeight}px`;
-      try {
-        ignoreEvent = true;
-        editor.getModifiedEditor().layout({ width: trueWidth() / 2, height: contentHeight });
-        editor.getOriginalEditor().layout({ width: trueWidth() / 2, height: contentHeight });
-      } finally {
-        ignoreEvent = false;
-      }
-    };
-    editor.getOriginalEditor().onDidContentSizeChange(updateHeight);
-    editor.getModifiedEditor().onDidContentSizeChange(updateHeight);
-    const originalListener = new EditorMouseListener(
-      this.props.path,
-      github.CommentSide.LEFT_SIDE,
-      this.props.baseSha,
-      editor.getOriginalEditor(),
-      this.props.handler
-    );
-    const modifiedListener = new EditorMouseListener(
-      this.props.path,
-      github.CommentSide.RIGHT_SIDE,
-      this.props.commitSha,
-      editor.getModifiedEditor(),
-      this.props.handler
-    );
-
-    updateHeight();
+  componentWillUnmount(): void {
+    this.state.editor?.dispose();
+    this.disposed = true;
   }
 
   // I don't like to use this, but this is the nicest way to add junk to Monaco
@@ -444,7 +489,8 @@ class MonacoDiffViewerComponent extends React.Component<
       modifiedUpdates.added.length === 0 &&
       modifiedUpdates.removed.length === 0
     ) {
-      // Nothing to update.
+      // Nothing to update, but we still need to trigger relayout for
+      // cases where a draft comment was added / removed...
       return null;
     }
     const newOriginalZones: AutoZone[] = originalUpdates.kept;
@@ -452,25 +498,36 @@ class MonacoDiffViewerComponent extends React.Component<
 
     editor.getOriginalEditor().changeViewZones(function (changeAccessor) {
       originalUpdates.added.forEach((t) => {
-        newOriginalZones.push(AutoZone.create(t.getId(), t.getLine(), editor.getOriginalEditor(), changeAccessor));
+        newOriginalZones.push(
+          AutoZone.create(
+            t.getId(),
+            t.getLine(),
+            editor.getOriginalEditor(),
+            state.resizeRequestCallback,
+            changeAccessor
+          )
+        );
       });
+      originalUpdates.removed.forEach((z) => z.removeFromEditor(editor.getOriginalEditor(), changeAccessor));
     });
-    originalUpdates.removed.forEach((z) => z.removeFromEditor());
     editor.getModifiedEditor().changeViewZones(function (changeAccessor) {
       modifiedUpdates.added.forEach((t) => {
-        newOriginalZones.push(AutoZone.create(t.getId(), t.getLine(), editor.getModifiedEditor(), changeAccessor));
+        newModifiedZones.push(
+          AutoZone.create(
+            t.getId(),
+            t.getLine(),
+            editor.getModifiedEditor(),
+            state.resizeRequestCallback,
+            changeAccessor
+          )
+        );
       });
+      modifiedUpdates.removed.forEach((z) => z.removeFromEditor(editor.getModifiedEditor(), changeAccessor));
     });
-    modifiedUpdates.removed.forEach((z) => z.removeFromEditor());
     return {
       originalEditorThreadZones: newOriginalZones,
       modifiedEditorThreadZones: newModifiedZones,
     };
-  }
-
-  componentDidUpdate() {
-    this.state.originalEditorThreadZones.forEach((z) => z.updateHeight());
-    this.state.modifiedEditorThreadZones.forEach((z) => z.updateHeight());
   }
 
   render() {
