@@ -413,7 +413,8 @@ class MonacoDiffViewerComponent extends React.Component<
     const originalListener = new EditorMouseListener(
       this.props.path,
       github.CommentSide.LEFT_SIDE,
-      this.props.baseSha,
+      // TODO(jdhollen): Fix weirdness when review spans multiple revisions.
+      this.props.commitSha,
       editor.getOriginalEditor(),
       this.props.handler
     );
