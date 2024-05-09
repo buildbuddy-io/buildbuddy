@@ -24,6 +24,7 @@ go_library(
         "//server/util/canary",
         "//server/util/disk",
         "//server/util/log",
+        "//server/util/metricsutil",
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
