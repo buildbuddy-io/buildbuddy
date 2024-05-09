@@ -2232,6 +2232,43 @@ message UsageStats {
   repeated FileSystemUsage peak_file_system_usage = 4;
 }
 
+// BuildBuddy-specific auxiliary execution metadata containing fine-grained
+// execution progress. These will be published in partial_execution_metadata in
+// the ExecuteOperation stream.
+message ExecutionProgress {
+  // Executor timestamp at which the progress message was created.
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Fine-grained execution state.
+  ExecutionState execution_state = 2;
+
+  // Fine-grained execution state for an action. Not all of these statuses are
+  // guaranteed to be published for every action, for example if there is an
+  // error that causes the action to exit early, or if the status requires using
+  // a certain isolation type.
+  enum ExecutionState {
+    UNKNOWN_EXECUTION_STATE = 0;
+
+    // Pulling the OCI image for the action.
+    PULLING_CONTAINER_IMAGE = 1;
+
+    // Downloading action inputs.
+    DOWNLOADING_INPUTS = 2;
+
+    // Booting a new VM.
+    BOOTING_VM = 4;
+
+    // Resuming a VM from snapshot.
+    RESUMING_VM = 5;
+
+    // Executing the command for the action.
+    EXECUTING_COMMAND = 6;
+
+    // Uploading action outputs.
+    UPLOADING_OUTPUTS = 7; 
+  }
+}
+
 // Proto representation of the Execution stored in OLAP DB. Only used in
 // backends.
 message StoredExecution {
