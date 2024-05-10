@@ -20,7 +20,7 @@ type SymlinkNode = build.bazel.remote.execution.v2.SymlinkNode;
 
 export interface TreeNode {
   obj: FileNode | DirectoryNode | SymlinkNode;
-  type: "file" | "dir" | "symlink";
+  type: "file" | "dir" | "symlink" | "tree";
 }
 
 function getChildCountText(childCount: Number) {
