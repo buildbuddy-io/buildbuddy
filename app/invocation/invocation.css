@@ -171,6 +171,17 @@
   height: 18px;
 }
 
+.invocation-action-card .output-symlink {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .icon {
+    width: 18px;
+    height: 18px;
+  }
+}
+
 .invocation-error-card .error-contents {
   background: #fafafa;
   border-radius: 8px;

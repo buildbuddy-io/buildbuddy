@@ -1,7 +1,7 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { Download, Info } from "lucide-react";
+import { ArrowRight, Download, FileSymlink, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
@@ -517,6 +517,32 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
   }
 
+  private renderOutputSymlinks(actionsResult: build.bazel.remote.execution.v2.ActionResult) {
+    const symlinks = actionsResult.outputSymlinks.length
+      ? actionsResult.outputSymlinks
+      : [...actionsResult.outputFileSymlinks, ...actionsResult.outputDirectorySymlinks];
+
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Output symlinks</div>
+        {symlinks.length ? (
+          <div className="action-list">
+            {symlinks.map((symlink) => (
+              <div className="output-symlink">
+                <FileSymlink className="icon symlink-icon" />
+                <span>{symlink.path}</span>
+                <ArrowRight className="icon arrow-right-icon" />
+                <span>{symlink.target}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div>None</div>
+        )}
+      </div>
+    );
+  }
+
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
     const vmMetadata = this.getFirecrackerVMMetadata();
@@ -585,26 +611,34 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         </div>
                         <div className="action-section">
                           <div className="action-property-title">Environment variables</div>
-                          <div className="action-list">
-                            {this.state.command.environmentVariables.map((variable) => (
-                              <div>
-                                <span className="prop-name">{variable.name}</span>
-                                <span className="prop-value">={variable.value}</span>
-                              </div>
-                            ))}
-                          </div>
+                          {this.state.command.environmentVariables.length ? (
+                            <div className="action-list">
+                              {this.state.command.environmentVariables.map((variable) => (
+                                <div>
+                                  <span className="prop-name">{variable.name}</span>
+                                  <span className="prop-value">={variable.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div>None</div>
+                          )}
                         </div>
                         <div className="action-section">
                           <div className="action-property-title">Platform properties</div>
-                          <div className="action-list">
-                            {this.state.command?.platform?.properties.map((property) => (
-                              <div>
-                                <span className="prop-name">{property.name}</span>
-                                <span className="prop-value">={property.value}</span>
-                              </div>
-                            ))}
-                            {!this.state.command?.platform?.properties.length && <div>(Default)</div>}
-                          </div>
+                          {this.state.command?.platform?.properties.length ? (
+                            <div className="action-list">
+                              {this.state.command?.platform?.properties.map((property) => (
+                                <div>
+                                  <span className="prop-name">{property.name}</span>
+                                  <span className="prop-value">={property.value}</span>
+                                </div>
+                              ))}
+                              {!this.state.command?.platform?.properties.length && <div>(Default)</div>}
+                            </div>
+                          ) : (
+                            <div>None</div>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -791,6 +825,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           <div>None</div>
                         )}
                       </div>
+                      {this.renderOutputSymlinks(this.state.actionResult)}
                       <div className="action-section">
                         <div className="action-property-title">Stderr</div>
                         <div>
