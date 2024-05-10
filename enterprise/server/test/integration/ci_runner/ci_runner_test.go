@@ -1372,3 +1372,31 @@ func TestArtifactUploads_JVMLog(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(b), "java.lang.OutOfMemoryError")
 }
+
+func TestTimeout(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	baselineRunnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+		"--timeout=500ms",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+
+	runnerFlags := baselineRunnerFlags
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	// Expect runner to timeout and exit early
+	require.NotEqual(t, 0, result.ExitCode)
+	runnerInvocation := singleInvocation(t, app, result)
+	require.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, runnerInvocation.InvocationStatus)
+	require.Contains(t, runnerInvocation.ConsoleBuffer, "Remote run exceeded timeout")
+}
