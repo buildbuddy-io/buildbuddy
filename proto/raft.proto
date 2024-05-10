@@ -481,6 +481,9 @@ message RangeDescriptor {
   repeated ReplicaDescriptor replicas = 4;
 
   uint64 generation = 5;
+
+  optional uint64 last_added_replica_id = 6;
+  optional int64 last_replica_added_at_usec = 7;
 }
 
 // SyncPropose, in proto form.
