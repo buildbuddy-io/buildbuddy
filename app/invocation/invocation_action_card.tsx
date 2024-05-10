@@ -568,7 +568,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {symlinks.length ? (
           <div className="action-list">
             {symlinks.map((symlink) => (
-              <div>
+              <div className="tree-node-symlink">
                 <span>
                   <FileSymlink className="icon symlink-icon" />
                 </span>{" "}

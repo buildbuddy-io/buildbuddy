@@ -85,17 +85,15 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
 
   renderSymlinkNode(node: SymlinkNode) {
     return (
-      <div className="input-tree-node">
-        <div className="input-tree-node-name">
-          <span>
-            <FileSymlink className="icon symlink-icon" />
-          </span>{" "}
-          <span className="input-tree-node-label">{node.name}</span>{" "}
-          <span>
-            <ArrowRight className="icon symlink-arrow-icon" />
-          </span>{" "}
-          <span className="input-tree-node-label">{node.target}</span>
-        </div>
+      <div className="tree-node-symlink">
+        <span>
+          <FileSymlink className="icon symlink-icon" />
+        </span>{" "}
+        <span className="input-tree-node-label">{node.name}</span>{" "}
+        <span>
+          <ArrowRight className="icon symlink-arrow-icon" />
+        </span>{" "}
+        <span className="input-tree-node-label">{node.target}</span>
       </div>
     );
   }
