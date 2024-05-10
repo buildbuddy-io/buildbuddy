@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -509,6 +508,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		TargetBranch:      req.GetTargetBranch(),
 		SHA:               req.GetCommitSha(),
 		PullRequestNumber: req.GetPullRequestNumber(),
+		EventName:         webhook_data.EventName.ManualDispatch,
 		// Don't set IsTargetRepoPublic here; instead set visibility directly
 		// from build metadata.
 	}
@@ -557,24 +557,24 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 				return
 			}
 			invocationID = invocationUUID.String()
-			ctx = log.EnrichContext(ctx, log.InvocationIDKey, invocationID)
+			executionCtx := log.EnrichContext(ctx, log.InvocationIDKey, invocationID)
 
 			// The workflow execution is trusted since we're authenticated as a member of
 			// the BuildBuddy org that owns the workflow.
 			isTrusted := true
-			executionID, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnv())
+			executionID, err := ws.executeWorkflowAction(executionCtx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnv())
 			if err != nil {
 				statusErr = status.WrapErrorf(err, "failed to execute workflow action %q", action.Name)
-				log.CtxWarning(ctx, statusErr.Error())
+				log.CtxWarning(executionCtx, statusErr.Error())
 				return
 			}
-			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
+			executionCtx = log.EnrichContext(executionCtx, log.ExecutionIDKey, executionID)
 			if req.GetAsync() {
 				return
 			}
-			if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
+			if err := ws.waitForWorkflowInvocationCreated(executionCtx, executionID, invocationID); err != nil {
 				statusErr = err
-				log.CtxWarning(ctx, statusErr.Error())
+				log.CtxWarning(executionCtx, statusErr.Error())
 				return
 			}
 		}()
@@ -586,6 +586,8 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}, nil
 }
 
+// getActions fetches the workflow config (buildbuddy.yaml) and returns the list of
+// actions matching the webhook event
 func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter []string) ([]*config.Action, error) {
 	// Fetch the workflow config
 	gitProvider, err := ws.providerForRepo(wd.PushedRepoURL)
@@ -594,22 +596,16 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 	}
 	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
 	if err != nil {
-		return nil, err
-	}
-
-	addKythe, err := ws.enableExtraKytheIndexingAction(ctx)
-	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "fetch workflow config")
 	}
 
 	var actions []*config.Action
 	for _, a := range cfg.Actions {
-		if len(actionFilter) == 0 || config.MatchesAnyActionName(a, actionFilter) {
+		matchesActionName := len(actionFilter) == 0 || config.MatchesAnyActionName(a, actionFilter)
+		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch)
+		if matchesActionName && matchesTrigger {
 			actions = append(actions, a)
 		}
-	}
-	if addKythe {
-		actions = append(actions, config.KytheIndexingAction(wd.TargetRepoDefaultBranch))
 	}
 	if len(actions) == 0 {
 		if len(actionFilter) == 0 {
@@ -685,15 +681,22 @@ func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, re
 	return err
 }
 
-func (ws *workflowService) enableExtraKytheIndexingAction(ctx context.Context) (bool, error) {
+func (ws *workflowService) addKytheActionIfEnabled(ctx context.Context, c *config.BuildBuddyConfig, workflow *tables.Workflow, wd *interfaces.WebhookData) error {
+	enableKythe, err := ws.enableExtraKytheIndexingAction(ctx, workflow.GroupID)
+	if err != nil {
+		return err
+	}
+	if enableKythe {
+		c.Actions = append(c.Actions, config.KytheIndexingAction(wd.TargetRepoDefaultBranch))
+	}
+	return nil
+}
+
+func (ws *workflowService) enableExtraKytheIndexingAction(ctx context.Context, groupID string) (bool, error) {
 	if !*enableKytheIndexing {
 		return false, nil
 	}
-	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return false, err
-	}
-	g, err := ws.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	g, err := ws.env.GetUserDB().GetGroupByID(ctx, groupID)
 	if err != nil {
 		return false, err
 	}
@@ -1323,14 +1326,25 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 		workflowRef = webhookData.PushedBranch
 	}
 
+	var c *config.BuildBuddyConfig
 	b, err := gitProvider.GetFileContents(ctx, workflow.AccessToken, webhookData.PushedRepoURL, config.FilePath, workflowRef)
-	if err != nil {
-		if status.IsNotFoundError(err) {
-			return config.GetDefault(webhookData.TargetRepoDefaultBranch), nil
+	if err == nil {
+		c, err = config.NewConfig(bytes.NewReader(b))
+		if err != nil {
+			return nil, err
 		}
+	} else {
+		if status.IsNotFoundError(err) {
+			c = config.GetDefault(webhookData.TargetRepoDefaultBranch)
+		} else {
+			return nil, err
+		}
+	}
+
+	if err := ws.addKytheActionIfEnabled(ctx, c, workflow, webhookData); err != nil {
 		return nil, err
 	}
-	return config.NewConfig(bytes.NewReader(b))
+	return c, nil
 }
 
 func (ws *workflowService) isTrustedCommit(ctx context.Context, gitProvider interfaces.GitProvider, wf *tables.Workflow, wd *interfaces.WebhookData) (bool, error) {
@@ -1407,23 +1421,20 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	if err != nil {
 		return err
 	}
-	// Fetch the workflow config (buildbuddy.yaml) and start a CI runner execution
-	// for each action matching the webhook event.
-	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
+
+	actions, err := ws.getActions(ctx, wf, wd, nil /*actionFilter*/)
 	if err != nil {
-		if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd); err != nil {
-			log.CtxWarningf(ctx, "Failed to create workflow config error status: %s", err)
+		if strings.Contains(err.Error(), "fetch workflow config") {
+			if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd); err != nil {
+				log.CtxWarningf(ctx, "Failed to create workflow config error status: %s", err)
+			}
 		}
 		return err
 	}
+
 	var wg sync.WaitGroup
-	for _, action := range cfg.Actions {
+	for _, action := range actions {
 		action := action
-		if !config.MatchesAnyTrigger(action, wd.EventName, wd.TargetBranch) {
-			jt, _ := json.Marshal(action.Triggers)
-			log.CtxDebugf(ctx, "Action %s not matched, triggers=%s", action.Name, string(jt))
-			continue
-		}
 		invocationUUID, err := guuid.NewRandom()
 		if err != nil {
 			return err
