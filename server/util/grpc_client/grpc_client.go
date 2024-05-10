@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,6 +26,9 @@ const (
 	// Log a warning if a new streaming RPC cannot be initialized within
 	// this time.
 	stuckStreamWarningPeriod = 15 * time.Second
+
+	// Default protocol to use when a target is missing a protocol.
+	defaultProtocol = "grpcs://"
 )
 
 var (
@@ -159,6 +163,8 @@ func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool
 // This function should not be used outside of tests and currently remains to
 // integrate with a third-party library (grpc-proxy).
 func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+	target = normalizeTarget(target)
+
 	dialOptions := CommonGRPCClientOptions()
 	dialOptions = append(dialOptions, extraOptions...)
 	u, err := url.Parse(target)
@@ -205,6 +211,13 @@ func DialInternalWithoutPooling(env environment.Env, target string, extraOptions
 	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
 	opts = append(opts, extraOptions...)
 	return DialSimpleWithoutPooling(target, opts...)
+}
+
+func normalizeTarget(target string) string {
+	if strings.Contains(target, "://") {
+		return target
+	}
+	return defaultProtocol + target
 }
 
 type rpcCredentials struct {
