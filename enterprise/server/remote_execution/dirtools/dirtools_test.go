@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -25,6 +27,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestUploadTree(t *testing.T) {
@@ -402,22 +405,22 @@ func TestUploadTree(t *testing.T) {
 				"a/fileA.txt": "a",
 			},
 			symlinkPaths: map[string]string{
-				"linkA": "fileA.txt",
+				"a/linkA": "fileA.txt",
 			},
 			expectedResult: &repb.ActionResult{
 				OutputDirectories: []*repb.OutputDirectory{
 					{
 						Path: "a",
 						TreeDigest: &repb.Digest{
-							SizeBytes: 85,
-							Hash:      "895545df6841b7efb2e9cc903a4eac7a60c645199be059f6056817ae6feb071d",
+							SizeBytes: 105,
+							Hash:      "8e2671dc4880a29a5053c6e36238ebb76e2b981ee5a1a123194da0dbea3ce235",
 						},
 					},
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
 				FileCount:        2,
-				BytesTransferred: 84,
+				BytesTransferred: 104,
 			},
 		},
 		{
@@ -665,6 +668,23 @@ func TestUploadTree(t *testing.T) {
 					fmt.Sprintf("expected symlink %s to be in actionResult.OutputDirectorySymlinks %v", expectedSymlink, actionResult.OutputDirectorySymlinks),
 				)
 			}
+
+			bsClient := env.GetByteStreamClient()
+			require.NotNil(t, bsClient)
+			casClient := env.GetContentAddressableStorageClient()
+			require.NotNil(t, casClient)
+
+			rn := digest.NewResourceName(tc.expectedResult.OutputDirectories[0].TreeDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+			// dir := &repb.Directory{}
+			// err = cachetools.GetBlobAsProto(ctx, bsClient, rn, dir)
+			// require.NoError(t, err)
+			tree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, casClient, rn)
+			require.NoError(t, err)
+			log.Printf("SLUONGNG DEBUG: %v", tree)
+
+			out, err := protojson.MarshalOptions{EmitDefaultValues: false, EmitUnpopulated: false, Multiline: true}.Marshal(tree)
+			require.NoError(t, err)
+			fmt.Println(string(out))
 		})
 	}
 }
