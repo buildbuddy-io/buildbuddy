@@ -11,6 +11,8 @@ import { getLangHintFromFilePath } from "../monaco/monaco";
 
 interface FileContentMonacoComponentProps {
   fileModel: FileModel;
+  originalCommitSha: string;
+  modifiedCommitSha: string;
   reviewModel: ReviewModel;
   disabled: boolean;
   handler: ReviewController;
@@ -47,7 +49,7 @@ export default class FileContentMonacoComponent extends React.Component<
             owner: this.props.reviewModel.getOwner(),
             repo: this.props.reviewModel.getRepo(),
             path: this.props.fileModel.getFullPath(),
-            ref: this.props.fileModel.getModifiedCommitSha(),
+            ref: this.props.modifiedCommitSha,
           })
         )
         .then((r) => {
@@ -55,6 +57,7 @@ export default class FileContentMonacoComponent extends React.Component<
           this.setState({ modifiedContent, modifiedLoaded: true });
         })
         .catch((e) => {
+          // XXX: Just handle not found.
           error_service.handleError("Failed to fetch source: " + e);
         });
     } else {
@@ -72,7 +75,7 @@ export default class FileContentMonacoComponent extends React.Component<
             owner: this.props.reviewModel.getOwner(),
             repo: this.props.reviewModel.getRepo(),
             path: this.props.fileModel.getOriginalFullPath(),
-            ref: this.props.fileModel.getOriginalCommitSha(),
+            ref: this.props.originalCommitSha,
           })
         )
         .then((r) => {
@@ -80,11 +83,60 @@ export default class FileContentMonacoComponent extends React.Component<
           this.setState({ originalContent, originalLoaded: true });
         })
         .catch((e) => {
+          // XXX: Just handle not found.
           error_service.handleError("Failed to fetch source: " + e);
         });
     } else {
       // TODO(jdhollen): better support for added / removed files.
       this.setState({ originalContent: "", originalLoaded: true });
+    }
+  }
+
+  componentDidUpdate(
+    prevProps: Readonly<FileContentMonacoComponentProps>,
+    prevState: Readonly<FileContentMonacoComponentState>
+  ): void {
+    // XXX: update contents.
+
+    if (this.props.modifiedCommitSha !== prevProps.modifiedCommitSha) {
+      this.setState({ modifiedLoaded: false });
+      rpc_service.service
+        .getGithubContent(
+          new github.GetGithubContentRequest({
+            owner: this.props.reviewModel.getOwner(),
+            repo: this.props.reviewModel.getRepo(),
+            path: this.props.fileModel.getFullPath(),
+            ref: this.props.modifiedCommitSha,
+          })
+        )
+        .then((r) => {
+          const modifiedContent = textDecoder.decode(r.content);
+          this.setState({ modifiedContent, modifiedLoaded: true });
+        })
+        .catch((e) => {
+          // XXX: Just handle not found.
+          error_service.handleError("Failed to fetch source: " + e);
+        });
+    }
+    if (this.props.originalCommitSha !== prevProps.originalCommitSha) {
+      this.setState({ originalLoaded: false });
+      rpc_service.service
+        .getGithubContent(
+          new github.GetGithubContentRequest({
+            owner: this.props.reviewModel.getOwner(),
+            repo: this.props.reviewModel.getRepo(),
+            path: this.props.fileModel.getOriginalFullPath(),
+            ref: this.props.originalCommitSha,
+          })
+        )
+        .then((r) => {
+          const originalContent = textDecoder.decode(r.content);
+          this.setState({ originalContent, originalLoaded: true });
+        })
+        .catch((e) => {
+          // XXX: Just handle not found.
+          error_service.handleError("Failed to fetch source: " + e);
+        });
     }
   }
 
@@ -99,7 +151,7 @@ export default class FileContentMonacoComponent extends React.Component<
 
     const originalThreads = this.props.reviewModel.getThreadsForFileRevision(
       this.props.fileModel.getFullPath(),
-      this.props.fileModel.getOriginalCommitSha(),
+      this.props.originalCommitSha,
       github.CommentSide.RIGHT_SIDE
     );
     // TODO(jdhollen): Do work to make sure that these comments actually line up right
@@ -107,13 +159,13 @@ export default class FileContentMonacoComponent extends React.Component<
     originalThreads.push(
       ...this.props.reviewModel.getThreadsForFileRevision(
         this.props.fileModel.getFullPath(),
-        this.props.fileModel.getModifiedCommitSha(),
+        this.props.modifiedCommitSha,
         github.CommentSide.LEFT_SIDE
       )
     );
     const modifiedThreads = this.props.reviewModel.getThreadsForFileRevision(
       this.props.fileModel.getFullPath(),
-      this.props.fileModel.getModifiedCommitSha(),
+      this.props.modifiedCommitSha,
       github.CommentSide.RIGHT_SIDE
     );
 
@@ -126,8 +178,8 @@ export default class FileContentMonacoComponent extends React.Component<
         modifiedThreads={modifiedThreads}
         disabled={this.props.disabled}
         path={this.props.fileModel.getFullPath()}
-        baseSha={this.props.fileModel.getOriginalCommitSha()}
-        commitSha={this.props.fileModel.getModifiedCommitSha()}
+        baseSha={this.props.originalCommitSha}
+        commitSha={this.props.modifiedCommitSha}
         reviewModel={this.props.reviewModel}></MonacoDiffViewerComponent>
     );
   }
@@ -364,7 +416,6 @@ class MonacoDiffViewerComponent extends React.Component<
   };
 
   componentDidMount() {
-    // Element is always part of the render() result.
     const container = this.monacoElement.current!;
     const editor = monaco.editor.createDiffEditor(container, {
       automaticLayout: true,
@@ -395,16 +446,7 @@ class MonacoDiffViewerComponent extends React.Component<
     });
     this.setState({ editor });
 
-    // TODO(jdhollen): switch this to be by sha, probably.
-    const originalUri = monaco.Uri.file(`original-${this.props.path}`);
-    const modifiedUri = monaco.Uri.file(`modified-${this.props.path}`);
-    const originalModel =
-      monaco.editor.getModel(originalUri) ??
-      monaco.editor.createModel(this.props.originalContent, getLangHintFromFilePath(this.props.path), originalUri);
-    const modifiedModel =
-      monaco.editor.getModel(modifiedUri) ??
-      monaco.editor.createModel(this.props.modifiedContent, getLangHintFromFilePath(this.props.path), modifiedUri);
-    editor.setModel({ original: originalModel, modified: modifiedModel });
+    this.handleModelUpdate(editor);
 
     let ignoreEvent = false;
     const maxHeight = () => {
@@ -447,6 +489,19 @@ class MonacoDiffViewerComponent extends React.Component<
     updateHeight();
   }
 
+  handleModelUpdate(editor: monaco.editor.IDiffEditor) {
+    // TODO(jdhollen): switch this to be by sha, probably.
+    const originalUri = monaco.Uri.file(`${this.props.baseSha}-${this.props.path}`);
+    const modifiedUri = monaco.Uri.file(`${this.props.commitSha}-${this.props.path}`);
+    const originalModel =
+      monaco.editor.getModel(originalUri) ??
+      monaco.editor.createModel(this.props.originalContent, getLangHintFromFilePath(this.props.path), originalUri);
+    const modifiedModel =
+      monaco.editor.getModel(modifiedUri) ??
+      monaco.editor.createModel(this.props.modifiedContent, getLangHintFromFilePath(this.props.path), modifiedUri);
+    editor.setModel({ original: originalModel, modified: modifiedModel });
+  }
+
   // I don't like to use this, but this is the nicest way to add junk to Monaco
   // while still tracking it with React.
   static getDerivedStateFromProps(props: MonacoDiffViewerComponentProps, state: MonacoDiffViewerComponentState) {
@@ -487,7 +542,15 @@ class MonacoDiffViewerComponent extends React.Component<
     };
   }
 
-  componentDidUpdate() {
+  componentDidUpdate(
+    prevProps: Readonly<MonacoDiffViewerComponentProps>,
+    prevState: Readonly<MonacoDiffViewerComponentState>
+  ) {
+    if (prevProps.baseSha !== this.props.baseSha || prevProps.commitSha != this.props.commitSha) {
+      console.log("Updating... " + this.props.baseSha + " " + this.props.commitSha);
+      this.handleModelUpdate(this.state.editor!);
+      return;
+    }
     this.state.originalEditorThreadZones.forEach((z) => z.updateHeight());
     this.state.modifiedEditorThreadZones.forEach((z) => z.updateHeight());
   }

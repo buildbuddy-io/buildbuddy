@@ -15,11 +15,12 @@ import error_service from "../../../app/errors/error_service";
 import ReviewThreadComponent from "./review_thread";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
-import { CommentModel, ReviewModel, FileModel, ThreadModel } from "./review_model";
+import { CommentModel, ReviewModel, FileModel } from "./review_model";
 import Link from "../../../app/components/link/link";
 import router from "../../../app/router/router";
 import PullRequestHeaderComponent from "./pull_request_header";
 import FileContentMonacoComponent from "./file_content_monaco";
+import Select, { Option } from "../../../app/components/select/select";
 
 interface ViewPullRequestComponentProps {
   owner: string;
@@ -30,6 +31,7 @@ interface ViewPullRequestComponentProps {
 
 interface State {
   reviewModel?: ReviewModel;
+  selectedBase: string;
   displayedDiffs: string[];
   replyDialogOpen: boolean;
   draftReplyText: string;
@@ -42,6 +44,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
 
   state: State = {
     displayedDiffs: [],
+    selectedBase: "",
     replyDialogOpen: false,
     draftReplyText: "",
     pendingRequest: false,
@@ -57,7 +60,8 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       })
       .then((r) => {
         console.log(r);
-        this.setState({ reviewModel: ReviewModel.fromResponse(r) });
+        const model = ReviewModel.fromResponse(r);
+        this.setState({ reviewModel: model, selectedBase: model.getBaseCommitSha() });
       })
       .catch((e) => error_service.handleError(e));
   }
@@ -293,7 +297,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
   }
 
   renderFileDiffs(file: FileModel) {
-    if (!this.state.reviewModel) {
+    if (!this.state.reviewModel || !this.state.selectedBase) {
       return <></>;
     }
     return (
@@ -301,6 +305,8 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         <td colSpan={6}>
           <FileContentMonacoComponent
             fileModel={file}
+            originalCommitSha={this.state.selectedBase}
+            modifiedCommitSha={this.state.reviewModel.getHeadCommitSha()}
             reviewModel={this.state.reviewModel}
             disabled={this.state.pendingRequest}
             handler={this}></FileContentMonacoComponent>
@@ -497,6 +503,15 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     }
   }
 
+  handleRevisionSelection(e: React.ChangeEvent<HTMLSelectElement>) {
+    if (!this.state.reviewModel) {
+      return;
+    }
+    const sha = e.target.value || this.state.reviewModel.getBaseCommitSha();
+    console.log(sha);
+    this.setState({ selectedBase: sha });
+  }
+
   renderReplyModal() {
     const reviewModel = this.state.reviewModel;
     if (!reviewModel) {
@@ -587,6 +602,8 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         <FileContentMonacoComponent
           fileModel={file}
           reviewModel={this.state.reviewModel}
+          originalCommitSha={this.state.selectedBase}
+          modifiedCommitSha={this.state.reviewModel.getHeadCommitSha()}
           disabled={this.state.pendingRequest}
           handler={this}></FileContentMonacoComponent>
       </>
@@ -639,6 +656,20 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
             <OutlinedButton className="small-button" onClick={() => this.handleExpandDiffsClicked()}>
               {this.state.displayedDiffs.length === 0 ? "Expand diffs" : "Collapse diffs"}
             </OutlinedButton>
+            {this.state.reviewModel && (
+              <>
+                <label>Diff against</label>
+                <Select
+                  className="small-select"
+                  value={this.state.selectedBase}
+                  onChange={this.handleRevisionSelection.bind(this)}>
+                  <Option value={this.state.reviewModel.getBaseCommitSha()}>PR Base</Option>
+                  {this.state.reviewModel.getCommits().map((c) => (
+                    <Option value={c.sha}>{c.message}</Option>
+                  ))}
+                </Select>
+              </>
+            )}
           </div>
         </div>
         <div className="file-section">

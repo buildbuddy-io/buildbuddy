@@ -569,6 +569,13 @@ message CommentPosition {
   CommentSide side = 3;
 }
 
+message PrCommit {
+  string id = 1;
+  string sha = 2;
+  string message = 3;
+  int64 commit_time_usec = 4;
+}
+
 message Comment {
   string id = 1;
   string body = 2;
@@ -654,6 +661,7 @@ message GetGithubPullRequestDetailsResponse {
   repeated Reviewer reviewers = 8;
   repeated ActionStatus action_statuses = 9;
   repeated FileSummary files = 10;
+  repeated PrCommit commits = 23;
 
   string title = 11;
   string body = 12;

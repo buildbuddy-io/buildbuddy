@@ -23,6 +23,13 @@
   width: 100%;
 }
 
+.small-select {
+  font-size: 14px;
+  padding: 4px 16px;
+  line-height: 14px;
+  height: 28px;
+}
+
 .select:focus {
   outline: none;
   border: 1px solid rgba(20, 20, 20, 0.5);

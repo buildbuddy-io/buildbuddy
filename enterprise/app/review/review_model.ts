@@ -261,6 +261,7 @@ interface State {
   pullId: string;
   branch: string;
   baseCommitSha: string;
+  headCommitSha: string;
   githubUrl: string;
   viewerLogin: string;
   author: string;
@@ -269,6 +270,7 @@ interface State {
   createdAtUsec: number;
   updatedAtUsec: number;
   files: readonly FileModel[];
+  commits: readonly github.PrCommit[];
   comments: readonly CommentModel[];
   actionStatuses: readonly github.ActionStatus[];
   reviewers: readonly github.Reviewer[];
@@ -293,6 +295,7 @@ export class ReviewModel {
   isReviewSavedToGithub(): boolean {
     return this.state.draftReviewId !== "" && !this.state.draftReviewId.startsWith(FAKE_ID_PREFIX);
   }
+
   getOwner(): string {
     return this.state.owner;
   }
@@ -319,6 +322,18 @@ export class ReviewModel {
 
   getUpdatedAtUsec(): number {
     return this.state.updatedAtUsec;
+  }
+
+  getBaseCommitSha(): string {
+    return this.state.baseCommitSha;
+  }
+
+  getHeadCommitSha(): string {
+    return this.state.headCommitSha;
+  }
+
+  getCommits(): readonly github.PrCommit[] {
+    return this.state.commits;
   }
 
   getTitle(): string {
@@ -490,6 +505,8 @@ export class ReviewModel {
       pullId: response.pullId,
       branch: response.branch,
       baseCommitSha: response.baseCommitSha,
+      headCommitSha: response.headCommitSha,
+      commits: response.commits,
       submitted: response.submitted,
       mergeable: response.mergeable,
       createdAtUsec: +response.createdAtUsec,

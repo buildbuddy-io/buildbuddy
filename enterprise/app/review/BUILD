@@ -111,6 +111,7 @@ ts_library(
         "//app/components/button:checkbox_button",
         "//app/components/dialog",
         "//app/components/link",
+        "//app/components/menu",
         "//app/components/modal",
         "//app/errors:error_service",
         "//app/format",
@@ -126,5 +127,18 @@ ts_library(
         "@npm//long",
         "@npm//react",
         "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "revision_picker_button",
+    srcs = ["revision_picker_button.tsx"],
+    deps = [
+        "//app/components/button",
+        "//app/components/menu",
+        "//app/components/popup",
+        "//proto:github_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
     ],
 )

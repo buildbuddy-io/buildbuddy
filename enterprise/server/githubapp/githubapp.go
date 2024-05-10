@@ -1950,8 +1950,11 @@ type checkSuite struct {
 
 type prCommit struct {
 	Commit struct {
-		Oid         string
-		CheckSuites struct {
+		Id            string
+		Oid           string
+		Message       string
+		CommittedDate time.Time
+		CheckSuites   struct {
 			Nodes []checkSuite
 		} `graphql:"checkSuites(last: 100)"`
 		Status struct {
@@ -2327,6 +2330,17 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		fileSummaries = append(fileSummaries, summary)
 	}
 
+	commits := make([]*ghpb.PrCommit, 0)
+	for _, n := range pr.Commits.Nodes {
+		commit := &ghpb.PrCommit{
+			Id:             n.Commit.Id,
+			Sha:            n.Commit.Oid,
+			Message:        n.Commit.Message,
+			CommitTimeUsec: n.Commit.CommittedDate.UnixMicro(),
+		}
+		commits = append(commits, commit)
+	}
+
 	statusTrackingMap := make(map[string]*combinedContext, 0)
 	checkTrackingMap := make(map[string]*combinedChecksForApp, 0)
 	// TODO(jdhollen): show previous checks + status as "outdated" when a new
@@ -2402,13 +2416,13 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		Reviewers:      reviewers,
 		Files:          fileSummaries,
 		ActionStatuses: actionStatuses,
+		Commits:        commits,
 		Comments:       outputComments,
-		// TODO(jdhollen): Switch to MergeStateStatus when it's stable. https://docs.github.com/en/graphql/reference/enums#mergestatestatus
-		Mergeable:     pr.MergeStateStatus == "CLEAN",
-		Submitted:     pr.Merged,
-		GithubUrl:     pr.URL,
-		DraftReviewId: draftReviewId,
-		ViewerLogin:   graph.Viewer.Login,
+		Mergeable:      pr.MergeStateStatus == "CLEAN",
+		Submitted:      pr.Merged,
+		GithubUrl:      pr.URL,
+		DraftReviewId:  draftReviewId,
+		ViewerLogin:    graph.Viewer.Login,
 	}
 
 	return resp, nil
