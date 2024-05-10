@@ -45,7 +45,8 @@ type StoreDetail struct {
 type StoreMap struct {
 	gossipManager interfaces.GossipService
 
-	mu           *sync.RWMutex
+	mu *sync.RWMutex
+	// NHID to StoreDetail
 	storeDetails map[string]*StoreDetail
 
 	startTime time.Time

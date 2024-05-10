@@ -154,6 +154,7 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor) (DriverAction
 }
 
 type pqItem struct {
+	rangeID   uint64
 	shardID   uint64
 	replicaID uint64
 
@@ -210,7 +211,7 @@ type Queue struct {
 	storeMap *storemap.StoreMap
 	store    IStore
 
-	pqItemMap sync.Map // rangeID -> *pqItem
+	pqItemMap sync.Map // shardID -> *pqItem
 	maxSize   int
 	stop      chan struct{}
 
@@ -272,17 +273,19 @@ func (rq *Queue) MaybeAdd(replica IReplica) {
 		if priority > item.priority {
 			rq.pq.update(item, priority)
 		}
+		return
 	}
 
 	item := &pqItem{
+		rangeID:    rd.GetRangeId(),
 		shardID:    replica.ShardID(),
 		replicaID:  replica.ReplicaID(),
 		priority:   priority,
 		insertTime: time.Now(),
 	}
 	heap.Push(rq.pq, item)
-	rq.pqItemMap.Store(item.shardID, item)
-	log.Infof("queued replica shardID=%d", item.shardID)
+	rq.pqItemMap.Store(item.rangeID, item)
+	log.Infof("queued replica rangeID=%d", item.rangeID)
 
 	// If the priroityQueue if full, let's remove the item with the lowest priority.
 	if pqLen := rq.pq.Len(); pqLen > rq.maxSize {
@@ -298,7 +301,7 @@ func (rq *Queue) remove(item *pqItem) {
 	if item.index >= 0 {
 		heap.Remove(rq.pq, item.index)
 	}
-	rq.pqItemMap.Delete(item.shardID)
+	rq.pqItemMap.Delete(item.rangeID)
 }
 
 func (rq *Queue) Start() {
@@ -327,10 +330,10 @@ func (rq *Queue) Start() {
 		}
 		item := heap.Pop(rq.pq).(*pqItem)
 		item.processing = true
-		repl, err := rq.store.GetReplica(item.shardID)
+		repl, err := rq.store.GetReplica(item.rangeID)
 		if err != nil || repl.ReplicaID() != item.replicaID {
 			log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
-			rq.pqItemMap.Delete(item.shardID)
+			rq.pqItemMap.Delete(item.rangeID)
 			continue
 		}
 
@@ -523,7 +526,8 @@ func (rq *Queue) processReplica(repl IReplica) (bool, error) {
 }
 
 func (rq *Queue) postProcess(repl IReplica) {
-	itemIface, ok := rq.pqItemMap.Load(repl.ShardID())
+	rd := repl.RangeDescriptor()
+	itemIface, ok := rq.pqItemMap.Load(rd.GetRangeId())
 	if !ok {
 		alert.UnexpectedEvent("unexpected_pq_item_not_found")
 	}
@@ -534,7 +538,7 @@ func (rq *Queue) postProcess(repl IReplica) {
 	if item.requeue {
 		rq.MaybeAdd(repl)
 	}
-	rq.pqItemMap.Delete(item.shardID)
+	rq.pqItemMap.Delete(rd.GetRangeId())
 }
 
 func aboveMeanReplicaCountThreshold(mean float64) float64 {
