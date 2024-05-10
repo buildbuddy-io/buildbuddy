@@ -274,7 +274,7 @@ class AutoZone {
     this.editor = editor;
   }
 
-  updateHeight() {
+  updateSize() {
     if (!this.editor) {
       return;
     }
@@ -350,8 +350,11 @@ class MonacoDiffViewerComponent extends React.Component<
 > {
   monacoElement: React.RefObject<HTMLDivElement> = React.createRef();
 
+  // If true, we've set a timer and will resize the editor when the timer fires.
   resizeUpdateScheduled: boolean = false;
-  heightUpdateInProgress: boolean = false;
+  // If true, we're actively updating the editor size (prevents loops).
+  sizeUpdateInProgress: boolean = false;
+
   currentContentHeight: number = -1;
   currentContentWidth: number = -1;
   resizeListener?: any;
@@ -375,10 +378,10 @@ class MonacoDiffViewerComponent extends React.Component<
   performSizeUpdate() {
     const editor = this.state.editor;
     const container = this.monacoElement.current;
-    if (this.heightUpdateInProgress || !editor || !container) {
+    if (this.sizeUpdateInProgress || !editor || !container) {
       return;
     }
-    this.heightUpdateInProgress = true;
+    this.sizeUpdateInProgress = true;
     try {
       const contentHeight = Math.max(
         editor.getOriginalEditor().getContentHeight(),
@@ -395,8 +398,8 @@ class MonacoDiffViewerComponent extends React.Component<
 
       container.style.height = `${contentHeight}px`;
       if (widthChanged) {
-        this.state.originalEditorThreadZones.forEach((z) => z.updateHeight());
-        this.state.modifiedEditorThreadZones.forEach((z) => z.updateHeight());
+        this.state.originalEditorThreadZones.forEach((z) => z.updateSize());
+        this.state.modifiedEditorThreadZones.forEach((z) => z.updateSize());
       }
 
       editor.getModifiedEditor().layout({ width: contentWidth / 2, height: contentHeight });
@@ -406,7 +409,7 @@ class MonacoDiffViewerComponent extends React.Component<
       // please don't.
       editor.layout();
     } finally {
-      this.heightUpdateInProgress = false;
+      this.sizeUpdateInProgress = false;
     }
   }
 
@@ -515,8 +518,8 @@ class MonacoDiffViewerComponent extends React.Component<
   }
 
   componentDidUpdate() {
-    this.state.originalEditorThreadZones.forEach((z) => z.updateHeight());
-    this.state.modifiedEditorThreadZones.forEach((z) => z.updateHeight());
+    this.state.originalEditorThreadZones.forEach((z) => z.updateSize());
+    this.state.modifiedEditorThreadZones.forEach((z) => z.updateSize());
   }
 
   componentWillUnmount(): void {
