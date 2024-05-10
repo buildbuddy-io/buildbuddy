@@ -1,7 +1,7 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { Download, Info } from "lucide-react";
+import { ArrowRight, Download, FileSymlink, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
@@ -416,24 +416,38 @@ export default class InvocationActionCardComponent extends React.Component<Props
       rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getInvocationId());
       return;
     }
+
     rpcService
       .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer) => {
-        let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
+      .then((buffer: ArrayBuffer) => new Uint8Array(buffer))
+      .then((array: Uint8Array) =>
+        node.type == "tree"
+          ? build.bazel.remote.execution.v2.Tree.decode(array).root
+          : build.bazel.remote.execution.v2.Directory.decode(array)
+      )
+      .then((dir: build.bazel.remote.execution.v2.Directory | null | undefined) => {
+        if (!dir) {
+          return;
+        }
+
         this.state.treeShaToExpanded.set(digestString, true);
-        let directories: TreeNode[] = dir.directories.map((child) => ({
-          obj: child,
-          type: "dir",
-        }));
-        let files: TreeNode[] = dir.files.map((child) => ({
-          obj: child,
-          type: "file",
-        }));
-        let symlinks: TreeNode[] = dir.symlinks.map((child) => ({
-          obj: child,
-          type: "symlink",
-        }));
-        const nodes = [...directories, ...files, ...symlinks];
+        const nodes = dir.directories
+          .map<TreeNode>((node) => ({
+            obj: node,
+            type: "dir",
+          }))
+          .concat(
+            dir.files.map((node) => ({
+              obj: node,
+              type: "file",
+            }))
+          )
+          .concat(
+            dir.symlinks.map((node) => ({
+              obj: node,
+              type: "symlink",
+            }))
+          );
         this.state.treeShaToChildrenMap.set(digestString, nodes);
         this.forceUpdate();
       })
@@ -515,6 +529,62 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .finally(() => {
         this.setState({ showInvalidateSnapshotModal: false, isMenuOpen: false });
       });
+  }
+
+  private renderOutputDirectories(actionsResult: build.bazel.remote.execution.v2.ActionResult) {
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Output directories</div>
+        {actionsResult.outputDirectories.length ? (
+          <div className="action-list">
+            {actionsResult.outputDirectories.map((dir) => (
+              <TreeNodeComponent
+                node={{
+                  obj: new build.bazel.remote.execution.v2.DirectoryNode({ name: dir.path, digest: dir.treeDigest }),
+                  type: "tree",
+                }}
+                treeShaToExpanded={this.state.treeShaToExpanded}
+                treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
+                handleFileClicked={this.handleFileClicked.bind(this)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div>None</div>
+        )}
+      </div>
+    );
+  }
+
+  private renderOutputSymlinks(actionsResult: build.bazel.remote.execution.v2.ActionResult) {
+    const symlinks = actionsResult.outputSymlinks.length
+      ? actionsResult.outputSymlinks
+      : [...actionsResult.outputFileSymlinks, ...actionsResult.outputDirectorySymlinks];
+
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Output symlinks</div>
+        {symlinks.length ? (
+          <div className="action-list">
+            {symlinks.map((symlink) => (
+              <div>
+                <span>
+                  <FileSymlink className="icon symlink-icon" />
+                </span>{" "}
+                <span>{symlink.path}</span>{" "}
+                <span>
+                  <ArrowRight className="icon arrow-right-icon" />
+                </span>{" "}
+                <span>{symlink.target}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div>None</div>
+        )}
+      </div>
+    );
   }
 
   render() {
@@ -777,20 +847,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           <div>None found</div>
                         )}
                       </div>
-                      <div className="action-section">
-                        <div className="action-property-title">Output directories</div>
-                        {this.state.actionResult.outputDirectories.length ? (
-                          <div className="action-list">
-                            {this.state.actionResult.outputDirectories.map((dir) => (
-                              <div>
-                                <span>{dir.path}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div>None</div>
-                        )}
-                      </div>
+                      {this.renderOutputDirectories(this.state.actionResult)}
+                      {this.renderOutputSymlinks(this.state.actionResult)}
                       <div className="action-section">
                         <div className="action-property-title">Stderr</div>
                         <div>

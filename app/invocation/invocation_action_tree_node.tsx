@@ -14,13 +14,14 @@ interface Props {
 
 interface State {}
 
+type Tree = build.bazel.remote.execution.v2.Tree;
 type FileNode = build.bazel.remote.execution.v2.FileNode;
 type DirectoryNode = build.bazel.remote.execution.v2.DirectoryNode;
 type SymlinkNode = build.bazel.remote.execution.v2.SymlinkNode;
 
 export interface TreeNode {
-  obj: FileNode | DirectoryNode | SymlinkNode;
-  type: "file" | "dir" | "symlink";
+  obj: FileNode | DirectoryNode | SymlinkNode | Tree;
+  type: "file" | "dir" | "symlink" | "tree";
 }
 
 function getChildCountText(childCount: Number) {
