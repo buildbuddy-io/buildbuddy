@@ -528,14 +528,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {symlinks.length ? (
           <div className="action-list">
             {symlinks.map((symlink) => (
-              <div>
-                <span>
-                  <FileSymlink className="icon symlink-icon" />
-                </span>{" "}
-                <span>{symlink.path}</span>{" "}
-                <span>
-                  <ArrowRight className="icon arrow-right-icon" />
-                </span>{" "}
+              <div className="output-symlink">
+                <FileSymlink className="icon symlink-icon" />
+                <span>{symlink.path}</span>
+                <ArrowRight className="icon arrow-right-icon" />
                 <span>{symlink.target}</span>
               </div>
             ))}

@@ -171,16 +171,15 @@
   height: 18px;
 }
 
-.invocation-action-card .icon.symlink-icon {
-  margin-right: 4px;
-  width: 18px;
-  height: 18px;
-}
+.invocation-action-card .output-symlink {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 
-.invocation-action-card .icon.arrow-right-icon {
-  margin-right: 4px;
-  width: 18px;
-  height: 18px;
+  .icon {
+    width: 18px;
+    height: 18px;
+  }
 }
 
 .invocation-error-card .error-contents {
