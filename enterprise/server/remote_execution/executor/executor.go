@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"strings"
 	"syscall"
 	"time"
 
@@ -410,15 +409,6 @@ func incompleteExecutionError(ctx context.Context, exitCode int, err error) erro
 		}
 		alert.UnexpectedEvent("unknown_context_error", "Unknown context error: %s", ctxErr)
 		return status.UnknownError(ctxErr.Error())
-	}
-	// Ensure that if the command was not found, we return FAILED_PRECONDITION,
-	// per RBE protocol. This is done because container/command implementations
-	// don't really have a good way to distinguish this error from other types of
-	// errors anyway (this is true for at least the bare and docker
-	// implementations at time of writing)
-	msg := status.Message(err)
-	if strings.Contains(msg, "no such file or directory") {
-		return status.FailedPreconditionError(msg)
 	}
 	return err
 }

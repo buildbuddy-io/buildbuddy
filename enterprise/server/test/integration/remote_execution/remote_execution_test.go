@@ -191,23 +191,6 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 		"failed action result should match what was sent in the ExecuteResponse")
 }
 
-func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor(t)
-	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
-
-	cmd := rbe.ExecuteCustomCommand("/COMMAND_THAT_DOES_NOT_EXIST")
-	res := cmd.MustTerminateAbnormally()
-	err := res.Err
-
-	require.Error(t, err)
-	assert.True(t, status.IsFailedPreconditionError(err))
-	assert.Contains(t, status.Message(err), "no such file or directory")
-	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
-	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
-}
-
 func TestSimpleCommand_Abort_ReturnsExecutionError(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
