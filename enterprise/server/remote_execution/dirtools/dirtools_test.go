@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -389,6 +390,44 @@ func TestUploadTree(t *testing.T) {
 			},
 		},
 		{
+			name: "SymlinkInOutputDir",
+			cmd: &repb.Command{
+				OutputDirectories: []string{
+					"a",
+				},
+			},
+			directoryPaths: []string{
+				"a",
+			},
+			fileContents: map[string]string{
+				"a/fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{
+				"a/linkA": "fileA.txt",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputDirectories: []*repb.OutputDirectory{
+					{
+						Path: "a",
+						TreeDigest: getDigestForMsg(t, &repb.Tree{
+							Root: &repb.Directory{
+								Files: []*repb.FileNode{
+									{Name: "fileA.txt", Digest: &repb.Digest{Hash: hash.String("a"), SizeBytes: 1}},
+								},
+								Symlinks: []*repb.SymlinkNode{
+									{Name: "linkA", Target: "fileA.txt"},
+								},
+							},
+						}),
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        2,
+				BytesTransferred: 104,
+			},
+		},
+		{
 			name: "DanglingFileSymlink",
 			cmd: &repb.Command{
 				OutputFiles: []string{"a"},
@@ -635,6 +674,12 @@ func TestUploadTree(t *testing.T) {
 			}
 		})
 	}
+}
+
+func getDigestForMsg(t *testing.T, in proto.Message) *repb.Digest {
+	d, err := digest.ComputeForMessage(in, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	return d
 }
 
 func TestDownloadTree(t *testing.T) {
