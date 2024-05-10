@@ -681,7 +681,7 @@ func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, re
 	return err
 }
 
-func (ws *workflowService) addDefaultConfigActions(ctx context.Context, c *config.BuildBuddyConfig, workflow *tables.Workflow, wd *interfaces.WebhookData) error {
+func (ws *workflowService) addKytheActionIfEnabled(ctx context.Context, c *config.BuildBuddyConfig, workflow *tables.Workflow, wd *interfaces.WebhookData) error {
 	enableKythe, err := ws.enableExtraKytheIndexingAction(ctx, workflow.GroupID)
 	if err != nil {
 		return err
@@ -1341,7 +1341,7 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 		}
 	}
 
-	if err := ws.addDefaultConfigActions(ctx, c, workflow, webhookData); err != nil {
+	if err := ws.addKytheActionIfEnabled(ctx, c, workflow, webhookData); err != nil {
 		return nil, err
 	}
 	return c, nil
