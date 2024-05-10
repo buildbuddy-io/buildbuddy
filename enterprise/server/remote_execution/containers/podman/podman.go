@@ -62,7 +62,7 @@ var (
 
 	podmanRuntime       = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	podmanStorageDriver = flag.String("executor.podman.storage_driver", "overlay", "The podman storage driver to use.")
-	podmanEnableStats   = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
+	podmanEnableStats   = flag.Bool("executor.podman.enable_stats", true, "Whether to enable cgroup-based podman stats.")
 	transientStore      = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.", flag.Deprecated("--transient-store is now always applied if the podman version supports it"))
 	podmanDNS           = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
 	podmanGPU           = flag.String("executor.podman.gpus", "", "Specifies the value of the --gpus= flag to pass to podman. Set to 'all' to pass all GPUs.")
