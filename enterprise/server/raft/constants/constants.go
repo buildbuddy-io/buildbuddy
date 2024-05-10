@@ -112,3 +112,11 @@ var (
 	RangeLeaseInvalidMsg = "Range lease invalid" // continue
 	RangeSplittingMsg    = "Range splitting"
 )
+
+type ReplicaState int
+
+const (
+	ReplicaStateUnknown ReplicaState = iota
+	ReplicaStateCurrent
+	ReplicaStateBehind
+)
