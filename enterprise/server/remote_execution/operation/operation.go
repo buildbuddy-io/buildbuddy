@@ -51,11 +51,7 @@ func (p *Publisher) Context() context.Context {
 	return p.stream.Context()
 }
 
-// Send publishes a message asynchronously. It is safe for concurrent use.
-//
-// If an error happened in a previous call, it may be surfaced by a later call
-// to this function. This delayed error surfacing is compatible with the stream
-// API, since Send() does not wait for the recipient to ack.
+// Send publishes a message on the stream. It is safe for concurrent use.
 func (p *Publisher) Send(op *longrunning.Operation) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -252,7 +248,7 @@ func Assemble(stage repb.ExecutionStage_Value, name string, r *digest.ResourceNa
 	return assemble(name, md, er)
 }
 
-func assemble(name string, md *repb.ExecuteOperationMetadata, er *repb.ExecuteResponse) (*longrunning.Operation, error) {
+func assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteResponse) (*longrunning.Operation, error) {
 	op := &longrunning.Operation{
 		Name: name,
 		Done: md.GetStage() == repb.ExecutionStage_COMPLETED,
@@ -264,8 +260,8 @@ func assemble(name string, md *repb.ExecuteOperationMetadata, er *repb.ExecuteRe
 		}
 		op.Metadata = mdAny
 	}
-	if er != nil {
-		resultAny, err := anypb.New(er)
+	if rsp != nil {
+		resultAny, err := anypb.New(rsp)
 		if err != nil {
 			return nil, err
 		}
