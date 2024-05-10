@@ -507,15 +507,12 @@
 
 .pr-view .monaco-thread {
   box-sizing: border-box;
+  padding: 12px 4px 12px 48px;
   width: 100%;
 }
 
 .pr-view .original .monaco-thread {
   padding: 12px 4px 12px 66px;
-}
-
-.pr-view .monaco-thread {
-  padding: 12px 4px 12px 48px;
 }
 
 .pr-view .monaco-editor .cursors-layer > .cursor {
