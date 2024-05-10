@@ -557,24 +557,24 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 				return
 			}
 			invocationID = invocationUUID.String()
-			ctx = log.EnrichContext(ctx, log.InvocationIDKey, invocationID)
+			executionCtx := log.EnrichContext(ctx, log.InvocationIDKey, invocationID)
 
 			// The workflow execution is trusted since we're authenticated as a member of
 			// the BuildBuddy org that owns the workflow.
 			isTrusted := true
-			executionID, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnv())
+			executionID, err := ws.executeWorkflowAction(executionCtx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnv())
 			if err != nil {
 				statusErr = status.WrapErrorf(err, "failed to execute workflow action %q", action.Name)
-				log.CtxWarning(ctx, statusErr.Error())
+				log.CtxWarning(executionCtx, statusErr.Error())
 				return
 			}
-			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
+			executionCtx = log.EnrichContext(executionCtx, log.ExecutionIDKey, executionID)
 			if req.GetAsync() {
 				return
 			}
-			if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
+			if err := ws.waitForWorkflowInvocationCreated(executionCtx, executionID, invocationID); err != nil {
 				statusErr = err
-				log.CtxWarning(ctx, statusErr.Error())
+				log.CtxWarning(executionCtx, statusErr.Error())
 				return
 			}
 		}()

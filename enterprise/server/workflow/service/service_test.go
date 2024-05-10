@@ -702,7 +702,7 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 		"API key should be set via env-overrides")
 }
 
-func TestActionFiltering(t *testing.T) {
+func TestAPIDispatch_ActionFiltering(t *testing.T) {
 	ctx := context.Background()
 	u, lis := testhttp.NewServer(t)
 	flags.Set(t, "app.build_buddy_url", *u)
