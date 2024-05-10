@@ -316,9 +316,9 @@ class AutoZone {
 
     let zoneId: string;
     const updateFunction = (ca: monaco.editor.IViewZoneChangeAccessor) => {
+      const width = editor.getContainerDomNode().getBoundingClientRect().width;
+      overlayElement.style.width = width + "px";
       if (zoneForMonaco.heightInPx !== overlayElement.getBoundingClientRect().height) {
-        const width = editor.getContainerDomNode().getBoundingClientRect().width;
-        overlayElement.style.width = width + "px";
         zoneForMonaco.heightInPx = overlayElement.getBoundingClientRect().height;
         ca.layoutZone(zoneId);
       }
@@ -350,6 +350,7 @@ class MonacoDiffViewerComponent extends React.Component<
 > {
   monacoElement: React.RefObject<HTMLDivElement> = React.createRef();
 
+  resizeUpdateScheduled: boolean = false;
   heightUpdateInProgress: boolean = false;
   currentContentHeight: number = -1;
   currentContentWidth: number = -1;
@@ -361,6 +362,17 @@ class MonacoDiffViewerComponent extends React.Component<
   };
 
   scheduleSizeUpdate() {
+    if (this.resizeUpdateScheduled) {
+      return;
+    }
+    this.resizeUpdateScheduled = true;
+    window.setTimeout(() => {
+      this.resizeUpdateScheduled = false;
+      this.performSizeUpdate();
+    }, 200);
+  }
+
+  performSizeUpdate() {
     const editor = this.state.editor;
     const container = this.monacoElement.current;
     if (this.heightUpdateInProgress || !editor || !container) {
@@ -377,17 +389,22 @@ class MonacoDiffViewerComponent extends React.Component<
       if (contentWidth === this.currentContentWidth && contentHeight === this.currentContentHeight) {
         return;
       }
+      const widthChanged = this.currentContentWidth !== contentWidth;
       this.currentContentWidth = contentWidth;
       this.currentContentHeight = contentHeight;
 
       container.style.height = `${contentHeight}px`;
-      if (contentWidth !== this.currentContentWidth) {
+      if (widthChanged) {
         this.state.originalEditorThreadZones.forEach((z) => z.updateHeight());
         this.state.modifiedEditorThreadZones.forEach((z) => z.updateHeight());
       }
 
       editor.getModifiedEditor().layout({ width: contentWidth / 2, height: contentHeight });
       editor.getOriginalEditor().layout({ width: contentWidth / 2, height: contentHeight });
+      // Performing an editor layout on an IDiffEditor causes scroll height to
+      // reposition in some cases, so while it might be tempting to update this,
+      // please don't.
+      editor.layout();
     } finally {
       this.heightUpdateInProgress = false;
     }
@@ -448,9 +465,12 @@ class MonacoDiffViewerComponent extends React.Component<
     // lines, etc., have all been determined and subsequent height changes are
     // "legit" in the sense that we should actually update the DOM for them.
     editor.onDidUpdateDiff(() => {
-      editor.getOriginalEditor().onDidContentSizeChange(() => this.scheduleSizeUpdate());
-      editor.getModifiedEditor().onDidContentSizeChange(() => this.scheduleSizeUpdate());
-      this.scheduleSizeUpdate();
+      editor.getOriginalEditor().onDidContentSizeChange(() => this.performSizeUpdate());
+      editor.getModifiedEditor().onDidContentSizeChange(() => this.performSizeUpdate());
+      this.performSizeUpdate();
+      window.addEventListener("resize", () => {
+        this.scheduleSizeUpdate();
+      });
     });
   }
 
@@ -484,7 +504,7 @@ class MonacoDiffViewerComponent extends React.Component<
     originalUpdates.removed.forEach((z) => z.removeFromEditor());
     editor.getModifiedEditor().changeViewZones(function (changeAccessor) {
       modifiedUpdates.added.forEach((t) => {
-        newOriginalZones.push(AutoZone.create(t.getId(), t.getLine(), editor.getModifiedEditor(), changeAccessor));
+        newModifiedZones.push(AutoZone.create(t.getId(), t.getLine(), editor.getModifiedEditor(), changeAccessor));
       });
     });
     modifiedUpdates.removed.forEach((z) => z.removeFromEditor());
