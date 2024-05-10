@@ -102,6 +102,7 @@
 .pr-view {
   padding: 0;
   font-size: 14px;
+  height: 100vh;
 }
 
 .pr-view .summary-section {
@@ -506,8 +507,12 @@
 
 .pr-view .monaco-thread {
   box-sizing: border-box;
-  padding: 12px 2px 12px 50px;
+  padding: 12px 4px 12px 48px;
   width: 100%;
+}
+
+.pr-view .original .monaco-thread {
+  padding: 12px 4px 12px 66px;
 }
 
 .pr-view .monaco-editor .cursors-layer > .cursor {
