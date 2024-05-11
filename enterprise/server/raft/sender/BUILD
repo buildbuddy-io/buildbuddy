@@ -12,7 +12,6 @@ go_library(
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rangecache",
         "//enterprise/server/raft/rbuilder",
-        "//enterprise/server/raft/registry",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/util/log",

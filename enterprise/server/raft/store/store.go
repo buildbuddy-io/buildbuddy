@@ -143,8 +143,8 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 		return nil, err
 	}
 	registry := regHolder.r
-	apiClient := client.NewAPIClient(env, nodeHost.ID())
-	sender := sender.New(rangeCache, registry, apiClient)
+	apiClient := client.NewAPIClient(env, nodeHost.ID(), registry)
+	sender := sender.New(rangeCache, apiClient)
 	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
 	if err != nil {
 		return nil, err
@@ -199,7 +199,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	s.updateTagsWorker = updateTagsWorker
 
-	txnCoordinator := txn.NewCoordinator(s, registry, apiClient, clockwork.NewRealClock())
+	txnCoordinator := txn.NewCoordinator(s, apiClient, clockwork.NewRealClock())
 	s.txnCoordinator = txnCoordinator
 
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
@@ -1543,33 +1543,32 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
 	}
 
-	var shardID, replicaID uint64
+	var replicaDesc *rfpb.ReplicaDescriptor
 	for _, replica := range req.GetRange().GetReplicas() {
 		if replica.GetReplicaId() == req.GetReplicaId() {
-			shardID = replica.GetShardId()
-			replicaID = replica.GetReplicaId()
+			replicaDesc = replica
 			break
 		}
 	}
-	if shardID == 0 && replicaID == 0 {
+	if replicaDesc == nil {
 		return nil, status.FailedPreconditionErrorf("No node with id %d found in range: %+v", req.GetReplicaId(), req.GetRange())
 	}
 
 	// First, update the range descriptor information to reflect the
 	// the node being removed.
-	rd, err := s.removeReplicaFromRangeDescriptor(ctx, shardID, replicaID, req.GetRange())
+	rd, err := s.removeReplicaFromRangeDescriptor(ctx, replicaDesc.GetShardId(), replicaDesc.GetReplicaId(), req.GetRange())
 	if err != nil {
 		return nil, err
 	}
 
-	configChangeID, err := s.getConfigChangeID(ctx, shardID)
+	configChangeID, err := s.getConfigChangeID(ctx, replicaDesc.GetShardId())
 	if err != nil {
 		return nil, err
 	}
 
 	// Propose the config change (this removes the node from the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		err := s.nodeHost.SyncRequestDeleteReplica(ctx, shardID, replicaID, configChangeID)
+		err := s.nodeHost.SyncRequestDeleteReplica(ctx, replicaDesc.GetShardId(), replicaDesc.GetReplicaId(), configChangeID)
 		if err == dragonboat.ErrShardClosed {
 			return nil
 		}
@@ -1579,20 +1578,15 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, err
 	}
 
-	grpcAddr, _, err := s.registry.ResolveGRPC(shardID, replicaID)
-	if err != nil {
-		s.log.Errorf("error resolving grpc addr for c%dn%d: %s", shardID, replicaID, err)
-		return nil, err
-	}
 	// Remove the data from the now stopped node.
-	c, err := s.apiClient.Get(ctx, grpcAddr)
+	c, err := s.apiClient.GetForReplica(ctx, replicaDesc)
 	if err != nil {
 		s.log.Errorf("err getting api client: %s", err)
 		return nil, err
 	}
 	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
-		ShardId:   shardID,
-		ReplicaId: replicaID,
+		ShardId:   replicaDesc.GetShardId(),
+		ReplicaId: replicaDesc.GetReplicaId(),
 	})
 	if err != nil {
 		s.log.Errorf("remove data err: %s", err)
@@ -1604,7 +1598,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		metrics.RaftMoveLabel:       "remove",
 	}).Inc()
 
-	s.log.Infof("Removed shard: s%dr%d", shardID, replicaID)
+	s.log.Infof("Removed shard: s%dr%d", replicaDesc.GetShardId(), replicaDesc.GetReplicaId())
 	return &rfpb.RemoveReplicaResponse{
 		Range: rd,
 	}, nil

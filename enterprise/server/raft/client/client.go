@@ -38,18 +38,25 @@ type NodeHost interface {
 	StaleRead(shardID uint64, query interface{}) (interface{}, error)
 }
 
-type APIClient struct {
-	env     environment.Env
-	log     log.Logger
-	mu      sync.Mutex
-	clients map[string]*grpc_client.ClientConnPool
+type IRegistry interface {
+	// Lookup the grpc address given a replica's shardID and replicaID
+	ResolveGRPC(shardID uint64, replicaID uint64) (string, string, error)
 }
 
-func NewAPIClient(env environment.Env, name string) *APIClient {
+type APIClient struct {
+	env      environment.Env
+	log      log.Logger
+	mu       sync.Mutex
+	clients  map[string]*grpc_client.ClientConnPool
+	registry IRegistry
+}
+
+func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClient {
 	return &APIClient{
-		env:     env,
-		log:     log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", name)),
-		clients: make(map[string]*grpc_client.ClientConnPool),
+		env:      env,
+		log:      log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", name)),
+		clients:  make(map[string]*grpc_client.ClientConnPool),
+		registry: registry,
 	}
 }
 
@@ -74,6 +81,14 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 
 func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, error) {
 	return c.getClient(ctx, peer)
+}
+
+func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
+	addr, _, err := c.registry.ResolveGRPC(rd.GetShardId(), rd.GetReplicaId())
+	if err != nil {
+		return nil, err
+	}
+	return c.getClient(ctx, addr)
 }
 
 func singleOpTimeout(ctx context.Context) time.Duration {

@@ -132,11 +132,11 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	ts.NodeHost = nodeHost
 
 	te := testenv.GetTestEnv(t)
-	apiClient := client.NewAPIClient(te, nodeHost.ID())
+	apiClient := client.NewAPIClient(te, nodeHost.ID(), reg)
 	ts.APIClient = apiClient
 
 	rc := rangecache.New()
-	ts.Sender = sender.New(rc, reg, apiClient)
+	ts.Sender = sender.New(rc, apiClient)
 	reg.AddNode(nodeHost.ID(), ts.RaftAddress, ts.GRPCAddress)
 	partitions := []disk.Partition{
 		{
