@@ -18,10 +18,19 @@ type FileNode = build.bazel.remote.execution.v2.FileNode;
 type DirectoryNode = build.bazel.remote.execution.v2.DirectoryNode;
 type SymlinkNode = build.bazel.remote.execution.v2.SymlinkNode;
 
-export interface TreeNode {
-  obj: FileNode | DirectoryNode | SymlinkNode;
-  type: "file" | "dir" | "symlink" | "tree";
-}
+export type TreeNode =
+  | {
+      type: "file";
+      obj: FileNode;
+    }
+  | {
+      type: "dir" | "tree";
+      obj: DirectoryNode;
+    }
+  | {
+      type: "symlink";
+      obj: SymlinkNode;
+    };
 
 function getChildCountText(childCount: Number) {
   if (childCount === 0) {
@@ -99,8 +108,8 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
   }
 
   render() {
-    return "digest" in this.props.node.obj
-      ? this.renderFileOrDirectoryNode(this.props.node.obj)
-      : this.renderSymlinkNode(this.props.node.obj);
+    return this.props.node.type == "symlink"
+      ? this.renderSymlinkNode(this.props.node.obj)
+      : this.renderFileOrDirectoryNode(this.props.node.obj);
   }
 }
