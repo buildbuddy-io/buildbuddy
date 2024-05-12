@@ -1043,6 +1043,28 @@
   color: #aaa;
 }
 
+.action-list .expected-output-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .icon {
+    height: 18px;
+    width: 18px;
+    opacity: 0.7;
+  }
+  .icon.check-icon {
+    stroke: green;
+  }
+  .icon.unlink {
+    stroke: red;
+  }
+}
+
+.expected-output-name .expected-output-label {
+  color: #444;
+}
+
 .state-page button.impersonate-button,
 .stage-page button.impersonate-button:hover {
   margin-top: 8px;
