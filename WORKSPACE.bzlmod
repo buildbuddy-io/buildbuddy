@@ -276,13 +276,6 @@ http_archive(
     urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
 )
 
-# protoc-gen-protobufjs (for .proto to .js codegen)
-http_archive(
-    name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
-    sha256 = "ef3f8fb9a417fa7c1e2fe53003221f118214cf014294bfbc5dcfbb2ed1560e83",
-    urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.9/protoc-gen-protobufjs-v0.0.9.tar.gz"],
-)
-
 # esbuild (for bundling JS)
 
 load("@build_bazel_rules_nodejs//toolchains/esbuild:esbuild_repositories.bzl", "esbuild_repositories")
