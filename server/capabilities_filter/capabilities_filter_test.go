@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -44,20 +45,34 @@ func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
 func TestBuildBuddyServiceRPCsHaveRequestAndResponseContextFields(t *testing.T) {
 	type Req interface{ GetRequestContext() *ctxpb.RequestContext }
 	type Res interface{ GetResponseContext() *ctxpb.ResponseContext }
-	reqType := reflect.TypeOf((*Req)(nil)).Elem()
-	resType := reflect.TypeOf((*Res)(nil)).Elem()
+	expectedReqType := reflect.TypeOf((*Req)(nil)).Elem()
+	expectedResType := reflect.TypeOf((*Res)(nil)).Elem()
+	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()
 
 	buildbuddyServiceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
 	for i := 0; i < buildbuddyServiceType.NumMethod(); i++ {
 		methodFunc := buildbuddyServiceType.Method(i).Type
 		methodName := buildbuddyServiceType.Method(i).Name
-		reqMsg := methodFunc.In(1)
-		if !reqMsg.Implements(reqType) {
-			assert.Failf(t, "missing request_context field", "BuildBuddyService/%s request message %s must have a field 'context.RequestContext request_context'", methodName, reqMsg)
+
+		var actualReqType, actualResType reflect.Type
+		if methodFunc.In(0).Implements(ctxType) {
+			// Unary RPC
+			actualReqType = methodFunc.In(1)
+			actualResType = methodFunc.Out(0)
+		} else {
+			// Server-streaming RPC
+			actualReqType = methodFunc.In(0)
+			streamType := methodFunc.In(1)
+			sendMethod, ok := streamType.MethodByName("Send")
+			require.True(t, ok)
+			actualResType = sendMethod.Type.In(0)
 		}
-		resMsg := methodFunc.Out(0)
-		if !resMsg.Implements(resType) {
-			assert.Failf(t, "missing response_context field", "BuildBuddyService/%s response message %s must have a field 'context.ResponseContext response_context'", methodName, resMsg)
+
+		if !actualReqType.Implements(expectedReqType) {
+			assert.Failf(t, "missing request_context field", "BuildBuddyService/%s request message %s must have a field 'context.RequestContext request_context'", methodName, actualReqType)
+		}
+		if !actualResType.Implements(expectedResType) {
+			assert.Failf(t, "missing response_context field", "BuildBuddyService/%s response message %s must have a field 'context.ResponseContext response_context'", methodName, actualResType)
 		}
 	}
 }

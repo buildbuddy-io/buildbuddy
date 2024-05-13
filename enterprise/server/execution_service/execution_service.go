@@ -122,7 +122,7 @@ func (es *ExecutionService) WaitExecution(req *espb.WaitExecutionRequest, stream
 	}
 	// Directly forward stream messages back to the Web client stream. Note: we
 	// don't try to automatically reconnect here, since the client has to handle
-	// disconnects regardless (to deal with the current server going away).
+	// disconnects anyway (to deal with the current server going away).
 	for {
 		op, err := client.Recv()
 		if err == io.EOF {
@@ -131,8 +131,8 @@ func (es *ExecutionService) WaitExecution(req *espb.WaitExecutionRequest, stream
 		if err != nil {
 			return err
 		}
-		err = stream.Send(&espb.WaitExecutionResponse{Operation: op})
-		if err != nil {
+		res := &espb.WaitExecutionResponse{Operation: op}
+		if err = stream.Send(res); err != nil {
 			return status.WrapError(err, "send")
 		}
 	}
