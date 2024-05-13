@@ -63,7 +63,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
   getExecutionLogFile(): build_event_stream.File | undefined {
     return this.props.model.buildToolLogs?.log.find(
       (log: build_event_stream.File) =>
-        (log.name == "execution.log" || log.name == "execution_log.binpb.zstd") &&
+        (log.name == "execution.log" || log.name == "execution_log.binpb.zst") &&
         log.uri &&
         Boolean(log.uri.startsWith("bytestream://"))
     );
@@ -114,11 +114,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     }
 
     try {
-      rpcService.downloadBytestreamFile(
-        "execution_log.binpb.zstd",
-        profileFile.uri,
-        this.props.model.getInvocationId()
-      );
+      rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFile.uri, this.props.model.getInvocationId());
     } catch {
       console.error("Error downloading execution log");
     }

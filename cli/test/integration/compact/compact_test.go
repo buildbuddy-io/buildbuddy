@@ -13,7 +13,7 @@ import (
 )
 
 func TestPrintCompactExec(t *testing.T) {
-	files, err := filepath.Glob("testdata/*.binpb.zstd")
+	files, err := filepath.Glob("testdata/*.binpb.zst")
 	require.NoError(t, err)
 
 	ws := testcli.NewWorkspace(t)
@@ -27,7 +27,7 @@ func TestPrintCompactExec(t *testing.T) {
 				if isSorted {
 					expectedSuffix = ".sorted.json"
 				}
-				expectedJson := strings.TrimSuffix(absPath, ".binpb.zstd") + expectedSuffix
+				expectedJson := strings.TrimSuffix(absPath, ".binpb.zst") + expectedSuffix
 				b, err := os.ReadFile(expectedJson)
 				require.NoError(t, err)
 
