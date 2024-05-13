@@ -2,17 +2,20 @@ package redis_metrics_collector
 
 import (
 	"context"
+	"flag"
 	"strconv"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/go-redis/redis/v8"
+
+	_ "github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
-const (
-	// How long until counts expire from Redis.
-	countExpiration = 1 * 24 * time.Hour
+var (
+	countExpiration = flagtypes.Alias[time.Duration](flag.CommandLine, "cache.count_expiration")
 )
 
 type collector struct {
@@ -53,7 +56,7 @@ func (c *collector) IncrementCountsWithExpiry(ctx context.Context, key string, c
 }
 
 func (c *collector) IncrementCounts(ctx context.Context, key string, counts map[string]int64) error {
-	return c.IncrementCountsWithExpiry(ctx, key, counts, countExpiration)
+	return c.IncrementCountsWithExpiry(ctx, key, counts, *countExpiration)
 }
 
 func (c *collector) IncrementCountWithExpiry(ctx context.Context, key, field string, n int64, expiry time.Duration) error {
@@ -67,7 +70,7 @@ func (c *collector) IncrementCountWithExpiry(ctx context.Context, key, field str
 }
 
 func (c *collector) IncrementCount(ctx context.Context, key, field string, n int64) error {
-	return c.IncrementCountWithExpiry(ctx, key, field, n, countExpiration)
+	return c.IncrementCountWithExpiry(ctx, key, field, n, *countExpiration)
 }
 
 func (c *collector) SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, members ...string) error {
@@ -85,7 +88,7 @@ func (c *collector) SetAddWithExpiry(ctx context.Context, key string, expiry tim
 }
 
 func (c *collector) SetAdd(ctx context.Context, key string, members ...string) error {
-	return c.SetAddWithExpiry(ctx, key, countExpiration, members...)
+	return c.SetAddWithExpiry(ctx, key, *countExpiration, members...)
 }
 
 func (c *collector) SetGetMembers(ctx context.Context, key string) ([]string, error) {

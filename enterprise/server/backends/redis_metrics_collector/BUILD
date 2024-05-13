@@ -9,6 +9,8 @@ go_library(
     deps = [
         "//enterprise/server/util/redisutil",
         "//server/real_environment",
+        "//server/remote_cache/hit_tracker",
+        "//server/util/flagutil/types",
         "@com_github_go_redis_redis_v8//:redis",
     ],
 )
