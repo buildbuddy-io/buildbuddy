@@ -26,6 +26,7 @@ Prints a human-readable representation of log files output by Bazel.
 Currently supported log types:
   --grpc_log: Path to a file saved with --experimental_remote_grpc_log.
   --compact_execution_log: Path to a file saved with --experimental_execution_log_compact_file.
+  --sort: Apply sorting to log output, only applicable with --compact_execution_log.
 `
 )
 
