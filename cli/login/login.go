@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
@@ -54,7 +53,7 @@ func isValidApiKey(apiKey string) bool {
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 
 	_, err = bbsClient.GetUser(ctx, &uspb.GetUserRequest{})
-	if err != nil && status.IsNotFoundError(err) && strings.Contains(err.Error(), authutil.UserNotFoundMsg) {
+	if err != nil && status.IsNotFoundError(err) && strings.Contains(err.Error(), "user not found") {
 		// Org-level API key is used
 		return true
 	}

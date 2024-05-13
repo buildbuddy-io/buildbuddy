@@ -11,7 +11,6 @@ go_library(
         "//cli/storage",
         "//proto:buildbuddy_service_go_proto",
         "//proto:user_go_proto",
-        "//server/util/authutil",
         "//server/util/grpc_client",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
