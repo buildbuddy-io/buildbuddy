@@ -258,7 +258,11 @@ func Config(path string) (*RepoConfig, error) {
 		DefaultBranch: defaultBranch,
 	}
 
-	patch, err := runGit("diff", commit)
+	diffBase := commit
+	if commit == "" {
+		diffBase = branch
+	}
+	patch, err := runGit("diff", diffBase)
 	if err != nil {
 		return nil, status.WrapError(err, "git diff")
 	}
@@ -313,15 +317,28 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 	}
 	currentBranchExistsRemotely := remoteBranchOutput != ""
 
-	currentCommitHash, err := runGit("rev-parse", "HEAD")
-	if err != nil {
-		return "", "", status.WrapError(err, "get current commit hash")
-	}
-	currentCommitHash = strings.TrimSuffix(currentCommitHash, "\n")
+	if currentBranchExistsRemotely {
+		branch = currentBranch
 
-	branch = currentBranch
-	commit = currentCommitHash
-	if !currentBranchExistsRemotely {
+		currentCommitHash, err := runGit("rev-parse", "HEAD")
+		if err != nil {
+			return "", "", status.WrapError(err, "get current commit hash")
+		}
+		currentCommitHash = strings.TrimSuffix(currentCommitHash, "\n")
+
+		remoteCommitOutput, err := runGit("fetch", "origin", "--negotiate-only", "--negotiation-tip="+currentCommitHash)
+		if err != nil {
+			return "", "", status.WrapError(err, fmt.Sprintf("check if commit %s exists remotely", currentCommitHash))
+		}
+		currentCommitExistsRemotely := remoteCommitOutput == currentCommitHash
+		if currentCommitExistsRemotely {
+			commit = currentCommitHash
+		} else {
+			// Do not set a commit if the current commit does not exist remotely.
+			// The remote runner will use the tip of the branch.
+			commit = ""
+		}
+	} else {
 		// If the current branch does not exist remotely, the remote runner will
 		// not be able to fetch it. In this case, use the default branch for the repo
 		defaultBranch, err := determineDefaultBranch(repo)
@@ -338,7 +355,9 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 	}
 
 	log.Debugf("Using base branch: %s", branch)
-	log.Debugf("Using base commit hash: %s", commit)
+	if commit != "" {
+		log.Debugf("Using base commit hash: %s", commit)
+	}
 
 	return branch, commit, nil
 }
