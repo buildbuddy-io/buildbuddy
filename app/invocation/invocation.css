@@ -171,14 +171,19 @@
   height: 18px;
 }
 
-.invocation-action-card .output-symlink {
+.invocation-action-card .tree-node-symlink {
   display: flex;
   align-items: center;
   gap: 4px;
 
   .icon {
+    opacity: 0.7;
     width: 18px;
     height: 18px;
+  }
+
+  .icon:hover {
+    opacity: 1;
   }
 }
 
