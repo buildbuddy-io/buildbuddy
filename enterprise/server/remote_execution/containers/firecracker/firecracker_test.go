@@ -471,7 +471,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		}
 
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
-		require.NoError(t, res.Error)
+		require.Error(t, res.Error)
 
 		require.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
 		require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")

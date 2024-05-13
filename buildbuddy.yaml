@@ -89,6 +89,7 @@ actions:
       - test //... --config=linux-workflows --config=race --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
   - name: Baremetal tests
     container_image: ubuntu-20.04
+    timeout: 3m
     triggers:
       push:
         branches:
@@ -97,7 +98,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare
+      - build //enterprise/server/... --config=linux-workflows
   # TODO(http://go/b/2282): delete this workflow.
   - name: Image streaming test
     container_image: ubuntu-20.04

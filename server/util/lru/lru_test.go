@@ -1,10 +1,9 @@
 package lru_test
 
 import (
-	"testing"
-
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/stretchr/testify/require"
+	"testing"
 )
 
 type eviction struct {
