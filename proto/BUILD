@@ -1,6 +1,6 @@
-load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:compiler.bzl", "go_proto_compiler")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
 load(":defs.bzl", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -171,6 +171,7 @@ proto_library(
         ":scheduler_proto",
         ":stat_filter_proto",
         "@com_google_protobuf//:timestamp_proto",
+        "@googleapis//google/longrunning:operations_proto",
         "@googleapis//google/rpc:status_proto",
     ],
 )
@@ -866,6 +867,7 @@ go_proto_library(
         ":resource_go_proto",
         ":scheduler_go_proto",
         ":stat_filter_go_proto",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
@@ -1784,6 +1786,7 @@ ts_proto_library(
     deps = [
         ":acl_ts_proto",
         ":context_ts_proto",
+        ":google_longrunning_ts_proto",
         ":grpc_status_ts_proto",
         ":invocation_status_ts_proto",
         ":remote_execution_ts_proto",

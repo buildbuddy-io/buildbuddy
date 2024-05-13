@@ -9,6 +9,7 @@ go_library(
         "//proto:api_key_go_proto",
         "//proto:auditlog_go_proto",
         "//proto:bazel_config_go_proto",
+        "//proto:buildbuddy_service_go_proto",
         "//proto:cache_go_proto",
         "//proto:encryption_go_proto",
         "//proto:eventlog_go_proto",

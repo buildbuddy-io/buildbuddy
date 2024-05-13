@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "google/longrunning/operations.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "proto/acl.proto";
@@ -147,6 +148,18 @@ message GetExecutionResponse {
   context.ResponseContext response_context = 1;
 
   repeated Execution execution = 2;
+}
+
+message WaitExecutionRequest {
+  context.RequestContext request_context = 1;
+
+  string execution_id = 2;
+}
+
+message WaitExecutionResponse {
+  context.ResponseContext response_context = 1;
+
+  google.longrunning.Operation operation = 2;
 }
 
 message ExecutionQuery {
