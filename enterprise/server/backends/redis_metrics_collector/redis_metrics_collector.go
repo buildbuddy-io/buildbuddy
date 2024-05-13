@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	countExpiration = flagtypes.Alias[time.Duration](flag.CommandLine, "cache.count_expiration")
+	countExpiration = flagtypes.Alias[time.Duration](flag.CommandLine, "cache.count_ttl")
 )
 
 type collector struct {
