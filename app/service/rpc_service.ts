@@ -462,8 +462,10 @@ type CancelableService<Service extends protobufjs.rpc.Service> = protobufjs.rpc.
       infer Request,
       infer Response
     >
-      ? UnaryRpcMethod<Request, Response>
-      : Service[MethodName];
+      ? /* Unary RPC: transform the generated method's return type from Promise to CancelablePromise. */
+        UnaryRpcMethod<Request, Response>
+      : /* Server-streaming RPC: keep the original method as-is. */
+        Service[MethodName];
   };
 
 type FetchPromiseType<T extends FetchResponseType> = T extends ""
