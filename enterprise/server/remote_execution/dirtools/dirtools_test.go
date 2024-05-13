@@ -2,9 +2,11 @@ package dirtools_test
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -387,6 +390,44 @@ func TestUploadTree(t *testing.T) {
 			},
 		},
 		{
+			name: "SymlinkInOutputDir",
+			cmd: &repb.Command{
+				OutputDirectories: []string{
+					"a",
+				},
+			},
+			directoryPaths: []string{
+				"a",
+			},
+			fileContents: map[string]string{
+				"a/fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{
+				"a/linkA": "fileA.txt",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputDirectories: []*repb.OutputDirectory{
+					{
+						Path: "a",
+						TreeDigest: getDigestForMsg(t, &repb.Tree{
+							Root: &repb.Directory{
+								Files: []*repb.FileNode{
+									{Name: "fileA.txt", Digest: &repb.Digest{Hash: hash.String("a"), SizeBytes: 1}},
+								},
+								Symlinks: []*repb.SymlinkNode{
+									{Name: "linkA", Target: "fileA.txt"},
+								},
+							},
+						}),
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        2,
+				BytesTransferred: 104,
+			},
+		},
+		{
 			name: "DanglingFileSymlink",
 			cmd: &repb.Command{
 				OutputFiles: []string{"a"},
@@ -472,31 +513,26 @@ func TestUploadTree(t *testing.T) {
 			expectedResult: &repb.ActionResult{
 				OutputDirectories: []*repb.OutputDirectory{
 					{
-						Path: "a/b/c",
+						Path: "a/b",
 						TreeDigest: &repb.Digest{
-							SizeBytes: 159,
-							Hash:      "d69a774656d42ed99962d1267db7be99d3d70875475d42122077ba60ef3ea8e2",
-						},
-					},
-					{
-						Path: "a/b/c/d",
-						TreeDigest: &repb.Digest{
-							SizeBytes: 2,
-							Hash:      "102b51b9765a56a3e899f7cf0ee38e5251f9c503b357b330a49183eb7b155604",
-						},
-					},
-					{
-						Path: "a/b/e/g",
-						TreeDigest: &repb.Digest{
-							SizeBytes: 2,
-							Hash:      "102b51b9765a56a3e899f7cf0ee38e5251f9c503b357b330a49183eb7b155604",
+							SizeBytes: 392,
+							Hash:      "59620196c9761b313ff20ed0dfb06bf81b824afe2bf7046ce49949ab51605b6b",
 						},
 					},
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        5,
-				BytesTransferred: 157,
+				// This should includes:
+				//
+				//   Dir:  a/b
+				//   Dir:  a/b/c
+				//   Dir:  a/b/c/d
+				//   Dir:  a/b/e
+				//   Dir:  a/b/e/g
+				//   File: a/b/c/fileA.txt
+				//
+				FileCount:        6,
+				BytesTransferred: 381,
 			},
 		},
 		{
@@ -573,15 +609,13 @@ func TestUploadTree(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			var outputPaths []string
-			outputPaths = append(outputPaths, tc.directoryPaths...)
-			for path := range tc.fileContents {
-				outputPaths = append(outputPaths, path)
+			outputDirs := []string{}
+			outputPaths := tc.cmd.GetOutputPaths()
+			if len(outputPaths) == 0 {
+				outputDirs = tc.cmd.GetOutputDirectories()
+				outputPaths = append(tc.cmd.GetOutputFiles(), tc.cmd.GetOutputDirectories()...)
 			}
-			for path := range tc.symlinkPaths {
-				outputPaths = append(outputPaths, path)
-			}
-			dirHelper := dirtools.NewDirHelper(rootDir, []string{} /*outputDirs*/, outputPaths, fs.FileMode(0o755))
+			dirHelper := dirtools.NewDirHelper(rootDir, outputDirs, outputPaths, fs.FileMode(0o755))
 
 			actionResult := &repb.ActionResult{}
 			txInfo, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, tc.cmd, actionResult)
@@ -600,52 +634,52 @@ func TestUploadTree(t *testing.T) {
 				assert.True(t, has)
 			}
 			for _, expectedDir := range tc.expectedResult.OutputDirectories {
-				found := false
-				for _, dir := range actionResult.OutputDirectories {
-					if dir.Path == expectedDir.Path {
-						assert.Equal(t, expectedDir.TreeDigest.SizeBytes, dir.TreeDigest.SizeBytes)
-						assert.Equal(t, expectedDir.TreeDigest.Hash, dir.TreeDigest.Hash)
-						found = true
-						break
-					}
-				}
-				assert.True(t, found)
+				assert.True(
+					t,
+					slices.ContainsFunc(actionResult.OutputDirectories, func(dir *repb.OutputDirectory) bool {
+						return expectedDir.Path == dir.Path && expectedDir.TreeDigest.SizeBytes == dir.TreeDigest.SizeBytes && expectedDir.TreeDigest.Hash == dir.TreeDigest.Hash
+					}),
+					fmt.Sprintf("expected dir %s to be in actionResult output directories %v", expectedDir, actionResult.OutputDirectories),
+				)
 			}
+			assert.Equal(t, len(tc.expectedResult.OutputSymlinks), len(actionResult.OutputSymlinks))
 			for _, expectedSymlink := range tc.expectedResult.OutputSymlinks {
-				found := false
-				for _, symlink := range actionResult.OutputSymlinks {
-					if symlink.Path == expectedSymlink.Path {
-						assert.Equal(t, expectedSymlink.Target, symlink.Target)
-						found = true
-						break
-					}
-				}
-				assert.True(t, found)
+				assert.True(
+					t,
+					slices.ContainsFunc(actionResult.OutputSymlinks, func(symlink *repb.OutputSymlink) bool {
+						return symlink.Path == expectedSymlink.Path && symlink.Target == expectedSymlink.Target
+					}),
+					fmt.Sprintf("expected symlink %s to be in actionResult.OutputSymlinks %v", expectedSymlink, actionResult.OutputSymlinks),
+				)
 			}
+			assert.Equal(t, len(tc.expectedResult.OutputFileSymlinks), len(actionResult.OutputFileSymlinks))
 			for _, expectedSymlink := range tc.expectedResult.OutputFileSymlinks {
-				found := false
-				for _, symlink := range actionResult.OutputFileSymlinks {
-					if symlink.Path == expectedSymlink.Path {
-						assert.Equal(t, expectedSymlink.Target, symlink.Target)
-						found = true
-						break
-					}
-				}
-				assert.True(t, found)
+				assert.True(
+					t,
+					slices.ContainsFunc(actionResult.OutputFileSymlinks, func(symlink *repb.OutputSymlink) bool {
+						return symlink.Path == expectedSymlink.Path && symlink.Target == expectedSymlink.Target
+					}),
+					fmt.Sprintf("expected symlink %s to be in actionResult.OutputFileSymlinks %v", expectedSymlink, actionResult.OutputFileSymlinks),
+				)
 			}
+			assert.Equal(t, len(tc.expectedResult.OutputDirectorySymlinks), len(actionResult.OutputDirectorySymlinks))
 			for _, expectedSymlink := range tc.expectedResult.OutputDirectorySymlinks {
-				found := false
-				for _, symlink := range actionResult.OutputDirectorySymlinks {
-					if symlink.Path == expectedSymlink.Path {
-						assert.Equal(t, expectedSymlink.Target, symlink.Target)
-						found = true
-						break
-					}
-				}
-				assert.True(t, found)
+				assert.True(
+					t,
+					slices.ContainsFunc(actionResult.OutputDirectorySymlinks, func(symlink *repb.OutputSymlink) bool {
+						return symlink.Path == expectedSymlink.Path && symlink.Target == expectedSymlink.Target
+					}),
+					fmt.Sprintf("expected symlink %s to be in actionResult.OutputDirectorySymlinks %v", expectedSymlink, actionResult.OutputDirectorySymlinks),
+				)
 			}
 		})
 	}
+}
+
+func getDigestForMsg(t *testing.T, in proto.Message) *repb.Digest {
+	d, err := digest.ComputeForMessage(in, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	return d
 }
 
 func TestDownloadTree(t *testing.T) {
