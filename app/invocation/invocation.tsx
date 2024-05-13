@@ -197,6 +197,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
       .catch((error: any) => {
         console.error(error);
         this.setState({ error: BuildBuddyError.parse(error) });
+
+        // To make manual testing easier, support a special 'retry' param that
+        // auto-reloads the page if there is an error.
+        if (this.props.search.get("retry") !== null) {
+          setTimeout(() => window.location.reload(), 500);
+        }
       })
       .finally(() => this.setState({ loading: false }));
   }

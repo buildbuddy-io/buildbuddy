@@ -6,10 +6,12 @@ import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
 import rpcService from "../service/rpc_service";
+import router from "../router/router";
 import { OutlinedButton } from "../components/button/button";
 import {
   downloadDuration,
   executionDuration,
+  getActionPageLink,
   getExecutionStatus,
   queuedDuration,
   subtractTimestamp,
@@ -72,6 +74,12 @@ export default class ExecutionCardComponent extends React.Component<Props, State
 
       if (inProgressBeforeRequestWasMade) {
         this.fetchUpdatedProgress();
+      }
+
+      // To help with manual testing, support a special "openFirst" URL param
+      // which automatically navigates to the first execution that we fetched.
+      if (new URLSearchParams(window.location.search).get("openFirst") !== null) {
+        router.replaceURL(getActionPageLink(this.props.model.getInvocationId(), response.execution[0]));
       }
 
       console.log(response);

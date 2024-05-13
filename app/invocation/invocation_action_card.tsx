@@ -7,7 +7,7 @@ import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
-import rpcService from "../service/rpc_service";
+import rpcService, { Cancelable } from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
 import TerminalComponent from "../terminal/terminal";
@@ -25,6 +25,8 @@ import Dialog, {
 } from "../components/dialog/dialog";
 import Button, { OutlinedButton } from "../components/button/button";
 import Modal from "../components/modal/modal";
+import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
+import capabilities from "../capabilities/capabilities";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -53,6 +55,7 @@ interface State {
   stderr?: string;
   stdout?: string;
   serverLogs?: ServerLog[];
+  lastOperation?: ExecuteOperation;
 }
 
 interface ServerLog {
@@ -82,6 +85,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
     } else {
       this.fetchActionResult();
     }
+    if (this.props.search.has("executionId")) {
+      this.streamExecution();
+    }
   }
 
   componentDidUpdate(prevProps: Readonly<Props>): void {
@@ -93,6 +99,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
     if (prevProps.search.get("executeResponseDigest") != this.props.search.get("executeResponseDigest")) {
       this.fetchExecuteResponse();
+    }
+    if (prevProps.search.get("executionId") !== this.props.search.get("executionId")) {
+      this.streamExecution();
     }
   }
 
@@ -118,6 +127,34 @@ export default class InvocationActionCardComponent extends React.Component<Props
       })
       .catch((e) => console.error("Failed to fetch action:", e))
       .finally(() => this.setState({ loadingAction: false }));
+  }
+
+  private operationStream?: Cancelable;
+
+  streamExecution() {
+    if (!capabilities.config.streamingHttpEnabled) return;
+
+    this.operationStream?.cancel();
+    this.setState({ lastOperation: undefined });
+    const executionId = this.props.search.get("executionId");
+    if (!executionId) return;
+    this.operationStream = waitExecution(executionId, {
+      next: (operation) => {
+        this.setState({ lastOperation: operation });
+        if (operation.response) {
+          this.setState({ executeResponse: operation.response });
+          console.log(operation.response);
+        }
+        if (operation.response?.result) {
+          this.setState({ actionResult: operation.response.result });
+        }
+      },
+      error: (error) => {
+        // TODO: better error handling
+        console.log(error);
+      },
+      complete: () => {},
+    });
   }
 
   fetchDirectorySizes(rootDigest: build.bazel.remote.execution.v2.Digest) {
@@ -590,6 +627,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
     const vmMetadata = this.getFirecrackerVMMetadata();
+    const executionId = this.props.search.get("executionId");
 
     return (
       <div className="invocation-action-card">
@@ -602,6 +640,41 @@ export default class InvocationActionCardComponent extends React.Component<Props
           <div className="card">
             <Info className="icon purple" />
             <div className="content">
+              {executionId && (
+                <>
+                  <div className="title">Execution details</div>
+                  <div className="details">
+                    <div className="action-section">
+                      <div className="action-property-title">Execution ID</div>
+                      <div>{executionId}</div>
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Stage</div>
+                      <div>{this.state.lastOperation ? executionStatusLabel(this.state.lastOperation) : "Unknown"}</div>
+                    </div>
+                    {this.state.executeResponse && (
+                      <>
+                        <div className="action-section">
+                          <div className="action-property-title">RPC status</div>
+                          <div
+                            className={(this.state.executeResponse.status?.code ?? 0) !== 0 ? "grpc-status-error" : ""}>
+                            {this.state.executeResponse
+                              ? grpcStatusCodeToString(this.state.executeResponse.status?.code ?? 0)
+                              : "Unknown"}
+                            {this.state.executeResponse?.status?.message && (
+                              <>: {this.state.executeResponse?.status.message}</>
+                            )}
+                          </div>
+                        </div>
+                        <div className="action-section">
+                          <div className="action-property-title">Served from cache</div>
+                          <div>{this.state.executeResponse.cachedResult ? "Yes" : "No"}</div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
               <div className="title">Action details</div>
               {this.state.action ? (
                 <div className="details">
@@ -902,17 +975,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     </div>
                   ) : (
                     !this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>
-                  )}
-                  {this.state.executeResponse?.status && (
-                    <div className="action-section">
-                      <div className="action-property-title">Status</div>
-                      <div className={this.state.executeResponse.status.code !== 0 ? "grpc-status-error" : ""}>
-                        <b>{grpcStatusCodeToString(this.state.executeResponse.status.code)}</b>
-                        {this.state.executeResponse.status.message && (
-                          <>: {this.state.executeResponse.status.message}</>
-                        )}
-                      </div>
-                    </div>
                   )}
                 </div>
               </div>
