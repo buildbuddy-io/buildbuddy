@@ -16,7 +16,7 @@ import Modal from "../../../app/components/modal/modal";
 import alert_service from "../../../app/alert/alert_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import errorService from "../../../app/errors/error_service";
-import { CancelableRpc } from "../../../app/service/rpc_service";
+import { UnaryRpcMethod } from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import rpcService from "../../../app/service/rpc_service";
@@ -28,10 +28,10 @@ export interface ApiKeysComponentProps {
   /** Whether to show only user-owned keys. */
   userOwnedOnly?: boolean;
 
-  get: CancelableRpc<api_key.GetApiKeysRequest, api_key.GetApiKeysResponse>;
-  create: CancelableRpc<api_key.CreateApiKeyRequest, api_key.CreateApiKeyResponse>;
-  update: CancelableRpc<api_key.UpdateApiKeyRequest, api_key.UpdateApiKeyResponse>;
-  delete: CancelableRpc<api_key.DeleteApiKeyRequest, api_key.DeleteApiKeyResponse>;
+  get: UnaryRpcMethod<api_key.GetApiKeysRequest, api_key.GetApiKeysResponse>;
+  create: UnaryRpcMethod<api_key.CreateApiKeyRequest, api_key.CreateApiKeyResponse>;
+  update: UnaryRpcMethod<api_key.UpdateApiKeyRequest, api_key.UpdateApiKeyResponse>;
+  delete: UnaryRpcMethod<api_key.DeleteApiKeyRequest, api_key.DeleteApiKeyResponse>;
 }
 
 interface State {
