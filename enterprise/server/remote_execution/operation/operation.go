@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"io"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -18,12 +19,75 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gstatus "google.golang.org/grpc/status"
+	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
 	// Timeout for retrying a PublishOperation stream.
 	reconnectTimeout = 5 * time.Second
 )
+
+// Publisher is used to publish state changes for a task. Publisher is intended
+// to be used instead of a raw PublishOperation stream because it is safe for
+// concurrent use and includes auto-reconnect functionality in case the stream
+// is broken.
+type Publisher struct {
+	taskID           string
+	taskResourceName *digest.ResourceName
+
+	mu     sync.Mutex
+	stream *retryingClient
+}
+
+func newPublisher(stream *retryingClient, taskID string, taskResourceName *digest.ResourceName) *Publisher {
+	return &Publisher{
+		stream:           stream,
+		taskID:           taskID,
+		taskResourceName: taskResourceName,
+	}
+}
+
+func (p *Publisher) Context() context.Context {
+	return p.stream.Context()
+}
+
+// Send publishes a message on the stream. It is safe for concurrent use.
+func (p *Publisher) Send(op *longrunning.Operation) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.stream.Send(op)
+}
+
+// SetStatus sets the current task status and eagerly publishes a progress
+// update with the new state.
+func (p *Publisher) SetState(state repb.ExecutionProgress_ExecutionState) error {
+	progress := &repb.ExecutionProgress{
+		Timestamp:      tspb.Now(),
+		ExecutionState: state,
+	}
+	progressAny, err := anypb.New(progress)
+	if err != nil {
+		return err
+	}
+	md := &repb.ExecuteOperationMetadata{
+		Stage:        repb.ExecutionStage_EXECUTING,
+		ActionDigest: p.taskResourceName.GetDigest(),
+		PartialExecutionMetadata: &repb.ExecutedActionMetadata{
+			AuxiliaryMetadata: []*anypb.Any{progressAny},
+		},
+	}
+	op, err := assemble(p.taskID, md, nil /*=response*/)
+	if err != nil {
+		return status.WrapError(err, "assemble operation")
+	}
+	return p.Send(op)
+}
+
+// CloseAndRecv closes the send direction of the stream and waits for the
+// server to ack.
+func (p *Publisher) CloseAndRecv() (*repb.PublishOperationResponse, error) {
+	return p.stream.CloseAndRecv()
+}
 
 // retryingClient works like a PublishOperationClient but transparently
 // re-connects the stream when disconnected. The retryingClient does not re-dial
@@ -40,16 +104,21 @@ type retryingClient struct {
 // stream if disconnected. After a disconnect (either in Send or CloseAndRecv),
 // it will re-publish the last sent message if applicable to ensure that the
 // server has acknowledged it.
-func Publish(ctx context.Context, client repb.ExecutionClient) (*retryingClient, error) {
+func Publish(ctx context.Context, client repb.ExecutionClient, taskID string) (*Publisher, error) {
+	r, err := digest.ParseUploadResourceName(taskID)
+	if err != nil {
+		return nil, status.WrapError(err, "parse task ID")
+	}
 	clientStream, err := client.PublishOperation(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &retryingClient{
+	retryingStream := &retryingClient{
 		ctx:          ctx,
 		client:       client,
 		clientStream: clientStream,
-	}, nil
+	}
+	return newPublisher(retryingStream, taskID, r), nil
 }
 
 func (c *retryingClient) Context() context.Context {
@@ -167,31 +236,38 @@ func (c *retryingClient) CloseAndRecv() (*repb.PublishOperationResponse, error) 
 	return nil, status.UnknownError("CloseAndRecv: unknown error")
 }
 
+// TODO: make assemble() the public one and remove this.
 func Assemble(stage repb.ExecutionStage_Value, name string, r *digest.ResourceName, er *repb.ExecuteResponse) (*longrunning.Operation, error) {
 	if r == nil || er == nil {
 		return nil, status.FailedPreconditionError("digest or execute response are both required to assemble operation")
 	}
-	metadata, err := anypb.New(&repb.ExecuteOperationMetadata{
+	md := &repb.ExecuteOperationMetadata{
 		Stage:        stage,
 		ActionDigest: r.GetDigest(),
-	})
-	if err != nil {
-		return nil, err
 	}
-	operation := &longrunning.Operation{
-		Name:     name,
-		Metadata: metadata,
-	}
-	result, err := anypb.New(er)
-	if err != nil {
-		return nil, err
-	}
-	operation.Result = &longrunning.Operation_Response{Response: result}
+	return assemble(name, md, er)
+}
 
-	if stage == repb.ExecutionStage_COMPLETED {
-		operation.Done = true
+func assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteResponse) (*longrunning.Operation, error) {
+	op := &longrunning.Operation{
+		Name: name,
+		Done: md.GetStage() == repb.ExecutionStage_COMPLETED,
 	}
-	return operation, nil
+	if md != nil {
+		mdAny, err := anypb.New(md)
+		if err != nil {
+			return nil, err
+		}
+		op.Metadata = mdAny
+	}
+	if rsp != nil {
+		resultAny, err := anypb.New(rsp)
+		if err != nil {
+			return nil, err
+		}
+		op.Result = &longrunning.Operation_Response{Response: resultAny}
+	}
+	return op, nil
 }
 
 func AssembleFailed(stage repb.ExecutionStage_Value, name string, d *digest.ResourceName, status error) (*longrunning.Operation, error) {

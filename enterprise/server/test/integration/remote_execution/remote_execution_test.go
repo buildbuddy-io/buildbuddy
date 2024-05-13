@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
@@ -64,6 +65,12 @@ func TestSimpleCommandWithNonZeroExitCode(t *testing.T) {
 	assert.Equal(t, 5, res.ExitCode, "exit code should be propagated")
 	assert.Equal(t, "hello\n", res.Stdout, "stdout should be propagated")
 	assert.Equal(t, "bye\n", res.Stderr, "stderr should be propagated")
+	assert.Equal(t, []repb.ExecutionProgress_ExecutionState{
+		repb.ExecutionProgress_PULLING_CONTAINER_IMAGE,
+		repb.ExecutionProgress_DOWNLOADING_INPUTS,
+		repb.ExecutionProgress_EXECUTING_COMMAND,
+		repb.ExecutionProgress_UPLOADING_OUTPUTS,
+	}, getProgressStates(t, cmd), "command progress states")
 }
 
 func TestActionResultCacheWithSuccessfulAction(t *testing.T) {
@@ -1981,4 +1988,19 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 func randSleepMillis(min, max int) {
 	r := rand.Int63n(int64(max-min)) + int64(min)
 	time.Sleep(time.Duration(r))
+}
+
+func getProgressStates(t *testing.T, c *rbetest.Command) []repb.ExecutionProgress_ExecutionState {
+	var states []repb.ExecutionProgress_ExecutionState
+	for _, op := range c.GetOperations() {
+		rsp, err := rexec.UnpackOperation(op)
+		require.NoError(t, err)
+		var progress repb.ExecutionProgress
+		ok, err := rexec.AuxiliaryMetadata(rsp.ExecuteOperationMetadata.GetPartialExecutionMetadata(), &progress)
+		require.NoError(t, err)
+		if ok {
+			states = append(states, progress.ExecutionState)
+		}
+	}
+	return states
 }

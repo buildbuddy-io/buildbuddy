@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/exp/maps"
@@ -138,18 +139,14 @@ func Start(ctx context.Context, env environment.Env, actionResourceName *rspb.Re
 
 // Wait waits for command execution to complete, and returns the COMPLETE stage
 // operation response.
-func Wait(stream *RetryingStream) (*ExecuteOperation, error) {
+func Wait(stream *RetryingStream) (*Response, error) {
 	for {
 		op, err := stream.Recv()
 		if err != nil {
 			return nil, err
 		}
-		msg, err := unpackOperation(op)
-		if err != nil {
-			return nil, err
-		}
-		if msg.Operation.GetDone() {
-			return msg, nil
+		if op.Done {
+			return op, nil
 		}
 	}
 }
@@ -214,7 +211,7 @@ func (s *RetryingStream) Name() string {
 //
 // If the stream is disconnected and the operation name has been received, it
 // will attempt to reconnect with WaitExecution.
-func (s *RetryingStream) Recv() (*longrunning.Operation, error) {
+func (s *RetryingStream) Recv() (*Response, error) {
 	r := retry.DefaultWithContext(s.ctx)
 	for {
 		op, err := s.stream.Recv()
@@ -222,7 +219,7 @@ func (s *RetryingStream) Recv() (*longrunning.Operation, error) {
 			if op.GetName() != "" {
 				s.name = op.GetName()
 			}
-			return op, nil
+			return UnpackOperation(op)
 		}
 		if !status.IsUnavailableError(err) || s.name == "" {
 			return nil, err
@@ -251,9 +248,8 @@ func (s *RetryingStream) CloseSend() error {
 	return err
 }
 
-// ExecuteOperation contains an operation along with its execution-specific
-// payload.
-type ExecuteOperation struct {
+// Response contains an operation along with its execution-specific payload.
+type Response struct {
 	*longrunning.Operation
 
 	// ExecuteOperationMetadata contains any metadata unpacked from the
@@ -265,10 +261,10 @@ type ExecuteOperation struct {
 	Err error
 }
 
-// unpackOperation unmarshals all expected execution-specific fields from the
+// UnpackOperation unmarshals all expected execution-specific fields from the
 // given operationn.
-func unpackOperation(op *longrunning.Operation) (*ExecuteOperation, error) {
-	msg := &ExecuteOperation{Operation: op}
+func UnpackOperation(op *longrunning.Operation) (*Response, error) {
+	msg := &Response{Operation: op}
 	if op.GetResponse() != nil {
 		msg.ExecuteResponse = &repb.ExecuteResponse{}
 		if err := op.GetResponse().UnmarshalTo(msg.ExecuteResponse); err != nil {
@@ -283,4 +279,22 @@ func unpackOperation(op *longrunning.Operation) (*ExecuteOperation, error) {
 	}
 	msg.Err = gstatus.FromProto(msg.ExecuteResponse.GetStatus()).Err()
 	return msg, nil
+}
+
+// AuxiliaryMetadata searches for auxiliary metadata for a type matching the
+// full name of the given proto message descriptor. If one is found, it
+// unmarshals the type into the given message.
+// It returns whether the type was found as well as whether there was an error
+// unmarshaling.
+func AuxiliaryMetadata(md *repb.ExecutedActionMetadata, pb proto.Message) (ok bool, err error) {
+	typeURL := "type.googleapis.com/" + string(pb.ProtoReflect().Descriptor().FullName())
+	for _, m := range md.GetAuxiliaryMetadata() {
+		if m.TypeUrl == typeURL {
+			if err := m.UnmarshalTo(pb); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+	}
+	return false, nil
 }
