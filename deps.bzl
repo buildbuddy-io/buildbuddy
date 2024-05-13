@@ -6807,6 +6807,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
+        name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
+        sha256 = "d6d2dfb28c569ba3e4965acb54ddcccb85d5c55b03e4abf0d0e7df17f2656ee6",
+        urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.11/protoc-gen-protobufjs-v0.0.11.tar.gz"],
+    )
+
+    http_archive(
         name = "com_github_firecracker_microvm_firecracker",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
