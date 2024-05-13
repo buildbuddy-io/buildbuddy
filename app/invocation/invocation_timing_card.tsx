@@ -78,18 +78,9 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       this.props.model.structuredCommandLine
         ?.find((scl) => scl.commandLineLabel == "canonical")
         ?.sections?.find((s) => s.sectionLabel == "command options")
-        ?.optionList?.option?.find((o) => o.optionName == "profile")?.optionValue ?? "command.profile.gz";
-
-    let profileName: string;
-    if (profilePath.includes("\\")) {
-      // Windows supports both forward slash and backward slash as separator.
-      const separator = "\\";
-      const altSeparator = "/";
-      const lastSeparatorIndex = Math.max(profilePath.lastIndexOf(separator), profilePath.lastIndexOf(altSeparator));
-      profileName = profilePath.substring(lastSeparatorIndex + 1);
-    } else {
-      profileName = profilePath.substring(profilePath.lastIndexOf("/") + 1);
-    }
+        ?.optionList?.option?.find((o) => o.optionName == "profile")
+        ?.optionValue.replaceAll("\\", "/") ?? "command.profile.gz";
+    const profileName = profilePath.substring(profilePath.lastIndexOf("/") + 1);
 
     return this.props.model.buildToolLogs?.log.find(
       (log: build_event_stream.File) => log.name == profileName && log.uri
