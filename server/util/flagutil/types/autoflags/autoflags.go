@@ -10,23 +10,7 @@ import (
 
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	flagtags "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
-
-type Taggable flagtags.Taggable
-
-var SecretTag = flagtags.SecretTag
-
-var DeprecatedTag = flagtags.DeprecatedTag
-
-type yamlIgnoreTag struct{}
-
-func (_ *yamlIgnoreTag) Tag(flagset *flag.FlagSet, name string, f flagtags.Tagged) flag.Value {
-	flagyaml.IgnoreFlagForYAML(name)
-	return nil
-}
-
-var YAMLIgnoreTag = &yamlIgnoreTag{}
 
 // New declares a new flag named `name` with the specified value `defaultValue`
 // of type `T` and the help text `usage`. It returns a pointer to where the
@@ -34,7 +18,7 @@ var YAMLIgnoreTag = &yamlIgnoreTag{}
 // `SecretTag` to mark a flag that contains a secret that should be redacted in
 // output, or use `DeprecatedTag(migrationPlan)` to mark a flag that has been
 // deprecated and provide its migration plan.
-func New[T any](flagset *flag.FlagSet, name string, defaultValue T, usage string, tags ...Taggable) *T {
+func New[T any](flagset *flag.FlagSet, name string, defaultValue T, usage string, tags ...flagtags.Taggable) *T {
 	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
 	Var(flagset, value, name, defaultValue, usage, tags...)
 	return value
@@ -46,7 +30,7 @@ func New[T any](flagset *flag.FlagSet, name string, defaultValue T, usage string
 // contains a secret that should be redacted in output, or use
 // `DeprecatedTag(migrationPlan)` to mark a flag that has been deprecated and
 // provide its migration plan.
-func Var[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, usage string, tags ...Taggable) {
+func Var[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, usage string, tags ...flagtags.Taggable) {
 	switch v := any(value).(type) {
 	case *bool:
 		flagset.BoolVar(v, name, any(defaultValue).(bool), usage)
@@ -93,7 +77,7 @@ func Var[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, us
 	}
 }
 
-func Tag[T any, FV flag.Value](flagset *flag.FlagSet, name string, tags ...Taggable) {
+func Tag[T any, FV flag.Value](flagset *flag.FlagSet, name string, tags ...flagtags.Taggable) {
 	for _, tg := range tags {
 		flagtags.Tag[T, FV](flagset, name, tg)
 	}

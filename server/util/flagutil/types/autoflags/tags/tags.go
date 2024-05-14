@@ -8,6 +8,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
 // Tagged exists as an interface to provide an abstraction of
@@ -327,3 +329,12 @@ func (_ *secretTag) Tag(flagset *flag.FlagSet, name string, tagged Tagged) flag.
 }
 
 var SecretTag = &secretTag{}
+
+type yamlIgnoreTag struct{}
+
+func (_ *yamlIgnoreTag) Tag(flagset *flag.FlagSet, name string, f Tagged) flag.Value {
+	flagyaml.IgnoreFlagForYAML(name)
+	return nil
+}
+
+var YAMLIgnoreTag = &yamlIgnoreTag{}

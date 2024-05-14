@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
+	flagtags "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
 	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
@@ -208,7 +209,7 @@ func TestNew(t *testing.T) {
 func TestYAMLIgnoreTag(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
 	_ = replaceIgnoreSetForTesting(t)
-	flagBool := New(flags, "bool", false, "", YAMLIgnoreTag)
+	flagBool := New(flags, "bool", false, "", flagtags.YAMLIgnoreTag)
 
 	yamlData := `
 	bool: true
