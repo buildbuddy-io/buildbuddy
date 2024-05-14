@@ -19,7 +19,6 @@ import (
 )
 
 var (
-	enableDriver        = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	minReplicasPerRange = flag.Int("cache.raft.min_replicas_per_range", 3, "The minimum number of replicas each range should have")
 )
 
@@ -389,8 +388,8 @@ func storeHasReplica(node *rfpb.NodeDescriptor, existing []*rfpb.ReplicaDescript
 	return false
 }
 
-// allocateTarget finds a target node for rd to up-replicate.
-func (rq *Queue) allocateTarget(rd *rfpb.RangeDescriptor) *rfpb.NodeDescriptor {
+// findNodeForAllocation finds a target node for the range to up-replicate.
+func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor) *rfpb.NodeDescriptor {
 	storesWithStats := rq.storeMap.GetStoresWithStats()
 	var candidates []*candidate
 	for _, su := range storesWithStats.Usages {
@@ -422,7 +421,7 @@ type change struct {
 }
 
 func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
-	target := rq.allocateTarget(rd)
+	target := rq.findNodeForAllocation(rd)
 	if target == nil {
 		log.Debugf("cannot find targets for range descriptor:%+v", rd)
 		return nil

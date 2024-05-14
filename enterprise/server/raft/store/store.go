@@ -64,6 +64,7 @@ var (
 	zombieNodeScanInterval = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
 	replicaScanInterval    = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
 	maxRangeSizeBytes      = flag.Int64("cache.raft.max_range_size_bytes", 1e8, "If set to a value greater than 0, ranges will be split until smaller than this size")
+	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 )
 
 type Store struct {
@@ -208,7 +209,9 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
 
-	s.driverQueue = driver.NewQueue(s, gossipManager)
+	if *enableDriver {
+		s.driverQueue = driver.NewQueue(s, gossipManager)
+	}
 
 	if err != nil {
 		return nil, err
@@ -436,7 +439,9 @@ func (s *Store) Start() error {
 		return nil
 	})
 	eg.Go(func() error {
-		s.driverQueue.Start()
+		if s.driverQueue != nil {
+			s.driverQueue.Start()
+		}
 		return nil
 	})
 
@@ -454,7 +459,9 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.egCancel()
 		s.leaseKeeper.Stop()
 		s.liveness.Release()
-		s.driverQueue.Stop()
+		if s.driverQueue != nil {
+			s.driverQueue.Stop()
+		}
 		s.eg.Wait()
 	}
 	s.updateTagsWorker.Stop()
@@ -1845,6 +1852,9 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, shardID, r
 }
 
 func (store *Store) scan(ctx context.Context) {
+	if store.driverQueue == nil {
+		return
+	}
 	scanDelay := time.NewTicker(*replicaScanInterval)
 	for {
 		select {
