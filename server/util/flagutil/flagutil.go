@@ -1,8 +1,6 @@
 package flagutil
 
 import (
-	"flag"
-
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 )
 
