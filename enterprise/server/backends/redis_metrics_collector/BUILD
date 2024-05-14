@@ -8,9 +8,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector",
     deps = [
         "//enterprise/server/util/redisutil",
+        "//server/cache/config",
         "//server/real_environment",
-        "//server/remote_cache/hit_tracker",
-        "//server/util/flagutil/types",
         "@com_github_go_redis_redis_v8//:redis",
     ],
 )

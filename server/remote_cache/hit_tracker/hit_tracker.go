@@ -30,9 +30,8 @@ import (
 )
 
 var (
-	detailedStatsEnabled       = flag.Bool("cache.detailed_stats_enabled", false, "Whether to enable detailed stats recording for all cache requests.")
-	scorecardResultsExpiration = flag.Duration("cache.detailed_stats_ttl", 3*time.Hour, "How long to go without receiving any cache requests for an invocation before deleting the invocation's detailed results from the metrics collector. Has no effect if cache.detailed_stats_enabled is not set.")
-	countExpiration            = flag.Duration("cache.count_ttl", 24*time.Hour, "How long to go without receiving any cache requests for an invocation before deleting the invocation's counts from the metrics collector.")
+	detailedStatsEnabled = flag.Bool("cache.detailed_stats_enabled", false, "Whether to enable detailed stats recording for all cache requests.")
+	scorecardResultsTTL  = flag.Duration("cache.detailed_stats_ttl", 3*time.Hour, "How long to go without receiving any cache requests for an invocation before deleting the invocation's detailed results from the metrics collector. Has no effect if cache.detailed_stats_enabled is not set.")
 
 	// Example: "GoLink(//merger:merger_test)/16f1152b7b260f690ea06f8b938a1b60712b5ee41a1c125ecad8ed9416481fbb"
 	actionRegexp = regexp.MustCompile(`^(?P<action_mnemonic>[[:alnum:]]*)\((?P<target_id>.+)\)/(?P<action_id>[[:alnum:]]+)$`)
@@ -325,7 +324,7 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 	if err := h.c.ListAppend(h.ctx, key, string(b)); err != nil {
 		return err
 	}
-	if err := h.c.Expire(h.ctx, key, *scorecardResultsExpiration); err != nil {
+	if err := h.c.Expire(h.ctx, key, *scorecardResultsTTL); err != nil {
 		return err
 	}
 	return nil
