@@ -46,6 +46,10 @@ ts_library(
 ts_library(
     name = "errors",
     srcs = ["errors.ts"],
+    deps = [
+        "//proto:grpc_code_ts_proto",
+        "//proto:grpc_status_ts_proto",
+    ],
 )
 
 ts_library(
