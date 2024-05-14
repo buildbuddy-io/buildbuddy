@@ -205,3 +205,21 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 	}
 	return createStoresWithStats(alive)
 }
+
+func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	alive := make([]*rfpb.StoreUsage, 0, len(nhids))
+	for _, nhid := range nhids {
+		sd, ok := sm.storeDetails[nhid]
+		if !ok {
+			continue
+		}
+		status := sd.status()
+		if status == storeStatusAvailable || status == storeStatusSuspect {
+			alive = append(alive, sd.usage)
+		}
+	}
+	return createStoresWithStats(alive)
+}
