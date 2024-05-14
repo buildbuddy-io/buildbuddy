@@ -39,6 +39,4 @@ func GetDereferencedValue[T any](name string) (T, error) {
 
 // Expand updates the flag value to replace any placeholders in format ${FOO}
 // with the content of calling the mapper function with the placeholder name.
-func Expand(v flag.Value, mapper func(string) (string, error)) error {
-	return common.Expand(v, mapper)
-}
+var Expand = common.Expand
