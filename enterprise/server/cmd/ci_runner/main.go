@@ -149,7 +149,7 @@ var (
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
-	timeout            = flag.Duration("timeout", 100*time.Hour, "Timeout before all commands will be canceled automatically.")
+	timeout            = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
 
 	// Flags to configure setting up git repo
 	triggerEvent    = flag.String("trigger_event", "", "Event type that triggered the action runner.")
@@ -571,8 +571,11 @@ func run() error {
 		ctx = metadata.AppendToOutgoingContext(ctx, clientidentity.IdentityHeaderName, ci)
 	}
 	contextWithoutTimeout := ctx
-	ctx, cancel := context.WithTimeout(ctx, *timeout)
-	defer cancel()
+	if *timeout != 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, *timeout)
+		defer cancel()
+	}
 
 	// Use a context without a timeout for the build event reporter, so that even
 	// if the `timeout` is reached, any events will finish getting published
