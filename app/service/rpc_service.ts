@@ -4,6 +4,7 @@ import { context } from "../../proto/context_ts_proto";
 import { CancelablePromise } from "../util/async";
 import * as protobufjs from "protobufjs";
 import capabilities from "../capabilities/capabilities";
+import { FetchError, GRPCStatusError, HTTPStatusError, parseGRPCStatus } from "../util/errors";
 
 /** Return type for unary RPCs. */
 export { CancelablePromise } from "../util/async";
@@ -56,6 +57,12 @@ export type BytestreamFileOptions = {
   filename?: string;
   zip?: string;
 };
+
+// When streaming HTTP is enabled, use more structured gRPC errors, since we
+// need to be able to classify errors accurately in order to know whether
+// they can be retried or not.
+// TODO: enable these unconditionally after testing.
+const structuredErrors = capabilities.config.streamingHttpEnabled;
 
 class RpcService {
   service: ExtendedBuildBuddyService;
@@ -164,25 +171,40 @@ class RpcService {
     try {
       response = await fetch(url, { ...init, headers });
     } catch (e) {
-      throw `connection error: ${e}`;
+      throw structuredErrors ? new FetchError(e) : `connection error: ${e}`;
     }
     if (response.status < 200 || response.status >= 400) {
       // Read error message from response body
-      let message = "";
+      let body = "";
       try {
-        message = await response.text();
+        body = await response.text();
       } catch (e) {
-        message = `unknown (failed to read response body: ${e})`;
+        if (structuredErrors) {
+          // If we failed to read the response body then ignore the status code
+          // and return a generic network error. It may be possible to retry
+          // this error to get the complete error message.
+          throw new FetchError(e);
+        }
+        body = `unknown (failed to read response body: ${e})`;
       }
-      throw `failed to fetch: ${message}`;
+
+      throw structuredErrors ? new HTTPStatusError(response.status, body) : `failed to fetch: ${body}`;
     }
     switch (responseType) {
       case "arraybuffer":
-        return (await response.arrayBuffer()) as FetchPromiseType<T>;
+        try {
+          return (await response.arrayBuffer()) as FetchPromiseType<T>;
+        } catch (e) {
+          throw structuredErrors ? new FetchError(e) : e;
+        }
       case "stream":
         return response.body as FetchPromiseType<T>;
       default:
-        return (await response.text()) as FetchPromiseType<T>;
+        try {
+          return (await response.text()) as FetchPromiseType<T>;
+        } catch (e) {
+          throw structuredErrors ? new FetchError(e) : e;
+        }
     }
   }
 
@@ -220,7 +242,14 @@ class RpcService {
         });
         streamParams?.complete?.();
       } catch (e) {
-        callback(e);
+        // If we successfully read the HTTP response but it returned an error
+        // code, try to parse it as a gRPC error.
+        const grpcStatus = e instanceof HTTPStatusError ? parseGRPCStatus(e.body) : null;
+        if (grpcStatus) {
+          callback(new GRPCStatusError(grpcStatus));
+        } else {
+          callback(e);
+        }
       }
       return;
     }
