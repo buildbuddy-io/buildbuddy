@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/alert",
         "//server/util/flagutil/common",
+        "//server/util/flagutil/types/autoflags/tags",
         "//server/util/log",
         "//server/util/status",
         "@in_gopkg_yaml_v3//:yaml_v3",
@@ -21,6 +22,7 @@ go_test(
     embed = [":types"],
     deps = [
         "//server/util/flagutil/common",
+        "//server/util/flagutil/types/autoflags/tags",
         "//server/util/flagutil/yaml",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

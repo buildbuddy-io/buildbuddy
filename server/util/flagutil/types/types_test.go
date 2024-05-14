@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -206,9 +207,10 @@ func TestFlagAlias(t *testing.T) {
 	flags.Lookup("string_alias_alias").Value.Set("meow")
 	assert.Equal(t, *s, "meow")
 
-	asf := flags.Lookup("string_alias").Value.(*FlagAlias[string])
+	asf := flags.Lookup("string_alias").Value
 	assert.Equal(t, "meow", asf.String())
-	assert.Equal(t, "string", asf.AliasedName())
+	assert.True(t, asf.(common.NameAliasable).IsNameAliasing())
+	assert.Equal(t, "string", asf.(common.NameAliasable).AliasedName())
 	asfType, err := common.GetTypeForFlagValue(asf)
 	require.NoError(t, err)
 	assert.Equal(t, reflect.TypeOf((*string)(nil)), asfType)
@@ -216,9 +218,10 @@ func TestFlagAlias(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, reflect.TypeOf((*string)(nil)), asfYAMLType)
 
-	aasf := flags.Lookup("string_alias").Value.(*FlagAlias[string])
+	aasf := flags.Lookup("string_alias").Value
 	assert.Equal(t, "meow", aasf.String())
-	assert.Equal(t, "string", aasf.AliasedName())
+	assert.True(t, aasf.(common.NameAliasable).IsNameAliasing())
+	assert.Equal(t, "string", aasf.(common.NameAliasable).AliasedName())
 	aasfType, err := common.GetTypeForFlagValue(asf)
 	require.NoError(t, err)
 	assert.Equal(t, reflect.TypeOf((*string)(nil)), aasfType)
@@ -416,8 +419,18 @@ string_alias: "meow"
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}}, structSlice)
 
 	// `String` should not panic on zero-constructed flag
-	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*FlagAlias[[]testStruct])(nil)).Elem()).Interface().(flag.Value).String())
-	assert.Equal(t, "", reflect.New(reflect.TypeOf((*FlagAlias[string])(nil)).Elem()).Interface().(flag.Value).String())
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
+	JSONStruct(flags, "struct", testStruct{Field: 1}, "")
+	JSONSlice(flags, "struct_slice", []testStruct{{Field: 1}, {Field: 2}}, "")
+	StringSlice(flags, "string_slice", []string{"1", "2"}, "")
+
+	Alias[testStruct](flags, "struct", "struct_alias")
+	Alias[[]testStruct](flags, "struct_slice", "struct_slice_alias")
+	Alias[[]string](flags, "string_slice", "string_slice_alias")
+
+	assert.Equal(t, "{}", reflect.New(reflect.TypeOf(flags.Lookup("struct_alias").Value).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "[]", reflect.New(reflect.TypeOf(flags.Lookup("struct_slice_alias").Value).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "", reflect.New(reflect.TypeOf(flags.Lookup("string_slice_alias").Value).Elem()).Interface().(flag.Value).String())
 }
 
 func TestDeprecatedVar(t *testing.T) {
@@ -465,7 +478,7 @@ deprecated_string_slice:
 	require.NoError(t, err)
 	assert.Equal(t, testStringSlice, []string{"hi", "hello", "hey"})
 
-	d := any(&DeprecatedFlag[struct{}]{})
+	d := any(&tags.TaggedFlagValue[struct{}, *JSONStructFlag[struct{}]]{})
 	_, ok := d.(common.WrappingValue)
 	assert.True(t, ok)
 	_, ok = d.(common.SetValueForFlagNameHooked)
@@ -474,16 +487,17 @@ deprecated_string_slice:
 	assert.True(t, ok)
 
 	// `String` should not panic on zero-constructed flag
-	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*DeprecatedFlag[[]testStruct])(nil)).Elem()).Interface().(flag.Value).String())
-	assert.Equal(t, "", reflect.New(reflect.TypeOf((*DeprecatedFlag[string])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*tags.TaggedFlagValue[[]testStruct, *JSONSliceFlag[[]testStruct]])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "{}", reflect.New(reflect.TypeOf((*tags.TaggedFlagValue[struct{}, *JSONStructFlag[struct{}]])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "", reflect.New(reflect.TypeOf((*tags.TaggedFlagValue[string, flag.Value])(nil)).Elem()).Interface().(flag.Value).String())
 }
 
 func TestDeprecate(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
 	flagInt := flags.Int("deprecated_int", 5, "some usage text")
-	Deprecate[int](flags, "deprecated_int", "migration plan")
+	Deprecate[int, flag.Value](flags, "deprecated_int", "migration plan")
 	flagStringSlice := StringSlice(flags, "deprecated_string_slice", []string{"hi"}, "")
-	Deprecate[[]string](flags, "deprecated_string_slice", "migration plan")
+	Deprecate[[]string, *StringSliceFlag](flags, "deprecated_string_slice", "migration plan")
 	assert.Equal(t, *flagInt, 5)
 	assert.Equal(t, *flagStringSlice, []string{"hi"})
 	flags.Set("deprecated_int", "7")
@@ -501,9 +515,9 @@ func TestDeprecate(t *testing.T) {
 	flags = replaceFlagsForTesting(t)
 
 	flagInt = flags.Int("deprecated_int", 5, "some usage text")
-	Deprecate[int](flags, "deprecated_int", "migration plan")
+	Deprecate[int, flag.Value](flags, "deprecated_int", "migration plan")
 	flagString := flags.String("deprecated_string", "", "")
-	Deprecate[string](flags, "deprecated_string", "migration plan")
+	Deprecate[string, flag.Value](flags, "deprecated_string", "migration plan")
 	flagStringSlice = DeprecatedVar[[]string](flags, NewStringSliceFlag(&[]string{"hi"}), "deprecated_string_slice", "", "migration plan")
 	flags.Set("deprecated_int", "7")
 	flags.Set("deprecated_string_slice", "hello")
