@@ -3,7 +3,6 @@ package testgit
 import (
 	"context"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -166,12 +166,12 @@ func configure(t testing.TB, repoPath string) {
 	`)
 }
 
-// FakeApp implements the git app interface for tests.
-type FakeApp struct {
+// FakeGitHubApp implements the github app interface for tests.
+type FakeGitHubApp struct {
 	interfaces.GitHubApp
 	Token string
 }
 
-func (a *FakeApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
+func (a *FakeGitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
 	return a.Token, nil
 }

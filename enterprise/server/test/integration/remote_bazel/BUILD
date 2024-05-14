@@ -11,6 +11,7 @@ go_test(
         "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:271e5e3704d861159c75b8dd6713dbe5a12272ec8ee73d17f89ed7be8026553f",
         # The tests clone git repos, so make sure they have enough resources to do so
         "test.EstimatedComputeUnits": "3",
+        "test.EstimatedFreeDiskBytes": "4GB",
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "remote-bazel-integration",
     },

@@ -75,8 +75,6 @@ func TestWithPublicRepo(t *testing.T) {
 		// to setup than a firecracker runner
 		"--runner_exec_properties=workload-isolation-type=none",
 		"--runner_exec_properties=container-image=",
-		// Give more memory to the CI runner because it needs to clone the gazelle repo
-		"--runner_exec_properties=EstimatedComputeUnits=3",
 		"help",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", apiKey)})
 	require.NoError(t, err)
@@ -184,7 +182,7 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, 
 			e.SetWorkflowService(service.NewWorkflowService(e))
 			iss := invocation_search_service.NewInvocationSearchService(e, e.GetDBHandle(), e.GetOLAPDBHandle())
 			e.SetInvocationSearchService(iss)
-			e.SetGitHubApp(&testgit.FakeApp{Token: githubToken})
+			e.SetGitHubApp(&testgit.FakeGitHubApp{Token: githubToken})
 			runner, err := hostedrunner.New(e)
 			require.NoError(t, err)
 			e.SetRunnerService(runner)
