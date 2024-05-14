@@ -411,15 +411,7 @@ func (rq *Queue) allocateTarget(rd *rfpb.RangeDescriptor) *rfpb.NodeDescriptor {
 		return nil
 	}
 	slices.SortFunc(candidates, func(a, b *candidate) int {
-		if n := a.compare(b); n != 0 {
-			if n < 0 {
-				// b is better than a.
-				return 1
-			} else {
-				return -1
-			}
-		}
-		return cmp.Compare(a.usage.GetNode().GetNhid(), b.usage.GetNode().GetNhid())
+		return int(compare(a, b))
 	})
 	return candidates[0].usage.GetNode()
 }
@@ -579,25 +571,25 @@ type candidate struct {
 }
 
 // compare returns
-//   - a positive number if c is a better fit than o;
-//   - 0 if c and o is equivalent
-//   - 0 a negative number if c is a worse fit than o.
-func (c *candidate) compare(o *candidate) float64 {
-	if c.replicaCountMeanLevel != o.replicaCountMeanLevel {
-		score := 10 + math.Abs(float64(c.replicaCountMeanLevel-o.replicaCountMeanLevel))
-		if c.replicaCountMeanLevel > o.replicaCountMeanLevel {
+//   - a positive number if a is a better fit than b;
+//   - 0 if a and b is equivalent
+//   - a negative number if a is a worse fit than b.
+func compare(a *candidate, b *candidate) float64 {
+	if a.replicaCountMeanLevel != b.replicaCountMeanLevel {
+		score := 10 + math.Abs(float64(a.replicaCountMeanLevel-b.replicaCountMeanLevel))
+		if a.replicaCountMeanLevel > b.replicaCountMeanLevel {
 			return score
 		}
 		return -10
 	}
 
-	diff := math.Abs(float64(c.replicaCount - o.replicaCount))
-	if c.replicaCount < o.replicaCount {
-		return diff / float64(o.replicaCount)
-	} else if c.replicaCount > o.replicaCount {
-		return diff / float64(c.replicaCount)
+	diff := math.Abs(float64(a.replicaCount - b.replicaCount))
+	if a.replicaCount < b.replicaCount {
+		return diff / float64(b.replicaCount)
+	} else if a.replicaCount > b.replicaCount {
+		return diff / float64(a.replicaCount)
 	}
-	return 0
+	return float64(cmp.Compare(a.usage.GetNode().GetNhid(), b.usage.GetNode().GetNhid()))
 }
 
 func replicaCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.StoreUsage) meanLevel {
