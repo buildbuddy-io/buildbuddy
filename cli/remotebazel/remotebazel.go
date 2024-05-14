@@ -3,6 +3,7 @@ package remotebazel
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -258,11 +259,7 @@ func Config(path string) (*RepoConfig, error) {
 		DefaultBranch: defaultBranch,
 	}
 
-	diffBase := commit
-	if commit == "" {
-		diffBase = branch
-	}
-	patch, err := runGit("diff", diffBase)
+	patch, err := runGit("diff", commit)
 	if err != nil {
 		return nil, status.WrapError(err, "git diff")
 	}
@@ -334,9 +331,16 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 		if currentCommitExistsRemotely {
 			commit = currentCommitHash
 		} else {
-			// Do not set a commit if the current commit does not exist remotely.
-			// The remote runner will use the tip of the branch.
-			commit = ""
+			// Get the head commit of the remote branch
+			remoteHeadOutput, err := runGit("ls-remote", "--heads", "origin", branch)
+			if err != nil {
+				return "", "", status.WrapError(err, fmt.Sprintf("get remote head of %s", branch))
+			}
+			remoteHeadParsed := strings.Fields(remoteHeadOutput)
+			if len(remoteHeadParsed) < 1 {
+				return "", "", errors.New("unexpected remote head output: " + remoteHeadOutput)
+			}
+			commit = remoteHeadParsed[0]
 		}
 	} else {
 		// If the current branch does not exist remotely, the remote runner will
@@ -355,9 +359,7 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 	}
 
 	log.Debugf("Using base branch: %s", branch)
-	if commit != "" {
-		log.Debugf("Using base commit hash: %s", commit)
-	}
+	log.Debugf("Using base commit hash: %s", commit)
 
 	return branch, commit, nil
 }
