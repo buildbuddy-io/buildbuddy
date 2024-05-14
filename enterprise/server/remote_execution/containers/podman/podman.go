@@ -79,6 +79,8 @@ var (
 
 	// A map from image name to pull status. This is used to avoid parallel pulling of the same image.
 	pullOperations sync.Map
+
+	databaseLockedRegexp = regexp.MustCompile("beginning container [0-9a-f]{64} save transaction: database is locked")
 )
 
 const (
@@ -786,6 +788,14 @@ func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podm
 	// Note: we don't collect stats on the podman process, and instead use
 	// cgroups for stats accounting.
 	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
+
+	// If the disk is under heavy load, podman may fail with "database is
+	// locked". Detect these and return a retryable error.
+	if result.ExitCode == podmanCommandNotRunnableExitCode && databaseLockedRegexp.Match(result.Stderr) {
+		result.ExitCode = commandutil.NoExitCode
+		result.Error = status.UnavailableErrorf("podman failed: %q", strings.TrimSpace(string(result.Stderr)))
+	}
+
 	return result
 }
 
