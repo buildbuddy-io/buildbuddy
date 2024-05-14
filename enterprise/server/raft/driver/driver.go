@@ -23,6 +23,12 @@ var (
 	minReplicasPerRange = flag.Int("cache.raft.min_replicas_per_range", 3, "The minimum number of replicas each range should have")
 )
 
+const (
+	// If a node's disk is fuller than this (by percentage), it is not
+	// eligible to receive ranges moved from other nodes.
+	maximumDiskCapacity = .95
+)
+
 type DriverAction int
 
 const (
@@ -391,6 +397,9 @@ func (rq *Queue) allocateTarget(rd *rfpb.RangeDescriptor) *rfpb.NodeDescriptor {
 		if storeHasReplica(su.GetNode(), rd.GetReplicas()) {
 			continue
 		}
+		if isDiskFull(su) {
+			continue
+		}
 		candidates = append(candidates, &candidate{
 			usage:                 su,
 			replicaCount:          su.GetReplicaCount(),
@@ -539,6 +548,12 @@ func (rq *Queue) postProcess(repl IReplica) {
 		rq.MaybeAdd(repl)
 	}
 	rq.pqItemMap.Delete(rd.GetRangeId())
+}
+
+func isDiskFull(su *rfpb.StoreUsage) bool {
+	bytesFree := su.GetTotalBytesFree()
+	bytesUsed := su.GetTotalBytesUsed()
+	return float64(bytesFree+bytesUsed)*maximumDiskCapacity > float64(bytesUsed)
 }
 
 func aboveMeanReplicaCountThreshold(mean float64) float64 {

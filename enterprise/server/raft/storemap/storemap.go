@@ -21,12 +21,6 @@ var (
 	suspectStoreDuration = flag.Duration("cache.raft.suspect_store_duration", 30*time.Second, "The amount of time we consider a node suspect after it becomes unavailable")
 )
 
-const (
-	// If a node's disk is fuller than this (by percentage), it is not
-	// eligible to receive ranges moved from other nodes.
-	maximumDiskCapacity = .95
-)
-
 type storeStatus int
 
 const (
@@ -199,7 +193,7 @@ func createStoresWithStats(usages []*rfpb.StoreUsage) *StoresWithStats {
 	return res
 }
 
-// Returns stores with stats that are alive and also below maximumDiskCapacity
+// Returns stores with stats that are alive
 func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
@@ -208,11 +202,7 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 	for _, sd := range sm.storeDetails {
 		status := sd.status()
 		if status == storeStatusAvailable || status == storeStatusSuspect {
-			bytesFree := sd.usage.GetTotalBytesFree()
-			bytesUsed := sd.usage.GetTotalBytesUsed()
-			if float64(bytesFree+bytesUsed)*maximumDiskCapacity > float64(bytesUsed) {
-				alive = append(alive, sd.usage)
-			}
+			alive = append(alive, sd.usage)
 		}
 	}
 	return createStoresWithStats(alive)
