@@ -134,6 +134,7 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor) (DriverAction
 	if numLiveReplicas < quorum {
 		// The cluster is unavailable since we don't have enough live nodes.
 		// There is no point of doing anything right now.
+		log.Debugf("noop because num live replicas = %d less than quorum =%d", numLiveReplicas, quorum)
 		action := DriverNoop
 		return action, action.Priority()
 	}
@@ -239,12 +240,14 @@ func (rq *Queue) shouldQueue(repl IReplica) (bool, float64) {
 
 	if !rq.store.HaveLease(rd.GetRangeId()) {
 		// The store doesn't have lease for this range. do not queue.
+		log.Debugf("should not queue because we don't have lease")
 		return false, 0
 	}
 
 	action, priority := rq.computeAction(rd.GetReplicas())
-	log.Debugf("shouldQueue for replica:%d returns action:%d, with priority %.2f", repl.ShardID(), action, priority)
+	log.Debugf("shouldQueue for replica:%d returns action:%s, with priority %.2f", repl.ShardID(), action, priority)
 	if action == DriverNoop {
+		log.Debugf("should not queue because no-op")
 		return false, 0
 	} else if action != DriverConsiderRebalance {
 		return true, priority
@@ -278,6 +281,7 @@ func (rq *Queue) MaybeAdd(replica IReplica) {
 		if priority > item.priority {
 			rq.pq.update(item, priority)
 		}
+		log.Infof("updated priority for replica rangeID=%d", item.rangeID)
 		return
 	}
 
@@ -394,11 +398,14 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor) *rfpb.NodeDescr
 	var candidates []*candidate
 	for _, su := range storesWithStats.Usages {
 		if storeHasReplica(su.GetNode(), rd.GetReplicas()) {
+			log.Debugf("skip node %+v because the replica is already on the node", su.GetNode())
 			continue
 		}
 		if isDiskFull(su) {
+			log.Debugf("skip node %+v because the disk is full", su.GetNode())
 			continue
 		}
+		log.Debugf("add node %+v to candidate list", su.GetNode())
 		candidates = append(candidates, &candidate{
 			usage:                 su,
 			replicaCount:          su.GetReplicaCount(),
@@ -442,6 +449,10 @@ func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *
 		return nil
 	}
 	change := rq.addReplica(rd)
+	if change == nil {
+		log.Debug("replaceDeadReplica cannot find node for allocation")
+		return nil
+	}
 
 	change.removeOp = &rfpb.RemoveReplicaRequest{
 		Range:     rd,

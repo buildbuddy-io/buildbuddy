@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	deadStoreTimeout     = flag.Duration("cache.raft.dead_store_timeout", 5*time.Minute, "The amount of time after which we didn't receive alive status for a node, consider a store dead")
+	deadStoreTimeout     = flag.Duration("cache.raft.dead_store_timeout", 2*time.Minute, "The amount of time after which we didn't receive alive status for a node, consider a store dead")
 	suspectStoreDuration = flag.Duration("cache.raft.suspect_store_duration", 30*time.Second, "The amount of time we consider a node suspect after it becomes unavailable")
 )
 
@@ -32,7 +32,6 @@ const (
 
 type StoreDetail struct {
 	usage             *rfpb.StoreUsage
-	lastUpdatedAt     time.Time
 	lastUnavailableAt time.Time
 }
 
@@ -87,9 +86,7 @@ func (sm *StoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *ReplicasByS
 func (sm *StoreMap) getDetail(nhid string) *StoreDetail {
 	detail, ok := sm.storeDetails[nhid]
 	if !ok {
-		detail = &StoreDetail{
-			lastUpdatedAt: sm.startTime,
-		}
+		detail = &StoreDetail{}
 		sm.storeDetails[nhid] = detail
 	}
 	return detail
@@ -97,10 +94,10 @@ func (sm *StoreMap) getDetail(nhid string) *StoreDetail {
 }
 
 func (sd *StoreDetail) status() storeStatus {
-	if time.Since(sd.lastUpdatedAt) > *deadStoreTimeout {
-		sd.lastUnavailableAt = time.Now()
+	if !sd.lastUnavailableAt.IsZero() && time.Since(sd.lastUnavailableAt) > *deadStoreTimeout {
 		return storeStatusDead
 	}
+
 	if sd.usage == nil {
 		return storeStatusUnknown
 	}
@@ -127,8 +124,9 @@ func (sm *StoreMap) updateStoreDetail(nhid string, usage *rfpb.StoreUsage, nodeS
 	now := time.Now()
 	if nodeStatus != serf.StatusAlive {
 		detail.lastUnavailableAt = now
+	} else {
+		detail.lastUnavailableAt = time.Time{}
 	}
-	detail.lastUpdatedAt = now
 	return nil
 }
 
