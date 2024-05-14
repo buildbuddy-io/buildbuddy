@@ -149,6 +149,7 @@ var (
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
+	timeout            = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
 
 	// Flags to configure setting up git repo
 	triggerEvent    = flag.String("trigger_event", "", "Event type that triggered the action runner.")
@@ -569,8 +570,16 @@ func run() error {
 	if ci := os.Getenv(clientIdentityEnvVar); ci != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, clientidentity.IdentityHeaderName, ci)
 	}
+	contextWithoutTimeout := ctx
+	if *timeout != 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, *timeout)
+		defer cancel()
+	}
 
-	buildEventReporter, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
+	// Use a context without a timeout for the build event reporter, so that even
+	// if the `timeout` is reached, any events will finish getting published
+	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 	if err != nil {
 		return err
 	}
@@ -2025,6 +2034,10 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	}()
 	err = cmd.Wait()
 	<-copyOutputDone
+
+	if ctxErr := ctx.Err(); ctxErr == context.DeadlineExceeded {
+		_, _ = outputSink.Write([]byte(fmt.Sprintf("Remote run exceeded timeout (%s). Aborting...", timeout.String())))
+	}
 	return err
 }
 

@@ -1174,6 +1174,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		args = append(args, "--install_kythe=true")
 	}
 
+	if workflowAction.Timeout != nil {
+		args = append(args, "--timeout="+workflowAction.Timeout.String())
+	}
 	for _, filter := range workflowAction.GetGitFetchFilters() {
 		args = append(args, "--git_fetch_filters="+filter)
 	}
@@ -1234,10 +1237,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		CommandDigest:   cmdDigest,
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
-	}
-
-	if workflowAction.Timeout != nil {
-		action.Timeout = durationpb.New(*workflowAction.Timeout)
 	}
 
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, action)
