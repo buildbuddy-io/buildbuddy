@@ -326,11 +326,11 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 		}
 		currentCommitHash = strings.TrimSuffix(currentCommitHash, "\n")
 
-		remoteCommitOutput, err := runGit("fetch", "origin", "--negotiate-only", "--negotiation-tip="+currentCommitHash)
+		remoteCommitOutput, err := runGit("branch", "-r", "--contains", currentCommitHash)
 		if err != nil {
 			return "", "", status.WrapError(err, fmt.Sprintf("check if commit %s exists remotely", currentCommitHash))
 		}
-		currentCommitExistsRemotely := remoteCommitOutput == currentCommitHash
+		currentCommitExistsRemotely := strings.Contains(remoteCommitOutput, fmt.Sprintf("origin/%s", branch))
 		if currentCommitExistsRemotely {
 			commit = currentCommitHash
 		} else {
