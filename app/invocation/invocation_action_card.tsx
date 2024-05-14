@@ -734,6 +734,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
       ...actionResult.outputDirectorySymlinks,
     ].map((file) => file.path);
     const missingFiles = command.outputFiles.filter((expected) => !actualFiles.includes(expected));
+    // In practice, Bazel creates the expected directories inside the input tree.
+    // So it's unlikely that any of the expected dirs is missing.
     const actualDirs = actionResult.outputDirectories.map((dir) => dir.path);
     const missingDirs = command.outputDirectories.filter((expected) => !actualDirs.includes(expected));
     return (
