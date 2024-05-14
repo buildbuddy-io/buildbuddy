@@ -1054,11 +1054,20 @@
     opacity: 0.7;
   }
 
-  .icon.check-icon {
-    stroke: green;
+  .expected-output-label {
+    color: #444;
   }
+}
 
-  .icon.unlink {
+.action-list .missing-output {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .icon {
+    height: 18px;
+    width: 18px;
+    opacity: 0.7;
     stroke: red;
   }
 
