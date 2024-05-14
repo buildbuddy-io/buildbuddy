@@ -1,7 +1,7 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { ArrowRight, Download, FileSymlink, Info, File, Folder, Check, Unlink, FileQuestion } from "lucide-react";
+import { ArrowRight, Download, File, FileQuestion, FileSymlink, Folder, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
@@ -624,65 +624,22 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  private renderExpectedOutputs(
-    command: build.bazel.remote.execution.v2.Command,
-    actionResult?: build.bazel.remote.execution.v2.ActionResult
-  ) {
-    type OutputMap = Map<string, "file" | "dir" | "symlink" | "">;
-
-    const renderIcon = (actualOutputs: OutputMap, expectedOutput: string, defaultType: string) => {
-      switch (actualOutputs.get(expectedOutput)) {
-        case "file":
-          return <File className="icon file-icon" />;
-        case "dir":
-          return <Folder className="icon folder-icon" />;
-        case "symlink":
-          return <FileSymlink className="icon symlink-icon" />;
-        default:
-          switch (defaultType) {
-            case "file":
-              return <File className="icon file-icon" />;
-            case "dir":
-              return <Folder className="icon folder-icon" />;
-            case "symlink":
-              return <FileSymlink className="icon symlink-icon" />;
-            default:
-              return <FileQuestion className="icon file-question-icon" />;
-          }
-      }
-    };
-
+  private renderExpectedOutputs(command: build.bazel.remote.execution.v2.Command) {
     const useOutputPaths =
       command.outputPaths.length && !(command.outputFiles.length + command.outputDirectories.length);
 
     if (useOutputPaths) {
-      const actualOutputs = actionResult
-        ? actionResult.outputFiles
-            .map((file) => [file.path, "file"])
-            .concat(actionResult.outputDirectories.map((dir) => [dir.path, "dir"]))
-            .concat(actionResult.outputSymlinks.map((symlink) => [symlink.path, "symlink"]))
-            .reduce((map, [k, v]) => {
-              map.set(k, v);
-              return map;
-            }, new Map())
-        : new Map();
-
       return (
         <div className="action-section">
           <div className="action-property-title">Expected Outputs</div>
           {command.outputPaths.length ? (
             <div className="action-list">
               {command.outputPaths.map((expectedOutput) => (
-                <div className="expected-output-name">
-                  <span>{renderIcon(actualOutputs, expectedOutput, "")}</span>{" "}
-                  <span className="expected-output-label">{expectedOutput}</span>{" "}
+                <div className="expected-output">
                   <span>
-                    {actualOutputs.get(expectedOutput) ? (
-                      <Check className="icon check-icon" />
-                    ) : (
-                      <Unlink className="icon unlink-icon" />
-                    )}
+                    <FileQuestion className="icon file-question-icon" />
                   </span>
+                  <span className="expected-output-label">{expectedOutput}</span>
                 </div>
               ))}
             </div>
@@ -693,54 +650,25 @@ export default class InvocationActionCardComponent extends React.Component<Props
       );
     }
 
-    const actualFileOutputs = actionResult
-      ? actionResult.outputFiles
-          .map((file) => [file.path, "file"])
-          .concat(actionResult.outputFileSymlinks.map((fileSymlink) => [fileSymlink.path, "symlink"]))
-          .reduce((map, [k, v]) => {
-            map.set(k, v);
-            return map;
-          }, new Map())
-      : new Map();
-    const actualDirOutputs = actionResult
-      ? actionResult.outputDirectories
-          .map((dir) => [dir.path, "dir"])
-          .concat(actionResult.outputDirectorySymlinks.map((dirSymlink) => [dirSymlink.path, "symlink"]))
-          .reduce((map, [k, v]) => {
-            map.set(k, v);
-            return map;
-          }, new Map())
-      : new Map();
-
     return (
       <div className="action-section">
         <div className="action-property-title">Expected Outputs</div>
         {command.outputFiles.length + command.outputDirectories.length ? (
           <div className="action-list">
             {command.outputFiles.map((expectedFile) => (
-              <div className="expected-output-name">
-                <span>{renderIcon(actualFileOutputs, expectedFile, "file")}</span>{" "}
-                <span className="expected-output-label">{expectedFile}</span>{" "}
+              <div className="expected-output">
                 <span>
-                  {actualFileOutputs.get(expectedFile) ? (
-                    <Check className="icon check-icon" />
-                  ) : (
-                    <Unlink className="icon unlink-icon" />
-                  )}
+                  <File className="icon file-icon" />
                 </span>
+                <span className="expected-output-label">{expectedFile}</span>
               </div>
             ))}
             {command.outputDirectories.map((expectedDir) => (
-              <div className="expected-output-name">
-                <span>{renderIcon(actualDirOutputs, expectedDir, "dir")}</span>{" "}
-                <span className="expected-output-label">{expectedDir}</span>{" "}
+              <div className="expected-output">
                 <span>
-                  {actualDirOutputs.get(expectedDir) ? (
-                    <Check className="icon check-icon" />
-                  ) : (
-                    <Unlink className="icon unlink-icon" />
-                  )}
+                  <Folder className="icon folder-icon" />
                 </span>
+                <span className="expected-output-label">{expectedDir}</span>
               </div>
             ))}
           </div>
@@ -884,7 +812,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             <div>None</div>
                           )}
                         </div>
-                        {this.renderExpectedOutputs(this.state.command, this.state.actionResult)}
+                        {!this.state.actionResult && this.renderExpectedOutputs(this.state.command)}
                       </div>
                     ) : (
                       <div>No command details were found.</div>
