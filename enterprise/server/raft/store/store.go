@@ -1778,6 +1778,8 @@ func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, shardID, replic
 		Nhid:      proto.String(nhid),
 	})
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
+	newDescriptor.LastAddedReplicaId = proto.Uint64(replicaID)
+	newDescriptor.LastReplicaAddedAtUsec = proto.Int64(time.Now().UnixMicro())
 	if err := s.updateRangeDescriptor(ctx, shardID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
@@ -1793,6 +1795,10 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, shardID, r
 		}
 	}
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
+	if newDescriptor.GetLastAddedReplicaId() == replicaID {
+		newDescriptor.LastAddedReplicaId = nil
+		newDescriptor.LastReplicaAddedAtUsec = nil
+	}
 	if err := s.updateRangeDescriptor(ctx, shardID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
