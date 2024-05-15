@@ -1062,7 +1062,6 @@
 .action-list .missing-output {
   display: flex;
   align-items: center;
-  gap: 4px;
 
   .icon {
     height: 18px;
