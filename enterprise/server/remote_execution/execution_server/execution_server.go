@@ -358,9 +358,12 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
-
+	rmd := bazel_request.GetRequestMetadata(ctx)
 	for _, link := range links {
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
+		if rmd != nil {
+			executionProto.TargetLabel = rmd.GetTargetId()
+		}
 		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {
 			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.GetInvocationId(), err)
