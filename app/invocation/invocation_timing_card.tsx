@@ -141,9 +141,9 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     };
     rpcService
       .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "stream", { init })
-      .then((body) => {
-        if (body === null) throw new Error("response body is null");
-        return readProfile(body, (n) => this.setProgress(n, digestSize, storedEncoding));
+      .then((response) => {
+        if (!response.body) throw new Error("response body is null");
+        return readProfile(response.body, (n) => this.setProgress(n, digestSize, storedEncoding));
       })
       .then((profile) => this.updateProfile(profile))
       .catch((e) => errorService.handleError(e))

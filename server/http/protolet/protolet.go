@@ -3,16 +3,15 @@ package protolet
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -207,7 +206,7 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{},
 			r.Header.Set("content-type", "application/grpc")
 			wrapped := &wrappedResponse{w: w}
 			grpcServer.ServeHTTP(wrapped, r)
-			wrapped.sendErrorIfNeeded(r)
+			wrapped.sendStatus()
 			return
 		}
 
@@ -280,22 +279,40 @@ func (w *wrappedResponse) Flush() {
 	}
 }
 
-func (w *wrappedResponse) sendErrorIfNeeded(req *http.Request) {
-	if w.wroteHeader || w.wroteBody {
-		return
+func (w *wrappedResponse) sendStatus() {
+	defer w.Flush()
+
+	if w.Header().Get("grpc-status") == "" {
+		// The status field winds up being empty if the server is shutting down.
+		// Translate this to "Unavailable".
+		w.Header().Set("grpc-status", fmt.Sprintf("%d", codes.Unavailable))
+		w.Header().Set("grpc-message", "server is unavailable")
 	}
-	i, err := strconv.Atoi(w.Header().Get("grpc-status"))
-	if err != nil {
-		i = int(codes.Unknown)
-	}
-	if i == 0 {
+
+	if !w.wroteHeader {
+		// If we haven't sent the headers yet, then we can send the status as
+		// plain old headers.
 		w.WriteHeader(200)
 		return
 	}
 
-	// Match our current behavior where we return 500 for all errors and return the message in the response body
-	w.WriteHeader(500)
-	code := codes.Code(i).String()
-	w.Write([]byte(fmt.Sprintf("rpc error: code = %s desc = %s", code, w.Header().Get("grpc-message"))))
-	w.Flush()
+	// If we already wrote the HTTP header then write the status as "trailers"
+	// using the same encoding used by gRPC Web.
+	h := http.Header{}
+	h.Set("grpc-status", w.Header().Get("grpc-status"))
+	h.Set("grpc-message", w.Header().Get("grpc-message"))
+	var encodedHeaders bytes.Buffer
+	h.Write(&encodedHeaders)
+
+	const trailerFlags = 0x80
+	prefix := messageHeader(trailerFlags, uint32(encodedHeaders.Len()))
+	w.Write(prefix[:])
+	w.Write(encodedHeaders.Bytes())
+}
+
+func messageHeader(flags byte, length uint32) [5]byte {
+	var b [5]byte
+	b[0] = flags
+	binary.BigEndian.AppendUint32(b[1:1], length)
+	return b
 }
