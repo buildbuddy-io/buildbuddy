@@ -339,7 +339,8 @@ func readConfig(path string) (*ConfigFile, error) {
 
 	log.Debugf("Reading %s", f.Name())
 	cfg := &BuildBuddyConfig{}
-	if err := yaml.NewDecoder(f).Decode(cfg); err != nil {
+	// Decode YAML but ignore EOF errors, which happen when the file is empty.
+	if err := yaml.NewDecoder(f).Decode(cfg); err != nil && err != io.EOF {
 		return nil, status.UnknownErrorf("failed to parse %s: %s", f.Name(), err)
 	}
 	return &ConfigFile{Path: path, BuildBuddyConfig: cfg}, nil
@@ -615,9 +616,12 @@ func (p *Plugin) load() error {
 	}
 
 	log.Printf("Downloading %q", p.RepoURL())
-	// Clone into a temp dir so that if the ref does not exist, we don't
-	// actually create the plugin directory.
-	tempPath, err := os.MkdirTemp("", "buildbuddy-git-clone-*")
+	// Clone into a temp dir next to where the repo will be cloned so that if
+	// the ref does not exist, we don't actually create the plugin directory.
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("failed to create repo dir: %s", err)
+	}
+	tempPath, err := os.MkdirTemp(filepath.Dir(path), ".git-clone.*.tmp")
 	if err != nil {
 		return fmt.Errorf("failed to create temp dir: %s", err)
 	}
@@ -646,9 +650,6 @@ func (p *Plugin) load() error {
 
 	// We cloned the repo and checked out the ref successfully; move it to
 	// the cache dir.
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("failed to create repo dir: %s", err)
-	}
 	if err := os.Rename(tempPath, path); err != nil {
 		return fmt.Errorf("failed to add cloned repo to plugins dir: %s", err)
 	}

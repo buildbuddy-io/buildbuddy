@@ -8,7 +8,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service",
     deps = [
         "//enterprise/server/util/execution",
+        "//proto:buildbuddy_service_go_proto",
         "//proto:execution_stats_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/tables",
         "//server/util/db",

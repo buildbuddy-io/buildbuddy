@@ -17,5 +17,6 @@ go_library(
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

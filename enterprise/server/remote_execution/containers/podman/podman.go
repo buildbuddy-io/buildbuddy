@@ -62,10 +62,11 @@ var (
 
 	podmanRuntime       = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	podmanStorageDriver = flag.String("executor.podman.storage_driver", "overlay", "The podman storage driver to use.")
-	podmanEnableStats   = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
+	podmanEnableStats   = flag.Bool("executor.podman.enable_stats", true, "Whether to enable cgroup-based podman stats.")
 	transientStore      = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.", flag.Deprecated("--transient-store is now always applied if the podman version supports it"))
 	podmanDNS           = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
 	podmanGPU           = flag.String("executor.podman.gpus", "", "Specifies the value of the --gpus= flag to pass to podman. Set to 'all' to pass all GPUs.")
+	podmanPidsLimit     = flag.String("executor.podman.pids_limit", "", "Specifies the value of the --pids-limit= flag to pass to podman. Set to '-1' for unlimited PIDs. The default is 2048 on systems that support pids cgroup controller.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -78,6 +79,8 @@ var (
 
 	// A map from image name to pull status. This is used to avoid parallel pulling of the same image.
 	pullOperations sync.Map
+
+	databaseLockedRegexp = regexp.MustCompile("beginning container [0-9a-f]{64} save transaction: database is locked")
 )
 
 const (
@@ -343,6 +346,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	}
 	if *podmanGPU != "" {
 		args = append(args, "--gpus="+*podmanGPU)
+	}
+	if *podmanPidsLimit != "" {
+		args = append(args, "--pids-limit="+*podmanPidsLimit)
 	}
 	for _, device := range c.options.Devices {
 		deviceSpecs := make([]string, 0)
@@ -782,6 +788,14 @@ func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podm
 	// Note: we don't collect stats on the podman process, and instead use
 	// cgroups for stats accounting.
 	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
+
+	// If the disk is under heavy load, podman may fail with "database is
+	// locked". Detect these and return a retryable error.
+	if result.ExitCode == podmanCommandNotRunnableExitCode && databaseLockedRegexp.Match(result.Stderr) {
+		result.ExitCode = commandutil.NoExitCode
+		result.Error = status.UnavailableErrorf("podman failed: %q", strings.TrimSpace(string(result.Stderr)))
+	}
+
 	return result
 }
 

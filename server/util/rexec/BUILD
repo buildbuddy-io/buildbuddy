@@ -12,6 +12,7 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/proto",
         "//server/util/retry",
         "//server/util/status",
         "@org_golang_google_genproto//googleapis/longrunning",

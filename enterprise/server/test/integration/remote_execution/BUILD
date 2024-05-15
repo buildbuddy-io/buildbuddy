@@ -11,7 +11,6 @@ go_test(
     srcs = ["remote_execution_test.go"],
     args = ["--test.v"],
     shard_count = 11,
-    tags = ["cpu:4"],
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",
@@ -35,6 +34,7 @@ go_test(
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/rexec",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_go_redis_redis_v8//:redis",

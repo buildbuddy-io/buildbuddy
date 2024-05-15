@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"strings"
 	"syscall"
 	"time"
 
@@ -128,7 +127,7 @@ func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
 	return !isClientBazel(task)
 }
 
-func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream operation.StreamLike) (retry bool, err error) {
+func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream *operation.Publisher) (retry bool, err error) {
 	// From here on in we use these liberally, so check that they are setup properly
 	// in the environment.
 	if s.env.GetActionCacheClient() == nil || s.env.GetByteStreamClient() == nil || s.env.GetContentAddressableStorageClient() == nil {
@@ -218,6 +217,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	log.CtxDebugf(ctx, "Preparing runner for task.")
 	stage.Set("pull_image")
+	// TODO: don't publish this progress update if we're not actually pulling
+	// an image.
+	_ = stream.SetState(repb.ExecutionProgress_PULLING_CONTAINER_IMAGE)
 	if err := r.PrepareForTask(ctx); err != nil {
 		return finishWithErrFn(err)
 	}
@@ -226,16 +228,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	log.CtxDebugf(ctx, "Downloading inputs.")
 	stage.Set("input_fetch")
+	_ = stream.SetState(repb.ExecutionProgress_DOWNLOADING_INPUTS)
 	if err := r.DownloadInputs(ctx, md.IoStats); err != nil {
 		return finishWithErrFn(err)
 	}
 
 	md.InputFetchCompletedTimestamp = timestamppb.Now()
-
-	log.CtxDebugf(ctx, "Transitioning to EXECUTING stage")
-	if err := stateChangeFn(repb.ExecutionStage_EXECUTING, operation.InProgressExecuteResponse()); err != nil {
-		return true, err
-	}
 	md.ExecutionStartTimestamp = timestamppb.Now()
 	execTimeout, err := parseTimeout(task.GetAction().Timeout)
 	if err != nil {
@@ -247,6 +245,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	log.CtxDebugf(ctx, "Executing task.")
 	stage.Set("execution")
+	_ = stream.SetState(repb.ExecutionProgress_EXECUTING_COMMAND)
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)
 	go func() {
 		cmdResultChan <- r.Run(ctx)
@@ -306,6 +305,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	log.CtxDebugf(ctx, "Uploading outputs.")
 	stage.Set("output_upload")
+	_ = stream.SetState(repb.ExecutionProgress_UPLOADING_OUTPUTS)
 	if err := r.UploadOutputs(ctx, md.IoStats, executeResponse, cmdResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
@@ -410,15 +410,6 @@ func incompleteExecutionError(ctx context.Context, exitCode int, err error) erro
 		}
 		alert.UnexpectedEvent("unknown_context_error", "Unknown context error: %s", ctxErr)
 		return status.UnknownError(ctxErr.Error())
-	}
-	// Ensure that if the command was not found, we return FAILED_PRECONDITION,
-	// per RBE protocol. This is done because container/command implementations
-	// don't really have a good way to distinguish this error from other types of
-	// errors anyway (this is true for at least the bare and docker
-	// implementations at time of writing)
-	msg := status.Message(err)
-	if strings.Contains(msg, "no such file or directory") {
-		return status.FailedPreconditionError(msg)
 	}
 	return err
 }

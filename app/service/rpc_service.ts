@@ -1,11 +1,21 @@
 import { Subject } from "rxjs";
-import { buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
+import { buildbuddy, $stream } from "../../proto/buildbuddy_service_ts_proto";
 import { context } from "../../proto/context_ts_proto";
 import { CancelablePromise } from "../util/async";
 import * as protobufjs from "protobufjs";
 import capabilities from "../capabilities/capabilities";
 
+/** Return type for unary RPCs. */
 export { CancelablePromise } from "../util/async";
+
+/** Return type for server-streaming RPCs. */
+export type ServerStream<T> = $stream.ServerStream<T>;
+
+/** Return type common to both unary and server-streaming RPCs. */
+export type Cancelable = CancelablePromise<any> | ServerStream<any>;
+
+/** Stream handler params passed when calling a server-streaming RPC. */
+export type ServerStreamHandler<T> = $stream.ServerStreamHandler<T>;
 
 /**
  * ExtendedBuildBuddyService is an extended version of BuildBuddyService with
@@ -13,6 +23,9 @@ export { CancelablePromise } from "../util/async";
  *
  * - The `requestContext` field is automatically set on each request.
  * - All RPC methods return a `CancelablePromise` instead of a `Promise`.
+ *
+ * TODO(bduffany): allow customizing the codegen to provide this extended functionality
+ * instead of trying to transform the service types / classes like this.
  */
 type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddyService>;
 
@@ -173,25 +186,46 @@ class RpcService {
     }
   }
 
-  async rpc(server: string, method: any, requestData: any, callback: any) {
+  async rpc(
+    server: string,
+    method: { name: string; serverStreaming?: boolean },
+    requestData: Uint8Array,
+    callback: (error: any, data?: Uint8Array) => void,
+    streamParams?: $stream.StreamingRPCParams
+  ): Promise<void> {
     const url = `${server || ""}/rpc/BuildBuddyService/${method.name}`;
     const init: RequestInit = { method: "POST", body: requestData };
     if (capabilities.config.regions?.map((r) => r.server).includes(server)) {
       init.credentials = "include";
     }
     init.headers = { "Content-Type": "application/proto" };
-    try {
-      if (capabilities.config.streamingHttpEnabled) {
-        init.headers["Content-Type"] = "application/proto+prefixed";
-        init.body = lengthPrefixMessage(requestData);
+    // Set the signal to allow canceling the underlying fetch, if applicable.
+    if (streamParams?.signal) {
+      init.signal = streamParams.signal;
+    }
 
-        const reader = (await this.fetch(url, "stream", init))?.getReader();
-        return transformLengthPrefixedReaderStreamToProtoMessageBytes(reader, (error, bytes) => {
+    if (method.serverStreaming && !capabilities.config.streamingHttpEnabled) {
+      console.error("Attempted to call server-streaming RPC, but streaming HTTP is disabled");
+      return;
+    }
+
+    if (capabilities.config.streamingHttpEnabled) {
+      init.headers["Content-Type"] = "application/proto+prefixed";
+      init.body = lengthPrefixMessage(requestData);
+      try {
+        const response = await this.fetch(url, "stream", init);
+        await readLengthPrefixedStream(response!.getReader(), (messageBytes) => {
           this.events.next(method.name);
-          callback(error, bytes);
+          callback(null, messageBytes);
         });
+        streamParams?.complete?.();
+      } catch (e) {
+        callback(e);
       }
+      return;
+    }
 
+    try {
       const arrayBuffer = await this.fetch(url, "arraybuffer", init);
       callback(null, new Uint8Array(arrayBuffer));
       this.events.next(method.name);
@@ -204,12 +238,20 @@ class RpcService {
   private getExtendedService(service: buildbuddy.service.BuildBuddyService): ExtendedBuildBuddyService {
     const extendedService = Object.create(service);
     for (const rpcName of getRpcMethodNames(buildbuddy.service.BuildBuddyService)) {
-      extendedService[rpcName] = (request: Record<string, any>) => {
+      const method = (request: Record<string, any>, subscriber?: any) => {
         if (this.requestContext && !request.requestContext) {
           request.requestContext = this.requestContext;
         }
-        return new CancelablePromise((service as any)[rpcName](request));
+        const originalMethod = (service as any)[rpcName] as BaseRpcMethod<any, any>;
+        if (originalMethod.serverStreaming) {
+          // ServerStream method already supports cancel function.
+          return originalMethod.call(service, request, subscriber);
+        } else {
+          // Wrap with our CancelablePromise util.
+          return new CancelablePromise(originalMethod.call(service, request));
+        }
       };
+      extendedService[rpcName] = method;
     }
     return extendedService;
   }
@@ -241,10 +283,15 @@ interface Value {
   done: boolean;
 }
 
-async function transformLengthPrefixedReaderStreamToProtoMessageBytes(
-  reader: ReadableStreamDefaultReader | undefined,
-  callback: (e: Error | null, b: Uint8Array) => void
-) {
+/**
+ * Reads length-prefixed message payloads from the stream and invokes the given
+ * callback for each one.
+ *
+ * The returned promise completes when all messages are successfully read from
+ * the stream. It resolves with an error if reading from the stream fails or if
+ * it contains malformed data.
+ */
+async function readLengthPrefixedStream(reader: ReadableStreamDefaultReader, callback: (b: Uint8Array) => void) {
   let streamState: StreamState = {
     buffer: new Uint8Array(),
     bufferedLength: 0,
@@ -273,7 +320,7 @@ async function transformLengthPrefixedReaderStreamToProtoMessageBytes(
 
     // We've got a full message, flush it to the callback so the full proto can be parsed.
     if (streamState.bufferedLength >= streamState.messageExpectedLength) {
-      callback(null, streamState.buffer);
+      callback(streamState.buffer);
     }
 
     // If the stream closed with no more data, we're done.
@@ -323,10 +370,10 @@ function consumeMessageChunk(streamState: StreamState, value: Value) {
   return { value: value.value.slice(streamState.messageExpectedLength - streamState.bufferedLength), done: value.done };
 }
 
-async function readAtLeastNBytes(value: Value, reader: ReadableStreamDefaultReader | undefined, n: number) {
+async function readAtLeastNBytes(value: Value, reader: ReadableStreamDefaultReader, n: number) {
   let done = false;
   while (value.value.length < n) {
-    let r = await reader?.read();
+    let r = await reader.read();
     if (r?.value?.length) {
       value.value = mergeBuffers(value.value, r.value);
     }
@@ -367,23 +414,58 @@ function getRpcMethodNames(serviceClass: Function) {
   return new Set(Object.keys(serviceClass.prototype).filter((key) => key !== "constructor"));
 }
 
-type Rpc<Request, Response> = (request: Request) => Promise<Response>;
-
-export type CancelableRpc<Request, Response> = (request: Request) => CancelablePromise<Response>;
-
-type RpcMethodNames<Service> = keyof Omit<Service, keyof protobufjs.rpc.Service>;
+/**
+ * Type of a unary RPC method on the originally generated service type,
+ * before wrapping with our ExtendedBuildBuddyService functionality.
+ */
+type BaseUnaryRpcMethod<Request, Response> = ((request: Request) => Promise<Response>) & {
+  name: string;
+  serverStreaming: false;
+};
 
 /**
- * Utility type that adapts a `PromiseBasedService` so that `CancelablePromise` is
- * returned from all methods, instead of `Promise`.
+ * Type of a unary RPC method on the ExtendedBuildBuddyService.
+ */
+export type UnaryRpcMethod<Request, Response> = (request: Request) => CancelablePromise<Response>;
+
+/**
+ * Type of a server-streaming RPC method.
+ */
+export type ServerStreamingRpcMethod<Request, Response> = ((
+  request: Request,
+  handler: $stream.ServerStreamHandler<Response>
+) => $stream.ServerStream<Response>) & {
+  name: string;
+  serverStreaming: true;
+};
+
+export type RpcMethod<Request, Response> =
+  | UnaryRpcMethod<Request, Response>
+  | ServerStreamingRpcMethod<Request, Response>;
+
+type BaseRpcMethod<Request, Response> =
+  | BaseUnaryRpcMethod<Request, Response>
+  | ServerStreamingRpcMethod<Request, Response>;
+
+type RpcMethodNames<Service extends protobufjs.rpc.Service> = keyof Omit<Service, keyof protobufjs.rpc.Service>;
+
+/**
+ * Utility type that adapts a generated service class so that
+ * `CancelablePromise` is returned from all unary RPC methods instead of
+ * `Promise`.
  */
 type CancelableService<Service extends protobufjs.rpc.Service> = protobufjs.rpc.Service &
   {
     // Loop over all methods in the service, except for the ones inherited from the base
     // service (we don't want to modify those at all).
-    [MethodName in RpcMethodNames<Service>]: Service[MethodName] extends Rpc<infer Request, infer Response>
-      ? CancelableRpc<Request, Response>
-      : never;
+    [MethodName in RpcMethodNames<Service>]: Service[MethodName] extends BaseUnaryRpcMethod<
+      infer Request,
+      infer Response
+    >
+      ? /* Unary RPC: transform the generated method's return type from Promise to CancelablePromise. */
+        UnaryRpcMethod<Request, Response>
+      : /* Server-streaming RPC: keep the original method as-is. */
+        Service[MethodName];
   };
 
 type FetchPromiseType<T extends FetchResponseType> = T extends ""

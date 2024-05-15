@@ -26,5 +26,6 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

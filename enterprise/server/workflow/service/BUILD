@@ -61,6 +61,7 @@ go_test(
         ":service",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
+        "//enterprise/server/workflow/config",
         "//proto:buildbuddy_service_go_proto",
         "//proto:git_go_proto",
         "//proto:remote_execution_go_proto",
@@ -88,5 +89,6 @@ go_test(
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/anypb",
     ],
 )

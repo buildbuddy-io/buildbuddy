@@ -8,5 +8,6 @@ go_library(
     deps = [
         "//server/util/flagutil/common",
         "//server/util/flagutil/types/autoflags",
+        "//server/util/flagutil/types/autoflags/tags",
     ],
 )

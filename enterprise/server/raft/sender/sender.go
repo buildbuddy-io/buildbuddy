@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -30,18 +29,14 @@ type Sender struct {
 	// Keeps track of which raft nodes are responsible for which data.
 	rangeCache *rangecache.RangeCache
 
-	// Keeps track of which raft nodes live on which machines.
-	nodeRegistry registry.NodeRegistry
-
 	// Keeps track of connections to other machines.
 	apiClient *client.APIClient
 }
 
-func New(rangeCache *rangecache.RangeCache, nodeRegistry registry.NodeRegistry, apiClient *client.APIClient) *Sender {
+func New(rangeCache *rangecache.RangeCache, apiClient *client.APIClient) *Sender {
 	return &Sender{
-		rangeCache:   rangeCache,
-		nodeRegistry: nodeRegistry,
-		apiClient:    apiClient,
+		rangeCache: rangeCache,
+		apiClient:  apiClient,
 	}
 }
 
@@ -52,22 +47,6 @@ func makeHeader(rangeDescriptor *rfpb.RangeDescriptor, replicaIdx int, mode rfpb
 		Generation:      rangeDescriptor.GetGeneration(),
 		ConsistencyMode: mode,
 	}
-}
-
-func (s *Sender) grpcAddrForReplicaDescriptor(rd *rfpb.ReplicaDescriptor) (string, error) {
-	addr, _, err := s.nodeRegistry.ResolveGRPC(rd.GetShardId(), rd.GetReplicaId())
-	if err != nil {
-		return "", err
-	}
-	return addr, nil
-}
-
-func (s *Sender) connectionForReplicaDescriptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
-	addr, err := s.grpcAddrForReplicaDescriptor(rd)
-	if err != nil {
-		return nil, err
-	}
-	return s.apiClient.Get(ctx, addr)
 }
 
 func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, key []byte) (*rfpb.RangeDescriptor, error) {
@@ -168,7 +147,7 @@ type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, mode rfpb.Header_ConsistencyMode) (int, error) {
 	for i, replica := range rd.GetReplicas() {
-		client, err := s.connectionForReplicaDescriptor(ctx, replica)
+		client, err := s.apiClient.GetForReplica(ctx, replica)
 		if err != nil {
 			if status.IsUnavailableError(err) {
 				log.Debugf("tryReplicas: replica %+v is unavailable: %s", replica, err)

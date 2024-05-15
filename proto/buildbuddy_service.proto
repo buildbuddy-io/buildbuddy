@@ -104,6 +104,8 @@ service BuildBuddyService {
   // Execution API
   rpc GetExecution(execution_stats.GetExecutionRequest)
       returns (execution_stats.GetExecutionResponse);
+  rpc WaitExecution(execution_stats.WaitExecutionRequest)
+      returns (stream execution_stats.WaitExecutionResponse);
   rpc GetExecutionNodes(scheduler.GetExecutionNodesRequest)
       returns (scheduler.GetExecutionNodesResponse);
   rpc SearchExecution(execution_stats.SearchExecutionRequest)

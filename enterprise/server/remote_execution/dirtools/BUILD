@@ -43,6 +43,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/hash",
         "//server/util/prefix",
+        "//server/util/proto",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
