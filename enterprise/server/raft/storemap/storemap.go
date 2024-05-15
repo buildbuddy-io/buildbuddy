@@ -199,7 +199,7 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 	alive := make([]*rfpb.StoreUsage, 0, len(sm.storeDetails))
 	for _, sd := range sm.storeDetails {
 		status := sd.status()
-		if status == storeStatusAvailable || status == storeStatusSuspect {
+		if status == storeStatusAvailable {
 			alive = append(alive, sd.usage)
 		}
 	}
