@@ -9,10 +9,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
-	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -21,7 +19,6 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -209,7 +206,7 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{},
 			r.Header.Set("content-type", "application/grpc")
 			wrapped := &wrappedResponse{w: w}
 			grpcServer.ServeHTTP(wrapped, r)
-			wrapped.sendErrorIfNeeded(r)
+			wrapped.sendStatus()
 			return
 		}
 
@@ -282,58 +279,40 @@ func (w *wrappedResponse) Flush() {
 	}
 }
 
-func (w *wrappedResponse) sendErrorIfNeeded(req *http.Request) {
+func (w *wrappedResponse) sendStatus() {
 	defer w.Flush()
 
-	codeStr := w.Header().Get("grpc-status")
-	message := w.Header().Get("grpc-message")
-
-	// The status field winds up being empty if the request context gets
-	// cancelled due to the server shutting down. Translate this to an
-	// Unavailable error.
-	var s *gstatus.Status
-	if codeStr == "" {
-		s = gstatus.New(codes.Unavailable, "server is unavailable")
-	} else {
-		code, err := strconv.Atoi(codeStr)
-		if err != nil {
-			code = int(codes.Unknown)
-		}
-		s = gstatus.New(codes.Code(code), message)
+	if w.Header().Get("grpc-status") == "" {
+		// The status field winds up being empty if the server is shutting down.
+		// Translate this to "Unavailable".
+		w.Header().Set("grpc-status", fmt.Sprintf("%d", codes.Unavailable))
+		w.Header().Set("grpc-message", "server is unavailable")
 	}
 
 	if !w.wroteHeader {
-		// Match our current behavior where we return 500 for all errors
-		// and return the status as a string in the message body.
-		if err := s.Err(); err != nil {
-			http.Error(w, err.Error(), 500)
-		} else {
-			w.WriteHeader(200)
-		}
+		// If we haven't sent the headers yet, then we can send the status as
+		// plain old headers.
+		w.WriteHeader(200)
 		return
 	}
 
-	// If we already wrote the HTTP header then write the error as a
-	// message using a special convention:
-	// - Write a length prefix with length equal to the max allowed value.
-	// - Write a length-prefixed Status proto.
-	if s.Err() == nil {
-		return
-	}
-	marker := messageHeader(^uint32(0))
-	w.Write(marker[:])
-	b, err := proto.Marshal(s.Proto())
-	if err != nil {
-		log.CtxWarningf(req.Context(), "Failed to marshal status proto: %s", err)
-	}
-	p := messageHeader(uint32(len(b)))
-	w.Write(p[:])
-	w.Write(b)
+	// If we already wrote the HTTP header then write the status as "trailers"
+	// using the same encoding used by gRPC Web.
+	h := http.Header{}
+	h.Set("grpc-status", w.Header().Get("grpc-status"))
+	h.Set("grpc-message", w.Header().Get("grpc-message"))
+	var encodedHeaders bytes.Buffer
+	h.Write(&encodedHeaders)
+
+	const trailerFlags = 0x80
+	prefix := messageHeader(trailerFlags, uint32(encodedHeaders.Len()))
+	w.Write(prefix[:])
+	w.Write(encodedHeaders.Bytes())
 }
 
-func messageHeader(length uint32) [5]byte {
+func messageHeader(flags byte, length uint32) [5]byte {
 	var b [5]byte
-	b[0] = 0 // always set optimized flag = 0 for now
+	b[0] = flags
 	binary.BigEndian.AppendUint32(b[1:1], length)
 	return b
 }

@@ -6,6 +6,8 @@ import * as protobufjs from "protobufjs";
 import capabilities from "../capabilities/capabilities";
 import { FetchError, GRPCStatusError, HTTPStatusError, parseGRPCStatus } from "../util/errors";
 import { google as google_status } from "../../proto/grpc_status_ts_proto";
+import { google as google_code } from "../../proto/grpc_code_ts_proto";
+import { BrowserHeaders } from "browser-headers";
 
 /** Return type for unary RPCs. */
 export { CancelablePromise } from "../util/async";
@@ -199,7 +201,7 @@ class RpcService {
           throw structuredErrors ? new FetchError(e) : e;
         }
       case "stream":
-        return response.body as FetchPromiseType<T>;
+        return response as FetchPromiseType<T>;
       default:
         try {
           return (await response.text()) as FetchPromiseType<T>;
@@ -237,10 +239,17 @@ class RpcService {
       init.body = lengthPrefixMessage(requestData);
       try {
         const response = await this.fetch(url, "stream", init);
-        await readLengthPrefixedStream(response!.getReader(), (messageBytes) => {
-          this.events.next(method.name);
-          callback(null, messageBytes);
-        });
+        if (response.headers.has("grpc-status")) {
+          const status = statusFromHeaders(response.headers);
+          if (status.code !== google_code.rpc.Code.OK) {
+            throw new GRPCStatusError(status);
+          }
+        } else if (response.body) {
+          await readLengthPrefixedStream(response.body.getReader(), (messageBytes) => {
+            this.events.next(method.name);
+            callback(null, messageBytes);
+          });
+        }
         streamParams?.complete?.();
       } catch (e) {
         // If we successfully read the HTTP response but it returned an error
@@ -312,54 +321,63 @@ function lengthPrefixMessage(requestData: Uint8Array) {
 async function readLengthPrefixedStream(reader: ReadableStreamDefaultReader, callback: (b: Uint8Array) => void) {
   const bufferedStream = new BufferedStream(reader);
 
-  // Reusable buffer for the length prefix header.
-  const header = new Uint8Array(5);
-  const readLength = async () => {
-    const n = await bufferedStream.read(header);
+  // Reusable buffer for the flags + length header.
+  const headerBytes = new Uint8Array(5);
+  const readHeader = async () => {
+    const n = await bufferedStream.read(headerBytes);
     if (n === 0) {
       return null; // no more data
     }
-    if (n !== header.length) {
+    if (n !== headerBytes.length) {
       throw new Error("unexpected data on stream while reading length prefix");
     }
-    // Return the length. Note, byte 0 is the compression flag and is unused.
-    return new DataView(header.buffer, 1, 4).getUint32(0, /*littleEndian=*/ false);
+    return {
+      flags: headerBytes[0],
+      payloadLength: new DataView(headerBytes.buffer, 1, 4).getUint32(0, /*littleEndian=*/ false),
+    };
   };
 
-  const readMessage = async (messageLength: number) => {
-    const messageBytes = new Uint8Array(messageLength);
+  const readPayload = async (payloadLength: number) => {
+    const messageBytes = new Uint8Array(payloadLength);
     const n = await bufferedStream.read(messageBytes);
     if (n < messageBytes.length) {
-      throw new Error("stream ended unexpectedly while reading message payload");
+      throw new Error("stream ended unexpectedly while reading payload");
     }
     return messageBytes;
   };
 
-  const readStatus = async () => {
-    const length = await readLength();
-    if (length === null) {
-      throw new Error("stream ended unexpectedly while reading error status header");
-    }
-    const message = await readMessage(length);
-    return google_status.rpc.Status.decode(message);
-  };
-
   while (true) {
-    const messageLength = await readLength();
-    if (messageLength === null) {
-      return; // no more data
+    const header = await readHeader();
+    if (!header) {
+      // No more data, and we haven't read the status.
+      // Just assume OK status for now.
+      return;
     }
 
-    if (messageLength === 0xffffffff) {
-      // This value indicates that an error occurred mid-stream. We expect to
-      // see a length-prefixed gRPC status in this case.
-      const status = await readStatus();
+    if ((header.flags & 0x80) === 0x80) {
+      // This value indicates that there is no more data and the gRPC status
+      // payload will follow.
+      const encodedTrailers = await readPayload(header.payloadLength);
+      const status = statusFromHeaders(decodeTrailers(encodedTrailers));
+      if (status.code === google_code.rpc.Code.OK) {
+        return; // OK status - don't throw an error.
+      }
       throw new GRPCStatusError(status);
     }
 
-    const message = await readMessage(messageLength);
+    const message = await readPayload(header.payloadLength);
     callback(message);
   }
+}
+
+function statusFromHeaders(input: Headers | string): google_status.rpc.Status {
+  const headers = new BrowserHeaders(input);
+  const code = Number(headers.get("grpc-status")?.[0] ?? undefined);
+  const message = headers.get("grpc-message")?.[0] ?? undefined;
+  return new google_status.rpc.Status({
+    code: isNaN(code) ? google_code.rpc.Code.UNKNOWN : code,
+    message: message || "unknown error",
+  });
 }
 
 /**
@@ -409,6 +427,21 @@ class BufferedStream {
     this.len -= n;
     return n;
   }
+}
+
+const isAllowedControlChar = (char: number) => char === 0x9 || char === 0xa || char === 0xd;
+
+function isValidHeaderAscii(val: number): boolean {
+  return isAllowedControlChar(val) || (val >= 0x20 && val <= 0x7e);
+}
+
+function decodeTrailers(bytes: Uint8Array): string {
+  for (let i = 0; i !== bytes.length; ++i) {
+    if (!isValidHeaderAscii(bytes[i])) {
+      throw new Error("gRPC status trailers returned by server are not valid ASCII");
+    }
+  }
+  return new TextDecoder("ASCII").decode(bytes);
 }
 
 function uint8ArrayToBase64(array: Uint8Array): string {
@@ -481,7 +514,7 @@ type FetchPromiseType<T extends FetchResponseType> = T extends ""
   : T extends "arraybuffer"
   ? ArrayBuffer
   : T extends "stream"
-  ? ReadableStream<Uint8Array> | null
+  ? Response
   : never;
 
 export default new RpcService();
