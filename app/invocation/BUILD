@@ -790,6 +790,7 @@ ts_library(
     srcs = ["execution_status.tsx"],
     deps = [
         "//app/service:rpc_service",
+        "//app/util:rpc",
         "//proto:execution_stats_ts_proto",
         "//proto:remote_execution_ts_proto",
     ],
