@@ -873,6 +873,7 @@ type ExecutionNode interface {
 
 type ExecutionSearchService interface {
 	SearchExecutions(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error)
+	FetchExecutionRequestMetadata(ctx context.Context, execIDs []string) (map[string]*repb.RequestMetadata, error)
 }
 
 // TaskRouter decides which execution nodes should execute a task.
@@ -1325,6 +1326,9 @@ type ExecutionCollector interface {
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
 	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink) error
+	AddExecutionRequestMetadata(context.Context, string, *repb.RequestMetadata) error
+	GetExecutionRequestMetadata(context.Context, string) (*repb.RequestMetadata, error)
+	DeleteExecutionRequestMetadata(context.Context, string) error
 	GetInvocationLinks(ctx context.Context, execution_id string) ([]*sipb.StoredInvocationLink, error)
 	DeleteInvocationLinks(ctx context.Context, execution_id string) error
 }

@@ -2,6 +2,7 @@ package redis_execution_collector
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -14,9 +15,10 @@ import (
 )
 
 const (
-	redisExecutionKeyPrefix      = "exec"
-	redisInvocationKeyPrefix     = "invocation"
-	redisInvocationLinkKeyPrefix = "invocationLink"
+	redisExecutionKeyPrefix                = "exec"
+	redisInvocationKeyPrefix               = "invocation"
+	redisInvocationLinkKeyPrefix           = "invocationLink"
+	redisExecutionRequestMetadataKeyPrefix = "execReqMetadata"
 
 	invocationExpiration     = 24 * time.Hour
 	invocationLinkExpiration = 24 * time.Hour
@@ -44,6 +46,10 @@ func New(rdb redis.UniversalClient) *collector {
 
 func getExecutionKey(iid string) string {
 	return strings.Join([]string{redisExecutionKeyPrefix, iid}, "/")
+}
+
+func getExecutionRequestMetadataKey(executionID string) string {
+	return strings.Join([]string{redisExecutionRequestMetadataKeyPrefix, executionID}, "/")
 }
 
 func getInvocationKey(iid string) string {
@@ -118,6 +124,47 @@ func (c *collector) AppendExecution(ctx context.Context, iid string, execution *
 	pipe.Expire(ctx, key, executionExpiration)
 	_, err = pipe.Exec(ctx)
 	return err
+}
+
+func (c *collector) AddExecutionRequestMetadata(ctx context.Context, executionID string, metadata *repb.RequestMetadata) error {
+	b, err := proto.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	key := getExecutionRequestMetadataKey(executionID)
+	pipe := c.rdb.TxPipeline()
+	if result := pipe.RPush(ctx, key, string(b)); result.Err() != nil {
+		return result.Err()
+	}
+	if result := pipe.Expire(ctx, key, executionExpiration); result.Err() != nil {
+		return result.Err()
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *collector) GetExecutionRequestMetadata(ctx context.Context, executionID string) (*repb.RequestMetadata, error) {
+	key := getExecutionRequestMetadataKey(executionID)
+	res, err := c.rdb.Get(ctx, key).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	m := &repb.RequestMetadata{}
+	if err := proto.Unmarshal([]byte(res), m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *collector) DeleteExecutionRequestMetadata(ctx context.Context, executionID string) error {
+	return c.rdb.Del(ctx, getExecutionRequestMetadataKey(executionID)).Err()
 }
 
 func (c *collector) GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error) {

@@ -99,14 +99,49 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	sort.Slice(executions, func(i, j int) bool {
 		return executions[i].Model.CreatedAtUsec < executions[j].Model.CreatedAtUsec
 	})
+
+	var completedExecs []string
 	rsp := &espb.GetExecutionResponse{}
 	for _, ex := range executions {
 		protoExec, err := execution.TableExecToClientProto(ex)
 		if err != nil {
 			return nil, err
 		}
+
+		if repb.ExecutionStage_Value(ex.Stage) != repb.ExecutionStage_COMPLETED {
+			if collector := es.env.GetExecutionCollector(); collector != nil {
+				if metadata, err := collector.GetExecutionRequestMetadata(ctx, ex.ExecutionID); err != nil {
+					log.CtxDebugf(ctx, "could not find execution %s request metadata from redis: %v", ex.ExecutionID, err)
+				} else {
+					protoExec.TargetLabel = metadata.TargetId
+					protoExec.ActionMnemonic = metadata.ActionMnemonic
+					protoExec.ConfigurationId = metadata.ConfigurationId
+				}
+			}
+		} else {
+			completedExecs = append(completedExecs, ex.ExecutionID)
+		}
 		rsp.Execution = append(rsp.Execution, protoExec)
 	}
+
+	// Batch query for the completed Executions from ClickHouse to add missing metadata
+	oh := es.env.GetOLAPDBHandle()
+	ess := es.env.GetExecutionSearchService()
+	if oh != nil && ess != nil {
+		execIDToMetadata, err := ess.FetchExecutionRequestMetadata(ctx, completedExecs)
+		if err != nil {
+			log.CtxDebugf(ctx, "could not find completed executions %v request metadata from clickhouse: %v", completedExecs, err)
+		} else {
+			for _, exec := range rsp.Execution {
+				if metadata, ok := execIDToMetadata[exec.ExecutionId]; ok {
+					exec.TargetLabel = metadata.TargetId
+					exec.ActionMnemonic = metadata.ActionMnemonic
+					exec.ConfigurationId = metadata.ConfigurationId
+				}
+			}
+		}
+	}
+
 	if req.GetInlineExecuteResponse() {
 		// If inlined responses are requested, fetch them now.
 		var eg errgroup.Group
