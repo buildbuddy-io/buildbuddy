@@ -45,14 +45,16 @@ export function executionStatusLabel(op: ExecuteOperation) {
     case ExecutionStage.QUEUED:
       return "Queued";
     case ExecutionStage.EXECUTING:
-      // Return fine-grained progress using BB-specific enum
-      break;
+      // Return fine-grained progress using BB-specific metadata
+      return executionProgressLabel(op);
     case ExecutionStage.COMPLETED:
       return "Completed";
     default:
       return "Unknown";
   }
+}
 
+function executionProgressLabel(op: ExecuteOperation) {
   switch (op.progress?.executionState) {
     case ExecutionState.PULLING_CONTAINER_IMAGE:
       return "Pulling container image";
