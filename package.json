@@ -64,5 +64,8 @@
   },
   "resolutions": {
     "@types/react": "^16.8.17"
+  },
+  "dependencies": {
+    "jasmine-core": "5.1.2"
   }
 }
