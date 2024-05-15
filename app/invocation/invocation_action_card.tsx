@@ -940,7 +940,7 @@ function computeMilliCpu(result: build.bazel.remote.execution.v2.ActionResult): 
 }
 
 function durationSeconds(t1: ITimestamp, t2: ITimestamp): number {
-  return timestampToUnixSeconds(t2) - timestampToUnixSeconds(t1);
+  return Math.max(0, timestampToUnixSeconds(t2) - timestampToUnixSeconds(t1));
 }
 
 function timestampToUnixSeconds(timestamp: ITimestamp): number {
