@@ -402,7 +402,7 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor) *rfpb.NodeDescr
 			continue
 		}
 		if isDiskFull(su) {
-			log.Debugf("skip node %+v because the disk is full", su.GetNode())
+			log.Debugf("skip node %+v because the disk is full", su)
 			continue
 		}
 		log.Debugf("add node %+v to candidate list", su.GetNode())
@@ -555,7 +555,7 @@ func (rq *Queue) postProcess(repl IReplica) {
 func isDiskFull(su *rfpb.StoreUsage) bool {
 	bytesFree := su.GetTotalBytesFree()
 	bytesUsed := su.GetTotalBytesUsed()
-	return float64(bytesFree+bytesUsed)*maximumDiskCapacity > float64(bytesUsed)
+	return float64(bytesFree+bytesUsed)*maximumDiskCapacity <= float64(bytesUsed)
 }
 
 func aboveMeanReplicaCountThreshold(mean float64) float64 {
