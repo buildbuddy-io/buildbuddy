@@ -417,7 +417,8 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor) *rfpb.NodeDescr
 		return nil
 	}
 	slices.SortFunc(candidates, func(a, b *candidate) int {
-		return int(compare(a, b))
+		// Best targets are up front.
+		return -int(compare(a, b))
 	})
 	return candidates[0].usage.GetNode()
 }
