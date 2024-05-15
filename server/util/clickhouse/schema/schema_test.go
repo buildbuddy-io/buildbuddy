@@ -47,7 +47,8 @@ func TestSchemaInSync(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, len(getAllTables()), len(tests), "All clickhouse tables should be present in the tests")
+	allTables := getAllTables()
+	require.Equal(t, len(allTables), len(tests), "All clickhouse tables %v should be present in the tests %v", allTables, tests)
 
 	for _, tc := range tests {
 		if tc.primaryDBTable == nil {

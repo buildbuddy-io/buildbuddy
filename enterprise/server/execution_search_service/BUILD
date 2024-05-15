@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/util/execution",
         "//proto:execution_stats_go_proto",
         "//proto:invocation_status_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/build_event_protocol/invocation_format",
         "//server/environment",
         "//server/interfaces",
