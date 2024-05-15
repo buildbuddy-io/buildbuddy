@@ -7,6 +7,7 @@ import {
   downloadDuration,
   executionDuration,
   uploadDuration,
+  getActionPageLink,
 } from "./invocation_execution_util";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import DigestComponent from "../components/digest/digest";
@@ -19,23 +20,6 @@ interface Props {
 }
 
 export default class InvocationExecutionTable extends React.Component<Props> {
-  getActionPageLink(execution: execution_stats.Execution) {
-    const search = new URLSearchParams();
-    if (execution.actionDigest) {
-      search.set("actionDigest", digestToString(execution.actionDigest));
-    }
-    // Prefer executeResponseDigest if present, since it represents the action
-    // response that was returned for this specific invocation, and also
-    // contains additional useful info such as gRPC status. Otherwise, try the
-    // (deprecated) actionResultDigest.
-    if (execution.executeResponseDigest) {
-      search.set("executeResponseDigest", digestToString(execution.executeResponseDigest));
-    } else if (execution.actionResultDigest) {
-      search.set("actionResultDigest", digestToString(execution.actionResultDigest));
-    }
-    return `/invocation/${this.props.invocationIdProvider(execution)}?${search}#action`;
-  }
-
   render() {
     return (
       <div className="invocation-execution-table">
@@ -45,7 +29,10 @@ export default class InvocationExecutionTable extends React.Component<Props> {
             return;
           }
           return (
-            <Link key={index} className="invocation-execution-row" href={this.getActionPageLink(execution)}>
+            <Link
+              key={index}
+              className="invocation-execution-row"
+              href={getActionPageLink(this.props.invocationIdProvider(execution), execution)}>
               <div className="invocation-execution-row-image">{status.icon}</div>
               <div>
                 <div className="invocation-execution-row-header">

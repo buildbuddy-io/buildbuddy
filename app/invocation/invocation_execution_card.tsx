@@ -6,10 +6,12 @@ import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
 import rpcService from "../service/rpc_service";
+import router from "../router/router";
 import { OutlinedButton } from "../components/button/button";
 import {
   downloadDuration,
   executionDuration,
+  getActionPageLink,
   getExecutionStatus,
   queuedDuration,
   subtractTimestamp,

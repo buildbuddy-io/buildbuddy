@@ -119,6 +119,7 @@ ts_library(
     srcs = ["invocation_action_card.tsx"],
     deps = [
         "//app/alert:alert_service",
+        "//app/capabilities",
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/digest",
@@ -126,6 +127,7 @@ ts_library(
         "//app/components/modal",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:execution_status",
         "//app/invocation:invocation_action_tree_node",
         "//app/invocation:invocation_model",
         "//app/preferences",
@@ -321,6 +323,7 @@ ts_library(
         "//app/invocation:invocation_execution_table",
         "//app/invocation:invocation_execution_util",
         "//app/invocation:invocation_model",
+        "//app/router",
         "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
         "//proto:remote_execution_ts_proto",
@@ -348,6 +351,7 @@ ts_library(
     name = "invocation_execution_util",
     srcs = ["invocation_execution_util.tsx"],
     deps = [
+        "//app/util:cache",
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:remote_execution_ts_proto",
@@ -778,5 +782,15 @@ ts_library(
         "@npm//react",
         "@npm//tslib",
         "@npm//varint",
+    ],
+)
+
+ts_library(
+    name = "execution_status",
+    srcs = ["execution_status.tsx"],
+    deps = [
+        "//app/service:rpc_service",
+        "//proto:execution_stats_ts_proto",
+        "//proto:remote_execution_ts_proto",
     ],
 )
