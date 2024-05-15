@@ -643,20 +643,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     const renderOutputFilesAndDirs = () => (
       <>
-        {command.outputFiles.map((expectedFile) => (
-          <div className="expected-output">
-            <span>
-              <File className="icon file-icon" />
-            </span>
-            <span className="expected-output-label">{expectedFile}</span>
-          </div>
-        ))}
         {command.outputDirectories.map((expectedDir) => (
           <div className="expected-output">
             <span>
               <Folder className="icon folder-icon" />
             </span>
             <span className="expected-output-label">{expectedDir}</span>
+          </div>
+        ))}
+        {command.outputFiles.map((expectedFile) => (
+          <div className="expected-output">
+            <span>
+              <File className="icon file-icon" />
+            </span>
+            <span className="expected-output-label">{expectedFile}</span>
           </div>
         ))}
       </>
@@ -692,20 +692,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     const renderMissingOutputFilesAndDirs = (missingFiles: Array<string>, missingDirs: Array<string>) => (
       <>
-        {missingFiles.map((missingFile) => (
-          <div className="missing-output">
-            <span>
-              <FileQuestion className="icon file-question-icon" />
-            </span>
-            <span className="missing-output-label">{missingFile}</span>
-          </div>
-        ))}
         {missingDirs.map((missingDir) => (
           <div className="missing-output">
             <span>
               <Folder className="icon file-question-icon" />
             </span>
             <span className="missing-output-label">{missingDir}</span>
+          </div>
+        ))}
+        {missingFiles.map((missingFile) => (
+          <div className="missing-output">
+            <span>
+              <FileQuestion className="icon file-question-icon" />
+            </span>
+            <span className="missing-output-label">{missingFile}</span>
           </div>
         ))}
       </>
