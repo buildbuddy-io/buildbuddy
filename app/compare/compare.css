@@ -60,7 +60,7 @@
 }
 
 .compare-invocations .compare-row.different {
-  background: #FFF8E1;
+  background: #fff8e1;
 }
 
 .compare-invocations .compare-row div {
@@ -76,14 +76,14 @@
   text-decoration: none !important;
 }
 
-.compare-invocations .difference-left  {
+.compare-invocations .difference-left {
   font-weight: 600;
-  color: #D84315;
-  background-color: #FFE0B2;
+  color: #d84315;
+  background-color: #ffe0b2;
 }
 
-.compare-invocations .difference-right  {
+.compare-invocations .difference-right {
   font-weight: 600;
-  color: #1565C0;
-  background-color: #BBDEFB;
+  color: #1565c0;
+  background-color: #bbdefb;
 }
