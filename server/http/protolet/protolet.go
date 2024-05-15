@@ -3,6 +3,7 @@ package protolet
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -11,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -281,21 +283,57 @@ func (w *wrappedResponse) Flush() {
 }
 
 func (w *wrappedResponse) sendErrorIfNeeded(req *http.Request) {
-	if w.wroteHeader || w.wroteBody {
-		return
+	defer w.Flush()
+
+	codeStr := w.Header().Get("grpc-status")
+	message := w.Header().Get("grpc-message")
+
+	// The status field winds up being empty if the request context gets
+	// cancelled due to the server shutting down. Translate this to an
+	// Unavailable error.
+	var s *gstatus.Status
+	if codeStr == "" {
+		s = gstatus.New(codes.Unavailable, "server is unavailable")
+	} else {
+		code, err := strconv.Atoi(codeStr)
+		if err != nil {
+			code = int(codes.Unknown)
+		}
+		s = gstatus.New(codes.Code(code), message)
 	}
-	i, err := strconv.Atoi(w.Header().Get("grpc-status"))
-	if err != nil {
-		i = int(codes.Unknown)
-	}
-	if i == 0 {
-		w.WriteHeader(200)
+
+	if !w.wroteHeader {
+		// Match our current behavior where we return 500 for all errors
+		// and return the status as a string in the message body.
+		if err := s.Err(); err != nil {
+			http.Error(w, err.Error(), 500)
+		} else {
+			w.WriteHeader(200)
+		}
 		return
 	}
 
-	// Match our current behavior where we return 500 for all errors and return the message in the response body
-	w.WriteHeader(500)
-	code := codes.Code(i).String()
-	w.Write([]byte(fmt.Sprintf("rpc error: code = %s desc = %s", code, w.Header().Get("grpc-message"))))
-	w.Flush()
+	// If we already wrote the HTTP header then write the error as a
+	// message using a special convention:
+	// - Write a length prefix with length equal to the max allowed value.
+	// - Write a length-prefixed Status proto.
+	if s.Err() == nil {
+		return
+	}
+	marker := messageHeader(^uint32(0))
+	w.Write(marker[:])
+	b, err := proto.Marshal(s.Proto())
+	if err != nil {
+		log.CtxWarningf(req.Context(), "Failed to marshal status proto: %s", err)
+	}
+	p := messageHeader(uint32(len(b)))
+	w.Write(p[:])
+	w.Write(b)
+}
+
+func messageHeader(length uint32) [5]byte {
+	var b [5]byte
+	b[0] = 0 // always set optimized flag = 0 for now
+	binary.BigEndian.AppendUint32(b[1:1], length)
+	return b
 }

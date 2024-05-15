@@ -5,6 +5,7 @@ import { CancelablePromise } from "../util/async";
 import * as protobufjs from "protobufjs";
 import capabilities from "../capabilities/capabilities";
 import { FetchError, GRPCStatusError, HTTPStatusError, parseGRPCStatus } from "../util/errors";
+import { google as google_status } from "../../proto/grpc_status_ts_proto";
 
 /** Return type for unary RPCs. */
 export { CancelablePromise } from "../util/async";
@@ -300,18 +301,6 @@ function lengthPrefixMessage(requestData: Uint8Array) {
   return new Uint8Array(frame);
 }
 
-interface StreamState {
-  buffer: Uint8Array;
-  bufferedLength: number;
-  messageExpectedLength: number;
-  leftovers: Value;
-}
-
-interface Value {
-  value: Uint8Array;
-  done: boolean;
-}
-
 /**
  * Reads length-prefixed message payloads from the stream and invokes the given
  * callback for each one.
@@ -321,117 +310,105 @@ interface Value {
  * it contains malformed data.
  */
 async function readLengthPrefixedStream(reader: ReadableStreamDefaultReader, callback: (b: Uint8Array) => void) {
-  let streamState: StreamState = {
-    buffer: new Uint8Array(),
-    bufferedLength: 0,
-    messageExpectedLength: 0,
-    leftovers: { value: new Uint8Array(), done: false },
+  const bufferedStream = new BufferedStream(reader);
+
+  // Reusable buffer for the length prefix header.
+  const header = new Uint8Array(5);
+  const readLength = async () => {
+    const n = await bufferedStream.read(header);
+    if (n === 0) {
+      return null; // no more data
+    }
+    if (n !== header.length) {
+      throw new Error("unexpected data on stream while reading length prefix");
+    }
+    // Return the length. Note, byte 0 is the compression flag and is unused.
+    return new DataView(header.buffer, 1, 4).getUint32(0, /*littleEndian=*/ false);
   };
+
+  const readMessage = async (messageLength: number) => {
+    const messageBytes = new Uint8Array(messageLength);
+    const n = await bufferedStream.read(messageBytes);
+    if (n < messageBytes.length) {
+      throw new Error("stream ended unexpectedly while reading message payload");
+    }
+    return messageBytes;
+  };
+
+  const readStatus = async () => {
+    const length = await readLength();
+    if (length === null) {
+      throw new Error("stream ended unexpectedly while reading error status header");
+    }
+    const message = await readMessage(length);
+    return google_status.rpc.Status.decode(message);
+  };
+
   while (true) {
-    // Start with any leftovers from the last turn.
-    let value: Value = streamState.leftovers;
-
-    // If we don't have an expected message length, we can consume the length prefix to get it.
-    if (streamState.messageExpectedLength == 0) {
-      value = consumeLengthPrefix(streamState, await readAtLeastNBytes(value, reader, 5));
+    const messageLength = await readLength();
+    if (messageLength === null) {
+      return; // no more data
     }
 
-    // If the stream closed with no more data, we're done.
-    if (streamDone(value)) {
-      break;
+    if (messageLength === 0xffffffff) {
+      // This value indicates that an error occurred mid-stream. We expect to
+      // see a length-prefixed gRPC status in this case.
+      const status = await readStatus();
+      throw new GRPCStatusError(status);
     }
 
-    // Read the rest of the bytes into the buffer until it's full, saving any leftovers.
-    value = consumeMessageChunk(
-      streamState,
-      await readAtLeastNBytes(value, reader, streamState.messageExpectedLength - streamState.bufferedLength)
-    );
-
-    // We've got a full message, flush it to the callback so the full proto can be parsed.
-    if (streamState.bufferedLength >= streamState.messageExpectedLength) {
-      callback(streamState.buffer);
-    }
-
-    // If the stream closed with no more data, we're done.
-    if (streamDone(value)) {
-      break;
-    }
-
-    // Now that we've flushed the buffer, reset it.
-    streamState.buffer = new Uint8Array();
-    streamState.bufferedLength = 0;
-    streamState.messageExpectedLength = 0;
+    const message = await readMessage(messageLength);
+    callback(message);
   }
 }
 
-function consumeLengthPrefix(streamState: StreamState, value: Value) {
-  if (streamDone(value)) {
-    return value;
-  }
+/**
+ * Provides buffering for a ReadableStream.
+ */
+class BufferedStream {
+  private chunks: Uint8Array[] = [];
+  private len = 0;
+  private done = false;
 
-  streamState.messageExpectedLength = new DataView(value.value.buffer, 1, 4).getUint32(0, false /* big endian */);
-  streamState.buffer = new Uint8Array(streamState.messageExpectedLength);
-  value.value = value.value.slice(5);
-  return value;
-}
+  constructor(private reader: ReadableStreamDefaultReader) {}
 
-function consumeMessageChunk(streamState: StreamState, value: Value) {
-  if (streamDone(value)) {
-    return value;
-  }
-
-  // If we got more bytes than we need to fill the rest of the buffer, we've got leftovers.
-  streamState.leftovers = {
-    value:
-      value.value.length > streamState.messageExpectedLength - streamState.bufferedLength
-        ? value.value.slice(streamState.messageExpectedLength - streamState.bufferedLength)
-        : new Uint8Array(),
-    done: value.done,
-  };
-
-  // Fill up the buffer as much as we can with the bytes we were given.
-  streamState.buffer.set(
-    value.value.slice(0, streamState.messageExpectedLength - streamState.bufferedLength),
-    streamState.bufferedLength
-  );
-  streamState.bufferedLength += value.value.length;
-
-  return { value: value.value.slice(streamState.messageExpectedLength - streamState.bufferedLength), done: value.done };
-}
-
-async function readAtLeastNBytes(value: Value, reader: ReadableStreamDefaultReader, n: number) {
-  let done = false;
-  while (value.value.length < n) {
-    let r = await reader.read();
-    if (r?.value?.length) {
-      value.value = mergeBuffers(value.value, r.value);
-    }
-
-    if (r?.done) {
-      done = true;
-      if (value.value.length < n && value.value.length > 0) {
-        throw new Error(
-          `Tried to read ${n} bytes from stream, but stream finished early with only ${value.value.length} bytes.`
-        );
+  /**
+   * Tries to fill the given buffer with data from the stream, and returns the
+   * number of bytes that were successfully read. It returns a value less than
+   * the buffer length only if the stream ends while reading.
+   */
+  async read(out: Uint8Array): Promise<number> {
+    // Read chunks until either we can fill the buffer or the stream has no more
+    // data.
+    while (this.len < out.length && !this.done) {
+      const { value, done } = await this.reader.read();
+      this.done = done;
+      if (value) {
+        this.chunks.push(value);
+        this.len += value.length ?? 0;
       }
-      break;
     }
-    if (!r?.value) {
-      continue;
+    // Consume chunk data until either we fill the buffer, or the stream is done
+    // and we don't have any buffered data left.
+    let n = 0;
+    while (n < out.length && this.chunks.length) {
+      const remainder = out.length - n;
+      let data: Uint8Array;
+      if (remainder >= this.chunks[0].length) {
+        // Consume the full chunk.
+        data = this.chunks[0];
+        this.chunks.shift();
+      } else {
+        // Consume a partial chunk.
+        data = this.chunks[0].subarray(0, remainder);
+        this.chunks[0] = this.chunks[0].subarray(remainder);
+      }
+      out.set(data, n);
+      n += data.length;
     }
+    this.len -= n;
+    return n;
   }
-  return { value: value.value, done };
-}
-
-function mergeBuffers(a: Uint8Array, b: Uint8Array) {
-  let merged = new Uint8Array(a.length + b.length);
-  merged.set(a, 0);
-  merged.set(b, a.length);
-  return merged;
-}
-
-function streamDone(value: Value) {
-  return value.done && value.value.length == 0;
 }
 
 function uint8ArrayToBase64(array: Uint8Array): string {
