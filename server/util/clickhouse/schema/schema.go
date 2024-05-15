@@ -159,6 +159,10 @@ type Execution struct {
 
 	Stage int64
 
+	TargetLabel     string
+	ActionMnemonic  string
+	ConfigurationID string
+
 	// IOStats
 	FileDownloadCount        int64
 	FileDownloadSizeBytes    int64
@@ -244,6 +248,9 @@ func (e *Execution) AdditionalFields() []string {
 		"InvocationLinkType",
 		"Tags",
 		"OutputPath",
+		"TargetLabel",
+		"ActionMnemonic",
+		"ConfigurationID",
 	}
 }
 

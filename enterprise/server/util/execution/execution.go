@@ -18,12 +18,12 @@ import (
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
-func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) *repb.StoredExecution {
-	return &repb.StoredExecution{
+func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink, metadata *repb.RequestMetadata) *repb.StoredExecution {
+	se := &repb.StoredExecution{
 		GroupId:                            in.GroupID,
 		UpdatedAtUsec:                      in.UpdatedAtUsec,
 		ExecutionId:                        in.ExecutionID,
-		InvocationUuid:                     strings.Replace(invLink.GetInvocationId(), "-", "", -1),
+		InvocationUuid:                     strings.ReplaceAll(invLink.GetInvocationId(), "-", ""),
 		InvocationLinkType:                 int32(invLink.GetType()),
 		CreatedAtUsec:                      in.CreatedAtUsec,
 		UserId:                             in.UserID,
@@ -51,6 +51,12 @@ func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) 
 		StatusCode:                         in.StatusCode,
 		ExitCode:                           in.ExitCode,
 	}
+	if metadata != nil {
+		se.TargetLabel = metadata.TargetId
+		se.ActionMnemonic = metadata.ActionMnemonic
+		se.ConfigurationId = metadata.ConfigurationId
+	}
+	return se
 }
 
 func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
