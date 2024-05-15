@@ -9,10 +9,9 @@ ts_library(
     srcs = ["compare_invocations.tsx"],
     deps = [
         "//app/auth:auth_service",
-        "//app/compare:diff_chunk",
-        "//app/compare:diff_preprocessing",
         "//app/components/button:checkbox_button",
         "//app/components/button:link_button",
+        "//app/invocation:invocation_model",
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:errors",
