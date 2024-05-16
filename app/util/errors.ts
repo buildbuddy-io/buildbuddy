@@ -7,6 +7,9 @@ export type ErrorCode = Omit<GRPCCodeName, "OK">;
  * High-level error class representing any error from the BuildBuddy server,
  * either GRPC or HTTP.
  */
+// TODO(bduffany): once structured errors are fully rolled out
+// (app.streaming_http_enabled), remove this in favor of directly using the
+// errors returned by RPCs.
 export class BuildBuddyError extends Error {
   constructor(public code: ErrorCode, public description: string) {
     super(description);
