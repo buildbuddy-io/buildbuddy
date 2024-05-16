@@ -9,6 +9,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
+      - clean
       - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
   - name: Test with BzlMod
     container_image: ubuntu-20.04
