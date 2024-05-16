@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -139,9 +140,16 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		cancel()
 
 		if err != nil {
-			lastErr = err
+			isTimeoutTooSmall := errors.Is(err, dragonboat.ErrTimeoutTooSmall)
+			if !isTimeoutTooSmall {
+				// ErrTimeoutTooSmall is less interesting than the prior error.
+				lastErr = err
+			}
 			if dragonboat.IsTempError(err) {
 				continue
+			}
+			if isTimeoutTooSmall && lastErr != nil {
+				return lastErr
 			}
 			return err
 		}
