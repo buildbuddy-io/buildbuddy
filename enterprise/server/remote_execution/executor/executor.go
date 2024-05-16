@@ -435,7 +435,7 @@ func observeStageDuration(groupID string, stage string, start *timestamppb.Times
 	}
 	duration := endTime.Sub(startTime)
 	metrics.RemoteExecutionExecutedActionMetadataDurationsUsec.With(prometheus.Labels{
-		metrics.GroupID:                  metricsutil.GroupIDLabel(groupID),
+		metrics.GroupID:                  metricsutil.FilteredGroupIDLabel(groupID),
 		metrics.ExecutedActionStageLabel: stage,
 	}).Observe(float64(duration / time.Microsecond))
 }
