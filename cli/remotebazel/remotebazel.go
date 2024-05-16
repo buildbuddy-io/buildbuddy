@@ -3,6 +3,7 @@ package remotebazel
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -313,15 +314,35 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 	}
 	currentBranchExistsRemotely := remoteBranchOutput != ""
 
-	currentCommitHash, err := runGit("rev-parse", "HEAD")
-	if err != nil {
-		return "", "", status.WrapError(err, "get current commit hash")
-	}
-	currentCommitHash = strings.TrimSuffix(currentCommitHash, "\n")
+	if currentBranchExistsRemotely {
+		branch = currentBranch
 
-	branch = currentBranch
-	commit = currentCommitHash
-	if !currentBranchExistsRemotely {
+		currentCommitHash, err := runGit("rev-parse", "HEAD")
+		if err != nil {
+			return "", "", status.WrapError(err, "get current commit hash")
+		}
+		currentCommitHash = strings.TrimSuffix(currentCommitHash, "\n")
+
+		remoteCommitOutput, err := runGit("branch", "-r", "--contains", currentCommitHash)
+		if err != nil {
+			return "", "", status.WrapError(err, fmt.Sprintf("check if commit %s exists remotely", currentCommitHash))
+		}
+		currentCommitExistsRemotely := strings.Contains(remoteCommitOutput, fmt.Sprintf("origin/%s", branch))
+		if currentCommitExistsRemotely {
+			commit = currentCommitHash
+		} else {
+			// Get the head commit of the remote branch
+			remoteHeadOutput, err := runGit("ls-remote", "--heads", "origin", branch)
+			if err != nil {
+				return "", "", status.WrapError(err, fmt.Sprintf("get remote head of %s", branch))
+			}
+			remoteHeadParsed := strings.Fields(remoteHeadOutput)
+			if len(remoteHeadParsed) < 1 {
+				return "", "", errors.New("unexpected remote head output: " + remoteHeadOutput)
+			}
+			commit = remoteHeadParsed[0]
+		}
+	} else {
 		// If the current branch does not exist remotely, the remote runner will
 		// not be able to fetch it. In this case, use the default branch for the repo
 		defaultBranch, err := determineDefaultBranch(repo)

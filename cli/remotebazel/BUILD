@@ -45,5 +45,9 @@ go_test(
     name = "remotebazel_test",
     srcs = ["remotebazel_test.go"],
     embed = [":remotebazel"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        "//server/testutil/testgit",
+        "//server/testutil/testshell",
+        "@com_github_stretchr_testify//require",
+    ],
 )

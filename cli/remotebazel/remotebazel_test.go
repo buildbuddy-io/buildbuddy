@@ -1,8 +1,11 @@
 package remotebazel
 
 import (
+	"os"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/stretchr/testify/require"
 )
 
@@ -201,6 +204,80 @@ func TestParseRemoteCliFlags(t *testing.T) {
 		for flag, expectedVal := range tc.expectedFlagValue {
 			actualVal := remoteFlagset.Lookup(flag).Value
 			require.Equal(t, expectedVal, actualVal.String(), tc.name)
+		}
+	}
+}
+
+func TestGitConfig(t *testing.T) {
+	// Setup the "remote" repo
+	remoteRepoPath, remoteMasterHeadCommit := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
+
+	// Create a remote branch
+	testshell.Run(t, remoteRepoPath, "git checkout -B remote_b")
+	remoteBranchHeadCommit := testgit.CommitFiles(t, remoteRepoPath, map[string]string{"new_file.txt": "exit 0"})
+	testshell.Run(t, remoteRepoPath, "git checkout master")
+
+	type testCase struct {
+		name string
+
+		localBranchExistsRemotely bool
+		localCommitExistsRemotely bool
+
+		expectedBranch  string
+		expectedCommit  string
+		expectedPatches []string
+	}
+
+	testCases := []testCase{
+		{
+			name:                      "Local branch and commit exist remotely",
+			localBranchExistsRemotely: true,
+			localCommitExistsRemotely: true,
+			expectedBranch:            "remote_b",
+			expectedCommit:            remoteBranchHeadCommit,
+			expectedPatches:           []string{},
+		},
+		{
+			name:                      "Local branch does not exist remotely",
+			localBranchExistsRemotely: false,
+			localCommitExistsRemotely: false,
+			expectedBranch:            "refs/heads/master",
+			expectedCommit:            remoteMasterHeadCommit,
+			expectedPatches:           []string{"local_file.txt"},
+		},
+		{
+			name:                      "Local commit does not exist remotely",
+			localBranchExistsRemotely: true,
+			localCommitExistsRemotely: false,
+			expectedBranch:            "remote_b",
+			expectedCommit:            remoteBranchHeadCommit,
+			expectedPatches:           []string{"local_file.txt"},
+		},
+	}
+
+	for _, tc := range testCases {
+		// Setup a "local" repo
+		localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
+		err := os.Chdir(localRepoPath)
+		require.NoError(t, err, tc.name)
+
+		if tc.localBranchExistsRemotely {
+			testshell.Run(t, localRepoPath, "git checkout remote_b")
+		} else {
+			testshell.Run(t, localRepoPath, "git checkout -B local_only")
+		}
+		if !tc.localCommitExistsRemotely {
+			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_file.txt": "exit 0"})
+		}
+
+		config, err := Config(localRepoPath)
+		require.NoError(t, err, tc.name)
+
+		require.Equal(t, tc.expectedBranch, config.Ref, tc.name)
+		require.Equal(t, tc.expectedCommit, config.CommitSHA, tc.name)
+		require.Equal(t, len(tc.expectedPatches), len(config.Patches))
+		if len(tc.expectedPatches) > 0 {
+			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0])
 		}
 	}
 }
