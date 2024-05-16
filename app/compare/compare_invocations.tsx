@@ -9,9 +9,11 @@ import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
 import { OutlinedLinkButton } from "../components/button/link_button";
 import InvocationModel from "../invocation/invocation_model";
+import CompareExecutionLogComponent from "./compare_execution_logs";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
+  tab: string;
   search: URLSearchParams;
   invocationAId: string;
   invocationBId: string;
@@ -65,15 +67,31 @@ const FACETS = [
   { name: "Branch", facet: (i?: InvocationModel) => i?.getBranchName() },
   { name: "Role", facet: (i?: InvocationModel) => i?.getRole() },
   { name: "Status", facet: (i?: InvocationModel) => i?.getStatus() },
-  { name: "Tags", facet: (i?: InvocationModel) => i?.getTags().join("\n") },
+  {
+    name: "Tags",
+    facet: (i?: InvocationModel) =>
+      i
+        ?.getTags()
+        .map((t) => t.name)
+        .join("\n"),
+  },
   { name: "Fetch count", facet: (i?: InvocationModel) => i?.getFetchURLs().length },
-  { name: "Explicit command line", facet: (i?: InvocationModel) => i?.optionsParsed?.explicitCmdLine.join("\n") },
-  { name: "Full command line", facet: (i?: InvocationModel) => i?.optionsParsed?.cmdLine.join("\n") },
+  {
+    name: "Explicit command line",
+    facet: (i?: InvocationModel) => i?.optionsParsed?.explicitCmdLine.join("\n"),
+    type: "flag",
+  },
+  { name: "Full command line", facet: (i?: InvocationModel) => i?.optionsParsed?.cmdLine.join("\n"), type: "flag" },
   {
     name: "Explicit startup options",
     facet: (i?: InvocationModel) => i?.optionsParsed?.explicitStartupOptions.join("\n"),
+    type: "flag",
   },
-  { name: "Full startup options", facet: (i?: InvocationModel) => i?.optionsParsed?.startupOptions.join("\n") },
+  {
+    name: "Full startup options",
+    facet: (i?: InvocationModel) => i?.optionsParsed?.startupOptions.join("\n"),
+    type: "flag",
+  },
   {
     name: "Invocation policy",
     facet: (i?: InvocationModel) => i?.optionsParsed?.invocationPolicy?.flagPolicies.join("\n"),
@@ -167,9 +185,11 @@ export default class CompareInvocationsComponent extends React.Component<Compare
 
     if (status == "ERROR") {
       return (
-        <div className="error-container">
-          <XCircle className="icon red" />
-          <div>{error}</div>
+        <div className="compare-invocations container">
+          <div className="error-container">
+            <XCircle className="icon red" />
+            <div>{error}</div>
+          </div>
         </div>
       );
     }
@@ -186,6 +206,16 @@ export default class CompareInvocationsComponent extends React.Component<Compare
               Show changes only
             </CheckboxButton>
           </header>
+          <div className="container">
+            <div className="tabs">
+              <a href="#" className={`tab ${!this.props.tab ? "selected" : ""}`}>
+                Details
+              </a>
+              <a href="#flag" className={`tab ${this.props.tab == "#flag" ? "selected" : ""}`}>
+                Flags
+              </a>
+            </div>
+          </div>
         </div>
         <div className="compare-table">
           {FACETS.map((f) => {
@@ -199,6 +229,10 @@ export default class CompareInvocationsComponent extends React.Component<Compare
             }
 
             if (!facetA && !facetB) {
+              return <></>;
+            }
+
+            if (this.props.tab && "#" + f.type != this.props.tab) {
               return <></>;
             }
 
@@ -247,15 +281,6 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       </div>
     );
   }
-}
-
-function InvocationIdTag({ prefix, id }: { prefix: string; id: string }) {
-  const href = `/invocation/${id}`;
-  return (
-    <OutlinedLinkButton className="invocation-id-tag" href={href}>
-      <div className="invocation-id-tag-prefix">{prefix}:</div> <div className="invocation-id-tag-id">{id}</div>
-    </OutlinedLinkButton>
-  );
 }
 
 const dmp = new DiffMatchPatch.diff_match_patch();

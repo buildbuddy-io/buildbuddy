@@ -29,6 +29,10 @@
   }
 }
 
+.compare-invocations .tabs {
+  margin-top: 0;
+}
+
 .compare-invocations .error-container {
   background: #ffebee;
   padding: 16px;
