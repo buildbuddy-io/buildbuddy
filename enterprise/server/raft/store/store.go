@@ -1657,30 +1657,34 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, err
 	}
 
-	// Remove the data from the now stopped node.
+	metrics.RaftMoves.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		metrics.RaftMoveLabel:       "remove",
+	}).Inc()
+
+	rsp := &rfpb.RemoveReplicaResponse{
+		Range: rd,
+	}
+
+	// Remove the data from the now stopped node. This is best-effort only,
+	// because we can remove the replica when the node is dead; and in this case,
+	// we won't be able to connect to the node.
 	c, err := s.apiClient.GetForReplica(ctx, replicaDesc)
 	if err != nil {
-		s.log.Errorf("err getting api client: %s", err)
-		return nil, err
+		s.log.Warningf("RemoveReplica unable to remove data, err getting api client: %s", err)
+		return rsp, nil
 	}
 	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
 		ShardId:   replicaDesc.GetShardId(),
 		ReplicaId: replicaDesc.GetReplicaId(),
 	})
 	if err != nil {
-		s.log.Errorf("remove data err: %s", err)
-		return nil, err
+		s.log.Warningf("RemoveReplica unable to remove data err: %s", err)
+		return rsp, nil
 	}
 
-	metrics.RaftMoves.With(prometheus.Labels{
-		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-		metrics.RaftMoveLabel:       "remove",
-	}).Inc()
-
 	s.log.Infof("Removed shard: s%dr%d", replicaDesc.GetShardId(), replicaDesc.GetReplicaId())
-	return &rfpb.RemoveReplicaResponse{
-		Range: rd,
-	}, nil
+	return rsp, nil
 }
 
 func (s *Store) reserveReplicaIDs(ctx context.Context, n int) ([]uint64, error) {
