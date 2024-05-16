@@ -4,12 +4,9 @@ import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import CheckboxButton from "../components/button/checkbox_button";
-import router from "../router/router";
 import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
-import { OutlinedLinkButton } from "../components/button/link_button";
 import InvocationModel from "../invocation/invocation_model";
-import CompareExecutionLogComponent from "./compare_execution_logs";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
