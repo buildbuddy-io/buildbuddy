@@ -224,8 +224,18 @@ func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunReques
 		return nil, err
 	}
 
-	// If no access token is provided explicitly, try fetching the token.
+	// If no access token is provided explicitly, try reading from the REPO_TOKEN env var.
 	accessToken := req.GetGitRepo().GetAccessToken()
+	if accessToken == "" {
+		for k, v := range req.GetEnv() {
+			if k == "REPO_TOKEN" {
+				accessToken = v
+				break
+			}
+		}
+	}
+	// If the token is still not set, try fetching the token from a Workflow
+	// configured for the same repo.
 	if accessToken == "" {
 		repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
 		if err != nil {
