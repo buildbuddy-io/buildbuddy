@@ -354,6 +354,7 @@ svg.icon.orange {
   font-weight: 600;
   text-transform: uppercase;
   user-select: none;
+  background: #fff;
 }
 
 .tab:hover {
