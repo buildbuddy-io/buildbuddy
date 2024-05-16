@@ -1295,6 +1295,6 @@ svg.invocation-query-graph .nodes rect {
 }
 
 .target-more-buttons svg {
- height: 16px;
- color: rgba(0, 0, 0, 0.5)
+  height: 16px;
+  color: rgba(0, 0, 0, 0.5);
 }
