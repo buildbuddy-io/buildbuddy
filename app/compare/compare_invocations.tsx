@@ -7,6 +7,7 @@ import CheckboxButton from "../components/button/checkbox_button";
 import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
 import InvocationModel from "../invocation/invocation_model";
+import CompareExecutionLogFilesComponent from "./compare_execution_log_files";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
@@ -196,12 +197,14 @@ export default class CompareInvocationsComponent extends React.Component<Compare
         <div className="shelf nopadding-dense">
           <header className="container header">
             <h2 className="title">Comparing invocations</h2>
-            <CheckboxButton
-              className="show-changes-only-button"
-              onChange={this.onClickShowChangesOnly.bind(this)}
-              checked={this.state.showChangesOnly}>
-              Show changes only
-            </CheckboxButton>
+            {this.props.tab != "#file" && (
+              <CheckboxButton
+                className="show-changes-only-button"
+                onChange={this.onClickShowChangesOnly.bind(this)}
+                checked={this.state.showChangesOnly}>
+                Show changes only
+              </CheckboxButton>
+            )}
           </header>
           <div className="container">
             <div className="tabs">
@@ -210,6 +213,9 @@ export default class CompareInvocationsComponent extends React.Component<Compare
               </a>
               <a href="#flag" className={`tab ${this.props.tab == "#flag" ? "selected" : ""}`}>
                 Flags
+              </a>
+              <a href="#file" className={`tab ${this.props.tab == "#file" ? "selected" : ""}`}>
+                Files
               </a>
             </div>
           </div>
@@ -275,6 +281,24 @@ export default class CompareInvocationsComponent extends React.Component<Compare
             );
           })}
         </div>
+        {this.props.tab == "#file" && (
+          <div className="container">
+            {(!this.state.modelA?.getIsExecutionLogEnabled() || !this.state.modelB?.getIsExecutionLogEnabled()) && (
+              <div>
+                In order to compare files, both invocation must have the execution log enabled with the
+                `--experimental_execution_log_compact_file` flag.
+              </div>
+            )}
+            {this.state.modelA?.getIsExecutionLogEnabled() && this.state.modelB?.getIsExecutionLogEnabled() && (
+              <CompareExecutionLogFilesComponent
+                modelA={this.state.modelA}
+                modelB={this.state.modelB}
+                search={this.props.search}
+                filter={""}
+              />
+            )}
+          </div>
+        )}
       </div>
     );
   }
