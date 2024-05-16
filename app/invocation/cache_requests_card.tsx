@@ -87,7 +87,7 @@ const filters: PresetFilter[] = [
   },
 ];
 
-const defaultFilterIndex = 2; // AC Misses
+const defaultFilterIndex = 0; // All
 
 /**
  * CacheRequestsCardComponent shows all BuildBuddy cache requests for an invocation in a tabular form.
