@@ -1,13 +1,13 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { Download, Info } from "lucide-react";
+import { ArrowRight, Download, FileSymlink, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
-import rpcService from "../service/rpc_service";
+import rpcService, { Cancelable } from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
 import TerminalComponent from "../terminal/terminal";
@@ -25,6 +25,8 @@ import Dialog, {
 } from "../components/dialog/dialog";
 import Button, { OutlinedButton } from "../components/button/button";
 import Modal from "../components/modal/modal";
+import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
+import capabilities from "../capabilities/capabilities";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -53,6 +55,7 @@ interface State {
   stderr?: string;
   stdout?: string;
   serverLogs?: ServerLog[];
+  lastOperation?: ExecuteOperation;
 }
 
 interface ServerLog {
@@ -82,6 +85,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
     } else {
       this.fetchActionResult();
     }
+    if (this.props.search.has("executionId")) {
+      this.streamExecution();
+    }
   }
 
   componentDidUpdate(prevProps: Readonly<Props>): void {
@@ -93,6 +99,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
     if (prevProps.search.get("executeResponseDigest") != this.props.search.get("executeResponseDigest")) {
       this.fetchExecuteResponse();
+    }
+    if (prevProps.search.get("executionId") !== this.props.search.get("executionId")) {
+      this.streamExecution();
     }
   }
 
@@ -118,6 +127,34 @@ export default class InvocationActionCardComponent extends React.Component<Props
       })
       .catch((e) => console.error("Failed to fetch action:", e))
       .finally(() => this.setState({ loadingAction: false }));
+  }
+
+  private operationStream?: Cancelable;
+
+  streamExecution() {
+    if (!capabilities.config.streamingHttpEnabled) return;
+
+    this.operationStream?.cancel();
+    this.setState({ lastOperation: undefined });
+    const executionId = this.props.search.get("executionId");
+    if (!executionId) return;
+    this.operationStream = waitExecution(executionId, {
+      next: (operation) => {
+        this.setState({ lastOperation: operation });
+        if (operation.response) {
+          this.setState({ executeResponse: operation.response });
+          console.log(operation.response);
+        }
+        if (operation.response?.result) {
+          this.setState({ actionResult: operation.response.result });
+        }
+      },
+      error: (error) => {
+        // TODO: better error handling
+        console.log(error);
+      },
+      complete: () => {},
+    });
   }
 
   fetchDirectorySizes(rootDigest: build.bazel.remote.execution.v2.Digest) {
@@ -416,24 +453,38 @@ export default class InvocationActionCardComponent extends React.Component<Props
       rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getInvocationId());
       return;
     }
+
     rpcService
       .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer) => {
-        let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
+      .then((buffer: ArrayBuffer) => new Uint8Array(buffer))
+      .then((array: Uint8Array) =>
+        node.type == "tree"
+          ? build.bazel.remote.execution.v2.Tree.decode(array).root
+          : build.bazel.remote.execution.v2.Directory.decode(array)
+      )
+      .then((dir: build.bazel.remote.execution.v2.Directory | null | undefined) => {
+        if (!dir) {
+          return;
+        }
+
         this.state.treeShaToExpanded.set(digestString, true);
-        let directories: TreeNode[] = dir.directories.map((child) => ({
-          obj: child,
-          type: "dir",
-        }));
-        let files: TreeNode[] = dir.files.map((child) => ({
-          obj: child,
-          type: "file",
-        }));
-        let symlinks: TreeNode[] = dir.symlinks.map((child) => ({
-          obj: child,
-          type: "symlink",
-        }));
-        const nodes = [...directories, ...files, ...symlinks];
+        const nodes = dir.directories
+          .map<TreeNode>((node) => ({
+            obj: node,
+            type: "dir",
+          }))
+          .concat(
+            dir.files.map((node) => ({
+              obj: node,
+              type: "file",
+            }))
+          )
+          .concat(
+            dir.symlinks.map((node) => ({
+              obj: node,
+              type: "symlink",
+            }))
+          );
         this.state.treeShaToChildrenMap.set(digestString, nodes);
         this.forceUpdate();
       })
@@ -517,9 +568,66 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
   }
 
+  private renderOutputDirectories(actionsResult: build.bazel.remote.execution.v2.ActionResult) {
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Output directories</div>
+        {actionsResult.outputDirectories.length ? (
+          <div className="action-list">
+            {actionsResult.outputDirectories.map((dir) => (
+              <TreeNodeComponent
+                node={{
+                  obj: new build.bazel.remote.execution.v2.DirectoryNode({ name: dir.path, digest: dir.treeDigest }),
+                  type: "tree",
+                }}
+                treeShaToExpanded={this.state.treeShaToExpanded}
+                treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
+                handleFileClicked={this.handleFileClicked.bind(this)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div>None</div>
+        )}
+      </div>
+    );
+  }
+
+  private renderOutputSymlinks(actionsResult: build.bazel.remote.execution.v2.ActionResult) {
+    const symlinks = actionsResult.outputSymlinks.length
+      ? actionsResult.outputSymlinks
+      : [...actionsResult.outputFileSymlinks, ...actionsResult.outputDirectorySymlinks];
+
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Output symlinks</div>
+        {symlinks.length ? (
+          <div className="action-list">
+            {symlinks.map((symlink) => (
+              <div className="tree-node-symlink">
+                <span>
+                  <FileSymlink className="icon symlink-icon" />
+                </span>{" "}
+                <span>{symlink.path}</span>{" "}
+                <span>
+                  <ArrowRight className="icon arrow-right-icon" />
+                </span>{" "}
+                <span>{symlink.target}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div>None</div>
+        )}
+      </div>
+    );
+  }
+
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
     const vmMetadata = this.getFirecrackerVMMetadata();
+    const executionId = this.props.search.get("executionId");
 
     return (
       <div className="invocation-action-card">
@@ -532,6 +640,41 @@ export default class InvocationActionCardComponent extends React.Component<Props
           <div className="card">
             <Info className="icon purple" />
             <div className="content">
+              {executionId && (
+                <>
+                  <div className="title">Execution details</div>
+                  <div className="details">
+                    <div className="action-section">
+                      <div className="action-property-title">Execution ID</div>
+                      <div>{executionId}</div>
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Stage</div>
+                      <div>{this.state.lastOperation ? executionStatusLabel(this.state.lastOperation) : "Unknown"}</div>
+                    </div>
+                    {this.state.executeResponse && (
+                      <>
+                        <div className="action-section">
+                          <div className="action-property-title">RPC status</div>
+                          <div
+                            className={(this.state.executeResponse.status?.code ?? 0) !== 0 ? "grpc-status-error" : ""}>
+                            {this.state.executeResponse
+                              ? grpcStatusCodeToString(this.state.executeResponse.status?.code ?? 0)
+                              : "Unknown"}
+                            {this.state.executeResponse?.status?.message && (
+                              <>: {this.state.executeResponse?.status.message}</>
+                            )}
+                          </div>
+                        </div>
+                        <div className="action-section">
+                          <div className="action-property-title">Served from cache</div>
+                          <div>{this.state.executeResponse.cachedResult ? "Yes" : "No"}</div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
               <div className="title">Action details</div>
               {this.state.action ? (
                 <div className="details">
@@ -585,26 +728,34 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         </div>
                         <div className="action-section">
                           <div className="action-property-title">Environment variables</div>
-                          <div className="action-list">
-                            {this.state.command.environmentVariables.map((variable) => (
-                              <div>
-                                <span className="prop-name">{variable.name}</span>
-                                <span className="prop-value">={variable.value}</span>
-                              </div>
-                            ))}
-                          </div>
+                          {this.state.command.environmentVariables.length ? (
+                            <div className="action-list">
+                              {this.state.command.environmentVariables.map((variable) => (
+                                <div>
+                                  <span className="prop-name">{variable.name}</span>
+                                  <span className="prop-value">={variable.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div>None</div>
+                          )}
                         </div>
                         <div className="action-section">
                           <div className="action-property-title">Platform properties</div>
-                          <div className="action-list">
-                            {this.state.command?.platform?.properties.map((property) => (
-                              <div>
-                                <span className="prop-name">{property.name}</span>
-                                <span className="prop-value">={property.value}</span>
-                              </div>
-                            ))}
-                            {!this.state.command?.platform?.properties.length && <div>(Default)</div>}
-                          </div>
+                          {this.state.command?.platform?.properties.length ? (
+                            <div className="action-list">
+                              {this.state.command?.platform?.properties.map((property) => (
+                                <div>
+                                  <span className="prop-name">{property.name}</span>
+                                  <span className="prop-value">={property.value}</span>
+                                </div>
+                              ))}
+                              {!this.state.command?.platform?.properties.length && <div>(Default)</div>}
+                            </div>
+                          ) : (
+                            <div>None</div>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -777,20 +928,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           <div>None found</div>
                         )}
                       </div>
-                      <div className="action-section">
-                        <div className="action-property-title">Output directories</div>
-                        {this.state.actionResult.outputDirectories.length ? (
-                          <div className="action-list">
-                            {this.state.actionResult.outputDirectories.map((dir) => (
-                              <div>
-                                <span>{dir.path}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div>None</div>
-                        )}
-                      </div>
+                      {this.renderOutputDirectories(this.state.actionResult)}
+                      {this.renderOutputSymlinks(this.state.actionResult)}
                       <div className="action-section">
                         <div className="action-property-title">Stderr</div>
                         <div>
@@ -837,17 +976,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   ) : (
                     !this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>
                   )}
-                  {this.state.executeResponse?.status && (
-                    <div className="action-section">
-                      <div className="action-property-title">Status</div>
-                      <div className={this.state.executeResponse.status.code !== 0 ? "grpc-status-error" : ""}>
-                        <b>{grpcStatusCodeToString(this.state.executeResponse.status.code)}</b>
-                        {this.state.executeResponse.status.message && (
-                          <>: {this.state.executeResponse.status.message}</>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -874,7 +1002,7 @@ function computeMilliCpu(result: build.bazel.remote.execution.v2.ActionResult): 
 }
 
 function durationSeconds(t1: ITimestamp, t2: ITimestamp): number {
-  return timestampToUnixSeconds(t2) - timestampToUnixSeconds(t1);
+  return Math.max(0, timestampToUnixSeconds(t2) - timestampToUnixSeconds(t1));
 }
 
 function timestampToUnixSeconds(timestamp: ITimestamp): number {

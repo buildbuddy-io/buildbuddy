@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"net"
@@ -148,8 +149,8 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 		return nil, err
 	}
 	registry := regHolder.r
-	apiClient := client.NewAPIClient(env, nodeHost.ID())
-	sender := sender.New(rangeCache, registry, apiClient)
+	apiClient := client.NewAPIClient(env, nodeHost.ID(), registry)
+	sender := sender.New(rangeCache, apiClient)
 	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
 	if err != nil {
 		return nil, err
@@ -204,7 +205,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	s.updateTagsWorker = updateTagsWorker
 
-	txnCoordinator := txn.NewCoordinator(s, registry, apiClient, clockwork.NewRealClock())
+	txnCoordinator := txn.NewCoordinator(s, apiClient, clockwork.NewRealClock())
 	s.txnCoordinator = txnCoordinator
 
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
@@ -1589,33 +1590,32 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
 	}
 
-	var shardID, replicaID uint64
+	var replicaDesc *rfpb.ReplicaDescriptor
 	for _, replica := range req.GetRange().GetReplicas() {
 		if replica.GetReplicaId() == req.GetReplicaId() {
-			shardID = replica.GetShardId()
-			replicaID = replica.GetReplicaId()
+			replicaDesc = replica
 			break
 		}
 	}
-	if shardID == 0 && replicaID == 0 {
+	if replicaDesc == nil {
 		return nil, status.FailedPreconditionErrorf("No node with id %d found in range: %+v", req.GetReplicaId(), req.GetRange())
 	}
 
 	// First, update the range descriptor information to reflect the
 	// the node being removed.
-	rd, err := s.removeReplicaFromRangeDescriptor(ctx, shardID, replicaID, req.GetRange())
+	rd, err := s.removeReplicaFromRangeDescriptor(ctx, replicaDesc.GetShardId(), replicaDesc.GetReplicaId(), req.GetRange())
 	if err != nil {
 		return nil, err
 	}
 
-	configChangeID, err := s.getConfigChangeID(ctx, shardID)
+	configChangeID, err := s.getConfigChangeID(ctx, replicaDesc.GetShardId())
 	if err != nil {
 		return nil, err
 	}
 
 	// Propose the config change (this removes the node from the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		err := s.nodeHost.SyncRequestDeleteReplica(ctx, shardID, replicaID, configChangeID)
+		err := s.nodeHost.SyncRequestDeleteReplica(ctx, replicaDesc.GetShardId(), replicaDesc.GetReplicaId(), configChangeID)
 		if err == dragonboat.ErrShardClosed {
 			return nil
 		}
@@ -1625,20 +1625,15 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, err
 	}
 
-	grpcAddr, _, err := s.registry.ResolveGRPC(shardID, replicaID)
-	if err != nil {
-		s.log.Errorf("error resolving grpc addr for c%dn%d: %s", shardID, replicaID, err)
-		return nil, err
-	}
 	// Remove the data from the now stopped node.
-	c, err := s.apiClient.Get(ctx, grpcAddr)
+	c, err := s.apiClient.GetForReplica(ctx, replicaDesc)
 	if err != nil {
 		s.log.Errorf("err getting api client: %s", err)
 		return nil, err
 	}
 	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
-		ShardId:   shardID,
-		ReplicaId: replicaID,
+		ShardId:   replicaDesc.GetShardId(),
+		ReplicaId: replicaDesc.GetReplicaId(),
 	})
 	if err != nil {
 		s.log.Errorf("remove data err: %s", err)
@@ -1650,7 +1645,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		metrics.RaftMoveLabel:       "remove",
 	}).Inc()
 
-	s.log.Infof("Removed shard: s%dr%d", shardID, replicaID)
+	s.log.Infof("Removed shard: s%dr%d", replicaDesc.GetShardId(), replicaDesc.GetReplicaId())
 	return &rfpb.RemoveReplicaResponse{
 		Range: rd,
 	}, nil
@@ -1830,6 +1825,8 @@ func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, shardID, replic
 		Nhid:      proto.String(nhid),
 	})
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
+	newDescriptor.LastAddedReplicaId = proto.Uint64(replicaID)
+	newDescriptor.LastReplicaAddedAtUsec = proto.Int64(time.Now().UnixMicro())
 	if err := s.updateRangeDescriptor(ctx, shardID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
@@ -1845,6 +1842,10 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, shardID, r
 		}
 	}
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
+	if newDescriptor.GetLastAddedReplicaId() == replicaID {
+		newDescriptor.LastAddedReplicaId = nil
+		newDescriptor.LastReplicaAddedAtUsec = nil
+	}
 	if err := s.updateRangeDescriptor(ctx, shardID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
@@ -1868,4 +1869,80 @@ func (store *Store) scan(ctx context.Context) {
 			store.driverQueue.MaybeAdd(repl)
 		}
 	}
+}
+
+func bytesToUint64(buf []byte) uint64 {
+	return binary.LittleEndian.Uint64(buf)
+}
+
+func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) map[uint64]constants.ReplicaState {
+	localReplica, err := s.GetReplica(rd.GetRangeId())
+	if err != nil {
+		s.log.Errorf("GetReplicaStates failed to get replica(range_id=%d): %s", rd.GetRangeId(), err)
+		return nil
+	}
+	if !s.IsLeader(localReplica.ShardID()) {
+		// we are not the leader. we don't know whether the replica is behind
+		// or not.
+		return nil
+	}
+	curIndex, err := localReplica.LastAppliedIndex()
+	if err != nil {
+		s.log.Errorf("ReplicaIsBehind failed to get last applied index(range_id=%d): %s", rd.GetRangeId(), err)
+		return nil
+	}
+
+	res := make(map[uint64]constants.ReplicaState, 0)
+	for _, r := range rd.GetReplicas() {
+		if r.GetReplicaId() == localReplica.ReplicaID() {
+			res[r.GetReplicaId()] = constants.ReplicaStateCurrent
+		} else {
+			res[r.GetReplicaId()] = constants.ReplicaStateUnknown
+		}
+	}
+	rd = localReplica.RangeDescriptor()
+	header := makeHeader(rd)
+	// To read a local key for a replica, we don't need to check whether the
+	// replica has lease or not.
+	header.ConsistencyMode = rfpb.Header_STALE
+	for _, r := range rd.GetReplicas() {
+		if r.GetReplicaId() == localReplica.ReplicaID() {
+			res[r.GetReplicaId()] = constants.ReplicaStateCurrent
+			continue
+		}
+		client, err := s.apiClient.GetForReplica(ctx, r)
+		if err != nil {
+			s.log.Errorf("GetReplicaStates failed to get client for replica %+v: %s", r, err)
+			continue
+		}
+		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: constants.LastAppliedIndexKey,
+		}).ToProto()
+		if err != nil {
+			s.log.Errorf("GetReplicaStates failed to construct direct read request for replica %+v: %s", r, err)
+			continue
+		}
+		syncResp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
+			Header: header,
+			Batch:  readReq,
+		})
+		if err != nil {
+			s.log.Errorf("GetReplicaStates failed to read last index for replica %+v: %s", r, err)
+			continue
+		}
+		batchResp := rbuilder.NewBatchResponseFromProto(syncResp.GetBatch())
+		readResponse, err := batchResp.DirectReadResponse(0)
+		if err != nil {
+			s.log.Errorf("GetReplicaStates failed to parse direct read response for replica %+v: %s", r, err)
+			continue
+		}
+		index := bytesToUint64(readResponse.GetKv().GetValue())
+		if index >= curIndex {
+			res[r.GetReplicaId()] = constants.ReplicaStateCurrent
+		} else {
+			res[r.GetReplicaId()] = constants.ReplicaStateBehind
+		}
+	}
+
+	return res
 }

@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	gRPCOverHTTPPortEnabled = flag.Bool("app.grpc_over_http_port_enabled", false, "Cloud-Only")
+	gRPCOverHTTPPortEnabled = flag.Bool("app.grpc_over_http_port_enabled", true, "Enables grpc traffic to be served over the http port.")
 
 	// Support large BEP messages: https://github.com/bazelbuild/bazel/issues/12050
 	gRPCMaxRecvMsgSizeBytes           = flag.Int("grpc_max_recv_msg_size_bytes", 50_000_000, "Configures the max GRPC receive message size [bytes]")

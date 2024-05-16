@@ -4,6 +4,7 @@ import { google as google_grpc } from "../../proto/grpc_code_ts_proto";
 import { google as google_ts } from "../../proto/timestamp_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { RotateCw, Package, Clock, AlertCircle, XCircle, CheckCircle } from "lucide-react";
+import { digestToString } from "../util/cache";
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
 
@@ -90,4 +91,22 @@ export function uploadDuration(execution: execution_stats.IExecution) {
     execution?.executedActionMetadata?.outputUploadCompletedTimestamp,
     execution?.executedActionMetadata?.outputUploadStartTimestamp
   );
+}
+
+export function getActionPageLink(invocationId: string, execution: execution_stats.Execution) {
+  const search = new URLSearchParams();
+  search.set("executionId", execution.executionId);
+  if (execution.actionDigest) {
+    search.set("actionDigest", digestToString(execution.actionDigest));
+  }
+  // Prefer executeResponseDigest if present, since it represents the action
+  // response that was returned for this specific invocation, and also
+  // contains additional useful info such as gRPC status. Otherwise, try the
+  // (deprecated) actionResultDigest.
+  if (execution.executeResponseDigest) {
+    search.set("executeResponseDigest", digestToString(execution.executeResponseDigest));
+  } else if (execution.actionResultDigest) {
+    search.set("actionResultDigest", digestToString(execution.actionResultDigest));
+  }
+  return `/invocation/${invocationId}?${search}#action`;
 }

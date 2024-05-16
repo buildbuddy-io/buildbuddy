@@ -341,7 +341,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 
 	execTask := st.ExecutionTask
 	ctx = q.propagateExecutionTaskValuesToContext(ctx, execTask)
-	clientStream, err := operation.Publish(ctx, q.env.GetRemoteExecutionClient())
+	clientStream, err := operation.Publish(ctx, q.env.GetRemoteExecutionClient(), execTask.GetExecutionId())
 	if err != nil {
 		log.CtxWarningf(ctx, "Error opening publish operation stream: %s", err)
 		return true, status.WrapError(err, "failed to open execution status update stream")

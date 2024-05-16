@@ -31,6 +31,7 @@ import (
 
 var (
 	detailedStatsEnabled = flag.Bool("cache.detailed_stats_enabled", false, "Whether to enable detailed stats recording for all cache requests.")
+	scorecardResultsTTL  = flag.Duration("cache.detailed_stats_ttl", 3*time.Hour, "How long to go without receiving any cache requests for an invocation before deleting the invocation's detailed results from the metrics collector. Has no effect if cache.detailed_stats_enabled is not set.")
 
 	// Example: "GoLink(//merger:merger_test)/16f1152b7b260f690ea06f8b938a1b60712b5ee41a1c125ecad8ed9416481fbb"
 	actionRegexp = regexp.MustCompile(`^(?P<action_mnemonic>[[:alnum:]]*)\((?P<target_id>.+)\)/(?P<action_id>[[:alnum:]]+)$`)
@@ -40,10 +41,6 @@ type CacheMode int
 type counterType int
 
 const (
-	// scorecardResultsExpiration determines how long we can go without receiving
-	// any cache requests for an invocation before we delete the invocation's
-	// detailed results from the metrics collector.
-	scorecardResultsExpiration = 3 * time.Hour
 
 	// CacheMissScoreCardLimit is the maximum number of results to return in
 	// the "cache misses" card (the card displayed when detailed stats are
@@ -327,7 +324,7 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 	if err := h.c.ListAppend(h.ctx, key, string(b)); err != nil {
 		return err
 	}
-	if err := h.c.Expire(h.ctx, key, scorecardResultsExpiration); err != nil {
+	if err := h.c.Expire(h.ctx, key, *scorecardResultsTTL); err != nil {
 		return err
 	}
 	return nil
@@ -712,6 +709,10 @@ func CleanupCacheStats(ctx context.Context, env environment.Env, iid string) {
 	}
 
 	if err := c.Delete(ctx, counterKey(iid)); err != nil {
+		log.Warningf("Failed to clean up cache stats for invocation %s: %s", iid, err)
+	}
+
+	if err := c.Delete(ctx, targetMissesKey(iid)); err != nil {
 		log.Warningf("Failed to clean up cache stats for invocation %s: %s", iid, err)
 	}
 }

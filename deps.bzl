@@ -1351,8 +1351,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_docker_docker",
         importpath = "github.com/docker/docker",
-        sum = "h1:Ng2qi+gdKADUa/VM+6b6YaY2nlZhk/lVJiKR/2bMudU=",
-        version = "v26.0.0+incompatible",
+        sum = "h1:yGVmKUFGgcxA6PXWAokO0sQL22BrQ67cgVjko8tGdXE=",
+        version = "v26.0.2+incompatible",
     )
     go_repository(
         name = "com_github_docker_docker_credential_helpers",
@@ -6806,6 +6806,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
 
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
+    http_archive(
+        name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
+        sha256 = "81ce501fdcc10a08c84b8c9d9d1900ca35b62f581deaba8168bed2b96e7696b0",
+        urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.12/protoc-gen-protobufjs-v0.0.12.tar.gz"],
+    )
+
     http_archive(
         name = "com_github_firecracker_microvm_firecracker",
         build_file_content = "\n".join([

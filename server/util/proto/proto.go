@@ -13,6 +13,7 @@ var String = gproto.String
 var Float64 = gproto.Float64
 var Uint64 = gproto.Uint64
 var Int32 = gproto.Int32
+var Int64 = gproto.Int64
 var Bool = gproto.Bool
 
 type Message = gproto.Message

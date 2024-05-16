@@ -2,6 +2,7 @@ package execution_service
 
 import (
 	"context"
+	"io"
 	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
@@ -14,7 +15,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 type ExecutionService struct {
@@ -105,4 +108,32 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 		}
 	}
 	return rsp, nil
+}
+
+func (es *ExecutionService) WaitExecution(req *espb.WaitExecutionRequest, stream bbspb.BuildBuddyService_WaitExecutionServer) error {
+	if es.env.GetRemoteExecutionClient() == nil {
+		return status.UnimplementedError("not implemented")
+	}
+	client, err := es.env.GetRemoteExecutionClient().WaitExecution(stream.Context(), &repb.WaitExecutionRequest{
+		Name: req.GetExecutionId(),
+	})
+	if err != nil {
+		return status.WrapError(err, "create WaitExecution stream")
+	}
+	// Directly forward stream messages back to the Web client stream. Note: we
+	// don't try to automatically reconnect here, since the client has to handle
+	// disconnects anyway (to deal with the current server going away).
+	for {
+		op, err := client.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		res := &espb.WaitExecutionResponse{Operation: op}
+		if err = stream.Send(res); err != nil {
+			return status.WrapError(err, "send")
+		}
+	}
 }

@@ -18,10 +18,19 @@ type FileNode = build.bazel.remote.execution.v2.FileNode;
 type DirectoryNode = build.bazel.remote.execution.v2.DirectoryNode;
 type SymlinkNode = build.bazel.remote.execution.v2.SymlinkNode;
 
-export interface TreeNode {
-  obj: FileNode | DirectoryNode | SymlinkNode;
-  type: "file" | "dir" | "symlink";
-}
+export type TreeNode =
+  | {
+      type: "file";
+      obj: FileNode;
+    }
+  | {
+      type: "dir" | "tree";
+      obj: DirectoryNode;
+    }
+  | {
+      type: "symlink";
+      obj: SymlinkNode;
+    };
 
 function getChildCountText(childCount: Number) {
   if (childCount === 0) {
@@ -85,24 +94,22 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
 
   renderSymlinkNode(node: SymlinkNode) {
     return (
-      <div className="input-tree-node">
-        <div className="input-tree-node-name">
-          <span>
-            <FileSymlink className="icon symlink-icon" />
-          </span>{" "}
-          <span className="input-tree-node-label">{node.name}</span>{" "}
-          <span>
-            <ArrowRight className="icon symlink-arrow-icon" />
-          </span>{" "}
-          <span className="input-tree-node-label">{node.target}</span>
-        </div>
+      <div className="tree-node-symlink">
+        <span>
+          <FileSymlink className="icon symlink-icon" />
+        </span>{" "}
+        <span className="input-tree-node-label">{node.name}</span>{" "}
+        <span>
+          <ArrowRight className="icon symlink-arrow-icon" />
+        </span>{" "}
+        <span className="input-tree-node-label">{node.target}</span>
       </div>
     );
   }
 
   render() {
-    return "digest" in this.props.node.obj
-      ? this.renderFileOrDirectoryNode(this.props.node.obj)
-      : this.renderSymlinkNode(this.props.node.obj);
+    return this.props.node.type == "symlink"
+      ? this.renderSymlinkNode(this.props.node.obj)
+      : this.renderFileOrDirectoryNode(this.props.node.obj);
   }
 }

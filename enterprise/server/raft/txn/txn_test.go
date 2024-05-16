@@ -91,10 +91,10 @@ func newFakeStore(t *testing.T, rootDir string) *fakeStore {
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	require.NoError(t, err)
 	te := testenv.GetTestEnv(t)
-	apiClient := client.NewAPIClient(te, nodeHost.ID())
+	apiClient := client.NewAPIClient(te, nodeHost.ID(), reg)
 	rc := rangecache.New()
 	fs := &fakeStore{
-		sender:      sender.New(rc, reg, apiClient),
+		sender:      sender.New(rc, apiClient),
 		nhid:        nodeHost.ID(),
 		grpcAddress: grpcAddress,
 		apiClient:   apiClient,
@@ -178,7 +178,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 		CreatedAtUsec: clock.Now().UnixMicro(),
 	}
 
-	tc := txn.NewCoordinator(store, store.reg, store.apiClient, clock)
+	tc := txn.NewCoordinator(store, store.apiClient, clock)
 	err = tc.WriteTxnRecord(ctx, txnRecord)
 	require.NoError(t, err)
 
@@ -284,7 +284,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 			txnProto.GetStatements()[0].GetReplica(),
 		},
 	}
-	tc := txn.NewCoordinator(store, store.reg, store.apiClient, clock)
+	tc := txn.NewCoordinator(store, store.apiClient, clock)
 
 	err = tc.WriteTxnRecord(ctx, txnRecord)
 	require.NoError(t, err)
@@ -353,7 +353,7 @@ func TestFetchTxnRecordsSkipRecent(t *testing.T) {
 	store := newFakeStore(t, rootDir)
 	ctx := context.Background()
 	clock := clockwork.NewFakeClock()
-	tc := txn.NewCoordinator(store, store.reg, store.apiClient, clock)
+	tc := txn.NewCoordinator(store, store.apiClient, clock)
 
 	err := tc.WriteTxnRecord(ctx, &rfpb.TxnRecord{
 		TxnRequest:    &rfpb.TxnRequest{TransactionId: []byte("a")},

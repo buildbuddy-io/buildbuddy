@@ -34,3 +34,7 @@ func ResetFlags() error {
 func GetDereferencedValue[T any](name string) (T, error) {
 	return common.GetDereferencedValue[T](common.DefaultFlagSet, name)
 }
+
+// Expand updates the flag value to replace any placeholders in format ${FOO}
+// with the content of calling the mapper function with the placeholder name.
+var Expand = common.Expand

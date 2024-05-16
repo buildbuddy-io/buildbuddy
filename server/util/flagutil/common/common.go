@@ -11,7 +11,7 @@ import (
 
 var (
 	// Used for type conversions between flags and normal go types
-	flagTypeMap = map[reflect.Type]reflect.Type{
+	flagTypeToGoTypeMap = map[reflect.Type]reflect.Type{
 		flagTypeFromFlagFuncName("Bool"):     reflect.TypeOf((*bool)(nil)),
 		flagTypeFromFlagFuncName("Duration"): reflect.TypeOf((*time.Duration)(nil)),
 		flagTypeFromFlagFuncName("Float64"):  reflect.TypeOf((*float64)(nil)),
@@ -21,6 +21,7 @@ var (
 		flagTypeFromFlagFuncName("Uint64"):   reflect.TypeOf((*uint64)(nil)),
 		flagTypeFromFlagFuncName("String"):   reflect.TypeOf((*string)(nil)),
 	}
+	goTypeToFlagTypeMap = invertMap(flagTypeToGoTypeMap)
 
 	// Change only for testing purposes
 	DefaultFlagSet = flag.CommandLine
@@ -37,12 +38,36 @@ func flagTypeFromFlagFuncName(name string) reflect.Type {
 	return reflect.TypeOf(fs.Lookup("").Value)
 }
 
+func invertMap[K comparable, V comparable](m map[K]V) map[V]K {
+	inverse := make(map[V]K, len(m))
+	for k, v := range m {
+		inverse[v] = k
+	}
+	return inverse
+}
+
+func ZeroFlagValueFromType[T any]() flag.Value {
+	t, ok := goTypeToFlagTypeMap[reflect.TypeOf(Zero[T]())]
+	if !ok || t.Kind() != reflect.Pointer {
+		return nil
+	}
+	zero, ok := reflect.New(t.Elem()).Interface().(flag.Value)
+	if !ok {
+		return nil
+	}
+	return zero
+}
+
 type TypeAliased interface {
 	// AliasedType returns the type this flag.Value aliases.
 	AliasedType() reflect.Type
 }
 
-type IsNameAliasing interface {
+type NameAliasable interface {
+	// IsNameAliasing returns whether or not this flag.Value is aliasing another
+	// flag.
+	IsNameAliasing() bool
+
 	// AliasedName returns the flag name this flag.Value aliases.
 	AliasedName() string
 }
@@ -87,7 +112,7 @@ func GetTypeForFlagValue(value flag.Value) (reflect.Type, error) {
 	if v, ok := value.(WrappingValue); ok {
 		return GetTypeForFlagValue(v.WrappedValue())
 	}
-	if t, ok := flagTypeMap[reflect.TypeOf(value)]; ok {
+	if t, ok := flagTypeToGoTypeMap[reflect.TypeOf(value)]; ok {
 		return t, nil
 	} else if v, ok := value.(TypeAliased); ok {
 		return v.AliasedType(), nil
@@ -160,7 +185,7 @@ type SetValueForIndirectFxn func(flagset *flag.FlagSet, flagValue flag.Value, na
 // are not slices. setHooks is a slice of functions to call in order if the
 // flag.Value will be set.
 func SetValueWithCustomIndirectBehavior(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setValueForIndirect SetValueForIndirectFxn, setHooks ...func()) error {
-	if v, ok := flagValue.(IsNameAliasing); ok {
+	if v, ok := flagValue.(NameAliasable); ok && v.IsNameAliasing() {
 		aliasedFlag := flagset.Lookup(v.AliasedName())
 		if aliasedFlag == nil {
 			return status.NotFoundErrorf("Flag %s aliases undefined flag: %s", name, v.AliasedName())
@@ -213,8 +238,11 @@ func GetDereferencedValue[T any](flagset *flag.FlagSet, name string) (T, error) 
 }
 
 func getDereferencedValueFrom[T any](flagset *flag.FlagSet, value flag.Value, name string) (T, error) {
-	if v, ok := value.(IsNameAliasing); ok {
-		return GetDereferencedValue[T](flagset, v.AliasedName())
+	for v, ok := value.(WrappingValue); ok; v, ok = value.(WrappingValue) {
+		if a, ok := v.(NameAliasable); ok && a.IsNameAliasing() {
+			return GetDereferencedValue[T](flagset, a.AliasedName())
+		}
+		value = v.WrappedValue()
 	}
 	converted, err := ConvertFlagValue(value)
 	if err != nil {
@@ -314,8 +342,26 @@ func setWithOverride(flagset *flag.FlagSet, flagValue flag.Value, name, newValue
 	return nil
 }
 
+// Expand updates the flag value to replace any placeholders in format ${FOO}
+// with the content of calling the mapper function with the placeholder name.
+func Expand(v flag.Value, mapper func(string) (string, error)) error {
+	// If the flag type wants to handle expansion, let it.
+	if r, ok := v.(Expandable); ok {
+		if err := r.Expand(mapper); err != nil {
+			return err
+		}
+		return nil
+	}
+	// Otherwise, expand directly using String/Set.
+	exp, err := mapper(v.String())
+	if err != nil {
+		return err
+	}
+	return v.Set(exp)
+}
+
 // AddTestFlagTypeForTesting adds a type correspondence to the internal
 // flagTypeMap.
 func AddTestFlagTypeForTesting(flagValue, value any) {
-	flagTypeMap[reflect.TypeOf(flagValue)] = reflect.TypeOf(value)
+	flagTypeToGoTypeMap[reflect.TypeOf(flagValue)] = reflect.TypeOf(value)
 }

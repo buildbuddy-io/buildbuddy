@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -17,7 +16,6 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
 
 const (
@@ -36,32 +34,21 @@ type IStore interface {
 
 type Coordinator struct {
 	store IStore
-	// Keeps track of which raft nodes live on which machines.
-	nodeRegistry registry.NodeRegistry
 	// Keeps track of connections to other machines.
 	apiClient *client.APIClient
 	clock     clockwork.Clock
 }
 
-func NewCoordinator(store IStore, reg registry.NodeRegistry, apiClient *client.APIClient, clock clockwork.Clock) *Coordinator {
+func NewCoordinator(store IStore, apiClient *client.APIClient, clock clockwork.Clock) *Coordinator {
 	return &Coordinator{
-		store:        store,
-		nodeRegistry: reg,
-		apiClient:    apiClient,
-		clock:        clock,
+		store:     store,
+		apiClient: apiClient,
+		clock:     clock,
 	}
 }
 
 func (tc *Coordinator) sender() *sender.Sender {
 	return tc.store.Sender()
-}
-
-func (tc *Coordinator) getClientForReplicaDescriptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
-	addr, _, err := tc.nodeRegistry.ResolveGRPC(rd.GetShardId(), rd.GetReplicaId())
-	if err != nil {
-		return nil, err
-	}
-	return tc.apiClient.Get(ctx, addr)
 }
 
 func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
@@ -101,7 +88,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 		batch.TransactionId = txnID
 
 		// Prepare each statement.
-		c, err := tc.getClientForReplicaDescriptor(ctx, statement.GetReplica())
+		c, err := tc.apiClient.GetForReplica(ctx, statement.GetReplica())
 		if err != nil {
 			return err
 		}
@@ -202,7 +189,7 @@ func (tc *Coordinator) FinalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 	}
 
 	// Prepare each statement.
-	c, err := tc.getClientForReplicaDescriptor(ctx, replica)
+	c, err := tc.apiClient.GetForReplica(ctx, replica)
 	if err != nil {
 		return err
 	}

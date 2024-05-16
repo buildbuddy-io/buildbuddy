@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -31,6 +32,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -199,10 +201,20 @@ func (c *fakeExecutionClient) NextExecuteRequest() *executeRequest {
 	return <-c.executeRequests
 }
 
+func (c *fakeExecutionClient) WaitExecution(ctx context.Context, req *repb.WaitExecutionRequest, opts ...grpc.CallOption) (repb.Execution_WaitExecutionClient, error) {
+	return &fakeExecuteStream{}, nil
+}
+
 type fakeExecuteStream struct{ grpc.ClientStream }
 
 func (*fakeExecuteStream) Recv() (*longrunning.Operation, error) {
-	return &longrunning.Operation{Name: "fake-operation-name"}, nil
+	metadata, err := anypb.New(&repb.ExecuteOperationMetadata{
+		Stage: repb.ExecutionStage_COMPLETED,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &longrunning.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
 }
 
 func authenticate(t *testing.T, ctx context.Context, env environment.Env) (authCtx context.Context, uid, gid string) {
@@ -688,4 +700,95 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
+}
+
+func TestAPIDispatch_ActionFiltering(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	flags.Set(t, "remote_execution.enable_kythe_indexing", true)
+
+	te := newTestEnv(t)
+	ctx, uid, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	_ = setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, te, t)
+	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
+	reqCtx := testauth.RequestContext(uid, gid)
+	req := &wfpb.CreateWorkflowRequest{
+		RequestContext: reqCtx,
+		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
+	}
+	wfRes, err := bbClient.CreateWorkflow(ctx, req)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name            string
+		actionFilter    []string
+		kytheEnabled    bool
+		expectedActions []string
+	}{
+		{
+			name:            "no action filter, kythe disabled",
+			actionFilter:    nil,
+			kytheEnabled:    false,
+			expectedActions: []string{"Test all targets"},
+		},
+		{
+			name:            "no action filter, kythe enabled",
+			actionFilter:    nil,
+			kytheEnabled:    true,
+			expectedActions: []string{"Test all targets", config.KytheActionName},
+		},
+		{
+			name:            "action filter, kythe disabled",
+			actionFilter:    []string{"Test all targets"},
+			kytheEnabled:    false,
+			expectedActions: []string{"Test all targets"},
+		},
+		{
+			name:            "action filter, kythe enabled",
+			actionFilter:    []string{"Test all targets"},
+			kytheEnabled:    true,
+			expectedActions: []string{"Test all targets"},
+		},
+		{
+			name:            "kythe action filter",
+			actionFilter:    []string{config.KytheActionName},
+			kytheEnabled:    true,
+			expectedActions: []string{config.KytheActionName},
+		},
+	}
+
+	for _, tc := range testCases {
+		g, err := te.GetUserDB().GetGroupByID(ctx, gid)
+		require.NoError(t, err)
+		g.URLIdentifier = "mustbeset"
+		g.CodeSearchEnabled = tc.kytheEnabled
+		_, err = te.GetUserDB().UpdateGroup(ctx, g)
+		require.NoError(t, err)
+
+		rsp, err := bbClient.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
+			RequestContext: reqCtx,
+			WorkflowId:     wfRes.Id,
+			CommitSha:      "c04d68571cb519e095772c865847007ed3e7fea9",
+			PushedRepoUrl:  "https://github.com/acme-inc/acme",
+			PushedBranch:   "main",
+			ActionNames:    tc.actionFilter,
+		})
+		require.NoError(t, err, tc.name)
+		executedActionNames := make([]string, 0, len(rsp.ActionStatuses))
+		for _, a := range rsp.ActionStatuses {
+			executedActionNames = append(executedActionNames, a.ActionName)
+		}
+		require.ElementsMatch(t, tc.expectedActions, executedActionNames, tc.name)
+
+		for range tc.expectedActions {
+			_ = execClient.NextExecuteRequest()
+		}
+	}
 }

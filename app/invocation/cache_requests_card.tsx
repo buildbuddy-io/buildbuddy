@@ -1,7 +1,17 @@
 import React from "react";
 import router from "../router/router";
 import InvocationModel from "./invocation_model";
-import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, SortDesc } from "lucide-react";
+import {
+  X,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeftRight,
+  ChevronRight,
+  Check,
+  SortAsc,
+  SortDesc,
+  DownloadIcon,
+} from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
@@ -87,7 +97,7 @@ const filters: PresetFilter[] = [
   },
 ];
 
-const defaultFilterIndex = 2; // AC Misses
+const defaultFilterIndex = 0; // All
 
 /**
  * CacheRequestsCardComponent shows all BuildBuddy cache requests for an invocation in a tabular form.
@@ -359,11 +369,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     );
   }
 
-  private handleRowClicked(result: cache.ScoreCard.Result) {
-    if (result.digest?.hash && result.cacheType == resource.CacheType.AC) {
-      router.navigateTo(this.getActionUrl(result.digest.hash));
-    }
-    if (result.digest?.hash && result.cacheType == resource.CacheType.CAS) {
+  private handleDownloadClicked(result: cache.ScoreCard.Result) {
+    if (result.digest?.hash) {
       rpc_service.downloadBytestreamFile(
         result.digest.hash,
         this.props.model.getBytestreamURL(result.digest),
@@ -383,7 +390,6 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       <Tooltip
         className="row result-row"
         pin={pinBottomMiddleToMouse}
-        onClick={this.handleRowClicked.bind(this, result)}
         renderContent={() => this.renderResultHovercard(result, startTimeMillis)}>
         {(groupTarget === null || groupActionId === null) && (
           <div className="name-column" title={result.targetId ? `${result.targetId} › ${result.actionMnemonic}` : ""}>
@@ -395,8 +401,15 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                 {groupActionId === null && result.actionMnemonic}
               </TextLink>
             ) : (
-              <>{result.name ? result.name : result.actionId}</>
+              <span>{result.name ? result.name : result.actionId}</span>
             )}
+            <div title="Download">
+              <DownloadIcon
+                onClick={this.handleDownloadClicked.bind(this, result)}
+                className="download-button icon"
+                role="button"
+              />
+            </div>
           </div>
         )}
         <div className="cache-type-column" title={cacheTypeTitle(result.cacheType)}>

@@ -78,9 +78,9 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       this.props.model.structuredCommandLine
         ?.find((scl) => scl.commandLineLabel == "canonical")
         ?.sections?.find((s) => s.sectionLabel == "command options")
-        ?.optionList?.option?.find((o) => o.optionName == "profile")?.optionValue ?? "command.profile.gz";
-    const separator = profilePath.includes("\\") ? "\\" : "/";
-    const profileName = profilePath.substring(profilePath.lastIndexOf(separator) + 1);
+        ?.optionList?.option?.find((o) => o.optionName == "profile")
+        ?.optionValue.replaceAll("\\", "/") ?? "command.profile.gz";
+    const profileName = profilePath.substring(profilePath.lastIndexOf("/") + 1);
 
     return this.props.model.buildToolLogs?.log.find(
       (log: build_event_stream.File) => log.name == profileName && log.uri
@@ -141,9 +141,9 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     };
     rpcService
       .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "stream", { init })
-      .then((body) => {
-        if (body === null) throw new Error("response body is null");
-        return readProfile(body, (n) => this.setProgress(n, digestSize, storedEncoding));
+      .then((response) => {
+        if (!response.body) throw new Error("response body is null");
+        return readProfile(response.body, (n) => this.setProgress(n, digestSize, storedEncoding));
       })
       .then((profile) => this.updateProfile(profile))
       .catch((e) => errorService.handleError(e))
