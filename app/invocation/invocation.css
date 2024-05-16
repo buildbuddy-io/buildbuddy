@@ -327,13 +327,6 @@
   background: #fafafa;
 }
 
-.cache-requests-card .result-row:hover {
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  transition: box-shadow 100ms;
-  z-index: 1;
-}
-
 .cache-requests-card .results-list > .row {
   gap: 0;
 }
@@ -373,12 +366,32 @@
   width: 60px;
 }
 
+.cache-requests-card .download-button {
+  width: 18px;
+  height: 18px;
+  padding: 4px;
+  margin: -2px;
+  border-radius: 8px;
+  stroke: #2196f3;
+  cursor: pointer;
+}
+
+.cache-requests-card .download-button:hover {
+  stroke: #03a9f4;
+  background: #eee;
+}
+
 .cache-requests-card .name-column {
   width: 28%;
   max-width: 300px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
 }
 
 .cache-requests-card.group-by-target .name-column {
