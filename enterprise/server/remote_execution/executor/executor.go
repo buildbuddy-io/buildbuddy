@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/metricsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -359,7 +360,7 @@ func (m *ActionMetrics) Report(ctx context.Context) {
 		// Don't report metrics for cached actions for now.
 		return
 	}
-	groupID := interfaces.AuthAnonymousUser
+	groupID := ""
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
 		groupID = u.GetGroupID()
 	}
@@ -425,7 +426,7 @@ func observeStageDuration(groupID string, stage string, start *timestamppb.Times
 	}
 	duration := endTime.Sub(startTime)
 	metrics.RemoteExecutionExecutedActionMetadataDurationsUsec.With(prometheus.Labels{
-		metrics.GroupID:                  groupID,
+		metrics.GroupID:                  metricsutil.FilteredGroupIDLabel(groupID),
 		metrics.ExecutedActionStageLabel: stage,
 	}).Observe(float64(duration / time.Microsecond))
 }
