@@ -40,7 +40,7 @@ jobs:
             --bes_results_url=https://app.buildbuddy.io/invocation/
             --remote_cache=remote.buildbuddy.io
             --flaky_test_attempts=3
-            --local_test_jobs=8
+            --local_test_jobs=4
             --build_metadata=ROLE=CI
             --color=yes
           )
