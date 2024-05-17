@@ -285,13 +285,12 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     const bytestreamURL = this.props.search.get("bytestream_url") || "";
     const invocationID = this.props.search.get("invocation_id") || "";
-    const zip = this.props.search.get("z") || undefined;
-    let filename = this.props.search.get("filename");
-    if (this.isSingleFile() && bytestreamURL) {
-      rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text", { zip }).then((result) => {
-        let path = monaco.Uri.file(filename || "file");
-        this.setModel(path.path, monaco.editor.createModel(result, getLangHintFromFilePath(path.path), path));
-      });
+    const compareBytestreamURL = this.props.search.get("compare_bytestream_url") || "";
+    if (compareBytestreamURL) {
+      this.showBytestreamCompare();
+      return;
+    } else if (this.isSingleFile() && bytestreamURL) {
+      this.showBytestreamFile();
       return;
     }
 
@@ -464,6 +463,52 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   isDirectory(node: github.TreeNode | undefined) {
     return node?.type === "tree";
+  }
+
+  async modelForBytestreamUrl(bytestreamURL: string, invocationID: string, path: string, zip?: string) {
+    let model = getOrCreateModel(path + "-error", "File not found in cache.");
+    await rpcService
+      .fetchBytestreamFile(bytestreamURL, invocationID, "text", { zip })
+      .then((result) => {
+        model = getOrCreateModel(path, result);
+      })
+      .catch(() => {});
+    return model;
+  }
+
+  async showBytestreamCompare() {
+    const bytestreamURL = this.props.search.get("bytestream_url") || "";
+    const invocationID = this.props.search.get("invocation_id") || "";
+    const zip = this.props.search.get("z") || undefined;
+    let filename = this.props.search.get("filename") || "file";
+
+    const compareBytestreamURL = this.props.search.get("compare_bytestream_url") || "";
+    const compareInvocationID = this.props.search.get("compare_invocation_id") || "";
+    let compareFilename = this.props.search.get("compare_filename") || "";
+
+    let modelA = this.modelForBytestreamUrl(bytestreamURL, invocationID, filename, zip);
+    let modelB = this.modelForBytestreamUrl(compareBytestreamURL, compareInvocationID, "diff-" + compareFilename, zip);
+
+    if (!this.diffEditor) {
+      this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current!);
+    }
+    let diffModel = { original: await modelA, modified: await modelB };
+    this.diffEditor?.setModel(diffModel);
+    this.state.fullPathToDiffModelMap.set(filename, diffModel);
+    this.updateState({ fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
+      this.diffEditor?.layout();
+    });
+  }
+
+  async showBytestreamFile() {
+    const bytestreamURL = this.props.search.get("bytestream_url") || "";
+    const invocationID = this.props.search.get("invocation_id") || "";
+    const zip = this.props.search.get("z") || undefined;
+    let filename = this.props.search.get("filename") || "file";
+
+    let modelA = await this.modelForBytestreamUrl(bytestreamURL, invocationID, filename, zip);
+
+    this.setModel(filename, modelA);
   }
 
   // TODO(siggisim): Support moving files around
