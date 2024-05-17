@@ -33,7 +33,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
