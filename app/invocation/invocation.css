@@ -1073,6 +1073,11 @@
   }
 }
 
+.state-page .runner-execution-status {
+  display: flex;
+  align-items: center;
+}
+
 .state-page button.impersonate-button,
 .stage-page button.impersonate-button:hover {
   margin-top: 8px;
