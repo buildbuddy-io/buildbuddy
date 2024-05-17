@@ -264,6 +264,82 @@ func TestCleanupZombieShards(t *testing.T) {
 	t.Fatalf("Zombie killer never cleaned up zombie range 2")
 }
 
+func TestCleanupZombieReplicas(t *testing.T) {
+	flag.Set("cache.raft.zombie_node_scan_interval", "100ms")
+
+	sf := newStoreFactory(t)
+	s1, nh1 := sf.NewStore(t)
+	s2, nh2 := sf.NewStore(t)
+	ctx := context.Background()
+
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+		nh1.ID(): s1.GRPCAddress,
+		nh2.ID(): s2.GRPCAddress,
+	})
+	require.NoError(t, err)
+
+	stores := []*TestingStore{s1, s2}
+	waitForRangeLease(t, stores, 2)
+
+	s := getStoreWithRangeLease(t, stores, 2)
+	rd := s.GetRange(2)
+
+	require.Equal(t, len(rd.GetReplicas()), 2)
+
+	// Remove replica of range 2 on nh1 in meta range
+	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(rd.GetReplicas())-1)
+	for _, repl := range rd.GetReplicas() {
+		if repl.GetNhid() == nh1.ID() {
+			continue
+		}
+		replicas = append(replicas, repl)
+	}
+	rd.Replicas = replicas
+	require.Equal(t, 1, len(replicas))
+	rd.Generation = rd.GetGeneration() + 1
+	protoBytes, err := proto.Marshal(rd)
+	require.NoError(t, err)
+
+	// Write the range descriptor the meta range
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(rd.GetEnd()),
+			Value: protoBytes,
+		},
+	}).ToProto()
+	require.NoError(t, err)
+	writeRsp, err := s1.Sender.SyncPropose(ctx, constants.MetaRangePrefix, writeReq)
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	require.NoError(t, err)
+
+	for i := 0; i < 30; i++ {
+		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		if len(list.GetReplicas()) == 1 {
+			log.Debugf("listReplicas: %+v", list)
+			repl := list.GetReplicas()[0]
+			// nh1 only has shard 1
+			require.Equal(t, uint64(1), repl.GetShardId())
+
+			require.Nil(t, s1.GetRange(2))
+			_, err := s1.GetReplica(2)
+			require.True(t, status.IsOutOfRangeError(err))
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	// verify that the range and replica is not removed from s2
+	list, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+	require.NoError(t, err)
+	require.Equal(t, 2, list.GetReplicas())
+	require.NotNil(t, s2.GetRange(2))
+	_, err = s2.GetReplica(2)
+	require.NoError(t, err)
+
+	t.Fatalf("Zombie killer never cleaned up zombie range 2")
+}
+
 func TestAutomaticSplitting(t *testing.T) {
 	flag.Set("cache.raft.entries_between_usage_checks", "1")
 	flag.Set("cache.raft.max_range_size_bytes", "10000")
