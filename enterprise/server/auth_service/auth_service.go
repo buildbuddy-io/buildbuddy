@@ -3,25 +3,22 @@ package auth_service
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 )
 
 type AuthService struct {
-	env environment.Env
+	authenticator interfaces.Authenticator
 }
 
-func Register(env *real_environment.RealEnv) error {
-	auth := AuthService{}
-	env.SetAuthService(auth)
-	return nil
+func Register(env *real_environment.RealEnv) {
+	env.SetAuthService(AuthService{authenticator: env.GetAuthenticator()})
 }
 
 func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
-	resp := authpb.AuthenticateResponse{
-		Jwt: a.env.GetAuthenticator().TrustedJWTFromAuthContext(ctx),
-	}
-	return &resp, nil
+	// TODO(iain): is this OK / check TTL.
+	jwt := a.authenticator.TrustedJWTFromAuthContext(ctx)
+	return &authpb.AuthenticateResponse{Jwt: &jwt}, nil
 }
