@@ -106,4 +106,9 @@
   display: flex;
   align-items: center;
   margin-bottom: 0;
+  flex-grow: 1;
+}
+
+.invocation-execution-row-file .invocation-execution-row-header-status {
+  flex-grow: 1;
 }

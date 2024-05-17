@@ -91,7 +91,6 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
     return rpcService
       .fetchBytestreamFile(logFile.uri, model.getInvocationId(), "arraybuffer", { init })
       .then(async (body) => {
-        if (body === null) throw new Error("response body is null");
         let entries: tools.protos.ExecLogEntry[] = [];
         let byteArray = new Uint8Array(body);
         for (var offset = 0; offset < body.byteLength; ) {
@@ -216,82 +215,78 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
     }
 
     return (
-      <div>
-        <div className={`card expanded`}>
-          <div className="content">
-            <div className="invocation-content-header">
-              <div className="title">Changed Files ({format.formatWithCommas(changedFiles.length)}) </div>
-              <div className="invocation-sort-controls">
-                <span className="invocation-sort-title">Sort by</span>
-                <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
-                  <Option value="none">None</Option>
-                  <Option value="size">Size</Option>
-                  <Option value="path">Path</Option>
-                </Select>
-                <span className="group-container">
-                  <div>
-                    <input
-                      id="direction-asc"
-                      checked={this.state.direction == "asc"}
-                      onChange={this.handleInputChange.bind(this)}
-                      value="asc"
-                      name="direction"
-                      type="radio"
-                    />
-                    <label htmlFor="direction-asc">Asc</label>
-                  </div>
-                  <div>
-                    <input
-                      id="direction-desc"
-                      checked={this.state.direction == "desc"}
-                      onChange={this.handleInputChange.bind(this)}
-                      value="desc"
-                      name="direction"
-                      type="radio"
-                    />
-                    <label htmlFor="direction-desc">Desc</label>
-                  </div>
-                </span>
-              </div>
-            </div>
-            <div>
-              <div className="invocation-execution-table">
-                {changedFiles
-                  .sort(this.sort.bind(this))
-                  .slice(0, this.state.limit)
-                  .map((diff) => (
-                    <Link
-                      key={diff.a.id}
-                      className="invocation-execution-row invocation-execution-row-file"
-                      href={this.getCompareUrl(
-                        this.props.modelA,
-                        diff.a.file?.digest!,
-                        diff.a.file?.path!,
-                        this.props.modelB,
-                        diff.b.file?.digest!,
-                        diff.b.file?.path!
-                      )}>
-                      <div className="invocation-execution-row-image">
-                        <File className="icon" />
-                      </div>
-                      <div>
-                        <div className="invocation-execution-row-header">
-                          <span className="invocation-execution-row-header-status">{diff.a.file?.path}</span>
-                          {diff.a.file?.digest && <DigestComponent digest={diff.a.file.digest} expanded={false} />}
-                          <ArrowRight className="icon" />
-                          {diff.b.file?.digest && <DigestComponent digest={diff.b.file.digest} expanded={false} />}
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-              </div>
-              {changedFiles.length > this.state.limit && (
-                <div className="more-buttons">
-                  <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>See more files</OutlinedButton>
-                  <OutlinedButton onClick={this.handleAllClicked.bind(this)}>See all files</OutlinedButton>
+      <div className={`card expanded`}>
+        <div className="content">
+          <div className="invocation-content-header">
+            <div className="title">Changed Files ({format.formatWithCommas(changedFiles.length)}) </div>
+            <div className="invocation-sort-controls">
+              <span className="invocation-sort-title">Sort by</span>
+              <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
+                <Option value="none">None</Option>
+                <Option value="size">Size</Option>
+                <Option value="path">Path</Option>
+              </Select>
+              <span className="group-container">
+                <div>
+                  <input
+                    id="direction-asc"
+                    checked={this.state.direction == "asc"}
+                    onChange={this.handleInputChange.bind(this)}
+                    value="asc"
+                    name="direction"
+                    type="radio"
+                  />
+                  <label htmlFor="direction-asc">Asc</label>
                 </div>
-              )}
+                <div>
+                  <input
+                    id="direction-desc"
+                    checked={this.state.direction == "desc"}
+                    onChange={this.handleInputChange.bind(this)}
+                    value="desc"
+                    name="direction"
+                    type="radio"
+                  />
+                  <label htmlFor="direction-desc">Desc</label>
+                </div>
+              </span>
             </div>
+          </div>
+          <div>
+            <div className="invocation-execution-table">
+              {changedFiles
+                .sort(this.sort.bind(this))
+                .slice(0, this.state.limit)
+                .map((diff) => (
+                  <Link
+                    key={diff.a.id}
+                    className="invocation-execution-row invocation-execution-row-file"
+                    href={this.getCompareUrl(
+                      this.props.modelA,
+                      diff.a.file?.digest!,
+                      diff.a.file?.path!,
+                      this.props.modelB,
+                      diff.b.file?.digest!,
+                      diff.b.file?.path!
+                    )}>
+                    <div className="invocation-execution-row-image">
+                      <File className="icon" />
+                    </div>
+                    <div className="invocation-execution-row-header">
+                      <span className="invocation-execution-row-header-status">{diff.a.file?.path}</span>
+                      {diff.a.file?.digest && <DigestComponent digest={diff.a.file.digest} expanded={false} />}
+                      <ArrowRight className="icon" />
+                      {diff.b.file?.digest && <DigestComponent digest={diff.b.file.digest} expanded={false} />}
+                    </div>
+                  </Link>
+                ))}
+            </div>
+            {changedFiles.length > this.state.limit && (
+              <div className="more-buttons">
+                <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>See more files</OutlinedButton>
+                <OutlinedButton onClick={this.handleAllClicked.bind(this)}>See all files</OutlinedButton>
+              </div>
+            )}
           </div>
         </div>
       </div>
