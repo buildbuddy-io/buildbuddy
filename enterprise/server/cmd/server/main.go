@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/codesearch"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
@@ -131,6 +132,10 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		log.Fatalf("Error setting up runner: %s", err)
 	}
 	env.SetRunnerService(runnerService)
+
+	if err := auth_service.Register(env); err != nil {
+		log.Fatalf("Failed to register auth service: %s", err)
+	}
 
 	env.SetSplashPrinter(&splash.Printer{})
 }

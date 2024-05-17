@@ -123,4 +123,5 @@ type Env interface {
 	GetCommandRunner() interfaces.CommandRunner
 	GetCodesearchService() interfaces.CodesearchService
 	GetSnapshotService() interfaces.SnapshotService
+	GetAuthService() interfaces.AuthService
 }
