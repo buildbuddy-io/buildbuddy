@@ -85,19 +85,14 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
           callback && callback();
           return;
         }
-        this.setState(
-          {
-            fetchedTargets: [...this.state.fetchedTargets, ...page.targets],
-            nextPageToken: page.nextPageToken,
-          },
-          () => {
-            if (all && page.nextPageToken) {
-              this.loadMore(true, callback);
-            } else {
-              callback && callback();
-            }
-          }
-        );
+        this.state.fetchedTargets = [...this.state.fetchedTargets, ...page.targets];
+        this.state.nextPageToken = page.nextPageToken;
+        if (all && page.nextPageToken) {
+          this.loadMore(true, callback);
+          return;
+        }
+        this.forceUpdate();
+        callback && callback();
       })
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));
