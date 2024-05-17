@@ -156,3 +156,13 @@ ts_jasmine_node_test(
         "@npm//tslib",
     ],
 )
+
+ts_library(
+    name = "rpc",
+    srcs = ["rpc.ts"],
+    deps = [
+        "//app/service:rpc_service",
+        "//app/util:errors",
+        "//proto:grpc_code_ts_proto",
+    ],
+)
