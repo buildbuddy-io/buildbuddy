@@ -87,6 +87,7 @@ export default class RootComponent extends React.Component {
                 invocationAId={compareInvocationIds.a}
                 invocationBId={compareInvocationIds.b}
                 search={this.state.search}
+                tab={this.state.tab}
                 user={undefined}
               />
             )}

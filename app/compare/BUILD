@@ -10,9 +10,7 @@ ts_library(
     deps = [
         "//app/auth:auth_service",
         "//app/components/button:checkbox_button",
-        "//app/components/button:link_button",
         "//app/invocation:invocation_model",
-        "//app/router",
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:invocation_ts_proto",
