@@ -91,3 +91,24 @@
   color: #1565c0;
   background-color: #bbdefb;
 }
+
+.invocation-execution-row-file {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.invocation-execution-row-file svg {
+  height: 16px;
+}
+
+.invocation-execution-row-file .invocation-execution-row-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+  flex-grow: 1;
+}
+
+.invocation-execution-row-file .invocation-execution-row-header-status {
+  flex-grow: 1;
+}
