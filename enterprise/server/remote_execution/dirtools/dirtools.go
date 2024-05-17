@@ -541,7 +541,7 @@ func copyFile(src *FilePointer, dest *FilePointer, opts *DownloadTreeOpts) error
 
 // linkFileFromFileCache attempts to link the given file path from the local
 // file cache, and returns whether the linking was successful.
-func linkFileFromFileCache(ctx context.Context, d *repb.Digest, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) (bool, error) {
+func linkFileFromFileCache(ctx context.Context, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) (bool, error) {
 	if err := removeExisting(fp, opts); err != nil {
 		return false, err
 	}
@@ -691,9 +691,8 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		// Attempt to link files from the local file cache.
 		numFilesLinked := 0
 		for _, fp := range filePointers {
-			d := fp.FileNode.GetDigest()
 			if fileCache != nil {
-				linked, err := linkFileFromFileCache(ff.ctx, d, fp, fileCache, opts)
+				linked, err := linkFileFromFileCache(ff.ctx, fp, fileCache, opts)
 				if err != nil {
 					return err
 				}
