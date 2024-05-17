@@ -1,0 +1,17 @@
+
+syntax = "proto3";
+
+package auth;
+
+// Authentication information is passed via headers.
+message AuthenticateRequest {}
+
+message AuthenticateResponse {
+  optional string jwt = 1;
+}
+
+service AuthService {
+  // Authenticates the user based on the provided headers, returning a JWT that
+  // may be used for local access for a short time.
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+}
