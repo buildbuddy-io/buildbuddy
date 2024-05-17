@@ -165,7 +165,9 @@
   color: #757575;
 }
 
-.invocation-action-card .icon.file-icon {
+.invocation-action-card .icon.file-icon,
+.invocation-action-card .icon.folder-icon,
+.invocation-action-card .icon.file-question-icon {
   margin-right: 4px;
   width: 18px;
   height: 18px;
@@ -1041,6 +1043,35 @@
 
 .prop-value .detail {
   color: #aaa;
+}
+
+.action-list .expected-output {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .icon {
+    opacity: 0.7;
+  }
+
+  .expected-output-label {
+    color: #444;
+  }
+}
+
+.action-list .missing-output {
+  display: flex;
+  align-items: center;
+
+  .icon {
+    height: 18px;
+    width: 18px;
+    opacity: 0.7;
+  }
+
+  .expected-output-label {
+    color: #444;
+  }
 }
 
 .state-page button.impersonate-button,

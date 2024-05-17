@@ -1,7 +1,7 @@
-import React from "react";
+import React, { ReactElement } from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { ArrowRight, Download, FileSymlink, Info } from "lucide-react";
+import { ArrowRight, Download, File, FileQuestion, FileSymlink, Folder, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
@@ -624,6 +624,126 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  private renderExpectedOutputs(command: build.bazel.remote.execution.v2.Command) {
+    const useOutputPaths =
+      command.outputPaths.length && !(command.outputFiles.length + command.outputDirectories.length);
+
+    const renderOutputPaths = () => (
+      <>
+        {command.outputPaths.map((expectedOutput) => (
+          <div className="expected-output">
+            <span>
+              <FileQuestion className="icon file-question-icon" />
+            </span>
+            <span className="expected-output-label">{expectedOutput}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    const renderOutputFilesAndDirs = () => (
+      <>
+        {command.outputDirectories.map((expectedDir) => (
+          <div className="expected-output">
+            <span>
+              <Folder className="icon folder-icon" />
+            </span>
+            <span className="expected-output-label">{expectedDir}</span>
+          </div>
+        ))}
+        {command.outputFiles.map((expectedFile) => (
+          <div className="expected-output">
+            <span>
+              <File className="icon file-icon" />
+            </span>
+            <span className="expected-output-label">{expectedFile}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Expected Outputs</div>
+        <div className="action-list">{useOutputPaths ? renderOutputPaths() : renderOutputFilesAndDirs()}</div>
+      </div>
+    );
+  }
+
+  private renderMissingOutputs(
+    command: build.bazel.remote.execution.v2.Command,
+    actionResult: build.bazel.remote.execution.v2.ActionResult
+  ) {
+    const useOutputPaths =
+      command.outputPaths.length && !(command.outputFiles.length + command.outputDirectories.length);
+
+    const renderMissingOutputPaths = (missingOutputs: Array<string>) => (
+      <>
+        {missingOutputs.map((missingOutput) => (
+          <div className="missing-output">
+            <span>
+              <FileQuestion className="icon file-question-icon red" />
+            </span>
+            <span className="missing-output-label">{missingOutput}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    const renderMissingOutputFilesAndDirs = (missingFiles: Array<string>, missingDirs: Array<string>) => (
+      <>
+        {missingDirs.map((missingDir) => (
+          <div className="missing-output">
+            <span>
+              <Folder className="icon file-question-icon red" />
+            </span>
+            <span className="missing-output-label">{missingDir}</span>
+          </div>
+        ))}
+        {missingFiles.map((missingFile) => (
+          <div className="missing-output">
+            <span>
+              <FileQuestion className="icon file-question-icon red" />
+            </span>
+            <span className="missing-output-label">{missingFile}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    const renderOutline = (content: ReactElement) => (
+      <div className="action-section">
+        <div className="action-property-title">Missing Outputs</div>
+        <div className="action-list">{content}</div>
+      </div>
+    );
+
+    if (useOutputPaths) {
+      const actualOutputs = [
+        ...actionResult.outputFiles,
+        ...actionResult.outputDirectories,
+        ...actionResult.outputSymlinks,
+      ].map((output) => output.path);
+      const missingOutputs = command.outputPaths.filter((expected) => !actualOutputs.includes(expected));
+      return missingOutputs.length && renderOutline(renderMissingOutputPaths(missingOutputs));
+    }
+
+    const actualFiles = [
+      ...actionResult.outputFiles,
+      ...actionResult.outputFileSymlinks,
+      ...actionResult.outputDirectorySymlinks,
+    ].map((file) => file.path);
+    const missingFiles = command.outputFiles.filter((expected) => !actualFiles.includes(expected));
+    // In practice, Bazel creates the expected directories inside the input tree.
+    // So it's unlikely that any of the expected dirs is missing.
+    const actualDirs = actionResult.outputDirectories.map((dir) => dir.path);
+    const missingDirs = command.outputDirectories.filter((expected) => !actualDirs.includes(expected));
+    return (
+      missingFiles.length + missingDirs.length > 0 &&
+      renderOutline(renderMissingOutputFilesAndDirs(missingFiles, missingDirs))
+    );
+  }
+
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
     const vmMetadata = this.getFirecrackerVMMetadata();
@@ -743,20 +863,21 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         </div>
                         <div className="action-section">
                           <div className="action-property-title">Platform properties</div>
-                          {this.state.command?.platform?.properties.length ? (
+                          {this.state.command.platform?.properties.length ? (
                             <div className="action-list">
-                              {this.state.command?.platform?.properties.map((property) => (
+                              {this.state.command.platform?.properties.map((property) => (
                                 <div>
                                   <span className="prop-name">{property.name}</span>
                                   <span className="prop-value">={property.value}</span>
                                 </div>
                               ))}
-                              {!this.state.command?.platform?.properties.length && <div>(Default)</div>}
+                              {!this.state.command.platform?.properties.length && <div>(Default)</div>}
                             </div>
                           ) : (
                             <div>None</div>
                           )}
                         </div>
+                        {!this.state.actionResult && this.renderExpectedOutputs(this.state.command)}
                       </div>
                     ) : (
                       <div>No command details were found.</div>
@@ -930,6 +1051,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       </div>
                       {this.renderOutputDirectories(this.state.actionResult)}
                       {this.renderOutputSymlinks(this.state.actionResult)}
+                      {this.state.command && this.renderMissingOutputs(this.state.command, this.state.actionResult)}
                       <div className="action-section">
                         <div className="action-property-title">Stderr</div>
                         <div>
