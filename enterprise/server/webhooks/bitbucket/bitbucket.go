@@ -54,8 +54,6 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 			EventName:     webhook_data.EventName.Push,
 			PushedRepoURL: v["Repository.Links.HTML.Href"],
 			PushedBranch:  branch,
-			TargetRepoURL: v["Repository.Links.HTML.Href"],
-			TargetBranch:  branch,
 			SHA:           v["Push.Changes.0.New.Target.Hash"],
 		}, nil
 	case "pullrequest:created", "pullrequest:updated":

@@ -766,8 +766,14 @@ actions:
 
 		// When invoked with the initial commit sha, should not contain the modified print statement
 		result = invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
-		checkRunnerResult(t, result)
-		assert.Contains(t, result.Output, "args: {{ Hello world }}")
+		if !tc.setBranchName {
+			// Git does not support fetching non-HEAD commits by default.
+			// If pushed_branch is not set as a fallback, the fetch will fail.
+			require.NotEqual(t, 0, result.ExitCode)
+		} else {
+			checkRunnerResult(t, result)
+			assert.Contains(t, result.Output, "args: {{ Hello world }}")
+		}
 
 		// When invoked with the new commit sha, should contain the modified print statement
 		runnerFlagsCommit2 := append(baselineRunnerFlags, "--commit_sha="+newCommitSha)

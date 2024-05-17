@@ -137,14 +137,11 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 		}
 		branch := strings.TrimPrefix(v["Ref"], "refs/heads/")
 		return &interfaces.WebhookData{
-			EventName:               webhook_data.EventName.Push,
-			PushedRepoURL:           v["Repo.CloneURL"],
-			PushedBranch:            branch,
-			SHA:                     v["HeadCommit.ID"],
-			TargetRepoURL:           v["Repo.CloneURL"],
-			TargetRepoDefaultBranch: v["Repo.DefaultBranch"],
-			TargetBranch:            branch,
-			IsTargetRepoPublic:      v["Repo.Private"] == "false",
+			EventName:          webhook_data.EventName.Push,
+			PushedRepoURL:      v["Repo.CloneURL"],
+			PushedBranch:       branch,
+			SHA:                v["HeadCommit.ID"],
+			IsTargetRepoPublic: v["Repo.Private"] == "false",
 		}, nil
 
 	case *gh.PullRequestEvent:

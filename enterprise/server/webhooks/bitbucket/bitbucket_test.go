@@ -33,8 +33,6 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 		PushedRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
 		PushedBranch:  "main",
 		SHA:           "f3307f36e35d1820c78b642cc8dfec6bf28a6230",
-		TargetRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
-		TargetBranch:  "main",
 	}, data)
 }
 

@@ -162,7 +162,7 @@ var (
 	patchURIs       = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	gitCleanExclude = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
 	gitFetchFilters = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to `git fetch` commands.")
-	gitFetchDepth   = flag.Int("git_fetch_depth", 0, "Depth to use for `git fetch` commands.")
+	gitFetchDepth   = flag.Int("git_fetch_depth", 1, "Depth to use for `git fetch` commands.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -1702,47 +1702,54 @@ func (ws *workspace) sync(ctx context.Context) error {
 
 // fetchRefs fetches the pushed and target refs from their respective remotes
 func (ws *workspace) fetchRefs(ctx context.Context) error {
-	// "base" here is referring to the repo on which the workflow is configured.
-	baseRefs := make([]string, 0)
-	if *targetBranch != "" {
-		baseRefs = append(baseRefs, *targetBranch)
-	}
-	// "fork" is referring to the forked repo, if the runner was triggered by a
-	// PR from a fork (forkRefs will be empty otherwise).
-	forkRefs := make([]string, 0)
-
-	// Add the pushed ref to the appropriate list corresponding to the remote
-	// to be fetched (base or fork).
 	inFork := isPushedRefInFork()
-	if inFork {
-		// Try to fetch a branch if possible, because fetching
-		// commits that aren't at the tip of a branch requires
-		// users to set an additional config option (uploadpack.allowAnySHA1InWant)
-		pushedRefToFetch := *pushedBranch
-		if pushedRefToFetch == "" {
-			pushedRefToFetch = *commitSHA
-		}
-		forkRefs = append(forkRefs, pushedRefToFetch)
-	} else {
-		if *pushedBranch == "" {
-			baseRefs = append(baseRefs, *commitSHA)
-		} else if *pushedBranch != *targetBranch {
-			baseRefs = append(baseRefs, *pushedBranch)
-		}
-	}
 
-	baseURL := *pushedRepoURL
-	if inFork {
-		baseURL = *targetRepoURL
-	}
 	// TODO: Fetch from remotes in parallel
-	if err := ws.fetch(ctx, baseURL, baseRefs); err != nil {
-		return err
-	}
-	if err := ws.fetch(ctx, *pushedRepoURL, forkRefs); err != nil {
-		return err
+	if inFork {
+		if *targetBranch == "" {
+			return status.InvalidArgumentError("target_branch must be set if target_url != pushed_url")
+		}
+		if err := ws.fetch(ctx, *targetRepoURL, []string{*targetBranch}); err != nil {
+			return status.WrapError(err, "fetch target ref")
+		}
+
+		if err := ws.fetchPushedRef(ctx); err != nil {
+			return status.WrapError(err, "fetch pushed ref")
+		}
+	} else {
+		if err := ws.fetchPushedRef(ctx); err != nil {
+			return status.WrapError(err, "fetch pushed ref")
+		}
+
+		if *targetBranch != "" && *targetBranch != *pushedBranch {
+			if err := ws.fetch(ctx, *pushedRepoURL, []string{*targetBranch}); err != nil {
+				return status.WrapError(err, "fetch target ref")
+			}
+		}
 	}
 	return nil
+}
+
+func (ws *workspace) fetchPushedRef(ctx context.Context) error {
+	if *pushedBranch != "" && (*commitSHA == "" || *gitFetchDepth != 1) {
+		return ws.fetch(ctx, *pushedRepoURL, []string{*pushedBranch})
+	}
+	err := ws.fetch(ctx, *pushedRepoURL, []string{*commitSHA})
+	if err != nil {
+		if strings.Contains(err.Error(), "Server does not allow request for unadvertised object") {
+			log.Warning("Git does not support fetching non-HEAD commits by default." +
+				" You must set the `upload.allowAnySHA1InWant` config option in the repo being fetched." +
+				" Attempting to fetch pushed_branch... ")
+			if *pushedBranch != "" {
+				if err = ws.fetch(ctx, *pushedRepoURL, []string{*pushedBranch}); err != nil {
+					return err
+				}
+			} else {
+				log.Warning("Pushed_branch not set on the request.")
+			}
+		}
+	}
+	return err
 }
 
 // checkoutRef checks out a reference that the rest of the remote run should run off
@@ -1845,11 +1852,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string)
 	fetchArgs = append(fetchArgs, remoteName)
 	fetchArgs = append(fetchArgs, refs...)
 	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
-		if strings.Contains(err.Error(), "Server does not allow request for unadvertised object") {
-			log.Warning("Git does not support fetching non-HEAD commits by default. You must either set the `uploadpack.allowAnySHA1InWant`" +
-				" config option in the repo that is being fetched, or set pushed_branch in the request.")
-		}
-		return err
+		return status.WrapError(err, err.Output)
 	}
 	return nil
 }

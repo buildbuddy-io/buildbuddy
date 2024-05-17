@@ -30,13 +30,10 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, &interfaces.WebhookData{
-		EventName:               "push",
-		PushedRepoURL:           "https://github.com/test/hello_bb_ci.git",
-		PushedBranch:            "main",
-		SHA:                     "258044d28288d5f6f1c5928b0e22580296fec666",
-		TargetRepoURL:           "https://github.com/test/hello_bb_ci.git",
-		TargetRepoDefaultBranch: "main",
-		TargetBranch:            "main",
+		EventName:     "push",
+		PushedRepoURL: "https://github.com/test/hello_bb_ci.git",
+		PushedBranch:  "main",
+		SHA:           "258044d28288d5f6f1c5928b0e22580296fec666",
 	}, data)
 }
 
