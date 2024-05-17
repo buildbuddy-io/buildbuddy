@@ -33,7 +33,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
@@ -453,16 +452,16 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 	assert.Equal(t, 1, pool.PausedRunnerCount())
 }
 
-type providerFunc func(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error)
+type providerFunc func(ctx context.Context, args *container.Init) (container.CommandContainer, error)
 
-func (f providerFunc) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error) {
-	return f(ctx, props, task, state, workspaceRoot)
+func (f providerFunc) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	return f(ctx, args)
 }
 
 // Returns containers that only consume disk resources when paused (like firecracker).
 type DiskOnlyContainerProvider struct{}
 
-func (*DiskOnlyContainerProvider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error) {
+func (*DiskOnlyContainerProvider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	fc := newFakeFirecrackerContainer()
 	return container.NewTracedCommandContainer(fc), nil
 }
@@ -813,7 +812,7 @@ func TestRunnerPool_RecycleAfterCreateFailed_CallsRemove(t *testing.T) {
 	// Set up a fake command container that always returns a fixed error
 	// when calling Create().
 	fakeCreateError := fmt.Errorf("test-create-error")
-	cfg.ContainerProvider = providerFunc(func(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error) {
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 		ctr = NewFakeContainer()
 		ctr.CreateError = fakeCreateError
 		return ctr, nil

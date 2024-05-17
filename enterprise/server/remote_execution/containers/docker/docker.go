@@ -115,12 +115,12 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 	}, nil
 }
 
-func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	opts := &DockerOptions{
-		ForceRoot:               props.DockerForceRoot,
-		DockerInit:              props.DockerInit,
-		DockerUser:              props.DockerUser,
-		DockerNetwork:           props.DockerNetwork,
+		ForceRoot:               args.Props.DockerForceRoot,
+		DockerInit:              args.Props.DockerInit,
+		DockerUser:              args.Props.DockerUser,
+		DockerNetwork:           args.Props.DockerNetwork,
 		Socket:                  platform.DockerSocket(),
 		EnableSiblingContainers: *dockerSiblingContainers,
 		UseHostNetwork:          *dockerNetHost,
@@ -131,7 +131,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 		Volumes:                 *dockerVolumes,
 		InheritUserIDs:          *dockerInheritUserIDs,
 	}
-	return NewDockerContainer(p.env, p.client, props.ContainerImage, p.buildRoot, opts), nil
+	return NewDockerContainer(p.env, p.client, args.Props.ContainerImage, p.buildRoot, opts), nil
 }
 
 type DockerOptions struct {

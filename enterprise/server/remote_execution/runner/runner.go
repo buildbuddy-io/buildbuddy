@@ -1031,9 +1031,11 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 }
 
 func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (*container.TracedCommandContainer, error) {
+	args := &container.Init{Props: props, Task: task, State: state, WorkDir: workingDir}
+
 	// Overriding in tests.
 	if p.overrideProvider != nil {
-		c, err := p.overrideProvider.New(ctx, props, task, state, workingDir)
+		c, err := p.overrideProvider.New(ctx, args)
 		if err != nil {
 			return nil, err
 		}
@@ -1050,7 +1052,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		return nil, status.UnimplementedErrorf("no container provider registered for %q isolation", isolationType)
 	}
 
-	c, err := containerProvider.New(ctx, props, task, state, workingDir)
+	c, err := containerProvider.New(ctx, args)
 	if err != nil {
 		return nil, err
 	}

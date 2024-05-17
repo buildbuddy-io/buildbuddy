@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -42,11 +43,11 @@ func TestPullsNotDeduped(t *testing.T) {
 	provider, err := podman.NewProvider(env, dir)
 	require.NoError(t, err)
 
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
 		DockerNetwork:  "off",
 	}
-	container, err := provider.New(ctx, &props, nil, nil, "")
+	container, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	eg := errgroup.Group{}
@@ -82,11 +83,11 @@ func TestImageExists(t *testing.T) {
 	provider, err := podman.NewProvider(env, dir)
 	require.NoError(t, err)
 
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
 		DockerNetwork:  "off",
 	}
-	container, err := provider.New(ctx, &props, nil, nil, "")
+	container, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	exitCode = 1
