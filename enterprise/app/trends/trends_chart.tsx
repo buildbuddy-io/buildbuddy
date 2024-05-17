@@ -14,7 +14,7 @@ import {
   Cell,
   ReferenceArea,
 } from "recharts";
-import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
+import { CategoricalChartState } from "recharts/types/chart/types";
 
 interface ChartDataSeries {
   name: string;
