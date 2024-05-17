@@ -476,7 +476,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     return model;
   }
 
-  showBytestreamCompare() {
+  async showBytestreamCompare() {
     const bytestreamURL = this.props.search.get("bytestream_url") || "";
     const invocationID = this.props.search.get("invocation_id") || "";
     const zip = this.props.search.get("z") || undefined;
@@ -489,16 +489,14 @@ export default class CodeComponent extends React.Component<Props, State> {
     let modelA = this.modelForBytestreamUrl(bytestreamURL, invocationID, filename, zip);
     let modelB = this.modelForBytestreamUrl(compareBytestreamURL, compareInvocationID, "diff-" + compareFilename, zip);
 
-    Promise.all([modelA, modelB]).then((m) => {
-      if (!this.diffEditor) {
-        this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current!);
-      }
-      let diffModel = { original: m[0], modified: m[1] };
-      this.diffEditor?.setModel(diffModel);
-      this.state.fullPathToDiffModelMap.set(filename, diffModel);
-      this.updateState({ fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
-        this.diffEditor?.layout();
-      });
+    if (!this.diffEditor) {
+      this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current!);
+    }
+    let diffModel = { original: await modelA, modified: await modelB };
+    this.diffEditor?.setModel(diffModel);
+    this.state.fullPathToDiffModelMap.set(filename, diffModel);
+    this.updateState({ fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
+      this.diffEditor?.layout();
     });
   }
 
