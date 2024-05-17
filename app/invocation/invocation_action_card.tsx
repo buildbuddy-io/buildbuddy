@@ -374,7 +374,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       color: string;
       timestamp: Timestamp;
     };
-    let filteredEvents: FilteredTimelineEvent[] = events
+    const filteredEvents: FilteredTimelineEvent[] = events
       .filter((event): event is FilteredTimelineEvent => event.timestamp != null)
       .map((event, i, events) => {
         if (i == events.length - 1) return event;
@@ -415,11 +415,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
               title={`Total: (${format.durationSec(totalDuration)}, 100%)`}
               style={{ flex: `1 0 0`, backgroundColor: "green" }}></div>
           </div>
-          {filteredEvents.map((event, i) => {
+          {filteredEvents.map((event, i, events) => {
             // Don't render the end marker.
-            if (i == filteredEvents.length - 1) return null;
+            if (i == events.length - 1) return null;
 
-            const next = filteredEvents[i + 1];
+            const next = events[i + 1];
             const duration = durationSeconds(event.timestamp!, next.timestamp!);
             const weight = duration / totalDuration;
 
