@@ -22,3 +22,29 @@ ts_library(
         "@npm//tslib",
     ],
 )
+
+ts_library(
+    name = "compare_execution_log_files",
+    srcs = ["compare_execution_log_files.tsx"],
+    deps = [
+        "//app/components/button",
+        "//app/components/button:checkbox_button",
+        "//app/components/digest",
+        "//app/components/link",
+        "//app/components/select",
+        "//app/errors:error_service",
+        "//app/format",
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//app/util:cache",
+        "//proto:build_event_stream_ts_proto",
+        "//proto:remote_execution_ts_proto",
+        "//proto:spawn_ts_proto",
+        "@npm//@types/react",
+        "@npm//@types/varint",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
+        "@npm//varint",
+    ],
+)
