@@ -735,7 +735,7 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		// Once Bazel receives the initial update, it will use WaitExecution to handle retry on error instead of
 		// requesting a new execution via Execute.
 		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), actionResource)
-		err = stateChangeFn(repb.ExecutionStage_UNKNOWN, operation.InProgressExecuteResponse())
+		err = stateChangeFn(repb.ExecutionStage_QUEUED, operation.InProgressExecuteResponse())
 		if err != nil && err != io.EOF {
 			log.CtxWarningf(stream.Context(), "Could not send initial update: %s", err)
 		}
@@ -840,7 +840,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	lastOp := &longrunning.Operation{}
 	lastWrite := time.Now()
 	taskID := ""
-	stage := repb.ExecutionStage_UNKNOWN
+	// Once the executor has called PublishOperation, we're in EXECUTING stage.
+	stage := repb.ExecutionStage_EXECUTING
 	mu := sync.Mutex{}
 	// 80% of executions take < 10 seconds in total. So here, we delay
 	// writes to the database if pubsub.Publish is successful, in an

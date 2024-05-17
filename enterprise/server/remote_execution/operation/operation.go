@@ -35,6 +35,14 @@ type Publisher struct {
 	taskID           string
 	taskResourceName *digest.ResourceName
 
+	// Execution stage as defined by the remote execution API.
+	executionStage repb.ExecutionStage_Value
+
+	// Fine-grained state that further specifies where we are within the
+	// EXECUTION stage. This is BuildBuddy-specific and gets published as
+	// auxiliary metadata.
+	executionStageProgress repb.ExecutionProgress_ExecutionState
+
 	mu     sync.Mutex
 	stream *retryingClient
 }
@@ -58,19 +66,18 @@ func (p *Publisher) Send(op *longrunning.Operation) error {
 	return p.stream.Send(op)
 }
 
-// SetStatus sets the current task status and eagerly publishes a progress
-// update with the new state.
-func (p *Publisher) SetState(state repb.ExecutionProgress_ExecutionState) error {
+// Ping re-publishes the current execution progress state.
+func (p *Publisher) Ping() error {
 	progress := &repb.ExecutionProgress{
 		Timestamp:      tspb.Now(),
-		ExecutionState: state,
+		ExecutionState: p.executionStageProgress,
 	}
 	progressAny, err := anypb.New(progress)
 	if err != nil {
 		return err
 	}
 	md := &repb.ExecuteOperationMetadata{
-		Stage:        repb.ExecutionStage_EXECUTING,
+		Stage:        p.executionStage,
 		ActionDigest: p.taskResourceName.GetDigest(),
 		PartialExecutionMetadata: &repb.ExecutedActionMetadata{
 			AuxiliaryMetadata: []*anypb.Any{progressAny},
@@ -81,6 +88,14 @@ func (p *Publisher) SetState(state repb.ExecutionProgress_ExecutionState) error 
 		return status.WrapError(err, "assemble operation")
 	}
 	return p.Send(op)
+}
+
+// SetStatus sets the current task status and eagerly publishes a progress
+// update with the new state.
+func (p *Publisher) SetState(state repb.ExecutionProgress_ExecutionState) error {
+	p.executionStage = repb.ExecutionStage_EXECUTING
+	p.executionStageProgress = state
+	return p.Ping()
 }
 
 // CloseAndRecv closes the send direction of the stream and waits for the

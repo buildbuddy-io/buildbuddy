@@ -37,6 +37,7 @@
     "diff": "^5.0.0",
     "diff-match-patch": "^1.0.5",
     "jasmine": "^4.1.0",
+    "jasmine-core": "^5.1.0",
     "libsodium-wrappers": "^0.7.10",
     "long": "^4.0.0",
     "lucide-react": "^0.241.0",

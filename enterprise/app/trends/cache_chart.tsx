@@ -13,7 +13,7 @@ import {
   ReferenceArea,
 } from "recharts";
 import * as format from "../../../app/format/format";
-import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
+import { CategoricalChartState } from "recharts/types/chart/types";
 
 interface Props {
   title: string;
