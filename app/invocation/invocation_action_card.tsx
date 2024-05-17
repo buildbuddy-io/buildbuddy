@@ -682,7 +682,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {missingOutputs.map((missingOutput) => (
           <div className="missing-output">
             <span>
-              <FileQuestion className="icon file-question-icon" />
+              <FileQuestion className="icon file-question-icon red" />
             </span>
             <span className="missing-output-label">{missingOutput}</span>
           </div>
@@ -695,7 +695,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {missingDirs.map((missingDir) => (
           <div className="missing-output">
             <span>
-              <Folder className="icon file-question-icon" />
+              <Folder className="icon file-question-icon red" />
             </span>
             <span className="missing-output-label">{missingDir}</span>
           </div>
@@ -703,7 +703,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {missingFiles.map((missingFile) => (
           <div className="missing-output">
             <span>
-              <FileQuestion className="icon file-question-icon" />
+              <FileQuestion className="icon file-question-icon red" />
             </span>
             <span className="missing-output-label">{missingFile}</span>
           </div>
