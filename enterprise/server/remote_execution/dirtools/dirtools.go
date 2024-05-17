@@ -889,8 +889,19 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	}
 
 	filesToFetch := make(map[digest.Key][]*FilePointer, 0)
-	var fetchDirFn func(dir *repb.Directory, parentDir string) error
-	fetchDirFn = func(dir *repb.Directory, parentDir string) error {
+	type parentAndDir struct {
+		parent string
+		dir    *repb.Directory
+	}
+	dirQueue := []*parentAndDir{{parent: rootDir, dir: dirMap[digest.NewKey(rootDirectoryDigest)]}}
+	for len(dirQueue) > 0 {
+		// Pop first entry in queue
+		pnd := dirQueue[0]
+		dirQueue = dirQueue[1:]
+		parentDir := pnd.parent
+		dir := pnd.dir
+
+		// handle files
 		for _, fileNode := range dir.GetFiles() {
 			func(node *repb.FileNode, location string) {
 				d := node.GetDigest()
@@ -912,23 +923,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 				trackTransfersFn(relPath, node)
 			}(fileNode, parentDir)
 		}
-		for _, child := range dir.GetDirectories() {
-			newRoot := filepath.Join(parentDir, child.GetName())
-			if err := os.MkdirAll(newRoot, dirPerms); err != nil {
-				return err
-			}
-			rn := digest.NewResourceName(child.GetDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
-			if rn.IsEmpty() && rn.GetDigest().SizeBytes == 0 {
-				continue
-			}
-			childDir, ok := dirMap[digest.NewKey(child.GetDigest())]
-			if !ok {
-				return digest.MissingDigestError(child.GetDigest())
-			}
-			if err := fetchDirFn(childDir, newRoot); err != nil {
-				return err
-			}
-		}
+
+		// handle symlinks
 		for _, symlinkNode := range dir.GetSymlinks() {
 			nodeAbsPath := filepath.Join(parentDir, symlinkNode.GetName())
 			if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
@@ -939,28 +935,41 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 					// Attempt to blow away the existing
 					// file(s) at that location and re-link.
 					if err := os.RemoveAll(nodeAbsPath); err != nil {
-						return err
+						return nil, err
 					}
 					// Now that the symlink has been removed
 					// try one more time to link it.
 					if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
-						return err
+						return nil, err
 					}
 					continue
 				}
-				return err
+				return nil, err
 			}
 		}
-		return nil
-	}
-	// Create the directory structure and track files to download.
-	if err := fetchDirFn(dirMap[digest.NewKey(rootDirectoryDigest)], rootDir); err != nil {
-		return nil, err
-	}
 
-	ff := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
+		// handle directories
+		for _, child := range dir.GetDirectories() {
+			newRoot := filepath.Join(parentDir, child.GetName())
+			if err := os.MkdirAll(newRoot, dirPerms); err != nil {
+				return nil, err
+			}
+			rn := digest.NewResourceName(child.GetDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
+			if rn.IsEmpty() && rn.GetDigest().SizeBytes == 0 {
+				continue
+			}
+			childDir, ok := dirMap[digest.NewKey(child.GetDigest())]
+			if !ok {
+				return nil, digest.MissingDigestError(child.GetDigest())
+			}
+
+			// push child dir into queue
+			dirQueue = append(dirQueue, &parentAndDir{parent: newRoot, dir: childDir})
+		}
+	}
 
 	// Download any files into the directory structure.
+	ff := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
 	if err := ff.FetchFiles(filesToFetch, opts); err != nil {
 		return nil, err
 	}
