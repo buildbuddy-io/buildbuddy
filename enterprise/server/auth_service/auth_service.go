@@ -20,6 +20,8 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
-	var resp authpb.AuthenticateResponse
+	resp := authpb.AuthenticateResponse{
+		Jwt: a.env.GetAuthenticator().TrustedJWTFromAuthContext(ctx),
+	}
 	return &resp, nil
 }
