@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/soci_store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -183,8 +182,8 @@ func getPodmanVersion(ctx context.Context, commandRunner interfaces.CommandRunne
 	return semver.NewVersion(strings.TrimSpace(stdout.String()))
 }
 
-func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.ScheduledTask, _ *rnpb.RunnerState, _ string) (container.CommandContainer, error) {
-	imageIsPublic := props.ContainerRegistryUsername == "" && props.ContainerRegistryPassword == ""
+func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	imageIsPublic := args.Props.ContainerRegistryUsername == "" && args.Props.ContainerRegistryPassword == ""
 	imageIsStreamable := (imageIsPublic || *privateImageStreamingEnabled)
 	if imageIsStreamable {
 		if err := p.sociStore.WaitUntilReady(); err != nil {
@@ -215,16 +214,16 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 		env:               p.env,
 		podmanVersion:     p.podmanVersion,
 		cgroupPaths:       p.cgroupPaths,
-		image:             props.ContainerImage,
+		image:             args.Props.ContainerImage,
 		imageIsStreamable: imageIsStreamable,
 		sociStore:         p.sociStore,
 		imageExistsCache:  p.imageExistsCache,
 		buildRoot:         p.buildRoot,
 		options: &PodmanOptions{
-			ForceRoot:          props.DockerForceRoot,
-			Init:               props.DockerInit,
-			User:               props.DockerUser,
-			Network:            props.DockerNetwork,
+			ForceRoot:          args.Props.DockerForceRoot,
+			Init:               args.Props.DockerInit,
+			User:               args.Props.DockerUser,
+			Network:            args.Props.DockerNetwork,
 			DefaultNetworkMode: networkMode,
 			CapAdd:             capAdd,
 			Devices:            devices,

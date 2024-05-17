@@ -143,11 +143,11 @@ func TestRunHelloWorld(t *testing.T) {
 
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
 		DockerNetwork:  "off",
 	}
-	c, err := provider.New(ctx, &props, nil, nil, "")
+	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
@@ -180,11 +180,11 @@ func TestHelloWorldExec(t *testing.T) {
 
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
 		DockerNetwork:  "off",
 	}
-	c, err := provider.New(ctx, &props, nil, nil, "")
+	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	err = c.Create(ctx, workDir)
@@ -227,11 +227,11 @@ func TestExecStdio(t *testing.T) {
 
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
 		DockerNetwork:  "off",
 	}
-	c, err := provider.New(ctx, &props, nil, nil, "")
+	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	err = c.Create(ctx, workDir)
@@ -271,11 +271,11 @@ func TestRun_Timeout(t *testing.T) {
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
 		DockerNetwork:  "off",
 	}
-	c, err := provider.New(ctx, &props, nil, nil, "")
+	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	// Ensure the image is cached
@@ -322,11 +322,11 @@ func TestExec_Timeout(t *testing.T) {
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
 		DockerNetwork:  "off",
 	}
-	c, err := provider.New(ctx, &props, nil, nil, "")
+	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	// Ensure the image is cached
@@ -387,11 +387,11 @@ func TestIsImageCached(t *testing.T) {
 	for _, tc := range tests {
 		provider, err := podman.NewProvider(env, rootDir)
 		require.NoError(t, err)
-		props := platform.Properties{
+		props := &platform.Properties{
 			ContainerImage: tc.image,
 			DockerNetwork:  "off",
 		}
-		c, err := provider.New(ctx, &props, nil, nil, "")
+		c, err := provider.New(ctx, &container.Init{Props: props})
 		require.NoError(t, err)
 		if tc.want {
 			err := c.PullImage(ctx, oci.Credentials{})
@@ -446,12 +446,12 @@ func TestForceRoot(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			provider, err := podman.NewProvider(env, rootDir)
 			require.NoError(t, err)
-			props := platform.Properties{
+			props := &platform.Properties{
 				ContainerImage:  image,
 				DockerForceRoot: tc.forceRoot,
 				DockerNetwork:   "off",
 			}
-			c, err := provider.New(ctx, &props, nil, nil, "")
+			c, err := provider.New(ctx, &container.Init{Props: props})
 			require.NoError(t, err)
 			result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 			require.NoError(t, result.Error)
@@ -494,12 +494,12 @@ func TestUser(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			provider, err := podman.NewProvider(env, rootDir)
 			require.NoError(t, err)
-			props := platform.Properties{
+			props := &platform.Properties{
 				ContainerImage: image,
 				DockerUser:     tc.user,
 				DockerNetwork:  "off",
 			}
-			c, err := provider.New(ctx, &props, nil, nil, "")
+			c, err := provider.New(ctx, &container.Init{Props: props})
 			require.NoError(t, err)
 			result := c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-u", "-n"},
@@ -545,11 +545,11 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
 		DockerNetwork:  "off",
 	}
-	c, err := provider.New(ctx, &props, nil, nil, "")
+	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
@@ -586,11 +586,11 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	flags.Set(t, "executor.podman.enable_stats", true)
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/ubuntu:20.04",
 		DockerNetwork:  "off",
 	}
-	c, err := provider.New(ctx, &props, nil, nil, "")
+	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})

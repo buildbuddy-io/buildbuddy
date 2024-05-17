@@ -440,11 +440,11 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 	}, nil
 }
 
-func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	var vmConfig *fcpb.VMConfiguration
-	savedState := state.GetContainerState().GetFirecrackerState()
+	savedState := args.State.GetContainerState().GetFirecrackerState()
 	if savedState == nil {
-		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
+		sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
 		numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
 		numCPUs += int64(*overprivisionCPUs)
 		numCPUs = min(numCPUs, int64(runtime.NumCPU()))
@@ -452,10 +452,10 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 			NumCpus:           numCPUs,
 			MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 			ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
-			EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(task.GetExecutionTask(), "debug-enable-vm-logs")),
+			EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
 			EnableNetworking:  true,
-			InitDockerd:       props.InitDockerd,
-			EnableDockerdTcp:  props.EnableDockerdTCP,
+			InitDockerd:       args.Props.InitDockerd,
+			EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		}
 		vmConfig.BootArgs = getBootArgs(vmConfig)
 	} else if *snaputil.EnableLocalSnapshotSharing {
@@ -463,18 +463,18 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 		// snapshots, since these aren't shareable (i.e. COW-formatted).
 		return nil, status.UnavailableError("ignoring persisted snapshot; this functionality has been replaced by local snapshot sharing")
 	} else {
-		vmConfig = state.GetContainerState().GetFirecrackerState().GetVmConfiguration()
+		vmConfig = args.State.GetContainerState().GetFirecrackerState().GetVmConfiguration()
 	}
 	opts := ContainerOpts{
 		VMConfiguration:        vmConfig,
 		SavedState:             savedState,
-		ContainerImage:         props.ContainerImage,
-		User:                   props.DockerUser,
+		ContainerImage:         args.Props.ContainerImage,
+		User:                   args.Props.DockerUser,
 		DockerClient:           p.dockerClient,
-		ActionWorkingDirectory: workingDir,
+		ActionWorkingDirectory: args.WorkDir,
 		ExecutorConfig:         p.executorConfig,
 	}
-	c, err := NewContainer(ctx, p.env, task.GetExecutionTask(), opts)
+	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
 		return nil, err
 	}

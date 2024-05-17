@@ -462,7 +462,7 @@ func (f providerFunc) New(ctx context.Context, props *platform.Properties, task 
 // Returns containers that only consume disk resources when paused (like firecracker).
 type DiskOnlyContainerProvider struct{}
 
-func (*DiskOnlyContainerProvider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workspaceRoot string) (container.CommandContainer, error) {
+func (*DiskOnlyContainerProvider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	fc := newFakeFirecrackerContainer()
 	return container.NewTracedCommandContainer(fc), nil
 }
