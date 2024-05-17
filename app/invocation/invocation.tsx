@@ -275,6 +275,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
   private runnerExecutionStream?: Cancelable;
 
   streamRunnerExecution() {
+    if (!capabilities.config.streamingHttpEnabled) return;
+
     const runnerExecution = this.state.runnerExecution;
     if (!runnerExecution?.executionId) return;
 
