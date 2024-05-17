@@ -1,6 +1,7 @@
 package firecracker
 
 import (
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	dockerclient "github.com/docker/docker/client"
@@ -37,6 +38,9 @@ type ContainerOpts struct {
 	// will be pulled directly by skopeo and no image pull de-duping will be
 	// performed.
 	DockerClient *dockerclient.Client
+
+	// The operation stream publisher for the task.
+	Publisher *operation.Publisher
 
 	// The action directory with inputs / outputs.
 	ActionWorkingDirectory string

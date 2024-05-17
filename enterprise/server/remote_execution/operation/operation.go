@@ -93,6 +93,11 @@ func (p *Publisher) Ping() error {
 // SetStatus sets the current task status and eagerly publishes a progress
 // update with the new state.
 func (p *Publisher) SetState(state repb.ExecutionProgress_ExecutionState) error {
+	// For convenience, allow calling SetState on a nil publisher.
+	if p == nil {
+		return nil
+	}
+
 	p.executionStage = repb.ExecutionStage_EXECUTING
 	p.executionStageProgress = state
 	return p.Ping()

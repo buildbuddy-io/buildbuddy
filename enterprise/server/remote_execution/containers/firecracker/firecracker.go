@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
@@ -473,6 +474,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		DockerClient:           p.dockerClient,
 		ActionWorkingDirectory: args.WorkDir,
 		ExecutorConfig:         p.executorConfig,
+		Publisher:              args.Publisher,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
@@ -527,6 +529,8 @@ type FirecrackerContainer struct {
 	// dockerClient is used to optimize image pulls by reusing image layers from
 	// the Docker cache as well as deduping multiple requests for the same image.
 	dockerClient *dockerclient.Client
+
+	publisher *operation.Publisher
 
 	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
@@ -596,6 +600,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		containerImage:     opts.ContainerImage,
 		user:               opts.User,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
+		publisher:          opts.Publisher,
 		env:                env,
 		task:               task,
 		loader:             loader,
@@ -1955,6 +1960,8 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
+	c.publisher.SetState(repb.ExecutionProgress_BOOTING_VM)
+
 	vmCtx, cancel := context.WithCancelCause(background.ToBackground(ctx))
 	c.vmCtx = vmCtx
 	c.cancelVmCtx = cancel
@@ -2194,6 +2201,7 @@ func (c *FirecrackerContainer) monitorVMContext(ctx context.Context) (context.Co
 // stdout writer.
 func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	log.CtxInfof(ctx, "Executing command.")
+	c.publisher.SetState(repb.ExecutionProgress_EXECUTING_COMMAND)
 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -2639,6 +2647,7 @@ func (c *FirecrackerContainer) cleanupOldSnapshots(snapshotDetails *snapshotDeta
 func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+	c.publisher.SetState(repb.ExecutionProgress_RESUMING_VM)
 
 	start := time.Now()
 	err := c.unpause(ctx)
