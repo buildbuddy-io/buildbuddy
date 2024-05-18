@@ -332,7 +332,7 @@ func TestCleanupZombieReplicas(t *testing.T) {
 	// verify that the range and replica is not removed from s2
 	list, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 	require.NoError(t, err)
-	require.Equal(t, 2, list.GetReplicas())
+	require.Equal(t, 2, len(list.GetReplicas()))
 	require.NotNil(t, s2.GetRange(2))
 	_, err = s2.GetReplica(2)
 	require.NoError(t, err)
