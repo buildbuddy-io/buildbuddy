@@ -1318,3 +1318,18 @@ svg.invocation-query-graph .nodes rect {
     margin-right: 0;
   }
 }
+
+.target-more-buttons {
+  display: flex;
+  gap: 16px;
+}
+
+.target-more-buttons div {
+  display: flex;
+  align-items: center;
+}
+
+.target-more-buttons svg {
+  height: 16px;
+  color: rgba(0, 0, 0, 0.5);
+}
