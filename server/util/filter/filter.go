@@ -102,7 +102,7 @@ func GenerateFilterStringAndArgs(f *stat_filter.StatFilter, paramPrefix string) 
 	return fmt.Sprintf("(%s >= ?)", metric), []interface{}{f.GetMin()}, nil
 }
 
-func DimensionToDbField(m *stat_filter.DimensionFilter, paramPrefix string) (string, error) {
+func DimensionToDbField(m *stat_filter.Dimension, paramPrefix string) (string, error) {
 	if m == nil {
 		return "", status.InvalidArgumentErrorf("Filter dimension must not be nil")
 	}
@@ -119,14 +119,5 @@ func GenerateDimensionFilterStringAndArgs(f *stat_filter.DimensionFilter, paramP
 	if err != nil {
 		return "", nil, err
 	}
-	if f.Max == nil && f.Min == nil {
-		return "", nil, status.InvalidArgumentErrorf("No filter bounds specified: %v", f)
-	}
-	if f.Max != nil && f.Min != nil {
-		return fmt.Sprintf("(%s BETWEEN ? AND ?)", metric), []interface{}{f.GetMin(), f.GetMax()}, nil
-	}
-	if f.Max != nil {
-		return fmt.Sprintf("(%s <= ?)", metric), []interface{}{f.GetMax()}, nil
-	}
-	return fmt.Sprintf("(%s >= ?)", metric), []interface{}{f.GetMin()}, nil
+	return fmt.Sprintf("(%s = ?)", metric), []interface{}{f.GetValue()}, nil
 }

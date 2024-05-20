@@ -40,6 +40,7 @@ message StatFilter {
 
 enum InvocationDimensionType {
   UNKNOWN_INVOCATION_DIMENSION = 0;
+  BRANCH_INVOCATION_DIMENSION = 1;
 }
 
 enum ExecutionDimensionType {
@@ -49,7 +50,7 @@ enum ExecutionDimensionType {
 
 message Dimension {
   optional InvocationDimensionType invocation = 1;
-  optional ExecutionDimensionType dimension = 2;
+  optional ExecutionDimensionType execution = 2;
 }
 
 message DimensionFilter {

@@ -404,7 +404,7 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		q.AddWhereClause(str, args...)
 	}
 	for _, f := range tq.GetDimensionFilter() {
-		if !includeExecutionDimensionFilters && f.Execution != nil {
+		if !includeExecutionDimensionFilters && f.GetDimension().Execution != nil {
 			continue
 		}
 		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f, "")
@@ -1061,7 +1061,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause(str, args...)
 	}
 	for _, f := range req.GetQuery().GetDimensionFilter() {
-		if f.Invocation == nil {
+		if f.GetDimension().Invocation == nil {
 			continue
 		}
 		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f, "")
