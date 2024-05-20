@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"strconv"
@@ -45,6 +46,10 @@ func GetEventLogPathFromInvocationIdAndAttempt(invocationId string, attempt uint
 		return invocationId + "/chunks/log/eventlog"
 	}
 	return invocationId + "/" + strconv.FormatUint(attempt, 10) + "/chunks/log/eventlog"
+}
+
+func GetEventLogPubSubChannel(invocationID string) string {
+	return fmt.Sprintf("eventlog/%s/updates", invocationID)
 }
 
 // Gets the chunk of the event log specified by the request from the blobstore and returns a response containing it
@@ -276,12 +281,14 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 	return result.data, nil
 }
 
-func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, eventLogPath string, numLinesToRetain int) *EventLogWriter {
+func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, pubsub interfaces.PubSub, pubsubChannel string, eventLogPath string, numLinesToRetain int) *EventLogWriter {
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}
 	eventLogWriter := &EventLogWriter{
 		keyValueStore: c,
+		pubsub:        pubsub,
+		pubsubChannel: pubsubChannel,
 		eventLogPath:  eventLogPath,
 	}
 	var writeHook func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte)
@@ -314,6 +321,8 @@ type EventLogWriter struct {
 	chunkstoreWriter *chunkstore.ChunkstoreWriter
 	lastChunk        *elpb.LiveEventLogChunk
 	keyValueStore    interfaces.KeyValStore
+	pubsub           interfaces.PubSub
+	pubsubChannel    string
 	eventLogPath     string
 }
 
@@ -341,6 +350,9 @@ func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeReque
 		curChunk,
 	)
 	w.lastChunk = curChunk
+	if w.pubsub != nil {
+		w.pubsub.Publish(ctx, w.pubsubChannel, "")
+	}
 }
 
 func (w *EventLogWriter) GetLastChunkId(ctx context.Context) string {

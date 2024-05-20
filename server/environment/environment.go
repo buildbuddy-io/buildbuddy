@@ -125,4 +125,5 @@ type Env interface {
 	GetSnapshotService() interfaces.SnapshotService
 	GetAuthService() interfaces.AuthService
 	GetRegistryService() interfaces.RegistryService
+	GetPubSub() interfaces.PubSub
 }

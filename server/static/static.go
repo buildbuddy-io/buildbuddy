@@ -60,6 +60,7 @@ var (
 	codeSearchEnabled                      = flag.Bool("app.codesearch_enabled", false, "If set, show the code search UI.")
 	orgAdminApiKeyCreationEnabled          = flag.Bool("app.org_admin_api_key_creation_enabled", false, "If set, SCIM API keys will be able to be created in the UI.")
 	readerWriterRolesEnabled               = flag.Bool("app.reader_writer_roles_enabled", false, "If set, Reader/Writer roles will be enabled in the user management UI.")
+	invocationLogStreamingEnabled          = flag.Bool("app.invocation_log_streaming_enabled", false, "If set, the UI will stream invocation logs instead of polling.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -197,6 +198,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CodeSearchEnabled:                      *codeSearchEnabled,
 		OrgAdminApiKeyCreationEnabled:          *orgAdminApiKeyCreationEnabled,
 		ReaderWriterRolesEnabled:               *readerWriterRolesEnabled,
+		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

@@ -29,6 +29,7 @@ var (
 		// done purely using perms bits attached to each row.
 		"GetInvocation",
 		"GetEventLogChunk",
+		"GetEventLog",
 		"GetCacheScoreCard",
 		"GetCacheMetadata",
 		"GetTreeDirectorySizes",

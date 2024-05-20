@@ -404,8 +404,10 @@ ts_library(
     name = "invocation_logs_model",
     srcs = ["invocation_logs_model.tsx"],
     deps = [
+        "//app/capabilities",
         "//app/errors:error_service",
         "//app/service:rpc_service",
+        "//app/util:rpc",
         "//proto:eventlog_ts_proto",
         "@npm//rxjs",
     ],
