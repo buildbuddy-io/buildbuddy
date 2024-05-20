@@ -191,9 +191,6 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		q.AddWhereClause(str, args...)
 	}
 	for _, f := range req.GetQuery().GetDimensionFilter() {
-		if f.GetDimension().Execution == nil {
-			continue
-		}
 		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f, "")
 		if err != nil {
 			return nil, err
