@@ -7,7 +7,6 @@ go_library(
     srcs = ["usage_service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service",
     deps = [
-        "//enterprise/server/usage/config",
         "//proto:usage_go_proto",
         "//server/environment",
         "//server/real_environment",

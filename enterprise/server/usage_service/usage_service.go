@@ -35,7 +35,7 @@ type usageService struct {
 // Registers the usage service if usage tracking is enabled
 func Register(env *real_environment.RealEnv) error {
 	// if usage_config.UsageTrackingEnabled() {
-		env.SetUsageService(New(env, clockwork.NewRealClock()))
+	env.SetUsageService(New(env, clockwork.NewRealClock()))
 	// }
 	return nil
 }
@@ -88,7 +88,7 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 	}
 
 	// XXX: Check month??
-	for _, u := range(usages) {
+	for _, u := range usages {
 		aggregateUsage.Invocations += u.GetInvocations()
 		aggregateUsage.ActionCacheHits += u.GetActionCacheHits()
 		aggregateUsage.CasCacheHits += u.GetCasCacheHits()
