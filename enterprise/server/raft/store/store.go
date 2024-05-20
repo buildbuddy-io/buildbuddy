@@ -950,44 +950,76 @@ func (s *Store) acquireNodeLiveness(ctx context.Context) {
 	}
 }
 
-func (s *Store) isRangelessNode(shardID uint64) bool {
-	if rd := s.lookupRange(shardID); rd != nil {
-		for _, r := range rd.GetReplicas() {
-			if r.GetShardId() == shardID {
-				return false
-			}
-		}
-	}
-	return true
-}
+type membershipStatus int
 
-// If the replica is behind: don’t kill
-// If the replica is one of the replicas specified in the range: don’t kill
-// Otherwise: kill
-func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo) bool {
+const (
+	membershipStatusUnknown membershipStatus = iota
+	membershipStatusMember
+	membershipStatusNotMember
+)
+
+// checkMembershipStatus checks the status of the membership given the shard info.
+// Returns membershipStatusMember when the replica's config change is current and
+// it's one of the voters, non-voters, or witnesses;
+// Returns membershipStatusUnknown when the replica's config change is behind or
+// there is error to get membership info.
+func (s *Store) checkMembershipStatus(ctx context.Context, shardInfo dragonboat.ShardInfo) membershipStatus {
 	// Get the config change index for this shard.
 	membership, err := s.getMembership(ctx, shardInfo.ShardID)
 	if err != nil {
-		s.log.Errorf("Error gettting membership for shard %d: %s", shardInfo.ShardID, err)
-		return false
+		s.log.Errorf("checkMembershipStatus failed to get membership for shard %d: %s", shardInfo.ShardID, err)
+		return membershipStatusUnknown
 	}
 
 	if shardInfo.ConfigChangeIndex > 0 && shardInfo.ConfigChangeIndex <= membership.ConfigChangeID {
-		return false
+		return membershipStatusUnknown
 	}
 
 	for replicaID := range membership.Nodes {
 		if replicaID == shardInfo.ReplicaID {
-			return false
+			return membershipStatusMember
 		}
 	}
 	for replicaID := range membership.NonVotings {
 		if replicaID == shardInfo.ReplicaID {
-			return false
+			return membershipStatusMember
 		}
 	}
 	for replicaID := range membership.Witnesses {
 		if replicaID == shardInfo.ReplicaID {
+			return membershipStatusMember
+		}
+	}
+	return membershipStatusNotMember
+}
+
+// isZombieNode checks whether a node is a zombie node.
+func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo) bool {
+	membershipStatus := s.checkMembershipStatus(ctx, shardInfo)
+	if membershipStatus == membershipStatusNotMember {
+		return true
+	}
+
+	rd := s.lookupRange(shardInfo.ShardID)
+	if rd == nil {
+		return true
+	}
+
+	// The replica info in the local range descriptor could be out of date. For
+	// example, when another node in the raft cluster proposed to remove this node
+	// when this node is dead. When this node restarted, the range descriptor is
+	// behind, but it cannot get updates from other nodes b/c it was removed from the
+	// cluster.
+	updatedRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), false /*skip Cache */)
+	if err != nil {
+		log.Errorf("failed to look up range descriptor: %s", err)
+		return false
+	}
+	if updatedRD.GetGeneration() >= rd.GetGeneration() {
+		rd = updatedRD
+	}
+	for _, r := range rd.GetReplicas() {
+		if r.GetShardId() == shardInfo.ShardID && r.GetReplicaId() == shardInfo.ReplicaID {
 			return false
 		}
 	}
@@ -1017,7 +1049,7 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 			sInfo := nInfo.ShardInfoList[idx]
 			idx += 1
 
-			if s.isZombieNode(ctx, sInfo) || s.isRangelessNode(sInfo.ShardID) {
+			if s.isZombieNode(ctx, sInfo) {
 				s.log.Debugf("Removing zombie node: %+v...", sInfo)
 				if err := s.nodeHost.StopReplica(sInfo.ShardID, sInfo.ReplicaID); err != nil {
 					s.log.Errorf("Error stopping zombie replica: %s", err)
