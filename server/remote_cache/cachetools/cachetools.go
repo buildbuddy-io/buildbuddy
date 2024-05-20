@@ -602,8 +602,9 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	}
 	ul.uploads[dk] = struct{}{}
 
-	rsc.Seek(0, 0)
-	r := io.ReadCloser(rsc)
+	if _, err := rsc.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("could not reset file read to start: %v", err)
+	}
 
 	compressor := repb.Compressor_IDENTITY
 	if ul.supportsCompression() {
@@ -619,17 +620,17 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 			return status.InvalidArgumentError("missing bytestream client")
 		}
 		ul.eg.Go(func() error {
-			defer r.Close()
-			_, err := UploadFromReader(ul.ctx, byteStreamClient, resourceName, r)
+			defer rsc.Close()
+			_, err := UploadFromReader(ul.ctx, byteStreamClient, resourceName, rsc)
 			return err
 		})
 		return nil
 	}
-	b, err := io.ReadAll(r)
+	b, err := io.ReadAll(rsc)
 	if err != nil {
 		return err
 	}
-	if err := r.Close(); err != nil {
+	if err := rsc.Close(); err != nil {
 		return err
 	}
 
