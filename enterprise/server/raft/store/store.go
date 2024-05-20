@@ -1056,7 +1056,7 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 	// when this node is dead. When this node restarted, the range descriptor is
 	// behind, but it cannot get updates from other nodes b/c it was removed from the
 	// cluster.
-	updatedRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), false /*skip Cache */)
+	updatedRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
 	if err != nil {
 		log.Errorf("failed to look up range descriptor: %s", err)
 		return false
