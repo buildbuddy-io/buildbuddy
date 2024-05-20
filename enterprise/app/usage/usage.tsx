@@ -216,6 +216,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   name: "linux remote execution duration",
                   extractValue: (ts) => +(this.getUsage(ts).linuxExecutionDurationUsec ?? 0),
                   formatHoverValue: (value) => formatMinutes(value || 0),
+                  onClick: this.onBarClicked.bind(this, "build_time"),
                   color: ChartColor.BLUE,
                 },
               ]}
