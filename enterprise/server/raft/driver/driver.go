@@ -356,10 +356,12 @@ func (rq *Queue) Start() {
 			return
 		case <-queueDelay.C:
 		}
-		if rq.pq.Len() == 0 {
+		if rq.Len() == 0 {
 			continue
 		}
+		rq.mu.Lock()
 		item := heap.Pop(rq.pq).(*pqItem)
+		rq.mu.Unlock()
 		item.processing = true
 		repl, err := rq.store.GetReplica(item.rangeID)
 		if err != nil || repl.ReplicaID() != item.replicaID {
