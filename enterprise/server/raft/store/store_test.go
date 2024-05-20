@@ -283,8 +283,9 @@ func TestCleanupZombieReplicas(t *testing.T) {
 
 	s := getStoreWithRangeLease(t, stores, 2)
 	rd := s.GetRange(2)
+	newRD := rd.CloneVT()
 
-	require.Equal(t, len(rd.GetReplicas()), 2)
+	require.Equal(t, len(newRD.GetReplicas()), 2)
 
 	// Remove replica of range 2 on nh1 in meta range
 	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(rd.GetReplicas())-1)
@@ -294,16 +295,16 @@ func TestCleanupZombieReplicas(t *testing.T) {
 		}
 		replicas = append(replicas, repl)
 	}
-	rd.Replicas = replicas
+	newRD.Replicas = replicas
 	require.Equal(t, 1, len(replicas))
-	rd.Generation = rd.GetGeneration() + 1
-	protoBytes, err := proto.Marshal(rd)
+	newRD.Generation = rd.GetGeneration() + 1
+	protoBytes, err := proto.Marshal(newRD)
 	require.NoError(t, err)
 
 	// Write the range descriptor the meta range
 	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(rd.GetEnd()),
+			Key:   keys.RangeMetaKey(newRD.GetEnd()),
 			Value: protoBytes,
 		},
 	}).ToProto()
