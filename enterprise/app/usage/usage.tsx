@@ -66,7 +66,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
   }
 
   renderCharts() {
-    if (!this.state.response?.dailyUsage) {
+    if (this.state.loading || !this.state.response?.dailyUsage) {
       return undefined;
     }
     const daysInMonth = moment(this.state.selectedPeriod, "YYYY-MM").daysInMonth();
