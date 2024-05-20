@@ -227,7 +227,7 @@ class Router {
     this.navigateTo(Path.settingsPath);
   }
 
-  navigateToTrends() {
+  navigateToTrends(chartId?: string) {
     this.navigateTo(Path.trendsPath);
   }
 
@@ -574,6 +574,8 @@ export class Path {
   static reviewsPath = "/reviews/";
   static codesearchPath = "/search/";
 }
+
+export type TrendsChartId = "builds" | "duration" | "cache" | "cas" | "savings";
 
 /** Returns the longest path value in `Path` matching the given URL path. */
 function getMatchedPath(urlPath: string): string | null {

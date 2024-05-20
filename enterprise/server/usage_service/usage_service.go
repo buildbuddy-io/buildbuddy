@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 
-	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
+	// usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 )
 
@@ -34,9 +34,9 @@ type usageService struct {
 
 // Registers the usage service if usage tracking is enabled
 func Register(env *real_environment.RealEnv) error {
-	if usage_config.UsageTrackingEnabled() {
+	// if usage_config.UsageTrackingEnabled() {
 		env.SetUsageService(New(env, clockwork.NewRealClock()))
-	}
+	// }
 	return nil
 }
 
@@ -83,17 +83,23 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 	}
 	period := getUsagePeriod(start).String()
 
-	if len(usages) > 1 {
-		log.Warningf("Scan returned more than one usage period! Start: %s, End: %s", start, end)
+	aggregateUsage := &usagepb.Usage{
+		Period: period,
 	}
 
-	// If there are no rows in the response, there's no usage for the requested
-	// time period--just shove in some zeroes instead.
-	if len(usages) > 0 && usages[0].Period == period {
-		rsp.Usage = usages[0]
-	} else {
-		rsp.Usage = &usagepb.Usage{Period: period}
+	// XXX: Check month??
+	for _, u := range(usages) {
+		aggregateUsage.Invocations += u.GetInvocations()
+		aggregateUsage.ActionCacheHits += u.GetActionCacheHits()
+		aggregateUsage.CasCacheHits += u.GetCasCacheHits()
+		aggregateUsage.TotalDownloadSizeBytes += u.GetTotalDownloadSizeBytes()
+		aggregateUsage.TotalUploadSizeBytes += u.GetTotalUploadSizeBytes()
+		aggregateUsage.LinuxExecutionDurationUsec += u.GetLinuxExecutionDurationUsec()
+		aggregateUsage.TotalCachedActionExecUsec += u.GetTotalCachedActionExecUsec()
 	}
+
+	rsp.Usage = aggregateUsage
+	rsp.DailyUsage = usages
 	return rsp, nil
 }
 
@@ -115,7 +121,7 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
 	dbh := s.env.GetDBHandle()
 	rq := dbh.NewQuery(ctx, "usage_service_scan").Raw(`
-		SELECT `+dbh.UTCMonthFromUsecTimestamp("period_start_usec")+` AS period,
+		SELECT `+dbh.DateFromUsecTimestamp("period_start_usec", 0)+` AS period,
 		SUM(invocations) AS invocations,
 		SUM(action_cache_hits) AS action_cache_hits,
 		SUM(cas_cache_hits) AS cas_cache_hits,

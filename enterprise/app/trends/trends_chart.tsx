@@ -15,6 +15,7 @@ import {
   ReferenceArea,
 } from "recharts";
 import { CategoricalChartState } from "recharts/types/chart/types";
+import { TrendsChartId } from "../../../app/router/router";
 
 interface ChartDataSeries {
   name: string;
@@ -36,7 +37,8 @@ interface Props {
   title: string;
   data: number[];
   ticks: number[];
-  id?: string;
+  id?: TrendsChartId;
+  standaloneChart?: boolean;
 
   formatXAxisLabel: (datum: number) => string;
   formatHoverXAxisLabel: (datum: number) => string;
@@ -188,7 +190,11 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     const hasSecondaryAxis = this.props.secondaryYAxis !== undefined;
 
     return (
-      <div id={this.props.id} className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""}`}>
+      <div
+        id={this.props.id}
+        className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""} ${
+          this.props.standaloneChart ? "standalone" : ""
+        }`}>
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
