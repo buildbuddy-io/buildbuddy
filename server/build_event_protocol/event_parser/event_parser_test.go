@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -31,6 +32,7 @@ func singleFiles() []*build_event_stream.File {
 }
 
 func TestFillInvocation(t *testing.T) {
+	flags.Set(t, "app.tags_enabled", true)
 	events := make([]*build_event_stream.BuildEvent, 0)
 
 	progress := &build_event_stream.Progress{
@@ -161,6 +163,10 @@ func TestFillInvocation(t *testing.T) {
 				Key:   "BUILD_USER",
 				Value: "WORKSPACE_STATUS_BUILD_USER",
 			},
+			{
+				Key:   "TAGS",
+				Value: "el, barto, was,here",
+			},
 		},
 	}
 	events = append(events, &build_event_stream.BuildEvent{
@@ -252,6 +258,11 @@ func TestFillInvocation(t *testing.T) {
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", invocation.RepoUrl, "repo URL should be normalized")
 	assert.Equal(t, false, invocation.GetUploadLocalResultsEnabled())
 	assert.Equal(t, false, invocation.GetRemoteExecutionEnabled())
+	outputTags := make([]string, 0)
+	for _, t := range invocation.Tags {
+		outputTags = append(outputTags, t.Name)
+	}
+	assert.Equal(t, []string{"el", "barto", "was", "here"}, outputTags)
 	assert.Equal(t, inpb.DownloadOutputsOption_MINIMAL, invocation.GetDownloadOutputsOption())
 }
 
