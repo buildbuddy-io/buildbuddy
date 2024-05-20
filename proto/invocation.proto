@@ -285,6 +285,8 @@ message InvocationQuery {
 
   // Stat filters (duration_usec, cas_cache_misses, etc.)
   repeated stat_filter.StatFilter filter = 14;
+  // String-based dimensional filters (execution worker, branch, etc.)
+  repeated stat_filter.DimensionFilter dimension_filter = 17;
 
   // The pattern for the targets built (exact match). Ex: "//..."
   string pattern = 15;
@@ -425,6 +427,9 @@ message InvocationStatQuery {
 
   // Stat filters (duration_usec, cas_cache_misses, etc.)
   repeated stat_filter.StatFilter filter = 12;
+
+  // String-based dimensional filters (execution worker, branch, etc.)
+  repeated stat_filter.DimensionFilter dimension_filter = 15;
 
   // The pattern for the targets built (exact match). Ex: "//..."
   string pattern = 13;

@@ -55,6 +55,24 @@ func invocationMetricToDbField(m stat_filter.InvocationMetricType, paramPrefix s
 	}
 }
 
+func executionDimensionToDbField(m stat_filter.ExecutionDimensionType, paramPrefix string) (string, error) {
+	switch m {
+	case stat_filter.ExecutionDimensionType_WORKER_EXECUTION_DIMENSION:
+		return paramPrefix + "worker", nil
+	default:
+		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
+	}
+}
+
+func invocationDimensionToDbField(m stat_filter.InvocationDimensionType, paramPrefix string) (string, error) {
+	switch m {
+	case stat_filter.InvocationDimensionType_BRANCH_INVOCATION_DIMENSION:
+		return paramPrefix + "branch", nil
+	default:
+		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
+	}
+}
+
 func MetricToDbField(m *stat_filter.Metric, paramPrefix string) (string, error) {
 	if m == nil {
 		return "", status.InvalidArgumentErrorf("Filter metric must not be nil")
@@ -69,6 +87,35 @@ func MetricToDbField(m *stat_filter.Metric, paramPrefix string) (string, error) 
 
 func GenerateFilterStringAndArgs(f *stat_filter.StatFilter, paramPrefix string) (string, []interface{}, error) {
 	metric, err := MetricToDbField(f.GetMetric(), paramPrefix)
+	if err != nil {
+		return "", nil, err
+	}
+	if f.Max == nil && f.Min == nil {
+		return "", nil, status.InvalidArgumentErrorf("No filter bounds specified: %v", f)
+	}
+	if f.Max != nil && f.Min != nil {
+		return fmt.Sprintf("(%s BETWEEN ? AND ?)", metric), []interface{}{f.GetMin(), f.GetMax()}, nil
+	}
+	if f.Max != nil {
+		return fmt.Sprintf("(%s <= ?)", metric), []interface{}{f.GetMax()}, nil
+	}
+	return fmt.Sprintf("(%s >= ?)", metric), []interface{}{f.GetMin()}, nil
+}
+
+func DimensionToDbField(m *stat_filter.DimensionFilter, paramPrefix string) (string, error) {
+	if m == nil {
+		return "", status.InvalidArgumentErrorf("Filter dimension must not be nil")
+	}
+	if m.Invocation != nil {
+		return invocationDimensionToDbField(m.GetInvocation(), paramPrefix)
+	} else if m.Execution != nil {
+		return executionDimensionToDbField(m.GetExecution(), paramPrefix)
+	}
+	return "", status.InvalidArgumentErrorf("Invalid filter: %v", m)
+}
+
+func GenerateDimensionFilterStringAndArgs(f *stat_filter.DimensionFilter, paramPrefix string) (string, []interface{}, error) {
+	metric, err := DimensionToDbField(f.GetDimension(), paramPrefix)
 	if err != nil {
 		return "", nil, err
 	}
