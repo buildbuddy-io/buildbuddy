@@ -757,7 +757,7 @@ export default class InvocationModel {
 
   getLinks(): { linkUrl: string; linkText: string }[] {
     const rawValue = this.buildMetadataMap.get("BUILDBUDDY_LINKS") ?? this.workspaceStatusMap.get("BUILDBUDDY_LINKS");
-    let links = rawValue?.split(",");
+    const links = rawValue?.split(",");
     const filtered: { linkUrl: string; linkText: string }[] =
       links
         ?.flatMap((link) => {
