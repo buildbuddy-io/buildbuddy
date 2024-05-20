@@ -1,13 +1,13 @@
 package dirtools
 
 import (
-	"bytes"
 	"context"
 	"flag"
-	"io"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
@@ -185,315 +184,242 @@ func trimPathPrefix(fullPath, prefix string) string {
 	return r
 }
 
-type fileToUpload struct {
-	resourceName *digest.ResourceName
-	info         os.FileInfo
-	fullFilePath string
+func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult) (*TransferInfo, error) {
+	txInfo := &TransferInfo{}
+	startTime := time.Now()
 
-	// If this was a directory, this is set, because the bytes to be
-	// uploaded are the contents of a directory proto, not the contents
-	// of the file at fullFilePath.
-	data []byte
-	dir  *repb.Directory
-}
+	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
+	fc := env.GetFileCache()
 
-func newDirToUpload(instanceName string, digestFunction repb.DigestFunction_Value, parentDir string, info os.FileInfo, dir *repb.Directory) (*fileToUpload, error) {
-	data, err := proto.Marshal(dir)
-	if err != nil {
-		return nil, err
-	}
-	reader := bytes.NewReader(data)
-
-	d, err := digest.Compute(reader, digestFunction)
-	if err != nil {
-		return nil, err
-	}
-	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)
-
-	return &fileToUpload{
-		fullFilePath: filepath.Join(parentDir, info.Name()),
-		info:         info,
-		resourceName: r,
-		data:         data,
-		dir:          dir,
-	}, nil
-}
-
-func newFileToUpload(instanceName string, digestFunction repb.DigestFunction_Value, parentDir string, info os.FileInfo) (*fileToUpload, error) {
-	fullFilePath := filepath.Join(parentDir, info.Name())
-	ad, err := cachetools.ComputeFileDigest(fullFilePath, instanceName, digestFunction)
-	if err != nil {
-		return nil, err
-	}
-	return &fileToUpload{
-		fullFilePath: fullFilePath,
-		info:         info,
-		resourceName: ad,
-	}, nil
-}
-
-func (f *fileToUpload) ReadSeekCloser() (io.ReadSeekCloser, error) {
-	if f.data != nil {
-		return cachetools.NewBytesReadSeekCloser(f.data), nil
-	}
-	file, err := os.Open(f.fullFilePath)
-	// Note: Caller is responsible for closing.
-	if err != nil {
-		return nil, err
-	}
-	return file, nil
-}
-
-func (f *fileToUpload) OutputFile(rootDir string) *repb.OutputFile {
-	return &repb.OutputFile{
-		Path:         filepath.ToSlash(trimPathPrefix(f.fullFilePath, rootDir)),
-		Digest:       f.resourceName.GetDigest(),
-		IsExecutable: f.info.Mode()&0111 != 0,
-	}
-}
-
-func (f *fileToUpload) FileNode() *repb.FileNode {
-	return &repb.FileNode{
-		Name:         f.info.Name(),
-		Digest:       f.resourceName.GetDigest(),
-		IsExecutable: f.info.Mode()&0111 != 0,
-	}
-}
-
-func (f *fileToUpload) OutputDirectory(rootDir string) *repb.OutputDirectory {
-	return &repb.OutputDirectory{
-		Path:       trimPathPrefix(f.fullFilePath, rootDir),
-		TreeDigest: f.resourceName.GetDigest(),
-	}
-}
-
-func (f *fileToUpload) DirNode() *repb.DirectoryNode {
-	return &repb.DirectoryNode{
-		Name:   f.info.Name(),
-		Digest: f.resourceName.GetDigest(),
-	}
-}
-
-func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
-	for _, uploadableFile := range filesToUpload {
-		// Add output files to the filecache.
-		if fc != nil && uploadableFile.dir == nil {
-			node := uploadableFile.FileNode()
-			if err := fc.AddFile(ctx, node, uploadableFile.fullFilePath); err != nil {
-				log.Warningf("Error adding file to filecache: %s", err)
-			}
+	trees := make(map[string]*repb.Tree)
+	dirMap := make(map[string]*repb.Directory)
+	var dirStack []string
+	if err := filepath.WalkDir(rootDir, func(absPath string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
 
-		rsc, err := uploadableFile.ReadSeekCloser()
+		relPath := trimPathPrefix(absPath, rootDir)
+		parentPath := filepath.Dir(relPath)
+		parentDir, found := dirMap[parentPath]
+		if !found {
+			parentDir = &repb.Directory{}
+			dirMap[parentPath] = parentDir
+		}
+
+		// Handle directory
+		if d.IsDir() {
+			if !dirHelper.ShouldUploadAnythingInDir(absPath) {
+				return fs.SkipDir
+			}
+			currentDir := &repb.Directory{}
+			dirMap[relPath] = currentDir
+			dirStack = append(dirStack, relPath)
+
+			if dirHelper.IsOutputPath(absPath) {
+				trees[relPath] = &repb.Tree{Root: currentDir}
+			}
+			if parentOutputPath, found := dirHelper.FindParentOutputPath(absPath); found {
+				parentRelPath := trimPathPrefix(parentOutputPath, rootDir)
+				tree, ok := trees[parentRelPath]
+				if !ok {
+					return fmt.Errorf("could not find output tree for dir %q under the expected output path %q", absPath, parentRelPath)
+				}
+				tree.Children = append(tree.Children, currentDir)
+			}
+
+			return nil
+		}
+
+		if !dirHelper.ShouldUploadFile(absPath) {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return fmt.Errorf("could not find %q info", absPath)
+		}
+
+		unixRelPath := filepath.ToSlash(relPath)
+		// Handle symlink
+		if info.Mode().Type() == fs.ModeSymlink {
+			target, err := os.Readlink(absPath)
+			if err != nil {
+				return fmt.Errorf("could not readlink on %q: %v", relPath, err)
+			}
+			symlink := &repb.OutputSymlink{
+				Path:   unixRelPath,
+				Target: filepath.ToSlash(target),
+			}
+			parentDir.Symlinks = append(parentDir.Symlinks, &repb.SymlinkNode{
+				Name:   d.Name(),
+				Target: filepath.ToSlash(target),
+			})
+			// REAPI specification:
+			//   `output_symlinks` will only be populated if the command `output_paths` field
+			//   was used, and not the pre v2.1 `output_files` or `output_directories` fields.
+			//
+			// Check whether the current client is using REAPI version before or after v2.1.
+			if len(cmd.OutputPaths) > 0 && len(cmd.OutputFiles) == 0 && len(cmd.OutputDirectories) == 0 {
+				// REAPI >= v2.1
+				actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, symlink)
+				// REAPI specification:
+				//   Servers that wish to be compatible with v2.0 API should still
+				//   populate `output_file_symlinks` and `output_directory_symlinks`
+				//   in addition to `output_symlinks`.
+				//
+				// TODO(sluongng): Since v6.0.0, all the output directories are included in
+				// Action.input_root_digest. So we should be able to save a `stat()` call by
+				// checking wherether the symlink target was included as a directory inside
+				// input root or not.
+				//
+				// Reference:
+				//   https://github.com/bazelbuild/bazel/commit/4310aeb36c134e5fc61ed5cdfdf683f3e95f19b7
+				resolvedTarget, err := filepath.EvalSymlinks(absPath)
+				if err != nil {
+					log.Warningf("could not resolve symlink %q's target: %v, skip legacy fields", absPath, err)
+					return nil
+				}
+				symlinkInfo, err := os.Stat(resolvedTarget)
+				if err != nil {
+					// When encounter a dangling symlink, skip setting it to legacy fields.
+					// TODO(sluongng): do we care to log this?
+					log.Warningf("could not find symlink %q's target: %v, skip legacy fields", absPath, err)
+					return nil
+				}
+				if symlinkInfo.IsDir() {
+					actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
+					return nil
+				}
+
+				actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
+				return nil
+			}
+
+			// REAPI < v2.1
+			for _, expectedFile := range cmd.OutputFiles {
+				if symlink.Path == expectedFile {
+					actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
+					break
+				}
+			}
+			for _, expectedDir := range cmd.OutputDirectories {
+				if symlink.Path == expectedDir {
+					actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
+					break
+				}
+			}
+			return nil
+		}
+
+		if !info.Mode().IsRegular() {
+			log.Warningf("unexpected file type found for %q", absPath)
+			return nil
+		}
+
+		// Handle file
+		rn, err := cachetools.ComputeFileDigest(absPath, instanceName, digestFunction)
+		if err != nil {
+			return err
+		}
+		if _, ok := dirHelper.FindParentOutputPath(absPath); !ok {
+			// If this file is *not* a descendant of any output_path but wasn't
+			// skipped before the call to uploadFileFn, then it must be
+			// appended to OutputFiles.
+			actionResult.OutputFiles = append(actionResult.OutputFiles, &repb.OutputFile{
+				Path:         unixRelPath,
+				Digest:       rn.GetDigest(),
+				IsExecutable: info.Mode()&0o111 != 0,
+			})
+		}
+		fn := &repb.FileNode{
+			Name:         info.Name(),
+			Digest:       rn.GetDigest(),
+			IsExecutable: info.Mode()&0o111 != 0,
+		}
+
+		// Add output files to the filecache.
+		if fc != nil {
+			if err := fc.AddFile(ctx, fn, absPath); err != nil {
+				log.Warningf("failed adding file %s to filecache: %s", absPath, err)
+			}
+		}
+		file, err := os.Open(absPath)
 		if err != nil {
 			return err
 		}
 		// Note: uploader.Upload closes the file after it is uploaded.
-		if err := uploader.Upload(uploadableFile.resourceName.GetDigest(), rsc); err != nil {
+		if err := uploader.Upload(rn.GetDigest(), file); err != nil {
 			return err
 		}
-	}
-
-	return nil
-}
-
-// handleSymlink adds the symlink to the directory and actionResult proto so that
-// they could be recreated on the Bazel client side if needed.
-func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, directory *repb.Directory, fqfn string) error {
-	target, err := os.Readlink(fqfn)
-	if err != nil {
-		return err
-	}
-	symlink := &repb.OutputSymlink{
-		Path:   filepath.ToSlash(trimPathPrefix(fqfn, rootDir)),
-		Target: filepath.ToSlash(target),
-	}
-	if !dirHelper.ShouldUploadFile(fqfn) {
+		txInfo.FileCount += 1
+		txInfo.BytesTransferred += rn.GetDigest().GetSizeBytes()
+		parentDir.Files = append(parentDir.Files, fn)
 		return nil
+	}); err != nil {
+		return nil, err
 	}
-	directory.Symlinks = append(directory.Symlinks, &repb.SymlinkNode{
-		Name:   filepath.ToSlash(filepath.Base(symlink.Path)),
-		Target: filepath.ToSlash(symlink.Target),
-	})
 
-	// REAPI specification:
-	//   `output_symlinks` will only be populated if the command `output_paths` field
-	//   was used, and not the pre v2.1 `output_files` or `output_directories` fields.
+	// filepath.WalkDir traverses the file tree in lexical order, which guarantees that
+	// the parent directory is visited before child directories. Leveraging this, we
+	// add directories into dirStack by the traversal order.
 	//
-	// Check whether the current client is using REAPI version before or after v2.1.
-	if len(cmd.OutputPaths) > 0 && len(cmd.OutputFiles) == 0 && len(cmd.OutputDirectories) == 0 {
-		// REAPI >= v2.1
-		actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, symlink)
-		// REAPI specification:
-		//   Servers that wish to be compatible with v2.0 API should still
-		//   populate `output_file_symlinks` and `output_directory_symlinks`
-		//   in addition to `output_symlinks`.
-		//
-		// TODO(sluongng): Since v6.0.0, all the output directories are included in
-		// Action.input_root_digest. So we should be able to save a `stat()` call by
-		// checking wherether the symlink target was included as a directory inside
-		// input root or not.
-		//
-		// Reference:
-		//   https://github.com/bazelbuild/bazel/commit/4310aeb36c134e5fc61ed5cdfdf683f3e95f19b7
-		symlinkInfo, err := os.Stat(fqfn)
-		if err != nil {
-			// When encounter a dangling symlink, skip setting it to legacy fields.
-			// TODO(sluongng): do we care to log this?
-			log.Warningf("Could not find symlink %q's target: %s, skip legacy fields", fqfn, err)
-			return nil
-		}
-		if symlinkInfo.IsDir() {
-			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
-			return nil
-		}
+	// By popping the dirStack after WalkDir has completed, it is guaranteed that the parent
+	// directory is only processed after all it's children has been processed. This means that
+	// the current directory.Directories should have all the needed DirectoryNode and is
+	// ready to be uploaded.
+	for i := len(dirStack) - 1; i >= 0; i-- {
+		relPath := dirStack[i]
+		absPath := filepath.Join(rootDir, relPath)
+		dir := dirMap[relPath]
+		parentRelPath := filepath.Dir(relPath)
+		parentDir := dirMap[parentRelPath]
 
-		actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
-		return nil
-	}
+		if shouldUploadDir := dirHelper.ShouldUploadFile(absPath); shouldUploadDir {
+			// ensure consistent ordering within Directory
+			slices.SortStableFunc(dir.Files, sortByName)
+			slices.SortStableFunc(dir.Directories, sortByName)
+			slices.SortStableFunc(dir.Symlinks, sortSymlinkWithName)
 
-	// REAPI < v2.1
-	for _, expectedFile := range cmd.OutputFiles {
-		if symlink.Path == expectedFile {
-			actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
-			break
-		}
-	}
-	for _, expectedDir := range cmd.OutputDirectories {
-		if symlink.Path == expectedDir {
-			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
-			break
-		}
-	}
-	return nil
-}
-
-func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult) (*TransferInfo, error) {
-	txInfo := &TransferInfo{}
-	startTime := time.Now()
-	treesToUpload := make([]string, 0)
-	filesToUpload := make([]*fileToUpload, 0)
-	uploadFileFn := func(parentDir string, info os.FileInfo) (*repb.FileNode, error) {
-		uploadableFile, err := newFileToUpload(instanceName, digestFunction, parentDir, info)
-		if err != nil {
-			return nil, err
-		}
-		filesToUpload = append(filesToUpload, uploadableFile)
-		fqfn := filepath.Join(parentDir, info.Name())
-		if _, ok := dirHelper.FindParentOutputPath(fqfn); !ok {
-			// If this file is *not* a descendant of any output_path but wasn't
-			// skipped before the call to uploadFileFn, then it must be
-			// appended to OutputFiles.
-			actionResult.OutputFiles = append(actionResult.OutputFiles, uploadableFile.OutputFile(rootDir))
-		}
-
-		return uploadableFile.FileNode(), nil
-	}
-
-	var uploadDirFn func(parentDir, dirName string) (*repb.DirectoryNode, error)
-	uploadDirFn = func(parentDir, dirName string) (*repb.DirectoryNode, error) {
-		directory := &repb.Directory{}
-		fullPath := filepath.Join(parentDir, dirName)
-		dirInfo, err := os.Stat(fullPath)
-		if err != nil {
-			return nil, err
-		}
-		entries, err := os.ReadDir(fullPath)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range entries {
-			info, err := entry.Info()
+			d, err := uploader.UploadProto(dir)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to upload directory with path %s: %v", relPath, err)
 			}
-			fqfn := filepath.Join(fullPath, info.Name())
-			if info.IsDir() {
-				// Don't recurse on non-uploadable directories.
-				if !dirHelper.ShouldUploadAnythingInDir(fqfn) {
-					continue
-				}
-				isOutputPath := dirHelper.IsOutputPath(fqfn)
-				if isOutputPath {
-					treesToUpload = append(treesToUpload, fqfn)
-				}
-				dirNode, err := uploadDirFn(fullPath, info.Name())
-				if err != nil {
-					return nil, err
-				}
-				if _, ok := dirHelper.FindParentOutputPath(fqfn); !ok && !isOutputPath {
-					continue
-				}
-				txInfo.FileCount += 1
-				txInfo.BytesTransferred += dirNode.GetDigest().GetSizeBytes()
-				directory.Directories = append(directory.Directories, dirNode)
-			} else if info.Mode().IsRegular() {
-				if !dirHelper.ShouldUploadFile(fqfn) {
-					continue
-				}
-				fileNode, err := uploadFileFn(fullPath, info)
-				if err != nil {
-					return nil, err
-				}
+			txInfo.FileCount += 1
+			txInfo.BytesTransferred += d.GetSizeBytes()
+			parentDir.Directories = append(parentDir.Directories, &repb.DirectoryNode{
+				Name:   filepath.Base(relPath),
+				Digest: d,
+			})
+		}
+		if tree, treeFound := trees[relPath]; treeFound {
+			// Ensure consistent ordering within Tree
+			slices.SortStableFunc(tree.Root.Directories, func(a, b *repb.DirectoryNode) int {
+				return strings.Compare(a.GetName(), b.GetName()) * -1
+			})
+			slices.SortStableFunc(tree.Children, func(a, b *repb.Directory) int {
+				return strings.Compare(a.String(), b.String())
+			})
 
-				txInfo.FileCount += 1
-				txInfo.BytesTransferred += fileNode.GetDigest().GetSizeBytes()
-				directory.Files = append(directory.Files, fileNode)
-			} else if info.Mode()&os.ModeSymlink == os.ModeSymlink {
-				if err := handleSymlink(dirHelper, rootDir, cmd, actionResult, directory, fqfn); err != nil {
-					return nil, err
-				}
+			td, err := uploader.UploadProto(tree)
+			if err != nil {
+				return nil, fmt.Errorf("failed to upload tree for directory with path %s: %v", relPath, err)
 			}
-		}
-
-		uploadableDir, err := newDirToUpload(instanceName, digestFunction, parentDir, dirInfo, directory)
-		if err != nil {
-			return nil, err
-		}
-		filesToUpload = append(filesToUpload, uploadableDir)
-		return uploadableDir.DirNode(), nil
-	}
-	if _, err := uploadDirFn(rootDir, ""); err != nil {
-		return nil, err
-	}
-
-	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
-	if err := uploadFiles(ctx, uploader, env.GetFileCache(), filesToUpload); err != nil {
-		return nil, err
-	}
-
-	// Make Trees of all of the paths specified in output_paths which were
-	// directories (which we noted in the filesystem walk above).
-	trees := make(map[string]*repb.Tree, 0)
-	for _, treeToUpload := range treesToUpload {
-		trees[treeToUpload] = &repb.Tree{}
-	}
-
-	// For each of the filesToUpload, determine which Tree (if any) it is a part
-	// of and add it.
-	for _, f := range filesToUpload {
-		if f.dir == nil {
-			continue
-		}
-		fqfn := f.fullFilePath
-		if tree, ok := trees[fqfn]; ok {
-			tree.Root = f.dir
-		} else if treePath, ok := dirHelper.FindParentOutputPath(fqfn); ok {
-			tree = trees[treePath]
-			tree.Children = append(tree.Children, f.dir)
+			// TODO(sluongng): should we count Tree uploads?
+			// txInfo.FileCount += 1
+			// txInfo.BytesTransferred += td.GetSizeBytes()
+			actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
+				Path:       filepath.ToSlash(relPath),
+				TreeDigest: td,
+			})
 		}
 	}
 
-	for fullFilePath, tree := range trees {
-		td, err := uploader.UploadProto(tree)
-		if err != nil {
-			return nil, err
-		}
-		actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
-			Path:       filepath.ToSlash(trimPathPrefix(fullFilePath, rootDir)),
-			TreeDigest: td,
-		})
-	}
+	// ensure consistent ordering within ActionResult
+	slices.SortStableFunc(actionResult.OutputSymlinks, sortSymlinkWithPath)
+	slices.SortStableFunc(actionResult.OutputFileSymlinks, sortSymlinkWithPath)
+	slices.SortStableFunc(actionResult.OutputDirectorySymlinks, sortSymlinkWithPath)
+	slices.SortStableFunc(actionResult.OutputFiles, sortByPath)
+	slices.SortStableFunc(actionResult.OutputDirectories, sortByPath)
 
 	if err := uploader.Wait(); err != nil {
 		return nil, err
@@ -501,6 +427,46 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	endTime := time.Now()
 	txInfo.TransferDuration = endTime.Sub(startTime)
 	return txInfo, nil
+}
+
+type withName interface {
+	GetName() string
+}
+
+func sortByName[E withName](a, b E) int {
+	return strings.Compare(a.GetName(), b.GetName())
+}
+
+type withPath interface {
+	GetPath() string
+}
+
+func sortByPath[E withPath](a, b E) int {
+	return strings.Compare(a.GetPath(), b.GetPath())
+}
+
+type symlinkWithPath interface {
+	GetPath() string
+	GetTarget() string
+}
+
+func sortSymlinkWithPath[E symlinkWithPath](a, b E) int {
+	if i := strings.Compare(a.GetPath(), b.GetPath()); i != 0 {
+		return i
+	}
+	return strings.Compare(a.GetTarget(), b.GetTarget())
+}
+
+type symlinkWithName interface {
+	GetName() string
+	GetTarget() string
+}
+
+func sortSymlinkWithName[E symlinkWithName](a, b E) int {
+	if i := strings.Compare(a.GetName(), b.GetName()); i != 0 {
+		return i
+	}
+	return strings.Compare(a.GetTarget(), b.GetTarget())
 }
 
 type FilePointer struct {
@@ -701,8 +667,8 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 
 		// Attempt to link files from the local file cache.
 		numFilesLinked := 0
-		for _, fp := range filePointers {
-			if fileCache != nil {
+		if fileCache != nil {
+			for _, fp := range filePointers {
 				linked, err := linkFileFromFileCache(ff.ctx, fp, fileCache, opts)
 				if err != nil {
 					return err

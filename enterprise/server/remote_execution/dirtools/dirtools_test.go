@@ -519,7 +519,7 @@ func TestUploadTree(t *testing.T) {
 						Path: "a/b",
 						TreeDigest: &repb.Digest{
 							SizeBytes: 392,
-							Hash:      "59620196c9761b313ff20ed0dfb06bf81b824afe2bf7046ce49949ab51605b6b",
+							Hash:      "e104e3e264a241d5667907d195a16a9ed17decf910042eb50e5241e10eaeff7f",
 						},
 					},
 				},
