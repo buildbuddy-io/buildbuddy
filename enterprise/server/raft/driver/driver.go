@@ -200,15 +200,6 @@ func (pq *priorityQueue) Pop() interface{} {
 	*pq = old[0 : n-1]
 	return item
 }
-func (pq *priorityQueue) update(item *pqItem, priority float64) {
-	item.priority = priority
-	heap.Fix(pq, item.index)
-}
-func (pq *priorityQueue) getItemWithMinPriority() *pqItem {
-	old := *pq
-	n := len(old)
-	return old[n-1]
-}
 
 // The Queue is responsible for up-replicate, down-replicate and reblance ranges
 // across the stores.
@@ -221,7 +212,7 @@ type Queue struct {
 	maxSize   int
 	stop      chan struct{}
 
-	mu      sync.Mutex //protects started
+	mu      sync.Mutex //protects started and pq
 	started bool
 }
 
@@ -257,6 +248,36 @@ func (rq *Queue) shouldQueue(repl IReplica) (bool, float64) {
 	return false, 0
 }
 
+func (rq *Queue) push(item *pqItem) {
+	rq.mu.Lock()
+	heap.Push(rq.pq, item)
+	rq.mu.Unlock()
+
+	rq.pqItemMap.Store(item.rangeID, item)
+}
+
+func (rq *Queue) update(item *pqItem, priority float64) {
+	item.priority = priority
+
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	heap.Fix(rq.pq, item.index)
+}
+
+func (rq *Queue) getItemWithMinPriority() *pqItem {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	old := *rq.pq
+	n := len(old)
+	return old[n-1]
+}
+
+func (rq *Queue) Len() int {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	return rq.pq.Len()
+}
+
 // MaybeAdd adds a replica to the queue if the store has the lease for the range,
 // and there is work needs to be done.
 // When the queue is full, it deletes the least important replica from the queue.
@@ -279,7 +300,7 @@ func (rq *Queue) MaybeAdd(replica IReplica) {
 			return
 		}
 		if priority > item.priority {
-			rq.pq.update(item, priority)
+			rq.update(item, priority)
 		}
 		log.Infof("updated priority for replica rangeID=%d", item.rangeID)
 		return
@@ -292,13 +313,12 @@ func (rq *Queue) MaybeAdd(replica IReplica) {
 		priority:   priority,
 		insertTime: time.Now(),
 	}
-	heap.Push(rq.pq, item)
-	rq.pqItemMap.Store(item.rangeID, item)
+	rq.push(item)
 	log.Infof("queued replica rangeID=%d", item.rangeID)
 
 	// If the priroityQueue if full, let's remove the item with the lowest priority.
-	if pqLen := rq.pq.Len(); pqLen > rq.maxSize {
-		rq.remove(rq.pq.getItemWithMinPriority())
+	if pqLen := rq.Len(); pqLen > rq.maxSize {
+		rq.remove(rq.getItemWithMinPriority())
 	}
 }
 
@@ -308,7 +328,9 @@ func (rq *Queue) remove(item *pqItem) {
 		return
 	}
 	if item.index >= 0 {
+		rq.mu.Lock()
 		heap.Remove(rq.pq, item.index)
+		rq.mu.Unlock()
 	}
 	rq.pqItemMap.Delete(item.rangeID)
 }
