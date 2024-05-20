@@ -428,6 +428,10 @@ func (s *Store) Start() error {
 		return nil
 	})
 	eg.Go(func() error {
+		s.updateStoreUsageTag(gctx)
+		return nil
+	})
+	eg.Go(func() error {
 		s.processSplitRequests(gctx)
 		return nil
 	})
@@ -1141,6 +1145,27 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
 				default:
 					s.log.Debugf("Split queue full. Dropping message.")
 				}
+			default:
+				break
+			}
+		}
+	}
+}
+
+func (s *Store) updateStoreUsageTag(ctx context.Context) {
+	eventsCh := s.AddEventListener()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e := <-eventsCh:
+			switch e.EventType() {
+			case events.EventRangeUsageUpdated:
+				rangeUsageEvent := e.(events.RangeUsageEvent)
+				if !s.leaseKeeper.HaveLease(rangeUsageEvent.RangeDescriptor.GetRangeId()) {
+					continue
+				}
+				s.updateTagsWorker.Enqueue()
 			default:
 				break
 			}
