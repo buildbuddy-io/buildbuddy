@@ -227,7 +227,7 @@ class Router {
     this.navigateTo(Path.settingsPath);
   }
 
-  navigateToTrends(chartId?: string) {
+  navigateToTrends() {
     this.navigateTo(Path.trendsPath);
   }
 
