@@ -63,9 +63,8 @@ type storeFactory struct {
 func newStoreFactory(t *testing.T) *storeFactory {
 	rootDir := testfs.MakeTempDir(t)
 	fileDir := filepath.Join(rootDir, "files")
-	if err := disk.EnsureDirectoryExists(fileDir); err != nil {
-		t.Fatal(err)
-	}
+	err := disk.EnsureDirectoryExists(fileDir)
+	require.NoError(t, err)
 	return &storeFactory{
 		rootDir: rootDir,
 		fileDir: fileDir,
@@ -126,9 +125,7 @@ func (sf *storeFactory) NewStore(t *testing.T) *TestingStore {
 		SystemEventListener: raftListener,
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
-	if err != nil {
-		t.Fatalf("error creating NodeHost: %s", err)
-	}
+	require.NoError(t, err, "unexpected error creating NodeHost")
 	ts.NodeHost = nodeHost
 
 	te := testenv.GetTestEnv(t)
