@@ -423,6 +423,31 @@ func waitForRangeLease(t testing.TB, ctx context.Context, stores []*testutil.Tes
 	log.Printf("%s got range lease for range: %d", s.NHID(), rangeID)
 }
 
+func waitForReplicaToCatchUp(t testing.TB, ctx context.Context, r *replica.Replica, desiredLastAppliedIndex uint64) {
+	// Wait for raft replication to finish bringing the new node up to date.
+	waitStart := time.Now()
+	for {
+		newReplicaIndex, err := r.LastAppliedIndex()
+		require.True(t, err == nil || status.IsNotFoundError(err))
+		if err == nil && newReplicaIndex >= desiredLastAppliedIndex {
+			log.Infof("Replica caught up in %s", time.Since(waitStart))
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func getReplica(t testing.TB, s *testutil.TestingStore, rangeID uint64) *replica.Replica {
+	for {
+		res, err := s.GetReplica(rangeID)
+		if err == nil {
+			return res
+		}
+		require.False(t, status.IsOutOfRangeError(err))
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestSplitNonMetaRange(t *testing.T) {
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
@@ -560,28 +585,10 @@ func TestPostFactoSplit(t *testing.T) {
 	lastAppliedIndex, err := r1.LastAppliedIndex()
 	require.NoError(t, err)
 
-	var r2 *replica.Replica
-	for {
-		r2, err = s2.GetReplica(2)
-		if err == nil {
-			break
-		}
-		if !status.IsOutOfRangeError(err) {
-			require.FailNowf(t, "unexpected error", "unexpected error %s", err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	r2 := getReplica(t, s2, 2)
 
 	// Wait for raft replication to finish bringing the new node up to date.
-	waitStart := time.Now()
-	for {
-		newReplicaIndex, err := r2.LastAppliedIndex()
-		if err == nil && newReplicaIndex >= lastAppliedIndex {
-			log.Infof("Replica caught up in %s", time.Since(waitStart))
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForReplicaToCatchUp(t, ctx, r2, lastAppliedIndex)
 
 	// Transfer Leadership to the new node
 	_, err = s.TransferLeadership(ctx, &rfpb.TransferLeadershipRequest{
@@ -824,5 +831,80 @@ func TestSplitAcrossClusters(t *testing.T) {
 	// Check that all files are found.
 	for _, fr := range written {
 		readRecord(ctx, t, s1, fr)
+	}
+}
+
+func TestUpReplicate(t *testing.T) {
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	ctx := context.Background()
+
+	// start shards for s1 and s2
+	stores := []*testutil.TestingStore{s1, s2}
+	sf.StartShard(t, ctx, stores...)
+
+	{ // Verify that there are 2 replicas for range 1
+		s := getStoreWithRangeLease(t, ctx, stores, 1)
+		replicas := getMembership(t, s, ctx, 1)
+		require.Equal(t, 2, len(replicas))
+		rd := s.GetRange(1)
+		require.Equal(t, 2, len(rd.GetReplicas()))
+	}
+
+	{ // Verify that there are 2 replicas for range 2, and also write 10 records
+		s := getStoreWithRangeLease(t, ctx, stores, 2)
+		writeNRecords(ctx, t, s, 10)
+		replicas := getMembership(t, s, ctx, 2)
+		require.Equal(t, 2, len(replicas))
+		rd := s.GetRange(2)
+		require.Equal(t, 2, len(rd.GetReplicas()))
+	}
+
+	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	r, err := s.GetReplica(2)
+	require.NoError(t, err)
+	desiredAppliedIndex, err := r.LastAppliedIndex()
+	require.NoError(t, err)
+
+	s3 := sf.NewStore(t)
+	for {
+		// advance the clock to trigger scan replicas
+		clock.Advance(61 * time.Second)
+		// wait some time to allow let driver queue execute
+		time.Sleep(100 * time.Millisecond)
+		list, err := s3.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		if len(list.GetReplicas()) < 2 {
+			continue
+		}
+
+		if len(s1.GetRange(1).GetReplicas()) == 3 &&
+			len(s1.GetRange(2).GetReplicas()) == 3 &&
+			len(s2.GetRange(1).GetReplicas()) == 3 &&
+			len(s2.GetRange(2).GetReplicas()) == 3 {
+			break
+		}
+
+	}
+	r2 := getReplica(t, s3, 2)
+	waitForReplicaToCatchUp(t, ctx, r2, desiredAppliedIndex)
+	waitStart := time.Now()
+	for {
+		l := len(r2.RangeDescriptor().GetReplicas())
+		if l == 3 {
+			break
+		}
+		if time.Since(waitStart) > 30*time.Second {
+			require.Failf(t, "unexpected range descriptor", "Range 2 on s3 has %d replicas, expected 3", l)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
