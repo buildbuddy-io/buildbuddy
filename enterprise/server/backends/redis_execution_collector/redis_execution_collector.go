@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/go-redis/redis/v8"
 
@@ -133,7 +134,7 @@ func (c *collector) AddExecutionRequestMetadata(ctx context.Context, executionID
 	}
 	key := getExecutionRequestMetadataKey(executionID)
 	pipe := c.rdb.TxPipeline()
-	if result := pipe.RPush(ctx, key, string(b)); result.Err() != nil {
+	if result := pipe.RPush(ctx, key, b); result.Err() != nil {
 		return result.Err()
 	}
 	if result := pipe.Expire(ctx, key, executionExpiration); result.Err() != nil {
@@ -161,6 +162,37 @@ func (c *collector) GetExecutionRequestMetadata(ctx context.Context, executionID
 		return nil, err
 	}
 	return m, nil
+}
+
+func (c *collector) GetExecutionRequestMetadatas(ctx context.Context, executionIDs []string) (map[string]*repb.RequestMetadata, error) {
+	keys := make([]string, 0, len(executionIDs))
+	for _, id := range executionIDs {
+		keys = append(keys, getExecutionRequestMetadataKey(id))
+	}
+	allResp, err := c.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	execIDToMetadata := make(map[string]*repb.RequestMetadata, len(keys))
+	for i, resp := range allResp {
+		respBody, ok := resp.([]byte)
+		if !ok {
+			log.Warningf("unknown data type from Redis")
+			continue
+		}
+		m := &repb.RequestMetadata{}
+		if err := proto.Unmarshal(respBody, m); err != nil {
+			log.Warningf("failed to unmarshal request metadata from Redis: %v", err)
+			continue
+		}
+		// MGet preserves the order of the request keys
+		execIDToMetadata[executionIDs[i]] = m
+	}
+	return execIDToMetadata, nil
 }
 
 func (c *collector) DeleteExecutionRequestMetadata(ctx context.Context, executionID string) error {
