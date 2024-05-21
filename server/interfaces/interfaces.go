@@ -380,7 +380,6 @@ type DBHandle interface {
 	TransactionWithOptions(ctx context.Context, opts DBOptions, txn NewTxRunner) error
 
 	NewQueryWithOpts(ctx context.Context, name string, opts DBOptions) DBQuery
-	UTCMonthFromUsecTimestamp(fieldName string) string
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	SelectForUpdateModifier() string
 	SetNowFunc(now func() time.Time)

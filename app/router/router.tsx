@@ -575,6 +575,8 @@ export class Path {
   static codesearchPath = "/search/";
 }
 
+export type TrendsChartId = "builds" | "duration" | "cache" | "cas" | "savings" | "build_time";
+
 /** Returns the longest path value in `Path` matching the given URL path. */
 function getMatchedPath(urlPath: string): string | null {
   if (!urlPath.endsWith("/")) {

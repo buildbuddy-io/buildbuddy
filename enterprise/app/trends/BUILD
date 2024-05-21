@@ -171,6 +171,7 @@ ts_library(
     name = "trends_chart",
     srcs = ["trends_chart.tsx"],
     deps = [
+        "//app/router",
         "@npm//@types/react",
         "@npm//react",
         "@npm//recharts",

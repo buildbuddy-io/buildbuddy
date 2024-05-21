@@ -45,6 +45,12 @@ func TestGetUsage(t *testing.T) {
 			PeriodStartUsec: time.Date(2024, 2, 3, 0, 0, 0, 0, time.UTC).UnixMicro(),
 			UsageCounts:     tables.UsageCounts{Invocations: 13, CASCacheHits: 10_000},
 		},
+		{
+			UsageID:         "UG1",
+			GroupID:         "GR1",
+			PeriodStartUsec: time.Date(2024, 2, 4, 1, 0, 0, 0, time.UTC).UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 15, CASCacheHits: 12_000},
+		},
 		// GR1, previous usage period
 		{
 			UsageID:         "UG2",
@@ -73,8 +79,20 @@ func TestGetUsage(t *testing.T) {
 	expectedResponse := &usagepb.GetUsageResponse{
 		Usage: &usagepb.Usage{
 			Period:       "2024-02",
-			Invocations:  13,
-			CasCacheHits: 10_000,
+			Invocations:  28,
+			CasCacheHits: 22_000,
+		},
+		DailyUsage: []*usagepb.Usage{
+			&usagepb.Usage{
+				Period:       "2024-02-03",
+				Invocations:  13,
+				CasCacheHits: 10_000,
+			},
+			&usagepb.Usage{
+				Period:       "2024-02-04",
+				Invocations:  15,
+				CasCacheHits: 12_000,
+			},
 		},
 		AvailableUsagePeriods: []string{
 			"2024-02",

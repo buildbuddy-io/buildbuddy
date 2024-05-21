@@ -20,6 +20,9 @@ message GetUsageResponse {
   // Usage numbers for the requested UTC month.
   Usage usage = 2;
 
+  // Daily usage numbers for the requested UTC month.
+  repeated Usage daily_usage = 4;
+
   // The available usage periods that may be specified in a subsequent
   // GetUsageRequest.
   repeated string available_usage_periods = 3;
@@ -28,7 +31,7 @@ message GetUsageResponse {
 // Usage represents a count of BuildBuddy resources used for a particular time
 // period.
 message Usage {
-  // Usage period in UTC, in "YYYY-MM" format.
+  // Usage period in UTC, in "YYYY-MM" or "YYYY-MM-DD" format.
   string period = 1;
 
   // The number of invocations.
