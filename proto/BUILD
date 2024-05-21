@@ -68,8 +68,6 @@ proto_library(
 proto_library(
     name = "auth_proto",
     srcs = ["auth.proto"],
-    deps = [
-    ],
 )
 
 proto_library(
@@ -802,8 +800,6 @@ go_proto_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/auth",
     proto = ":auth_proto",
-    deps = [
-    ],
 )
 
 go_proto_library(
