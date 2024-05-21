@@ -1332,6 +1332,7 @@ type ExecutionCollector interface {
 	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink) error
 	AddExecutionRequestMetadata(context.Context, string, *repb.RequestMetadata) error
 	GetExecutionRequestMetadata(context.Context, string) (*repb.RequestMetadata, error)
+	GetExecutionRequestMetadatas(context.Context, []string) (map[string]*repb.RequestMetadata, error)
 	DeleteExecutionRequestMetadata(context.Context, string) error
 	GetInvocationLinks(ctx context.Context, execution_id string) ([]*sipb.StoredInvocationLink, error)
 	DeleteInvocationLinks(ctx context.Context, execution_id string) error
