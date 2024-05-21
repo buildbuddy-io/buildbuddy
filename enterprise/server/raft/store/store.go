@@ -445,7 +445,7 @@ func (s *Store) Start() error {
 	})
 	eg.Go(func() error {
 		if s.driverQueue != nil {
-			s.driverQueue.Start()
+			s.driverQueue.Start(gctx)
 		}
 		return nil
 	})
@@ -464,9 +464,6 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.egCancel()
 		s.leaseKeeper.Stop()
 		s.liveness.Release()
-		if s.driverQueue != nil {
-			s.driverQueue.Stop()
-		}
 		s.eg.Wait()
 	}
 	s.updateTagsWorker.Stop()
