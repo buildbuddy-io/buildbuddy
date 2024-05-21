@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -19,7 +20,8 @@ import (
 )
 
 var (
-	minReplicasPerRange = flag.Int("cache.raft.min_replicas_per_range", 3, "The minimum number of replicas each range should have")
+	minReplicasPerRange   = flag.Int("cache.raft.min_replicas_per_range", 3, "The minimum number of replicas each range should have")
+	newReplicaGracePeriod = flag.Duration("cache.raft.new_replica_grace_period", 5*time.Minute, "The amount of time we allow for a new replica to catch up to the leader's before we start to consider it to be behind.")
 )
 
 const (
@@ -103,6 +105,7 @@ type IStore interface {
 	HaveLease(rangeID uint64) bool
 	AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error)
 	RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error)
+	GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) map[uint64]constants.ReplicaState
 }
 
 // computeQuorum computes a quorum, which a majority of members from a peer set.
@@ -487,6 +490,117 @@ func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *
 	return change
 }
 
+func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, brandNewReplicaID *uint64) []*rfpb.ReplicaDescriptor {
+	replicaStateMap :=
+		rq.store.GetReplicaStates(context.TODO(), rd)
+
+	numUpToDateReplicas := 0
+	replicasBehind := make([]*rfpb.ReplicaDescriptor, 0)
+	for _, r := range rd.GetReplicas() {
+		rs, ok := replicaStateMap[r.GetReplicaId()]
+		if !ok {
+			continue
+		}
+		if rs == constants.ReplicaStateCurrent {
+			numUpToDateReplicas++
+		} else if rs == constants.ReplicaStateBehind {
+			// Don't consider brand new replica ID as falling behind
+			if brandNewReplicaID != nil && r.GetReplicaId() != *brandNewReplicaID {
+				replicasBehind = append(replicasBehind, r)
+			}
+		}
+	}
+
+	quorum := computeQuorum(len(rd.GetReplicas()) - 1)
+	if numUpToDateReplicas < quorum {
+		// The number of up-to-date replicas is less than quorum. Don't remove
+		log.Debugf("there are %d up-to-date replicas and quorum is %d, don't remove", numUpToDateReplicas, quorum)
+		return nil
+	}
+
+	if numUpToDateReplicas > quorum {
+		// Any replica can be removed.
+		log.Debugf("there are %d up-to-date replicas and quorum is %d, any replicas can be removed", numUpToDateReplicas, quorum)
+		return rd.GetReplicas()
+	}
+
+	// The number of up-to-date-replicas equals to the quorum. We only want to delete replicas that are behind.
+	log.Debugf("there are %d up-to-date replicas and quorum is %d, only remove behind replicas", numUpToDateReplicas, quorum)
+	return replicasBehind
+}
+
+func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, localRepl IReplica) *rfpb.ReplicaDescriptor {
+	lastReplIDAdded := rd.LastAddedReplicaId
+	if lastReplIDAdded != nil && rd.LastReplicaAddedAtUsec != nil {
+		if time.Since(time.UnixMicro(rd.GetLastReplicaAddedAtUsec())) > *newReplicaGracePeriod {
+			lastReplIDAdded = nil
+		}
+	}
+
+	removableReplicas := rq.findRemovableReplicas(rd, lastReplIDAdded)
+
+	if len(removableReplicas) == 0 {
+		// there is nothing to remove
+		return nil
+	}
+
+	nhids := make([]string, 0, len(removableReplicas))
+	for _, repl := range removableReplicas {
+		nhids = append(nhids, repl.GetNhid())
+	}
+
+	storesWithStats := rq.storeMap.GetStoresWithStatsFromIDs(nhids)
+
+	var candidates []*candidate
+	for _, su := range storesWithStats.Usages {
+		candidates = append(candidates, &candidate{
+			usage:                 su,
+			replicaCount:          su.GetReplicaCount(),
+			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
+			fullDisk:              isDiskFull(su),
+		})
+	}
+
+	if len(candidates) == 0 {
+		// cannot find candidates for removal
+		return nil
+	}
+
+	slices.SortFunc(candidates, func(a, b *candidate) int {
+		// The worst targets are at the front
+		return int(compare(a, b))
+	})
+
+	for _, c := range candidates {
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetNhid() == c.usage.GetNode().GetNhid() {
+				if repl.GetReplicaId() != localRepl.ReplicaID() {
+					return repl
+				}
+				// For simplicity, we don't want to select the local replica
+				// as the removal target. Let's go to the next worst candidate.
+				// TODO: support lease transfer so we can remove local replica.
+				break
+			}
+		}
+	}
+	return nil
+}
+
+func (rq *Queue) removeReplica(rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
+	removingReplica := rq.findReplicaForRemoval(rd, localRepl)
+	if removingReplica == nil {
+		return nil
+	}
+
+	return &change{
+		removeOp: &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: removingReplica.GetReplicaId(),
+		},
+	}
+}
+
 func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	var rd *rfpb.RangeDescriptor
 	if change.addOp != nil {
@@ -536,6 +650,7 @@ func (rq *Queue) processReplica(repl IReplica) (bool, error) {
 		change = rq.replaceDeadReplica(rd, replicasByStatus)
 	case DriverRemoveReplica:
 		log.Debugf("remove replica: %d", repl.ShardID())
+		change = rq.removeReplica(rd, repl)
 		// TODO
 	case DriverRemoveDeadReplica:
 		log.Debugf("remove dead replica: %d", repl.ShardID())
@@ -601,6 +716,7 @@ const (
 
 type candidate struct {
 	usage                 *rfpb.StoreUsage
+	fullDisk              bool
 	replicaCountMeanLevel meanLevel
 	replicaCount          int64
 }
@@ -610,6 +726,14 @@ type candidate struct {
 //   - 0 if a and b is equivalent
 //   - a negative number if a is a worse fit than b.
 func compare(a *candidate, b *candidate) float64 {
+	if a.fullDisk != b.fullDisk {
+		if a.fullDisk {
+			return 20
+		}
+		if b.fullDisk {
+			return -20
+		}
+	}
 	if a.replicaCountMeanLevel != b.replicaCountMeanLevel {
 		score := 10 + math.Abs(float64(a.replicaCountMeanLevel-b.replicaCountMeanLevel))
 		if a.replicaCountMeanLevel > b.replicaCountMeanLevel {
