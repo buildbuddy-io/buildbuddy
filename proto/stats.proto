@@ -74,6 +74,9 @@ message TrendQuery {
   // Stat filters (duration_usec, cas_cache_misses, etc.)
   repeated stat_filter.StatFilter filter = 12;
 
+  // String-based dimensional filters (execution worker, branch, etc.)
+  repeated stat_filter.DimensionFilter dimension_filter = 17;
+
   // The minimum invocation duration.
   google.protobuf.Duration minimum_duration = 13;
 
@@ -256,6 +259,7 @@ message GetStatDrilldownRequest {
   context.RequestContext request_context = 1;
   TrendQuery query = 2;
   repeated stat_filter.StatFilter filter = 3;
+  repeated stat_filter.DimensionFilter dimension_filter = 5;
   stat_filter.Metric drilldown_metric = 4;
 }
 

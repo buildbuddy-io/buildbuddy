@@ -324,7 +324,7 @@ func (i *InvocationStatService) flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) error {
+func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, includeExecutionDimensionFilters bool, reqCtx *ctxpb.RequestContext) error {
 
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("user = ?", user)
@@ -403,6 +403,16 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		}
 		q.AddWhereClause(str, args...)
 	}
+	for _, f := range tq.GetDimensionFilter() {
+		if !includeExecutionDimensionFilters && f.GetDimension().Execution != nil {
+			continue
+		}
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f, "")
+		if err != nil {
+			return err
+		}
+		q.AddWhereClause(str, args...)
+	}
 
 	q.AddWhereClause(`group_id = ?`, reqCtx.GetGroupId())
 	return nil
@@ -432,7 +442,7 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
     `)
 
 	reqCtx := req.GetRequestContext()
-	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), false, reqCtx); err != nil {
 		return nil, err
 	}
 	qStr, qArgs := q.Build()
@@ -448,7 +458,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQueryWithArgs(i.getTrendBasicQuery(req.GetQuery(), timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
-	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), false, reqCtx); err != nil {
 		return nil, err
 	}
 	if i.finerTimeBucketsEnabled() {
@@ -532,7 +542,7 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQueryWithArgs(i.getExecutionTrendQuery(timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
-	if err := i.addWhereClauses(q, req.GetQuery(), req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), true, req.GetRequestContext()); err != nil {
 		return nil, err
 	}
 	if *finerTimeBuckets {
@@ -853,7 +863,7 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 
 func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
 	placeholderQuery := query_builder.NewQuery("")
-	if err := i.addWhereClauses(placeholderQuery, q, reqCtx); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, q, m.Execution != nil, reqCtx); err != nil {
 		return "", nil, err
 	}
 	if m.GetInvocation() == sfpb.InvocationMetricType_DURATION_USEC_INVOCATION_METRIC {
@@ -1050,6 +1060,16 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		}
 		q.AddWhereClause(str, args...)
 	}
+	for _, f := range req.GetQuery().GetDimensionFilter() {
+		if f.GetDimension().Invocation == nil {
+			continue
+		}
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f, "")
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(str, args...)
+	}
 
 	statusClauses := toStatusClauses(req.GetQuery().GetStatus())
 	statusQuery, statusArgs := statusClauses.Build()
@@ -1152,7 +1172,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
-	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().Execution != nil, req.GetRequestContext()); err != nil {
 		return "", nil, err
 	}
 
