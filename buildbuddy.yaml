@@ -110,6 +110,10 @@ actions:
           - "*"
     bazel_commands:
       - test //... --host_platform=//:many_layered_image --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
+  - name: Prober test
+    container_image: ubuntu-20.04
+    bazel_commands:
+      - version
 
 plugins:
   - path: cli/plugins/go-deps
