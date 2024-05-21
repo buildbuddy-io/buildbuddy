@@ -1058,7 +1058,7 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 	// cluster.
 	updatedRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
 	if err != nil {
-		log.Errorf("failed to look up range descriptor: %s", err)
+		s.log.Errorf("failed to look up range descriptor: %s", err)
 		return false
 	}
 	if updatedRD.GetGeneration() >= rd.GetGeneration() {
@@ -1899,7 +1899,6 @@ func (store *Store) scan(ctx context.Context) {
 			return
 		case <-scanDelay.C:
 		}
-		log.Debug("scan started")
 		replicas := store.getLeasedReplicas()
 		for _, repl := range replicas {
 			store.driverQueue.MaybeAdd(repl)
