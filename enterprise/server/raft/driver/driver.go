@@ -338,61 +338,41 @@ func (rq *Queue) remove(item *pqItem) {
 	rq.pqItemMap.Delete(item.rangeID)
 }
 
-func (rq *Queue) Start() {
-	rq.mu.Lock()
-	started := rq.started
-	rq.mu.Unlock()
-	if started {
-		return
-	}
+func (rq *Queue) Start(ctx context.Context) {
+	go func() {
+		queueDelay := time.NewTicker(queueWaitDuration)
+		defer queueDelay.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-queueDelay.C:
+			}
+			if rq.Len() == 0 {
+				continue
+			}
+			rq.mu.Lock()
+			item := heap.Pop(rq.pq).(*pqItem)
+			rq.mu.Unlock()
+			item.processing = true
+			repl, err := rq.store.GetReplica(item.rangeID)
+			if err != nil || repl.ReplicaID() != item.replicaID {
+				log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
+				rq.pqItemMap.Delete(item.rangeID)
+				continue
+			}
 
-	rq.mu.Lock()
-	rq.started = true
-	rq.stop = make(chan struct{})
-	rq.mu.Unlock()
-
-	queueDelay := time.NewTicker(queueWaitDuration)
-	defer queueDelay.Stop()
-	for {
-		select {
-		case <-rq.stop:
-			return
-		case <-queueDelay.C:
+			requeue, err := rq.processReplica(repl)
+			if err != nil {
+				// TODO: check if err can be retried.
+				log.Errorf("failed to process replica: %s", err)
+			} else {
+				log.Debugf("successfully processed replica: %d", repl.ShardID())
+			}
+			item.requeue = requeue
+			rq.postProcess(repl)
 		}
-		if rq.Len() == 0 {
-			continue
-		}
-		rq.mu.Lock()
-		item := heap.Pop(rq.pq).(*pqItem)
-		rq.mu.Unlock()
-		item.processing = true
-		repl, err := rq.store.GetReplica(item.rangeID)
-		if err != nil || repl.ReplicaID() != item.replicaID {
-			log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
-			rq.pqItemMap.Delete(item.rangeID)
-			continue
-		}
-
-		requeue, err := rq.processReplica(repl)
-		if err != nil {
-			// TODO: check if err can be retried.
-			log.Errorf("failed to process replica: %s", err)
-		} else {
-			log.Debugf("successfully processed replica: %d", repl.ShardID())
-		}
-		item.requeue = requeue
-		rq.postProcess(repl)
-	}
-}
-
-func (rq *Queue) Stop() {
-	rq.mu.Lock()
-	defer rq.mu.Unlock()
-	if !rq.started {
-		return
-	}
-	close(rq.stop)
-	rq.started = false
+	}()
 }
 
 // findReplacingReplica finds a dead replica to be removed.
