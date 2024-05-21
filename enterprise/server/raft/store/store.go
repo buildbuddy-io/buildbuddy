@@ -822,7 +822,7 @@ func (s *Store) getLeasedReplicas() []*replica.Replica {
 	}
 	s.rangeMu.RUnlock()
 
-	res := make([]*replica.Replica, 0, len(s.openRanges))
+	res := make([]*replica.Replica, 0, len(openRanges))
 	for _, rd := range openRanges {
 		header := &rfpb.Header{
 			RangeId:    rd.GetRangeId(),
