@@ -2,7 +2,6 @@ package composable_cache_test
 
 import (
 	"context"
-	"flag"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
@@ -14,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -53,11 +53,11 @@ func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, 
 
 func TestReadThrough(t *testing.T) {
 	env1, _ := testEnvAndContext(t)
-	flag.Set("cache.redis.max_value_size_bytes", "100")
+	flags.Set(t, "cache.redis.max_value_size_bytes", 100)
 	outer := redis_cache.NewCache(env1.GetDefaultRedisClient())
 
 	env2, ctx := testEnvAndContext(t)
-	flag.Set("cache.redis.max_value_size_bytes", "1000")
+	flags.Set(t, "cache.redis.max_value_size_bytes", 1000)
 	inner := redis_cache.NewCache(env2.GetDefaultRedisClient())
 
 	c := composable_cache.NewComposableCache(outer, inner, composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough)
