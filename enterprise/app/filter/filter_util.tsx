@@ -101,12 +101,7 @@ function parseDimensionType(stringValue: string): stat_filter.Dimension | undefi
 }
 
 function setFieldsFromDimensionParam(out: ProtoFilterParams, dimensionParamValue: string) {
-  // Use a pipe as a separator.  If the part before a pipe doesn't look like a
-  // dimension enum identifier, assume the pipe is part of the value.  I'll
-  // probably regret this someday.
   const filters: stat_filter.DimensionFilter[] = [];
-  console.log("hello");
-  console.log(dimensionParamValue);
   while (dimensionParamValue.length > 0) {
     let separatorIndex = dimensionParamValue.indexOf("|");
     if (separatorIndex == -1 || separatorIndex + 1 === dimensionParamValue.length) {

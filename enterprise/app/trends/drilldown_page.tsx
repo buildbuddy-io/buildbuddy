@@ -459,7 +459,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       dimensionFilter: filterParams.dimensionFilters,
     });
     this.roundEndDateAndAddZoomFiltersToQuery(heatmapRequest.query);
-    console.log(heatmapRequest);
 
     rpcService.service
       .getStatHeatmap(heatmapRequest)
