@@ -225,7 +225,7 @@ func TestStartShard(t *testing.T) {
 }
 
 func TestCleanupZombieShards(t *testing.T) {
-	flags.Set(t, "cache.raft.zombie_node_scan_interval", "100ms")
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 100*time.Millisecond)
 
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
@@ -265,7 +265,7 @@ func TestCleanupZombieShards(t *testing.T) {
 }
 
 func TestCleanupZombieReplicas(t *testing.T) {
-	flags.Set(t, "cache.raft.zombie_node_scan_interval", "100ms")
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 100*time.Millisecond)
 
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
