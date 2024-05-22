@@ -59,6 +59,7 @@ go_test(
     name = "store_test",
     srcs = ["store_test.go"],
     shard_count = 8,
+    tags = ["block-network"],
     deps = [
         ":store",
         "//enterprise/server/raft/bringup",
