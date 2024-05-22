@@ -29,6 +29,7 @@ go_test(
         "//server/remote_cache/digest",
         "//server/testutil/testdigest",
         "//server/util/prefix",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )

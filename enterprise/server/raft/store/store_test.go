@@ -3,7 +3,6 @@ package store_test
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -31,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/stretchr/testify/require"
@@ -225,7 +225,7 @@ func TestStartShard(t *testing.T) {
 }
 
 func TestCleanupZombieShards(t *testing.T) {
-	flag.Set("cache.raft.zombie_node_scan_interval", "100ms")
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", "100ms")
 
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
@@ -265,7 +265,7 @@ func TestCleanupZombieShards(t *testing.T) {
 }
 
 func TestCleanupZombieReplicas(t *testing.T) {
-	flag.Set("cache.raft.zombie_node_scan_interval", "100ms")
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", "100ms")
 
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
@@ -342,8 +342,8 @@ func TestCleanupZombieReplicas(t *testing.T) {
 }
 
 func TestAutomaticSplitting(t *testing.T) {
-	flag.Set("cache.raft.entries_between_usage_checks", "1")
-	flag.Set("cache.raft.max_range_size_bytes", "10000")
+	flags.Set(t, "cache.raft.entries_between_usage_checks", "1")
+	flags.Set(t, "cache.raft.max_range_size_bytes", "10000")
 
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
@@ -535,7 +535,7 @@ func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int
 }
 
 func TestSplitMetaRange(t *testing.T) {
-	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", "0") // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	ctx := context.Background()
@@ -589,7 +589,7 @@ func waitForRangeLease(t testing.TB, stores []*TestingStore, rangeID uint64) {
 }
 
 func TestSplitNonMetaRange(t *testing.T) {
-	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", "0") // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -782,7 +782,7 @@ func TestPostFactoSplit(t *testing.T) {
 }
 
 func TestManySplits(t *testing.T) {
-	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", "0") // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	ctx := context.Background()
@@ -841,7 +841,7 @@ func TestManySplits(t *testing.T) {
 }
 
 func TestSplitAcrossClusters(t *testing.T) {
-	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", "0") // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)

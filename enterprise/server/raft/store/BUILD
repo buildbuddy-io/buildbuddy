@@ -84,6 +84,7 @@ go_test(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//config",
         "@com_github_lni_dragonboat_v4//raftio",

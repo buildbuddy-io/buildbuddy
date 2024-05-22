@@ -28,6 +28,7 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//server/testutil/testenv",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//encoding/prototext",
