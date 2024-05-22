@@ -26,6 +26,7 @@ import Radio from "../../../app/components/radio/radio";
 import { compactDurationSec, formatDateRange } from "../../../app/format/format";
 import router from "../../../app/router/router";
 import {
+  DIMENSION_PARAM_NAME,
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
   ROLE_PARAM_NAME,
