@@ -89,4 +89,5 @@ go_test(
         "@com_github_lni_dragonboat_v4//raftio",
         "@com_github_stretchr_testify//require",
     ],
+	tags=["block-network"],
 )
