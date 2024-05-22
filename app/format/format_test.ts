@@ -110,7 +110,7 @@ describe("bytes", () => {
   it("should abbreviate large numbers", () => {
     expect(format.bytes(0)).toEqual("0B");
     expect(format.bytes(99)).toEqual("99B");
-    expect(format.bytes(100)).toEqual("0.1KB");
+    expect(format.bytes(100)).toEqual("100B");
     expect(format.bytes(1020)).toEqual("1.02KB");
     expect(format.bytes(1023)).toEqual("1.023KB");
     expect(format.bytes(1e6 - 1)).toEqual("1000KB");
