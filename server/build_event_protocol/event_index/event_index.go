@@ -171,6 +171,9 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 	case *bespb.BuildEvent_Progress:
 		// Drop progress events
 		return
+	case *bespb.BuildEvent_Fetch:
+		// Drop fetch events
+		return
 	default:
 		idx.TopLevelEvents = append(idx.TopLevelEvents, event)
 	}
