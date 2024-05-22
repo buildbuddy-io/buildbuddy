@@ -53,11 +53,11 @@ func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, 
 
 func TestReadThrough(t *testing.T) {
 	env1, _ := testEnvAndContext(t)
-	flags.Set(t, "cache.redis.max_value_size_bytes", "100")
+	flags.Set(t, "cache.redis.max_value_size_bytes", 100)
 	outer := redis_cache.NewCache(env1.GetDefaultRedisClient())
 
 	env2, ctx := testEnvAndContext(t)
-	flags.Set(t, "cache.redis.max_value_size_bytes", "1000")
+	flags.Set(t, "cache.redis.max_value_size_bytes", 1000)
 	inner := redis_cache.NewCache(env2.GetDefaultRedisClient())
 
 	c := composable_cache.NewComposableCache(outer, inner, composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough)
