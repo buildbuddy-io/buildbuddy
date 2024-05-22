@@ -897,6 +897,16 @@ var (
 		GroupID,
 	})
 
+	RemoteExecutionMergedTimeSavedUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "merged_time_saved_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*day, 10),
+		Help:      "The amount of time saved (in microseconds) due to action merging.",
+	}, []string{
+		GroupID,
+	})
+
 	// #### Examples
 	//
 	// ```promql

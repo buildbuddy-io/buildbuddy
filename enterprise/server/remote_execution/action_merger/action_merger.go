@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -22,6 +23,11 @@ const (
 	// set to twice the length of `remote_execution.lease_duration` to give a
 	// short grace period in the event of missed leases.
 	DefaultClaimedExecutionTTL = 20 * time.Second
+
+	// TTL for redis entries tracking the time at which an execution began.
+	// This is used to calculate the amount of time saved due to action merging
+	// for metrics, and is not critical to action-merging functionality.
+	executionStartTimeTTL = 8 * time.Hour
 )
 
 var (
@@ -42,6 +48,10 @@ func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.Resou
 
 func redisKeyForPendingExecutionDigest(executionID string) string {
 	return fmt.Sprintf("pendingExecutionDigest/%s", executionID)
+}
+
+func redisKeyForExecutionStartTime(executionID string) string {
+	return fmt.Sprintf("pendingExecutionStart/%s", executionID)
 }
 
 // Action merging is an optimization that detects when an execution is
@@ -67,10 +77,10 @@ func RecordQueuedExecution(ctx context.Context, rdb redis.UniversalClient, execu
 	if err != nil {
 		return err
 	}
-	reverseKey := redisKeyForPendingExecutionDigest(executionID)
 	pipe := rdb.TxPipeline()
 	pipe.Set(ctx, forwardKey, executionID, queuedExecutionTTL)
-	pipe.Set(ctx, reverseKey, forwardKey, queuedExecutionTTL)
+	pipe.Set(ctx, redisKeyForPendingExecutionDigest(executionID), forwardKey, queuedExecutionTTL)
+	pipe.Set(ctx, redisKeyForExecutionStartTime(executionID), strconv.FormatInt(time.Now().UnixMicro(), 36), executionStartTimeTTL)
 	_, err = pipe.Exec(ctx)
 	return err
 }
@@ -100,23 +110,24 @@ func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, exec
 }
 
 // Returns the execution ID of a pending execution working on the action with
-// the provided action digest, or an empty string and possibly an error if no
-// pending execution was found.
-func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.ResourceName) (string, error) {
+// the provided action digest and the time at which that action was enqueued,
+// or an empty string and possibly an error if no pending execution was found.
+func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.ResourceName) (string, time.Time, error) {
+	invalidStartTime := time.Now().Add(24 * time.Hour)
 	if !*enableActionMerging {
-		return "", nil
+		return "", invalidStartTime, nil
 	}
 
 	executionIDKey, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
-		return "", err
+		return "", invalidStartTime, err
 	}
 	executionID, err := rdb.Get(ctx, executionIDKey).Result()
 	if err == redis.Nil {
-		return "", nil
+		return "", invalidStartTime, nil
 	}
 	if err != nil {
-		return "", err
+		return "", invalidStartTime, err
 	}
 
 	// Validate that the reverse mapping exists as well. The reverse mapping is
@@ -124,23 +135,34 @@ func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedu
 	// Bail out if it doesn't exist.
 	err = rdb.Get(ctx, redisKeyForPendingExecutionDigest(executionID)).Err()
 	if err == redis.Nil {
-		return "", nil
+		return "", invalidStartTime, nil
 	}
 	if err != nil {
-		return "", err
+		return "", invalidStartTime, err
 	}
 
 	// Finally, confirm this execution exists in the scheduler and hasn't been
 	// lost somehow.
 	ok, err := schedulerService.ExistsTask(ctx, executionID)
 	if err != nil {
-		return "", err
+		return "", invalidStartTime, err
 	}
 	if !ok {
 		log.CtxWarningf(ctx, "Pending execution %q does not exist in the scheduler", executionID)
-		return "", nil
+		return "", invalidStartTime, nil
 	}
-	return executionID, nil
+
+	startTimeMicros, err := rdb.Get(ctx, redisKeyForExecutionStartTime(executionID)).Result()
+	if err != nil {
+		log.Debugf("Error reading execution start time from redis")
+		return executionID, invalidStartTime, nil
+	}
+	startTime, err := strconv.ParseInt(startTimeMicros, 36, 64)
+	if err != nil {
+		log.Debugf("Malformed execution start time in redis: %s", startTimeMicros)
+		return executionID, invalidStartTime, nil
+	}
+	return executionID, time.UnixMicro(startTime), nil
 }
 
 // Deletes the pending execution with the provided execution ID.
