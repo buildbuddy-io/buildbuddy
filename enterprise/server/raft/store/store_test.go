@@ -342,8 +342,8 @@ func TestCleanupZombieReplicas(t *testing.T) {
 }
 
 func TestAutomaticSplitting(t *testing.T) {
-	flags.Set(t, "cache.raft.entries_between_usage_checks", "1")
-	flags.Set(t, "cache.raft.max_range_size_bytes", "10000")
+	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
+	flags.Set(t, "cache.raft.max_range_size_bytes", 10000)
 
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
@@ -535,7 +535,7 @@ func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int
 }
 
 func TestSplitMetaRange(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	ctx := context.Background()
@@ -589,7 +589,7 @@ func waitForRangeLease(t testing.TB, stores []*TestingStore, rangeID uint64) {
 }
 
 func TestSplitNonMetaRange(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -782,7 +782,7 @@ func TestPostFactoSplit(t *testing.T) {
 }
 
 func TestManySplits(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	ctx := context.Background()
@@ -841,7 +841,7 @@ func TestManySplits(t *testing.T) {
 }
 
 func TestSplitAcrossClusters(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
