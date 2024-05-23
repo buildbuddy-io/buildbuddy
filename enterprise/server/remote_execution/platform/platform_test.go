@@ -2,7 +2,6 @@ package platform
 
 import (
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -551,7 +551,7 @@ func TestForceNetworkIsolationType(t *testing.T) {
 			{Name: "workload-isolation-type", Value: testCase.workloadIsolationType},
 		}}
 
-		flag.Set("executor.forced_network_isolation_type", testCase.forcedNetworkIsolationType)
+		flags.Set(t, "executor.forced_network_isolation_type", testCase.forcedNetworkIsolationType)
 
 		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		require.NoError(t, err)

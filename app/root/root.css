@@ -354,6 +354,7 @@ svg.icon.orange {
   font-weight: 600;
   text-transform: uppercase;
   user-select: none;
+  background: #fff;
 }
 
 .tab:hover {
@@ -1897,6 +1898,10 @@ code .comment {
   height: 0.8em;
   width: 0.8em;
   margin-left: 0.2em;
+}
+
+.copy-icon.green {
+  color: #4caf50;
 }
 
 .coverage-source {

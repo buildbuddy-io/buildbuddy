@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper"
@@ -62,7 +63,9 @@ import (
 
 var (
 	zombieNodeScanInterval = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
+	replicaScanInterval    = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
 	maxRangeSizeBytes      = flag.Int64("cache.raft.max_range_size_bytes", 1e8, "If set to a value greater than 0, ranges will be split until smaller than this size")
+	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 )
 
 type Store struct {
@@ -105,6 +108,8 @@ type Store struct {
 
 	updateTagsWorker *updateTagsWorker
 	txnCoordinator   *txn.Coordinator
+
+	driverQueue *driver.Queue
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -204,6 +209,11 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	s.txnCoordinator = txnCoordinator
 
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
+
+	if *enableDriver {
+		s.driverQueue = driver.NewQueue(s, gossipManager)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -418,11 +428,25 @@ func (s *Store) Start() error {
 		return nil
 	})
 	eg.Go(func() error {
+		s.updateStoreUsageTag(gctx)
+		return nil
+	})
+	eg.Go(func() error {
 		s.processSplitRequests(gctx)
 		return nil
 	})
 	eg.Go(func() error {
 		s.txnCoordinator.Start(gctx)
+		return nil
+	})
+	eg.Go(func() error {
+		s.scan(gctx)
+		return nil
+	})
+	eg.Go(func() error {
+		if s.driverQueue != nil {
+			s.driverQueue.Start(gctx)
+		}
 		return nil
 	})
 
@@ -787,6 +811,29 @@ func (s *Store) ListReplicas(ctx context.Context, req *rfpb.ListReplicasRequest)
 	return rsp, nil
 }
 
+func (s *Store) getLeasedReplicas() []*replica.Replica {
+	s.rangeMu.RLock()
+	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
+	for _, rd := range s.openRanges {
+		openRanges = append(openRanges, rd)
+	}
+	s.rangeMu.RUnlock()
+
+	res := make([]*replica.Replica, 0, len(openRanges))
+	for _, rd := range openRanges {
+		header := &rfpb.Header{
+			RangeId:    rd.GetRangeId(),
+			Generation: rd.GetGeneration(),
+		}
+		r, err := s.LeasedRange(header)
+		if err != nil {
+			continue
+		}
+		res = append(res, r)
+	}
+	return res
+}
+
 func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error) {
 	s.log.Infof("Starting new raft node c%dn%d", req.GetShardId(), req.GetReplicaId())
 	rc := raftConfig.GetRaftConfig(req.GetShardId(), req.GetReplicaId())
@@ -950,44 +997,76 @@ func (s *Store) acquireNodeLiveness(ctx context.Context) {
 	}
 }
 
-func (s *Store) isRangelessNode(shardID uint64) bool {
-	if rd := s.lookupRange(shardID); rd != nil {
-		for _, r := range rd.GetReplicas() {
-			if r.GetShardId() == shardID {
-				return false
-			}
-		}
-	}
-	return true
-}
+type membershipStatus int
 
-// If the replica is behind: don’t kill
-// If the replica is one of the replicas specified in the range: don’t kill
-// Otherwise: kill
-func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo) bool {
+const (
+	membershipStatusUnknown membershipStatus = iota
+	membershipStatusMember
+	membershipStatusNotMember
+)
+
+// checkMembershipStatus checks the status of the membership given the shard info.
+// Returns membershipStatusMember when the replica's config change is current and
+// it's one of the voters, non-voters, or witnesses;
+// Returns membershipStatusUnknown when the replica's config change is behind or
+// there is error to get membership info.
+func (s *Store) checkMembershipStatus(ctx context.Context, shardInfo dragonboat.ShardInfo) membershipStatus {
 	// Get the config change index for this shard.
 	membership, err := s.getMembership(ctx, shardInfo.ShardID)
 	if err != nil {
-		s.log.Errorf("Error gettting membership for shard %d: %s", shardInfo.ShardID, err)
-		return false
+		s.log.Errorf("checkMembershipStatus failed to get membership for shard %d: %s", shardInfo.ShardID, err)
+		return membershipStatusUnknown
 	}
 
 	if shardInfo.ConfigChangeIndex > 0 && shardInfo.ConfigChangeIndex <= membership.ConfigChangeID {
-		return false
+		return membershipStatusUnknown
 	}
 
 	for replicaID := range membership.Nodes {
 		if replicaID == shardInfo.ReplicaID {
-			return false
+			return membershipStatusMember
 		}
 	}
 	for replicaID := range membership.NonVotings {
 		if replicaID == shardInfo.ReplicaID {
-			return false
+			return membershipStatusMember
 		}
 	}
 	for replicaID := range membership.Witnesses {
 		if replicaID == shardInfo.ReplicaID {
+			return membershipStatusMember
+		}
+	}
+	return membershipStatusNotMember
+}
+
+// isZombieNode checks whether a node is a zombie node.
+func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo) bool {
+	membershipStatus := s.checkMembershipStatus(ctx, shardInfo)
+	if membershipStatus == membershipStatusNotMember {
+		return true
+	}
+
+	rd := s.lookupRange(shardInfo.ShardID)
+	if rd == nil {
+		return true
+	}
+
+	// The replica info in the local range descriptor could be out of date. For
+	// example, when another node in the raft cluster proposed to remove this node
+	// when this node is dead. When this node restarted, the range descriptor is
+	// behind, but it cannot get updates from other nodes b/c it was removed from the
+	// cluster.
+	updatedRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
+	if err != nil {
+		s.log.Errorf("failed to look up range descriptor: %s", err)
+		return false
+	}
+	if updatedRD.GetGeneration() >= rd.GetGeneration() {
+		rd = updatedRD
+	}
+	for _, r := range rd.GetReplicas() {
+		if r.GetShardId() == shardInfo.ShardID && r.GetReplicaId() == shardInfo.ReplicaID {
 			return false
 		}
 	}
@@ -1017,7 +1096,7 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 			sInfo := nInfo.ShardInfoList[idx]
 			idx += 1
 
-			if s.isZombieNode(ctx, sInfo) || s.isRangelessNode(sInfo.ShardID) {
+			if s.isZombieNode(ctx, sInfo) {
 				s.log.Debugf("Removing zombie node: %+v...", sInfo)
 				if err := s.nodeHost.StopReplica(sInfo.ShardID, sInfo.ReplicaID); err != nil {
 					s.log.Errorf("Error stopping zombie replica: %s", err)
@@ -1063,6 +1142,27 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
 				default:
 					s.log.Debugf("Split queue full. Dropping message.")
 				}
+			default:
+				break
+			}
+		}
+	}
+}
+
+func (s *Store) updateStoreUsageTag(ctx context.Context) {
+	eventsCh := s.AddEventListener()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e := <-eventsCh:
+			switch e.EventType() {
+			case events.EventRangeUsageUpdated:
+				rangeUsageEvent := e.(events.RangeUsageEvent)
+				if !s.leaseKeeper.HaveLease(rangeUsageEvent.RangeDescriptor.GetRangeId()) {
+					continue
+				}
+				s.updateTagsWorker.Enqueue()
 			default:
 				break
 			}
@@ -1579,30 +1679,34 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, err
 	}
 
-	// Remove the data from the now stopped node.
+	metrics.RaftMoves.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		metrics.RaftMoveLabel:       "remove",
+	}).Inc()
+
+	rsp := &rfpb.RemoveReplicaResponse{
+		Range: rd,
+	}
+
+	// Remove the data from the now stopped node. This is best-effort only,
+	// because we can remove the replica when the node is dead; and in this case,
+	// we won't be able to connect to the node.
 	c, err := s.apiClient.GetForReplica(ctx, replicaDesc)
 	if err != nil {
-		s.log.Errorf("err getting api client: %s", err)
-		return nil, err
+		s.log.Warningf("RemoveReplica unable to remove data, err getting api client: %s", err)
+		return rsp, nil
 	}
 	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
 		ShardId:   replicaDesc.GetShardId(),
 		ReplicaId: replicaDesc.GetReplicaId(),
 	})
 	if err != nil {
-		s.log.Errorf("remove data err: %s", err)
-		return nil, err
+		s.log.Warningf("RemoveReplica unable to remove data err: %s", err)
+		return rsp, nil
 	}
 
-	metrics.RaftMoves.With(prometheus.Labels{
-		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-		metrics.RaftMoveLabel:       "remove",
-	}).Inc()
-
 	s.log.Infof("Removed shard: s%dr%d", replicaDesc.GetShardId(), replicaDesc.GetReplicaId())
-	return &rfpb.RemoveReplicaResponse{
-		Range: rd,
-	}, nil
+	return rsp, nil
 }
 
 func (s *Store) reserveReplicaIDs(ctx context.Context, n int) ([]uint64, error) {
@@ -1804,6 +1908,24 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, shardID, r
 		return nil, err
 	}
 	return newDescriptor, nil
+}
+
+func (store *Store) scan(ctx context.Context) {
+	if store.driverQueue == nil {
+		return
+	}
+	scanDelay := time.NewTicker(*replicaScanInterval)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-scanDelay.C:
+		}
+		replicas := store.getLeasedReplicas()
+		for _, repl := range replicas {
+			store.driverQueue.MaybeAdd(repl)
+		}
+	}
 }
 
 func bytesToUint64(buf []byte) uint64 {

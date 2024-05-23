@@ -205,7 +205,7 @@ export default class EnterpriseRootComponent extends React.Component {
 
   render() {
     let invocationId = router.getInvocationId(this.state.path);
-    let compareInvocationIds = router.getInvocationIdsForCompare(this.state.path);
+    let compareInvocationIds = this.state.user && router.getInvocationIdsForCompare(this.state.path);
     let historyUser = this.state.user && router.getHistoryUser(this.state.path);
     let historyHost = this.state.user && router.getHistoryHost(this.state.path);
     let historyRepo = this.state.user && router.getHistoryRepo(this.state.path);
@@ -304,6 +304,7 @@ export default class EnterpriseRootComponent extends React.Component {
                         invocationAId={compareInvocationIds.a}
                         invocationBId={compareInvocationIds.b}
                         search={this.state.search}
+                        tab={this.state.tab}
                         user={this.state.user}
                       />
                     </Suspense>

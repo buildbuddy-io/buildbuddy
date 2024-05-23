@@ -904,24 +904,6 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 // UTC, or do an explicit timezone conversion here from `@@session.time_zone`
 // to UTC.
 
-// UTCMonthFromUsecTimestamp returns an SQL expression that converts the value
-// of the given field from a Unix timestamp (in microseconds since the Unix
-// Epoch) to a month in UTC time, formatted as "YYYY-MM".
-func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
-	timestampExpr := fieldName + `/1000000`
-	switch h.driver {
-	case sqliteDriver:
-		return `STRFTIME('%Y-%m', ` + timestampExpr + `, 'unixepoch')`
-	case mysqlDriver:
-		return `DATE_FORMAT(FROM_UNIXTIME(` + timestampExpr + `), '%Y-%m')`
-	case postgresDriver:
-		return `TO_CHAR(TO_TIMESTAMP(` + timestampExpr + `), 'YYYY-MM')`
-	default:
-		log.Errorf("Driver %s is not supported by UTCMonthFromUsecTimestamp.", h.driver)
-		return `UNIMPLEMENTED`
-	}
-}
-
 // DateFromUsecTimestamp returns an SQL expression that converts the value
 // of the given field from a Unix timestamp (in microseconds since the Unix
 // Epoch) to a date offset by the given UTC offset. The offset is defined

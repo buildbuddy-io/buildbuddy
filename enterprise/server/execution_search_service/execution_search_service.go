@@ -190,6 +190,13 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		}
 		q.AddWhereClause(str, args...)
 	}
+	for _, f := range req.GetQuery().GetDimensionFilter() {
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f, "")
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(str, args...)
+	}
 
 	q.SetOrderBy("created_at_usec", true)
 

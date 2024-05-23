@@ -427,6 +427,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               />
               <CacheChartComponent
                 title="Content Addressable Store"
+                id="cas"
                 data={this.state.timeKeys}
                 extractLabel={this.formatShortDate.bind(this)}
                 ticks={this.state.ticks}
@@ -634,6 +635,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   <TrendsChartComponent
                     title="Remote Execution Build Time (minutes)"
                     data={this.state.timeKeys}
+                    id="build_time"
                     dataSeries={[
                       {
                         name: "build time (minutes)",

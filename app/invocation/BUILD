@@ -10,10 +10,10 @@ ts_library(
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
-        "//app/components/banner",
         "//app/favicon",
         "//app/invocation:cache_requests_card",
         "//app/invocation:child_invocations",
+        "//app/invocation:execution_status",
         "//app/invocation:invocation_action_card",
         "//app/invocation:invocation_artifacts_card",
         "//app/invocation:invocation_bot_card",
@@ -51,6 +51,7 @@ ts_library(
         "//proto/api/v1:common_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//moment",
         "@npm//react",
         "@npm//rxjs",
@@ -790,6 +791,7 @@ ts_library(
     srcs = ["execution_status.tsx"],
     deps = [
         "//app/service:rpc_service",
+        "//app/util:rpc",
         "//proto:execution_stats_ts_proto",
         "//proto:remote_execution_ts_proto",
     ],

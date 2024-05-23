@@ -3,8 +3,11 @@ import { target } from "../../proto/target_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import {
   ArrowDownCircle,
+  Check,
   CheckCircle,
+  ChevronDown,
   ChevronRight,
+  ChevronsDown,
   Clock,
   Copy,
   FileCode,
@@ -32,6 +35,7 @@ interface State {
   loading: boolean;
   fetchedTargets: target.Target[];
   nextPageToken: string | null;
+  copied: boolean;
 }
 
 const Status = api_common.v1.Status;
@@ -45,6 +49,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
     loading: false,
     fetchedTargets: [],
     nextPageToken: null,
+    copied: false,
   };
 
   private fetchRPC?: CancelablePromise;
@@ -64,7 +69,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
     return Boolean(this.nextPageToken());
   }
 
-  private loadMore() {
+  private loadMore(all?: boolean, callback?: () => void) {
     this.fetchRPC?.cancel();
     this.setState({ loading: true });
     rpc_service.service
@@ -76,11 +81,18 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
       })
       .then((response) => {
         const page = response.targetGroups[0];
-        if (!page) return;
-        this.setState({
-          fetchedTargets: [...this.state.fetchedTargets, ...page.targets],
-          nextPageToken: page.nextPageToken,
-        });
+        if (!page) {
+          callback && callback();
+          return;
+        }
+        this.state.fetchedTargets = [...this.state.fetchedTargets, ...page.targets];
+        this.state.nextPageToken = page.nextPageToken;
+        if (all && page.nextPageToken) {
+          this.loadMore(true, callback);
+          return;
+        }
+        this.forceUpdate();
+        callback && callback();
       })
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));
@@ -103,6 +115,19 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
       bytestream_url: file.uri,
       filename: file.name,
     })}`;
+  }
+
+  onCopyClicked() {
+    let callback = () => {
+      let targets = this.props.group.targets.concat(this.state.fetchedTargets);
+      copyToClipboard(targets.map((target) => target.metadata?.label ?? "").join(" "));
+      this.setState({ copied: true });
+    };
+    if (this.hasMoreTargets()) {
+      this.loadMore(true, callback);
+      return;
+    }
+    callback();
   }
 
   render() {
@@ -173,10 +198,11 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
           <div className="title">
             {format.formatWithCommas(this.props.group.totalCount)}
             {this.props.filter ? " matching" : ""} {pastVerb}{" "}
-            <Copy
-              className="copy-icon"
-              onClick={() => copyToClipboard(targets.map((target) => target.metadata?.label ?? "").join(" "))}
-            />
+            {this.state.copied ? (
+              <Check className="copy-icon green" onClick={() => this.onCopyClicked()} />
+            ) : (
+              <Copy className="copy-icon" onClick={() => this.onCopyClicked()} />
+            )}
           </div>
           <div className="details">
             {this.props.group.status !== 0 && (
@@ -223,11 +249,18 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
                 </div>
               ))}
           </div>
-          {this.hasMoreTargets() && !this.state.loading && (
-            <div className="more" onClick={() => this.loadMore()}>
-              Load more {presentVerb}
-            </div>
-          )}
+          <div className="target-more-buttons">
+            {this.hasMoreTargets() && !this.state.loading && (
+              <div className="more" onClick={() => this.loadMore()}>
+                <ChevronDown /> Load more {presentVerb}
+              </div>
+            )}
+            {this.hasMoreTargets() && !this.state.loading && (
+              <div className="more" onClick={() => this.loadMore(true)}>
+                <ChevronsDown /> Load all {presentVerb}
+              </div>
+            )}
+          </div>
           {this.state.loading && (
             <div className="more-loading">
               Load more {presentVerb} <Spinner className="small-spinner" />

@@ -11,7 +11,7 @@ go_library(
         "//proto:usage_go_proto",
         "//server/environment",
         "//server/real_environment",
-        "//server/util/authutil",
+        "//server/tables",
         "//server/util/db",
         "//server/util/log",
         "//server/util/status",

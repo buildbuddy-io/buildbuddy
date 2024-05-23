@@ -3,7 +3,6 @@ package store_test
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -31,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/stretchr/testify/require"
@@ -63,9 +63,8 @@ type storeFactory struct {
 func newStoreFactory(t *testing.T) *storeFactory {
 	rootDir := testfs.MakeTempDir(t)
 	fileDir := filepath.Join(rootDir, "files")
-	if err := disk.EnsureDirectoryExists(fileDir); err != nil {
-		t.Fatal(err)
-	}
+	err := disk.EnsureDirectoryExists(fileDir)
+	require.NoError(t, err)
 	return &storeFactory{
 		rootDir: rootDir,
 		fileDir: fileDir,
@@ -95,7 +94,7 @@ func (ts *TestingStore) NewReplica(shardID, replicaID uint64) *replica.Replica {
 	return sm.(*replica.Replica)
 }
 
-func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeHost) {
+func (sf *storeFactory) NewStore(t *testing.T) *TestingStore {
 	nodeAddr := localAddr(t)
 	gm := newGossipManager(t, nodeAddr, sf.gossipAddrs)
 	sf.gossipAddrs = append(sf.gossipAddrs, nodeAddr)
@@ -126,9 +125,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 		SystemEventListener: raftListener,
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
-	if err != nil {
-		t.Fatalf("error creating NodeHost: %s", err)
-	}
+	require.NoError(t, err, "unexpected error creating NodeHost")
 	ts.NodeHost = nodeHost
 
 	te := testenv.GetTestEnv(t)
@@ -156,7 +153,15 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	t.Cleanup(func() {
 		s.Stop(context.TODO())
 	})
-	return ts, nodeHost
+	return ts
+}
+
+func makeNodeGRPCAddressesMap(stores ...*TestingStore) map[string]string {
+	res := make(map[string]string, len(stores))
+	for _, s := range stores {
+		res[s.NodeHost.ID()] = s.GRPCAddress
+	}
+	return res
 }
 
 func (ts *TestingStore) getMembership(ctx context.Context, shardID uint64) ([]*rfpb.ReplicaDescriptor, error) {
@@ -190,7 +195,7 @@ func (ts *TestingStore) getMembership(ctx context.Context, shardID uint64) ([]*r
 
 func TestAddGetRemoveRange(t *testing.T) {
 	sf := newStoreFactory(t)
-	s1, _ := sf.NewStore(t)
+	s1 := sf.NewStore(t)
 	r1 := s1.NewReplica(1, 1)
 
 	rd := &rfpb.RangeDescriptor{
@@ -215,25 +220,21 @@ func TestAddGetRemoveRange(t *testing.T) {
 
 func TestStartShard(t *testing.T) {
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-	})
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1))
 	require.NoError(t, err)
 }
 
 func TestCleanupZombieShards(t *testing.T) {
-	flag.Set("cache.raft.zombie_node_scan_interval", "100ms")
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 100*time.Millisecond)
 
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-	})
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1))
 	require.NoError(t, err)
 
 	stores := []*TestingStore{s1}
@@ -264,17 +265,89 @@ func TestCleanupZombieShards(t *testing.T) {
 	t.Fatalf("Zombie killer never cleaned up zombie range 2")
 }
 
-func TestAutomaticSplitting(t *testing.T) {
-	flag.Set("cache.raft.entries_between_usage_checks", "1")
-	flag.Set("cache.raft.max_range_size_bytes", "10000")
+func TestCleanupZombieReplicas(t *testing.T) {
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 100*time.Millisecond)
 
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-	})
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1, s2))
+	require.NoError(t, err)
+
+	stores := []*TestingStore{s1, s2}
+	waitForRangeLease(t, stores, 2)
+
+	s := getStoreWithRangeLease(t, stores, 2)
+	rd := s.GetRange(2)
+	newRD := rd.CloneVT()
+
+	require.Equal(t, len(newRD.GetReplicas()), 2)
+
+	// Remove replica of range 2 on nh1 in meta range
+	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(rd.GetReplicas())-1)
+	for _, repl := range rd.GetReplicas() {
+		if repl.GetNhid() == s1.NodeHost.ID() {
+			continue
+		}
+		replicas = append(replicas, repl)
+	}
+	newRD.Replicas = replicas
+	require.Equal(t, 1, len(replicas))
+	newRD.Generation = rd.GetGeneration() + 1
+	protoBytes, err := proto.Marshal(newRD)
+	require.NoError(t, err)
+
+	// Write the range descriptor the meta range
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(newRD.GetEnd()),
+			Value: protoBytes,
+		},
+	}).ToProto()
+	require.NoError(t, err)
+	writeRsp, err := s1.Sender.SyncPropose(ctx, constants.MetaRangePrefix, writeReq)
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	require.NoError(t, err)
+
+	for i := 0; i < 30; i++ {
+		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		if len(list.GetReplicas()) == 1 {
+			log.Debugf("listReplicas: %+v", list)
+			repl := list.GetReplicas()[0]
+			// nh1 only has shard 1
+			require.Equal(t, uint64(1), repl.GetShardId())
+
+			require.Nil(t, s1.GetRange(2))
+			_, err := s1.GetReplica(2)
+			require.True(t, status.IsOutOfRangeError(err))
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	// verify that the range and replica is not removed from s2
+	list, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(list.GetReplicas()))
+	require.NotNil(t, s2.GetRange(2))
+	_, err = s2.GetReplica(2)
+	require.NoError(t, err)
+
+	t.Fatalf("Zombie killer never cleaned up zombie range 2")
+}
+
+func TestAutomaticSplitting(t *testing.T) {
+	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
+	flags.Set(t, "cache.raft.max_range_size_bytes", 10000)
+
+	sf := newStoreFactory(t)
+	s1 := sf.NewStore(t)
+	ctx := context.Background()
+
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1))
 	require.NoError(t, err)
 
 	stores := []*TestingStore{s1}
@@ -286,13 +359,11 @@ func TestAutomaticSplitting(t *testing.T) {
 
 func TestAddNodeToCluster(t *testing.T) {
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
-	s2, nh2 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-	})
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1))
 	require.NoError(t, err)
 
 	stores := []*TestingStore{s1, s2}
@@ -302,7 +373,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: rd,
 		Node: &rfpb.NodeDescriptor{
-			Nhid:        nh2.ID(),
+			Nhid:        s2.NodeHost.ID(),
 			RaftAddress: s2.RaftAddress,
 			GrpcAddress: s2.GRPCAddress,
 		},
@@ -322,7 +393,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: mrd,
 		Node: &rfpb.NodeDescriptor{
-			Nhid:        nh2.ID(),
+			Nhid:        s2.NodeHost.ID(),
 			RaftAddress: s2.RaftAddress,
 			GrpcAddress: s2.GRPCAddress,
 		},
@@ -340,14 +411,11 @@ func TestAddNodeToCluster(t *testing.T) {
 
 func TestRemoveNodeFromCluster(t *testing.T) {
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
-	s2, nh2 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-		nh2.ID(): s2.GRPCAddress,
-	})
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1, s2))
 	require.NoError(t, err)
 
 	stores := []*TestingStore{s1, s2}
@@ -458,14 +526,12 @@ func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int
 }
 
 func TestSplitMetaRange(t *testing.T) {
-	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-	})
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1))
 	require.NoError(t, err)
 
 	rd := s1.GetRange(1)
@@ -512,19 +578,15 @@ func waitForRangeLease(t testing.TB, stores []*TestingStore, rangeID uint64) {
 }
 
 func TestSplitNonMetaRange(t *testing.T) {
-	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
-	s2, nh2 := sf.NewStore(t)
-	s3, nh3 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
 	ctx := context.Background()
 
 	stores := []*TestingStore{s1, s2, s3}
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-		nh2.ID(): s2.GRPCAddress,
-		nh3.ID(): s3.GRPCAddress,
-	})
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1, s2, s3))
 	require.NoError(t, err)
 
 	s := getStoreWithRangeLease(t, stores, 2)
@@ -591,16 +653,12 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 func TestListReplicas(t *testing.T) {
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
-	s2, nh2 := sf.NewStore(t)
-	s3, nh3 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-		nh2.ID(): s2.GRPCAddress,
-		nh3.ID(): s3.GRPCAddress,
-	})
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1, s2, s3))
 	require.NoError(t, err)
 
 	stores := []*TestingStore{s1, s2, s3}
@@ -613,14 +671,12 @@ func TestListReplicas(t *testing.T) {
 
 func TestPostFactoSplit(t *testing.T) {
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
-	s2, nh2 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
 	ctx := context.Background()
 
 	stores := []*TestingStore{s1, s2}
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-	})
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1))
 	require.NoError(t, err)
 
 	s := getStoreWithRangeLease(t, stores, 2)
@@ -651,7 +707,7 @@ func TestPostFactoSplit(t *testing.T) {
 	_, err = s1.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: s1.GetRange(2),
 		Node: &rfpb.NodeDescriptor{
-			Nhid:        nh2.ID(),
+			Nhid:        s2.NodeHost.ID(),
 			RaftAddress: s2.RaftAddress,
 			GrpcAddress: s2.GRPCAddress,
 		},
@@ -705,15 +761,13 @@ func TestPostFactoSplit(t *testing.T) {
 }
 
 func TestManySplits(t *testing.T) {
-	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
 	ctx := context.Background()
 	stores := []*TestingStore{s1}
 
-	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-	})
+	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1))
 	require.NoError(t, err)
 	s := getStoreWithRangeLease(t, stores, 2)
 
@@ -764,19 +818,15 @@ func TestManySplits(t *testing.T) {
 }
 
 func TestSplitAcrossClusters(t *testing.T) {
-	flag.Set("cache.raft.max_range_size_bytes", "0") // disable auto splitting
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
-	s2, nh2 := sf.NewStore(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
 	ctx := context.Background()
 
 	stores := []*TestingStore{s1, s2}
-	poolA := map[string]string{
-		nh1.ID(): s1.GRPCAddress,
-	}
-	poolB := map[string]string{
-		nh2.ID(): s2.GRPCAddress,
-	}
+	poolA := makeNodeGRPCAddressesMap(s1)
+	poolB := makeNodeGRPCAddressesMap(s2)
 
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
@@ -796,7 +846,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 		RangeId:    2,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 2, ReplicaId: 1, Nhid: proto.String(nh2.ID())},
+			{ShardId: 2, ReplicaId: 1, Nhid: proto.String(s2.NodeHost.ID())},
 		},
 	}
 	protoBytes, err := proto.Marshal(initialRD)
