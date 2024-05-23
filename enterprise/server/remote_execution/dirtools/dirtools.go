@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"flag"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -48,10 +47,10 @@ type deduper struct {
 	groups map[string]*singleflight.Group
 }
 
-func (d deduper) Group(ctx context.Context, instanceName string, digestFunction repb.DigestFunction_Value) *singleflight.Group {
+func (d deduper) Group(ctx context.Context) *singleflight.Group {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	key := fmt.Sprintf("%s/%s/%s", groupIDStringFromContext(ctx), instanceName, digestFunction)
+	key := groupIDStringFromContext(ctx)
 	if _, ok := d.groups[key]; !ok {
 		sfg := singleflight.Group{}
 		d.groups[key] = &sfg
@@ -615,7 +614,7 @@ func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		digestFunction: digestFunction,
 		once:           &sync.Once{},
 		compress:       false,
-		group:          DownloadDeduper.Group(ctx, instanceName, digestFunction),
+		group:          DownloadDeduper.Group(ctx),
 	}
 }
 
@@ -849,8 +848,11 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	}
 	fp := fpInterface.(*FilePointer)
 
-	// The rest of the files in the list all have the same digest, so we can
-	// FastCopy them from the first file.
+	// Depending on whether or not this bytestream request was deduped, fp
+	// will either be == fps[0], or a different fp from a concurrent request
+	// made by the same user.
+	// Check for that case, to avoid copying a file over itself, and copy fp
+	// to all of the destination fps.
 	for _, dest := range fps {
 		if fp == dest {
 			continue
