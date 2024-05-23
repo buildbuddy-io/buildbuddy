@@ -63,6 +63,7 @@ import (
 
 var (
 	zombieNodeScanInterval = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
+	zombieMinDuration      = flag.Duration("cache.raft.zombie_min_duration", 1*time.Minute, "The minimum duration a replica must remain in a zombie state to be considered a zombie.")
 	replicaScanInterval    = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
 	maxRangeSizeBytes      = flag.Int64("cache.raft.max_range_size_bytes", 1e8, "If set to a value greater than 0, ranges will be split until smaller than this size")
 	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
@@ -1100,19 +1101,27 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 			idx += 1
 
 			if s.isZombieNode(ctx, sInfo) {
-				s.log.Debugf("Removing zombie node: %+v...", sInfo)
-				if err := s.nodeHost.StopReplica(sInfo.ShardID, sInfo.ReplicaID); err != nil {
-					s.log.Errorf("Error stopping zombie replica: %s", err)
-				} else {
-					if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
-						ShardId:   sInfo.ShardID,
-						ReplicaId: sInfo.ReplicaID,
-					}); err != nil {
-						s.log.Errorf("Error removing zombie replica data: %s", err)
-					} else {
-						s.log.Infof("Successfully removed zombie node: %+v", sInfo)
+				s.log.Debugf("Found a potential Zombie: %+v", sInfo)
+				potentialZombie := sInfo
+				deleteTimer := s.clock.AfterFunc(*zombieMinDuration, func() {
+					if !s.isZombieNode(ctx, potentialZombie) {
+						return
 					}
-				}
+					s.log.Debugf("Removing zombie node: %+v...", potentialZombie)
+					if err := s.nodeHost.StopReplica(potentialZombie.ShardID, potentialZombie.ReplicaID); err != nil {
+						s.log.Errorf("Error stopping zombie replica: %s", err)
+					} else {
+						if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
+							ShardId:   potentialZombie.ShardID,
+							ReplicaId: potentialZombie.ReplicaID,
+						}); err != nil {
+							s.log.Errorf("Error removing zombie replica data: %s", err)
+						} else {
+							s.log.Infof("Successfully removed zombie node: %+v", potentialZombie)
+						}
+					}
+				})
+				defer deleteTimer.Stop()
 			}
 		}
 	}
