@@ -1092,7 +1092,6 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.Chan():
-			s.log.Info("timer chan received")
 			if idx == len(nInfo.ShardInfoList) {
 				idx = 0
 				nInfo = s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{SkipLogInfo: true})
@@ -1105,7 +1104,6 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 				s.log.Debugf("Found a potential Zombie: %+v", sInfo)
 				potentialZombie := sInfo
 				deleteTimer := s.clock.AfterFunc(*zombieMinDuration, func() {
-					s.log.Debugf("deleteTimer run: %+v", sInfo)
 					if !s.isZombieNode(ctx, potentialZombie) {
 						return
 					}
