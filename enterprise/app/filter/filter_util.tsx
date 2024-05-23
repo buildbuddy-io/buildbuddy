@@ -100,6 +100,16 @@ function parseDimensionType(stringValue: string): stat_filter.Dimension | undefi
   return undefined;
 }
 
+// Parses a set of DimensionFilters from the supplied URL param string.  Each
+// entry is formatted as "dimension|value_length|value" and entry is separated
+// from the next by another pipe.
+// dimension: [ei][0-9]+ identifies either the [e]xecution or [i]nvocation
+// field of the Dimension field in the DimensionFilter.
+// value_length: the length of the value field because (rather than escaping)
+// value: the actual string value to match for the dimension.
+// So, for example, e1|5|abcdef|i1|4|main represents:
+//     * ExecutionDimensionType.WORKER_EXECUTION_DIMENSION == abcdef
+//     * InvocationDimensionType.BRANCH_INVOCATION_DIMENSION == main
 export function getFiltersFromDimensionParam(dimensionParamValue: string): stat_filter.DimensionFilter[] {
   const filters: stat_filter.DimensionFilter[] = [];
   while (dimensionParamValue.length > 0) {
@@ -158,10 +168,7 @@ export function getProtoFilterParams(search: URLSearchParams, now?: moment.Momen
   };
 }
 
-export function getDimensionName(d?: stat_filter.Dimension): string {
-  if (!d) {
-    return "";
-  }
+export function getDimensionName(d: stat_filter.Dimension): string {
   if (d.execution) {
     switch (d.execution) {
       case stat_filter.ExecutionDimensionType.WORKER_EXECUTION_DIMENSION:

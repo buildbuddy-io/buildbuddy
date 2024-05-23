@@ -463,11 +463,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 {compactDurationSec(Number(maximumDurationValue))}
               </span>
             )}
-            {dimensions.map((v) => (
-              <span className="advanced-badge" title={getDimensionName(v.dimension ?? undefined)}>
-                {getDimensionIcon(v.dimension ?? undefined)} {v.value}
-              </span>
-            ))}
+            {dimensions.map(
+              (v) =>
+                v.dimension && (
+                  <span className="advanced-badge" title={getDimensionName(v.dimension)}>
+                    {getDimensionIcon(v.dimension)} {v.value}
+                  </span>
+                )
+            )}
           </OutlinedButton>
           <Popup
             isOpen={this.state.isFilterMenuOpen}
@@ -698,10 +701,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
 }
 
-function getDimensionIcon(f?: stat_filter.Dimension) {
-  if (!f) {
-    return undefined;
-  }
+function getDimensionIcon(f: stat_filter.Dimension) {
   if (f.execution) {
     switch (f.execution) {
       case stat_filter.ExecutionDimensionType.WORKER_EXECUTION_DIMENSION:
