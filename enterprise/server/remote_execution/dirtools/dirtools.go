@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -16,11 +17,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -32,6 +35,42 @@ const gRPCMaxSize = int64(4000000)
 var (
 	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
 )
+
+func groupIDStringFromContext(ctx context.Context) string {
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return c.GroupID
+	}
+	return interfaces.AuthAnonymousUser
+}
+
+type deduper struct {
+	mu     *sync.Mutex
+	groups map[string]*singleflight.Group
+}
+
+func (d deduper) Group(ctx context.Context, instanceName string, digestFunction repb.DigestFunction_Value) *singleflight.Group {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	key := fmt.Sprintf("%s/%s/%s", groupIDStringFromContext(ctx), instanceName, digestFunction)
+	if _, ok := d.groups[key]; !ok {
+		sfg := singleflight.Group{}
+		d.groups[key] = &sfg
+	}
+	return d.groups[key]
+}
+func newDeduper() deduper {
+	return deduper{
+		mu:     &sync.Mutex{},
+		groups: make(map[string]*singleflight.Group),
+	}
+}
+
+// DownloadDeduper is a deduper that can be used for deduping downloads.
+// Example usage:
+//
+//	group := Deduper.Group(ctx, instanceName, digestFunction)
+//	data, err, _ := w.requestGroup.Do(digest, func() (interface{}, error) {}
+var DownloadDeduper = newDeduper()
 
 type TransferInfo struct {
 	FileCount        int64
@@ -559,6 +598,7 @@ type BatchFileFetcher struct {
 	digestFunction repb.DigestFunction_Value
 	once           *sync.Once
 	compress       bool
+	group          *singleflight.Group
 
 	statsMu sync.Mutex
 	stats   repb.IOStats
@@ -575,6 +615,7 @@ func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		digestFunction: digestFunction,
 		once:           &sync.Once{},
 		compress:       false,
+		group:          DownloadDeduper.Group(ctx, instanceName, digestFunction),
 	}
 }
 
@@ -769,41 +810,51 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if len(fps) == 0 {
 		return nil
 	}
-	fp := fps[0]
-	var mode os.FileMode = 0644
-	if fp.FileNode.IsExecutable {
-		mode = 0755
-	}
-	f, err := os.OpenFile(fp.FullPath, os.O_RDWR|os.O_CREATE, mode)
+	fpInterface, err, _ := ff.group.Do(d.GetHash(), func() (interface{}, error) {
+		fp0 := fps[0]
+		var mode os.FileMode = 0644
+		if fp0.FileNode.IsExecutable {
+			mode = 0755
+		}
+		f, err := os.OpenFile(fp0.FullPath, os.O_RDWR|os.O_CREATE, mode)
+		if err != nil {
+			return nil, err
+		}
+		resourceName := digest.NewResourceName(fp0.FileNode.Digest, instanceName, rspb.CacheType_CAS, ff.digestFunction)
+		if ff.supportsCompression() {
+			resourceName.SetCompressor(repb.Compressor_ZSTD)
+		}
+		if err := cachetools.GetBlob(ctx, bsClient, resourceName, f); err != nil {
+			return nil, err
+		}
+
+		ff.statsMu.Lock()
+		ff.stats.FileDownloadSizeBytes += d.GetSizeBytes()
+		ff.stats.FileDownloadCount += 1
+		ff.statsMu.Unlock()
+
+		if err := f.Close(); err != nil {
+			return nil, err
+		}
+		fileCache := ff.env.GetFileCache()
+		if fileCache != nil {
+			if err := fileCache.AddFile(ff.ctx, fp0.FileNode, fp0.FullPath); err != nil {
+				log.Warningf("Error adding file to filecache: %s", err)
+			}
+		}
+		return fp0, nil
+	})
 	if err != nil {
 		return err
 	}
-	resourceName := digest.NewResourceName(fp.FileNode.Digest, instanceName, rspb.CacheType_CAS, ff.digestFunction)
-	if ff.supportsCompression() {
-		resourceName.SetCompressor(repb.Compressor_ZSTD)
-	}
-	if err := cachetools.GetBlob(ctx, bsClient, resourceName, f); err != nil {
-		return err
-	}
-
-	ff.statsMu.Lock()
-	ff.stats.FileDownloadSizeBytes += d.GetSizeBytes()
-	ff.stats.FileDownloadCount += 1
-	ff.statsMu.Unlock()
-
-	if err := f.Close(); err != nil {
-		return err
-	}
-	fileCache := ff.env.GetFileCache()
-	if fileCache != nil {
-		if err := fileCache.AddFile(ff.ctx, fp.FileNode, fp.FullPath); err != nil {
-			log.Warningf("Error adding file to filecache: %s", err)
-		}
-	}
+	fp := fpInterface.(*FilePointer)
 
 	// The rest of the files in the list all have the same digest, so we can
 	// FastCopy them from the first file.
-	for _, dest := range fps[1:] {
+	for _, dest := range fps {
+		if fp == dest {
+			continue
+		}
 		if err := copyFile(fp, dest, opts); err != nil {
 			return err
 		}
