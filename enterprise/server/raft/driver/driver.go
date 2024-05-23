@@ -260,10 +260,14 @@ func (rq *Queue) push(item *pqItem) {
 }
 
 func (rq *Queue) update(item *pqItem, priority float64) {
-	item.priority = priority
-
 	rq.mu.Lock()
 	defer rq.mu.Unlock()
+	if item.processing {
+		item.requeue = true
+		return
+	}
+	item.priority = priority
+
 	heap.Fix(rq.pq, item.index)
 }
 
@@ -297,14 +301,8 @@ func (rq *Queue) MaybeAdd(replica IReplica) {
 		if !ok {
 			alert.UnexpectedEvent("unexpected_pq_item_map_type_error_in_replicate_queue")
 		}
-		// Replica is already processing. Mark to be requeued.
-		if item.processing {
-			item.requeue = true
-			return
-		}
-		if priority > item.priority {
-			rq.update(item, priority)
-		}
+		// update item.priority and item.requeue
+		rq.update(item, priority)
 		log.Infof("updated priority for replica rangeID=%d", item.rangeID)
 		return
 	}
@@ -326,14 +324,14 @@ func (rq *Queue) MaybeAdd(replica IReplica) {
 }
 
 func (rq *Queue) remove(item *pqItem) {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
 	if item.processing {
 		item.requeue = false
 		return
 	}
 	if item.index >= 0 {
-		rq.mu.Lock()
 		heap.Remove(rq.pq, item.index)
-		rq.mu.Unlock()
 	}
 	rq.pqItemMap.Delete(item.rangeID)
 }
@@ -353,8 +351,8 @@ func (rq *Queue) Start(ctx context.Context) {
 			}
 			rq.mu.Lock()
 			item := heap.Pop(rq.pq).(*pqItem)
-			rq.mu.Unlock()
 			item.processing = true
+			rq.mu.Unlock()
 			repl, err := rq.store.GetReplica(item.rangeID)
 			if err != nil || repl.ReplicaID() != item.replicaID {
 				log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
@@ -369,7 +367,9 @@ func (rq *Queue) Start(ctx context.Context) {
 			} else {
 				log.Debugf("successfully processed replica: %d", repl.ShardID())
 			}
+			rq.mu.Lock()
 			item.requeue = requeue
+			rq.mu.Unlock()
 			rq.postProcess(repl)
 		}
 	}()
