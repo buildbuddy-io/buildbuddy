@@ -25,4 +25,4 @@ jobs:
           if [[ "$API_KEY" ]]; then
             API_KEY_ARGS=("--remote_header=x-buildbuddy-api-key=$API_KEY")
           fi
-          bazel build //website:website --config=ci "${API_KEY_ARGS[@]}"
+          bazelisk build //website:website --config=ci "${API_KEY_ARGS[@]}"
