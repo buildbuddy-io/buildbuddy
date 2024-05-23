@@ -64,11 +64,19 @@ func newDeduper() deduper {
 	}
 }
 
-// DownloadDeduper is a deduper that can be used for deduping downloads.
+// DownloadDeduper is a deduper that can be used for deduping downloads across
+// requests made by a single user (identified by ctx). This can help to save
+// bandwidth and improve performance if a many remote execution actions need to
+// download the same file and they are all scheduled concurrently on a single
+// node.
+//
 // Example usage:
 //
-//	group := Deduper.Group(ctx, instanceName, digestFunction)
-//	data, err, _ := w.requestGroup.Do(digest, func() (interface{}, error) {}
+//		group := Deduper.Group(ctx)
+//		data, err, _ := group.Do(digest, func() (interface{}, error) {
+//	       data, err := fetch(digest)
+//	       return data, err
+//	     })
 var DownloadDeduper = newDeduper()
 
 type TransferInfo struct {
