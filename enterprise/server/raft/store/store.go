@@ -1123,7 +1123,6 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 				})
 				defer deleteTimer.Stop()
 			}
-
 		}
 	}
 }
