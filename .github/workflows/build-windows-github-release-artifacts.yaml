@@ -1,6 +1,7 @@
 name: "Build Windows Github Release Artifacts"
 
 on:
+  pull_request:
   workflow_dispatch:
     inputs:
       release_branch:
@@ -44,4 +45,3 @@ jobs:
           $artifact_rel_path = bazelisk --output_user_root=D:/0 cquery --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --output=files //enterprise/server/cmd/executor:executor
           $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
           Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-amd64-beta.exe
-          gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe --clobber
