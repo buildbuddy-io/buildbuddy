@@ -20,6 +20,7 @@ import {
   Tag,
   SortAsc,
   SortDesc,
+  Cloud,
 } from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import Radio from "../../../app/components/radio/radio";
@@ -48,6 +49,7 @@ import {
   DEFAULT_SORT_ORDER_VALUE,
 } from "../../../app/router/router_params";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
+import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import {
   parseRoleParam,
   toRoleParam,
@@ -65,6 +67,8 @@ import {
   DURATION_SLIDER_MIN_VALUE,
   DURATION_SLIDER_MAX_INDEX,
   DURATION_SLIDER_MAX_VALUE,
+  getFiltersFromDimensionParam,
+  getDimensionName,
 } from "./filter_util";
 import TextInput from "../../../app/components/input/input";
 
@@ -227,6 +231,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [COMMAND_PARAM_NAME]: "",
       [PATTERN_PARAM_NAME]: "",
       [TAG_PARAM_NAME]: "",
+      [DIMENSION_PARAM_NAME]: "",
       [MINIMUM_DURATION_PARAM_NAME]: "",
       [MAXIMUM_DURATION_PARAM_NAME]: "",
       [SORT_BY_PARAM_NAME]: "",
@@ -357,6 +362,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const isSorting = Boolean(
       this.props.search.get(SORT_BY_PARAM_NAME) || this.props.search.get(SORT_ORDER_PARAM_NAME)
     );
+    const dimensions = getFiltersFromDimensionParam(this.props.search.get(DIMENSION_PARAM_NAME) ?? "");
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
 
@@ -457,6 +463,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 {compactDurationSec(Number(maximumDurationValue))}
               </span>
             )}
+            {dimensions.map((v) => (
+              <span className="advanced-badge" title={getDimensionName(v.dimension ?? undefined)}>
+                {getDimensionIcon(v.dimension ?? undefined)} {v.value}
+              </span>
+            ))}
           </OutlinedButton>
           <Popup
             isOpen={this.state.isFilterMenuOpen}
@@ -685,4 +696,22 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       </div>
     );
   }
+}
+
+function getDimensionIcon(f?: stat_filter.Dimension) {
+  if (!f) {
+    return undefined;
+  }
+  if (f.execution) {
+    switch (f.execution) {
+      case stat_filter.ExecutionDimensionType.WORKER_EXECUTION_DIMENSION:
+        return <Cloud />;
+    }
+  } else if (f.invocation) {
+    switch (f.invocation) {
+      case stat_filter.InvocationDimensionType.BRANCH_INVOCATION_DIMENSION:
+        return <GitBranch />;
+    }
+  }
+  return undefined;
 }

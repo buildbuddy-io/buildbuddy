@@ -100,7 +100,7 @@ function parseDimensionType(stringValue: string): stat_filter.Dimension | undefi
   return undefined;
 }
 
-function setFieldsFromDimensionParam(out: ProtoFilterParams, dimensionParamValue: string) {
+export function getFiltersFromDimensionParam(dimensionParamValue: string): stat_filter.DimensionFilter[] {
   const filters: stat_filter.DimensionFilter[] = [];
   while (dimensionParamValue.length > 0) {
     let separatorIndex = dimensionParamValue.indexOf("|");
@@ -130,12 +130,12 @@ function setFieldsFromDimensionParam(out: ProtoFilterParams, dimensionParamValue
 
     dimensionParamValue = dimensionParamValue.substring(dimensionValueLength);
   }
-  out.dimensionFilters = filters;
+  return filters;
 }
 
 export function getProtoFilterParams(search: URLSearchParams, now?: moment.Moment): ProtoFilterParams {
   const endDate = getEndDate(search);
-  const result = {
+  return {
     role: parseRoleParam(search.get(ROLE_PARAM_NAME)),
     status: parseStatusParam(search.get(STATUS_PARAM_NAME)),
     updatedAfter: proto.dateToTimestamp(getStartDate(search, now)),
@@ -154,11 +154,26 @@ export function getProtoFilterParams(search: URLSearchParams, now?: moment.Momen
 
     sortBy: search.get(SORT_BY_PARAM_NAME) as SortBy,
     sortOrder: search.get(SORT_ORDER_PARAM_NAME) as SortOrder,
+    dimensionFilters: getFiltersFromDimensionParam(search.get(DIMENSION_PARAM_NAME) ?? ""),
   };
+}
 
-  // The generic dimension url param takes precedence.
-  setFieldsFromDimensionParam(result, search.get(DIMENSION_PARAM_NAME) ?? "");
-  return result;
+export function getDimensionName(d?: stat_filter.Dimension): string {
+  if (!d) {
+    return "";
+  }
+  if (d.execution) {
+    switch (d.execution) {
+      case stat_filter.ExecutionDimensionType.WORKER_EXECUTION_DIMENSION:
+        return "Worker";
+    }
+  } else if (d.invocation) {
+    switch (d.invocation) {
+      case stat_filter.InvocationDimensionType.BRANCH_INVOCATION_DIMENSION:
+        return "Branch";
+    }
+  }
+  return "";
 }
 
 export function getDefaultStartDate(now?: moment.Moment): Date {
@@ -280,8 +295,8 @@ export function formatDateRangeFromSearchParams(search: URLSearchParams): string
   return formatDateRange(startDate, endDate);
 }
 
-export function isAnyNonDateDimensionFilterSet(param: string): boolean {
-  return false;
+export function isAnyDimensionFilterSet(param: string): boolean {
+  return getFiltersFromDimensionParam(param).length > 0;
 }
 
 export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
@@ -298,7 +313,7 @@ export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
       (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
       search.get(MINIMUM_DURATION_PARAM_NAME) ||
       search.get(MAXIMUM_DURATION_PARAM_NAME) ||
-      isAnyNonDateDimensionFilterSet(search.get(DIMENSION_PARAM_NAME) ?? "")
+      isAnyDimensionFilterSet(search.get(DIMENSION_PARAM_NAME) ?? "")
   );
 }
 
