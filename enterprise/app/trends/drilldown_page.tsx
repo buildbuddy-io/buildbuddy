@@ -398,7 +398,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         updatedBefore: filterParams.updatedBefore,
         status: filterParams.status || [],
         filter: this.toStatFilterList(heatmapSelection),
-        // XXX: dimensionFilter: filterParams.dimensionFilters,
+        dimensionFilter: filterParams.dimensionFilters,
       }),
       pageToken: "",
       count: 25,
