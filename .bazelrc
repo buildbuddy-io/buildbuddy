@@ -221,6 +221,7 @@ common --@io_bazel_rules_docker//transitions:enable=false
 # Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
 # on Docker for development
 test --test_tag_filters=-docker,-bare
+build --build_tag_filters=-secrets
 
 # Use C++17 standard for all C++ compilation
 common:linux --host_cxxopt=-std=c++17

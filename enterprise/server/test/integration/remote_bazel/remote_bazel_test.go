@@ -99,11 +99,10 @@ func TestWithPublicRepo(t *testing.T) {
 
 func TestWithPrivateRepo(t *testing.T) {
 	repoName := "private-test-repo"
+	// If you need to re-generate this PAT, it should only have read access to
+	// `private-test-repo`, and should be saved as a BB secret in all environments.
 	username := "maggie-lou"
-	// This token grants read-only access to a private dummy repo.
-	// Github will invalidate tokens that are committed, so format it so that Github
-	// won't catch it.
-	personalAccessToken := fmt.Sprintf("github_pat_%s", "11ADKOFLI06Ob3cnrygcQa_gwLj0orOD3EILEu2k9pJ9EUkmXW6uM0k47k0uPOWInCDPHNC444JmQ8oN62")
+	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
 	repoURLWithToken := fmt.Sprintf("https://%s:%s@github.com/buildbuddy-io/private-test-repo.git", username, personalAccessToken)
 
 	// Use a dir that is persisted on recycled runners
