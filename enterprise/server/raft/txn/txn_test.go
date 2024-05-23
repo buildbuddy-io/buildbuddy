@@ -111,7 +111,7 @@ func newFakeStore(t *testing.T, rootDir string) *fakeStore {
 			MaxSizeBytes: int64(1_000_000_000), // 1G
 		},
 	}
-	s, err := store.NewWithArgs(te, rootDir, nodeHost, gm, fs.sender, reg, raftListener, apiClient, grpcAddress, partitions, db, fs.leaser)
+	s, err := store.NewWithArgs(te, rootDir, nodeHost, gm, fs.sender, reg, raftListener, apiClient, grpcAddress, partitions, db, fs.leaser, clockwork.NewRealClock())
 	require.NoError(t, err)
 	fs.Store = s
 	t.Cleanup(func() {
