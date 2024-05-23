@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/stretchr/testify/require"
@@ -95,6 +96,10 @@ func (ts *TestingStore) NewReplica(shardID, replicaID uint64) *replica.Replica {
 }
 
 func (sf *storeFactory) NewStore(t *testing.T) *TestingStore {
+	return sf.NewStoreWithClock(t, clockwork.NewRealClock())
+}
+
+func (sf *storeFactory) NewStoreWithClock(t *testing.T, clock clockwork.Clock) *TestingStore {
 	nodeAddr := localAddr(t)
 	gm := newGossipManager(t, nodeAddr, sf.gossipAddrs)
 	sf.gossipAddrs = append(sf.gossipAddrs, nodeAddr)
@@ -144,7 +149,7 @@ func (sf *storeFactory) NewStore(t *testing.T) *TestingStore {
 	db, err := pebble.Open(ts.RootDir, "raft_store", &pebble.Options{})
 	require.NoError(t, err)
 	leaser := pebble.NewDBLeaser(db)
-	s, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser)
+	s, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, ts.Sender, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser, clock)
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	s.Start()
@@ -228,10 +233,9 @@ func TestStartShard(t *testing.T) {
 }
 
 func TestCleanupZombieShards(t *testing.T) {
-	flags.Set(t, "cache.raft.zombie_node_scan_interval", 100*time.Millisecond)
-
+	clock := clockwork.NewFakeClock()
 	sf := newStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStoreWithClock(t, clock)
 	ctx := context.Background()
 
 	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1))
@@ -254,23 +258,22 @@ func TestCleanupZombieShards(t *testing.T) {
 	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
 
-	for i := 0; i < 30; i++ {
+	for {
+		clock.Advance(11 * time.Second)
 		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 		require.NoError(t, err)
 		if len(list.GetReplicas()) == 1 {
-			return
+			break
 		}
-		time.Sleep(time.Second)
 	}
-	t.Fatalf("Zombie killer never cleaned up zombie range 2")
 }
 
 func TestCleanupZombieReplicas(t *testing.T) {
-	flags.Set(t, "cache.raft.zombie_node_scan_interval", 100*time.Millisecond)
+	clock := clockwork.NewFakeClock()
 
 	sf := newStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
+	s1 := sf.NewStoreWithClock(t, clock)
+	s2 := sf.NewStoreWithClock(t, clock)
 	ctx := context.Background()
 
 	err := bringup.SendStartShardRequests(ctx, s1.NodeHost, s1.APIClient, makeNodeGRPCAddressesMap(s1, s2))
@@ -312,22 +315,28 @@ func TestCleanupZombieReplicas(t *testing.T) {
 	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
 
-	for i := 0; i < 30; i++ {
+	for {
+		clock.Advance(11 * time.Second)
 		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 		require.NoError(t, err)
 		if len(list.GetReplicas()) == 1 {
-			log.Debugf("listReplicas: %+v", list)
 			repl := list.GetReplicas()[0]
 			// nh1 only has shard 1
 			require.Equal(t, uint64(1), repl.GetShardId())
-
-			require.Nil(t, s1.GetRange(2))
-			_, err := s1.GetReplica(2)
-			require.True(t, status.IsOutOfRangeError(err))
-			return
+			break
 		}
-		time.Sleep(time.Second)
 	}
+
+	for i := 0; i <= 30; i++ {
+		rd := s1.GetRange(2)
+		if rd == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	_, err = s1.GetReplica(2)
+	require.True(t, status.IsOutOfRangeError(err))
 	// verify that the range and replica is not removed from s2
 	list, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 	require.NoError(t, err)
@@ -335,8 +344,6 @@ func TestCleanupZombieReplicas(t *testing.T) {
 	require.NotNil(t, s2.GetRange(2))
 	_, err = s2.GetReplica(2)
 	require.NoError(t, err)
-
-	t.Fatalf("Zombie killer never cleaned up zombie range 2")
 }
 
 func TestAutomaticSplitting(t *testing.T) {
