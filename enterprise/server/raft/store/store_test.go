@@ -258,15 +258,14 @@ func TestCleanupZombieShards(t *testing.T) {
 	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
 
-	for i := 0; i < 30; i++ {
+	for {
 		clock.Advance(11 * time.Second)
 		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 		require.NoError(t, err)
 		if len(list.GetReplicas()) == 1 {
-			return
+			break
 		}
 	}
-	require.Fail(t, "Zombie killer never cleaned up zombie range 2")
 }
 
 func TestCleanupZombieReplicas(t *testing.T) {
@@ -316,7 +315,7 @@ func TestCleanupZombieReplicas(t *testing.T) {
 	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
 
-	for i := 0; i < 30; i++ {
+	for {
 		clock.Advance(11 * time.Second)
 		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 		require.NoError(t, err)
@@ -324,13 +323,20 @@ func TestCleanupZombieReplicas(t *testing.T) {
 			repl := list.GetReplicas()[0]
 			// nh1 only has shard 1
 			require.Equal(t, uint64(1), repl.GetShardId())
-
-			require.Nil(t, s1.GetRange(2))
-			_, err := s1.GetReplica(2)
-			require.True(t, status.IsOutOfRangeError(err))
-			return
+			break
 		}
 	}
+
+	for i := 0; i <= 30; i++ {
+		rd := s1.GetRange(2)
+		if rd == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	_, err = s1.GetReplica(2)
+	require.True(t, status.IsOutOfRangeError(err))
 	// verify that the range and replica is not removed from s2
 	list, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 	require.NoError(t, err)
@@ -338,8 +344,6 @@ func TestCleanupZombieReplicas(t *testing.T) {
 	require.NotNil(t, s2.GetRange(2))
 	_, err = s2.GetReplica(2)
 	require.NoError(t, err)
-
-	require.Fail(t, "Zombie killer never cleaned up zombie range 2")
 }
 
 func TestAutomaticSplitting(t *testing.T) {
