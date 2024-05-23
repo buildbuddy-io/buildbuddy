@@ -7,6 +7,7 @@ import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import moment from "moment";
 import {
+  DIMENSION_PARAM_NAME,
   ROLE_PARAM_NAME,
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
@@ -60,6 +61,7 @@ export interface ProtoFilterParams {
   tags?: string[];
   minimumDuration?: google_duration.protobuf.Duration;
   maximumDuration?: google_duration.protobuf.Duration;
+  dimensionFilters?: stat_filter.DimensionFilter[];
 
   sortBy?: SortBy;
   sortOrder?: SortOrder;
@@ -75,6 +77,70 @@ function splitAndTrimTags(param: string | null): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s);
+}
+
+function parseDimensionType(stringValue: string): stat_filter.Dimension | undefined {
+  if (stringValue.length < 2) {
+    return undefined;
+  }
+  const type = stringValue[0];
+  const enumValue = Number.parseInt(stringValue.substring(1));
+  if (!Number.isInteger(enumValue) || enumValue === 0) {
+    return undefined;
+  }
+  if (type == "e" && Object.values(stat_filter.ExecutionDimensionType).find((v) => v === enumValue)) {
+    return new stat_filter.Dimension({
+      execution: enumValue,
+    });
+  } else if (type == "i" && Object.values(stat_filter.InvocationDimensionType).find((v) => v === enumValue)) {
+    return new stat_filter.Dimension({
+      invocation: enumValue,
+    });
+  }
+  return undefined;
+}
+
+// Parses a set of DimensionFilters from the supplied URL param string.  Each
+// entry is formatted as "dimension|value_length|value" and entry is separated
+// from the next by another pipe.
+// dimension: [ei][0-9]+ identifies either the [e]xecution or [i]nvocation
+// field of the Dimension field in the DimensionFilter.
+// value_length: the length of the value field because (rather than escaping)
+// value: the actual string value to match for the dimension.
+// So, for example, e1|5|abcdef|i1|4|main represents:
+//     * ExecutionDimensionType.WORKER_EXECUTION_DIMENSION == abcdef
+//     * InvocationDimensionType.BRANCH_INVOCATION_DIMENSION == main
+export function getFiltersFromDimensionParam(dimensionParamValue: string): stat_filter.DimensionFilter[] {
+  const filters: stat_filter.DimensionFilter[] = [];
+  while (dimensionParamValue.length > 0) {
+    let separatorIndex = dimensionParamValue.indexOf("|");
+    if (separatorIndex == -1 || separatorIndex + 1 === dimensionParamValue.length) {
+      break;
+    }
+    const dimension = parseDimensionType(dimensionParamValue.substring(0, separatorIndex));
+    if (!dimension) {
+      // The param is malformed or we don't recognize the param ID. Give up.
+      break;
+    }
+    dimensionParamValue = dimensionParamValue.substring(separatorIndex + 1);
+    separatorIndex = dimensionParamValue.indexOf("|");
+    if (separatorIndex == -1 || separatorIndex + 1 === dimensionParamValue.length) {
+      break;
+    }
+
+    const dimensionValueLength = Number.parseInt(dimensionParamValue.substring(0, separatorIndex));
+    dimensionParamValue = dimensionParamValue.substring(separatorIndex + 1);
+
+    if (!Number.isInteger(dimensionValueLength) || dimensionParamValue.length < dimensionValueLength) {
+      break;
+    }
+
+    const value = dimensionParamValue.substring(0, dimensionValueLength);
+    filters.push(new stat_filter.DimensionFilter({ dimension, value }));
+
+    dimensionParamValue = dimensionParamValue.substring(dimensionValueLength);
+  }
+  return filters;
 }
 
 export function getProtoFilterParams(search: URLSearchParams, now?: moment.Moment): ProtoFilterParams {
@@ -98,7 +164,23 @@ export function getProtoFilterParams(search: URLSearchParams, now?: moment.Momen
 
     sortBy: search.get(SORT_BY_PARAM_NAME) as SortBy,
     sortOrder: search.get(SORT_ORDER_PARAM_NAME) as SortOrder,
+    dimensionFilters: getFiltersFromDimensionParam(search.get(DIMENSION_PARAM_NAME) ?? ""),
   };
+}
+
+export function getDimensionName(d: stat_filter.Dimension): string {
+  if (d.execution) {
+    switch (d.execution) {
+      case stat_filter.ExecutionDimensionType.WORKER_EXECUTION_DIMENSION:
+        return "Worker";
+    }
+  } else if (d.invocation) {
+    switch (d.invocation) {
+      case stat_filter.InvocationDimensionType.BRANCH_INVOCATION_DIMENSION:
+        return "Branch";
+    }
+  }
+  return "";
 }
 
 export function getDefaultStartDate(now?: moment.Moment): Date {
@@ -220,6 +302,10 @@ export function formatDateRangeFromSearchParams(search: URLSearchParams): string
   return formatDateRange(startDate, endDate);
 }
 
+export function isAnyDimensionFilterSet(param: string): boolean {
+  return getFiltersFromDimensionParam(param).length > 0;
+}
+
 export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
   return Boolean(
     search.get(ROLE_PARAM_NAME) ||
@@ -233,7 +319,8 @@ export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
       search.get(PATTERN_PARAM_NAME) ||
       (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
       search.get(MINIMUM_DURATION_PARAM_NAME) ||
-      search.get(MAXIMUM_DURATION_PARAM_NAME)
+      search.get(MAXIMUM_DURATION_PARAM_NAME) ||
+      isAnyDimensionFilterSet(search.get(DIMENSION_PARAM_NAME) ?? "")
   );
 }
 
