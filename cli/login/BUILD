@@ -9,6 +9,11 @@ go_library(
         "//cli/log",
         "//cli/parser",
         "//cli/storage",
+        "//proto:buildbuddy_service_go_proto",
+        "//proto:user_go_proto",
+        "//server/util/grpc_client",
+        "//server/util/status",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
