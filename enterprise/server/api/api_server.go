@@ -126,7 +126,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		return nil, err
 	}
 
-	if req.IncludeMetadata {
+	if req.IncludeMetadata || req.IncludeArtifacts {
 		for _, i := range invocations {
 			inv, err := build_event_handler.LookupInvocation(s.env, ctx, i.Id.InvocationId)
 			if err != nil {
@@ -135,7 +135,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 			for _, event := range inv.GetEvent() {
 				switch p := event.BuildEvent.Payload.(type) {
 				case *bespb.BuildEvent_BuildMetadata:
-					{
+					if req.IncludeMetadata {
 						for k, v := range p.BuildMetadata.Metadata {
 							i.BuildMetadata = append(i.BuildMetadata, &apipb.InvocationMetadata{
 								Key:   k,
@@ -144,11 +144,20 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 						}
 					}
 				case *bespb.BuildEvent_WorkspaceStatus:
-					{
+					if req.IncludeMetadata {
 						for _, item := range p.WorkspaceStatus.Item {
 							i.WorkspaceStatus = append(i.WorkspaceStatus, &apipb.InvocationMetadata{
 								Key:   item.Key,
 								Value: item.Value,
+							})
+						}
+					}
+				case *bespb.BuildEvent_NamedSetOfFiles:
+					if req.IncludeArtifacts {
+						for _, file := range p.NamedSetOfFiles.Files {
+							i.Artifacts = append(i.Artifacts, &apipb.File{
+								Name: file.GetName(),
+								Uri:  file.GetUri(),
 							})
 						}
 					}
