@@ -1531,7 +1531,7 @@ func (a *GitHubApp) GetGithubCompare(ctx context.Context, req *ghpb.GetGithubCom
 		summary.OriginalCommitSha = req.Base
 		summary.ModifiedCommitSha = req.Head
 
-		res.Files = append(res.FileSummaries, summary)
+		res.Files = append(res.Files, summary)
 	}
 
 	return res, nil
