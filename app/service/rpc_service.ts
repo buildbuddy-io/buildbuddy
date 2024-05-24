@@ -67,6 +67,8 @@ export type BytestreamFileOptions = {
 // TODO: enable these unconditionally after testing.
 const structuredErrors = capabilities.config.streamingHttpEnabled;
 
+const SUBDOMAIN_REGEX = /^[a-zA-Z0-9-]+$/;
+
 class RpcService {
   service: ExtendedBuildBuddyService;
   regionalServices = new Map<string, ExtendedBuildBuddyService>();
@@ -99,6 +101,44 @@ class RpcService {
       return true;
     }
     return false;
+  }
+
+  getRegionalServiceOrDefault(server: string): ExtendedBuildBuddyService {
+    if (!capabilities.config.regions) {
+      return this.service;
+    }
+
+    // grpcs uses https, let's just treat them as equivalent to make matching easier..
+    server = server.replace("grpcs://", "https://");
+
+    let bestMatch = this.service;
+    let bestMatchDepth = 0;
+    for (let i = 0; i < capabilities.config.regions.length; i++) {
+      const region = capabilities.config.regions[i];
+      if (region.server === server) {
+        return this.regionalServices.get(region.name) ?? this.service;
+      }
+      const chunks = region.subdomains.split("*");
+      // Only one wildcard is allowed for the subdomain.
+      if (chunks.length != 2) {
+        continue;
+      }
+
+      // Trim the http:// prefix bit and the top level domain suffix.
+      if (!server.startsWith(chunks[0]) || !server.endsWith(chunks[1])) {
+        continue;
+      }
+      const subdomain = server.substring(0, server.length - chunks[1].length).substring(chunks[0].length);
+      // Make sure the subdomain doesn't have any non alphanumeric or dash characters.
+      if (subdomain.match(SUBDOMAIN_REGEX)) {
+        const domainSuffixDepth = chunks[1].split(".").length;
+        if (domainSuffixDepth > bestMatchDepth) {
+          bestMatchDepth = domainSuffixDepth;
+          bestMatch = this.regionalServices.get(region.name) ?? this.service;
+        }
+      }
+    }
+    return bestMatch;
   }
 
   getDownloadUrl(params: Record<string, string>): string {

@@ -159,7 +159,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   fetchDirectorySizes(rootDigest: build.bazel.remote.execution.v2.Digest) {
     const remoteInstanceName = this.props.model.optionsMap.get("remote_instance_name") || undefined;
-    rpcService.service
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_cache"));
+
+    service
       .getTreeDirectorySizes({
         rootDigest: rootDigest,
         instanceName: remoteInstanceName,
