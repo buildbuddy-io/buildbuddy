@@ -1504,9 +1504,9 @@ func (a *GitHubApp) GetGithubCompare(ctx context.Context, req *ghpb.GetGithubCom
 	}
 
 	res := &ghpb.GetGithubCompareResponse{
-		AheadBy: int64(comparison.GetAheadBy()),
-		Files:   []*ghpb.File{},
-		Commits: []*ghpb.Commit{},
+		AheadBy:       int64(comparison.GetAheadBy()),
+		FileSummaries: []*ghpb.FileSummary{},
+		Commits:       []*ghpb.Commit{},
 	}
 
 	for _, c := range comparison.Commits {
@@ -1516,10 +1516,22 @@ func (a *GitHubApp) GetGithubCompare(ctx context.Context, req *ghpb.GetGithubCom
 	}
 
 	for _, f := range comparison.Files {
-		res.Files = append(res.Files, &ghpb.File{
-			Name: f.GetFilename(),
-			Sha:  f.GetSHA(),
-		})
+		summary := &ghpb.FileSummary{
+			Name:       f.GetFilename(),
+			Sha:        f.GetSHA(),
+			Additions:  int64(f.GetAdditions()),
+			Deletions:  int64(f.GetDeletions()),
+			Patch:      f.GetPatch(),
+			ChangeType: FileStatusToChangeType(f.GetStatus()),
+		}
+		summary.OriginalName = f.GetPreviousFilename()
+		if summary.OriginalName == "" {
+			summary.OriginalName = summary.Name
+		}
+		summary.OriginalCommitSha = req.Base
+		summary.ModifiedCommitSha = req.Head
+
+		res.FileSummaries = append(res.FileSummaries, summary)
 	}
 
 	return res, nil
