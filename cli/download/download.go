@@ -55,8 +55,8 @@ type newlineStdoutCloser struct {
 }
 
 func (n *newlineStdoutCloser) Close() error {
-	if isatty.IsTerminal(n.Fd()) {
-		n.Write([]byte{'\n'})
+	if isatty.IsTerminal(n.File.Fd()) {
+		n.File.Write([]byte{'\n'})
 	}
 	return n.File.Close()
 }
@@ -77,7 +77,7 @@ func printProtoToOutput(msg proto.Message, output io.Writer) error {
 	return err
 }
 
-func DownloadFile(uri string) error {
+func downloadFile(uri string) error {
 	if !strings.HasPrefix(uri, "/blobs") {
 		uri = "/blobs/" + uri
 	}
@@ -146,7 +146,7 @@ func HandleDownload(args []string) (int, error) {
 	}
 
 	uri := flags.Args()[0]
-	if err := DownloadFile(uri); err != nil {
+	if err := downloadFile(uri); err != nil {
 		log.Print(err)
 		return 1, nil
 	}
