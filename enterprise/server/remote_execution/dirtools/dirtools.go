@@ -42,42 +42,7 @@ func groupIDStringFromContext(ctx context.Context) string {
 	return interfaces.AuthAnonymousUser
 }
 
-type deduper struct {
-	mu     *sync.Mutex
-	groups map[string]*singleflight.Group
-}
-
-func (d deduper) Group(ctx context.Context) *singleflight.Group {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	key := groupIDStringFromContext(ctx)
-	if _, ok := d.groups[key]; !ok {
-		sfg := singleflight.Group{}
-		d.groups[key] = &sfg
-	}
-	return d.groups[key]
-}
-func newDeduper() deduper {
-	return deduper{
-		mu:     &sync.Mutex{},
-		groups: make(map[string]*singleflight.Group),
-	}
-}
-
-// DownloadDeduper is a deduper that can be used for deduping downloads across
-// requests made by a single user (identified by ctx). This can help to save
-// bandwidth and improve performance if a many remote execution actions need to
-// download the same file and they are all scheduled concurrently on a single
-// node.
-//
-// Example usage:
-//
-//		group := Deduper.Group(ctx)
-//		data, err, _ := group.Do(digest, func() (interface{}, error) {
-//	       data, err := fetch(digest)
-//	       return data, err
-//	     })
-var DownloadDeduper = newDeduper()
+var DownloadDeduper = singleflight.Group{}
 
 type TransferInfo struct {
 	FileCount        int64
@@ -605,7 +570,6 @@ type BatchFileFetcher struct {
 	digestFunction repb.DigestFunction_Value
 	once           *sync.Once
 	compress       bool
-	group          *singleflight.Group
 
 	statsMu sync.Mutex
 	stats   repb.IOStats
@@ -622,7 +586,6 @@ func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		digestFunction: digestFunction,
 		once:           &sync.Once{},
 		compress:       false,
-		group:          DownloadDeduper.Group(ctx),
 	}
 }
 
@@ -817,7 +780,9 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if len(fps) == 0 {
 		return nil
 	}
-	fpInterface, err, _ := ff.group.Do(d.GetHash(), func() (interface{}, error) {
+
+	dedupeKey := groupIDStringFromContext(ctx) + "-" + d.GetHash()
+	fpInterface, err, _ := DownloadDeduper.Do(dedupeKey, func() (interface{}, error) {
 		fp0 := fps[0]
 		var mode os.FileMode = 0644
 		if fp0.FileNode.IsExecutable {
