@@ -817,6 +817,11 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		return fp0, nil
 	})
 	if err != nil {
+		// Ensure that an unavailable error is always returned so that
+		// the download can be retried if we hit a transient error.
+		if !status.IsUnavailableError(err) {
+			err = status.UnavailableError(err.Error())
+		}
 		return err
 	}
 	fp := fpInterface.(*FilePointer)
