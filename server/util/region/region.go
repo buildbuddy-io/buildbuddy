@@ -26,6 +26,7 @@ func Protos() []*cfgpb.Region {
 		protos = append(protos, &cfgpb.Region{
 			Name:   r.Name,
 			Server: r.Server,
+			Subdomains: r.Subdomains,
 		})
 	}
 	return protos

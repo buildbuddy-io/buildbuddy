@@ -162,4 +162,7 @@ message Region {
   // The http endpoint of the regional server, including https://.
   // Ex: "https://app.buildbuddy.io"
   string server = 2;
+
+  // The subdomains contained by this region.
+  string subdomains = 3;
 }

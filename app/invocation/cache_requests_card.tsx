@@ -452,7 +452,9 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     // or if there is an invalid result
     this.state.digestToCacheMetadata.set(digest.hash, null);
 
-    rpc_service.service
+    const service = rpc_service.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_cache"));
+
+    service
       .getCacheMetadata(
         cache.GetCacheMetadataRequest.create({
           resourceName: resource.ResourceName.create({
