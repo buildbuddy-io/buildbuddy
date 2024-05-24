@@ -18,12 +18,14 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/claims",
         "//server/util/fastcopy",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_x_sync//errgroup",
+        "@org_golang_x_sync//singleflight",
     ],
 )
 
@@ -39,6 +41,7 @@ go_test(
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
+        "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/hash",
@@ -47,5 +50,6 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_x_sync//errgroup",
     ],
 )
