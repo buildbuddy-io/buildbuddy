@@ -133,6 +133,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	for _, patchURI := range patchURIs {
 		args = append(args, "--patch_uri="+patchURI)
 	}
+	args = append(args, req.GetRunnerFlags()...)
 
 	affinityKey := req.GetSessionAffinityKey()
 	if affinityKey == "" {

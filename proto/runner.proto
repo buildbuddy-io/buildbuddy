@@ -60,6 +60,9 @@ message RunRequest {
   // remotely. If false or unset, run metadata (runtime flags, files, etc) will
   // be collected so the binary can be run elsewhere.
   bool run_remotely = 14;
+
+  // Flags to pass directly to the runner.
+  repeated string runner_flags = 15;
 }
 
 message RunResponse {
