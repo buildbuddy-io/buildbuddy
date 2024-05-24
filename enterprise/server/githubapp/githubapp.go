@@ -1504,9 +1504,9 @@ func (a *GitHubApp) GetGithubCompare(ctx context.Context, req *ghpb.GetGithubCom
 	}
 
 	res := &ghpb.GetGithubCompareResponse{
-		AheadBy:       int64(comparison.GetAheadBy()),
-		FileSummaries: []*ghpb.FileSummary{},
-		Commits:       []*ghpb.Commit{},
+		AheadBy: int64(comparison.GetAheadBy()),
+		Files:   []*ghpb.FileSummary{},
+		Commits: []*ghpb.Commit{},
 	}
 
 	for _, c := range comparison.Commits {
@@ -1531,7 +1531,7 @@ func (a *GitHubApp) GetGithubCompare(ctx context.Context, req *ghpb.GetGithubCom
 		summary.OriginalCommitSha = req.Base
 		summary.ModifiedCommitSha = req.Head
 
-		res.FileSummaries = append(res.FileSummaries, summary)
+		res.Files = append(res.FileSummaries, summary)
 	}
 
 	return res, nil
