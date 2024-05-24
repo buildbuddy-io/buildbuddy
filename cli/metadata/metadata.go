@@ -94,7 +94,11 @@ func runGit(dir string, args ...string) (output string, err error) {
 	cmd.Dir = dir
 	b, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("command `git %s` failed: %s", strings.Join(args, " "), string(b))
+		msg := strings.TrimSpace(string(b))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", fmt.Errorf("command `git %s` failed: %s", strings.Join(args, " "), msg)
 	}
 	return strings.TrimSpace(string(b)), nil
 }

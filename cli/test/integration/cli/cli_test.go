@@ -71,6 +71,35 @@ func TestInvokeViaBazelisk(t *testing.T) {
 	}
 }
 
+func TestInvokeViaBazeliskWithToolsBazelWrapper(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelversion": fmt.Sprintf("%s\n%s\n", testcli.BinaryPath(t), testbazel.BinaryPath(t)),
+		".bazelrc": `
+build:foo --action_env=EXIT_CODE=0
+`,
+		"WORKSPACE": "",
+		"BUILD": `
+load(":defs.bzl", "run_shell")
+run_shell(name = "exit_command", command = "exit ${EXIT_CODE:-1}")
+`,
+		// Note: the tools/bazel script passes a --config flag. After expanding
+		// and canonicalizing flags, we set --ignore_all_rc_files, which means
+		// that --config flags are no longer allowed. So, this is testing that
+		// we invoke tools/bazel *after* calling tools/bazel.
+		"tools/bazel": `#!/bin/sh
+exec "$BAZEL_REAL" "$@" --config=foo
+`,
+	})
+
+	testfs.MakeExecutable(t, ws, "tools/bazel")
+
+	cmd := testcli.BazeliskCommand(t, ws, "--verbose=1", "build", ":all")
+	b, err := testcli.CombinedOutput(cmd)
+
+	require.NoError(t, err, "output: %s", string(b))
+}
+
 func TestBazelHelp(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	cmd := testcli.Command(t, ws, "help", "completion")

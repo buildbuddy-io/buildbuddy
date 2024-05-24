@@ -46,6 +46,8 @@ func main() {
 }
 
 func run() (exitCode int, err error) {
+	bazelisk.HandleWrapper()
+
 	start := time.Now()
 	// Record original arguments so we can show them in the UI.
 	originalArgs := append([]string{}, os.Args...)
