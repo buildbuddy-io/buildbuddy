@@ -124,11 +124,6 @@ class RpcService {
         continue;
       }
 
-      if (server === chunks[0] + chunks[1].substring(1)) {
-        // The request is directly to the region's server.
-        return this.regionalServices.get(region.name) ?? this.service;
-      }
-
       // Trim the http:// prefix bit and the top level domain suffix.
       if (!server.startsWith(chunks[0]) || !server.endsWith(chunks[1])) {
         continue;
