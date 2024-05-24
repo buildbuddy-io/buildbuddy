@@ -37,17 +37,18 @@ var (
 	apiTarget = flags.String("target", "grpcs://remote.buildbuddy.io", "BuildBuddy gRPC target")
 
 	usage = `
-bb ` + flags.Name() + ` [--check] [--allow_existing]
+bb ` + flags.Name() + ` [--allow_existing] [--check]
 
 Logs into BuildBuddy, saving your personal API key to .git/config.
 
-The --check option checks whether you are logged in. The exit code indicates
-the result of the check:
+By default, this command will always prompt for login. To skip prompting if
+the current credentials are valid, use the --allow_existing flag.
+
+The --check option checks whether you are logged in.
+The exit code indicates the result of the check:
 	0: credentials are valid
 	1: credentials are invalid
 	2: error validating credentials
-
-
 `
 )
 
