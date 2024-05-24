@@ -8,7 +8,7 @@ import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_grpc_status } from "../../proto/grpc_status_ts_proto";
 import { User } from "../auth/auth_service";
 import faviconService from "../favicon/favicon";
-import rpcService, { CancelablePromise } from "../service/rpc_service";
+import rpcService, { Cancelable, CancelablePromise } from "../service/rpc_service";
 import TargetComponent from "../target/target";
 import DenseInvocationOverviewComponent from "./dense/dense_invocation_overview";
 import ArtifactsCardComponent from "./invocation_artifacts_card";
@@ -42,7 +42,8 @@ import router from "../router/router";
 import rpc_service from "../service/rpc_service";
 import { InvocationBotCard } from "./invocation_bot_card";
 import TargetV2Component from "../target/target_v2";
-import Banner from "../components/banner/banner";
+import { ExecuteOperation, ExecutionStage, executionStatusLabel, waitExecution } from "./execution_status";
+import { PlayCircle, PlayCircleIcon } from "lucide-react";
 
 interface State {
   loading: boolean;
@@ -56,6 +57,7 @@ interface State {
    * applicable.
    */
   runnerExecution?: execution_stats.Execution;
+  runnerLastExecuteOperation?: ExecuteOperation;
 
   keyboardShortcutHandle: string;
 }
@@ -138,6 +140,17 @@ export default class InvocationComponent extends React.Component<Props, State> {
       // the invocation and runner execution).
       this.fetchRunnerExecution();
     }
+    // If we don't have an invocation yet, stream updates from the runner
+    // execution so we can see what it's doing before the invocation is created.
+    if (prevState.runnerExecution?.executionId !== this.state.runnerExecution?.executionId && !this.state.model) {
+      this.runnerExecutionStream?.cancel();
+      if (this.state.runnerExecution?.executionId) {
+        this.streamRunnerExecution();
+      }
+    } else if (this.state.model) {
+      this.runnerExecutionStream?.cancel();
+    }
+
     // If we transitioned from queued to not queued, and we have an invocation,
     // start fetching logs for the workflow.
     if (this.isQueued(prevProps, prevState) && !this.isQueued() && this.state.model) {
@@ -195,7 +208,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         });
       })
       .catch((error: any) => {
-        console.error(error);
+        console.error("Failed to fetch invocation:", error);
         this.setState({ error: BuildBuddyError.parse(error) });
       })
       .finally(() => this.setState({ loading: false }));
@@ -257,6 +270,33 @@ export default class InvocationComponent extends React.Component<Props, State> {
         this.setState({ runnerExecution });
       });
     return this.runnerExecutionRPC;
+  }
+
+  private runnerExecutionStream?: Cancelable;
+
+  streamRunnerExecution() {
+    if (!capabilities.config.streamingHttpEnabled) return;
+
+    const runnerExecution = this.state.runnerExecution;
+    if (!runnerExecution?.executionId) return;
+
+    this.runnerExecutionStream = waitExecution(runnerExecution.executionId, {
+      next: (op) => {
+        this.setState({ runnerLastExecuteOperation: op });
+        if (op.response) {
+          this.setState({
+            runnerExecution: new execution_stats.Execution({
+              ...runnerExecution,
+              executeResponse: op.response,
+            }),
+          });
+        }
+      },
+      error: (error) => {
+        console.error("Failed to fetch runner execution", error);
+      },
+      complete: () => {},
+    });
   }
 
   renderTargetPage(targetLabel: string, targetStatus: api_common.v1.Status) {
@@ -348,10 +388,21 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }
 
     if (this.isQueued()) {
+      const op = this.state.runnerLastExecuteOperation;
       return (
         <InvocationInProgressComponent
           invocationId={this.props.invocationId}
-          title={"Invocation is waiting for an available worker..."}
+          title={
+            !op || op.metadata?.stage === ExecutionStage.QUEUED
+              ? "Invocation is waiting for an available worker..."
+              : "Invocation in progress..."
+          }
+          subtitle={
+            <div className="runner-execution-status">
+              <PlayCircleIcon className="icon blue" />
+              <span>{op ? executionStatusLabel(op) : "Queued"}...</span>
+            </div>
+          }
         />
       );
     }

@@ -7,6 +7,7 @@ go_library(
     srcs = ["container.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container",
     deps = [
+        "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/oci",
         "//proto:firecracker_go_proto",

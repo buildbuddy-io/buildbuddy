@@ -72,6 +72,7 @@ var (
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
+	workflowsDefaultTimeout       = flag.Duration("remote_execution.workflows_default_timeout", 8*time.Hour, "Default timeout applied to all workflows.")
 	workflowsRunnerMaxWait        = flag.Duration("remote_execution.workflows_runner_recycling_max_wait", 3*time.Second, "Max duration that a workflow task should wait for a warm runner before running on a potentially cold runner.")
 	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
 	workflowURLMatcher            = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
@@ -104,6 +105,13 @@ const (
 	// How many times to retry workflow execution if it fails due to a transient
 	// error.
 	executeWorkflowMaxRetries = 4
+
+	// Additional timeout allowed in addition to user timeout specified in
+	// buildbuddy.yaml (or the default timeout). This is long enough to allow
+	// some time for the action setup (e.g. pulling the VM snapshot) as well as
+	// some extra time for the CI runner to finish publishing the "outer"
+	// workflow invocation results after the user-specified timeout is reached.
+	timeoutGracePeriod = 10 * time.Minute
 )
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
@@ -1133,6 +1141,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 
+	timeout := *workflowsDefaultTimeout
+	if workflowAction.Timeout != nil {
+		timeout = *workflowAction.Timeout
+	}
+
 	args := []string{
 		// NOTE: The executor is responsible for making sure this
 		// buildbuddy_ci_runner binary exists at the workspace root. It does so
@@ -1159,6 +1172,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--trigger_event=" + wd.EventName,
 		"--bazel_command=" + ws.ciRunnerBazelCommand(),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
+		"--timeout=" + timeout.String(),
 	}
 
 	// HACK: Kythe requires some special args, so if the name of this action
@@ -1174,9 +1188,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		args = append(args, "--install_kythe=true")
 	}
 
-	if workflowAction.Timeout != nil {
-		args = append(args, "--timeout="+workflowAction.Timeout.String())
-	}
 	for _, filter := range workflowAction.GetGitFetchFilters() {
 		args = append(args, "--git_fetch_filters="+filter)
 	}
@@ -1237,6 +1248,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		CommandDigest:   cmdDigest,
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
+		// Set the action timeout slightly longer than the CI runner timeout, so
+		// that we allow the CI runner to finalize the outer workflow invocation
+		// once the timeout has elapsed, but if the CI runner takes too long to
+		// finalize, we can still kill the action.
+		Timeout: durationpb.New(timeout + timeoutGracePeriod),
 	}
 
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, action)

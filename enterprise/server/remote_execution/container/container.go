@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -75,7 +76,31 @@ type DockerDeviceMapping struct {
 // depending directly on platform-specific container
 // implementations.
 type Provider interface {
-	New(context.Context, *platform.Properties, *repb.ScheduledTask, *rnpb.RunnerState, string) (CommandContainer, error)
+	New(context.Context, *Init) (CommandContainer, error)
+}
+
+// Init contains initialization parameters used well calling Provider.New.
+//
+// It's not strictly necessary to look at all of these params in order to create
+// a working container implementation, but they might be useful.
+type Init struct {
+	// WorkDir is the working directory for the initially assigned task.
+	WorkDir string
+
+	// Task is the execution initially assigned to the container.
+	Task *repb.ScheduledTask
+
+	// Props contains parsed platform properties for the task, with
+	// executor-level overrides and remote header overrides applied.
+	Props *platform.Properties
+
+	// Publisher can be used to send fine-grained execution progress updates.
+	Publisher *operation.Publisher
+
+	// State can be used to restore a runner from state that was serialized
+	// to disk.
+	// TODO: remove this since we have Firecracker snapshot sharing now.
+	State *rnpb.RunnerState
 }
 
 // ContainerMetrics handles Prometheus metrics accounting for CommandContainer

@@ -262,7 +262,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		case cmdResult = <-cmdResultChan:
 			updateTicker.Stop()
 		case <-updateTicker.C:
-			if err := stateChangeFn(repb.ExecutionStage_EXECUTING, operation.InProgressExecuteResponse()); err != nil {
+			if err := stream.Ping(); err != nil {
 				return true, status.UnavailableErrorf("could not publish periodic execution update for %q: %s", taskID, err)
 			}
 		}

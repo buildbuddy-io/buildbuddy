@@ -66,6 +66,11 @@ proto_library(
 )
 
 proto_library(
+    name = "auth_proto",
+    srcs = ["auth.proto"],
+)
+
+proto_library(
     name = "bazel_query_proto",
     srcs = ["bazel_query.proto"],
 )
@@ -785,6 +790,16 @@ go_proto_library(
         ":secrets_go_proto",
         ":workflow_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "auth_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/auth",
+    proto = ":auth_proto",
 )
 
 go_proto_library(

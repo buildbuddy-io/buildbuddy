@@ -37,3 +37,23 @@ message StatFilter {
   optional int64 min = 2;
   optional int64 max = 3;
 }
+
+enum InvocationDimensionType {
+  UNKNOWN_INVOCATION_DIMENSION = 0;
+  BRANCH_INVOCATION_DIMENSION = 1;
+}
+
+enum ExecutionDimensionType {
+  UNKNOWN_EXECUTION_DIMENSION = 0;
+  WORKER_EXECUTION_DIMENSION = 1;
+}
+
+message Dimension {
+  optional InvocationDimensionType invocation = 1;
+  optional ExecutionDimensionType execution = 2;
+}
+
+message DimensionFilter {
+  Dimension dimension = 1;
+  string value = 2;
+}

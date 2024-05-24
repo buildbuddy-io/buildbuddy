@@ -166,7 +166,7 @@ function truncateDecimalZeroes(numString: string): string {
 
 export function bytes(bytes: number | Long) {
   bytes = +bytes;
-  if (bytes < 100) {
+  if (bytes < 1e3) {
     return bytes + "B";
   }
   if (bytes < 1e6) {

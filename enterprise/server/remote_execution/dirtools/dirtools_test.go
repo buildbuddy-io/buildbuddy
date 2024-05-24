@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -22,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -743,6 +746,78 @@ func TestDownloadTree(t *testing.T) {
 	targetContents, err := os.ReadFile(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
 	assert.NoError(t, err)
 	assert.Equal(t, "mytestdataA", string(targetContents), "symlinked file contents should match target file")
+}
+
+func TestDownloadTreeDedupeInflight(t *testing.T) {
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+
+	rnA, bufA := testdigest.RandomCASResourceBuf(t, 5000000)
+	env.GetCache().Set(ctx, rnA, bufA)
+	fileADigest := rnA.GetDigest()
+
+	childDir := &repb.Directory{
+		Files: []*repb.FileNode{
+			&repb.FileNode{
+				Name:   "fileA.txt",
+				Digest: fileADigest,
+			},
+		},
+		Symlinks: []*repb.SymlinkNode{
+			&repb.SymlinkNode{
+				Name:   "fileA.symlink",
+				Target: "./fileA.txt",
+			},
+		},
+	}
+
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	directory := &repb.Tree{
+		Root: &repb.Directory{
+			Directories: []*repb.DirectoryNode{
+				&repb.DirectoryNode{
+					Name:   "my-directory",
+					Digest: childDigest,
+				},
+			},
+		},
+		Children: []*repb.Directory{
+			childDir,
+		},
+	}
+
+	mu := sync.Mutex{} // PROTECTS(totalTransferCount)
+	totalTransferCount := int64(0)
+
+	eg := errgroup.Group{}
+	for i := 0; i < 10; i++ {
+		eg.Go(func() error {
+			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			totalTransferCount += info.FileCount
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, int64(1), totalTransferCount, "two files were transferred")
+	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
+	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
+	target, err := os.Readlink(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
+	assert.NoError(t, err, "should be able to read symlink target")
+	assert.Equal(t, "./fileA.txt", target)
+	targetContents, err := os.ReadFile(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
+	assert.NoError(t, err)
+	assert.Equal(t, bufA, targetContents, "symlinked file contents should match target file")
 }
 
 func TestDownloadTreeWithFileCache(t *testing.T) {

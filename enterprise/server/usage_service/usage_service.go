@@ -10,7 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -21,11 +21,6 @@ import (
 )
 
 var usageStartDate = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
-
-const (
-	// Allow the user to view this many months of usage data.
-	maxNumMonthsOfUsageToReturn = 6
-)
 
 type usageService struct {
 	env   environment.Env
@@ -53,20 +48,16 @@ func New(env environment.Env, clock clockwork.Clock) *usageService {
 	}
 }
 
-func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
-	groupID := req.GetRequestContext().GetGroupId()
-	if err := authutil.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
-		return nil, err
-	}
-
-	// Build up the list of available usage periods to return to the client. For
-	// now we just send the last 6 periods regardless of whether any usage data
-	// is available for those periods.
+// Just a little function to make testing less miserable.
+func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
+	earliestAvailableUsagePeriod := max(g.CreatedAtUsec, configuredUsageStartDate().UnixMicro())
 	now := s.clock.Now().UTC()
+	endOfLatestUsagePeriod := addCalendarMonths(getUsagePeriod(now).Start(), 1)
+
 	var availableUsagePeriods []string
-	for i := 0; i < maxNumMonthsOfUsageToReturn; i++ {
-		p := getUsagePeriod(addCalendarMonths(now, -i))
-		availableUsagePeriods = append(availableUsagePeriods, p.String())
+	for usagePeriodStart := time.UnixMicro(earliestAvailableUsagePeriod); usagePeriodStart.Before(endOfLatestUsagePeriod); usagePeriodStart = addCalendarMonths(usagePeriodStart, 1) {
+		p := getUsagePeriod(usagePeriodStart)
+		availableUsagePeriods = append([]string{p.String()}, availableUsagePeriods...)
 	}
 
 	var start, end time.Time
@@ -82,7 +73,7 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 		end = addCalendarMonths(start, 1)
 	}
 
-	usages, err := s.scanUsages(ctx, groupID, start, end)
+	usages, err := s.scanUsages(ctx, g.GroupID, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -92,24 +83,44 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	}
 	period := getUsagePeriod(start).String()
 
-	if len(usages) > 1 {
-		log.Warningf("Scan returned more than one usage period! Start: %s, End: %s", start, end)
+	aggregateUsage := &usagepb.Usage{
+		Period: period,
 	}
 
-	// If there are no rows in the response, there's no usage for the requested
-	// time period--just shove in some zeroes instead.
-	if len(usages) > 0 && usages[0].Period == period {
-		rsp.Usage = usages[0]
-	} else {
-		rsp.Usage = &usagepb.Usage{Period: period}
+	for _, u := range usages {
+		aggregateUsage.Invocations += u.GetInvocations()
+		aggregateUsage.ActionCacheHits += u.GetActionCacheHits()
+		aggregateUsage.CasCacheHits += u.GetCasCacheHits()
+		aggregateUsage.TotalDownloadSizeBytes += u.GetTotalDownloadSizeBytes()
+		aggregateUsage.TotalUploadSizeBytes += u.GetTotalUploadSizeBytes()
+		aggregateUsage.LinuxExecutionDurationUsec += u.GetLinuxExecutionDurationUsec()
+		aggregateUsage.TotalCachedActionExecUsec += u.GetTotalCachedActionExecUsec()
 	}
+
+	rsp.Usage = aggregateUsage
+	rsp.DailyUsage = usages
 	return rsp, nil
+}
+
+func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupID := u.GetGroupID()
+
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.GetUsageInternal(ctx, g, req)
 }
 
 func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
 	dbh := s.env.GetDBHandle()
 	rq := dbh.NewQuery(ctx, "usage_service_scan").Raw(`
-		SELECT `+dbh.UTCMonthFromUsecTimestamp("period_start_usec")+` AS period,
+		SELECT `+dbh.DateFromUsecTimestamp("period_start_usec", 0)+` AS period,
 		SUM(invocations) AS invocations,
 		SUM(action_cache_hits) AS action_cache_hits,
 		SUM(cas_cache_hits) AS cas_cache_hits,

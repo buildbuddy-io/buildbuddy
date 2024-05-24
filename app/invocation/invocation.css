@@ -28,7 +28,6 @@
   border-radius: 4px;
   padding: 6px 4px 4px 14px;
   flex-shrink: 0;
-  max-height: 250px;
   overflow: scroll;
   box-sizing: border-box;
 }
@@ -165,7 +164,9 @@
   color: #757575;
 }
 
-.invocation-action-card .icon.file-icon {
+.invocation-action-card .icon.file-icon,
+.invocation-action-card .icon.folder-icon,
+.invocation-action-card .icon.file-question-icon {
   margin-right: 4px;
   width: 18px;
   height: 18px;
@@ -1043,6 +1044,40 @@
   color: #aaa;
 }
 
+.action-list .expected-output {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .icon {
+    opacity: 0.7;
+  }
+
+  .expected-output-label {
+    color: #444;
+  }
+}
+
+.action-list .missing-output {
+  display: flex;
+  align-items: center;
+
+  .icon {
+    height: 18px;
+    width: 18px;
+    opacity: 0.7;
+  }
+
+  .expected-output-label {
+    color: #444;
+  }
+}
+
+.state-page .runner-execution-status {
+  display: flex;
+  align-items: center;
+}
+
 .state-page button.impersonate-button,
 .stage-page button.impersonate-button:hover {
   margin-top: 8px;
@@ -1282,4 +1317,19 @@ svg.invocation-query-graph .nodes rect {
     padding: 16px;
     margin-right: 0;
   }
+}
+
+.target-more-buttons {
+  display: flex;
+  gap: 16px;
+}
+
+.target-more-buttons div {
+  display: flex;
+  align-items: center;
+}
+
+.target-more-buttons svg {
+  height: 16px;
+  color: rgba(0, 0, 0, 0.5);
 }

@@ -4,14 +4,14 @@ import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import CheckboxButton from "../components/button/checkbox_button";
-import router from "../router/router";
 import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
-import { OutlinedLinkButton } from "../components/button/link_button";
 import InvocationModel from "../invocation/invocation_model";
+import CompareExecutionLogFilesComponent from "./compare_execution_log_files";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
+  tab: string;
   search: URLSearchParams;
   invocationAId: string;
   invocationBId: string;
@@ -65,15 +65,31 @@ const FACETS = [
   { name: "Branch", facet: (i?: InvocationModel) => i?.getBranchName() },
   { name: "Role", facet: (i?: InvocationModel) => i?.getRole() },
   { name: "Status", facet: (i?: InvocationModel) => i?.getStatus() },
-  { name: "Tags", facet: (i?: InvocationModel) => i?.getTags().join("\n") },
+  {
+    name: "Tags",
+    facet: (i?: InvocationModel) =>
+      i
+        ?.getTags()
+        .map((t) => t.name)
+        .join("\n"),
+  },
   { name: "Fetch count", facet: (i?: InvocationModel) => i?.getFetchURLs().length },
-  { name: "Explicit command line", facet: (i?: InvocationModel) => i?.optionsParsed?.explicitCmdLine.join("\n") },
-  { name: "Full command line", facet: (i?: InvocationModel) => i?.optionsParsed?.cmdLine.join("\n") },
+  {
+    name: "Explicit command line",
+    facet: (i?: InvocationModel) => i?.optionsParsed?.explicitCmdLine.join("\n"),
+    type: "flag",
+  },
+  { name: "Full command line", facet: (i?: InvocationModel) => i?.optionsParsed?.cmdLine.join("\n"), type: "flag" },
   {
     name: "Explicit startup options",
     facet: (i?: InvocationModel) => i?.optionsParsed?.explicitStartupOptions.join("\n"),
+    type: "flag",
   },
-  { name: "Full startup options", facet: (i?: InvocationModel) => i?.optionsParsed?.startupOptions.join("\n") },
+  {
+    name: "Full startup options",
+    facet: (i?: InvocationModel) => i?.optionsParsed?.startupOptions.join("\n"),
+    type: "flag",
+  },
   {
     name: "Invocation policy",
     facet: (i?: InvocationModel) => i?.optionsParsed?.invocationPolicy?.flagPolicies.join("\n"),
@@ -167,9 +183,11 @@ export default class CompareInvocationsComponent extends React.Component<Compare
 
     if (status == "ERROR") {
       return (
-        <div className="error-container">
-          <XCircle className="icon red" />
-          <div>{error}</div>
+        <div className="compare-invocations container">
+          <div className="error-container">
+            <XCircle className="icon red" />
+            <div>{error}</div>
+          </div>
         </div>
       );
     }
@@ -179,13 +197,28 @@ export default class CompareInvocationsComponent extends React.Component<Compare
         <div className="shelf nopadding-dense">
           <header className="container header">
             <h2 className="title">Comparing invocations</h2>
-            <CheckboxButton
-              className="show-changes-only-button"
-              onChange={this.onClickShowChangesOnly.bind(this)}
-              checked={this.state.showChangesOnly}>
-              Show changes only
-            </CheckboxButton>
+            {this.props.tab != "#file" && (
+              <CheckboxButton
+                className="show-changes-only-button"
+                onChange={this.onClickShowChangesOnly.bind(this)}
+                checked={this.state.showChangesOnly}>
+                Show changes only
+              </CheckboxButton>
+            )}
           </header>
+          <div className="container">
+            <div className="tabs">
+              <a href="#" className={`tab ${!this.props.tab ? "selected" : ""}`}>
+                Details
+              </a>
+              <a href="#flag" className={`tab ${this.props.tab == "#flag" ? "selected" : ""}`}>
+                Flags
+              </a>
+              <a href="#file" className={`tab ${this.props.tab == "#file" ? "selected" : ""}`}>
+                Files
+              </a>
+            </div>
+          </div>
         </div>
         <div className="compare-table">
           {FACETS.map((f) => {
@@ -199,6 +232,10 @@ export default class CompareInvocationsComponent extends React.Component<Compare
             }
 
             if (!facetA && !facetB) {
+              return <></>;
+            }
+
+            if (this.props.tab && "#" + f.type != this.props.tab) {
               return <></>;
             }
 
@@ -244,18 +281,27 @@ export default class CompareInvocationsComponent extends React.Component<Compare
             );
           })}
         </div>
+        {this.props.tab == "#file" && (
+          <div className="container">
+            {(!this.state.modelA?.getIsExecutionLogEnabled() || !this.state.modelB?.getIsExecutionLogEnabled()) && (
+              <div>
+                In order to compare files, both invocation must have the execution log enabled with the
+                `--experimental_execution_log_compact_file` flag.
+              </div>
+            )}
+            {this.state.modelA?.getIsExecutionLogEnabled() && this.state.modelB?.getIsExecutionLogEnabled() && (
+              <CompareExecutionLogFilesComponent
+                modelA={this.state.modelA}
+                modelB={this.state.modelB}
+                search={this.props.search}
+                filter={""}
+              />
+            )}
+          </div>
+        )}
       </div>
     );
   }
-}
-
-function InvocationIdTag({ prefix, id }: { prefix: string; id: string }) {
-  const href = `/invocation/${id}`;
-  return (
-    <OutlinedLinkButton className="invocation-id-tag" href={href}>
-      <div className="invocation-id-tag-prefix">{prefix}:</div> <div className="invocation-id-tag-id">{id}</div>
-    </OutlinedLinkButton>
-  );
 }
 
 const dmp = new DiffMatchPatch.diff_match_patch();

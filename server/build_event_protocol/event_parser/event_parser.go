@@ -391,6 +391,8 @@ func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStat
 			sep.setBranchName(item.Value, priority)
 		case "COMMIT_SHA":
 			sep.setCommitSha(item.Value, priority)
+		case "TAGS":
+			sep.setTags(item.Value, priority)
 		}
 	}
 }

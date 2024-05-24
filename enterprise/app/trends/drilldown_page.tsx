@@ -23,7 +23,7 @@ import { BarChart, Bar, XAxis, Tooltip, CartesianGrid, TooltipProps } from "rech
 import { User } from "../../../app/auth/user";
 import Select, { Option } from "../../../app/components/select/select";
 import router from "../../../app/router/router";
-import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
+import { CategoricalChartState } from "recharts/types/chart/types";
 
 const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
@@ -312,6 +312,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
       status: filterParams.status,
+      dimensionFilter: filterParams.dimensionFilters,
     });
     this.roundEndDateAndAddZoomFiltersToQuery(drilldownRequest.query);
     drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
@@ -350,6 +351,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         updatedBefore: filterParams.updatedBefore,
         invocationStatus: filterParams.status || [],
         filter: this.toStatFilterList(heatmapSelection),
+        dimensionFilter: filterParams.dimensionFilters,
       }),
       pageToken: "",
       count: 25,
@@ -396,6 +398,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         updatedBefore: filterParams.updatedBefore,
         status: filterParams.status || [],
         filter: this.toStatFilterList(heatmapSelection),
+        dimensionFilter: filterParams.dimensionFilters,
       }),
       pageToken: "",
       count: 25,
@@ -453,6 +456,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       minimumDuration: isExecution ? undefined : filterParams.minimumDuration,
       maximumDuration: isExecution ? undefined : filterParams.maximumDuration,
       status: filterParams.status,
+      dimensionFilter: filterParams.dimensionFilters,
     });
     this.roundEndDateAndAddZoomFiltersToQuery(heatmapRequest.query);
 
@@ -601,6 +605,9 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           this.navigateForBarClick("tag", e.activeLabel);
         }
         return;
+      case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
+        const length = e.activeLabel.length;
+        this.navigateForBarClick("d", `e1|${length}|${e.activeLabel}`);
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:

@@ -1,9 +1,10 @@
 import rpc_service, { ServerStreamHandler, ServerStream } from "../service/rpc_service";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
+import { streamWithRetry } from "../util/rpc";
 
-const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage.Value;
-const ExecutionState = build.bazel.remote.execution.v2.ExecutionProgress.ExecutionState;
+export const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage.Value;
+export const ExecutionState = build.bazel.remote.execution.v2.ExecutionProgress.ExecutionState;
 
 /**
  * Live-streams execution updates using the WaitExecution API.
@@ -13,7 +14,8 @@ export function waitExecution(
   executionId: string,
   handler: ServerStreamHandler<ExecuteOperation>
 ): ServerStream<ExecuteOperation> {
-  return rpc_service.service.waitExecution(
+  return streamWithRetry(
+    rpc_service.service.waitExecution,
     { executionId },
     {
       next: (response) => {

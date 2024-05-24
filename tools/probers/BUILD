@@ -9,6 +9,7 @@ container_image(
     ],
     files = [
         "//tools/probers/bazelrbe",
+        "//tools/probers/workflow",
         "@cloudprober",
     ],
     tags = ["manual"],

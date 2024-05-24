@@ -1,7 +1,7 @@
-import React from "react";
+import React, { ReactElement } from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { ArrowRight, Download, FileSymlink, Info } from "lucide-react";
+import { ArrowRight, Download, File, FileQuestion, FileSymlink, Folder, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
@@ -319,63 +319,81 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  private renderTimelines() {
-    const metadata = this.state.actionResult?.executionMetadata;
-
+  private renderTimelines(metadata: build.bazel.remote.execution.v2.ExecutedActionMetadata) {
     type TimelineEvent = {
       name: string;
       color: string;
-      timestamp?: Timestamp | null;
+      timestamp: Timestamp | null | undefined;
     };
     const events: TimelineEvent[] = [
       {
         name: "Queued",
         color: "#3F51B5",
-        timestamp: metadata?.queuedTimestamp,
+        timestamp: metadata.queuedTimestamp,
       },
       {
         name: "Initializing",
         color: "#673AB7",
-        timestamp: metadata?.workerStartTimestamp,
+        timestamp: metadata.workerStartTimestamp,
       },
       {
         name: "Downloading inputs",
         color: "#FF6F00",
-        timestamp: metadata?.inputFetchStartTimestamp,
+        timestamp: metadata.inputFetchStartTimestamp,
       },
       {
         name: "Preparing runner",
         color: "#673AB7",
-        timestamp: metadata?.inputFetchCompletedTimestamp,
+        timestamp: metadata.inputFetchCompletedTimestamp,
       },
       {
         name: "Executing",
         color: "#1E88E5",
-        timestamp: metadata?.executionStartTimestamp,
+        timestamp: metadata.executionStartTimestamp,
       },
       {
         name: "Preparing for upload",
         color: "#673AB7",
-        timestamp: metadata?.executionCompletedTimestamp,
+        timestamp: metadata.executionCompletedTimestamp,
       },
       {
         name: "Uploading outputs",
         color: "#FF6F00",
-        timestamp: metadata?.outputUploadStartTimestamp,
+        timestamp: metadata.outputUploadStartTimestamp,
       },
       // End marker -- not actually rendered.
       {
         name: "Upload complete",
         color: "",
-        timestamp: metadata?.outputUploadCompletedTimestamp,
+        timestamp: metadata.outputUploadCompletedTimestamp,
       },
     ];
 
-    const filteredEvents = events.filter((event) => event && event.timestamp);
+    type FilteredTimelineEvent = {
+      name: string;
+      color: string;
+      timestamp: Timestamp;
+    };
+    const filteredEvents: FilteredTimelineEvent[] = events
+      .filter((event): event is FilteredTimelineEvent => event.timestamp != null)
+      .map((event, i, events) => {
+        if (i == events.length - 1) return event;
+        const next = events[i + 1];
+        // Queued event is recorded by the scheduler (not the workers)
+        // which may result in confusing timestamps due to clock drift.
+        // To reduce confusion, apply an adjustment here to enforce
+        // that all timestamps appear in monotonically increasing order
+        // when rendered as a timeline.
+        event.timestamp =
+          timestampToUnixSeconds(event.timestamp) > timestampToUnixSeconds(next.timestamp)
+            ? next.timestamp
+            : event.timestamp;
+
+        return event;
+      });
     if (filteredEvents.length == 0) {
       return null;
     }
-    const startTimestamp = filteredEvents[0].timestamp;
 
     const totalDuration = durationSeconds(
       filteredEvents[0].timestamp!,
@@ -384,57 +402,67 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     let offset = 0;
     return (
-      <div>
-        <div className="metadata-detail">
-          <span className="label">
-            Total
-            {startTimestamp && <> @ {format.formatTimestamp(startTimestamp)}</>}
-          </span>
-          <span className="bar-description">{format.durationSec(totalDuration)} (100%)</span>
-        </div>
-        <div className="action-timeline">
-          <div
-            className="timeline-event"
-            title={`Total: (${format.durationSec(totalDuration)}, 100%)`}
-            style={{ flex: `1 0 0`, backgroundColor: "green" }}></div>
-        </div>
-        {filteredEvents.map((event, i) => {
-          // Don't render the end marker.
-          if (i == filteredEvents.length - 1) return null;
+      <>
+        <div className="metadata-title">Timeline</div>
+        <div>
+          <div className="metadata-detail">
+            <span className="label">Total</span>
+            <span className="bar-description">{format.durationSec(totalDuration)} (100%)</span>
+          </div>
+          <div className="action-timeline">
+            <div
+              className="timeline-event"
+              title={`Total: (${format.durationSec(totalDuration)}, 100%)`}
+              style={{ flex: `1 0 0`, backgroundColor: "green" }}></div>
+          </div>
+          {filteredEvents.map((event, i, events) => {
+            // Don't render the end marker.
+            if (i == events.length - 1) return null;
 
-          const next = filteredEvents[i + 1];
-          const duration = durationSeconds(event.timestamp!, next.timestamp!);
-          const weight = duration / totalDuration;
-          offset += weight;
-          return (
-            <div>
-              <div className="metadata-detail">
-                <span className="label">
-                  {event.name}
-                  {event.timestamp && <> @ {format.formatTimestamp(event.timestamp)}</>}
-                </span>
-                <span className="bar-description">
-                  {format.compactDurationSec(duration)} ({(weight * 100).toFixed(1)}%)
-                </span>
+            const next = events[i + 1];
+            const duration = durationSeconds(event.timestamp!, next.timestamp!);
+            const weight = duration / totalDuration;
+
+            // Actual flex initial value.
+            //
+            // Time drift between app and executor could cause negative duration,
+            // which is not a valid flex initial value and causes broken render.
+            // Make sure to enforce a minimum value of zero for "flex" style so
+            // it is always included in the final render result.
+            const leftBar = Math.max(0, offset);
+            const middleBar = Math.max(0, weight);
+            const rightBar = Math.max(0, 1 - leftBar - middleBar);
+
+            offset += weight;
+            return (
+              <div>
+                <div className="metadata-detail">
+                  <span className="label">
+                    {event.name} @ {format.formatTimestamp(event.timestamp)}
+                  </span>
+                  <span className="bar-description">
+                    {format.compactDurationSec(duration)} ({(weight * 100).toFixed(1)}%)
+                  </span>
+                </div>
+                <div className="action-timeline">
+                  <div
+                    className="timeline-event-gray"
+                    title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
+                    style={{ flex: `${leftBar} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
+                  <div
+                    className="timeline-event"
+                    title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
+                    style={{ flex: `${middleBar} 0 0`, backgroundColor: event.color }}></div>
+                  <div
+                    className="timeline-event-gray"
+                    title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
+                    style={{ flex: `${rightBar} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
+                </div>
               </div>
-              <div className="action-timeline">
-                <div
-                  className="timeline-event-gray"
-                  title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                  style={{ flex: `${offset - weight} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
-                <div
-                  className="timeline-event"
-                  title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                  style={{ flex: `${weight} 0 0`, backgroundColor: event.color }}></div>
-                <div
-                  className="timeline-event-gray"
-                  title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                  style={{ flex: `${1 - offset} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </>
     );
   }
 
@@ -624,6 +652,126 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  private renderExpectedOutputs(command: build.bazel.remote.execution.v2.Command) {
+    const useOutputPaths =
+      command.outputPaths.length && !(command.outputFiles.length + command.outputDirectories.length);
+
+    const renderOutputPaths = () => (
+      <>
+        {command.outputPaths.map((expectedOutput) => (
+          <div className="expected-output">
+            <span>
+              <FileQuestion className="icon file-question-icon" />
+            </span>
+            <span className="expected-output-label">{expectedOutput}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    const renderOutputFilesAndDirs = () => (
+      <>
+        {command.outputDirectories.map((expectedDir) => (
+          <div className="expected-output">
+            <span>
+              <Folder className="icon folder-icon" />
+            </span>
+            <span className="expected-output-label">{expectedDir}</span>
+          </div>
+        ))}
+        {command.outputFiles.map((expectedFile) => (
+          <div className="expected-output">
+            <span>
+              <File className="icon file-icon" />
+            </span>
+            <span className="expected-output-label">{expectedFile}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Expected Outputs</div>
+        <div className="action-list">{useOutputPaths ? renderOutputPaths() : renderOutputFilesAndDirs()}</div>
+      </div>
+    );
+  }
+
+  private renderMissingOutputs(
+    command: build.bazel.remote.execution.v2.Command,
+    actionResult: build.bazel.remote.execution.v2.ActionResult
+  ) {
+    const useOutputPaths =
+      command.outputPaths.length && !(command.outputFiles.length + command.outputDirectories.length);
+
+    const renderMissingOutputPaths = (missingOutputs: Array<string>) => (
+      <>
+        {missingOutputs.map((missingOutput) => (
+          <div className="missing-output">
+            <span>
+              <FileQuestion className="icon file-question-icon red" />
+            </span>
+            <span className="missing-output-label">{missingOutput}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    const renderMissingOutputFilesAndDirs = (missingFiles: Array<string>, missingDirs: Array<string>) => (
+      <>
+        {missingDirs.map((missingDir) => (
+          <div className="missing-output">
+            <span>
+              <Folder className="icon file-question-icon red" />
+            </span>
+            <span className="missing-output-label">{missingDir}</span>
+          </div>
+        ))}
+        {missingFiles.map((missingFile) => (
+          <div className="missing-output">
+            <span>
+              <FileQuestion className="icon file-question-icon red" />
+            </span>
+            <span className="missing-output-label">{missingFile}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    const renderOutline = (content: ReactElement) => (
+      <div className="action-section">
+        <div className="action-property-title">Missing Outputs</div>
+        <div className="action-list">{content}</div>
+      </div>
+    );
+
+    if (useOutputPaths) {
+      const actualOutputs = [
+        ...actionResult.outputFiles,
+        ...actionResult.outputDirectories,
+        ...actionResult.outputSymlinks,
+      ].map((output) => output.path);
+      const missingOutputs = command.outputPaths.filter((expected) => !actualOutputs.includes(expected));
+      return missingOutputs.length && renderOutline(renderMissingOutputPaths(missingOutputs));
+    }
+
+    const actualFiles = [
+      ...actionResult.outputFiles,
+      ...actionResult.outputFileSymlinks,
+      ...actionResult.outputDirectorySymlinks,
+    ].map((file) => file.path);
+    const missingFiles = command.outputFiles.filter((expected) => !actualFiles.includes(expected));
+    // In practice, Bazel creates the expected directories inside the input tree.
+    // So it's unlikely that any of the expected dirs is missing.
+    const actualDirs = actionResult.outputDirectories.map((dir) => dir.path);
+    const missingDirs = command.outputDirectories.filter((expected) => !actualDirs.includes(expected));
+    return (
+      missingFiles.length + missingDirs.length > 0 &&
+      renderOutline(renderMissingOutputFilesAndDirs(missingFiles, missingDirs))
+    );
+  }
+
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
     const vmMetadata = this.getFirecrackerVMMetadata();
@@ -743,20 +891,21 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         </div>
                         <div className="action-section">
                           <div className="action-property-title">Platform properties</div>
-                          {this.state.command?.platform?.properties.length ? (
+                          {this.state.command.platform?.properties.length ? (
                             <div className="action-list">
-                              {this.state.command?.platform?.properties.map((property) => (
+                              {this.state.command.platform?.properties.map((property) => (
                                 <div>
                                   <span className="prop-name">{property.name}</span>
                                   <span className="prop-value">={property.value}</span>
                                 </div>
                               ))}
-                              {!this.state.command?.platform?.properties.length && <div>(Default)</div>}
+                              {!this.state.command.platform?.properties.length && <div>(Default)</div>}
                             </div>
                           ) : (
                             <div>None</div>
                           )}
                         </div>
+                        {!this.state.actionResult && this.renderExpectedOutputs(this.state.command)}
                       </div>
                     ) : (
                       <div>No command details were found.</div>
@@ -900,8 +1049,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 </div>
                               </>
                             )}
-                            <div className="metadata-title">Timeline</div>
-                            {this.renderTimelines()}
+                            {this.state.actionResult.executionMetadata &&
+                              this.renderTimelines(this.state.actionResult.executionMetadata)}
                           </div>
                         ) : (
                           <div>None found</div>
@@ -930,6 +1079,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       </div>
                       {this.renderOutputDirectories(this.state.actionResult)}
                       {this.renderOutputSymlinks(this.state.actionResult)}
+                      {this.state.command && this.renderMissingOutputs(this.state.command, this.state.actionResult)}
                       <div className="action-section">
                         <div className="action-property-title">Stderr</div>
                         <div>

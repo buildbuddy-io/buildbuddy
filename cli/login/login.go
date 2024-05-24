@@ -1,6 +1,8 @@
 package login
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -12,22 +14,113 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/grpc/metadata"
+
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 )
 
 const (
 	apiKeyRepoSetting = "api-key"
 	apiKeyHeader      = "remote_header=x-buildbuddy-api-key"
-	loginURL          = "https://app.buildbuddy.io/settings/cli-login"
 )
 
+var (
+	flags = flag.NewFlagSet("login", flag.ContinueOnError)
+
+	check         = flags.Bool("check", false, "Just check whether logged in. Exits with code 0 if logged in, code 1 if not logged in, or 2 if there is an error.")
+	allowExisting = flags.Bool("allow_existing", false, "Don't force re-login if the current credentials are valid.")
+
+	loginURL  = flags.String("url", "https://app.buildbuddy.io/settings/cli-login", "Web URL for user to login")
+	apiTarget = flags.String("target", "grpcs://remote.buildbuddy.io", "BuildBuddy gRPC target")
+
+	usage = `
+bb ` + flags.Name() + ` [--allow_existing] [--check]
+
+Logs into BuildBuddy, saving your personal API key to .git/config.
+
+By default, this command will always prompt for login. To skip prompting if
+the current credentials are valid, use the --allow_existing flag.
+
+The --check option checks whether you are logged in.
+The exit code indicates the result of the check:
+	0: credentials are valid
+	1: credentials are invalid
+	2: error validating credentials
+`
+)
+
+func authenticate(apiKey string) error {
+	conn, err := grpc_client.DialSimple(*apiTarget)
+	if err != nil {
+		return fmt.Errorf("dial %s: %w", *apiTarget, err)
+	}
+	defer conn.Close()
+	client := bbspb.NewBuildBuddyServiceClient(conn)
+
+	ctx := context.Background()
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+
+	_, err = client.GetUser(ctx, &uspb.GetUserRequest{})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func HandleLogin(args []string) (exitCode int, err error) {
-	if err := openInBrowser(loginURL); err != nil {
-		log.Printf("Failed to open browser: %s", err)
-		log.Printf("Copy and paste the URL below into a browser window:")
-		log.Printf("    %s", loginURL)
+	if err := arg.ParseFlagSet(flags, args); err != nil {
+		if err == flag.ErrHelp {
+			log.Print(usage)
+			return 1, nil
+		}
+		return -1, err
 	}
 
-	io.WriteString(os.Stderr, "Enter your API key from "+loginURL+": ")
+	if *check || *allowExisting {
+		apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
+		if err != nil {
+			return -1, fmt.Errorf("read .git/config: %w", err)
+		}
+		code := 0
+		if err := authenticate(apiKey); err != nil {
+			if status.IsUnauthenticatedError(err) {
+				code = 1
+			} else {
+				log.Printf("Failed to authenticate API key: %s", err)
+				code = 2
+			}
+		}
+		if *check {
+			// In check mode, always exit.
+			return code, nil
+		}
+		if *allowExisting {
+			if code == 0 {
+				// Success, skip login.
+				return 0, nil
+			}
+			if code != 1 {
+				// Error, exit immediately without proceeding to login.
+				return code, nil
+			}
+			// Unauthenticated - proceed to login.
+		}
+	}
+
+	log.Printf("Press Enter to open %s in your browser...", *loginURL)
+	if _, err := fmt.Scanln(); err != nil {
+		return -1, fmt.Errorf("failed to read input: %s", err)
+	}
+	if err := openInBrowser(*loginURL); err != nil {
+		log.Printf("Failed to open browser: %s", err)
+		log.Printf("Copy and paste the URL below into a browser window:")
+		log.Printf("    %s", *loginURL)
+	}
+
+	io.WriteString(os.Stderr, "Enter your API key from "+*loginURL+": ")
 
 	var apiKey string
 	if _, err := fmt.Scanln(&apiKey); err != nil {
@@ -38,12 +131,15 @@ func HandleLogin(args []string) (exitCode int, err error) {
 		return -1, fmt.Errorf("invalid input: API key is empty")
 	}
 
+	if err := authenticate(apiKey); err != nil {
+		return -1, fmt.Errorf("authenticate API key: %w", err)
+	}
+
 	if err := storage.WriteRepoConfig(apiKeyRepoSetting, apiKey); err != nil {
 		return -1, fmt.Errorf("failed to write API key to local .git/config: %s", err)
 	}
 
 	log.Printf("Wrote API key to .git/config")
-
 	log.Printf("You are now logged in!")
 
 	return 0, nil
@@ -83,7 +179,7 @@ func ConfigureAPIKey(args []string) ([]string, error) {
 		// config.
 		// Making this fatal would be inconvenient for new workspaces,
 		// so just log a debug message and move on.
-		log.Debugf("failed to configure API key from .git/config: %s", err)
+		log.Debugf("Failed to read API key from .git/config: %s", err)
 		return args, nil
 	}
 	if apiKey == "" {

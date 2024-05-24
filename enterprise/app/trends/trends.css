@@ -28,6 +28,12 @@
   user-select: none;
 }
 
+.trend-chart.standalone {
+  margin: 0;
+  border: none;
+  padding: 0;
+}
+
 /*
  * A hack: cursor is not configurable in recharts, so in we go. This could be
  * better (it currently sets cursor:pointer on the axis grid, too, but there

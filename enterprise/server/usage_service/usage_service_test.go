@@ -20,6 +20,12 @@ import (
 )
 
 func TestGetUsage(t *testing.T) {
+	group := &tables.Group{
+		GroupID: "GR1",
+		Model: tables.Model{
+			CreatedAtUsec: time.Date(2023, 7, 9, 0, 0, 0, 0, time.UTC).UnixMicro(),
+		},
+	}
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
@@ -38,6 +44,12 @@ func TestGetUsage(t *testing.T) {
 			GroupID:         "GR1",
 			PeriodStartUsec: time.Date(2024, 2, 3, 0, 0, 0, 0, time.UTC).UnixMicro(),
 			UsageCounts:     tables.UsageCounts{Invocations: 13, CASCacheHits: 10_000},
+		},
+		{
+			UsageID:         "UG1",
+			GroupID:         "GR1",
+			PeriodStartUsec: time.Date(2024, 2, 4, 1, 0, 0, 0, time.UTC).UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 15, CASCacheHits: 12_000},
 		},
 		// GR1, previous usage period
 		{
@@ -58,7 +70,7 @@ func TestGetUsage(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	rsp, err := service.GetUsage(ctx1, &usagepb.GetUsageRequest{
+	rsp, err := service.GetUsageInternal(ctx1, group, &usagepb.GetUsageRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
 		UsagePeriod:    "2024-02",
 	})
@@ -67,8 +79,20 @@ func TestGetUsage(t *testing.T) {
 	expectedResponse := &usagepb.GetUsageResponse{
 		Usage: &usagepb.Usage{
 			Period:       "2024-02",
-			Invocations:  13,
-			CasCacheHits: 10_000,
+			Invocations:  28,
+			CasCacheHits: 22_000,
+		},
+		DailyUsage: []*usagepb.Usage{
+			&usagepb.Usage{
+				Period:       "2024-02-03",
+				Invocations:  13,
+				CasCacheHits: 10_000,
+			},
+			&usagepb.Usage{
+				Period:       "2024-02-04",
+				Invocations:  15,
+				CasCacheHits: 12_000,
+			},
 		},
 		AvailableUsagePeriods: []string{
 			"2024-02",
@@ -77,6 +101,8 @@ func TestGetUsage(t *testing.T) {
 			"2023-11",
 			"2023-10",
 			"2023-09",
+			"2023-08",
+			"2023-07",
 		},
 	}
 	assert.Empty(t, cmp.Diff(expectedResponse, rsp, protocmp.Transform()))

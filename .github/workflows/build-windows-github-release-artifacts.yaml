@@ -40,8 +40,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bazelisk --output_user_root=D:/0 build --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
-          $execution_root = bazel.exe --output_user_root=D:/0 info execution_root
-          $artifact_rel_path = bazel.exe --output_user_root=D:/0 cquery --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --output=files //enterprise/server/cmd/executor:executor
+          $execution_root = bazelisk --output_user_root=D:/0 info execution_root
+          $artifact_rel_path = bazelisk --output_user_root=D:/0 cquery --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --output=files //enterprise/server/cmd/executor:executor
           $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
           Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-amd64-beta.exe
           gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe --clobber

@@ -277,11 +277,11 @@ class RpcService {
   private getExtendedService(service: buildbuddy.service.BuildBuddyService): ExtendedBuildBuddyService {
     const extendedService = Object.create(service);
     for (const rpcName of getRpcMethodNames(buildbuddy.service.BuildBuddyService)) {
+      const originalMethod = (service as any)[rpcName] as BaseRpcMethod<any, any>;
       const method = (request: Record<string, any>, subscriber?: any) => {
         if (this.requestContext && !request.requestContext) {
           request.requestContext = this.requestContext;
         }
-        const originalMethod = (service as any)[rpcName] as BaseRpcMethod<any, any>;
         if (originalMethod.serverStreaming) {
           // ServerStream method already supports cancel function.
           return originalMethod.call(service, request, subscriber);
@@ -290,6 +290,10 @@ class RpcService {
           return new CancelablePromise(originalMethod.call(service, request));
         }
       };
+      // Preserve generated metadata attributes attached to each method.
+      for (const name of ["name", "serverStreaming"] as const) {
+        Object.defineProperty(method, name, { value: originalMethod[name] });
+      }
       extendedService[rpcName] = method;
     }
     return extendedService;

@@ -181,6 +181,8 @@ func execute(cmdArgs []string) error {
 				repb.ExecutionProgress_ExecutionState_name[int32(progress.GetExecutionState())],
 				progress.GetTimestamp().AsTime(),
 			)
+		} else {
+			log.Debugf("Remote: %s", repb.ExecutionStage_Value_name[int32(msg.ExecuteOperationMetadata.GetStage())])
 		}
 		if msg.Done {
 			rsp = msg
