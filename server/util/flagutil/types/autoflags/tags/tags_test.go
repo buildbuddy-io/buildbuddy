@@ -265,7 +265,7 @@ func TestDeprecatedAndSecret(t *testing.T) {
 	assert.Empty(t, len(m))
 }
 
-func TestYAMLIgnoreAndSecret(t * testing.T) {
+func TestYAMLIgnoreAndSecret(t *testing.T) {
 	flagset := replaceFlagsForTesting(t)
 
 	v1 := flagset.String("t1", "default", "test usage")
