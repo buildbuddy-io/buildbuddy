@@ -157,7 +157,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 						for _, file := range p.NamedSetOfFiles.Files {
 							i.Artifacts = append(i.Artifacts, &apipb.File{
 								Name: file.GetName(),
-								Uri: file.GetUri(),
+								Uri:  file.GetUri(),
 							})
 						}
 					}
