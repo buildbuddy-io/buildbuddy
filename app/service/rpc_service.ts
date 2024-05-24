@@ -115,7 +115,7 @@ class RpcService {
     let bestMatchDepth = 0;
     for (let i = 0; i < capabilities.config.regions.length; i++) {
       const region = capabilities.config.regions[i];
-      if (region.server == server) {
+      if (region.server === server) {
         return this.regionalServices.get(region.name) ?? this.service;
       }
       const chunks = region.subdomains.split("*");
@@ -123,6 +123,12 @@ class RpcService {
       if (chunks.length != 2) {
         continue;
       }
+
+      if (server === chunks[0] + chunks[1].substring(1)) {
+        // The request is directly to the region's server.
+        return this.regionalServices.get(region.name) ?? this.service;
+      }
+
       // Trim the http:// prefix bit and the top level domain suffix.
       if (!server.startsWith(chunks[0]) || !server.endsWith(chunks[1])) {
         continue;
