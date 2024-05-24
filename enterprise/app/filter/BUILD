@@ -18,6 +18,7 @@ ts_library(
         "//app/router:router_params",
         "//enterprise/app/filter:filter_util",
         "//proto:invocation_status_ts_proto",
+        "//proto:stat_filter_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//@types/react-date-range",

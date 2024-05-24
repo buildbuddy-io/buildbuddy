@@ -645,6 +645,7 @@ type UsageCounts struct {
 	TotalUploadSizeBytes       int64 `gorm:"not null;default:0"`
 	TotalCachedActionExecUsec  int64 `gorm:"not null;default:0"`
 	CPUNanos                   int64 `gorm:"not null;default:0"`
+	MemoryGBUsec               int64 `gorm:"not null;default:0"`
 }
 
 type UsageLabels struct {

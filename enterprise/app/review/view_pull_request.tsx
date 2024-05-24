@@ -158,9 +158,9 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
             } else {
               newModel = newModel.addComment(newComment);
             }
-            newModel.setDraftReviewId(r.reviewId);
+            newModel = newModel.setDraftReviewId(r.reviewId);
           }
-          newModel.removeCommentFromPending(oldId);
+          newModel = newModel.removeCommentFromPending(oldId);
           this.setState({ reviewModel: newModel });
         }
       })
