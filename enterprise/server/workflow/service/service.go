@@ -799,7 +799,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 	}
 }
 
-func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl string, pattern string, timeLimitMicros int64) (*query_builder.Query, error) {
+func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl string, pattern string, timeLimitMicros int64, onlyMainBranches bool) (*query_builder.Query, error) {
 	q := query_builder.NewQuery(`SELECT repo_url, pattern, invocation_id, commit_sha, branch_name, created_at_usec, updated_at_usec, duration_usec, invocation_status, success FROM Invocations`)
 	if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
 		return nil, err
@@ -812,7 +812,9 @@ func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl 
 	q.AddWhereClause("pattern = ?", pattern)
 	// TODO(jdhollen): Efficiently fetch the default branch name for the
 	// repo instead of guessing.
-	q.AddWhereClause("branch_name IN ?", []string{"master", "main"})
+	if onlyMainBranches {
+		q.AddWhereClause("branch_name IN ?", []string{"master", "main"})
+	}
 	q.AddWhereClause("role = ?", "CI_RUNNER")
 	q.AddWhereClause("group_id = ?", authenticatedUser.GetGroupID())
 	q.AddWhereClause("updated_at_usec > ?", timeLimitMicros)
@@ -858,7 +860,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	timeLimitMicros := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 
 	// Find the names of all of the actions for each repo.
-	q := query_builder.NewQuery(`SELECT repo_url,pattern,count(1) AS total_runs, countIf(success) AS successful_runs, toInt64(avg(duration_usec)) AS average_duration FROM Invocations`)
+	q := query_builder.NewQuery(`SELECT repo_url,pattern,count(1) AS total_runs, countIf(success) AS successful_runs, toInt64(avg(duration_usec)) AS average_duration, countIf(branch_name IN ('master', 'main')) AS main_branch_runs FROM Invocations`)
 	q.AddWhereClause("repo_url IN ?", repos)
 	q.AddWhereClause("role = ?", "CI_RUNNER")
 	q.AddWhereClause("notEmpty(pattern)")
@@ -878,6 +880,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		TotalRuns       int64
 		SuccessfulRuns  int64
 		AverageDuration int64
+		MainBranchRuns  int64
 	}
 
 	qStr, qArgs := q.Build()
@@ -888,7 +891,8 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	workflows := make(map[string]map[string]*wfpb.ActionHistory)
 
 	err = db.ScanEach(rq, func(ctx context.Context, row *actionQueryOut) error {
-		q, err := ws.buildActionHistoryQuery(ctx, row.RepoUrl, row.Pattern, timeLimitMicros)
+		onlyFetchMainBranchRuns := row.MainBranchRuns > 0
+		q, err := ws.buildActionHistoryQuery(ctx, row.RepoUrl, row.Pattern, timeLimitMicros, onlyFetchMainBranchRuns)
 		if err != nil {
 			return err
 		}
