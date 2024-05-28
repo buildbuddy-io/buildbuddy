@@ -241,21 +241,15 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 	}
 	u := *authenticatedUser
 
+	qb := query_builder.NewQuery(`DELETE FROM "Invocations"`)
+	qb.AddWhereClause("invocation_id = ?", invocationID)
+	if err := perms.AddPermissionsCheckToQuery(ctx, d.env, qb); err != nil {
+		return err
+	}
+	q, args := qb.Build()
+
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		result := tx.NewQuery(ctx, "invocationdb_delete_invocation_with_perms_check").Raw(`
-			DELETE FROM "Invocations"
-			WHERE invocation_id = ?
-				AND (
-					(perms & ? <> 0 AND user_id = ?) OR
-					(perms & ? <> 0 AND group_id IN ?)
-				)
-			`,
-			invocationID,
-			perms.OWNER_WRITE,
-			u.GetUserID(),
-			perms.GROUP_WRITE,
-			u.GetAllowedGroups(),
-		).Exec()
+		result := tx.NewQuery(ctx, "invocationdb_delete_invocation_with_perms_check").Raw(q, args...).Exec()
 		if result.Error != nil {
 			return result.Error
 		}
