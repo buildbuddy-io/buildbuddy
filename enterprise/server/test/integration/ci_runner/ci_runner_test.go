@@ -193,27 +193,21 @@ actions:
 `,
 	}
 
-	workspaceContentsWithGitFetchDepth = map[string]string{
+	workspaceContentsWithGitLog = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
-		"BUILD":     `sh_binary(name = "fetch_depth_test", srcs = ["fetch_depth_test.sh"])`,
-		"fetch_depth_test.sh": `
+		"BUILD":     `sh_binary(name = "log", srcs = ["log.sh"])`,
+		"log.sh": `
 			cd "$BUILD_WORKSPACE_DIRECTORY"
-			# We should not have fetched the merge-base commit between the
-			# current branch and master, since the branches should have diverged
-			# and we're fetching with --depth=1.
-			MERGE_BASE=$(git merge-base origin/master origin/pr-branch)
-			echo "merge-base: '$MERGE_BASE' (should be empty)"
-			test -z "$MERGE_BASE" || exit 1
+			git log
 `,
 		"buildbuddy.yaml": `
 actions:
   - name: "Test"
     triggers:
-      pull_request: { branches: [ master ], merge_with_base: false }
       push: { branches: [ master ] }
     git_fetch_depth: 1
     bazel_commands:
-      - run :fetch_depth_test
+      - run :log
 `,
 	}
 
@@ -766,8 +760,14 @@ actions:
 
 		// When invoked with the initial commit sha, should not contain the modified print statement
 		result = invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
-		checkRunnerResult(t, result)
-		assert.Contains(t, result.Output, "args: {{ Hello world }}")
+		if !tc.setBranchName {
+			// Git does not support fetching non-HEAD commits by default.
+			// If pushed_branch is not set as a fallback, the fetch will fail.
+			require.NotEqual(t, 0, result.ExitCode)
+		} else {
+			checkRunnerResult(t, result)
+			assert.Contains(t, result.Output, "args: {{ Hello world }}")
+		}
 
 		// When invoked with the new commit sha, should contain the modified print statement
 		runnerFlagsCommit2 := append(baselineRunnerFlags, "--commit_sha="+newCommitSha)
@@ -1207,29 +1207,17 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 
 func TestFetchDepth1(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
-	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithGitFetchDepth)
-	testshell.Run(t, repoPath, `
-		# Create a PR branch
-		git checkout -b pr-branch
-
-		# Add a bad commit to the master branch;
-		# this should not break our CI run on the PR branch which doesn't have
-		# this change yet.
-		git checkout master
-		echo 'exit 1' > exit.sh
-		git add .
-		git commit -m "Fail"
-	`)
+	repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithGitLog)
+	newCommitSha := testgit.CommitFiles(t, repoPath, map[string]string{"new_file.txt": "echo 1"})
+	// Allow fetching non-HEAD commits
+	testshell.Run(t, repoPath, "git config uploadpack.allowReachableSHA1InWant true")
 
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
 		"--action_name=Test",
-		"--trigger_event=pull_request",
+		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=pr-branch",
-		"--commit_sha=" + headCommitSHA,
-		"--target_repo_url=file://" + repoPath,
-		"--target_branch=master",
+		"--pushed_branch=master",
 		// Need to set the fetch_depth flag even though it's set in the config,
 		// since this is required in order to fetch the config.
 		"--git_fetch_depth=1",
@@ -1237,8 +1225,22 @@ func TestFetchDepth1(t *testing.T) {
 	app := buildbuddy.Run(t)
 	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
-	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	// Should succeed if we set commit_sha to the HEAD commit
+	flagsOnHead := append(runnerFlags, "--commit_sha="+newCommitSha)
+	result := invokeRunner(t, flagsOnHead, nil, wsPath)
 	checkRunnerResult(t, result)
+	require.Contains(t, result.Output, "--depth=1")
+	require.Contains(t, result.Output, newCommitSha)
+	require.NotContains(t, result.Output, initialCommitSHA)
+
+	// Should still succeed if we set commit_sha to a non-HEAD commit - it should
+	// fetch that commit with --depth=1
+	flagsOnOldCommit := append(runnerFlags, "--commit_sha="+initialCommitSHA)
+	result = invokeRunner(t, flagsOnOldCommit, nil, wsPath)
+	checkRunnerResult(t, result)
+	require.Contains(t, result.Output, "--depth=1")
+	require.NotContains(t, result.Output, newCommitSha)
+	require.Contains(t, result.Output, initialCommitSHA)
 }
 
 func TestArtifactUploads_GRPCLog(t *testing.T) {
