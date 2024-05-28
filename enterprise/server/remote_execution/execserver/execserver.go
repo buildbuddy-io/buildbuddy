@@ -1,3 +1,11 @@
+// execserver is a little program that can be run inside a container to accept
+// commands from the host. Its purpose is to provide an alternative to things
+// like 'docker exec' or 'podman exec' which have significant overhead.
+//
+// It listens on a unix socket, which should be mounted into the container from
+// the host. It exposes the Exec service, which can be called using the
+// vmexec_client package.
+
 package main
 
 import (
@@ -14,7 +22,7 @@ import (
 )
 
 var (
-	socket = flag.String("socket", "", "Listen path")
+	socket = flag.String("socket", "", "Unix socket path for serving the exec service")
 )
 
 func main() {

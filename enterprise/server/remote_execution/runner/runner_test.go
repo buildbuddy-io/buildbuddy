@@ -703,6 +703,10 @@ func TestRunnerPool_DelayedPause_PausedInBackground(t *testing.T) {
 
 	// Should be paused after a short delay.
 	<-pauseCh
+
+	// Make sure we can get the same runner again, unpausing it.
+	r2 := mustGetPausedRunner(t, ctx, pool, newTask())
+	assert.Same(t, r1, r2, "should get the same pooled runner")
 }
 
 func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ScheduledTask {
