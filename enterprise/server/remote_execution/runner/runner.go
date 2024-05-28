@@ -69,6 +69,7 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+	pauseDelay                = flag.Duration("executor.runner_pool.pause_delay", 0, "How long a recycled runner can be kept running between actions before pausing the container. This helps avoid unnecessary pause/unpause cycles.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
 )
@@ -220,6 +221,10 @@ type taskRunner struct {
 	// Decoder used when reading streamed JSON values from stdout.
 	jsonDecoder *json.Decoder
 
+	// Unpauses the runner. This is dynamically set based on whether delayed
+	// pausing is enabled.
+	unpause func(ctx context.Context) error
+
 	// A function that is invoked after the runner is removed. Controlled by the
 	// runner pool.
 	removeCallback func()
@@ -244,6 +249,23 @@ func (r *taskRunner) String() string {
 
 func (r *taskRunner) pullCredentials() (oci.Credentials, error) {
 	return oci.CredentialsFromProperties(r.PlatformProperties)
+}
+
+func (r *taskRunner) pauseDelay() time.Duration {
+	// Disable delayed-pause optimization for Firecracker - it can be useful to
+	// pause eagerly since it saves a snapshot.
+	if r.PlatformProperties.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
+		return 0
+	}
+
+	// TODO: remove this debug prop and only use the flag.
+	if override := platform.FindEffectiveValue(r.task, "debug-runner-pause-delay"); override != "" {
+		d, err := time.ParseDuration(override)
+		if err == nil {
+			return d
+		}
+	}
+	return *pauseDelay
 }
 
 func (r *taskRunner) PrepareForTask(ctx context.Context) error {
@@ -617,10 +639,12 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		return err
 	}
 
-	if err := r.Container.Pause(ctx); err != nil {
-		return &labeledError{
-			status.WrapError(err, "failed to pause container before adding to the pool"),
-			"pause_failed",
+	if r.pauseDelay() <= 0 {
+		if err := r.Container.Pause(ctx); err != nil {
+			return &labeledError{
+				status.WrapError(err, "failed to pause container before adding to the pool"),
+				"pause_failed",
+			}
 		}
 	}
 
@@ -721,8 +745,67 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 	metrics.RunnerPoolMemoryUsageBytes.Add(float64(r.memoryUsageBytes))
 	metrics.RunnerPoolCount.Inc()
 
-	// Officially mark this runner paused and ready for reuse.
+	// Mark this runner ready for reuse.
 	r.state = paused
+
+	// If the pause is delayed, schedule that now.
+	if delay := r.pauseDelay(); delay > 0 {
+		log.CtxDebugf(ctx, "Delaying pause by %s", delay)
+
+		// Create a single resource that can be acquired by either the
+		// background pause goroutine or the next task goroutine that wants to
+		// use this runner. If a task goroutine gets this resource first, then
+		// it can cancel the background pause and start directly from a hot
+		// runner.
+		sem := make(chan struct{}, 1)
+		sem <- struct{}{}
+
+		// Schedule the background pause.
+		pauseErrCh := make(chan error, 1)
+		pauseCtx, cancelBackgroundPause := context.WithCancel(context.Background())
+		go func() {
+			defer cancelBackgroundPause()
+			t := time.NewTimer(delay)
+			defer t.Stop()
+			select {
+			case <-pauseCtx.Done():
+				// unpause func was called - short-circuit.
+				return
+			case <-t.C:
+			}
+			select {
+			case <-sem:
+				// A task did not get the resource in time - start the pause.
+				pauseErrCh <- r.Container.Pause(context.Background())
+			default:
+			}
+		}()
+
+		// Set an unpause func that tries to just cancel the background pause if
+		// it hasn't started yet, to avoid the pause/unpause cycle.
+		r.unpause = func(ctx context.Context) error {
+			select {
+			case <-sem:
+				log.CtxInfof(ctx, "Using hot runner (pause skipped due to pause_delay)")
+				cancelBackgroundPause()
+				return nil
+			default:
+			}
+			// Background pause started already - wait for it to complete, then
+			// unpause.
+			select {
+			case err := <-pauseErrCh:
+				if err != nil {
+					return status.WrapError(err, "error from previous pause")
+				}
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			return r.Container.Unpause(ctx)
+		}
+	} else {
+		r.unpause = r.Container.Unpause
+	}
 
 	return nil
 }
@@ -1003,6 +1086,7 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 		debugID:            state.GetDebugId(),
 		taskNumber:         state.GetAssignedTaskCount(),
 		task:               st.GetExecutionTask(),
+		unpause:            ctr.Unpause,
 		PlatformProperties: props,
 		Container:          ctr,
 		Workspace:          ws,
@@ -1112,7 +1196,7 @@ func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *taskRunn
 		}
 
 		// Found a match; unpause it.
-		if err := r.Container.Unpause(ctx); err != nil {
+		if err := r.unpause(ctx); err != nil {
 			log.CtxWarningf(ctx, "Unpause attempt for runner %s failed: %s", r, err)
 			// If we fail to unpause, subsequent unpause attempts are also
 			// likely to fail, so remove the container from the pool and also

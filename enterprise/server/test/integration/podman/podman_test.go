@@ -204,6 +204,55 @@ func TestHelloWorldExec(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestExecServer(t *testing.T) {
+	flags.Set(t, "executor.podman.enable_exec_server", true)
+
+	ctx := context.Background()
+	env := getTestEnv(t)
+	buildRoot := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.WriteAllFileContents(t, workDir, map[string]string{"world.txt": "world"})
+
+	cmd := &repb.Command{
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			&repb.Command_EnvironmentVariable{Name: "GREETING", Value: "Hello"},
+		},
+		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)!"`},
+	}
+
+	provider, err := podman.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	props := &platform.Properties{
+		ContainerImage: "docker.io/library/busybox",
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &container.Init{Props: props})
+	require.NoError(t, err)
+
+	execServerDir := workDir + ".execserver"
+
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err, "remove")
+		// Remove() should clean up execserver dir
+		_, err = os.Stat(execServerDir)
+		assert.True(t, os.IsNotExist(err), "stat %s should return NotExist", execServerDir)
+	})
+
+	// Sanity check: execserver dir should exist
+	_, err = os.Stat(execServerDir)
+	require.NoError(t, err, "stat %s", execServerDir)
+
+	result := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, result.Error)
+
+	assert.Equal(t, "Hello world!", string(result.Stdout), "stdout")
+	assert.Empty(t, string(result.Stderr), "stderr")
+	assert.Equal(t, 0, result.ExitCode, "exit code")
+}
+
 func TestExecStdio(t *testing.T) {
 	ctx := context.Background()
 	buildRoot := testfs.MakeTempDir(t)

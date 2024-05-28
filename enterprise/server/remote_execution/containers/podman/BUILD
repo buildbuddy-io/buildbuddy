@@ -5,15 +5,22 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "podman",
     srcs = ["podman.go"],
+    embedsrcs = [
+        "execserver",
+        "execserver.sum",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman",
     deps = [
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/soci_store",
+        "//enterprise/server/remote_execution/vmexec_client",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
+        "//proto:vmexec_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
@@ -22,6 +29,7 @@ go_library(
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/flagutil",
+        "//server/util/grpc_client",
         "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/lru",
@@ -32,6 +40,7 @@ go_library(
         "//server/util/tracing",
         "@com_github_masterminds_semver_v3//:semver",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//:go_default_library",
     ],
 )
 
@@ -52,6 +61,19 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
     ],
+)
+
+genrule(
+    name = "execserver_copy",
+    srcs = ["//enterprise/server/remote_execution/execserver"],
+    outs = [
+        "execserver",
+        "execserver.sum",
+    ],
+    cmd_bash = """
+        cp $(SRCS) $(location :execserver)
+        sha256sum $(location :execserver) | awk '{printf "%s", $$1}' > $(location :execserver.sum)
+    """,
 )
 
 # Repackages the podman-static distribution to make it more easily consumable
