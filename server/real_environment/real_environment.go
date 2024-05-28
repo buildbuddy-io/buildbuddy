@@ -123,6 +123,7 @@ type RealEnv struct {
 	commandRunner                    interfaces.CommandRunner
 	codesearchService                interfaces.CodesearchService
 	snapshotService                  interfaces.SnapshotService
+	authService                      interfaces.AuthService
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -734,4 +735,11 @@ func (r *RealEnv) GetCodesearchService() interfaces.CodesearchService {
 }
 func (r *RealEnv) SetCodesearchService(css interfaces.CodesearchService) {
 	r.codesearchService = css
+}
+
+func (r *RealEnv) GetAuthService() interfaces.AuthService {
+	return r.authService
+}
+func (r *RealEnv) SetAuthService(auths interfaces.AuthService) {
+	r.authService = auths
 }

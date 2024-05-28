@@ -56,6 +56,7 @@ import (
 	"google.golang.org/grpc"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -311,6 +312,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	// Register API Server as a gRPC service.
 	if api := env.GetAPIService(); api != nil {
 		apipb.RegisterApiServiceServer(grpcServer, api)
+	}
+	if auth := env.GetAuthService(); auth != nil {
+		authpb.RegisterAuthServiceServer(grpcServer, auth)
 	}
 }
 

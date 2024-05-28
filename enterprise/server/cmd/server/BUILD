@@ -17,6 +17,7 @@ go_library(
         "//enterprise/server/api",
         "//enterprise/server/auditlog",
         "//enterprise/server/auth",
+        "//enterprise/server/auth_service",
         "//enterprise/server/backends/authdb",
         "//enterprise/server/backends/codesearch",
         "//enterprise/server/backends/configsecrets",

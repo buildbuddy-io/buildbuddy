@@ -23,6 +23,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -1506,4 +1507,8 @@ type GossipService interface {
 type CodesearchService interface {
 	Search(ctx context.Context, req *cssrpb.SearchRequest) (*cssrpb.SearchResponse, error)
 	Index(ctx context.Context, req *csinpb.IndexRequest) (*csinpb.IndexResponse, error)
+}
+
+type AuthService interface {
+	Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error)
 }
