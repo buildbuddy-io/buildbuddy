@@ -280,7 +280,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
     const runnerExecution = this.state.runnerExecution;
     if (!runnerExecution?.executionId) return;
 
-    this.runnerExecutionStream = waitExecution(runnerExecution.executionId, {
+    const service = rpcService.getRegionalServiceOrDefault(
+      this.state.model?.stringCommandLineOption("remote_cache") ?? ""
+    );
+
+    this.runnerExecutionStream = waitExecution(service, runnerExecution.executionId, {
       next: (op) => {
         this.setState({ runnerLastExecuteOperation: op });
         if (op.response) {
