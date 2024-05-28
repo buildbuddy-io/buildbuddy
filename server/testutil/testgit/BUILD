@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testgit",
     deps = [
         "//server/interfaces",
+        "//server/tables",
         "//server/testutil/testfs",
         "//server/testutil/testshell",
         "//server/util/status",

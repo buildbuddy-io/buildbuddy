@@ -1,5 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+# gazelle:default_visibility //cli:__subpackages__,//enterprise:__subpackages__
+package(default_visibility = [
+    "//cli:__subpackages__",
+    "//enterprise:__subpackages__",
+])
+
 go_library(
     name = "remotebazel",
     srcs = ["remotebazel.go"],
@@ -38,8 +44,6 @@ go_library(
         "@org_golang_x_sys//unix",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])
 
 go_test(
     name = "remotebazel_test",
