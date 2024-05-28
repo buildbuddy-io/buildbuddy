@@ -60,8 +60,8 @@ var (
 
 type userGroupJoin struct {
 	tables.User
-	tables.UserGroup
-	tables.Group
+	*tables.UserGroup
+	*tables.Group
 }
 
 func singleUserGroup(u *tables.User) (*tables.Group, error) {
@@ -855,15 +855,15 @@ func usersFromUserGroupJoin(ugj []*userGroupJoin) ([]*tables.User, error) {
 			usersMap[user.UserID] = user
 			users = append(users, user)
 		}
-		if v.UserGroup.UserUserID == "" {
+		if v.UserGroup == nil {
 			// no user groups matched this user ID
 			continue
 		}
-		if v.Group.GroupID == "" {
+		if v.Group == nil {
 			// no group matched the user group (this shouldn't really happen)
 			return nil, status.InternalErrorf("No group entry matching groupID %s, which is present in UserGroups table.", v.UserGroup.GroupGroupID)
 		}
-		user.Groups = append(user.Groups, &tables.GroupRole{Group: v.Group, Role: v.UserGroup.Role})
+		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role})
 	}
 	return users, nil
 }
