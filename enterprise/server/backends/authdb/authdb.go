@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -429,31 +430,45 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 }
 
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
-	user := &tables.User{}
-	// TODO(zoey): switch this to JOIN
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx interfaces.DB) error {
-		rq := tx.NewQuery(ctx, "authdb_lookup_user_from_subid").Raw(
-			`SELECT * FROM "Users" WHERE sub_id = ? ORDER BY user_id ASC`, subID)
-		if err := rq.Take(user); err != nil {
-			return err
-		}
-		rq = tx.NewQuery(ctx, "authdb_lookup_user_groups").Raw(`
-			SELECT g.*, ug.role
-			FROM "Groups" AS g, "UserGroups" AS ug
-			WHERE g.group_id = ug.group_group_id
-			AND ug.membership_status = ?
-			AND ug.user_user_id = ?
-			`, int32(grpb.GroupMembershipStatus_MEMBER), user.UserID,
-		)
-		gs, err := db.ScanAll(rq, &tables.GroupRole{})
-		if err != nil {
-			return err
-		}
-		user.Groups = gs
-		return nil
-	})
+	rq := d.h.NewQueryWithOpts(ctx, "authdb_lookup_user_groups", db.Opts().WithStaleReads()).Raw(`
+		SELECT u.*, g.*, ug.*
+		FROM (
+			SELECT * FROM "Users" 
+			WHERE sub_id = ?
+			ORDER BY user_id ASC
+			LIMIT 1
+		) AS u
+			LEFT JOIN "UserGroups" AS ug
+				ON u.user_id = ug.user_user_id
+			LEFT JOIN "Groups" AS g
+				ON ug.group_group_id = g.group_id
+		AND (ug.membership_status = ? OR ug.user_user_id IS NULL)
+		ORDER BY u.user_id, g.group_id ASC
+		`, subID, int32(grpb.GroupMembershipStatus_MEMBER),
+	)
+	ugr, err := db.ScanAll(rq, &struct {
+		tables.User
+		tables.Group
+		tables.UserGroup
+	}{})
 	if err != nil {
 		return nil, err
+	}
+	if len(ugr) == 0 {
+		return nil, status.NotFoundErrorf("Sub id %s was not found in LookupUserFromSubID.", subID)
+	}
+	user := &ugr[0].User
+	if ugr[0].UserGroup.UserUserID == "" {
+		// no user groups matched this user ID
+		return user, nil
+	}
+	for _, v := range ugr {
+		if v.Group.GroupID == "" {
+			// no group matched the user group (this shouldn't really happen)
+			log.CtxWarningf(ctx, "In LookupUserFromSubID, the UserGroup row User: %s Group %s did not match a group with that ID.", v.UserGroup.UserUserID, v.UserGroup.GroupGroupID)
+			continue
+		}
+		user.Groups = append(user.Groups, &tables.GroupRole{Group: v.Group, Role: v.UserGroup.Role})
 	}
 	return user, nil
 }
