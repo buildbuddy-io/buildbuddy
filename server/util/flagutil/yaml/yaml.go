@@ -81,10 +81,10 @@ func UnstructuredFilter(flg *flag.Flag) bool {
 	return !StructuredFilter(flg)
 }
 
-// HiddenFilter is a filter that filters out hidden flags.
-func HiddenFilter(flg *flag.Flag) bool {
-	if h, ok := flg.Value.(common.Hideable); ok {
-		return !h.Hidden()
+// InternalFilter is a filter that filters out internal flags.
+func InternalFilter(flg *flag.Flag) bool {
+	if maybeInternal, ok := flg.Value.(common.MaybeInternal); ok {
+		return !maybeInternal.Internal()
 	}
 	return true
 }
@@ -485,7 +485,7 @@ func SplitDocumentedYAMLFromFlags(opts ...common.DocumentNodeOption) ([]byte, er
 		GenerateDocumentedMarshalerFromFlag,
 		UnstructuredFilter,
 		IgnoreFilter,
-		HiddenFilter,
+		InternalFilter,
 	)
 	if err != nil {
 		return nil, err
@@ -511,7 +511,7 @@ func SplitDocumentedYAMLFromFlags(opts ...common.DocumentNodeOption) ([]byte, er
 		GenerateDocumentedMarshalerFromFlag,
 		StructuredFilter,
 		IgnoreFilter,
-		HiddenFilter,
+		InternalFilter,
 	)
 	if err != nil {
 		return nil, err

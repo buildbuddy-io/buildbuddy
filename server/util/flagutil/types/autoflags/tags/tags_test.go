@@ -4,13 +4,12 @@ import (
 	"flag"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
-
 	"gopkg.in/yaml.v3"
+
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
 func replaceFlagsForTesting(t *testing.T) *flag.FlagSet {
@@ -102,11 +101,11 @@ func TestSecret(t *testing.T) {
 	assert.Empty(t, len(m))
 }
 
-func TestHidden(t *testing.T) {
+func TestInternal(t *testing.T) {
 	flagset := replaceFlagsForTesting(t)
 
 	v1 := flagset.String("t", "default", "test usage")
-	Tag[string, flag.Value](flagset, "t", HiddenTag)
+	Tag[string, flag.Value](flagset, "t", InternalTag)
 
 	f1 := flagset.Lookup("t")
 	require.NotNil(t, f1)
@@ -114,14 +113,14 @@ func TestHidden(t *testing.T) {
 	assert.EqualValues(t, v1, common.UnwrapFlagValue(f1.Value))
 
 	v2 := flagset.String("structured.t", "default2", "test usage")
-	Tag[string, flag.Value](flagset, "structured.t", HiddenTag)
+	Tag[string, flag.Value](flagset, "structured.t", InternalTag)
 
 	f2 := flagset.Lookup("structured.t")
 	require.NotNil(t, f2)
 
 	assert.EqualValues(t, v2, common.UnwrapFlagValue(f2.Value))
 
-	_ = flagset.String("not_hidden", "", "test usage")
+	_ = flagset.String("not_internal", "", "test usage")
 
 	common.DefaultFlagSet = flagset
 	text, err := flagyaml.SplitDocumentedYAMLFromFlags()
@@ -153,11 +152,11 @@ func TestYAMLIgnoreTag(t *testing.T) {
 	assert.Equal(t, "default", *v)
 }
 
-func TestHiddenAndSecret(t *testing.T) {
+func TestInternalAndSecret(t *testing.T) {
 	flagset := replaceFlagsForTesting(t)
 
 	v1 := flagset.String("t1", "default", "test usage")
-	Tag[string, flag.Value](flagset, "t1", HiddenTag)
+	Tag[string, flag.Value](flagset, "t1", InternalTag)
 	Tag[string, flag.Value](flagset, "t1", SecretTag)
 
 	f1 := flagset.Lookup("t1")
@@ -167,14 +166,14 @@ func TestHiddenAndSecret(t *testing.T) {
 
 	v2 := flagset.String("structured.t", "default2", "test usage")
 	Tag[string, flag.Value](flagset, "structured.t", SecretTag)
-	Tag[string, flag.Value](flagset, "structured.t", HiddenTag)
+	Tag[string, flag.Value](flagset, "structured.t", InternalTag)
 
 	f2 := flagset.Lookup("structured.t")
 	require.NotNil(t, f2)
 
 	assert.EqualValues(t, v2, common.UnwrapFlagValue(f2.Value))
 
-	_ = flagset.String("not_hidden_or_secret", "", "test usage")
+	_ = flagset.String("not_internal_or_secret", "", "test usage")
 
 	common.DefaultFlagSet = flagset
 	text, err := flagyaml.SplitDocumentedYAMLFromFlags()

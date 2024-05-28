@@ -66,8 +66,8 @@ type Tagged interface {
 	// from Secretable
 	DesignateIsSecretFunc(func() bool)
 
-	// from Hideable
-	DesignateHiddenFunc(func() bool)
+	// from MaybeInternal
+	DesignateInternalFunc(func() bool)
 
 	// from NameAliasable
 	DesignateIsNameAliasingFunc(func() bool)
@@ -99,7 +99,7 @@ type TaggedFlagValue[T any, FV flag.Value] struct {
 	wrappedValueFunc            func() flag.Value
 	expandFunc                  func(mapping func(string) (string, error)) error
 	isSecretFunc                func() bool
-	hiddenFunc                  func() bool
+	internalFunc                func() bool
 	isNameAliasingFunc          func() bool
 	aliasedNameFunc             func() string
 	setValueForFlagNameHookFunc func()
@@ -193,18 +193,18 @@ func (t *TaggedFlagValue[T, FV]) IsSecret() bool {
 	return false
 }
 
-func (t *TaggedFlagValue[T, FV]) DesignateHiddenFunc(hiddenFunc func() bool) {
-	t.hiddenFunc = hiddenFunc
+func (t *TaggedFlagValue[T, FV]) DesignateInternalFunc(internalFunc func() bool) {
+	t.internalFunc = internalFunc
 }
 
-func (t *TaggedFlagValue[T, FV]) Hidden() bool {
-	if t.hiddenFunc != nil {
-		return t.hiddenFunc()
+func (t *TaggedFlagValue[T, FV]) Internal() bool {
+	if t.internalFunc != nil {
+		return t.internalFunc()
 	}
 	v := t.WrappedValue()
 	for {
-		if hideable, ok := v.(common.Hideable); ok {
-			return hideable.Hidden()
+		if maybeInternal, ok := v.(common.MaybeInternal); ok {
+			return maybeInternal.Internal()
 		}
 		if wrapping, ok := v.(common.WrappingValue); ok {
 			v = wrapping.WrappedValue()
@@ -371,15 +371,15 @@ func (_ *secretTag) Tag(flagset *flag.FlagSet, name string, tagged Tagged) flag.
 
 var SecretTag = &secretTag{}
 
-type hiddenTag struct{}
+type internalTag struct{}
 
-func (_ *hiddenTag) Tag(flagset *flag.FlagSet, name string, f Tagged) flag.Value {
-	f.DesignateHiddenFunc(func() bool { return true })
+func (_ *internalTag) Tag(flagset *flag.FlagSet, name string, f Tagged) flag.Value {
+	f.DesignateInternalFunc(func() bool { return true })
 	common.SubstituteUsage(flagset)
 	return f
 }
 
-var HiddenTag = &hiddenTag{}
+var InternalTag = &internalTag{}
 
 type yamlIgnoreTag struct{}
 

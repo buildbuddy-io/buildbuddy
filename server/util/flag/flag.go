@@ -15,7 +15,7 @@ import (
 var Secret = flagtags.SecretTag
 var Deprecated = flagtags.DeprecatedTag
 var YAMLIgnore = flagtags.YAMLIgnoreTag
-var Hidden = flagtags.HiddenTag
+var Internal = flagtags.InternalTag
 
 var NewFlagSet = flag.NewFlagSet
 var ContinueOnError = flag.ContinueOnError

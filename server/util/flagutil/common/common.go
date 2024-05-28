@@ -95,8 +95,8 @@ type Secretable interface {
 	IsSecret() bool
 }
 
-type Hideable interface {
-	Hidden() bool
+type MaybeInternal interface {
+	Internal() bool
 }
 
 type DocumentNodeOption interface {
@@ -374,7 +374,7 @@ func SubstituteUsage(flagset *flag.FlagSet) bool {
 	if usage, ok := usageSubstitutions[flagset]; !ok {
 		flagset.Usage = func() {
 			// This Usage function is patterned off of flag.FlagSet.defaultUsage(),
-			// but uses a FlagSet that has had any hidden flags filtered out.
+			// but uses a FlagSet that has had any internal flags filtered out.
 			if flagset.Name() == "" {
 				fmt.Fprintf(flagset.Output(), "Usage:\n")
 			} else {
@@ -382,7 +382,7 @@ func SubstituteUsage(flagset *flag.FlagSet) bool {
 			}
 			filtered := flag.NewFlagSet(flagset.Name(), flagset.ErrorHandling())
 			flagset.VisitAll(func(f *flag.Flag) {
-				if h, ok := f.Value.(Hideable); ok && h.Hidden() {
+				if h, ok := f.Value.(MaybeInternal); ok && h.Internal() {
 					return
 				}
 				filtered.Var(f.Value, f.Name, f.Usage)
