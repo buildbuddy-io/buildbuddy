@@ -637,7 +637,7 @@ message DeleteGithubPullRequestCommentResponse {
   context.ResponseContext response_context = 1;
 }
 
-// Next ID: 24
+// Next ID: 23
 message GetGithubPullRequestDetailsResponse {
   context.ResponseContext response_context = 1;
 
