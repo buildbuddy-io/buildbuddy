@@ -90,7 +90,7 @@ const (
 	EnvOverridesPropertyName             = "env-overrides"
 	EnvOverridesBase64PropertyName       = "env-overrides-base64"
 	IncludeSecretsPropertyName           = "include-secrets"
-	TimeoutPropertyName                  = "timeout"
+	DefaultTimeoutPropertyName           = "default-timeout"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -157,10 +157,10 @@ type Properties struct {
 	EnableVFS                 bool
 	IncludeSecrets            bool
 
-	// Timeout specifies a remote action timeout, overriding `action.Timeout`.
-	// This works around an issue that bazel does not have a way to set action
-	// timeouts on regular build actions.
-	Timeout time.Duration
+	// DefaultTimeout specifies a remote action timeout to be used if
+	// `action.Timeout` is unset. This works around an issue that bazel does not
+	// have a way to set timeouts on regular build actions.
+	DefaultTimeout time.Duration
 
 	// InitDockerd specifies whether to initialize dockerd within the execution
 	// environment if it is available in the execution image, allowing Docker
@@ -269,7 +269,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		envOverrides = append(envOverrides, string(b))
 	}
 
-	timeout, err := durationProp(m, TimeoutPropertyName, 0*time.Second)
+	timeout, err := durationProp(m, DefaultTimeoutPropertyName, 0*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +298,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		AffinityRouting:           boolProp(m, AffinityRoutingPropertyName, false),
-		Timeout:                   timeout,
+		DefaultTimeout:            timeout,
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),

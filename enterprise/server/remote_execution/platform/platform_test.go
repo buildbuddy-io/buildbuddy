@@ -251,22 +251,34 @@ func TestParse_EstimatedMemory(t *testing.T) {
 }
 
 func TestParse_Duration(t *testing.T) {
+	const durationProperty = "runner-recycling-max-wait"
+
+	// Invalid values:
+	for _, rawValue := range []string{
+		"100",
+		"blah",
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: durationProperty, Value: rawValue},
+		}}
+		_, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		require.Error(t, err, "parse %q", rawValue)
+	}
+
+	// Valid values:
 	for _, testCase := range []struct {
-		name          string
 		rawValue      string
 		expectedValue time.Duration
 	}{
-		{"runner-recycling-max-wait", "", 0 * time.Second},
-		{"runner-recycling-max-wait", "100", 0 * time.Second},
-		{"runner-recycling-max-wait", "blah", 0 * time.Second},
-		{"runner-recycling-max-wait", "10ms", 10 * time.Millisecond},
-		{"runner-recycling-max-wait", "-20ms", -20 * time.Millisecond},
-		{"runner-recycling-max-wait", "2s", 2 * time.Second},
-		{"runner-recycling-max-wait", "4m", 4 * time.Minute},
-		{"runner-recycling-max-wait", "-7m", -7 * time.Minute},
+		{"", 0},
+		{"10ms", 10 * time.Millisecond},
+		{"-20ms", -20 * time.Millisecond},
+		{"2s", 2 * time.Second},
+		{"4m", 4 * time.Minute},
+		{"-7m", -7 * time.Minute},
 	} {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
-			{Name: testCase.name, Value: testCase.rawValue},
+			{Name: durationProperty, Value: testCase.rawValue},
 		}}
 		platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		require.NoError(t, err)

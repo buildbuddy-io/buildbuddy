@@ -93,13 +93,20 @@ func parseTimeout(task *repb.ExecutionTask) (time.Duration, error) {
 	if err != nil {
 		return 0, status.WrapError(err, "parse execution properties")
 	}
-	timeout := props.Timeout
-	if timeout <= 0 && task.GetAction().GetTimeout() != nil {
-		timeout = task.GetAction().GetTimeout().AsDuration()
+	// Use the action timeout if it's set (e.g. --test_timeout for test
+	// actions).
+	timeout := task.GetAction().GetTimeout().AsDuration()
+	// Fall back to the default timeout requested in platform properties if set
+	// (e.g. --remote_exec_header=x-buildbuddy-platform.default-timeout=15m)
+	if timeout <= 0 {
+		timeout = props.DefaultTimeout
 	}
+	// Fall back to the configured default.
 	if timeout <= 0 {
 		timeout = *defaultTaskTimeout
 	}
+	// Enforce the configured max timeout by returning an error if the requested
+	// timeout is too long.
 	if *maxTaskTimeout > 0 && timeout > *maxTaskTimeout {
 		return 0, status.InvalidArgumentErrorf("requested timeout (%s) is longer than allowed maximum (%s)", timeout, *maxTaskTimeout)
 	}
