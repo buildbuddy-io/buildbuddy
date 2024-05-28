@@ -66,6 +66,9 @@ type Tagged interface {
 	// from Secretable
 	DesignateIsSecretFunc(func() bool)
 
+	// from MaybeInternal
+	DesignateInternalFunc(func() bool)
+
 	// from NameAliasable
 	DesignateIsNameAliasingFunc(func() bool)
 	DesignateAliasedNameFunc(func() string)
@@ -96,6 +99,7 @@ type TaggedFlagValue[T any, FV flag.Value] struct {
 	wrappedValueFunc            func() flag.Value
 	expandFunc                  func(mapping func(string) (string, error)) error
 	isSecretFunc                func() bool
+	internalFunc                func() bool
 	isNameAliasingFunc          func() bool
 	aliasedNameFunc             func() string
 	setValueForFlagNameHookFunc func()
@@ -175,6 +179,39 @@ func (t *TaggedFlagValue[T, FV]) IsSecret() bool {
 	if t.isSecretFunc != nil {
 		return t.isSecretFunc()
 	}
+	v := t.WrappedValue()
+	for {
+		if secretable, ok := v.(common.Secretable); ok {
+			return secretable.IsSecret()
+		}
+		if wrapping, ok := v.(common.WrappingValue); ok {
+			v = wrapping.WrappedValue()
+		} else {
+			break
+		}
+	}
+	return false
+}
+
+func (t *TaggedFlagValue[T, FV]) DesignateInternalFunc(internalFunc func() bool) {
+	t.internalFunc = internalFunc
+}
+
+func (t *TaggedFlagValue[T, FV]) Internal() bool {
+	if t.internalFunc != nil {
+		return t.internalFunc()
+	}
+	v := t.WrappedValue()
+	for {
+		if maybeInternal, ok := v.(common.MaybeInternal); ok {
+			return maybeInternal.Internal()
+		}
+		if wrapping, ok := v.(common.WrappingValue); ok {
+			v = wrapping.WrappedValue()
+		} else {
+			break
+		}
+	}
 	return false
 }
 
@@ -226,6 +263,10 @@ func (t *TaggedFlagValue[T, FV]) YAMLSetValueHook() {
 // defining the flag initially
 func Tag[T any, FV flag.Value](flagset *flag.FlagSet, name string, t Taggable) *T {
 	flg := flagset.Lookup(name)
+	if flg == nil {
+		log.Fatalf("Error creating TaggedFlagValue[%T] when applying tag %v for flag %s: flag was nil.", common.Zero[T](), t, name)
+		return nil
+	}
 	converted, err := common.ConvertFlagValue(flg.Value)
 	if err != nil {
 		log.Fatalf("Error creating TaggedFlagValue[%T] when applying tag %v for flag %s: %v", common.Zero[T](), t, name, err)
@@ -329,6 +370,16 @@ func (_ *secretTag) Tag(flagset *flag.FlagSet, name string, tagged Tagged) flag.
 }
 
 var SecretTag = &secretTag{}
+
+type internalTag struct{}
+
+func (_ *internalTag) Tag(flagset *flag.FlagSet, name string, f Tagged) flag.Value {
+	f.DesignateInternalFunc(func() bool { return true })
+	common.SubstituteUsage(flagset)
+	return f
+}
+
+var InternalTag = &internalTag{}
 
 type yamlIgnoreTag struct{}
 

@@ -2,6 +2,7 @@ package common
 
 import (
 	"flag"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -25,6 +26,8 @@ var (
 
 	// Change only for testing purposes
 	DefaultFlagSet = flag.CommandLine
+
+	usageSubstitutions = make(map[*flag.FlagSet]*func())
 )
 
 func flagTypeFromFlagFuncName(name string) reflect.Type {
@@ -90,6 +93,10 @@ type Expandable interface {
 
 type Secretable interface {
 	IsSecret() bool
+}
+
+type MaybeInternal interface {
+	Internal() bool
 }
 
 type DocumentNodeOption interface {
@@ -358,6 +365,38 @@ func Expand(v flag.Value, mapper func(string) (string, error)) error {
 		return err
 	}
 	return v.Set(exp)
+}
+
+// SubstituteUsage substitutes flagutil's custom Usage function for the current
+// one in the given flagset, or performing a no-op if the custom Usage function
+// is already present. It returns whether or not it performed the substitution.
+func SubstituteUsage(flagset *flag.FlagSet) bool {
+	if usage, ok := usageSubstitutions[flagset]; !ok {
+		flagset.Usage = func() {
+			// This Usage function is patterned off of flag.FlagSet.defaultUsage(),
+			// but uses a FlagSet that has had any internal flags filtered out.
+			if flagset.Name() == "" {
+				fmt.Fprintf(flagset.Output(), "Usage:\n")
+			} else {
+				fmt.Fprintf(flagset.Output(), "Usage of %s:\n", flagset.Name())
+			}
+			filtered := flag.NewFlagSet(flagset.Name(), flagset.ErrorHandling())
+			flagset.VisitAll(func(f *flag.Flag) {
+				if h, ok := f.Value.(MaybeInternal); ok && h.Internal() {
+					return
+				}
+				filtered.Var(f.Value, f.Name, f.Usage)
+			})
+			filtered.PrintDefaults()
+		}
+		usageSubstitutions[flagset] = &flagset.Usage
+		return true
+	} else if &flagset.Usage != usage {
+		flagset.Usage = *usageSubstitutions[flagset]
+		usageSubstitutions[flagset] = &flagset.Usage
+		return true
+	}
+	return false
 }
 
 // AddTestFlagTypeForTesting adds a type correspondence to the internal

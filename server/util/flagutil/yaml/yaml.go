@@ -81,6 +81,14 @@ func UnstructuredFilter(flg *flag.Flag) bool {
 	return !StructuredFilter(flg)
 }
 
+// InternalFilter is a filter that filters out internal flags.
+func InternalFilter(flg *flag.Flag) bool {
+	if maybeInternal, ok := flg.Value.(common.MaybeInternal); ok {
+		return !maybeInternal.Internal()
+	}
+	return true
+}
+
 type YAMLTypeAliasable interface {
 	// YAMLTypeAlias returns the type alias we use in YAML for this flag.Value.
 	// Only necessary if the type used for YAML is not the type returned by
@@ -215,12 +223,8 @@ type redactSecrets struct{}
 
 func (r *redactSecrets) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.Node, error) {
 	if flg != nil {
-		flagValue := flg.Value
-		for v, ok := flagValue.(common.WrappingValue); ok; v, ok = flagValue.(common.WrappingValue) {
-			if secretable, ok := flagValue.(common.Secretable); ok && secretable.IsSecret() {
-				return nil, nil
-			}
-			flagValue = v.WrappedValue()
+		if s, ok := flg.Value.(common.Secretable); ok && s.IsSecret() {
+			return nil, nil
 		}
 	}
 
@@ -477,50 +481,61 @@ func GenerateDocumentedMarshalerFromFlag(flg *flag.Flag) (DocumentedMarshaler, e
 func SplitDocumentedYAMLFromFlags(opts ...common.DocumentNodeOption) ([]byte, error) {
 	b := bytes.NewBuffer([]byte{})
 
-	if _, err := b.Write([]byte("# Unstructured settings\n\n")); err != nil {
-		return nil, err
-	}
 	um, err := GenerateYAMLMapWithValuesFromFlags(
 		GenerateDocumentedMarshalerFromFlag,
 		UnstructuredFilter,
 		IgnoreFilter,
+		InternalFilter,
 	)
 	if err != nil {
 		return nil, err
 	}
-	un, err := DocumentedNode(um, opts...)
-	if err != nil {
-		return nil, err
-	}
-	ub, err := yaml.Marshal(un)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := b.Write(ub); err != nil {
-		return nil, err
+	if len(um) != 0 {
+		un, err := DocumentedNode(um, opts...)
+		if err != nil {
+			return nil, err
+		}
+		ub, err := yaml.Marshal(un)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := b.Write([]byte("# Unstructured settings\n\n")); err != nil {
+			return nil, err
+		}
+		if _, err := b.Write(ub); err != nil {
+			return nil, err
+		}
 	}
 
-	if _, err := b.Write([]byte("\n# Structured settings\n\n")); err != nil {
-		return nil, err
-	}
 	sm, err := GenerateYAMLMapWithValuesFromFlags(
 		GenerateDocumentedMarshalerFromFlag,
 		StructuredFilter,
 		IgnoreFilter,
+		InternalFilter,
 	)
 	if err != nil {
 		return nil, err
 	}
-	sn, err := DocumentedNode(sm, opts...)
-	if err != nil {
-		return nil, err
-	}
-	sb, err := yaml.Marshal(sn)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := b.Write(sb); err != nil {
-		return nil, err
+	if len(sm) != 0 {
+		sn, err := DocumentedNode(sm, opts...)
+		if err != nil {
+			return nil, err
+		}
+		sb, err := yaml.Marshal(sn)
+		if err != nil {
+			return nil, err
+		}
+		if len(um) != 0 {
+			if _, err := b.Write([]byte("\n")); err != nil {
+				return nil, err
+			}
+		}
+		if _, err := b.Write([]byte("# Structured settings\n\n")); err != nil {
+			return nil, err
+		}
+		if _, err := b.Write(sb); err != nil {
+			return nil, err
+		}
 	}
 
 	return b.Bytes(), nil
