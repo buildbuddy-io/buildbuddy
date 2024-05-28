@@ -31,7 +31,7 @@ export type ServerStreamHandler<T> = $stream.ServerStreamHandler<T>;
  * TODO(bduffany): allow customizing the codegen to provide this extended functionality
  * instead of trying to transform the service types / classes like this.
  */
-type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddyService>;
+export type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddyService>;
 
 /**
  * BuildBuddyServiceRpcName is a union type consisting of all BuildBuddyService
