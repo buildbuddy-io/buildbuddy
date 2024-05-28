@@ -356,17 +356,14 @@ message GetGithubCompareResponse {
   context.ResponseContext response_context = 1;
   int64 ahead_by = 2;
   repeated Commit commits = 3;
-  repeated File files = 4;
+  repeated FileSummary files = 5;
+
+  reserved 4;
 }
 
 message Commit {
   string sha = 1;
   string tree_sha = 2;
-}
-
-message File {
-  string name = 1;
-  string sha = 2;
 }
 
 // GET /repos/{owner}/{repo}/forks
@@ -549,6 +546,8 @@ message FileSummary {
   int64 deletions = 3;
 
   FileChangeType change_type = 8;
+
+  string sha = 10;
 
   reserved 4;  // formerly pr-level comment count.
 }
