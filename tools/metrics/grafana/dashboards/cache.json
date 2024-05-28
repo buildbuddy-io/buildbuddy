@@ -41,7 +41,7 @@
           "collapsed": true,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -124,7 +124,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -154,7 +154,7 @@
           "dataFormat": "tsbuckets",
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -232,7 +232,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -264,7 +264,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -369,7 +369,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum by(pod_name) (deriv(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\", cache_name=\"${cache_name}\", partition_id=\"${partition_id}\"}[${window}]))",
@@ -381,7 +381,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum by(pod_name) (rate(buildbuddy_remote_cache_disk_cache_partition_size_bytes_evicted{region=\"${region}\", cache_name=\"${cache_name}\", partition_id=\"${partition_id}\"}[${window}]))",
@@ -414,7 +414,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -490,7 +490,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum(rate(buildbuddy_encryption_encrypted_block_count{region=\"${region}\"}[5m]))",
@@ -501,7 +501,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum(rate(buildbuddy_encryption_encrypted_blob_count{region=\"${region}\"}[5m]))",
@@ -517,7 +517,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -593,7 +593,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum(rate(buildbuddy_encryption_decrypted_block_count{region=\"${region}\"}[5m]))",
@@ -604,7 +604,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum(rate(buildbuddy_encryption_decrypted_blob_count{region=\"${region}\"}[5m]))",
@@ -616,7 +616,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum(rate(buildbuddy_encryption_decryption_error_count{region=\"${region}\"}[5m]))",
@@ -632,7 +632,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -708,7 +708,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum(rate(buildbuddy_encryption_key_refresh_count{region=\"${region}\"}[5m]))",
@@ -719,7 +719,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum(rate(buildbuddy_encryption_key_refresh_failure_count{region=\"${region}\"}[5m]))",
@@ -735,7 +735,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -798,7 +798,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum(increase(buildbuddy_encryption_key_last_encryption_age_msec_bucket{region=\"${region}\"}[6h])) by (le)",
@@ -829,7 +829,7 @@
           "collapsed": true,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "Number of bytes copied from the source to destination cache during a cache migration.",
           "fieldConfig": {
@@ -933,7 +933,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum by(cache_type)(rate(buildbuddy_remote_cache_migration_bytes_copied{region=\"${region}\"}[${window}]))",
@@ -949,7 +949,7 @@
           "collapsed": true,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "Number of blobs copied from the source to destination cache during a cache migration.",
           "fieldConfig": {
@@ -1028,7 +1028,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum by(cache_type)(rate(buildbuddy_remote_cache_migration_blobs_copied{region=\"${region}\"}[${window}]))",
@@ -1044,7 +1044,7 @@
           "collapsed": true,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "Number of digests queued to be copied during a cache migration.",
           "fieldConfig": {
@@ -1123,7 +1123,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum by (pod_name) (buildbuddy_remote_cache_migration_copy_chan_size{region=\"${region}\",namespace=~\"buildbuddy-.*\"})",
@@ -1139,7 +1139,7 @@
           "collapsed": true,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "Number of not found errors from the destination cache during a cache migration.",
           "fieldConfig": {
@@ -1218,7 +1218,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum by(type)(rate(buildbuddy_remote_cache_migration_not_found_error_count{region=\"${region}\"}[${window}]))",
@@ -1234,7 +1234,7 @@
           "collapsed": true,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "Number of double reads where the source and destination caches hold the same digests during a cache migration.",
           "fieldConfig": {
@@ -1338,7 +1338,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum by(type)(rate(buildbuddy_remote_cache_migration_double_read_hit_count{region=\"${region}\"}[${window}]))",
@@ -1354,7 +1354,7 @@
           "collapsed": true,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "Percent of \"important\" artifacts (from reads) missing from the destination cache. ",
           "fieldConfig": {
@@ -1433,7 +1433,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum by (type) (rate(buildbuddy_remote_cache_migration_not_found_error_count{region=\"${region}\"}[${window}])) / (sum by (type) (rate(buildbuddy_remote_cache_migration_not_found_error_count{region=\"${region}\"}[${window}])) + sum by (type) (rate(buildbuddy_remote_cache_migration_double_read_hit_count{region=\"${region}\"}[${window}])))",
@@ -1466,7 +1466,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prom"
+          "uid": "vm"
         },
         "definition": "label_values(up, region)",
         "hide": 0,
@@ -1598,7 +1598,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prom"
+          "uid": "vm"
         },
         "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\"}, partition_id)",
         "hide": 0,
@@ -1624,7 +1624,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prom"
+          "uid": "vm"
         },
         "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\"}, cache_name)",
         "hide": 0,

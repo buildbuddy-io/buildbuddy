@@ -25,7 +25,7 @@
       "collapsed": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -39,7 +39,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -240,7 +240,7 @@
       "collapsed": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -254,7 +254,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -455,7 +455,7 @@
       "collapsed": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -469,7 +469,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -670,7 +670,7 @@
       "collapsed": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -684,7 +684,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -870,7 +870,7 @@
       "collapsed": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -884,7 +884,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }

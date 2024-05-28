@@ -31,7 +31,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -49,7 +49,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 0,
           "fillGradient": 0,
@@ -92,7 +92,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum(up{region=\"${region}\", job=\"${job}\"})",
               "hide": false,
@@ -104,7 +104,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(kube_pod_status_ready{region=\"${region}\", pod=~\"${job}-([0-9a-f]{8,10}-.*|[0-9]+)$\"})",
@@ -155,7 +155,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "",
           "fill": 0,
@@ -199,7 +199,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum by (version)(buildbuddy_version{region=\"${region}\", job=\"${job}\"})",
@@ -253,7 +253,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -293,7 +293,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(increase(kube_pod_container_status_restarts_total{region=\"${region}\"}[1m])) by (pod, container, exported_namespace) > 0",
@@ -339,7 +339,7 @@
           "collapsed": true,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -416,7 +416,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "expr": "sum(1 - (buildbuddy_health_check_status{region=\"${region}\"} == 0)) by (pod_name, health_check_name)",
@@ -433,7 +433,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -445,7 +445,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -464,7 +464,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "",
           "fill": 0,
@@ -506,7 +506,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
@@ -517,7 +517,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "avg(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
@@ -527,7 +527,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
@@ -578,7 +578,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -618,7 +618,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
@@ -669,7 +669,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -709,7 +709,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
@@ -760,7 +760,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -800,7 +800,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
@@ -851,7 +851,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -891,7 +891,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
@@ -942,7 +942,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -982,7 +982,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
@@ -1030,7 +1030,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -1042,7 +1042,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -1061,7 +1061,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "Chart is stacked, so values always add up to 100%.",
           "fill": 1,
@@ -1102,7 +1102,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}))",
@@ -1114,7 +1114,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
@@ -1167,7 +1167,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 0,
           "fillGradient": 0,
@@ -1214,7 +1214,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
@@ -1225,7 +1225,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
@@ -1235,7 +1235,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=\"${pool}-autoscaler\"}",
               "interval": "",
@@ -1288,7 +1288,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 0,
           "fillGradient": 0,
@@ -1328,7 +1328,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "histogram_quantile(\n  ${quantile},\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", stage!=\"worker\", job=\"${pool}\"}[${window}]))\n)",
@@ -1375,7 +1375,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -1452,7 +1452,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum by (stage) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"})",
@@ -1467,7 +1467,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -1546,7 +1546,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum by (status) (rate(buildbuddy_remote_execution_count{region=\"${region}\", job=\"${pool}\"}[${window}]))",
@@ -1566,7 +1566,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "",
           "fill": 0,
@@ -1608,7 +1608,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{region=\"${region}\", pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
@@ -1619,7 +1619,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{region=\"${region}\", pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
@@ -1663,7 +1663,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "",
           "fieldConfig": {
@@ -1741,7 +1741,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(buildbuddy_remote_execution_memory_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
@@ -1752,7 +1752,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(buildbuddy_remote_execution_peak_memory_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
@@ -1764,7 +1764,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\"})",
@@ -1776,7 +1776,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(buildbuddy_remote_execution_assignable_ram_bytes{region=\"${region}\", job=\"${pool}\"})",
@@ -1792,7 +1792,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -1869,7 +1869,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(buildbuddy_remote_execution_cpu_utilization_milli_cpu{region=\"${region}\",job=\"${pool}\"})/1000",
@@ -1880,7 +1880,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(rate(buildbuddy_remote_execution_used_milli_cpu{region=\"${region}\",job=\"${pool}\"}[${window}]))/1000",
@@ -1892,7 +1892,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\",job=\"${pool}\"})/1000",
@@ -1904,7 +1904,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(buildbuddy_remote_execution_assignable_milli_cpu{region=\"${region}\",job=\"${pool}\"})/1000",
@@ -1924,7 +1924,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "",
           "fill": 1,
@@ -1965,7 +1965,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
@@ -2016,7 +2016,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -2056,7 +2056,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
@@ -2105,7 +2105,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -2145,7 +2145,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "quantile(0.5, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
@@ -2196,7 +2196,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "Number of actions waiting to be executed",
           "fill": 0,
@@ -2238,7 +2238,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
@@ -2284,7 +2284,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -2363,7 +2363,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "sum(rate(buildbuddy_remote_execution_file_cache_requests{status=\"hit\", region=\"${region}\", job=\"${pool}\"}[${window}]))\n  /\nsum(rate(buildbuddy_remote_execution_file_cache_requests{region=\"${region}\", job=\"${pool}\"}[${window}]))",
@@ -2382,7 +2382,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -2425,7 +2425,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
               "interval": "",
@@ -2470,7 +2470,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -2551,7 +2551,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "histogram_quantile(\n  0.5,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
@@ -2562,7 +2562,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "histogram_quantile(\n  0.9,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
@@ -2574,7 +2574,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "histogram_quantile(\n  0.99,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
@@ -2586,7 +2586,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "histogram_quantile(\n  0.9999,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
@@ -2602,7 +2602,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -2708,7 +2708,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "buildbuddy_remote_execution_file_cache_last_eviction_age_usec{region=\"${region}\", job=\"${pool}\"}",
@@ -2726,7 +2726,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -2738,7 +2738,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -2755,7 +2755,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "Number of heap bytes allocated and still in use.",
           "fill": 0,
@@ -2799,7 +2799,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
@@ -2810,7 +2810,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "refId": "B"
             }
@@ -2854,7 +2854,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 0,
           "fillGradient": 0,
@@ -2897,7 +2897,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "go_goroutines{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
@@ -2945,7 +2945,7 @@
           "dashes": false,
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fill": 0,
           "fillGradient": 0,
@@ -2988,7 +2988,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "expr": "go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"${job}\"}",
               "interval": "",
@@ -3036,7 +3036,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -3048,7 +3048,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -3061,7 +3061,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -3139,7 +3139,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3157,7 +3157,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -3235,7 +3235,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3248,7 +3248,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3266,7 +3266,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -3344,7 +3344,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3357,7 +3357,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3379,7 +3379,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -3391,7 +3391,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -3404,7 +3404,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -3517,7 +3517,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": false,
@@ -3530,7 +3530,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3544,7 +3544,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3558,7 +3558,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3572,7 +3572,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3592,7 +3592,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -3604,7 +3604,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -3617,7 +3617,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -3776,7 +3776,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3790,7 +3790,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3804,7 +3804,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3817,7 +3817,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3831,7 +3831,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3851,7 +3851,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -3863,7 +3863,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -3876,7 +3876,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -3955,7 +3955,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -3974,7 +3974,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -3986,7 +3986,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -3999,7 +3999,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "",
           "fieldConfig": {
@@ -4110,7 +4110,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -4123,7 +4123,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "editorMode": "code",
               "exemplar": true,
@@ -4143,7 +4143,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -4292,7 +4292,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prom"
+          "uid": "vm"
         },
         "definition": "label_values(up{region=\"$region\"}, job)",
         "hide": 0,
@@ -4344,7 +4344,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prom"
+          "uid": "vm"
         },
         "definition": "label_values(node_uname_info{region=\"$region\"}, inventory_hostname)",
         "hide": 0,

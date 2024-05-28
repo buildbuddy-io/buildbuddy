@@ -35,7 +35,7 @@
       ],
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "filterNull": false,
       "fontSize": "100%",
@@ -95,7 +95,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Clickhouse operator metrics-exporter fails when grab metrics from clickhouse-server\n\nPlease look pods status\n\nkubectl get pods --all-namespaces | grep clickhouse",
       "fieldConfig": {
@@ -186,7 +186,7 @@
       ],
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "For example, version 11.22.33 is translated to 11022033",
       "filterNull": false,
@@ -238,7 +238,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Check Zookeeper connection, Disk Free space and network interconnection between replicas ASAP",
       "fieldConfig": {
@@ -331,7 +331,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Show DNS errors and distributed server-server connections failures",
       "fieldConfig": {
@@ -460,7 +460,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Show readonly and partial shutdown replicas, zookeeer exceptions, zookeeer sessions, zookeeper init requests",
       "fieldConfig": {
@@ -613,7 +613,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "delayed query\nNumber of INSERT queries that are throttled due to high number of active data parts for partition in a *MergeTree table.\n\ndelayed blocks\nNumber of times the INSERT of a block to a *MergeTree table was throttled due to high number of active data parts for partition. \n\nrejected blocks\nNumber of times the INSERT of a block to a MergeTree table was rejected with 'Too many parts' exception due to high number of active data parts for partition.\n\n\nplease look\nparts_to_delay_insert\nparts_to_throw_insert\n\nin system.merge_tree_settings table",
       "editable": true,
@@ -746,7 +746,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Number of SELECT queries started to be interpreted and maybe executed. Does not include queries that are failed to parse, that are rejected due to AST size limits; rejected due to quota limits or limits on number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.",
       "editable": true,
@@ -865,7 +865,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Show how much bytes read and decompress via compressed buffer on each server in cluster",
       "editable": true,
@@ -1012,7 +1012,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Total amount of memory (bytes) allocated in currently executing queries. \n\nNote that some memory allocations may not be accounted.",
       "editable": true,
@@ -1117,7 +1117,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Number of INSERT queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.",
       "editable": true,
@@ -1222,7 +1222,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "## Tracks amount of inserted data.",
       "editable": true,
@@ -1327,7 +1327,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "## Tracks rows of inserted data.",
       "editable": true,
@@ -1432,7 +1432,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Show how intensive data exchange between replicas in parts",
       "editable": true,
@@ -1636,7 +1636,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Show seconds when replicated servers can be delayed relative to current time,  when you insert directly in *ReplicatedMegreTree table on one server clickhouse need time to replicate new parts of data to another servers in same shard in background",
       "editable": true,
@@ -1766,7 +1766,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Number of requests to ZooKeeper transactions per seconds.",
       "editable": true,
@@ -1874,7 +1874,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Show how intensive background merge processes",
       "editable": true,
@@ -1986,7 +1986,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Show how intensive background merge processes",
       "editable": true,
@@ -2097,7 +2097,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Show how intensive background merge processes",
       "editable": true,
@@ -2208,7 +2208,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "decimals": 0,
       "description": "",
@@ -2310,7 +2310,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "decimals": 0,
       "description": "",
@@ -2437,7 +2437,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Each logical partition defined over `PARTITION BY` contains few physical data \"parts\" ",
       "editable": true,
@@ -2548,7 +2548,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Memory size allocated for clickhouse-server process\nAvailable for ClickHouse 20.4+\n\nVIRT \nThe total amount of virtual memory used by the task. It includes all code, data and shared libraries plus pages that have been swapped out.\n\nVIRT = SWAP + RES\n\n\nSWAP -- Swapped size (kb)\nThe swapped out portion of a task's total virtual memory image.\n\nRES -- Resident size (kb)\nThe non-swapped physical memory a task has used.\nRES = CODE + USED DATA.\n\nCODE -- Code size (kb)\nThe amount of physical memory devoted to executable code, also known as the 'text resident set' size or TRS\n\nDATA -- Data+Stack size (kb)\nThe amount of physical memory allocated to other than executable code, also known as the 'data resident set' size or DRS.\n\nSHR -- Shared Mem size (kb)\nThe amount of shared memory used by a task. It simply reflects memory that could be potentially shared with other processes.",
       "fieldConfig": {
@@ -2681,7 +2681,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Memory size allocated for primary keys",
       "fieldConfig": {
@@ -2773,7 +2773,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Memory size allocated for dictionaries",
       "fieldConfig": {
@@ -2870,7 +2870,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "shows how much space available in the kubernetes pod\n\nbe careful with multiple volumes configuration, kubernetes volume claims and S3 as storage backend",
       "fieldConfig": {
@@ -2968,7 +2968,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Total data size for all ClickHouse *MergeTree tables\n\n",
       "fieldConfig": {
@@ -3060,7 +3060,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Show different types of connections for each server",
       "editable": true,
@@ -3201,7 +3201,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "BackgroundPoolTask\t\n---\nNumber of active tasks in BackgroundProcessingPool (merges, mutations, fetches, or replication queue bookkeeping)\n\n\nBackgroundMovePoolTask\n---\nNumber of active tasks in BackgroundProcessingPool for moves\n\n\nBackgroundSchedulePoolTask\t\n---\nA number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.",
       "editable": true,
@@ -3332,7 +3332,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Number of active mutations (ALTER DELETE/ALTER UPDATE) and parts to mutate",
       "fieldConfig": {
@@ -3439,7 +3439,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Show which percent of mark files (.mrk) read from memory instead of disk",
       "editable": true,
@@ -3547,7 +3547,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "The time which CPU spent on various types of activity ",
       "fieldConfig": {
@@ -3724,7 +3724,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "",
       "editable": true,
@@ -3840,7 +3840,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prom"
+          "uid": "vm"
         },
         "definition": "label_values({__name__ =~ \"chi_clickhouse_metric_Uptime|chi_clickhouse_metric_fetch_errors\"}, exported_namespace)",
         "hide": 0,
@@ -3871,7 +3871,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prom"
+          "uid": "vm"
         },
         "definition": "label_values({__name__ =~ \"chi_clickhouse_metric_Uptime|chi_clickhouse_metric_fetch_errors\", exported_namespace=~\"$exported_namespace\"}, chi)",
         "hide": 0,
@@ -3902,7 +3902,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prom"
+          "uid": "vm"
         },
         "definition": "label_values({__name__ =~ \"chi_clickhouse_metric_Uptime|chi_clickhouse_metric_fetch_errors\",exported_namespace=~\"$exported_namespace\",chi=~\"$chi\"}, hostname)",
         "hide": 0,

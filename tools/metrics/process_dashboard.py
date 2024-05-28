@@ -63,7 +63,9 @@ def main(args):
     else:
         dashboard["uid"] = sha256(repr([get_file_tag(dashboard), args.data_source_uid]))[:9]
 
-    dashboard = with_data_source_uids(dashboard, args.data_source_uid)
+    # Use VictoriaMetrics datasource for all dashboards, since we no longer run
+    # prometheus.
+    dashboard = with_data_source_uids(dashboard, "vm")
     dashboard = with_ordered_dicts(dashboard)
 
     # Grafana updates the refresh interval in the JSON when changing it in the

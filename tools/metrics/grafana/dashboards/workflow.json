@@ -31,7 +31,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "fieldConfig": {
         "defaults": {
@@ -110,7 +110,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "(sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"us-west1\", job=\"executor-workflows\", status=\"hit\"}[60m])) * 60 * 60)\n/\n((sum(rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"us-west1\", job=\"executor-workflows\"}[60m])) > 0)* 60 * 60 > 10)",
@@ -121,7 +121,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "clamp_max(\n  sum(\n    (up{region=\"us-west1\", job=\"executor-workflows\"} offset 3m)\n      unless\n     up{region=\"us-west1\", job=\"executor-workflows\"}\n  )\n    /\n  sum(up{region=\"us-west1\", job=\"executor-workflows\"}),\n1)",
@@ -133,7 +133,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "expr": "",
           "hide": false,
@@ -149,7 +149,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "fieldConfig": {
         "defaults": {
@@ -226,7 +226,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le, stage) (\n\t     rate(buildbuddy_firecracker_stage_duration_usec_bucket{job=\"executor-workflows\"}[10m])\n\t    )\n) / 1e6 / 60",
@@ -242,7 +242,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "After a copy-on-write memory snapshot has been used, the ratio of dirty/total chunks.",
       "fieldConfig": {
@@ -306,7 +306,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{file_name=\"memory\", job=\"executor-workflows\"}[5m])) by (le)",
@@ -323,7 +323,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "After a copy-on-write rootfs file has been used, the ratio of dirty/total chunks.",
       "fieldConfig": {
@@ -388,7 +388,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{file_name=\"rootfs\", job=\"executor-workflows\"}[5m])) by (le)",
@@ -405,7 +405,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "After a copy-on-write snapshot has been used, the total count of bytes dirtied.",
       "fieldConfig": {
@@ -484,7 +484,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "sum by (file_name) (rate(buildbuddy_firecracker_cow_snapshot_dirty_bytes[10m]))",
@@ -499,7 +499,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "fieldConfig": {
         "defaults": {
@@ -576,7 +576,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le) (\n\t     rate(buildbuddy_firecracker_exec_dial_duration_usec_bucket[3m])\n\t    )\n) / 1e6",
@@ -592,7 +592,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "fieldConfig": {
         "defaults": {
@@ -670,7 +670,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "sum by (pod_name) (buildbuddy_firecracker_cow_snapshot_memory_mapped_bytes{job=\"executor-workflows\"})",
@@ -687,7 +687,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "The count represents the number of workflows where X% of snapshot chunks were fetched from the remote cache. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
       "fieldConfig": {
@@ -751,7 +751,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"remote_cache\"}[5m])) by (le)",
@@ -768,7 +768,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "The count represents the number of workflows where X% of snapshot chunks were not dynamically initialized during execution. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
       "fieldConfig": {
@@ -832,7 +832,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"unmapped\"}[5m])) by (le) ",
@@ -849,7 +849,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "The count represents the number of workflows where X% of snapshot chunks were fetched from the local filecache. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
       "fieldConfig": {
@@ -913,7 +913,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{job=\"executor-workflows\", chunk_source=\"local_filecache\"}[5m])) by (le) ",
@@ -929,7 +929,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Total time spent on each operation during VM initialization (everything before a command can be executed in the VM)",
       "fieldConfig": {
@@ -1020,7 +1020,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le, file_name, name) (\n\t     rate(buildbuddy_firecracker_cow_snapshot_chunk_operation_duration_usec_bucket[3m])\n\t    )\n) / 1e6",
@@ -1032,7 +1032,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "histogram_quantile(\n     0.95,\n     sum by(le, stage) (\n        rate(buildbuddy_firecracker_cow_snapshot_page_fault_total_duration_usec_bucket[3m])\n       )\n) / 1e6",
@@ -1049,7 +1049,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "description": "Time to initialize a single chunk (fetch the data and mmap it)",
       "fieldConfig": {
@@ -1127,7 +1127,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "editorMode": "code",
           "expr": "histogram_quantile(\n     0.95,\n     sum by(le, chunk_source) (\n        rate(buildbuddy_firecracker_cow_snapshot_init_chunk_duration_usec_bucket[3m])\n       )\n) / 1e6",
