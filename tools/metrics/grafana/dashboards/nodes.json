@@ -31,7 +31,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -44,7 +44,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -157,7 +157,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": false,
               "expr": "rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -168,7 +168,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -180,7 +180,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -192,7 +192,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -204,7 +204,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "1 - (avg by(mode) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})))",
@@ -222,7 +222,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -234,7 +234,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -247,7 +247,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -406,7 +406,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "node_memory_wired_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -418,7 +418,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "node_memory_compressed_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -430,7 +430,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "node_memory_active_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -441,7 +441,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "node_memory_inactive_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -453,7 +453,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "node_memory_free_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -471,7 +471,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -483,7 +483,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -496,7 +496,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "fieldConfig": {
             "defaults": {
@@ -575,7 +575,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "node_memory_swap_used_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -592,7 +592,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -604,7 +604,7 @@
       "collapsed": true,
       "datasource": {
         "type": "prometheus",
-        "uid": "prom"
+        "uid": "vm"
       },
       "gridPos": {
         "h": 1,
@@ -617,7 +617,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "description": "",
           "fieldConfig": {
@@ -728,7 +728,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "rate(node_memory_swapped_in_bytes_total[${window}]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -739,7 +739,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "prom"
+                "uid": "vm"
               },
               "exemplar": true,
               "expr": "rate(node_memory_swapped_out_bytes_total[${window}]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
@@ -757,7 +757,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prom"
+            "uid": "vm"
           },
           "refId": "A"
         }
@@ -782,7 +782,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prom"
+          "uid": "vm"
         },
         "definition": "label_values(up, region)",
         "hide": 0,
@@ -914,7 +914,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prom"
+          "uid": "vm"
         },
         "definition": "label_values(node_uname_info{region=\"$region\"}, nodename)",
         "hide": 0,

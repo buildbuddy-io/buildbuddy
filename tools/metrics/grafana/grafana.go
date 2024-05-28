@@ -26,7 +26,6 @@ import (
 
 var (
 	kube = flag.Bool("kube", false, "Use kubectl port-forward to point Grafana at real data.")
-	vm   = flag.Bool("vm", false, "Use VictoriaMetrics instead of Prometheus")
 
 	// Note: these flags only take effect when setting -kube=true:
 	namespace  = flag.String("namespace", "monitor-dev", "k8s namespace")
@@ -69,13 +68,8 @@ func run() error {
 		args := []string{"--file", "docker-compose.grafana.yml"}
 		if !*kube {
 			args = append(args, "--file", "docker-compose.redis-exporter.yml")
-			if *vm {
-				os.Setenv("DASHBOARDS_DIR", filepath.Join(workspaceRoot, vmDashboardsDir))
-				args = append(args, "--file", "docker-compose.victoria-metrics.yml")
-			} else {
-				os.Setenv("DASHBOARDS_DIR", filepath.Join(workspaceRoot, dashboardsDir))
-				args = append(args, "--file", "docker-compose.prometheus.yml")
-			}
+			os.Setenv("DASHBOARDS_DIR", filepath.Join(workspaceRoot, vmDashboardsDir))
+			args = append(args, "--file", "docker-compose.victoria-metrics.yml")
 		}
 		args = append(args, "up")
 		// Note: CommandContext kills with SIGKILL - we don't want that since it
