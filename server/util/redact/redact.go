@@ -9,6 +9,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/shlex"
 	"google.golang.org/protobuf/encoding/prototext"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -300,7 +302,7 @@ func splitCombinedForm(cf string) (string, string) {
 	return cf[:i], cf[i+1:]
 }
 
-func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) {
+func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) error {
 	command := ""
 	residualChunks := []*clpb.ChunkList{}
 
@@ -348,6 +350,16 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 						}
 					}
 				}
+
+				// Redact bazel sub command (for remote runners)
+				if option.OptionName == "bazel_sub_command" {
+					cmdLineTokens, err := shlex.Split(option.OptionValue)
+					if err != nil {
+						return status.WrapError(err, "split bazel_sub_command")
+					}
+					redactCmdLine(cmdLineTokens)
+					option.OptionValue = strings.Join(cmdLineTokens, " ")
+				}
 			}
 			continue
 		}
@@ -370,6 +382,7 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 			redactResidualChunkList(cl)
 		}
 	}
+	return nil
 }
 
 func redactResidualChunkList(chunkList *clpb.ChunkList) {
@@ -454,7 +467,7 @@ func NewStreamingRedactor(env environment.Env) *StreamingRedactor {
 	}
 }
 
-func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
+func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	switch p := event.Payload.(type) {
 	case *bespb.BuildEvent_Progress:
 		{
@@ -477,7 +490,9 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_StructuredCommandLine:
 		{
-			redactStructuredCommandLine(p.StructuredCommandLine, r.allowedEnvVars)
+			if err := redactStructuredCommandLine(p.StructuredCommandLine, r.allowedEnvVars); err != nil {
+				return err
+			}
 		}
 	case *bespb.BuildEvent_OptionsParsed:
 		{
@@ -548,6 +563,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		{
 		}
 	}
+	return nil
 }
 
 func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
