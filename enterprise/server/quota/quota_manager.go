@@ -135,7 +135,7 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 		rq,
 		func(ctx context.Context, qbg *struct {
 			tables.QuotaBucket
-			tables.QuotaGroup
+			*tables.QuotaGroup
 		}) error {
 			qb := &qbg.QuotaBucket
 			ns, ok := config[qb.Namespace]
@@ -157,8 +157,8 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 				ns.assignedBuckets[qb.Name] = bucket
 			}
 
-			qg := &qbg.QuotaGroup
-			if qg.Namespace == "" {
+			qg := qbg.QuotaGroup
+			if qg == nil {
 				// No Quota Group for this bucket
 				return nil
 			}
