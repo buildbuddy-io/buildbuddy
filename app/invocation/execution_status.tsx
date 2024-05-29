@@ -1,4 +1,4 @@
-import rpc_service, { ServerStreamHandler, ServerStream } from "../service/rpc_service";
+import { ExtendedBuildBuddyService, ServerStreamHandler, ServerStream } from "../service/rpc_service";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { streamWithRetry } from "../util/rpc";
@@ -11,11 +11,12 @@ export const ExecutionState = build.bazel.remote.execution.v2.ExecutionProgress.
  * Each operation is unpacked into a more usable format.
  */
 export function waitExecution(
+  rpcService: ExtendedBuildBuddyService,
   executionId: string,
   handler: ServerStreamHandler<ExecuteOperation>
 ): ServerStream<ExecuteOperation> {
   return streamWithRetry(
-    rpc_service.service.waitExecution,
+    rpcService.waitExecution,
     { executionId },
     {
       next: (response) => {

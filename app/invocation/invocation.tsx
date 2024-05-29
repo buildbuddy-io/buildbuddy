@@ -280,7 +280,15 @@ export default class InvocationComponent extends React.Component<Props, State> {
     const runnerExecution = this.state.runnerExecution;
     if (!runnerExecution?.executionId) return;
 
-    this.runnerExecutionStream = waitExecution(runnerExecution.executionId, {
+    // We technically know that we won't have the invocation at this point,
+    // but at least flagging this call here will get the default entry and
+    // ensure that we try to keep this matching region in the future (if we
+    // ever wind up needing it).
+    const service = rpcService.getRegionalServiceOrDefault(
+      this.state.model?.stringCommandLineOption("remote_execution") ?? ""
+    );
+
+    this.runnerExecutionStream = waitExecution(service, runnerExecution.executionId, {
       next: (op) => {
         this.setState({ runnerLastExecuteOperation: op });
         if (op.response) {

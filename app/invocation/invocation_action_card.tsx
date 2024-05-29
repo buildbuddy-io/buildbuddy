@@ -138,7 +138,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
     this.setState({ lastOperation: undefined });
     const executionId = this.props.search.get("executionId");
     if (!executionId) return;
-    this.operationStream = waitExecution(executionId, {
+
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+
+    this.operationStream = waitExecution(service, executionId, {
       next: (operation) => {
         this.setState({ lastOperation: operation });
         if (operation.response) {
