@@ -117,6 +117,7 @@ func execute(cmdArgs []string) error {
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
+	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 
 	environ, err := rexec.MakeEnv(*actionEnv...)
 	if err != nil {
