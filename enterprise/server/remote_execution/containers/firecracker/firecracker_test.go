@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -54,8 +53,6 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -799,7 +796,6 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 			ScratchDiskSizeMb: 100,
 		},
 		ExecutorConfig: cfg,
-		SavedState:     &rnpb.FirecrackerState{SnapshotKey: originalSnapshotKey},
 	}
 	ogFork, err := firecracker.NewContainer(ctx, env, task, opts)
 	require.NoError(t, err)
@@ -1925,112 +1921,6 @@ func TestFirecrackerLargeResult(t *testing.T) {
 	require.NoError(t, res.Error)
 	assert.Equal(t, string(res.Stderr), "")
 	assert.Len(t, res.Stdout, stdoutSize)
-}
-
-func TestFirecrackerWithExecutorRestart(t *testing.T) {
-	ctx := context.Background()
-
-	// Make sure we use the same filecache and disk root across restarts
-	testRoot := tempJailerRoot(t)
-	err := os.RemoveAll(filepath.Join(testRoot, "_runner_pool_state.bin"))
-	require.NoError(t, err)
-	filecacheRoot := testfs.MakeDirAll(t, testRoot, "filecache")
-	diskCacheRoot := testfs.MakeTempDir(t)
-
-	var (
-		env    *testenv.TestEnv
-		ta     *testauth.TestAuthenticator
-		pool   interfaces.RunnerPool
-		ctxUS1 context.Context
-	)
-	setup := func() {
-		var err error
-		env = getTestEnv(ctx, t, envOpts{filecacheRootDir: filecacheRoot, cacheRootDir: diskCacheRoot})
-		flags.Set(t, "executor.enable_firecracker", true)
-		// Jailer root dir needs to be < 38 chars
-		flags.Set(t, "executor.root_directory", testRoot)
-		ta = testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
-		env.SetAuthenticator(ta)
-		pool, err = runner.NewPool(env, &runner.PoolOptions{})
-		require.NoError(t, err)
-		ctxUS1, err = ta.WithAuthenticatedUser(ctx, "US1")
-		require.NoError(t, err)
-	}
-
-	setup()
-
-	smd := &scpb.SchedulingMetadata{
-		TaskSize: &scpb.TaskSize{
-			EstimatedMemoryBytes: 1_000_000_000,
-			EstimatedMilliCpu:    1_000,
-		},
-	}
-	commonProps := []*repb.Platform_Property{
-		{Name: "recycle-runner", Value: "true"},
-		{Name: "workload-isolation-type", Value: "firecracker"},
-		{Name: "container-image", Value: "docker://" + busyboxImage},
-		// TODO: Test setting preserve-workspace=true when resuming from
-		// persisted state. This doesn't matter a whole lot for workflows in
-		// particular, because we don't use the workspace and instead override
-		// the working dir to /root/workspace
-	}
-
-	task1 := &repb.ScheduledTask{
-		ExecutionTask: &repb.ExecutionTask{
-			Command: &repb.Command{
-				Arguments: []string{"sh", "-c", "printf foo > /root/KEEP"},
-				Platform:  &repb.Platform{Properties: commonProps},
-			},
-		},
-		SchedulingMetadata: smd,
-	}
-
-	r, err := pool.Get(ctxUS1, task1)
-	require.NoError(t, err)
-
-	res := r.Run(ctxUS1)
-	require.NoError(t, res.Error)
-
-	finishedCleanly := true
-	pool.TryRecycle(ctxUS1, r, finishedCleanly)
-
-	// Simulate executor shutdown.
-	err = pool.Shutdown(ctx)
-	require.NoError(t, err)
-
-	// Now re-initialize everything, simulating an executor restart. The pool
-	// should restore the saved snapshot state. Do this a couple of times for
-	// good measure.
-	for i := 0; i < 3; i++ {
-		setup()
-
-		task2 := &repb.ScheduledTask{
-			ExecutionTask: &repb.ExecutionTask{
-				Command: &repb.Command{
-					Arguments: []string{"sh", "-c", "cat /root/KEEP 2>&1"},
-					Platform:  &repb.Platform{Properties: commonProps},
-				},
-			},
-			SchedulingMetadata: smd,
-		}
-
-		r, err = pool.Get(ctxUS1, task2)
-		require.NoError(t, err)
-
-		log.Infof("Running task...")
-
-		res = r.Run(ctxUS1)
-		require.NoError(t, res.Error)
-
-		// Should be able to read /root/KEEP from the previous run.
-		require.Equal(t, "foo", string(res.Stdout))
-
-		finishedCleanly := true
-		pool.TryRecycle(ctxUS1, r, finishedCleanly)
-
-		err = pool.Shutdown(ctx)
-		require.NoError(t, err)
-	}
 }
 
 func TestMergeDiffSnapshot(t *testing.T) {

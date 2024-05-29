@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 var (
@@ -128,8 +127,4 @@ func (c *bareCommandContainer) Unpause(ctx context.Context) error { return nil }
 
 func (c *bareCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, nil
-}
-
-func (c *bareCommandContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	return nil, status.UnimplementedError("not implemented")
 }

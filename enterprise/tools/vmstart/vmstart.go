@@ -39,7 +39,6 @@ import (
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -242,7 +241,7 @@ func run(ctx context.Context, env environment.Env) error {
 		if err != nil {
 			return err
 		}
-		opts.SavedState = &rnpb.FirecrackerState{SnapshotKey: key}
+		opts.OverrideSnapshotKey = key
 		c, err = firecracker.NewContainer(ctx, env, task, opts)
 		if err != nil {
 			return status.WrapError(err, "init")

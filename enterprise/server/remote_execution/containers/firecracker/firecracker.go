@@ -63,7 +63,6 @@ import (
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	dockerclient "github.com/docker/docker/client"
@@ -442,32 +441,22 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	var vmConfig *fcpb.VMConfiguration
-	savedState := args.State.GetContainerState().GetFirecrackerState()
-	if savedState == nil {
-		sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
-		numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
-		numCPUs += int64(*overprivisionCPUs)
-		numCPUs = min(numCPUs, int64(runtime.NumCPU()))
-		vmConfig = &fcpb.VMConfiguration{
-			NumCpus:           numCPUs,
-			MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-			ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
-			EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
-			EnableNetworking:  true,
-			InitDockerd:       args.Props.InitDockerd,
-			EnableDockerdTcp:  args.Props.EnableDockerdTCP,
-		}
-		vmConfig.BootArgs = getBootArgs(vmConfig)
-	} else if *snaputil.EnableLocalSnapshotSharing {
-		// When local snapshot sharing is enabled, reject old-style persisted
-		// snapshots, since these aren't shareable (i.e. COW-formatted).
-		return nil, status.UnavailableError("ignoring persisted snapshot; this functionality has been replaced by local snapshot sharing")
-	} else {
-		vmConfig = args.State.GetContainerState().GetFirecrackerState().GetVmConfiguration()
+	sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
+	numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
+	numCPUs += int64(*overprivisionCPUs)
+	numCPUs = min(numCPUs, int64(runtime.NumCPU()))
+	vmConfig = &fcpb.VMConfiguration{
+		NumCpus:           numCPUs,
+		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
+		EnableNetworking:  true,
+		InitDockerd:       args.Props.InitDockerd,
+		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 	}
+	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
 		VMConfiguration:        vmConfig,
-		SavedState:             savedState,
 		ContainerImage:         args.Props.ContainerImage,
 		User:                   args.Props.DockerUser,
 		DockerClient:           p.dockerClient,
@@ -614,7 +603,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 
 	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCICommand(task.GetCommand()) || *forceRemoteSnapshotting)
 
-	if opts.SavedState == nil {
+	if opts.OverrideSnapshotKey == nil {
 		c.vmConfig.DebugMode = *debugTerminal
 
 		if err := c.newID(ctx); err != nil {
@@ -655,7 +644,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			}).Inc()
 		}
 	} else {
-		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.SavedState.GetSnapshotKey()}
+		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey}
 
 		// TODO(bduffany): add version info to snapshots. For example, if a
 		// breaking change is made to the vmexec API, the executor should not
@@ -813,28 +802,6 @@ func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
 
 func (c *FirecrackerContainer) SnapshotID() string {
 	return c.snapshotID
-}
-
-// State returns the container state to be persisted to disk so that this
-// container can be reconstructed from the state on disk after an executor
-// restart.
-func (c *FirecrackerContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	if *snaputil.EnableLocalSnapshotSharing {
-		// When local snapshot sharing is enabled, don't bother explicitly
-		// persisting container state across reboots. Instead we can
-		// deterministically match tasks to cached snapshots just based on the
-		// task's snapshot key.
-		return nil, status.UnimplementedError("not implemented")
-	}
-
-	state := &rnpb.ContainerState{
-		IsolationType: string(platform.FirecrackerContainerType),
-		FirecrackerState: &rnpb.FirecrackerState{
-			VmConfiguration: c.vmConfig,
-			SnapshotKey:     c.snapshotKeySet.GetBranchKey(),
-		},
-	}
-	return state, nil
 }
 
 func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {

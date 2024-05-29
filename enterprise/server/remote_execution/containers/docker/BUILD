@@ -12,7 +12,6 @@ go_library(
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
-        "//proto:runner_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/util/flag",

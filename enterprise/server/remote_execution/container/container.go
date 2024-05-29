@@ -24,7 +24,6 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 const (
@@ -96,11 +95,6 @@ type Init struct {
 
 	// Publisher can be used to send fine-grained execution progress updates.
 	Publisher *operation.Publisher
-
-	// State can be used to restore a runner from state that was serialized
-	// to disk.
-	// TODO: remove this since we have Firecracker snapshot sharing now.
-	State *rnpb.RunnerState
 }
 
 // ContainerMetrics handles Prometheus metrics accounting for CommandContainer
@@ -251,13 +245,6 @@ type CommandContainer interface {
 	// container is paused, for the purposes of computing resources used for
 	// pooled runners.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
-
-	// State returns the ContainerState to be persisted. This should be a
-	// relatively fast operation since it is called on executor shutdown.
-	//
-	// If a container implementation does not support saving and restoring state
-	// across restarts, it can return UNIMPLEMENTED.
-	State(ctx context.Context) (*rnpb.ContainerState, error)
 }
 
 // VM is an interface implemented by containers backed by VMs (i.e. just
@@ -532,19 +519,6 @@ func (t *TracedCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	}
 
 	return t.Delegate.Stats(ctx)
-}
-
-func (t *TracedCommandContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
-
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	if t.removed {
-		return nil, ErrRemoved
-	}
-
-	return t.Delegate.State(ctx)
 }
 
 func NewTracedCommandContainer(delegate CommandContainer) *TracedCommandContainer {

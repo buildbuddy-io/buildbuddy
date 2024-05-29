@@ -339,6 +339,3 @@ func (c *sandbox) Unpause(ctx context.Context) error                          { 
 func (c *sandbox) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, nil
 }
-func (c *sandbox) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	return nil, status.UnimplementedError("not implemented")
-}
