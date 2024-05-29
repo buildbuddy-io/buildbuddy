@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/throttled/throttled/v2"
@@ -105,66 +104,74 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 	}
 	ctx := env.GetServerContext()
 	config := make(map[string]*namespaceConfig)
-	// TODO(zoey): use JOIN for this
-	err := env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		q := query_builder.NewQuery(`SELECT * FROM "QuotaBuckets"`)
-		if namespace != "" {
-			q = q.AddWhereClause(`namespace = ?`, namespace)
-		}
-		queryStr, args := q.Build()
-		rq := tx.NewQuery(ctx, "quota_manager_get_quota_buckets").Raw(queryStr, args...)
-		err := db.ScanEach(rq, func(ctx context.Context, tb *tables.QuotaBucket) error {
-			if err := validateBucket(bucketToProto(tb)); err != nil {
-				return status.InternalErrorf("invalid bucket: %v", tb)
-			}
-			ns := config[tb.Namespace]
-			if ns == nil {
+	var rq interfaces.DBRawQuery
+	if namespace == "" {
+		rq = env.GetDBHandle().NewQuery(ctx, "quota_manager_fetch_all_configs_from_db").Raw(`
+			SELECT qb.*, qg.*
+			FROM "QuotaBuckets" AS qb
+				LEFT JOIN "QuotaGroups" AS qg
+					ON qb.namespace = qg.namespace
+					AND qb.name = qg.bucket_name
+			ORDER BY
+				qb.namespace,
+				qb.name ASC,
+				qg.quota_key ASC`,
+		)
+	} else {
+		rq = env.GetDBHandle().NewQuery(ctx, "quota_manager_fetch_config_from_db").Raw(`
+			SELECT qb.*, qg.*
+			FROM "QuotaBuckets" AS qb
+				LEFT JOIN "QuotaGroups" AS qg
+					ON qb.namespace = qg.namespace
+					AND qb.name = qg.bucket_name
+			WHERE qb.namespace = ?
+			ORDER BY
+				qb.name ASC,
+				qg.quota_key ASC`,
+			namespace,
+		)
+	}
+	err := db.ScanEach(
+		rq,
+		func(ctx context.Context, qbg *struct {
+			tables.QuotaBucket
+			*tables.QuotaGroup
+		}) error {
+			qb := &qbg.QuotaBucket
+			ns, ok := config[qb.Namespace]
+			if !ok {
 				ns = &namespaceConfig{
-					name:            tb.Namespace,
+					name:            qb.Namespace,
 					assignedBuckets: make(map[string]*assignedBucket),
 				}
-				config[tb.Namespace] = ns
+				config[qb.Namespace] = ns
 			}
-			ns.assignedBuckets[tb.Name] = &assignedBucket{
-				bucket: tb,
-			}
-			return nil
-		})
-		if err != nil {
-			return status.InternalErrorf("failed to read table QuotaBuckets: %s", err)
-		}
-
-		groupQuery := query_builder.NewQuery(`SELECT * FROM "QuotaGroups"`)
-		if namespace != "" {
-			groupQuery = groupQuery.AddWhereClause(`namespace = ?`, namespace)
-		}
-		groupQueryStr, groupArgs := groupQuery.Build()
-		rq = tx.NewQuery(ctx, "quota_manager_get_quota_groups").Raw(groupQueryStr, groupArgs...)
-		err = db.ScanEach(rq, func(ctx context.Context, tg *tables.QuotaGroup) error {
-			ns := config[tg.Namespace]
-			if ns == nil {
-				alert.UnexpectedEvent("invalid_quota_config", "namespace %q doesn't exist", tg.Namespace)
-				return nil
-			}
-			assignedBucket, ok := ns.assignedBuckets[tg.BucketName]
+			bucket, ok := ns.assignedBuckets[qb.Name]
 			if !ok {
-				alert.UnexpectedEvent("invalid_quota_config", "namespace %q bucket name %q doesn't exist", tg.Namespace, tg.BucketName)
+				if err := validateBucket(bucketToProto(qb)); err != nil {
+					return status.InternalErrorf("invalid bucket: %v", qbg.QuotaBucket)
+				}
+				bucket = &assignedBucket{
+					bucket: &qbg.QuotaBucket,
+				}
+				ns.assignedBuckets[qb.Name] = bucket
+			}
+
+			qg := qbg.QuotaGroup
+			if qg == nil {
+				// No Quota Group for this bucket
 				return nil
 			}
-			if tg.BucketName == defaultBucketName {
-				log.Warningf("Doesn't need to create QuotaGroup for default bucket in namespace %q", tg.Namespace)
+			if qg.BucketName == defaultBucketName {
+				log.Warningf("Doesn't need to create QuotaGroup for default bucket in namespace %q", qg.Namespace)
 				return nil
 			}
-			assignedBucket.quotaKeys = append(assignedBucket.quotaKeys, tg.QuotaKey)
+			bucket.quotaKeys = append(bucket.quotaKeys, qg.QuotaKey)
 			return nil
-		})
-		if err != nil {
-			return status.InternalErrorf("failed to read table QuotaGroups: %s", err)
-		}
-		return nil
-	})
+		},
+	)
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("fetchConfigFromDB query failed: %s", err)
 	}
 	return config, nil
 }
