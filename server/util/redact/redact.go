@@ -348,6 +348,13 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 						}
 					}
 				}
+
+				// Redact bazel sub command (for remote runners)
+				if option.OptionName == "bazel_sub_command" {
+					cmdLineTokens := strings.Split(option.OptionValue, " ")
+					redactCmdLine(cmdLineTokens)
+					option.OptionValue = strings.Join(cmdLineTokens, " ")
+				}
 			}
 			continue
 		}
