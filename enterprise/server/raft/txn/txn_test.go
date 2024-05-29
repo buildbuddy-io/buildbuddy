@@ -2,136 +2,27 @@ package txn_test
 
 import (
 	"context"
-	"fmt"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
-	"github.com/lni/dragonboat/v4"
-	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/stretchr/testify/require"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	dbConfig "github.com/lni/dragonboat/v4/config"
 )
 
-type fakeStore struct {
-	*store.Store
-	sender      *sender.Sender
-	nhid        string
-	db          pebble.IPebbleDB
-	leaser      pebble.Leaser
-	grpcAddress string
-	apiClient   *client.APIClient
-	reg         registry.NodeRegistry
-}
-
-func localAddr(t *testing.T) string {
-	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
-}
-
-type nodeRegistryFactory func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error)
-
-func (nrf nodeRegistryFactory) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-	return nrf(nhid, streamConnections, v)
-}
-
-func newGossipManager(t testing.TB, nodeAddr string) *gossip.GossipManager {
-	node, err := gossip.New("name-"+nodeAddr, nodeAddr, []string{})
+func prepareTransaction(t *testing.T, ts *testutil.TestingStore, txnID []byte, statement *rfpb.TxnRequest_Statement) {
+	repl1, err := ts.Store.GetReplica(statement.GetReplica().GetShardId())
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		node.Shutdown()
-	})
-	return node
-}
-
-func newFakeStore(t *testing.T, rootDir string) *fakeStore {
-	nodeAddr := localAddr(t)
-	gm := newGossipManager(t, nodeAddr)
-	rootDir = filepath.Join(rootDir, "store-0")
-	raftListener := listener.NewRaftListener()
-	reg := registry.NewStaticNodeRegistry(1, nil)
-	nrf := nodeRegistryFactory(func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-		return reg, nil
-	})
-	raftAddress := localAddr(t)
-	grpcAddress := localAddr(t)
-	nhc := dbConfig.NodeHostConfig{
-		WALDir:         filepath.Join(rootDir, "wal"),
-		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
-		RTTMillisecond: 1,
-		RaftAddress:    raftAddress,
-		Expert: dbConfig.ExpertConfig{
-			NodeRegistryFactory: nrf,
-		},
-		AddressByNodeHostID: false,
-		RaftEventListener:   raftListener,
-		SystemEventListener: raftListener,
-	}
-	nodeHost, err := dragonboat.NewNodeHost(nhc)
-	require.NoError(t, err)
-	te := testenv.GetTestEnv(t)
-	apiClient := client.NewAPIClient(te, nodeHost.ID(), reg)
-	rc := rangecache.New()
-	fs := &fakeStore{
-		sender:      sender.New(rc, apiClient),
-		nhid:        nodeHost.ID(),
-		grpcAddress: grpcAddress,
-		apiClient:   apiClient,
-		reg:         reg,
-	}
-	reg.AddNode(nodeHost.ID(), raftAddress, grpcAddress)
-	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
-	require.NoError(t, err)
-	fs.db = db
-	fs.leaser = pebble.NewDBLeaser(db)
-	partitions := []disk.Partition{
-		{
-			ID:           "default",
-			MaxSizeBytes: int64(1_000_000_000), // 1G
-		},
-	}
-	s, err := store.NewWithArgs(te, rootDir, nodeHost, gm, fs.sender, reg, raftListener, apiClient, grpcAddress, partitions, db, fs.leaser, clockwork.NewRealClock())
-	require.NoError(t, err)
-	fs.Store = s
-	t.Cleanup(func() {
-		s.Stop(context.TODO())
-	})
-	err = bringup.SendStartShardRequests(context.TODO(), nodeHost, apiClient, map[string]string{
-		fs.nhid: grpcAddress,
-	})
-	require.NoError(t, err)
-	return fs
-}
-
-func (fs *fakeStore) Sender() *sender.Sender {
-	return fs.sender
-}
-
-func (fs *fakeStore) prepareTransaction(t *testing.T, txnID []byte, statement *rfpb.TxnRequest_Statement) {
-	repl1, err := fs.Store.GetReplica(statement.GetReplica().GetShardId())
-	require.NoError(t, err)
-	wb := fs.db.NewBatch()
+	wb := ts.DB().NewBatch()
 	_, err = repl1.PrepareTransaction(wb, txnID, statement.GetRawBatch())
 	require.NoError(t, err)
 	require.NoError(t, wb.Commit(pebble.Sync))
@@ -139,9 +30,10 @@ func (fs *fakeStore) prepareTransaction(t *testing.T, txnID []byte, statement *r
 }
 
 func TestRollbackPendingTxn(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := newFakeStore(t, rootDir)
+	sf := testutil.NewStoreFactory(t)
+	store := sf.NewStore(t)
 	ctx := context.Background()
+	testutil.StartShard(t, ctx, store)
 
 	{ // Do a DirectWrite.
 		key := []byte("foo")
@@ -169,7 +61,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 		ReplicaId: 2,
 	}, batch).ToProto()
 	require.NoError(t, err)
-	store.prepareTransaction(t, txnProto.GetTransactionId(), txnProto.GetStatements()[0])
+	prepareTransaction(t, store, txnProto.GetTransactionId(), txnProto.GetStatements()[0])
 
 	clock := clockwork.NewFakeClock()
 	txnRecord := &rfpb.TxnRecord{
@@ -178,7 +70,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 		CreatedAtUsec: clock.Now().UnixMicro(),
 	}
 
-	tc := txn.NewCoordinator(store, store.apiClient, clock)
+	tc := txn.NewCoordinator(store, store.APIClient(), clock)
 	err = tc.WriteTxnRecord(ctx, txnRecord)
 	require.NoError(t, err)
 
@@ -242,9 +134,10 @@ func TestRollbackPendingTxn(t *testing.T) {
 }
 
 func TestCommitPreparedTxn(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := newFakeStore(t, rootDir)
+	sf := testutil.NewStoreFactory(t)
+	store := sf.NewStore(t)
 	ctx := context.Background()
+	testutil.StartShard(t, ctx, store)
 
 	{ // Do a DirectWrite.
 		key := []byte("foo")
@@ -272,7 +165,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 		ReplicaId: 2,
 	}, batch).ToProto()
 	require.NoError(t, err)
-	store.prepareTransaction(t, txnProto.GetTransactionId(), txnProto.GetStatements()[0])
+	prepareTransaction(t, store, txnProto.GetTransactionId(), txnProto.GetStatements()[0])
 
 	clock := clockwork.NewFakeClock()
 	txnRecord := &rfpb.TxnRecord{
@@ -284,7 +177,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 			txnProto.GetStatements()[0].GetReplica(),
 		},
 	}
-	tc := txn.NewCoordinator(store, store.apiClient, clock)
+	tc := txn.NewCoordinator(store, store.APIClient(), clock)
 
 	err = tc.WriteTxnRecord(ctx, txnRecord)
 	require.NoError(t, err)
@@ -349,11 +242,12 @@ func TestCommitPreparedTxn(t *testing.T) {
 }
 
 func TestFetchTxnRecordsSkipRecent(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := newFakeStore(t, rootDir)
-	ctx := context.Background()
+	sf := testutil.NewStoreFactory(t)
 	clock := clockwork.NewFakeClock()
-	tc := txn.NewCoordinator(store, store.apiClient, clock)
+	store := sf.NewStore(t)
+	ctx := context.Background()
+	testutil.StartShard(t, ctx, store)
+	tc := txn.NewCoordinator(store, store.APIClient(), clock)
 
 	err := tc.WriteTxnRecord(ctx, &rfpb.TxnRecord{
 		TxnRequest:    &rfpb.TxnRequest{TransactionId: []byte("a")},
