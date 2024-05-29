@@ -53,9 +53,7 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return 1, err
 	}
 
-	// Don't run update-repos when bzlmod is enabled
-	updateRepos := baseFile != workspace.ModuleFileName
-	if err := walk(updateRepos); err != nil {
+	if err := walk(baseFile); err != nil {
 		log.Printf("Error fixing: %s", err)
 	}
 
@@ -87,7 +85,7 @@ func runGazelle(repoRoot, baseFile string) error {
 	return nil
 }
 
-func walk(updateRepos bool) error {
+func walk(moduleOrWorkspaceFile string) error {
 	languages := getLanguages()
 	foundLanguages := map[language.Language]bool{}
 	depFiles := map[string][]string{}
@@ -151,15 +149,18 @@ func walk(updateRepos bool) error {
 			if err != nil {
 				log.Debugf("Failed adding %s: %s", d, err)
 			}
-			depFiles = l.ConsolidateDepFiles(depFiles)
 		}
+		depFiles = l.ConsolidateDepFiles(depFiles)
 	}
 
-	if updateRepos {
-		// Run update-repos on any dependency files we found.
-		for _, paths := range depFiles {
-			for _, p := range paths {
-				runUpdateRepos(p)
+	// Run update-repos on any dependency files we found.
+	for _, paths := range depFiles {
+		for _, path := range paths {
+			runUpdateRepos(path, moduleOrWorkspaceFile)
+			for l := range foundLanguages {
+				if l.IsDepFile(path) {
+					l.RegisterDeps(path, moduleOrWorkspaceFile)
+				}
 			}
 		}
 	}
@@ -196,7 +197,12 @@ func runBuildifier(path string) {
 	buildifier.Run()
 }
 
-func runUpdateRepos(path string) {
+func runUpdateRepos(path string, moduleOrWorkspaceFile string) {
+	// Don't run update-repos on MODULE.bazel files.
+	if moduleOrWorkspaceFile == workspace.ModuleFileName {
+		return
+	}
+
 	originalArgs := os.Args
 	defer func() {
 		os.Args = originalArgs
