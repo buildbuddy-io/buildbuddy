@@ -24,7 +24,6 @@ go_test(
     srcs = ["txn_test.go"],
     deps = [
         ":txn",
-        "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/logger",
