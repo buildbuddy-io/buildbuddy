@@ -1120,7 +1120,9 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	if err := e.redactor.RedactAPIKey(e.ctx, event.BuildEvent); err != nil {
 		return err
 	}
-	e.redactor.RedactMetadata(event.BuildEvent)
+	if err := e.redactor.RedactMetadata(event.BuildEvent); err != nil {
+		return err
+	}
 	// Accumulate a subset of invocation fields in memory.
 	if err := e.beValues.AddEvent(event.BuildEvent); err != nil {
 		return err
@@ -1436,7 +1438,9 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 				if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
 					return err
 				}
-				redactor.RedactMetadata(event.BuildEvent)
+				if err := redactor.RedactMetadata(event.BuildEvent); err != nil {
+					return err
+				}
 				if err := beValues.AddEvent(event.BuildEvent); err != nil {
 					return err
 				}

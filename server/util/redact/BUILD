@@ -11,6 +11,8 @@ go_library(
         "//server/environment",
         "//server/util/flag",
         "//server/util/git",
+        "//server/util/status",
+        "@com_github_google_shlex//:shlex",
         "@org_golang_google_protobuf//encoding/prototext",
     ],
 )
