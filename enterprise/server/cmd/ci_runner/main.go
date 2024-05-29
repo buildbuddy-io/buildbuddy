@@ -1709,7 +1709,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 func (ws *workspace) shouldMergeBranches(actionTriggers *config.Triggers) bool {
 	return actionTriggers.GetPullRequestTrigger() != nil &&
 		actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
-		*targetRepoURL != "" &&
+		ws.hasMultipleBranches()
+}
+
+func (ws *workspace) hasMultipleBranches() bool {
+	return *targetRepoURL != "" &&
 		*targetBranch != "" &&
 		(*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch)
 }
@@ -1722,8 +1726,10 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 	}
 	fetchDepth := 1
 
+	// TODO(Maggie): Only set fetch depth=0 if merge_with_base=true
+	// We can unconditionally pass serializedAction and read the action triggers from there
 	// If merging branches, fetch the full history, to ensure the merge base commit is fetched
-	if ws.shouldMergeBranches() {
+	if ws.hasMultipleBranches() {
 		fetchDepth = 0
 	}
 
