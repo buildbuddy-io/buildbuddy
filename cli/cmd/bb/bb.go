@@ -160,7 +160,14 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	// Show a picker if the target is omitted. Note: we do this after expanding
 	// args, in case a bazelrc specifies the target patterns (e.g. via
 	// --target_pattern_file).
-	bazelArgs = picker.HandlePicker(bazelArgs)
+	//
+	// Note: if there are args after "--" then we never show the picker:
+	// - For "build"/"test" commands, the args after "--" are target patterns.
+	// - For "run" commands, if there is no target pattern, then the first arg
+	//   after "--" is treated as the pattern.
+	if len(execArgs) == 0 {
+		bazelArgs = picker.HandlePicker(bazelArgs)
+	}
 
 	// Save some flags from the current invocation, in case the `ask` command
 	// is invoked in the future.
