@@ -650,8 +650,8 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         <Option value={model.getBaseCommitSha()}>PR Base ({shortSha(model.getBaseCommitSha())})</Option>
         {commitsToShow.map((c) => (
           <Option value={c.sha}>
-            {c.description.substring(0, 30)}
-            {c.description.length > 30 ? "..." : ""} ({shortSha(c.sha)})
+            {c.message.substring(0, 30)}
+            {c.message.length > 30 ? "..." : ""} ({shortSha(c.sha)})
           </Option>
         ))}
       </Select>

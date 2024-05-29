@@ -261,7 +261,7 @@ interface State {
   pullId: string;
   branch: string;
   baseCommitSha: string;
-  commits: github.PrCommit[];
+  commits: github.Commit[];
   githubUrl: string;
   viewerLogin: string;
   author: string;
@@ -342,7 +342,7 @@ export class ReviewModel {
     return this.state.commits[this.state.commits.length - 1].sha;
   }
 
-  getCommits(): readonly github.PrCommit[] {
+  getCommits(): readonly github.Commit[] {
     return this.state.commits;
   }
 

@@ -1598,6 +1598,7 @@ func (a *GitHubApp) GetGithubCommits(ctx context.Context, req *ghpb.GetGithubCom
 	for _, c := range commits {
 		commit := &ghpb.Commit{
 			Sha:     c.GetSHA(),
+			Message: c.GetCommit().GetMessage(),
 			TreeSha: c.GetCommit().GetTree().GetSHA(),
 		}
 		res.Commits = append(res.Commits, commit)
@@ -1962,7 +1963,10 @@ type checkSuite struct {
 
 type prCommit struct {
 	Commit struct {
-		Oid         string
+		Oid  string
+		Tree struct {
+			Oid string
+		}
 		Message     string
 		CheckSuites struct {
 			Nodes []checkSuite
@@ -2343,12 +2347,12 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	statusTrackingMap := make(map[string]*combinedContext, 0)
 	checkTrackingMap := make(map[string]*combinedChecksForApp, 0)
 
-	commits := make([]*ghpb.PrCommit, 0)
+	commits := make([]*ghpb.Commit, 0)
 	// TODO(jdhollen): show previous checks + status as "outdated" when a new
 	// run hasn't fired instead of hiding them.
 	if len(pr.Commits.Nodes) > 0 {
 		for _, c := range pr.Commits.Nodes {
-			commits = append(commits, &ghpb.PrCommit{Sha: c.Commit.Oid, Description: c.Commit.Message})
+			commits = append(commits, &ghpb.Commit{Sha: c.Commit.Oid, TreeSha: c.Commit.Tree.Oid, Message: c.Commit.Message})
 		}
 
 		lastCommit := pr.Commits.Nodes[len(pr.Commits.Nodes)-1]
