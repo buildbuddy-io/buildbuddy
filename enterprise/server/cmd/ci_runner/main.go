@@ -1634,9 +1634,6 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err := ws.fetchPushedRef(ctx); err != nil {
 		return status.WrapError(err, "fetch pushed ref")
 	}
-	if err := ws.fetchTargetRef(ctx); err != nil {
-		return status.WrapError(err, "fetch target ref")
-	}
 
 	// Clean up in case a previous workflow made a mess.
 	cleanArgs := []string{
@@ -1674,8 +1671,10 @@ func (ws *workspace) sync(ctx context.Context) error {
 	// If enabled, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
-	mergeEnabled := action.GetTriggers().GetPullRequestTrigger().GetMergeWithBase()
-	if mergeEnabled && ws.shouldMergeBranches() {
+	if ws.shouldMergeBranches(action.GetTriggers()) {
+		if err := ws.fetchTargetRef(ctx); err != nil {
+			return status.WrapError(err, "fetch target ref")
+		}
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
@@ -1707,8 +1706,10 @@ func (ws *workspace) sync(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) shouldMergeBranches() bool {
-	return *targetRepoURL != "" &&
+func (ws *workspace) shouldMergeBranches(actionTriggers *config.Triggers) bool {
+	return actionTriggers.GetPullRequestTrigger() != nil &&
+		actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
+		*targetRepoURL != "" &&
 		*targetBranch != "" &&
 		(*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch)
 }
@@ -1749,9 +1750,6 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 }
 
 func (ws *workspace) fetchTargetRef(ctx context.Context) error {
-	if !ws.shouldMergeBranches() {
-		return nil
-	}
 	// Fetch with --depth=0 to ensure the merge base commit is fetched
 	fetchDepth := 0
 	return ws.fetch(ctx, *targetRepoURL, []string{*targetBranch}, fetchDepth)
