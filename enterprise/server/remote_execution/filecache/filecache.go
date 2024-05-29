@@ -253,17 +253,9 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	if !ok {
 		return false
 	}
-
-	if groupID == interfaces.AuthAnonymousUser || *enableAlwaysClone {
-		if err := fastcopy.Clone(v.value, outputPath); err != nil {
-			log.Warningf("Error fast linking file: %s", err.Error())
-			return false
-		}
-	} else {
-		if err := fastcopy.FastCopy(v.value, outputPath); err != nil {
-			log.Warningf("Error fast linking file: %s", err.Error())
-			return false
-		}
+	if err := cloneOrLink(groupID, v.value, outputPath); err != nil {
+		log.Warningf("Failed to link file from cache: %s", err)
+		return false
 	}
 	return true
 }
@@ -293,8 +285,8 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
 		return err
 	}
-	if err := fastcopy.FastCopy(existingFilePath, fp); err != nil {
-		return wrapOSError(err, "fastcopy file to filecache")
+	if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
+		return err
 	}
 	e := &entry{
 		addedAtUsec: time.Now().UnixMicro(),
@@ -383,6 +375,19 @@ func (c *fileCache) tempPath(name string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(c.TempDir(), fmt.Sprintf("%s.%s.tmp", name, randStr)), nil
+}
+
+func cloneOrLink(groupID, source, destination string) error {
+	if groupID == interfaces.AuthAnonymousUser || *enableAlwaysClone {
+		if err := fastcopy.Clone(source, destination); err != nil {
+			return wrapOSError(err, "clone")
+		}
+	} else {
+		if err := fastcopy.FastCopy(source, destination); err != nil {
+			return wrapOSError(err, "fastcopy")
+		}
+	}
+	return nil
 }
 
 func wrapOSError(err error, message string) error {
