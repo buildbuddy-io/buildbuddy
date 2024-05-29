@@ -16,12 +16,8 @@ export const Select = React.forwardRef((props: SelectProps, ref: React.Ref<HTMLS
 });
 
 export function Option(props: JSX.IntrinsicElements["option"]) {
-  const { className, children, ...rest } = props;
-  return (
-    <option className={`select-option ${className || ""}`} {...rest}>
-      {children}
-    </option>
-  );
+  const { className, ...rest } = props;
+  return <option className={`select-option ${className || ""}`} {...rest} />;
 }
 
 export default Select;
