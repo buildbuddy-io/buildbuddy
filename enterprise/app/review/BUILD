@@ -123,6 +123,7 @@ ts_library(
         "//app/components/dialog",
         "//app/components/link",
         "//app/components/modal",
+        "//app/components/select",
         "//app/errors:error_service",
         "//app/format",
         "//app/router",

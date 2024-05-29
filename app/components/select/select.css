@@ -56,3 +56,11 @@
   color: black;
   background: #bbb;
 }
+
+.small-select {
+  font-size: 14px;
+  padding: 4px 40px 4px 16px;
+  line-height: 14px;
+  min-height: 28px;
+  height: auto;
+}

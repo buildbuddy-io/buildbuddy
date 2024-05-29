@@ -1963,6 +1963,7 @@ type checkSuite struct {
 type prCommit struct {
 	Commit struct {
 		Oid         string
+		Message     string
 		CheckSuites struct {
 			Nodes []checkSuite
 		} `graphql:"checkSuites(last: 100)"`
@@ -2341,9 +2342,15 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 
 	statusTrackingMap := make(map[string]*combinedContext, 0)
 	checkTrackingMap := make(map[string]*combinedChecksForApp, 0)
+
+	commits := make([]*ghpb.PrCommit, 0)
 	// TODO(jdhollen): show previous checks + status as "outdated" when a new
 	// run hasn't fired instead of hiding them.
 	if len(pr.Commits.Nodes) > 0 {
+		for _, c := range pr.Commits.Nodes {
+			commits = append(commits, &ghpb.PrCommit{Sha: c.Commit.Oid, Description: c.Commit.Message})
+		}
+
 		lastCommit := pr.Commits.Nodes[len(pr.Commits.Nodes)-1]
 		for _, s := range lastCommit.Commit.Status.CombinedContexts.Nodes {
 			if s.Typename == "StatusContext" {
@@ -2411,6 +2418,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 		Branch:         pr.HeadRefName,
 		BaseCommitSha:  pr.BaseRefOid,
 		HeadCommitSha:  pr.HeadRefOid,
+		Commits:        commits,
 		Reviewers:      reviewers,
 		Files:          fileSummaries,
 		ActionStatuses: actionStatuses,

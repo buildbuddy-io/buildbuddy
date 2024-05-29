@@ -585,6 +585,11 @@ message Comment {
   bool is_resolved = 11;
 }
 
+message PrCommit {
+  string sha = 1;
+  string description = 2;
+}
+
 // Creates a draft comment on the specified PR at the specified location.  If
 // the review id isn't specified, a new draft review will be created.  It is
 // an error to not specify the review id if a review is already in progress,
@@ -637,7 +642,7 @@ message DeleteGithubPullRequestCommentResponse {
   context.ResponseContext response_context = 1;
 }
 
-// Next ID: 23
+// Next ID: 24
 message GetGithubPullRequestDetailsResponse {
   context.ResponseContext response_context = 1;
 
@@ -664,6 +669,9 @@ message GetGithubPullRequestDetailsResponse {
   string branch = 16;
   string base_commit_sha = 21;
   string head_commit_sha = 22;
+
+  // A sorted list of the commits in this PR (base comes first).
+  repeated PrCommit commits = 23;
 
   repeated Comment comments = 17;
 
