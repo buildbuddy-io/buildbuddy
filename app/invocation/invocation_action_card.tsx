@@ -803,7 +803,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     </div>
                     <div className="action-section">
                       <div className="action-property-title">Stage</div>
-                      <div>{this.state.lastOperation ? executionStatusLabel(this.state.lastOperation) : "Unknown"}</div>
+                      <div>
+                        {this.state.executeResponse
+                          ? "Completed"
+                          : this.state.lastOperation
+                          ? executionStatusLabel(this.state.lastOperation)
+                          : "Unknown"}
+                      </div>
                     </div>
                     {this.state.executeResponse && (
                       <>
