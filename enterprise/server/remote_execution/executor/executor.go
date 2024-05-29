@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -89,15 +88,29 @@ func timevalDuration(tv syscall.Timeval) time.Duration {
 	return time.Duration(tv.Sec)*time.Second + time.Duration(tv.Usec)*time.Microsecond
 }
 
-func parseTimeout(timeout *durationpb.Duration) (time.Duration, error) {
-	if timeout == nil {
-		return *defaultTaskTimeout, nil
+func parseTimeout(task *repb.ExecutionTask) (time.Duration, error) {
+	props, err := platform.ParseProperties(task)
+	if err != nil {
+		return 0, status.WrapError(err, "parse execution properties")
 	}
-	requestDuration := timeout.AsDuration()
-	if *maxTaskTimeout > 0 && requestDuration > *maxTaskTimeout {
-		return 0, status.InvalidArgumentErrorf("requested timeout (%s) is longer than allowed maximum (%s)", requestDuration, *maxTaskTimeout)
+	// Use the action timeout if it's set (e.g. --test_timeout for test
+	// actions).
+	timeout := task.GetAction().GetTimeout().AsDuration()
+	// Fall back to the default timeout requested in platform properties if set
+	// (e.g. --remote_exec_header=x-buildbuddy-platform.default-timeout=15m)
+	if timeout <= 0 {
+		timeout = props.DefaultTimeout
 	}
-	return requestDuration, nil
+	// Fall back to the configured default.
+	if timeout <= 0 {
+		timeout = *defaultTaskTimeout
+	}
+	// Enforce the configured max timeout by returning an error if the requested
+	// timeout is too long.
+	if *maxTaskTimeout > 0 && timeout > *maxTaskTimeout {
+		return 0, status.InvalidArgumentErrorf("requested timeout (%s) is longer than allowed maximum (%s)", timeout, *maxTaskTimeout)
+	}
+	return timeout, nil
 }
 
 // isTaskMisconfigured returns whether a task failed to execute because of a
@@ -236,7 +249,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	md.InputFetchCompletedTimestamp = timestamppb.Now()
 	md.ExecutionStartTimestamp = timestamppb.Now()
-	execTimeout, err := parseTimeout(task.GetAction().Timeout)
+	execTimeout, err := parseTimeout(task)
 	if err != nil {
 		// These errors are failure-specific. Pass through unchanged.
 		return finishWithErrFn(err)

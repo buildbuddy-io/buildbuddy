@@ -29,7 +29,6 @@ go_library(
         "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//types/known/anypb",
-        "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

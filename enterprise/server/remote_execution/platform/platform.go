@@ -90,6 +90,7 @@ const (
 	EnvOverridesPropertyName             = "env-overrides"
 	EnvOverridesBase64PropertyName       = "env-overrides-base64"
 	IncludeSecretsPropertyName           = "include-secrets"
+	DefaultTimeoutPropertyName           = "default-timeout"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -155,6 +156,11 @@ type Properties struct {
 	RunnerRecyclingMaxWait    time.Duration
 	EnableVFS                 bool
 	IncludeSecrets            bool
+
+	// DefaultTimeout specifies a remote action timeout to be used if
+	// `action.Timeout` is unset. This works around an issue that bazel does not
+	// have a way to set timeouts on regular build actions.
+	DefaultTimeout time.Duration
 
 	// InitDockerd specifies whether to initialize dockerd within the execution
 	// environment if it is available in the execution image, allowing Docker
@@ -263,6 +269,15 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		envOverrides = append(envOverrides, string(b))
 	}
 
+	timeout, err := durationProp(m, DefaultTimeoutPropertyName, 0*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	runnerRecyclingMaxWait, err := durationProp(m, RunnerRecyclingMaxWaitPropertyName, 0*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
@@ -283,7 +298,8 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		AffinityRouting:           boolProp(m, AffinityRoutingPropertyName, false),
-		RunnerRecyclingMaxWait:    durationProp(m, RunnerRecyclingMaxWaitPropertyName, 0*time.Second),
+		DefaultTimeout:            timeout,
+		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
@@ -605,17 +621,16 @@ func stringListProp(props map[string]string, name string) []string {
 	return vals
 }
 
-func durationProp(props map[string]string, name string, defaultValue time.Duration) time.Duration {
+func durationProp(props map[string]string, name string, defaultValue time.Duration) (time.Duration, error) {
 	val := props[strings.ToLower(name)]
 	if val == "" {
-		return defaultValue
+		return defaultValue, nil
 	}
 	d, err := time.ParseDuration(val)
 	if err != nil {
-		log.Warningf("Could not parse platform property %q as duration: %s", name, err)
-		return defaultValue
+		return 0, status.InvalidArgumentErrorf("execution property value %q: invalid duration format", name)
 	}
-	return d
+	return d, nil
 }
 
 func findValue(platform *repb.Platform, name string) (value string, ok bool) {
