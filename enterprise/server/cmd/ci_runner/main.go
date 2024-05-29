@@ -1837,7 +1837,11 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string)
 	}
 	fetchArgs := []string{"fetch", "--force"}
 	for _, filter := range *gitFetchFilters {
-		fetchArgs = append(fetchArgs, "--filter="+filter)
+		// TODO(Maggie): Clean up once app changes have been rolled out to pass "--filter"
+		if !strings.HasPrefix(filter, "--") {
+			filter = "--filter=" + filter
+		}
+		fetchArgs = append(fetchArgs, filter)
 	}
 	if *gitFetchDepth > 0 {
 		fetchArgs = append(fetchArgs, fmt.Sprintf("--depth=%d", *gitFetchDepth))

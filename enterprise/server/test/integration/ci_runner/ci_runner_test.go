@@ -1163,7 +1163,7 @@ func TestFetchFilters(t *testing.T) {
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
-		"--git_fetch_filters=blob:none",
+		"--git_fetch_filters=--filter=blob:none",
 	}
 	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 

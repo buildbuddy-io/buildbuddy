@@ -388,9 +388,9 @@ A named group of Bazel commands that run when triggered.
   environment (usually named `"buildbuddy"`). Note: some legacy workflows
   might still have `"root"` as the default user, but we are in the process
   of migrating all users to non-root by default.
-- **`git_fetch_filters`** (`string` list): list of [`--filter` option](https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filtercodeemltfilter-specgtem)
-  values to the `git fetch` command used when fetching the git commits
-  to build. Defaults to `["blob:none"]`.
+- **`git_fetch_filters`** (`string` list): list of options to pass to
+  the `git fetch` command used when fetching the git commits
+  to build. Defaults to `["--filter=blob:none"]`.
 - **`git_fetch_depth`** (`int`): [`--depth` option](https://git-scm.com/docs/git-fetch#Documentation/git-fetch.txt---depthltdepthgt) value used when
   fetching the git commits to build. When using this option in combination
   with a `pull_request` trigger, it's recommended to set

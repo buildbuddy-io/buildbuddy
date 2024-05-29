@@ -57,9 +57,10 @@ func (a *Action) GetTriggers() *Triggers {
 
 func (a *Action) GetGitFetchFilters() []string {
 	if a.GitFetchFilters == nil {
-		// Default to blob:none if unspecified.
+		// Default to --filter=blob:none if unspecified.
 		// TODO: this seems to increase fetch time in some cases;
 		// consider removing this as the default.
+		// TODO(Maggie): Add '--filter' once ci_runner changes have been rolled out
 		return []string{"blob:none"}
 	}
 	return a.GitFetchFilters

@@ -99,8 +99,8 @@ func TestGetGitFetchFilters(t *testing.T) {
 		},
 		{
 			Name:    "NonEmptyList",
-			YAML:    `git_fetch_filters: ["tree:0"]`,
-			Filters: []string{"tree:0"},
+			YAML:    `git_fetch_filters: ["--filter=tree:0"]`,
+			Filters: []string{"--filter=tree:0"},
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
