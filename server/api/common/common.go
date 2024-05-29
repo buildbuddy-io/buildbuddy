@@ -81,6 +81,9 @@ func FillActionFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *ap
 			action.Id.TargetId = event.GetId().GetTestResult().GetLabel()
 			action.Id.ConfigurationId = event.GetId().GetTestResult().GetConfiguration().Id
 			action.Id.ActionId = EncodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", testResultID.Shard, testResultID.Run, testResultID.Attempt))
+			action.Shard = int64(testResultID.Shard)
+			action.Run = int64(testResultID.Run)
+			action.Attempt = int64(testResultID.Attempt)
 			return action
 		}
 	}

@@ -49,6 +49,18 @@ message Action {
 
   // The label of the target that generated this action.
   string target_label = 3;
+
+  // The test shard this action represents.
+  // Only populated for test actions.
+  int64 shard = 4;
+
+  // The test run this action represents.
+  // Only populated for test actions.
+  int64 run = 5;
+
+  // The test attempt this action represents.
+  // Only populated for test actions.
+  int64 attempt = 6;
 }
 
 // The selector used to specify which actions to return.
