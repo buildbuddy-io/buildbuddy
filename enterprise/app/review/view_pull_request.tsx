@@ -9,18 +9,19 @@ import Dialog, {
 } from "../../../app/components/dialog/dialog";
 import Modal from "../../../app/components/modal/modal";
 import format from "../../../app/format/format";
-import rpc_service from "../../../app/service/rpc_service";
+import rpc_service, { CancelablePromise } from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
 import error_service from "../../../app/errors/error_service";
 import ReviewThreadComponent from "./review_thread";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
-import { CommentModel, ReviewModel, FileModel, ThreadModel } from "./review_model";
+import { CommentModel, ReviewModel, FileModel } from "./review_model";
 import Link from "../../../app/components/link/link";
 import router from "../../../app/router/router";
 import PullRequestHeaderComponent from "./pull_request_header";
 import FileContentMonacoComponent from "./file_content_monaco";
 import { getMonacoModelForGithubFile } from "./file_content_service";
+import Select, { Option } from "../../../app/components/select/select";
 
 const FILES_TO_PREFETCH = 3;
 
@@ -33,10 +34,13 @@ interface ViewPullRequestComponentProps {
 
 interface State {
   reviewModel?: ReviewModel;
+  files: readonly FileModel[];
+  selectedBaseCommit?: string;
   displayedDiffs: string[];
   replyDialogOpen: boolean;
   draftReplyText: string;
   pendingRequest: boolean;
+  pendingFileRequest?: CancelablePromise<github.GetGithubCompareResponse>;
 }
 
 export default class ViewPullRequestComponent extends React.Component<ViewPullRequestComponentProps, State> {
@@ -45,6 +49,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
 
   state: State = {
     displayedDiffs: [],
+    files: [],
     replyDialogOpen: false,
     draftReplyText: "",
     pendingRequest: false,
@@ -62,9 +67,45 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         console.log(r);
         const reviewModel = ReviewModel.fromResponse(r);
         this.setState({ reviewModel });
-        prefetchFileContent(reviewModel);
+        // TODO(jdhollen): This is inefficient, we could include the base commit
+        // info on the original request.  Also, these responses can technically
+        // be cached since the commits and associated content can't change.
+        if (this.getSelectedBaseCommit(reviewModel) === reviewModel.getBaseCommitSha()) {
+          this.setState({ files: reviewModel.getFiles() });
+        } else {
+          this.setBaseCommitAndFetchFiles(this.getSelectedBaseCommit(reviewModel));
+        }
+        prefetchFileContent(reviewModel, this.getSelectedBaseCommit(reviewModel));
       })
       .catch((e) => error_service.handleError(e));
+  }
+
+  setBaseCommitAndFetchFiles(baseCommit: string) {
+    if (!this.state.reviewModel) {
+      return;
+    }
+    this.setState({ selectedBaseCommit: baseCommit });
+    // TODO(jdhollen): cache these.
+    const pendingRequest = rpc_service.service.getGithubCompare({
+      base: baseCommit,
+      head: this.state.reviewModel.getHeadCommitSha(),
+      owner: this.state.reviewModel.getOwner(),
+      repo: this.state.reviewModel.getRepo(),
+    });
+    this.setState({ pendingFileRequest: pendingRequest, files: [] });
+    pendingRequest
+      .then((response) => {
+        this.setState({
+          files: response.files.map((f) => FileModel.fromFileSummary(f)),
+          pendingFileRequest: undefined,
+        });
+      })
+      .catch((e) => {
+        error_service.handleError(e);
+      })
+      .finally(() => {
+        this.setState({ pendingFileRequest: undefined });
+      });
   }
 
   renderSingleReviewer(reviewer: github.Reviewer) {
@@ -598,6 +639,25 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
     );
   }
 
+  renderDiffSelect(model: ReviewModel) {
+    // Don't show the last commit in this view--we're always comparing with it.
+    const commitsToShow = model.getCommits().slice(0, model.getCommits().length - 1);
+    return (
+      <Select
+        className="diffbase-select small-select"
+        value={this.getSelectedBaseCommit(model)}
+        onChange={(e) => this.setBaseCommitAndFetchFiles(e.target.value)}>
+        <Option value={model.getBaseCommitSha()}>PR Base ({shortSha(model.getBaseCommitSha())})</Option>
+        {commitsToShow.map((c) => (
+          <Option value={c.sha}>
+            {c.message.substring(0, 30)}
+            {c.message.length > 30 ? "..." : ""} ({shortSha(c.sha)})
+          </Option>
+        ))}
+      </Select>
+    );
+  }
+
   renderReviewLandingPage(model: ReviewModel): JSX.Element {
     return (
       <>
@@ -641,17 +701,24 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
           </div>
           <div className="review-cell header">Files</div>
           <div className="review-cell header button-bar">
-            <OutlinedButton className="small-button" onClick={() => this.handleExpandDiffsClicked()}>
+            <div>
+              <span> Diff against: </span>
+              {this.renderDiffSelect(model)}
+            </div>
+            <OutlinedButton className="expand-button small-button" onClick={() => this.handleExpandDiffsClicked()}>
               {this.state.displayedDiffs.length === 0 ? "Expand diffs" : "Collapse diffs"}
             </OutlinedButton>
           </div>
         </div>
-        <div className="file-section">
-          <table>
-            {this.renderFileHeader()}
-            {model.getFiles().map((f) => this.renderFileRow(f))}
-          </table>
-        </div>
+        {this.state.pendingFileRequest !== undefined && <div className="loading loading-slim"></div>}
+        {this.state.pendingFileRequest === undefined && this.state.files && (
+          <div className="file-section">
+            <table>
+              {this.renderFileHeader()}
+              {this.state.files.map((f) => this.renderFileRow(f))}
+            </table>
+          </div>
+        )}
         {this.renderReplyModal()}
       </>
     );
@@ -666,7 +733,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
 
     if (pathParts.length > 5) {
       filePath = pathParts.slice(5).join("/");
-      const file = this.state.reviewModel.getFile(filePath);
+      const file = this.state.files.find((f) => f.getFullPath() === filePath);
       if (file !== undefined) {
         return this.renderSingleFileView(file);
       } else {
@@ -695,9 +762,13 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
       </div>
     );
   }
+
+  getSelectedBaseCommit(modelForDefault: ReviewModel): string {
+    return this.state.selectedBaseCommit || modelForDefault.getBaseCommitSha();
+  }
 }
 
-function prefetchFileContent(model: ReviewModel) {
+function prefetchFileContent(model: ReviewModel, originalSha: string) {
   const files = model.getFiles();
   for (let i = 0; i < files.length && i < FILES_TO_PREFETCH; i++) {
     const file = files[i];
@@ -711,7 +782,11 @@ function prefetchFileContent(model: ReviewModel) {
       owner: model.getOwner(),
       repo: model.getRepo(),
       path: file.getOriginalFullPath(),
-      ref: file.getOriginalCommitSha(),
+      ref: originalSha,
     });
   }
+}
+
+function shortSha(sha: string) {
+  return sha.substring(0, 7);
 }

@@ -364,6 +364,7 @@ message GetGithubCompareResponse {
 message Commit {
   string sha = 1;
   string tree_sha = 2;
+  string message = 3;
 }
 
 // GET /repos/{owner}/{repo}/forks
@@ -637,7 +638,7 @@ message DeleteGithubPullRequestCommentResponse {
   context.ResponseContext response_context = 1;
 }
 
-// Next ID: 23
+// Next ID: 24
 message GetGithubPullRequestDetailsResponse {
   context.ResponseContext response_context = 1;
 
@@ -664,6 +665,9 @@ message GetGithubPullRequestDetailsResponse {
   string branch = 16;
   string base_commit_sha = 21;
   string head_commit_sha = 22;
+
+  // A sorted list of the commits in this PR (oldest comes first).
+  repeated Commit commits = 23;
 
   repeated Comment comments = 17;
 

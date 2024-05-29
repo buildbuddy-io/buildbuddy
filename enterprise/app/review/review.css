@@ -470,6 +470,24 @@
 
 .pr-view .review-cell.header.button-bar {
   justify-content: flex-end;
+  gap: 12px;
+}
+
+.pr-view .diffbase-select {
+  width: 200px;
+}
+
+.pr-view .diffbase-select-option {
+  width: 200px;
+}
+
+.pr-view .select-option-sha {
+  color: #ccc;
+}
+
+.pr-view .expand-button {
+  width: 130px;
+  display: block;
 }
 
 .pr-view .file-list-header {
