@@ -64,9 +64,10 @@ func TestRedactMetadata_BuildStarted_RedactsOptionsDescription(t *testing.T) {
 		OptionsDescription: `--some_flag --another_flag`,
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, "<REDACTED>", buildStarted.OptionsDescription)
 }
@@ -77,11 +78,12 @@ func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
 		Args: []string{"foo"},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_UnstructuredCommandLine{
 			UnstructuredCommandLine: unstructuredCommandLine,
 		},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, []string{}, unstructuredCommandLine.Args)
 }
@@ -92,9 +94,10 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 	buildStarted := &bespb.BuildStarted{
 		OptionsDescription: "--build_metadata='ALLOW_ENV=FOO_ALLOWED,BAR_ALLOWED_PATTERN_*'",
 	}
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
 	})
+	require.NoError(t, err)
 
 	for _, testCase := range []struct {
 		optionName    string
@@ -121,7 +124,8 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 			CombinedForm: fmt.Sprintf("--%s=%s", testCase.optionName, testCase.inputValue),
 		}
 
-		redactor.RedactMetadata(structuredCommandLineEvent(option))
+		err := redactor.RedactMetadata(structuredCommandLineEvent(option))
+		require.NoError(t, err)
 
 		expectedCombinedForm := fmt.Sprintf("--%s=%s", testCase.optionName, testCase.expectedValue)
 		assert.Equal(t, expectedCombinedForm, option.CombinedForm)
@@ -138,7 +142,8 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 	event := structuredCommandLineEvent(option)
 	assert.NotEmpty(t, getCommandLineOptions(event), "sanity check: --default_override should be an option before redacting")
 
-	redactor.RedactMetadata(event)
+	err = redactor.RedactMetadata(event)
+	require.NoError(t, err)
 
 	assert.Empty(t, getCommandLineOptions(event), "--default_override options should be removed")
 
@@ -152,7 +157,8 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 	event = structuredCommandLineEvent(option)
 	assert.NotEmpty(t, getCommandLineOptions(event), "sanity check: EXPLICIT_COMMAND_LINE should be an option before redacting")
 
-	redactor.RedactMetadata(event)
+	err = redactor.RedactMetadata(event)
+	require.NoError(t, err)
 
 	assert.Empty(t, getCommandLineOptions(event), "EXPLICIT_COMMAND_LINE should be removed")
 }
@@ -182,9 +188,10 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 		},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(
 		t,
@@ -223,9 +230,10 @@ func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
 		ActionMetadataLogs: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Action{Action: actionExecuted},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, "uri", actionExecuted.Stdout.GetUri())
 	assert.Equal(t, "uri", actionExecuted.Stderr.GetUri())
@@ -239,9 +247,10 @@ func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
 		Files: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_NamedSetOfFiles{NamedSetOfFiles: namedSetOfFiles},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, "uri", namedSetOfFiles.Files[0].GetUri())
 }
@@ -253,9 +262,10 @@ func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
 		DirectoryOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Completed{Completed: targetComplete},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, "uri", targetComplete.DirectoryOutput[0].GetUri())
 }
@@ -267,9 +277,10 @@ func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
 		TestActionOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_TestResult{TestResult: testResult},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, "uri", testResult.TestActionOutput[0].GetUri())
 }
@@ -281,9 +292,10 @@ func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
 		Failed: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_TestSummary{TestSummary: testSummary},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, "uri", testSummary.Passed[0].GetUri())
 	assert.Equal(t, "uri", testSummary.Failed[0].GetUri())
@@ -300,9 +312,10 @@ func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 		},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", buildMetadata.Metadata["REPO_URL"])
 	assert.Equal(t, `["--remote_header=\u003cREDACTED\u003e","--foo=SAFE"]`, buildMetadata.Metadata["EXPLICIT_COMMAND_LINE"])
@@ -316,9 +329,10 @@ func TestRedactMetadata_WorkspaceStatus_StripsRepoURLCredentials(t *testing.T) {
 		},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: workspaceStatus},
 	})
+	require.NoError(t, err)
 
 	require.Equal(t, 1, len(workspaceStatus.Item))
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", workspaceStatus.Item[0].Value)
@@ -447,7 +461,7 @@ func TestRedactRunResidual(t *testing.T) {
 			chunkList := &clpb.ChunkList{
 				Chunk: tc.given,
 			}
-			redactor.RedactMetadata(&bespb.BuildEvent{
+			err := redactor.RedactMetadata(&bespb.BuildEvent{
 				Payload: &bespb.BuildEvent_StructuredCommandLine{
 					StructuredCommandLine: &clpb.CommandLine{
 						Sections: []*clpb.CommandLineSection{
@@ -469,7 +483,7 @@ func TestRedactRunResidual(t *testing.T) {
 					},
 				},
 			})
-
+			require.NoError(t, err)
 			require.Equal(t, tc.expected, chunkList.Chunk)
 		})
 	}
