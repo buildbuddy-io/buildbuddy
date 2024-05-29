@@ -1721,11 +1721,8 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 	}
 	fetchDepth := 1
 
-	// If merging branches, fetch the full branch, to ensure the merge base commit is fetched
+	// If merging branches, fetch the full history, to ensure the merge base commit is fetched
 	if ws.shouldMergeBranches() {
-		if *pushedBranch != "" {
-			refToFetch = *pushedBranch
-		}
 		fetchDepth = 0
 	}
 
