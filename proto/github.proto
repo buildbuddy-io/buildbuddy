@@ -670,7 +670,7 @@ message GetGithubPullRequestDetailsResponse {
   string base_commit_sha = 21;
   string head_commit_sha = 22;
 
-  // A sorted list of the commits in this PR (base comes first).
+  // A sorted list of the commits in this PR (oldest comes first).
   repeated PrCommit commits = 23;
 
   repeated Comment comments = 17;
