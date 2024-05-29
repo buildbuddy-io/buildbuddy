@@ -139,7 +139,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const executionId = this.props.search.get("executionId");
     if (!executionId) return;
 
-    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_cache"));
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
 
     this.operationStream = waitExecution(service, executionId, {
       next: (operation) => {
