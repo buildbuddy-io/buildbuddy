@@ -68,7 +68,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
         const reviewModel = ReviewModel.fromResponse(r);
         this.setState({ reviewModel });
         // TODO(jdhollen): This is inefficient, we could include the base commit
-        // info on the original request.  Also, these response can technically
+        // info on the original request.  Also, these responses can technically
         // be cached since the commits and associated content can't change.
         if (this.getSelectedBaseCommit(reviewModel) === reviewModel.getBaseCommitSha()) {
           this.setState({ files: reviewModel.getFiles() });
