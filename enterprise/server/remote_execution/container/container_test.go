@@ -16,7 +16,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 type FakeContainer struct {
@@ -53,9 +52,6 @@ func (c *FakeContainer) Pause(ctx context.Context) error   { return nil }
 func (c *FakeContainer) Unpause(ctx context.Context) error { return nil }
 func (c *FakeContainer) Stats(context.Context) (*repb.UsageStats, error) {
 	return &repb.UsageStats{}, nil
-}
-func (c *FakeContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	return nil, status.UnimplementedError("not implemented")
 }
 
 func userCtx(t *testing.T, ta *testauth.TestAuthenticator, userID string) context.Context {

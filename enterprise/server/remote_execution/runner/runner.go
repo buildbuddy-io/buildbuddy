@@ -36,7 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -111,9 +110,6 @@ const (
 	workerProtocolJSONValue = "json"
 	// Value for persisent workers that support the protobuf persistent worker protocol.
 	workerProtocolProtobufValue = "proto"
-
-	// Where to store the RunnerPoolState proto, relative to rootDirectory.
-	stateFileName = "_runner_pool_state.bin"
 
 	// If a runner exceeds this percentage of its total memory or disk allocation,
 	// it should not be recycled, because it may cause failures if it's reused
@@ -564,11 +560,6 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 
 	p.setLimits()
 	hc.RegisterShutdownFunction(p.Shutdown)
-
-	if err := p.initializeFromSavedState(env.GetServerContext()); err != nil {
-		log.Warningf("Failed to initialize runner pool from saved state: %s", err)
-	}
-
 	return p, nil
 }
 
@@ -772,11 +763,6 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		ExecutionTask: task,
 	}
 
-	state := &rnpb.RunnerState{
-		// Note: warmup runner is not tied to a group or instance name
-		RunnerKey: &rnpb.RunnerKey{Platform: plat},
-	}
-
 	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{})
 	if err != nil {
 		return err
@@ -786,7 +772,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		defer cancel()
 		_ = ws.Remove(ctx)
 	}()
-	c, err := p.newContainer(ctx, platProps, st, state, ws.Path())
+	c, err := p.newContainer(ctx, platProps, st, ws.Path())
 	if err != nil {
 		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, cfg.Image, err)
 		return err
@@ -957,14 +943,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		}).Inc()
 	}
 
-	debugID, _ := random.RandomString(8)
-	state := &rnpb.RunnerState{
-		RunnerKey:         key,
-		DebugId:           debugID,
-		AssignedTaskCount: 1,
-	}
-
-	r, err := p.newRunner(ctx, props, st, state)
+	r, err := p.newRunner(ctx, key, props, st)
 	if err != nil {
 		return nil, err
 	}
@@ -974,10 +953,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 
 // newRunner creates a runner either for the given task (if set) or restores the
 // runner from the given state.ContainerState.
-func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *repb.ScheduledTask, state *rnpb.RunnerState) (*taskRunner, error) {
-	if st == nil && state.GetContainerState() == nil {
-		return nil, status.FailedPreconditionError("either a task or saved container state is required to create a runner")
-	}
+func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platform.Properties, st *repb.ScheduledTask) (*taskRunner, error) {
 	useOverlayfs, err := isOverlayfsEnabledForAction(ctx, props)
 	if err != nil {
 		return nil, err
@@ -992,16 +968,17 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := p.newContainer(ctx, props, st, state, ws.Path())
+	ctr, err := p.newContainer(ctx, props, st, ws.Path())
 	if err != nil {
 		return nil, err
 	}
+	debugID, _ := random.RandomString(8)
 	r := &taskRunner{
 		env:                p.env,
 		p:                  p,
-		key:                state.GetRunnerKey(),
-		debugID:            state.GetDebugId(),
-		taskNumber:         state.GetAssignedTaskCount(),
+		key:                key,
+		debugID:            debugID,
+		taskNumber:         1,
 		task:               st.GetExecutionTask(),
 		PlatformProperties: props,
 		Container:          ctr,
@@ -1009,11 +986,6 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	}
 	if err := r.startVFS(); err != nil {
 		return nil, err
-	}
-	// If we restored a paused container from state, the initial state should be
-	// set to "paused" rather than the usual "init".
-	if state.GetContainerState() != nil {
-		r.state = paused
 	}
 
 	p.mu.Lock()
@@ -1030,8 +1002,8 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	return r, nil
 }
 
-func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (*container.TracedCommandContainer, error) {
-	args := &container.Init{Props: props, Task: task, State: state, WorkDir: workingDir}
+func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, workingDir string) (*container.TracedCommandContainer, error) {
+	args := &container.Init{Props: props, Task: task, WorkDir: workingDir}
 
 	// Overriding in tests.
 	if p.overrideProvider != nil {
@@ -1043,10 +1015,6 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 	}
 
 	isolationType := platform.ContainerType(props.WorkloadIsolationType)
-	if state.GetContainerState() != nil && isolationType != platform.FirecrackerContainerType {
-		return nil, status.UnimplementedErrorf("restoring container state is not implemented for %q isolation", isolationType)
-	}
-
 	containerProvider, ok := p.containerProviders[isolationType]
 	if !ok {
 		return nil, status.UnimplementedErrorf("no container provider registered for %q isolation", isolationType)
@@ -1211,73 +1179,12 @@ func (p *pool) pausedRunnerMemoryUsageBytes() int64 {
 	return b
 }
 
-func (p *pool) stateFilePath() string {
-	return filepath.Join(*rootDirectory, stateFileName)
-}
-
-func (p *pool) loadState(ctx context.Context) (*rnpb.RunnerPoolState, error) {
-	b, err := disk.ReadFile(ctx, p.stateFilePath())
-	if err != nil {
-		return nil, status.WrapErrorf(err, "failed to read state file %s", p.stateFilePath())
-	}
-	state := &rnpb.RunnerPoolState{}
-	if err := proto.Unmarshal(b, state); err != nil {
-		return nil, status.WrapError(err, "failed to unmarshal state")
-	}
-	if err := os.Remove(p.stateFilePath()); err != nil {
-		return nil, status.InternalErrorf("failed to remove state file %s: %s", p.stateFilePath(), err)
-	}
-	return state, nil
-}
-
-func (p *pool) saveState(ctx context.Context, state *rnpb.RunnerPoolState) error {
-	if len(state.RunnerStates) == 0 {
-		return nil
-	}
-	b, err := proto.Marshal(state)
-	if err != nil {
-		return status.WrapError(err, "failed to marshal state")
-	}
-	if _, err := disk.WriteFile(ctx, p.stateFilePath(), b); err != nil {
-		return status.WrapErrorf(err, "failed to write %s", p.stateFilePath())
-	}
-	return nil
-}
-
-func (p *pool) initializeFromSavedState(ctx context.Context) error {
-	state, err := p.loadState(ctx)
-	if err != nil {
-		if status.IsNotFoundError(err) {
-			log.Infof("Runner state file not found at %s", p.stateFilePath())
-			return nil
-		}
-		return err
-	}
-	for _, rs := range state.RunnerStates {
-		nopTask := &repb.ExecutionTask{Command: &repb.Command{Platform: rs.GetRunnerKey().GetPlatform()}}
-		props, err := p.effectivePlatform(nopTask)
-		if err != nil {
-			log.Warningf("Failed to restore runner state: %s", err)
-			continue
-		}
-		r, err := p.newRunner(ctx, props, nil /*=scheduledTask*/, rs)
-		if err != nil {
-			log.Warningf("Failed to restore runner state: %s", err)
-			continue
-		}
-		log.Infof("Restored runner %s from state", r)
-	}
-	log.Infof("Restored %d runner(s) from state file %s", len(p.runners), p.stateFilePath())
-	return nil
-}
-
 // Shutdown removes all runners from the pool and prevents new ones from
 // being added.
 func (p *pool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.isShuttingDown = true
 	var runnersToRemove []*taskRunner
-	persistedState := &rnpb.RunnerPoolState{}
 	// Remove only paused runners, since active runners should be removed only
 	// after their currently assigned task is canceled due to the shutdown
 	// grace period expiring.
@@ -1294,32 +1201,6 @@ func (p *pool) Shutdown(ctx context.Context) error {
 	if len(runnersToRemove) > 0 {
 		log.Infof("Runner pool: removing %s", runnerSlice(runnersToRemove))
 	}
-
-	for _, r := range pausedRunners {
-		// TODO: figure out how/whether to preserve the workspace dir during
-		// executor restarts, and remove this check. We exclude this check
-		// for firecracker workflows because they don't use the workspace
-		// disk.
-		if r.PlatformProperties.PreserveWorkspace && !(r.PlatformProperties.WorkflowID != "" && r.PlatformProperties.WorkloadIsolationType == string(platform.FirecrackerContainerType)) {
-			continue
-		}
-
-		containerState, err := r.Container.State(ctx)
-		if status.IsUnimplementedError(err) {
-			continue
-		}
-		if err != nil {
-			log.Warningf("Failed to persist state for runner %s: %s", r, err)
-			continue
-		}
-		runnerState := &rnpb.RunnerState{
-			RunnerKey:      r.key,
-			DebugId:        r.debugID,
-			ContainerState: containerState,
-		}
-		persistedState.RunnerStates = append(persistedState.RunnerStates, runnerState)
-		log.Infof("Persisting state for runner %s", r)
-	}
 	p.mu.Unlock()
 
 	removeResults := make(chan error)
@@ -1332,13 +1213,6 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		go func() {
 			removeResults <- r.RemoveWithTimeout(ctx)
 		}()
-	}
-
-	// Write runner pool state file.
-	if err := p.saveState(ctx, persistedState); err != nil {
-		log.Errorf("Failed to save runner pool state: %s", err)
-	} else {
-		log.Infof("Wrote runner pool state to %s", p.stateFilePath())
 	}
 
 	// Now wait for runners to finish removing.
