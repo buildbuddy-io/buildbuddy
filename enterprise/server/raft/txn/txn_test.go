@@ -279,3 +279,42 @@ func TestFetchTxnRecordsSkipRecent(t *testing.T) {
 	require.ElementsMatch(t, gotTxnIDs, [][]byte{[]byte("a"), []byte("b"), []byte("c")})
 	require.NoError(t, err)
 }
+
+func TestRunTxn(t *testing.T) {
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+	testutil.StartShard(t, ctx, s1, s2, s3)
+
+	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("foo"),
+			Value: []byte("zoo"),
+		},
+	}).Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   []byte("bar"),
+			Value: []byte("foo"),
+		},
+	})
+
+	metaBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.MakeKey(constants.SystemPrefix, []byte("aaa")),
+			Value: []byte("bbb"),
+		},
+	})
+	txnBuilder := rbuilder.NewTxn().AddStatement(&rfpb.ReplicaDescriptor{
+		ShardId:   2,
+		ReplicaId: 4,
+	}, batch).AddStatement(&rfpb.ReplicaDescriptor{
+		ShardId:   1,
+		ReplicaId: 1,
+	}, metaBatch)
+	clock := clockwork.NewFakeClock()
+	tc := txn.NewCoordinator(s1, s1.APIClient(), clock)
+	err := tc.RunTxn(ctx, txnBuilder)
+	require.NoError(t, err)
+}

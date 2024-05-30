@@ -22,6 +22,7 @@ go_library(
 go_test(
     name = "txn_test",
     srcs = ["txn_test.go"],
+    tags = ["block-network"],
     deps = [
         ":txn",
         "//enterprise/server/raft/constants",
