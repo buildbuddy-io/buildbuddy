@@ -1102,9 +1102,11 @@ func PostAutoMigrate(db *gorm.DB) error {
 				if m.HasIndex(tableName, indexName) {
 					continue
 				}
-				query := fmt.Sprintf(`CREATE INDEX "%s" ON "%s" %s`, indexName, tableName, cols)
+				var query string
 				if db.Dialector.Name() == mysqlDialect {
-					query = query + ", ALGORITHM=INPLACE, LOCK=NONE"
+					query = fmt.Sprintf(`ALTER TABLE "%s" ADD INDEX "%s" %s, ALGORITHM=INPLACE, LOCK=NONE`, tableName, indexName, cols)
+				} else {
+					query = fmt.Sprintf(`CREATE INDEX "%s" ON "%s" %s`, indexName, tableName, cols)
 				}
 				err := db.Exec(query).Error
 				if err != nil {
