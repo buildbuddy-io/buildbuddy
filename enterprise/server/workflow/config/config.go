@@ -41,7 +41,7 @@ type Action struct {
 	User              string            `yaml:"user"`
 	GitCleanExclude   []string          `yaml:"git_clean_exclude"`
 	GitFetchFilters   []string          `yaml:"git_fetch_filters"`
-	GitFetchDepth     int               `yaml:"git_fetch_depth"`
+	GitFetchDepth     *int              `yaml:"git_fetch_depth"`
 	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
 	Env               map[string]string `yaml:"env"`
 	BazelCommands     []string          `yaml:"bazel_commands"`
