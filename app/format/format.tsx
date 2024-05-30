@@ -184,6 +184,18 @@ export function bytes(bytes: number | Long) {
   return truncateDecimalZeroes((bytes / 1e15).toPrecision(4)) + "PB";
 }
 
+export function bytesIEC(bytes: number | Long) {
+  bytes = +bytes;
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let i = 0;
+  let threshold = 1024;
+  while (i < units.length - 1 && bytes >= threshold) {
+    i++;
+    threshold *= 1024;
+  }
+  return truncateDecimalZeroes((bytes / (threshold / 1024)).toPrecision(4)) + units[i];
+}
+
 export function bitsPerSecond(bitsPerSecond: number | Long) {
   bitsPerSecond = Number(bitsPerSecond);
   if (bitsPerSecond < 1e3) {
@@ -400,6 +412,7 @@ export default {
   sentenceCase,
   percent,
   bytes,
+  bytesIEC,
   bitsPerSecond,
   count,
   truncateList,
