@@ -14,10 +14,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	_ "embed"
+
 	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/soci_store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -28,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -37,9 +41,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc"
 
+	execclient "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 )
 
 var (
@@ -62,6 +69,7 @@ var (
 	podmanRuntime       = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	podmanStorageDriver = flag.String("executor.podman.storage_driver", "overlay", "The podman storage driver to use.")
 	podmanEnableStats   = flag.Bool("executor.podman.enable_stats", true, "Whether to enable cgroup-based podman stats.")
+	enableExecServer    = flag.Bool("executor.podman.enable_exec_server", false, "Whether to use an execution server inside each podman container for executing commands, rather than using 'podman exec'. Applies only to actions with runner recycling enabled.")
 	transientStore      = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.", flag.Deprecated("--transient-store is now always applied if the podman version supports it"))
 	podmanDNS           = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
 	podmanGPU           = flag.String("executor.podman.gpus", "", "Specifies the value of the --gpus= flag to pass to podman. Set to 'all' to pass all GPUs.")
@@ -81,6 +89,12 @@ var (
 
 	databaseLockedRegexp = regexp.MustCompile("beginning container .+ transaction: database is locked")
 )
+
+//go:embed execserver
+var execServerBytes []byte
+
+//go:embed execserver.sum
+var execServerHash string
 
 const (
 	// Podman exit codes
@@ -110,6 +124,10 @@ const (
 	imageExistsCacheSize = 1000
 )
 
+func execServerHostPath(buildRoot string) string {
+	return filepath.Join(buildRoot, "executor", execServerHash)
+}
+
 type pullStatus struct {
 	mu     *sync.RWMutex
 	pulled bool
@@ -125,6 +143,15 @@ type Provider struct {
 }
 
 func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
+	// Unpack embedded execserver to buildRoot.
+	srvPath := execServerHostPath(buildRoot)
+	if err := os.MkdirAll(filepath.Dir(srvPath), 0755); err != nil {
+		return nil, status.WrapError(err, "make execserver unpack dir")
+	}
+	if err := os.WriteFile(srvPath, execServerBytes, 0755); err != nil {
+		return nil, status.WrapError(err, "unpack execserver")
+	}
+
 	// Eagerly init podman version so we can crash the executor if it fails.
 	podmanVersion, err := getPodmanVersion(env.GetServerContext(), env.GetCommandRunner())
 	if err != nil {
@@ -219,6 +246,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		sociStore:         p.sociStore,
 		imageExistsCache:  p.imageExistsCache,
 		buildRoot:         p.buildRoot,
+		useExecServer:     *enableExecServer || platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-use-exec-server") == "true",
 		options: &PodmanOptions{
 			ForceRoot:          args.Props.DockerForceRoot,
 			Init:               args.Props.DockerInit,
@@ -259,6 +287,10 @@ type podmanCommandContainer struct {
 	image     string
 	buildRoot string
 	workDir   string
+
+	useExecServer bool
+	execConn      *grpc.ClientConn
+	execClient    vmxpb.ExecClient
 
 	imageIsStreamable bool
 	sociStore         soci_store.Store
@@ -444,8 +476,18 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	c.workDir = workDir
 
 	podmanRunArgs := c.getPodmanRunArgs(workDir)
+	if c.useExecServer {
+		if err := c.provisionExecServer(ctx); err != nil {
+			return status.WrapError(err, "provision execserver")
+		}
+		podmanRunArgs = append(podmanRunArgs, fmt.Sprintf("--volume=%s:/opt/buildbuddy/exec", c.execServerDir()))
+	}
 	podmanRunArgs = append(podmanRunArgs, c.image)
-	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
+	if c.useExecServer {
+		podmanRunArgs = append(podmanRunArgs, "/opt/buildbuddy/exec/execserver", "-socket=/opt/buildbuddy/exec/exec.sock")
+	} else {
+		podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
+	}
 	createResult := c.runPodman(ctx, "create", &interfaces.Stdio{}, podmanRunArgs...)
 	if err := c.maybeCleanupCorruptedImages(ctx, createResult); err != nil {
 		log.Warningf("Failed to remove corrupted image: %s", err)
@@ -466,6 +508,44 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	if startResult.ExitCode != 0 {
 		return status.UnknownErrorf("podman start failed: exit code %d, stderr: %s", startResult.ExitCode, startResult.Stderr)
 	}
+
+	// Wait for exec server to start listening
+	if c.useExecServer {
+		if err := c.dialExecServer(ctx); err != nil {
+			return status.WrapError(err, "dial execserver")
+		}
+	}
+
+	return nil
+}
+
+func (c *podmanCommandContainer) execServerDir() string {
+	return c.workDir + ".execserver"
+}
+
+func (c *podmanCommandContainer) provisionExecServer(ctx context.Context) error {
+	dir := c.execServerDir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	if err := os.Link(execServerHostPath(c.buildRoot), filepath.Join(dir, "execserver")); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *podmanCommandContainer) dialExecServer(ctx context.Context) error {
+	socket := filepath.Join(c.execServerDir(), "exec.sock")
+	if err := disk.WaitUntilExists(ctx, socket, disk.WaitOpts{Timeout: 30 * time.Second}); err != nil {
+		return status.UnavailableError("execserver socket not created")
+	}
+	conn, err := grpc_client.DialSimpleWithoutPooling("unix://"+socket, grpc.WithInsecure())
+	if err != nil {
+		return err
+	}
+	client := vmxpb.NewExecClient(conn)
+	c.execConn = conn
+	c.execClient = client
 	return nil
 }
 
@@ -492,7 +572,12 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	// during a normal execution, so we are overly cautious here and only
 	// interpret this code specially when the container was removed and we are
 	// expecting a SIGKILL as a result.
-	res := c.runPodman(ctx, "exec", stdio, podmanRunArgs...)
+	var res *interfaces.CommandResult
+	if c.execClient != nil {
+		res = execclient.Execute(ctx, c.execClient, cmd, c.workDir, "" /*=user*/, nil /*statsListener*/, stdio)
+	} else {
+		res = c.runPodman(ctx, "exec", stdio, podmanRunArgs...)
+	}
 	stopMonitoring()
 	res.UsageStats = <-statsCh
 	c.mu.Lock()
@@ -706,6 +791,7 @@ func (c *podmanCommandContainer) Remove(ctx context.Context) error {
 	c.removed = true
 	c.mu.Unlock()
 	os.RemoveAll(c.cidFilePath()) // intentionally ignoring error.
+	os.RemoveAll(c.execServerDir())
 	res := c.runPodman(ctx, "kill", &interfaces.Stdio{}, "--signal=KILL", c.name)
 	if res.Error != nil {
 		return res.Error

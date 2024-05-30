@@ -61,14 +61,24 @@ var (
 )
 
 type fakeContainer struct {
-	container.CommandContainer // TODO: implement all methods
-	CreateError                error
-	Removed                    chan struct{}
+	container.CommandContainer
+	PauseCount  int
+	Paused      chan struct{}
+	CreateError error
+	Removed     chan struct{}
 }
 
 func NewFakeContainer() *fakeContainer {
-	return &fakeContainer{Removed: make(chan struct{})}
+	return &fakeContainer{
+		CommandContainer: bare.NewBareCommandContainer(&bare.Opts{}),
+		Removed:          make(chan struct{}),
+		Paused:           make(chan struct{}, 1),
+	}
 }
+
+var FakeProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	return NewFakeContainer(), nil
+})
 
 func (c *fakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	return nil
@@ -76,6 +86,15 @@ func (c *fakeContainer) PullImage(ctx context.Context, creds oci.Credentials) er
 
 func (c *fakeContainer) Create(ctx context.Context, workdir string) error {
 	return c.CreateError
+}
+
+func (c *fakeContainer) Pause(ctx context.Context) error {
+	c.PauseCount++
+	select {
+	case c.Paused <- struct{}{}:
+	default:
+	}
+	return nil
 }
 
 func (c *fakeContainer) Remove(ctx context.Context) error {
@@ -641,6 +660,53 @@ func TestRunnerPool_TaskSize(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunnerPool_DelayedPause_PauseSkippedIfImmediatelyReused(t *testing.T) {
+	// Set a high pause delay to ensure runners are effectively never paused.
+	flags.Set(t, "executor.runner_pool.pause_delay", 100*time.Hour)
+
+	env := newTestEnv(t)
+	opts := *noLimitsCfg
+	opts.PoolOptions = &PoolOptions{ContainerProvider: FakeProvider}
+	pool := newRunnerPool(t, env, &opts)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	r1 := mustGetNewRunner(t, ctx, pool, newTask())
+
+	mustAddWithoutEviction(t, ctx, pool, r1)
+
+	r2 := mustGetPausedRunner(t, ctx, pool, newTask())
+
+	assert.Same(t, r1, r2)
+	assert.Equal(t, 0, pool.PausedRunnerCount())
+
+	pauseCount := r1.Container.Delegate.(*fakeContainer).PauseCount
+	assert.Equal(t, 0, pauseCount, "should not have actually been paused due to delayed pause optimization")
+}
+
+func TestRunnerPool_DelayedPause_PausedInBackground(t *testing.T) {
+	// Set a short pause delay so that the runner is paused asynchronously but
+	// relatively quickly after being added to the pool.
+	flags.Set(t, "executor.runner_pool.pause_delay", 10*time.Millisecond)
+
+	env := newTestEnv(t)
+	opts := *noLimitsCfg
+	opts.PoolOptions = &PoolOptions{ContainerProvider: FakeProvider}
+	pool := newRunnerPool(t, env, &opts)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	r1 := mustGetNewRunner(t, ctx, pool, newTask())
+	pauseCh := r1.Container.Delegate.(*fakeContainer).Paused
+
+	mustAddWithoutEviction(t, ctx, pool, r1)
+
+	// Should be paused after a short delay.
+	<-pauseCh
+
+	// Make sure we can get the same runner again, unpausing it.
+	r2 := mustGetPausedRunner(t, ctx, pool, newTask())
+	assert.Same(t, r1, r2, "should get the same pooled runner")
 }
 
 func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ScheduledTask {
