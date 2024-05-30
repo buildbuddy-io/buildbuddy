@@ -159,8 +159,14 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     // Vm metadata is stored in the auxiliary metadata field of the execution metadata.
     const auxiliaryMetadata = executeResponse.result?.executionMetadata?.auxiliaryMetadata;
     if (!auxiliaryMetadata || auxiliaryMetadata.length == 0) {
-      throw new Error("empty snapshot key in execute response");
+      // If there's no snapshot key in the execute response (i.e. for Mac workflows
+      // or those on self-hosted executors that don't use firecracker with
+      // snapshotting), invalidate the snapshot by bumping the instance name
+      const repoUrl = this.props.model.workflowConfigured?.pushedRepoUrl;
+      rpcService.service.invalidateAllSnapshotsForRepo(new workflow.InvalidateAllSnapshotsForRepoRequest({ repoUrl }));
+      return;
     }
+
     let snapshotKey: firecracker.SnapshotKey | null | undefined;
     for (const metadata of auxiliaryMetadata) {
       if (metadata.typeUrl === "type.googleapis.com/firecracker.VMMetadata") {
