@@ -1195,6 +1195,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	for _, filter := range workflowAction.GetGitFetchFilters() {
 		args = append(args, "--git_fetch_filters="+filter)
 	}
+	if workflowAction.GitFetchDepth != nil {
+		args = append(args, fmt.Sprintf("--git_fetch_depth=%d", *workflowAction.GitFetchDepth))
+	}
 	for _, path := range workflowAction.GitCleanExclude {
 		args = append(args, "--git_clean_exclude="+path)
 	}

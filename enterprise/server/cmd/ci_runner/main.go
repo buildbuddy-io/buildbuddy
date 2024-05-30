@@ -91,6 +91,10 @@ const (
 	defaultGitRemoteName = "origin"
 	forkGitRemoteName    = "fork"
 
+	// If smart fetch depth is enabled, the runner will try to fetch the minimum
+	// depth required.
+	smartFetchDepth = -1
+
 	// Env vars set by workflow runner
 	// NOTE: These env vars are not populated for non-private repos.
 
@@ -162,7 +166,7 @@ var (
 	patchURIs       = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	gitCleanExclude = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
 	gitFetchFilters = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to `git fetch` commands.")
-	gitFetchDepth   = flag.Int("git_fetch_depth", 0, "Depth to use for `git fetch` commands.")
+	gitFetchDepth   = flag.Int("git_fetch_depth", smartFetchDepth, "Depth to use for `git fetch` commands.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -1627,8 +1631,8 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `commit_sha` to be set")
 	}
 
-	if err := ws.fetchRefs(ctx); err != nil {
-		return status.WrapError(err, "fetch refs")
+	if err := ws.fetchPushedRef(ctx); err != nil {
+		return status.WrapError(err, "fetch pushed ref")
 	}
 
 	// Clean up in case a previous workflow made a mess.
@@ -1664,11 +1668,13 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	merge := action.GetTriggers().GetPullRequestTrigger().GetMergeWithBase()
-	// If enabled by the config, merge the target branch (if different from the
+	// If enabled, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
-	if merge && *targetRepoURL != "" && *targetBranch != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
+	if ws.shouldMergeBranches(action.GetTriggers()) {
+		if err := ws.fetchTargetRef(ctx); err != nil {
+			return status.WrapError(err, "fetch target ref")
+		}
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
@@ -1700,49 +1706,59 @@ func (ws *workspace) sync(ctx context.Context) error {
 	return nil
 }
 
-// fetchRefs fetches the pushed and target refs from their respective remotes
-func (ws *workspace) fetchRefs(ctx context.Context) error {
-	// "base" here is referring to the repo on which the workflow is configured.
-	baseRefs := make([]string, 0)
-	if *targetBranch != "" {
-		baseRefs = append(baseRefs, *targetBranch)
-	}
-	// "fork" is referring to the forked repo, if the runner was triggered by a
-	// PR from a fork (forkRefs will be empty otherwise).
-	forkRefs := make([]string, 0)
+func (ws *workspace) shouldMergeBranches(actionTriggers *config.Triggers) bool {
+	return actionTriggers.GetPullRequestTrigger() != nil &&
+		actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
+		ws.hasMultipleBranches()
+}
 
-	// Add the pushed ref to the appropriate list corresponding to the remote
-	// to be fetched (base or fork).
-	inFork := isPushedRefInFork()
-	if inFork {
-		// Try to fetch a branch if possible, because fetching
-		// commits that aren't at the tip of a branch requires
-		// users to set an additional config option (uploadpack.allowAnySHA1InWant)
-		pushedRefToFetch := *pushedBranch
-		if pushedRefToFetch == "" {
-			pushedRefToFetch = *commitSHA
-		}
-		forkRefs = append(forkRefs, pushedRefToFetch)
-	} else {
-		if *pushedBranch == "" {
-			baseRefs = append(baseRefs, *commitSHA)
-		} else if *pushedBranch != *targetBranch {
-			baseRefs = append(baseRefs, *pushedBranch)
-		}
+func (ws *workspace) hasMultipleBranches() bool {
+	return *targetRepoURL != "" &&
+		*targetBranch != "" &&
+		(*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch)
+}
+
+func (ws *workspace) fetchPushedRef(ctx context.Context) error {
+	// By default, try to fetch the commit sha with --depth=1, to minimize data fetched
+	refToFetch := *commitSHA
+	if refToFetch == "" {
+		refToFetch = *pushedBranch
+	}
+	fetchDepth := 1
+
+	// TODO(Maggie): Only set fetch depth=0 if merge_with_base=true
+	// We can unconditionally pass serializedAction and read the action triggers from there
+	// If merging branches, fetch the full history, to ensure the merge base commit is fetched
+	if ws.hasMultipleBranches() {
+		fetchDepth = 0
 	}
 
-	baseURL := *pushedRepoURL
-	if inFork {
-		baseURL = *targetRepoURL
+	// If fetch depth is explicitly set, respect it
+	if *gitFetchDepth != smartFetchDepth {
+		fetchDepth = *gitFetchDepth
 	}
-	// TODO: Fetch from remotes in parallel
-	if err := ws.fetch(ctx, baseURL, baseRefs); err != nil {
-		return err
-	}
-	if err := ws.fetch(ctx, *pushedRepoURL, forkRefs); err != nil {
+
+	if err := ws.fetch(ctx, *pushedRepoURL, []string{refToFetch}, fetchDepth); err != nil {
+		if strings.Contains(err.Error(), "Server does not allow request for unadvertised object") {
+			log.Warning("Git does not support fetching non-HEAD commits by default." +
+				" You must set the `uploadpack.allowAnySHA1InWant`" +
+				" config option in the repo that is being fetched.")
+			if refToFetch != *pushedBranch && *pushedBranch != "" {
+				log.Warning("Attempting to fetch the branch with --depth=0 instead...")
+				refToFetch = *pushedBranch
+				fetchDepth = 0
+				return ws.fetch(ctx, *pushedRepoURL, []string{refToFetch}, fetchDepth)
+			}
+		}
 		return err
 	}
 	return nil
+}
+
+func (ws *workspace) fetchTargetRef(ctx context.Context) error {
+	// Fetch with --depth=0 to ensure the merge base commit is fetched
+	fetchDepth := 0
+	return ws.fetch(ctx, *targetRepoURL, []string{*targetBranch}, fetchDepth)
 }
 
 // checkoutRef checks out a reference that the rest of the remote run should run off
@@ -1813,7 +1829,7 @@ func (ws *workspace) init(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string) error {
+func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string, fetchDepth int) error {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -1841,17 +1857,13 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string)
 	for _, filter := range *gitFetchFilters {
 		fetchArgs = append(fetchArgs, "--filter="+filter)
 	}
-	if *gitFetchDepth > 0 {
-		fetchArgs = append(fetchArgs, fmt.Sprintf("--depth=%d", *gitFetchDepth))
+	if fetchDepth > 0 {
+		fetchArgs = append(fetchArgs, fmt.Sprintf("--depth=%d", fetchDepth))
 	}
 	fetchArgs = append(fetchArgs, remoteName)
 	fetchArgs = append(fetchArgs, refs...)
 	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
-		if strings.Contains(err.Error(), "Server does not allow request for unadvertised object") {
-			log.Warning("Git does not support fetching non-HEAD commits by default. You must either set the `uploadpack.allowAnySHA1InWant`" +
-				" config option in the repo that is being fetched, or set pushed_branch in the request.")
-		}
-		return err
+		return status.WrapError(err, err.Output)
 	}
 	return nil
 }
