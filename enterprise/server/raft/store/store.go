@@ -209,7 +209,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	s.updateTagsWorker = updateTagsWorker
 
-	txnCoordinator := txn.NewCoordinator(s, apiClient, clockwork.NewRealClock())
+	txnCoordinator := txn.NewCoordinator(s, apiClient, clock)
 	s.txnCoordinator = txnCoordinator
 
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
