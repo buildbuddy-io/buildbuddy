@@ -1778,6 +1778,8 @@ func (ws *workspace) config(ctx context.Context) error {
 		// image, --filter=blob:none requires the partialClone extension to be
 		// enabled.
 		{"extensions.partialClone", "true"},
+		// Disable this check for `git fetch` performance improvements
+		{"fetch.showForcedUpdates", "false"},
 	}
 	writeCommandSummary(ws.log, "Configuring repository...")
 	for _, kv := range cfg {
