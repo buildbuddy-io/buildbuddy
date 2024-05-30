@@ -412,7 +412,7 @@ func getStoreWithRangeLease(t testing.TB, stores []*testutil.TestingStore, range
 		}
 	}
 
-	t.Fatalf("No store found holding rangelease for range: %d", rangeID)
+	require.Failf(t, "getStoreWithRangeLease failed", "No store found holding rangelease for range: %d", rangeID)
 	return nil
 }
 
