@@ -1573,7 +1573,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 			return err
 		}
 		log.Warningf(
-			"Blah test: Failed to sync existing repo (maybe due to destructive '.git' dir edit or incompatible remote update). "+
+			"Blah test: more changes more changes Failed to sync existing repo (maybe due to destructive '.git' dir edit or incompatible remote update). "+
 				"Deleting and initializing from scratch. Error: %s",
 			err,
 		)
