@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -160,13 +161,15 @@ var (
 	pushedRepoURL   = flag.String("pushed_repo_url", "", "URL of the pushed repo. This is required.")
 	pushedBranch    = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
 	commitSHA       = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
-	targetRepoURL   = flag.String("target_repo_url", "", "If different from pushed_repo_url, indicates a fork (`pushed_repo_url`) is being merged into this repo.")
-	targetBranch    = flag.String("target_branch", "", "If different from pushed_branch, pushed_branch should be merged into this branch in the target repo.")
 	prNumber        = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
 	patchURIs       = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	gitCleanExclude = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
 	gitFetchFilters = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to `git fetch` commands.")
 	gitFetchDepth   = flag.Int("git_fetch_depth", smartFetchDepth, "Depth to use for `git fetch` commands.")
+	// Flags to configure merge-with-base behavior
+	targetRepoURL  = flag.String("target_repo_url", "", "If different from pushed_repo_url, indicates a fork (`pushed_repo_url`) is being merged into this repo.")
+	targetBranch   = flag.String("target_branch", "", "If different from pushed_branch, pushed_branch should be merged into this branch in the target repo.")
+	mergeCommitSHA = flag.String("merge_commit_sha", "", "If set and merge-with-base is enabled, checkout this commit sha directly instead of manually fetching the target repo and merging to generate it.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -1689,6 +1692,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 				*pushedBranch, *targetBranch, errMsg,
 			)
 		}
+		mergedCommitSHA, err := git(ctx, io.Discard, "rev-parse", "HEAD")
+		if err != nil {
+			return err
+		}
+		ws.log.Write([]byte(fmt.Sprintf("Merged into the target branch %s. HEAD is now at %s.\n", *targetBranch, mergedCommitSHA)))
 	}
 
 	if len(*patchURIs) > 0 {
@@ -1708,8 +1716,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 }
 
 func (ws *workspace) shouldMergeBranches(actionTriggers *config.Triggers) bool {
-	return actionTriggers.GetPullRequestTrigger() != nil &&
+	return *triggerEvent == webhook_data.EventName.PullRequest &&
 		actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
+		// If the merge commit SHA already exists, we don't need to re-merge the branches
+		// to generate it
+		*mergeCommitSHA == "" &&
 		ws.hasMultipleBranches()
 }
 
@@ -1720,23 +1731,31 @@ func (ws *workspace) hasMultipleBranches() bool {
 }
 
 func (ws *workspace) fetchPushedRef(ctx context.Context) error {
-	// By default, try to fetch the commit sha with --depth=1, to minimize data fetched
+	// By default, try to fetch with --depth=1, to minimize data fetched
+	fetchDepth := 1
+	// If fetch depth is explicitly set, respect it
+	if *gitFetchDepth != smartFetchDepth {
+		fetchDepth = *gitFetchDepth
+	}
+
+	// If the merge commit sha was pre-generated and passed as an argument,
+	// we should fetch it from the target repo.
+	if *mergeCommitSHA != "" {
+		return ws.fetch(ctx, *targetRepoURL, []string{*mergeCommitSHA}, fetchDepth)
+	}
+
 	refToFetch := *commitSHA
 	if refToFetch == "" {
 		refToFetch = *pushedBranch
 	}
-	fetchDepth := 1
 
-	// TODO(Maggie): Only set fetch depth=0 if merge_with_base=true
-	// We can unconditionally pass serializedAction and read the action triggers from there
-	// If merging branches, fetch the full history, to ensure the merge base commit is fetched
-	if ws.hasMultipleBranches() {
+	// If the merge commit has not been generated, fetch the full history
+	// to ensure the merge base commit is fetched, so we can manually merge the branches
+	// TODO(Maggie): Only do this if merge_with_base is enabled
+	// If we serialize the action in serializedAction, we won't need to checkout
+	// the repo in the ci_runner to read the config
+	if ws.hasMultipleBranches() && *gitFetchDepth == smartFetchDepth {
 		fetchDepth = 0
-	}
-
-	// If fetch depth is explicitly set, respect it
-	if *gitFetchDepth != smartFetchDepth {
-		fetchDepth = *gitFetchDepth
 	}
 
 	if err := ws.fetch(ctx, *pushedRepoURL, []string{refToFetch}, fetchDepth); err != nil {
@@ -1768,6 +1787,10 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 	checkoutRef := *commitSHA
 	if checkoutRef == "" {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
+	}
+	if *mergeCommitSHA != "" {
+		checkoutRef = *mergeCommitSHA
+		ws.log.Write([]byte(fmt.Sprintf("Checking out merge commit sha %s...\n", checkoutRef)))
 	}
 
 	if checkoutLocalBranchName != "" {
