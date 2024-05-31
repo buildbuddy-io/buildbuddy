@@ -306,7 +306,7 @@ message Session {
   uint64 index = 2;
   // A timestamp when the session will be cleaned up; and when the state machine
   // can safely clean up the entry.
-  int64 expired_at = 3;
+  int64 expiry_usec = 3;
 
   // Optional. The response associated with the command associated with the
   // index.
@@ -330,9 +330,6 @@ message BatchCmdRequest {
 
   // Any post-commit hooks that should be run after a batch is *committed*.
   repeated PostCommitHook post_commit_hooks = 5;
-
-  // Session is used to guarantee idempotency for writes on the state machine.
-  optional Session session = 6;
 }
 
 message BatchCmdResponse {
@@ -489,6 +486,9 @@ message Header {
   //  Reads will use LINEARIZABLE by default but STALE can be set if the client
   //  can tolerate stale data.
   ConsistencyMode consistency_mode = 4;
+
+  // Session is used to guarantee idempotency for writes on the state machine.
+  optional Session session = 5;
 }
 
 message RangeSet {
