@@ -226,10 +226,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shard
 	sesh := nodehost.GetNoOPSession(shardID)
 
 	s.index++
-	if batch.Header == nil {
-		batch.Header = &rfpb.Header{}
-	}
-	batch.Header.Session = s.toProto()
+	batch.Session = s.toProto()
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
