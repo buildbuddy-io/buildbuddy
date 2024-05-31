@@ -178,9 +178,9 @@ type Session struct {
 
 func (s *Session) toProto() *rfpb.Session {
 	return &rfpb.Session{
-		Id:        []byte(s.id),
-		Index:     s.index,
-		ExpiredAt: s.expiredAt.UnixMicro(),
+		Id:         []byte(s.id),
+		Index:      s.index,
+		ExpiryUsec: s.expiredAt.UnixMicro(),
 	}
 }
 
@@ -226,7 +226,10 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shard
 	sesh := nodehost.GetNoOPSession(shardID)
 
 	s.index++
-	batch.Session = s.toProto()
+	if batch.Header == nil {
+		batch.Header = &rfpb.Header{}
+	}
+	batch.Header.Session = s.toProto()
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
