@@ -3,7 +3,9 @@ package execution_service
 import (
 	"context"
 	"io"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -37,7 +39,7 @@ func checkPreconditions(req *espb.GetExecutionRequest) error {
 	return status.FailedPreconditionError("An execution lookup with invocation_id must be provided")
 }
 
-func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID string) ([]*tables.Execution, error) {
+func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID, actionDigestHash string) ([]*tables.Execution, error) {
 	// Note: the invocation row may not be created yet because workflow
 	// invocations are created by the execution itself.
 	q := query_builder.NewQuery(`
@@ -46,6 +48,9 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 		LEFT JOIN "Invocations" i ON i.invocation_id = e.invocation_id
 	`)
 	q.AddWhereClause(`ie.invocation_id = ?`, invocationID)
+	if actionDigestHash != "" {
+		q.AddWhereClause(`e.execution_id LIKE ?`, "%/"+actionDigestHash+"/%")
+	}
 	dbh := es.env.GetDBHandle()
 
 	permClauses, err := perms.GetPermissionsCheckClauses(ctx, es.env, q, "e")
@@ -63,7 +68,20 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 
 	queryStr, args := q.Build()
 	rq := dbh.NewQuery(ctx, "execution_server_get_executions").Raw(queryStr, args...)
-	return db.ScanAll(rq, &tables.Execution{})
+	executions, err := db.ScanAll(rq, &tables.Execution{})
+	if err != nil {
+		return nil, err
+	}
+	// It's unlikely, but our digest predicate might return false positives
+	// since we aren't doing a strict match on the hash part of the execution
+	// ID. Filter out false positives here.
+	if actionDigestHash != "" {
+		executions = slices.DeleteFunc(executions, func(e *tables.Execution) bool {
+			parts := strings.Split(e.ExecutionID, "/")
+			return len(parts) < 2 || parts[len(parts)-2] != actionDigestHash
+		})
+	}
+	return executions, nil
 }
 
 func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
@@ -73,7 +91,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	if err := checkPreconditions(req); err != nil {
 		return nil, err
 	}
-	executions, err := es.getInvocationExecutions(ctx, req.GetExecutionLookup().GetInvocationId())
+	executions, err := es.getInvocationExecutions(ctx, req.GetExecutionLookup().GetInvocationId(), req.GetExecutionLookup().GetActionDigestHash())
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +113,10 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 		for _, ex := range rsp.Execution {
 			ex := ex
 			eg.Go(func() error {
+				// TODO: if the authenticated user has access to the group
+				// that owns the execution, switch to that group's ctx.
+				// Also if the execution was done anonymously, switch to
+				// anonymous ctx.
 				res, err := execution.GetCachedExecuteResponse(ctx, es.env, ex.ExecutionId)
 				if err != nil {
 					return err
