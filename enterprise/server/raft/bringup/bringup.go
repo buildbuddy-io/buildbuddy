@@ -31,6 +31,7 @@ type IStore interface {
 
 type ClusterStarter struct {
 	store    IStore
+	session  *client.Session
 	grpcAddr string
 
 	// the set of hosts passed to the Join arg
@@ -53,6 +54,7 @@ func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore) *Clu
 	joinList := gossipMan.JoinList()
 	cs := &ClusterStarter{
 		store:         store,
+		session:       client.NewDefaultSession(),
 		grpcAddr:      grpcAddr,
 		listenAddr:    gossipMan.ListenAddr(),
 		join:          joinList,
@@ -213,7 +215,7 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 		bootstrapInfo[br.GetNhid()] = br.GetGrpcAddress()
 		if len(bootstrapInfo) == len(cs.join) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			err = SendStartShardRequests(ctx, nodeHost, apiClient, bootstrapInfo)
+			err = SendStartShardRequests(ctx, cs.session, nodeHost, apiClient, bootstrapInfo)
 			cancel()
 			return err
 		}
@@ -324,7 +326,7 @@ func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo 
 
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bring up initial cluster(s).
-func SendStartShardRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {
+func SendStartShardRequests(ctx context.Context, session *client.Session, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
 			Start:      keys.MinByte,
@@ -337,10 +339,10 @@ func SendStartShardRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, 
 			Generation: 1,
 		},
 	}
-	return SendStartShardRequestsWithRanges(ctx, nodeHost, apiClient, nodeGrpcAddrs, startingRanges)
+	return SendStartShardRequestsWithRanges(ctx, session, nodeHost, apiClient, nodeGrpcAddrs, startingRanges)
 }
 
-func SendStartShardRequestsWithRanges(ctx context.Context, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string, startingRanges []*rfpb.RangeDescriptor) error {
+func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Session, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string, startingRanges []*rfpb.RangeDescriptor) error {
 	shardID := uint64(constants.InitialShardID)
 	replicaID := uint64(constants.InitialReplicaID)
 	rangeID := uint64(constants.InitialRangeID)
@@ -420,7 +422,7 @@ func SendStartShardRequestsWithRanges(ctx context.Context, nodeHost *dragonboat.
 		if err != nil {
 			return err
 		}
-		batchRsp, err := client.SyncProposeLocal(ctx, nodeHost, constants.InitialShardID, batchProto)
+		batchRsp, err := session.SyncProposeLocal(ctx, nodeHost, constants.InitialShardID, batchProto)
 		if err != nil {
 			return err
 		}

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
@@ -148,6 +149,7 @@ func TestAcquireAndRelease(t *testing.T) {
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-1", sender)
+	session := client.NewDefaultSession()
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   []byte("a"),
@@ -159,7 +161,7 @@ func TestAcquireAndRelease(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd, rep)
+	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -186,6 +188,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-2", sender)
+	session := client.NewDefaultSession()
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   keys.MinByte,
@@ -197,7 +200,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd, rep)
+	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -224,6 +227,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-3", sender)
+	session := client.NewDefaultSession()
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   keys.MinByte,
@@ -237,7 +241,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	}
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd, rep).WithTimeouts(leaseDuration, gracePeriod)
+	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -270,6 +274,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-4", sender)
+	session := client.NewDefaultSession()
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   []byte("a"),
@@ -281,7 +286,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 			{ShardId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, log.NamedSubLogger("test"), liveness, rd, rep)
+	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)

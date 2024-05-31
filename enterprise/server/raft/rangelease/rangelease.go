@@ -41,6 +41,7 @@ type Lease struct {
 	log      log.Logger
 	replica  *replica.Replica
 	liveness *nodeliveness.Liveness
+	session  *client.Session
 
 	leaseDuration time.Duration
 	gracePeriod   time.Duration
@@ -54,12 +55,13 @@ type Lease struct {
 	quitLease             chan struct{}
 }
 
-func New(nodeHost client.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor, r *replica.Replica) *Lease {
+func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor, r *replica.Replica) *Lease {
 	return &Lease{
 		nodeHost:              nodeHost,
 		log:                   log,
 		replica:               r,
 		liveness:              liveness,
+		session:               session,
 		leaseDuration:         defaultLeaseDuration,
 		gracePeriod:           defaultGracePeriod,
 		rangeDescriptor:       rd,
@@ -142,7 +144,7 @@ func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, l.replica.ShardID(), casRequest)
+	rsp, err := l.session.SyncProposeLocal(ctx, l.nodeHost, l.replica.ShardID(), casRequest)
 	if err != nil {
 		return nil, err
 	}

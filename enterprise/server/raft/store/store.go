@@ -82,6 +82,7 @@ type Store struct {
 	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
+	session       *client.Session
 	log           log.Logger
 
 	db     pebble.IPebbleDB
@@ -159,11 +160,13 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 		return nil, err
 	}
 	leaser := pebble.NewDBLeaser(db)
+	clock := clockwork.NewRealClock()
+	session := client.NewSession(clock, client.SessionLifetime())
 
-	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions, db, leaser, clockwork.NewRealClock())
+	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions, db, leaser, clock, session)
 }
 
-func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser, clock clockwork.Clock) (*Store, error) {
+func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser, clock clockwork.Clock, session *client.Session) (*Store, error) {
 	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
@@ -180,6 +183,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		registry:      registry,
 		apiClient:     apiClient,
 		liveness:      nodeLiveness,
+		session:       session,
 		log:           nhLog,
 
 		rangeMu:    sync.RWMutex{},
@@ -867,7 +871,7 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	}
 	sort.Slice(replicaIDs, func(i, j int) bool { return replicaIDs[i] < replicaIDs[j] })
 	if req.GetReplicaId() == replicaIDs[len(replicaIDs)-1] {
-		batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, req.GetShardId(), req.GetBatch())
+		batchResponse, err := s.session.SyncProposeLocal(ctx, s.nodeHost, req.GetShardId(), req.GetBatch())
 		if err != nil {
 			return nil, err
 		}
@@ -909,7 +913,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 		shardID = r.ShardID()
 	}
 
-	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, shardID, req.GetBatch())
+	batchResponse, err := s.session.SyncProposeLocal(ctx, s.nodeHost, shardID, req.GetBatch())
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
 			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, shardID)

@@ -27,6 +27,7 @@ go_test(
     srcs = ["rangelease_test.go"],
     deps = [
         ":rangelease",
+        "//enterprise/server/raft/client",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/replica",
@@ -38,6 +39,7 @@ go_test(
         "//server/util/proto",
         "//server/util/random",
         "//server/util/status",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//client",
         "@com_github_lni_dragonboat_v4//statemachine",

@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/raft/client",
         "//enterprise/server/raft/events",
         "//enterprise/server/raft/listener",
         "//enterprise/server/raft/nodeliveness",
@@ -13,6 +14,7 @@ go_library(
         "//enterprise/server/raft/replica",
         "//proto:raft_go_proto",
         "//server/util/log",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//raftio",
     ],
