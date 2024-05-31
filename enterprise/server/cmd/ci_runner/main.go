@@ -1858,7 +1858,9 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	for _, filter := range *gitFetchFilters {
 		fetchArgs = append(fetchArgs, "--filter="+filter)
 	}
-	if fetchDepth > 0 {
+	if fetchDepth == 0 {
+		fetchArgs = append(fetchArgs, "--unshallow")
+	} else if fetchDepth > 0 {
 		fetchArgs = append(fetchArgs, fmt.Sprintf("--depth=%d", fetchDepth))
 	}
 	fetchArgs = append(fetchArgs, remoteName)
