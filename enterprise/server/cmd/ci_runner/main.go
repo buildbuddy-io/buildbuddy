@@ -1595,9 +1595,6 @@ func (ws *workspace) setup(ctx context.Context) error {
 	if err := ws.init(ctx); err != nil {
 		return err
 	}
-	if err := ws.config(ctx); err != nil {
-		return err
-	}
 	if err := ws.sync(ctx); err != nil {
 		return err
 	}
@@ -1629,6 +1626,10 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 func (ws *workspace) sync(ctx context.Context) error {
 	if *pushedBranch == "" && *commitSHA == "" {
 		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `commit_sha` to be set")
+	}
+
+	if err := ws.config(ctx); err != nil {
+		return err
 	}
 
 	if err := ws.fetchPushedRef(ctx); err != nil {
