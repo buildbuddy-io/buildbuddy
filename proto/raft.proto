@@ -330,6 +330,9 @@ message BatchCmdRequest {
 
   // Any post-commit hooks that should be run after a batch is *committed*.
   repeated PostCommitHook post_commit_hooks = 5;
+
+  // Session is used to guarantee idempotency for writes on the state machine.
+  optional Session session = 6;
 }
 
 message BatchCmdResponse {
