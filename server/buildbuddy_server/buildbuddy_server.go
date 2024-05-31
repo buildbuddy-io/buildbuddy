@@ -1577,7 +1577,7 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if params.Get("artifact") != "" {
 		code, err = s.serveArtifact(r.Context(), w, params)
-	} else if params.Get("bytestream_url") != "" {
+	} else if params.Get("bytestream_url") != "" && strings.HasPrefix(params.Get("bytestream_url"), "bytestream://") {
 		// bytestream request
 		code, err = s.serveBytestream(r.Context(), w, params)
 		if err != nil && code == http.StatusNotFound {
@@ -1643,7 +1643,10 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		}
 		b, err := s.env.GetBlobstore().ReadBlob(ctx, path.Join(iid, "artifacts", "cache", lookup.URL.Path))
 		if err != nil {
-			log.Warningf("Error serving timing profile '%s' for invocation %s: %s", lookup.Filename, iid, err)
+			if status.IsNotFoundError(err) {
+				return http.StatusNotFound, status.NotFoundError("File not found.")
+			}
+			log.Infof("Failed to serve resource %q for invocation %s: %s", lookup.Filename, iid, err)
 			return http.StatusInternalServerError, status.InternalErrorf("Internal server error")
 		}
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
