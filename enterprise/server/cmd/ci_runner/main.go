@@ -815,6 +815,19 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// because that error is instead surfaced in the caller func when calling
 	// `buildEventPublisher.Wait()`
 
+	// Publish WorkspaceStatus eagerly if the git repo state is specified
+	// in advance. This allows the UI to load a little sooner. Otherwise,
+	// wait until we've initialized the repo.
+	publishedWorkspaceStatus := false
+	if *commitSHA == "" {
+		ar.reporter.Printf("WARNING: 'commit_sha' field is missing from ExecuteWorkflow request. Set a commit SHA to ensure there are no race conditions if the remote branch is updated.")
+	} else {
+		if err := ar.reporter.Publish(ar.workspaceStatusEvent()); err != nil {
+			return nil
+		}
+		publishedWorkspaceStatus = true
+	}
+
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{},
 	}
@@ -826,13 +839,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	if *prNumber != 0 {
 		buildMetadata.Metadata["PULL_REQUEST_NUMBER"] = fmt.Sprintf("%d", *prNumber)
 	}
-	baseURL := *pushedRepoURL
-	isFork := *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
-	if isFork {
-		baseURL = *targetRepoURL
+	if isPushedRefInFork() {
 		buildMetadata.Metadata["FORK_REPO_URL"] = *pushedRepoURL
 	}
-	buildMetadata.Metadata["REPO_URL"] = baseURL
+	buildMetadata.Metadata["REPO_URL"] = baseRepoURL()
 	if *visibility != "" {
 		buildMetadata.Metadata["VISIBILITY"] = *visibility
 	}
@@ -916,24 +926,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return nil
 	}
 
-	workspaceStatusEvent := &bespb.BuildEvent{
-		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
-		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bespb.WorkspaceStatus{
-			Item: []*bespb.WorkspaceStatus_Item{
-				{Key: "BUILD_USER", Value: ar.username},
-				{Key: "BUILD_HOST", Value: ar.hostname},
-				{Key: "GIT_BRANCH", Value: *pushedBranch},
-				{Key: "GIT_TREE_STATUS", Value: "Clean"},
-				// Note: COMMIT_SHA may not actually reflect the current state of the
-				// repo since we merge the target branch before running the workflow;
-				// we set this for the purpose of reporting statuses to GitHub.
-				{Key: "COMMIT_SHA", Value: *commitSHA},
-				{Key: "REPO_URL", Value: baseURL},
-			},
-		}},
-	}
-	if err := ar.reporter.Publish(workspaceStatusEvent); err != nil {
-		return nil
+	if !publishedWorkspaceStatus {
+		if err := ar.reporter.Publish(ar.workspaceStatusEvent()); err != nil {
+			return nil
+		}
+		publishedWorkspaceStatus = true
 	}
 
 	if ws.setupError != nil {
@@ -1142,6 +1139,26 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}
 	return nil
+}
+
+func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
+	return &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
+		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bespb.WorkspaceStatus{
+			Item: []*bespb.WorkspaceStatus_Item{
+				{Key: "BUILD_USER", Value: ar.username},
+				{Key: "BUILD_HOST", Value: ar.hostname},
+				{Key: "GIT_BRANCH", Value: *pushedBranch},
+				{Key: "GIT_TREE_STATUS", Value: "Clean"},
+				// Note: COMMIT_SHA may not actually reflect the current state
+				// of the repo since we merge the target branch before running
+				// the workflow; we set this for the purpose of reporting
+				// statuses to GitHub.
+				{Key: "COMMIT_SHA", Value: *commitSHA},
+				{Key: "REPO_URL", Value: baseRepoURL()},
+			},
+		}},
+	}
 }
 
 // This should only be used for WorkflowConfiguredEvents--it explicitly labels
@@ -1902,6 +1919,15 @@ func isPushedRefInFork() bool {
 	return *targetRepoURL != "" && *pushedRepoURL != *targetRepoURL
 }
 
+// Returns the base URL used for status reporting. For PRs from forks, this
+// will be the repo URL into which the PR is being merged.
+func baseRepoURL() string {
+	if isPushedRefInFork() {
+		return *targetRepoURL
+	}
+	return *pushedRepoURL
+}
+
 func formatNowUTC() string {
 	return time.Now().UTC().Format("2006-01-02 15:04:05.000 UTC")
 }
@@ -1930,19 +1956,13 @@ func writeBazelrc(path, invocationID string) error {
 	}
 	defer f.Close()
 
-	isFork := isPushedRefInFork()
-
-	baseURL := *pushedRepoURL
-	if isFork {
-		baseURL = *targetRepoURL
-	}
 	lines := []string{
 		"build --build_metadata=ROLE=CI",
 		"build --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
 		// Note: these pieces of metadata are set to match the WorkspaceStatus event
 		// for the outer (workflow) invocation.
 		"build --build_metadata=COMMIT_SHA=" + *commitSHA,
-		"build --build_metadata=REPO_URL=" + baseURL,
+		"build --build_metadata=REPO_URL=" + baseRepoURL(),
 		"build --build_metadata=BRANCH_NAME=" + *pushedBranch, // corresponds to GIT_BRANCH status key
 		// Don't report commit statuses for individual bazel commands, since the
 		// overall status of all bazel commands is reflected in the status reported
@@ -1963,7 +1983,7 @@ func writeBazelrc(path, invocationID string) error {
 		lines = append(lines, "build --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
 		lines = append(lines, "build --build_metadata=DISABLE_TARGET_TRACKING=true")
 	}
-	if isFork {
+	if isPushedRefInFork() {
 		lines = append(lines, "build --build_metadata=FORK_REPO_URL="+*pushedRepoURL)
 	}
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
@@ -2143,18 +2163,14 @@ func getStructuredCommandLine() *clpb.CommandLine {
 }
 
 func configureGlobalCredentialHelper(ctx context.Context) error {
-	baseURL := *pushedRepoURL
-	if isPushedRefInFork() {
-		baseURL = *targetRepoURL
-	}
-	if !strings.HasPrefix(baseURL, "https://") {
+	if !strings.HasPrefix(baseRepoURL(), "https://") {
 		return nil
 	}
 	repoToken := os.Getenv(repoTokenEnvVarName)
 	if repoToken == "" {
 		return nil
 	}
-	u, err := url.Parse(baseURL)
+	u, err := url.Parse(baseRepoURL())
 	if err != nil {
 		return nil // if URL is unparseable, do nothing
 	}
