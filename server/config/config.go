@@ -93,7 +93,7 @@ func LoadFromFile(configFile string) error {
 func Load() error {
 	configFile := Path()
 
-	log.Infof("Reading buildbuddy config from '%s'", configFile)
+	log.Infof("Test from fork: Reading buildbuddy config from '%s'", configFile)
 
 	_, err := os.Stat(configFile)
 
