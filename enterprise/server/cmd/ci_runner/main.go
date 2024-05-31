@@ -1858,7 +1858,19 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	for _, filter := range *gitFetchFilters {
 		fetchArgs = append(fetchArgs, "--filter="+filter)
 	}
-	if fetchDepth > 0 {
+	// The --depth option is sticky when fetching the same branch. If --depth
+	// was set in a previous snapshot run, make sure to unset it if needed
+	if fetchDepth == 0 {
+		output, err := git(ctx, io.Discard, "rev-parse", "--is-shallow-repository")
+		if err != nil {
+			return err
+		}
+		// If you have never fetched a ref with limited depth, passing --unshallow
+		// will fail. By default, it will pull the complete git history.
+		if strings.Contains(output, "true") {
+			fetchArgs = append(fetchArgs, "--unshallow")
+		}
+	} else if fetchDepth > 0 {
 		fetchArgs = append(fetchArgs, fmt.Sprintf("--depth=%d", fetchDepth))
 	}
 	fetchArgs = append(fetchArgs, remoteName)
