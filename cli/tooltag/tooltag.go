@@ -11,7 +11,7 @@ import (
 func ConfigureToolTag(args []string) []string {
 	log.Debugf("BuildBuddy CLI version %s invoked as %s", version.String(), os.Args[0])
 
-	v := "unknown"
+	v := "development"
 	if version.String() != "" {
 		v = version.String()
 	}
