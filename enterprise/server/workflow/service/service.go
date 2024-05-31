@@ -1574,16 +1574,16 @@ func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Wo
 	}
 	invocationURL += "?queued=true"
 	status := github.NewGithubStatusPayload(actionName, invocationURL, "Queued...", github.PendingState)
-	baseURL := getBaseURL(wd)
-	provider, err := ws.providerForRepo(baseURL)
+	statusReportingURL := getStatusReportingURL(wd)
+	provider, err := ws.providerForRepo(statusReportingURL)
 	if err != nil {
 		return err
 	}
-	return provider.CreateStatus(ctx, wf.AccessToken, baseURL, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
 }
 
-// getBaseURL returns the primary URL the workflow should be attributed to.
-func getBaseURL(wd *interfaces.WebhookData) string {
+// getStatusReportingURL returns the URL the workflow should report statuses to
+func getStatusReportingURL(wd *interfaces.WebhookData) string {
 	// If the workflow was triggered by a pull request from a fork, statuses should
 	// be reported to the target repo (the repo the fork will be merged into)
 	if isFork(wd) {
@@ -1606,12 +1606,12 @@ func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, 
 		"https://buildbuddy.io/docs/workflows-config",
 		"Invalid buildbuddy.yaml",
 		github.ErrorState)
-	baseURL := getBaseURL(wd)
-	provider, err := ws.providerForRepo(baseURL)
+	statusReportingURL := getStatusReportingURL(wd)
+	provider, err := ws.providerForRepo(statusReportingURL)
 	if err != nil {
 		return err
 	}
-	return provider.CreateStatus(ctx, wf.AccessToken, baseURL, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
 }
 
 func isGitHubURL(s string) bool {
