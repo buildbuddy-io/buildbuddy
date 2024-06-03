@@ -176,7 +176,7 @@ type Session struct {
 	mu       sync.Mutex
 }
 
-func (s *Session) toProto() *rfpb.Session {
+func (s *Session) ToProto() *rfpb.Session {
 	return &rfpb.Session{
 		Id:         []byte(s.id),
 		Index:      s.index,
@@ -226,7 +226,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shard
 	sesh := nodehost.GetNoOPSession(shardID)
 
 	s.index++
-	batch.Session = s.toProto()
+	batch.Session = s.ToProto()
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err

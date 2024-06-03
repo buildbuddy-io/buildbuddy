@@ -1586,7 +1586,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	}
 	// We have executed this command in the past, return the stored response and
 	// skip execution.
-	if len(lastRspData) > 0 {
+	if lastRspData != nil {
 		entry.Result = getEntryResult(entry.Cmd, lastRspData)
 		if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
 			return entry, err
@@ -1650,8 +1650,10 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 		return entry, status.InternalErrorf("failed to marshal batchRsp: %s", err)
 	}
 	entry.Result = getEntryResult(entry.Cmd, rspBuf)
-	if err := sm.updateSession(wb, reqSession, rspBuf); err != nil {
-		return entry, err
+	if reqSession != nil {
+		if err := sm.updateSession(wb, reqSession, rspBuf); err != nil {
+			return entry, err
+		}
 	}
 
 	if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
