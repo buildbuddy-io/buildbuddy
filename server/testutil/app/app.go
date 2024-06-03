@@ -9,7 +9,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testserver"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -21,9 +24,14 @@ import (
 //
 // NOTE: No SSL ports are required since the server doesn't have an SSL config by default.
 type App struct {
+	t *testing.T
+
 	HttpPort       int
 	MonitoringPort int
 	GRPCPort       int
+
+	// Path to local sqlite DB.
+	dbFilePath string
 }
 
 // Run a local BuildBuddy server for the scope of the given test case.
@@ -42,6 +50,8 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 
 func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string, configFilePath string) *App {
 	dataDir := testfs.MakeTempDir(t)
+	app.t = t
+	app.dbFilePath = filepath.Join(dataDir, "buildbuddy.db")
 	args := []string{
 		"--app.log_level=debug",
 		"--app.log_include_short_file_name",
@@ -54,7 +64,7 @@ func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string
 		"--static_directory=static",
 		"--app_directory=/app",
 		fmt.Sprintf("--app.build_buddy_url=http://localhost:%d", app.HttpPort),
-		fmt.Sprintf("--database.data_source=sqlite3://%s", filepath.Join(dataDir, "buildbuddy.db")),
+		fmt.Sprintf("--database.data_source=sqlite3://%s", app.dbFilePath),
 		fmt.Sprintf("--storage.disk.root_directory=%s", filepath.Join(dataDir, "storage")),
 		fmt.Sprintf("--cache.disk.root_directory=%s", filepath.Join(dataDir, "cache")),
 	}
@@ -68,6 +78,15 @@ func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string
 	})
 
 	return app
+}
+
+// DB returns a direct connection to the sqlite DB that the app is connected to.
+// This is intended for performing DB updates which are normally done manually,
+// i.e. not exposed via any public API.
+func (a *App) DB() *gorm.DB {
+	db, err := gorm.Open(sqlite.Open(a.dbFilePath), &gorm.Config{})
+	require.NoError(a.t, err)
+	return db
 }
 
 // HTTPURL returns the URL for the web app.

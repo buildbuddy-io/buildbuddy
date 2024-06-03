@@ -70,7 +70,7 @@ func FillActionFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *ap
 		{
 			action.TargetLabel = event.GetId().GetTargetCompleted().GetLabel()
 			action.Id.TargetId = event.GetId().GetTargetCompleted().GetLabel()
-			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().GetConfiguration().Id
+			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().GetConfiguration().GetId()
 			action.Id.ActionId = EncodeID("build")
 			return action
 		}

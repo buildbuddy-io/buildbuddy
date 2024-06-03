@@ -35,6 +35,8 @@ var (
 	cert     = flag.String("auth.saml.cert", "", "PEM encoded certificate used for SAML auth.", flag.Secret)
 	keyFile  = flag.String("auth.saml.key_file", "", "Path to a PEM encoded certificate key file used for SAML auth.")
 	key      = flag.String("auth.saml.key", "", "PEM encoded certificate key used for SAML auth.", flag.Secret)
+
+	trustedIDPCertFiles = flag.Slice("auth.saml.trusted_idp_cert_files", []string{}, "List of PEM-encoded trusted IDP certificates. Intended for testing and development only.")
 )
 
 const (
@@ -210,11 +212,17 @@ func IsEnabled(env environment.Env) bool {
 	return true
 }
 
-func NewSAMLAuthenticator(env environment.Env) *SAMLAuthenticator {
+func NewSAMLAuthenticator(env environment.Env) (*SAMLAuthenticator, error) {
+	if *cert != "" && *certFile != "" {
+		return nil, status.FailedPreconditionError("only one of SAML 'cert' and 'cert_file' may be set")
+	}
+	if *key != "" && *keyFile != "" {
+		return nil, status.FailedPreconditionError("only one of SAML 'key' and 'key_file' may be set")
+	}
 	return &SAMLAuthenticator{
 		env:           env,
 		samlProviders: make(map[string]*samlsp.Middleware),
-	}
+	}, nil
 }
 
 func (a *SAMLAuthenticator) SSOEnabled() bool {
@@ -399,6 +407,22 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	samlSP.ServiceProvider.MetadataURL.RawQuery = query
 	samlSP.ServiceProvider.AcsURL.RawQuery = query
 	samlSP.ServiceProvider.SloURL.RawQuery = query
+	if len(*trustedIDPCertFiles) > 0 {
+		certPool := x509.NewCertPool()
+		for i, path := range *trustedIDPCertFiles {
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return nil, status.InvalidArgumentErrorf("read cert file %s: %s", path, err)
+			}
+			if ok := certPool.AppendCertsFromPEM(b); !ok {
+				return nil, status.InvalidArgumentErrorf("trusted_idp_cert_files[%d] does not contain a valid PEM-encoded certificate", i)
+			}
+		}
+		tlsConfig := &tls.Config{RootCAs: certPool}
+		transport := &http.Transport{TLSClientConfig: tlsConfig}
+		client := &http.Client{Transport: transport}
+		samlSP.ServiceProvider.HTTPClient = client
+	}
 	samlSP.RequestTracker = &CookieRequestTracker{
 		ServiceProvider: &samlSP.ServiceProvider,
 		NamePrefix:      "saml_",

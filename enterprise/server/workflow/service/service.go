@@ -1372,8 +1372,7 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 func (ws *workflowService) isTrustedCommit(ctx context.Context, gitProvider interfaces.GitProvider, wf *tables.Workflow, wd *interfaces.WebhookData) (bool, error) {
 	// If the commit was pushed directly to the target repo then the commit must
 	// already be trusted.
-	isFork := wd.PushedRepoURL != wd.TargetRepoURL
-	if !isFork {
+	if !isFork(wd) {
 		return true, nil
 	}
 	if wd.PullRequestAuthor == "" {
@@ -1575,11 +1574,28 @@ func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Wo
 	}
 	invocationURL += "?queued=true"
 	status := github.NewGithubStatusPayload(actionName, invocationURL, "Queued...", github.PendingState)
-	provider, err := ws.providerForRepo(wd.TargetRepoURL)
+	statusReportingURL := getStatusReportingURL(wd)
+	provider, err := ws.providerForRepo(statusReportingURL)
 	if err != nil {
 		return err
 	}
-	return provider.CreateStatus(ctx, wf.AccessToken, wd.TargetRepoURL, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
+}
+
+// getStatusReportingURL returns the URL the workflow should report statuses to
+func getStatusReportingURL(wd *interfaces.WebhookData) string {
+	// If the workflow was triggered by a pull request from a fork, statuses should
+	// be reported to the target repo (the repo the fork will be merged into)
+	if isFork(wd) {
+		return wd.TargetRepoURL
+	}
+	// If there was not a fork, TargetRepoURL will not be set, or TargetRepoURL
+	// and PushedRepoURL will be equal
+	return wd.PushedRepoURL
+}
+
+func isFork(wd *interfaces.WebhookData) bool {
+	return wd.TargetRepoURL != "" && wd.PushedRepoURL != wd.TargetRepoURL
 }
 
 func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData) error {
@@ -1590,11 +1606,12 @@ func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, 
 		"https://buildbuddy.io/docs/workflows-config",
 		"Invalid buildbuddy.yaml",
 		github.ErrorState)
-	provider, err := ws.providerForRepo(wd.TargetRepoURL)
+	statusReportingURL := getStatusReportingURL(wd)
+	provider, err := ws.providerForRepo(statusReportingURL)
 	if err != nil {
 		return err
 	}
-	return provider.CreateStatus(ctx, wf.AccessToken, wd.TargetRepoURL, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
 }
 
 func isGitHubURL(s string) bool {

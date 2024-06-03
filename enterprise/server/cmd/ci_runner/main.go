@@ -1595,9 +1595,6 @@ func (ws *workspace) setup(ctx context.Context) error {
 	if err := ws.init(ctx); err != nil {
 		return err
 	}
-	if err := ws.config(ctx); err != nil {
-		return err
-	}
 	if err := ws.sync(ctx); err != nil {
 		return err
 	}
@@ -1629,6 +1626,10 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 func (ws *workspace) sync(ctx context.Context) error {
 	if *pushedBranch == "" && *commitSHA == "" {
 		return status.InvalidArgumentError("expected at least one of `pushed_branch` or `commit_sha` to be set")
+	}
+
+	if err := ws.config(ctx); err != nil {
+		return err
 	}
 
 	if err := ws.fetchPushedRef(ctx); err != nil {
@@ -1857,7 +1858,19 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	for _, filter := range *gitFetchFilters {
 		fetchArgs = append(fetchArgs, "--filter="+filter)
 	}
-	if fetchDepth > 0 {
+	// The --depth option is sticky when fetching the same branch. If --depth
+	// was set in a previous snapshot run, make sure to unset it if needed
+	if fetchDepth == 0 {
+		output, err := git(ctx, io.Discard, "rev-parse", "--is-shallow-repository")
+		if err != nil {
+			return err
+		}
+		// If you have never fetched a ref with limited depth, passing --unshallow
+		// will fail. By default, it will pull the complete git history.
+		if strings.Contains(output, "true") {
+			fetchArgs = append(fetchArgs, "--unshallow")
+		}
+	} else if fetchDepth > 0 {
 		fetchArgs = append(fetchArgs, fmt.Sprintf("--depth=%d", fetchDepth))
 	}
 	fetchArgs = append(fetchArgs, remoteName)

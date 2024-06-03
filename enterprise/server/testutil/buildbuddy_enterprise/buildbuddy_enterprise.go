@@ -79,10 +79,23 @@ type WebTarget interface {
 	HTTPURL() string
 }
 
-func SetupWebTarget(t *testing.T) WebTarget {
+// MarkTestLocalOnly skips the webdriver test if it is not being run against a
+// local, test-scoped server (i.e. the test is not suitable for running against
+// a live BuildBuddy server).
+func MarkTestLocalOnly(t *testing.T) {
+	if *webdriverTarget != "local" {
+		t.Skipf("test is not compatible with buildbuddy target %q", *webdriverTarget)
+	}
+}
+
+func SetupWebTarget(t *testing.T, localArgs ...string) WebTarget {
 	switch *webdriverTarget {
 	case "local":
-		return Run(t, "--cache.detailed_stats_enabled=true", "--app.user_owned_keys_enabled=true")
+		args := append([]string{
+			"--cache.detailed_stats_enabled=true",
+			"--app.user_owned_keys_enabled=true",
+		}, localArgs...)
+		return Run(t, args...)
 	case "remote":
 		return &remote{}
 	default:

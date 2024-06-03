@@ -627,6 +627,59 @@ func TestCIRunner_Fork_MergeConflict_FailsWithMergeConflictMessage(t *testing.T)
 	}
 }
 
+func TestCIRunner_Merge_FetchesCompleteGitHistory(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	testshell.Run(t, repoPath, `
+		# Create a base branch
+		git checkout -B base
+		printf 'echo "Base Commit" && exit 0\n' > base1.sh
+		git add base1.sh
+		git commit -m "Original commit on base"
+
+		# Create a feature branch off the first commit of the base branch
+		git checkout -B feature
+		printf 'echo NONCONFLICTING_EDIT && exit 0\n' > feature.sh
+		git add feature.sh
+		git commit -m "Commit from feature branch"
+
+		# Add another commit to the base branch
+		printf 'echo "Second commit on base" && exit 0\n' > base2.sh
+		git add base2.sh
+		git commit -m "Second commit on base"
+	`)
+
+	baselineRunnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + repoPath,
+		// Disable clean checkout fallback for this test since we expect to sync
+		// without errors.
+		"--fallback_to_clean_checkout=false",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+
+	// Have the runner checkout the base branch with --depth=1
+	flagsShallowFetchBase := append(baselineRunnerFlags, "--pushed_branch=base", "--git_fetch_depth=1")
+	result := invokeRunner(t, flagsShallowFetchBase, []string{}, wsPath)
+	checkRunnerResult(t, result)
+
+	// Now have the runner checkout the feature branch, with merge_with_base enabled.
+	// This should succeed, even though the runner will have to fetch the original
+	// commit on the `base` branch (the merge-base)
+	flagsMergeFeatureBranch := append(baselineRunnerFlags,
+		"--pushed_branch=feature",
+		"--target_repo_url=file://"+repoPath,
+		"--target_branch=base",
+	)
+	result = invokeRunner(t, flagsMergeFeatureBranch, []string{}, wsPath)
+	checkRunnerResult(t, result)
+}
+
 func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
