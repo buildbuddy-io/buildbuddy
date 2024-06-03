@@ -1150,6 +1150,18 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		timeout = *workflowAction.Timeout
 	}
 
+	mergeCommitSHA := ""
+	targetRepoURL := ""
+	targetBranch := ""
+	if wd.EventName == webhook_data.EventName.PullRequest {
+		targetRepoURL = wd.TargetRepoURL
+		targetBranch = wd.TargetBranch
+
+		if workflowAction.Triggers.GetPullRequestTrigger().GetMergeWithBase() {
+			mergeCommitSHA = wd.MergeCommitSHA
+		}
+	}
+
 	args := []string{
 		// NOTE: The executor is responsible for making sure this
 		// buildbuddy_ci_runner binary exists at the workspace root. It does so
@@ -1169,8 +1181,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--pushed_repo_url=" + wd.PushedRepoURL,
 		"--pushed_branch=" + wd.PushedBranch,
 		"--pull_request_number=" + fmt.Sprintf("%d", wd.PullRequestNumber),
-		"--target_repo_url=" + wd.TargetRepoURL,
-		"--target_branch=" + wd.TargetBranch,
+		"--target_repo_url=" + targetRepoURL,
+		"--target_branch=" + targetBranch,
+		"--merge_commit_sha=" + mergeCommitSHA,
 		"--visibility=" + visibility,
 		"--workflow_id=" + wf.WorkflowID,
 		"--trigger_event=" + wd.EventName,
