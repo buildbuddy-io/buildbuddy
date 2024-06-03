@@ -1183,7 +1183,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--pull_request_number=" + fmt.Sprintf("%d", wd.PullRequestNumber),
 		"--target_repo_url=" + targetRepoURL,
 		"--target_branch=" + targetBranch,
-		"--merge_commit_sha=" + mergeCommitSHA,
+		"--merge_commit_ref=" + mergeCommitSHA,
 		"--visibility=" + visibility,
 		"--workflow_id=" + wf.WorkflowID,
 		"--trigger_event=" + wd.EventName,

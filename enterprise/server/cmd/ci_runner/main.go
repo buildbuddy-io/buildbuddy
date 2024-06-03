@@ -169,7 +169,7 @@ var (
 	// Flags to configure merge-with-base behavior
 	targetRepoURL  = flag.String("target_repo_url", "", "If different from pushed_repo_url, indicates a fork (`pushed_repo_url`) is being merged into this repo.")
 	targetBranch   = flag.String("target_branch", "", "If different from pushed_branch, pushed_branch should be merged into this branch in the target repo.")
-	mergeCommitSHA = flag.String("merge_commit_sha", "", "If set and merge-with-base is enabled, checkout this commit sha directly instead of manually fetching the target repo and merging to generate it.")
+	mergeCommitRef = flag.String("merge_commit_ref", "", "If set and merge-with-base is enabled, checkout this ref directly instead of manually fetching the target repo and merging to generate it.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -1718,9 +1718,9 @@ func (ws *workspace) sync(ctx context.Context) error {
 func (ws *workspace) shouldMergeBranches(actionTriggers *config.Triggers) bool {
 	return *triggerEvent == webhook_data.EventName.PullRequest &&
 		actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
-		// If the merge commit SHA already exists, we don't need to re-merge the branches
+		// If the merge commit ref already exists, we don't need to re-merge the branches
 		// to generate it
-		*mergeCommitSHA == "" &&
+		*mergeCommitRef == "" &&
 		ws.hasMultipleBranches()
 }
 
@@ -1738,10 +1738,10 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 		fetchDepth = *gitFetchDepth
 	}
 
-	// If the merge commit sha was pre-generated and passed as an argument,
+	// If the merge commit ref was pre-generated and passed as an argument,
 	// we should fetch it from the target repo.
-	if *mergeCommitSHA != "" {
-		return ws.fetch(ctx, *targetRepoURL, []string{*mergeCommitSHA}, fetchDepth)
+	if *mergeCommitRef != "" {
+		return ws.fetch(ctx, *targetRepoURL, []string{*mergeCommitRef}, fetchDepth)
 	}
 
 	refToFetch := *commitSHA
@@ -1788,9 +1788,9 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 	if checkoutRef == "" {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
 	}
-	if *mergeCommitSHA != "" {
-		checkoutRef = *mergeCommitSHA
-		ws.log.Write([]byte(fmt.Sprintf("Checking out merge commit sha %s...\n", checkoutRef)))
+	if *mergeCommitRef != "" {
+		checkoutRef = *mergeCommitRef
+		ws.log.Write([]byte(fmt.Sprintf("Checking out merge commit ref %s...\n", checkoutRef)))
 	}
 
 	if checkoutLocalBranchName != "" {

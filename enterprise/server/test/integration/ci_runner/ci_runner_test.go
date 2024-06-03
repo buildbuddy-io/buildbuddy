@@ -712,7 +712,7 @@ actions:
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=feature",
-		"--merge_commit_sha=" + mergeCommitSHA,
+		"--merge_commit_ref=" + mergeCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
 		// Disable clean checkout fallback for this test since we expect to sync
