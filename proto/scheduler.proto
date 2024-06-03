@@ -122,6 +122,12 @@ message SchedulingMetadata {
   // exceed the executor's limits.
   TaskSize predicted_task_size = 8;
 
+  // The resources explicitly requested by the user. These will be unset if the
+  // user did not explicitly request resources.
+  //
+  // These should NOT be used for scheduling purposes.
+  TaskSize requested_task_size = 10;
+
   string os = 2;
   string arch = 3;
   string pool = 4;
