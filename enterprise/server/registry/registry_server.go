@@ -13,11 +13,11 @@ import (
 )
 
 var (
-	registryPort = flag.Int("registry_port", 0, "The port on which to listen for registry requests")
+	registryPort    = flag.Int("registry_port", 0, "The port on which to listen for registry requests")
 	registryBackend = flag.String("registry_backend", "https://bcr.bazel.build/", "The registry backend to forward requests to")
 )
 
-type RegistryServer struct {}
+type RegistryServer struct{}
 
 func NewRegistryServer(env environment.Env, h interfaces.DBHandle) *RegistryServer {
 	return &RegistryServer{}
@@ -35,7 +35,7 @@ func (t *RegistryServer) Start() {
 		log.Fatal(err.Error())
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(url)  
+	proxy := httputil.NewSingleHostReverseProxy(url)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		req.Host = req.URL.Host
