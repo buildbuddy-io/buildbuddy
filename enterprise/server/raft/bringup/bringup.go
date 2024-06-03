@@ -54,7 +54,7 @@ func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore) *Clu
 	joinList := gossipMan.JoinList()
 	cs := &ClusterStarter{
 		store:         store,
-		session:       client.NewDefaultSession(),
+		session:       client.NewSession(),
 		grpcAddr:      grpcAddr,
 		listenAddr:    gossipMan.ListenAddr(),
 		join:          joinList,

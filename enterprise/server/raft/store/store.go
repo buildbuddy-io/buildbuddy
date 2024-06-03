@@ -161,7 +161,7 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 	}
 	leaser := pebble.NewDBLeaser(db)
 	clock := clockwork.NewRealClock()
-	session := client.NewSession(clock, client.SessionLifetime())
+	session := client.NewSessionWithClock(clock)
 
 	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions, db, leaser, clock, session)
 }

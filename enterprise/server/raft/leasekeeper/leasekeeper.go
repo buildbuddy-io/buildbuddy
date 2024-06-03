@@ -75,7 +75,7 @@ func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.L
 		nodeHost:            nodeHost,
 		log:                 log,
 		liveness:            liveness,
-		session:             client.NewDefaultSession(),
+		session:             client.NewSession(),
 		listener:            listener,
 		broadcast:           broadcast,
 		mu:                  sync.Mutex{},
