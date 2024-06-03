@@ -1331,3 +1331,109 @@ func TestScanSharedDB(t *testing.T) {
 		require.NoError(t, err)
 	}
 }
+
+func TestDeleteSessions(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	now := time.Now()
+
+	session1 := &rfpb.Session{
+		Id:            []byte(uuid.New()),
+		Index:         1,
+		CreatedAtUsec: now.Add(-2 * time.Hour).UnixMicro(),
+	}
+
+	{
+		// Write session 1
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session1).Add(&rfpb.IncrementRequest{
+			Key:   []byte("incr-key"),
+			Delta: 1,
+		}))
+		writeRsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(writeRsp))
+
+		// Make sure the response holds the new value.
+		incrBatch := rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
+		incrRsp, err := incrBatch.IncrementResponse(0)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), incrRsp.GetValue())
+	}
+
+	session2 := &rfpb.Session{
+		Id:            []byte(uuid.New()),
+		Index:         1,
+		CreatedAtUsec: now.Add(-1 * time.Hour).UnixMicro(),
+	}
+
+	{
+		// Write session 2
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session2).Add(&rfpb.IncrementRequest{
+			Key:   []byte("incr-key"),
+			Delta: 1,
+		}))
+		writeRsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(writeRsp))
+
+		// Make sure the response holds the new value.
+		incrBatch := rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
+		incrRsp, err := incrBatch.IncrementResponse(0)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2), incrRsp.GetValue())
+	}
+
+	session3 := &rfpb.Session{
+		Id:            []byte(uuid.New()),
+		Index:         1,
+		CreatedAtUsec: now.UnixMicro(),
+	}
+	{
+		// Delete sessions created 90 minutes ago
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session3).Add(&rfpb.DeleteSessionsRequest{
+			CreatedAtUsec: now.Add(-90 * time.Minute).UnixMicro(),
+		}))
+		writeRsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(writeRsp))
+
+		// Make sure the response holds the new value.
+		incrBatch := rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
+		_, err = incrBatch.DeleteSessionsResponse(0)
+		require.NoError(t, err)
+	}
+	// Verify that session 1 is deleted and session 2 is not
+	start, end := keys.Range(constants.LocalSessionPrefix)
+	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
+		Start:    start,
+		End:      end,
+		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
+	}).ToBuf()
+	require.NoError(t, err)
+	readRsp, err := repl.Lookup(buf)
+	require.NoError(t, err)
+
+	readBatch := rbuilder.NewBatchResponse(readRsp)
+	scanRsp, err := readBatch.ScanResponse(0)
+	require.NoError(t, err)
+	got := []*rfpb.Session{}
+	for _, kv := range scanRsp.GetKvs() {
+		session := &rfpb.Session{}
+		err := proto.Unmarshal(kv.GetValue(), session)
+		require.NoError(t, err)
+		// We are not comparing RspData
+		session.RspData = nil
+		got = append(got, session)
+	}
+	require.ElementsMatch(t, got, []*rfpb.Session{session2, session3})
+}
