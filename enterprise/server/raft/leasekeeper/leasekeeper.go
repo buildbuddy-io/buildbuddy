@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
@@ -52,6 +53,7 @@ type LeaseKeeper struct {
 	nodeHost  *dragonboat.NodeHost
 	log       log.Logger
 	liveness  *nodeliveness.Liveness
+	session   *client.Session
 	listener  *listener.RaftListener
 	broadcast chan<- events.Event
 
@@ -73,6 +75,7 @@ func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.L
 		nodeHost:            nodeHost,
 		log:                 log,
 		liveness:            liveness,
+		session:             client.NewDefaultSession(),
 		listener:            listener,
 		broadcast:           broadcast,
 		mu:                  sync.Mutex{},
@@ -195,7 +198,7 @@ func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replic
 	ctx, cancel := context.WithCancel(context.TODO())
 	return leaseAgent{
 		log:       lk.log,
-		l:         rangelease.New(lk.nodeHost, lk.log, lk.liveness, rd, r),
+		l:         rangelease.New(lk.nodeHost, lk.session, lk.log, lk.liveness, rd, r),
 		ctx:       ctx,
 		cancel:    cancel,
 		once:      &sync.Once{},

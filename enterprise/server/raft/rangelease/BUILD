@@ -27,6 +27,7 @@ go_test(
     srcs = ["rangelease_test.go"],
     deps = [
         ":rangelease",
+        "//enterprise/server/raft/client",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/replica",
