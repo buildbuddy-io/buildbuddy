@@ -70,11 +70,11 @@ func NewFakeContainer() *fakeContainer {
 	return &fakeContainer{Removed: make(chan struct{})}
 }
 
-func (c *fakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+func (c *fakeContainer) PullImage(ctx context.Context, task *container.Task) error {
 	return nil
 }
 
-func (c *fakeContainer) Create(ctx context.Context, workdir string) error {
+func (c *fakeContainer) Create(ctx context.Context, task *container.Task) error {
 	return c.CreateError
 }
 

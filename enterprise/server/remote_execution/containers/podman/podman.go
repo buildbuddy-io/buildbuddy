@@ -383,11 +383,11 @@ func (c *podmanCommandContainer) IsolationType() string {
 	return "podman"
 }
 
-func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
-	c.workDir = workDir
+func (c *podmanCommandContainer) Run(ctx context.Context, task *container.Task) *interfaces.CommandResult {
+	c.workDir = task.WorkDir
 	defer os.RemoveAll(c.cidFilePath())
 	result := &interfaces.CommandResult{
-		CommandDebugString: fmt.Sprintf("(podman) %s", command.GetArguments()),
+		CommandDebugString: fmt.Sprintf("(podman) %s", task.Command().GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
 	}
 	containerName, err := generateContainerName()
@@ -397,7 +397,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
-	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image); err != nil {
+	if err := container.PullImageIfNecessary(ctx, c.env, c, task); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
 		return result
 	}
@@ -405,12 +405,12 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	stopMonitoring, statsCh := c.monitor(ctx)
 	defer stopMonitoring()
 
-	podmanRunArgs := c.getPodmanRunArgs(workDir)
-	for _, envVar := range command.GetEnvironmentVariables() {
+	podmanRunArgs := c.getPodmanRunArgs(task.WorkDir)
+	for _, envVar := range task.Command().GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 	podmanRunArgs = append(podmanRunArgs, c.image)
-	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
+	podmanRunArgs = append(podmanRunArgs, task.Command().Arguments...)
 	result = c.runPodman(ctx, "run", &interfaces.Stdio{}, podmanRunArgs...)
 
 	if result.ExitCode == podmanCommandNotRunnableExitCode {
@@ -434,15 +434,15 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	return result
 }
 
-func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
+func (c *podmanCommandContainer) Create(ctx context.Context, task *container.Task) error {
 	containerName, err := generateContainerName()
 	if err != nil {
 		return status.UnavailableErrorf("failed to generate podman container name: %s", err)
 	}
 	c.name = containerName
-	c.workDir = workDir
+	c.workDir = task.WorkDir
 
-	podmanRunArgs := c.getPodmanRunArgs(workDir)
+	podmanRunArgs := c.getPodmanRunArgs(task.WorkDir)
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
 	createResult := c.runPodman(ctx, "create", &interfaces.Stdio{}, podmanRunArgs...)
@@ -468,13 +468,14 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	return nil
 }
 
-func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+func (c *podmanCommandContainer) Exec(ctx context.Context, task *container.Task, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	// Reset usage stats since we're running a new task. Note: This throws away
 	// any resource usage between the initial "Create" call and now, but that's
 	// probably fine for our needs right now.
 	c.stats.Reset()
 	stopMonitoring, statsCh := c.monitor(ctx)
 	defer stopMonitoring()
+	cmd := task.Command()
 	podmanRunArgs := make([]string, 0, 2*len(cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
 	for _, envVar := range cmd.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
@@ -504,7 +505,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	return res
 }
 
-func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
+func (c *podmanCommandContainer) IsImageCached(ctx context.Context, task *container.Task) (bool, error) {
 	if c.imageExistsCache.Exists(c.image) {
 		return true, nil
 	}
@@ -527,7 +528,7 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 	return true, nil
 }
 
-func (c *podmanCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+func (c *podmanCommandContainer) PullImage(ctx context.Context, task *container.Task) error {
 	psi, _ := pullOperations.LoadOrStore(c.image, &pullStatus{&sync.RWMutex{}, false})
 	ps, ok := psi.(*pullStatus)
 	if !ok {
@@ -540,17 +541,17 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds oci.Creden
 	ps.mu.RUnlock()
 
 	if alreadyPulled {
-		return c.pullImage(ctx, creds)
+		return c.pullImage(ctx, task.OCICredentials)
 	}
 
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	if c.imageIsStreamable {
-		c.sociStore.GetArtifacts(ctx, c.env, c.image, creds)
+		c.sociStore.GetArtifacts(ctx, c.env, c.image, task.OCICredentials)
 	}
 
 	startTime := time.Now()
-	if err := c.pullImage(ctx, creds); err != nil {
+	if err := c.pullImage(ctx, task.OCICredentials); err != nil {
 		return err
 	}
 	pullLatency := time.Since(startTime)
@@ -723,7 +724,7 @@ func (c *podmanCommandContainer) Pause(ctx context.Context) error {
 	return nil
 }
 
-func (c *podmanCommandContainer) Unpause(ctx context.Context) error {
+func (c *podmanCommandContainer) Unpause(ctx context.Context, task *container.Task) error {
 	res := c.runPodman(ctx, "unpause", &interfaces.Stdio{}, c.name)
 	if res.Error != nil {
 		return res.Error

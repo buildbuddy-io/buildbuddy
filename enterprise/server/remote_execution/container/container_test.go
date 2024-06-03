@@ -33,7 +33,7 @@ func (c *FakeContainer) Run(context.Context, *repb.Command, string, oci.Credenti
 func (c *FakeContainer) IsImageCached(context.Context) (bool, error) {
 	return c.PullCount > 0, nil
 }
-func (c *FakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+func (c *FakeContainer) PullImage(ctx context.Context, task *container.Task) error {
 	if c.pullDelay > 0*time.Second {
 		time.Sleep(c.pullDelay)
 	}
@@ -47,9 +47,9 @@ func (c *FakeContainer) Create(context.Context, string) error { return nil }
 func (c *FakeContainer) Exec(context.Context, *repb.Command, *interfaces.Stdio) *interfaces.CommandResult {
 	return nil
 }
-func (c *FakeContainer) Remove(ctx context.Context) error  { return nil }
-func (c *FakeContainer) Pause(ctx context.Context) error   { return nil }
-func (c *FakeContainer) Unpause(ctx context.Context) error { return nil }
+func (c *FakeContainer) Remove(ctx context.Context) error                        { return nil }
+func (c *FakeContainer) Pause(ctx context.Context) error                         { return nil }
+func (c *FakeContainer) Unpause(ctx context.Context, task *container.Task) error { return nil }
 func (c *FakeContainer) Stats(context.Context) (*repb.UsageStats, error) {
 	return &repb.UsageStats{}, nil
 }

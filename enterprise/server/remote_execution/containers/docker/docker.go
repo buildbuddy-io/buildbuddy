@@ -194,9 +194,9 @@ func (c *dockerCommandContainer) IsolationType() string {
 	return "docker"
 }
 
-func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Run(ctx context.Context, task *container.Task) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
-		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
+		CommandDebugString: fmt.Sprintf("(docker) %s", task.Command().GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
 	}
 
@@ -208,15 +208,15 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
-	if err := container.PullImageIfNecessary(ctx, r.env, r, creds, r.image); err != nil {
+	if err := container.PullImageIfNecessary(ctx, r.env, r, task); err != nil {
 		result.Error = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
 		return result
 	}
 
 	containerCfg, err := r.containerConfig(
-		command.GetArguments(),
-		commandutil.EnvStringList(command),
-		workDir,
+		task.Command().GetArguments(),
+		commandutil.EnvStringList(task.Command()),
+		task.WorkDir,
 	)
 	if err != nil {
 		result.Error = err
@@ -225,7 +225,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	createResponse, err := r.client.ContainerCreate(
 		ctx,
 		containerCfg,
-		r.hostConfig(workDir),
+		r.hostConfig(task.WorkDir),
 		/*networkingConfig=*/ nil,
 		/*platform=*/ nil,
 		containerName,
@@ -467,7 +467,7 @@ func errMsg(err error) string {
 	return err.Error()
 }
 
-func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
+func (r *dockerCommandContainer) IsImageCached(ctx context.Context, task *container.Task) (bool, error) {
 	_, _, err := r.client.ImageInspectWithRaw(ctx, r.image)
 	if err == nil {
 		return true, nil
@@ -478,8 +478,8 @@ func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error
 	return false, nil
 }
 
-func (r *dockerCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
-	return PullImage(ctx, r.client, r.image, creds)
+func (r *dockerCommandContainer) PullImage(ctx context.Context, task *container.Task) error {
+	return PullImage(ctx, r.client, task.Props.ContainerImage, task.OCICredentials)
 }
 
 func PullImage(ctx context.Context, client *dockerclient.Client, image string, creds oci.Credentials) error {
@@ -546,9 +546,9 @@ func generateContainerName() (string, error) {
 	return "buildbuddy-exec-" + suffix, nil
 }
 
-func (r *dockerCommandContainer) Create(ctx context.Context, workDir string) error {
+func (r *dockerCommandContainer) Create(ctx context.Context, task *container.Task) error {
 	return commandutil.RetryIfTextFileBusy(func() error {
-		return r.create(ctx, workDir)
+		return r.create(ctx, task.WorkDir)
 	})
 }
 
@@ -583,11 +583,11 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 	return nil
 }
 
-func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Exec(ctx context.Context, task *container.Task, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	var res *interfaces.CommandResult
 	// Ignore error from this function; it is returned as part of res.
 	commandutil.RetryIfTextFileBusy(func() error {
-		res = r.exec(ctx, command, stdio)
+		res = r.exec(ctx, task.Command(), stdio)
 		return res.Error
 	})
 	return res
@@ -678,7 +678,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 	return result
 }
 
-func (r *dockerCommandContainer) Unpause(ctx context.Context) error {
+func (r *dockerCommandContainer) Unpause(ctx context.Context, task *container.Task) error {
 	if err := r.client.ContainerUnpause(ctx, r.id); err != nil {
 		return wrapDockerErr(err, "failed to unpause container")
 	}

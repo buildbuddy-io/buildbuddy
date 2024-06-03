@@ -82,8 +82,12 @@ type Provider interface {
 //
 // It's not strictly necessary to look at all of these params in order to create
 // a working container implementation, but they might be useful.
+//
+// TODO: remove this struct. Provider.New() should not be holding onto initial
+// state - this is the job of Create() / Run(), which should look at the Task
+// struct.
 type Init struct {
-	// WorkDir is the working directory for the initially assigned task.
+	// WorkDir is the working directory for the *initially* assigned task.
 	WorkDir string
 
 	// Task is the execution initially assigned to the container.
@@ -92,9 +96,48 @@ type Init struct {
 	// Props contains parsed platform properties for the task, with
 	// executor-level overrides and remote header overrides applied.
 	Props *platform.Properties
+}
 
-	// Publisher can be used to send fine-grained execution progress updates.
+// Task represents an action execution that the executor is currently working
+// on. In addition to the basic task specification (Command), it contains some
+// structured metadata as well as utilities that may be useful depending on the
+// isolation type.
+type Task struct {
+	// WorkDir is the local working directory containing the task's inputs.
+	WorkDir string
+
+	// Proto contains the raw task specification and scheduling information. In
+	// particular, this contains the command line to be executed as well as
+	// resource requirements if needed by the isolation type.
+	//
+	// Use Props and ImageCredentials for platform properties and OCI image
+	// credentials respectively, since these may depend on executor-level
+	// configuration that is not specified in the raw proto.
+	Proto *repb.ScheduledTask
+
+	// Props contains parsed platform properties for the task, with
+	// executor-level overrides and remote header overrides applied.
+	Props *platform.Properties
+
+	// OCICredentials hold the OCI image credentials if applicable.
+	OCICredentials oci.Credentials
+
+	// Publisher can optionally be used throughout the task's lifecycle to send
+	// fine-grained execution progress updates.
 	Publisher *operation.Publisher
+}
+
+func (t *Task) ExecuteRequest() *repb.ExecuteRequest {
+	return t.Proto.GetExecutionTask().GetExecuteRequest()
+}
+
+func (t *Task) Action() *repb.Action {
+	return t.Proto.GetExecutionTask().GetAction()
+}
+
+// Command returns the command to be executed.
+func (t *Task) Command() *repb.Command {
+	return t.Proto.GetExecutionTask().GetCommand()
 }
 
 // ContainerMetrics handles Prometheus metrics accounting for CommandContainer
@@ -202,15 +245,15 @@ type CommandContainer interface {
 	//
 	// It is approximately the same as calling PullImageIfNecessary, Create,
 	// Exec, then Remove.
-	Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult
+	Run(ctx context.Context, task *Task) *interfaces.CommandResult
 
 	// IsImageCached returns whether the configured image is cached locally.
-	IsImageCached(ctx context.Context) (bool, error)
+	IsImageCached(ctx context.Context, task *Task) (bool, error)
 
 	// PullImage pulls the container image from the remote. It always
 	// re-authenticates the request, but may serve the image from a local cache
 	// if needed.
-	PullImage(ctx context.Context, creds oci.Credentials) error
+	PullImage(ctx context.Context, task *Task) error
 
 	// Create creates a new container and starts a top-level process inside it
 	// (`sleep infinity`) so that it stays alive and running until explicitly
@@ -218,7 +261,8 @@ type CommandContainer interface {
 	// `docker create` or `ctr containers create` -- in addition to creating the
 	// container, it also puts it in a "ready to execute" state by starting the
 	// top level process.
-	Create(ctx context.Context, workingDir string) error
+	Create(ctx context.Context, task *Task) error
+
 	// Exec runs a command inside a container, with the same working dir set when
 	// creating the container.
 	//
@@ -226,11 +270,14 @@ type CommandContainer interface {
 	// stdin of the executed process. If stdout is non-nil, the stdout of the
 	// executed process will be written to the stdout writer rather than being
 	// written to the command result's stdout field (same for stderr).
-	Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult
+	Exec(ctx context.Context, task *Task, stdio *interfaces.Stdio) *interfaces.CommandResult
+
 	// Unpause un-freezes a container so that it can be used to execute commands.
-	Unpause(ctx context.Context) error
+	Unpause(ctx context.Context, task *Task) error
+
 	// Pause freezes a container so that it no longer consumes CPU resources.
 	Pause(ctx context.Context) error
+
 	// Remove kills any processes currently running inside the container and
 	// removes any resources associated with the container itself. It is safe to
 	// call remove if Create has not been called. If Create has been called but
@@ -264,7 +311,7 @@ type VM interface {
 
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
-func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
+func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, task *Task) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	if *debugUseLocalImagesOnly {
@@ -277,13 +324,13 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 		slowPullWarnOnce.Do(func() {
 			log.CtxWarningf(ctx, "Authentication is not properly configured; this will result in slower image pulls.")
 		})
-		return ctr.PullImage(ctx, creds)
+		return ctr.PullImage(ctx, task)
 	}
 
 	// TODO(iain): the auth/existence/pull synchronization is getting unruly.
 	// TODO: this (and the similar map in podman.go) can theoretically leak
 	// memory, though in practice it shouldn't be a problem.
-	uncastmu, _ := pullOperations.LoadOrStore(hash.Strings(ctr.IsolationType(), imageRef), &sync.Mutex{})
+	uncastmu, _ := pullOperations.LoadOrStore(hash.Strings(ctr.IsolationType(), task.Props.ContainerImage), &sync.Mutex{})
 	mu, ok := uncastmu.(*sync.Mutex)
 	if !ok {
 		alert.UnexpectedEvent("loaded mutex from sync.map that isn't a mutex!")
@@ -291,11 +338,11 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	isCached, err := ctr.IsImageCached(ctx)
+	isCached, err := ctr.IsImageCached(ctx, task)
 	if err != nil {
 		return err
 	}
-	cacheToken, err := NewImageCacheToken(ctx, env, creds, imageRef)
+	cacheToken, err := NewImageCacheToken(ctx, env, task.OCICredentials, task.Props.ContainerImage)
 	if err != nil {
 		return status.WrapError(err, "create image cache token")
 	}
@@ -304,7 +351,7 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	if isCached && cacheAuth.IsAuthorized(cacheToken) {
 		return nil
 	}
-	if err := ctr.PullImage(ctx, creds); err != nil {
+	if err := ctr.PullImage(ctx, task); err != nil {
 		return err
 	}
 	// Pull was successful, which means auth was successful. Refresh the token so
@@ -401,7 +448,7 @@ func (t *TracedCommandContainer) IsolationType() string {
 	return t.Delegate.IsolationType()
 }
 
-func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Run(ctx context.Context, task *Task) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -411,10 +458,10 @@ func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return &interfaces.CommandResult{ExitCode: noExitCode, Error: ErrRemoved}
 	}
 
-	return t.Delegate.Run(ctx, command, workingDir, creds)
+	return t.Delegate.Run(ctx, task)
 }
 
-func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
+func (t *TracedCommandContainer) IsImageCached(ctx context.Context, task *Task) (bool, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -424,10 +471,10 @@ func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error
 		return false, ErrRemoved
 	}
 
-	return t.Delegate.IsImageCached(ctx)
+	return t.Delegate.IsImageCached(ctx, task)
 }
 
-func (t *TracedCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+func (t *TracedCommandContainer) PullImage(ctx context.Context, task *Task) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -437,10 +484,10 @@ func (t *TracedCommandContainer) PullImage(ctx context.Context, creds oci.Creden
 		return ErrRemoved
 	}
 
-	return t.Delegate.PullImage(ctx, creds)
+	return t.Delegate.PullImage(ctx, task)
 }
 
-func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) error {
+func (t *TracedCommandContainer) Create(ctx context.Context, task *Task) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -450,10 +497,10 @@ func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) 
 		return ErrRemoved
 	}
 
-	return t.Delegate.Create(ctx, workingDir)
+	return t.Delegate.Create(ctx, task)
 }
 
-func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, opts *interfaces.Stdio) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Exec(ctx context.Context, task *Task, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -463,10 +510,10 @@ func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command
 		return &interfaces.CommandResult{ExitCode: noExitCode, Error: ErrRemoved}
 	}
 
-	return t.Delegate.Exec(ctx, command, opts)
+	return t.Delegate.Exec(ctx, task, stdio)
 }
 
-func (t *TracedCommandContainer) Unpause(ctx context.Context) error {
+func (t *TracedCommandContainer) Unpause(ctx context.Context, task *Task) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -476,7 +523,7 @@ func (t *TracedCommandContainer) Unpause(ctx context.Context) error {
 		return ErrRemoved
 	}
 
-	return t.Delegate.Unpause(ctx)
+	return t.Delegate.Unpause(ctx, task)
 }
 
 func (t *TracedCommandContainer) Pause(ctx context.Context) error {

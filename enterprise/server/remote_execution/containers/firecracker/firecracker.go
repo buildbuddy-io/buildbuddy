@@ -36,7 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -1854,7 +1853,7 @@ func (c *FirecrackerContainer) IsolationType() string {
 //
 // It is approximately the same as calling PullImageIfNecessary, Create,
 // Exec, then Remove.
-func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds oci.Credentials) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Run(ctx context.Context, task *container.Task) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1867,12 +1866,12 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// there's no need to Create the machine.
 	if c.machine == nil {
 		log.CtxInfof(ctx, "Pulling image %q", c.containerImage)
-		if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.containerImage); err != nil {
+		if err := container.PullImageIfNecessary(ctx, c.env, c, task); err != nil {
 			return nonCmdExit(ctx, err)
 		}
 
 		log.CtxInfof(ctx, "Creating VM.")
-		if err := c.Create(ctx, actionWorkingDir); err != nil {
+		if err := c.Create(ctx, task); err != nil {
 			return nonCmdExit(ctx, err)
 		}
 	}
@@ -1890,18 +1889,18 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		}
 	}()
 
-	cmdResult := c.Exec(ctx, command, &interfaces.Stdio{})
+	cmdResult := c.Exec(ctx, task, &interfaces.Stdio{})
 	return cmdResult
 }
 
 // Create creates a new VM and starts a top-level process inside it listening
 // for commands to execute.
-func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir string) error {
-	c.actionWorkingDir = actionWorkingDir
+func (c *FirecrackerContainer) Create(ctx context.Context, task *container.Task) error {
+	c.actionWorkingDir = task.WorkDir
 
 	if c.createFromSnapshot {
 		log.Debugf("Create: will unpause snapshot")
-		return c.Unpause(ctx)
+		return c.Unpause(ctx, task)
 	}
 
 	ctx, span := tracing.StartSpan(ctx)
@@ -2159,7 +2158,7 @@ func (c *FirecrackerContainer) monitorVMContext(ctx context.Context) (context.Co
 // the executed process.
 // If stdout is non-nil, the stdout of the executed process will be written to the
 // stdout writer.
-func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Exec(ctx context.Context, task *container.Task, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	log.CtxInfof(ctx, "Executing command.")
 
 	ctx, span := tracing.StartSpan(ctx)
@@ -2244,7 +2243,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 	defer conn.Close()
 
-	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
+	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, task.Command(), workDir, stdio)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
@@ -2303,7 +2302,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	return result
 }
 
-func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
+func (c *FirecrackerContainer) IsImageCached(ctx context.Context, task *container.Task) (bool, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -2317,7 +2316,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 // PullImage pulls the container image from the remote. It always
 // re-authenticates the request, but may serve the image from a local cache
 // in order to avoid re-downloading the image.
-func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+func (c *FirecrackerContainer) PullImage(ctx context.Context, task *container.Task) error {
 	if c.pulled {
 		return nil
 	}
@@ -2337,7 +2336,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.dockerClient, c.jailerRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.dockerClient, c.jailerRoot, c.containerImage, task.OCICredentials)
 	if err != nil {
 		return err
 	}
@@ -2603,7 +2602,7 @@ func (c *FirecrackerContainer) cleanupOldSnapshots(snapshotDetails *snapshotDeta
 }
 
 // Unpause un-freezes a container so that it can be used to execute commands.
-func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
+func (c *FirecrackerContainer) Unpause(ctx context.Context, task *container.Task) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
