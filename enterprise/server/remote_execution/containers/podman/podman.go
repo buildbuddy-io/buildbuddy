@@ -78,7 +78,7 @@ var (
 	// A map from image name to pull status. This is used to avoid parallel pulling of the same image.
 	pullOperations sync.Map
 
-	databaseLockedRegexp = regexp.MustCompile("beginning container .+ transaction: database is locked")
+	databaseLockedRegexp = regexp.MustCompile("transaction.*: database is locked")
 )
 
 const (

@@ -393,6 +393,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 4px;
+
+  .name-content {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .cache-requests-card.group-by-target .name-column {

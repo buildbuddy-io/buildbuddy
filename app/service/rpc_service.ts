@@ -188,12 +188,22 @@ class RpcService {
     invocationId: string,
     responseType?: T,
     options: BytestreamFileOptions = {}
-  ): Promise<FetchPromiseType<T>> {
-    return this.fetch(
-      this.getBytestreamUrl(bytestreamURL, invocationId, options),
-      (responseType || "") as FetchResponseType,
-      options.init ?? {}
-    ) as Promise<FetchPromiseType<T>>;
+  ): CancelablePromise<FetchPromiseType<T>> {
+    const controller = new AbortController();
+    return new CancelablePromise(
+      this.fetch(
+        this.getBytestreamUrl(bytestreamURL, invocationId, options),
+        (responseType || "") as FetchResponseType,
+        { ...(options.init ?? {}), signal: controller.signal }
+      ) as Promise<FetchPromiseType<T>>,
+      {
+        oncancelled: () => {
+          // In addition to preventing the promise from completing, cancel the
+          // underlying network request.
+          controller.abort();
+        },
+      }
+    );
   }
 
   /**
@@ -327,6 +337,8 @@ class RpcService {
           return originalMethod.call(service, request, subscriber);
         } else {
           // Wrap with our CancelablePromise util.
+          // TODO: add codegen support to allow canceling the underlying fetch
+          // for unary RPCs.
           return new CancelablePromise(originalMethod.call(service, request));
         }
       };

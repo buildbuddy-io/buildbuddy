@@ -395,13 +395,13 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           <div className="name-column" title={result.targetId ? `${result.targetId} › ${result.actionMnemonic}` : ""}>
             {/* bes-upload events don't have a target ID or action mnemonic. */}
             {result.targetId || result.actionMnemonic ? (
-              <TextLink href={this.getActionUrl(result.actionId)}>
+              <TextLink className="name-content" href={this.getActionUrl(result.actionId)}>
                 {groupTarget === null && result.targetId}
                 {groupTarget === null && groupActionId === null && " › "}
                 {groupActionId === null && result.actionMnemonic}
               </TextLink>
             ) : (
-              <span>{result.name ? result.name : result.actionId}</span>
+              <span className="name-content">{result.name ? result.name : result.actionId}</span>
             )}
             <div title="Download">
               <DownloadIcon

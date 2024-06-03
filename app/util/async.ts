@@ -6,11 +6,14 @@ export class CancelablePromise<T = unknown> implements Promise<T> {
   readonly [Symbol.toStringTag] = "CancelablePromise";
 
   private cancelled = false;
+  private oncancelled?: () => void;
 
   /** The parent promise in the chain. */
   private parent: CancelablePromise | null = null;
 
-  constructor(private promise: PromiseLike<T>) {}
+  constructor(private promise: PromiseLike<T>, { oncancelled = undefined }: { oncancelled?: () => void } = {}) {
+    this.oncancelled = oncancelled;
+  }
 
   then<U, V = never>(
     onfulfilled?: (value: T) => U | PromiseLike<U>,
@@ -58,6 +61,7 @@ export class CancelablePromise<T = unknown> implements Promise<T> {
    */
   cancel(): void {
     this.cancelled = true;
+    this.oncancelled?.();
     if (this.parent) this.parent.cancel();
   }
 }
