@@ -1696,7 +1696,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		ws.log.Write([]byte(fmt.Sprintf("Merged into the target branch %s. HEAD is now at %s.\n", *targetBranch, mergedCommitSHA)))
+		writeCommandSummary(ws.log, fmt.Sprintf("Merged into the target branch %s. HEAD is now at %s.", *targetBranch, mergedCommitSHA))
 	}
 
 	if len(*patchURIs) > 0 {
@@ -1760,11 +1760,11 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 
 	if err := ws.fetch(ctx, *pushedRepoURL, []string{refToFetch}, fetchDepth); err != nil {
 		if strings.Contains(err.Error(), "Server does not allow request for unadvertised object") {
-			log.Warning("Git does not support fetching non-HEAD commits by default." +
-				" You must set the `uploadpack.allowAnySHA1InWant`" +
+			writeCommandSummary(ws.log, "Git does not support fetching non-HEAD commits by default."+
+				" You must set the `uploadpack.allowAnySHA1InWant`"+
 				" config option in the repo that is being fetched.")
 			if refToFetch != *pushedBranch && *pushedBranch != "" {
-				log.Warning("Attempting to fetch the branch with --depth=0 instead...")
+				writeCommandSummary(ws.log, "Attempting to fetch the branch with --depth=0 instead...")
 				refToFetch = *pushedBranch
 				fetchDepth = 0
 				return ws.fetch(ctx, *pushedRepoURL, []string{refToFetch}, fetchDepth)
@@ -1790,7 +1790,7 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 	}
 	if *mergeCommitSHA != "" {
 		checkoutRef = *mergeCommitSHA
-		ws.log.Write([]byte(fmt.Sprintf("Checking out merge commit sha %s...\n", checkoutRef)))
+		writeCommandSummary(ws.log, fmt.Sprintf("Checking out merge commit sha %s...", checkoutRef))
 	}
 
 	if checkoutLocalBranchName != "" {
