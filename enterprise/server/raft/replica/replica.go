@@ -1509,6 +1509,60 @@ func errorEntry(err error) dbsm.Result {
 	}
 }
 
+func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Session) ([]byte, error) {
+	if reqSession == nil {
+		return nil, nil
+	}
+	sessionKey := keys.MakeKey(constants.LocalSessionPrefix, reqSession.GetId())
+	buf, err := sm.lookup(db, sessionKey)
+	if err != nil && !status.IsNotFoundError(err) {
+		return nil, err
+	}
+	storedSession := &rfpb.Session{}
+	if err := proto.Unmarshal(buf, storedSession); err != nil {
+		return nil, err
+	}
+	if storedSession.GetIndex() == reqSession.GetIndex() {
+		return storedSession.GetRspData(), nil
+	}
+	if storedSession.GetIndex()+1 != reqSession.GetIndex() {
+		return nil, status.InternalErrorf("getLastRespFromSession session index mismatch: storedSession.Index=%d and reqSession.Index=%d", storedSession.GetIndex(), reqSession.GetIndex())
+	}
+	// This is a new request.
+	return nil, nil
+}
+
+func getEntryResult(cmd []byte, rspBuf []byte) dbsm.Result {
+	return dbsm.Result{
+		Value: uint64(len(cmd)),
+		Data:  rspBuf,
+	}
+}
+
+func (sm *Replica) commitIndexBatch(wb pebble.Batch, entryIndex uint64) error {
+	appliedIndex := uint64ToBytes(entryIndex)
+	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
+	if err := wb.Commit(pebble.NoSync); err != nil {
+		return status.InternalErrorf("failed to commit batch: %s", err)
+	}
+	// If the batch commit was successful, update the replica's in-
+	// memory state.
+	sm.updateInMemoryState(wb)
+	sm.lastAppliedIndex = entryIndex
+	return nil
+}
+
+func (sm *Replica) updateSession(wb pebble.Batch, reqSession *rfpb.Session, rspBuf []byte) error {
+	reqSession.RspData = rspBuf
+	sessionBuf, err := proto.Marshal(reqSession)
+	if err != nil {
+		return status.InternalErrorf("failed to marshal session: %s", err)
+	}
+	sessionKey := keys.MakeKey(constants.LocalSessionPrefix, reqSession.GetId())
+	wb.Set(sm.replicaLocalKey(sessionKey), sessionBuf, nil)
+	return nil
+}
+
 func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Entry, error) {
 	// This method should return errors if something truly fails in an
 	// unrecoverable way (proto marshal/unmarshal, pebble batch commit) but
@@ -1517,6 +1571,27 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	batchReq := &rfpb.BatchCmdRequest{}
 	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
 		return entry, status.InternalErrorf("failed to unmarshal entry.Cmd: %s", err)
+	}
+
+	// All of the data in a BatchCmdRequest is handled in a single pebble
+	// write batch. That means that if any part of a batch update fails,
+	// none of the batch will be applied.
+	wb := db.NewIndexedBatch()
+	defer wb.Close()
+
+	reqSession := batchReq.GetSession()
+	lastRspData, err := sm.getLastRespFromSession(db, reqSession)
+	if err != nil {
+		return entry, err
+	}
+	// We have executed this command in the past, return the stored response and
+	// skip execution.
+	if len(lastRspData) > 0 {
+		entry.Result = getEntryResult(entry.Cmd, lastRspData)
+		if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
+			return entry, err
+		}
+		return entry, nil
 	}
 
 	sm.rangeMu.RLock()
@@ -1529,12 +1604,6 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 		metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
 	}).Inc()
 	sm.raftProposeQPS.Inc()
-
-	// All of the data in a BatchCmdRequest is handled in a single pebble
-	// write batch. That means that if any part of a batch update fails,
-	// none of the batch will be applied.
-	wb := db.NewIndexedBatch()
-	defer wb.Close()
 
 	batchRsp := &rfpb.BatchCmdResponse{}
 	if header := batchReq.GetHeader(); header != nil {
@@ -1580,24 +1649,17 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	if err != nil {
 		return entry, status.InternalErrorf("failed to marshal batchRsp: %s", err)
 	}
-	entry.Result = dbsm.Result{
-		Value: uint64(len(entry.Cmd)),
-		Data:  rspBuf,
+	entry.Result = getEntryResult(entry.Cmd, rspBuf)
+	if err := sm.updateSession(wb, reqSession, rspBuf); err != nil {
+		return entry, err
 	}
-	appliedIndex := uint64ToBytes(entry.Index)
-	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
-	if err := wb.Commit(pebble.NoSync); err != nil {
-		return entry, status.InternalErrorf("failed to commit batch: %s", err)
-	} else {
-		// If the batch commit was successful, update the replica's in-
-		// memory state.
-		sm.updateInMemoryState(wb)
-		sm.lastAppliedIndex = entry.Index
 
-		// Run post commit hooks, if any are set.
-		for _, hook := range batchReq.GetPostCommitHooks() {
-			sm.handlePostCommit(hook)
-		}
+	if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
+		return entry, err
+	}
+	// Run post commit hooks, if any are set.
+	for _, hook := range batchReq.GetPostCommitHooks() {
+		sm.handlePostCommit(hook)
 	}
 
 	return entry, nil

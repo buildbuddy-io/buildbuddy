@@ -102,6 +102,9 @@ var (
 
 	// A prefix to prepend to transactions.
 	LocalTransactionPrefix = keys.MakeKey(LocalPrefix, []byte("txn-"))
+
+	// A prefix to prepend to session keys
+	LocalSessionPrefix = keys.MakeKey(SystemPrefix, []byte("session-"))
 )
 
 // Error constants -- sender recognizes these errors.
