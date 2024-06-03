@@ -54,6 +54,7 @@ go_test(
         "//server/util/ioutil",
         "//server/util/proto",
         "//server/util/status",
+        "//server/util/uuid",
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_stretchr_testify//require",
     ],

@@ -124,6 +124,11 @@ func (bb *BatchBuilder) SetHeader(h *rfpb.Header) *BatchBuilder {
 	return bb
 }
 
+func (bb *BatchBuilder) SetSession(session *rfpb.Session) *BatchBuilder {
+	bb.cmd.Session = session
+	return bb
+}
+
 func (bb *BatchBuilder) AddPostCommitHook(m proto.Message) *BatchBuilder {
 	switch value := m.(type) {
 	case *rfpb.SnapshotClusterHook:

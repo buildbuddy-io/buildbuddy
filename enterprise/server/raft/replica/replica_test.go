@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/require"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -101,6 +102,7 @@ func newEntryMaker(t *testing.T) *entryMaker {
 		t: t,
 	}
 }
+
 func (em *entryMaker) makeEntry(batch *rbuilder.BatchBuilder) dbsm.Entry {
 	em.index += 1
 	buf, err := batch.ToBuf()
@@ -318,8 +320,13 @@ func TestReplicaIncrement(t *testing.T) {
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
 
+	session := &rfpb.Session{
+		Id:    []byte(uuid.New()),
+		Index: 1,
+	}
+
 	// Do a DirectWrite.
-	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.IncrementRequest{
 		Key:   []byte("incr-key"),
 		Delta: 1,
 	}))
@@ -333,8 +340,34 @@ func TestReplicaIncrement(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), incrRsp.GetValue())
 
+	// Write the same request again.
+	writeRsp, err = repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(writeRsp))
+
+	// Make sure the response holds the same value
+	incrBatch = rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
+	incrRsp, err = incrBatch.IncrementResponse(0)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), incrRsp.GetValue())
+
+	session.Index = 2
 	// Increment the same key again by a different value.
-	entry = em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+	entry = em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.IncrementRequest{
+		Key:   []byte("incr-key"),
+		Delta: 3,
+	}))
+	writeRsp, err = repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(writeRsp))
+
+	// Make sure the response holds the new value.
+	incrBatch = rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
+	incrRsp, err = incrBatch.IncrementResponse(0)
+	require.NoError(t, err)
+	require.Equal(t, uint64(4), incrRsp.GetValue())
+
+	entry = em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.IncrementRequest{
 		Key:   []byte("incr-key"),
 		Delta: 3,
 	}))
@@ -350,6 +383,42 @@ func TestReplicaIncrement(t *testing.T) {
 
 	err = repl.Close()
 	require.NoError(t, err)
+}
+
+func TestSessionIndexMismatchError(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	session := &rfpb.Session{
+		Id:    []byte(uuid.New()),
+		Index: 1,
+	}
+
+	// Do a DirectWrite.
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.IncrementRequest{
+		Key:   []byte("incr-key"),
+		Delta: 1,
+	}))
+	writeRsp, err := repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(writeRsp))
+
+	session.Index = 3
+	entry = em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.IncrementRequest{
+		Key:   []byte("incr-key"),
+		Delta: 1,
+	}))
+	_, err = repl.Update([]dbsm.Entry{entry})
+	require.ErrorContains(t, err, "session index mismatch")
 }
 
 func TestReplicaCAS(t *testing.T) {
@@ -393,7 +462,11 @@ func TestReplicaCAS(t *testing.T) {
 	// Do a CAS and verify:
 	//   1) the value is not set
 	//   2) the current value is returned.
-	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+	session := &rfpb.Session{
+		Id:    []byte(uuid.New()),
+		Index: 1,
+	}
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   fileMetadataKey,
 			Value: []byte{},
@@ -410,7 +483,24 @@ func TestReplicaCAS(t *testing.T) {
 
 	// Do a CAS with the correct expected value and ensure
 	// the value was written.
-	entry = em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+	session.Index++
+	entry = em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   fileMetadataKey,
+			Value: []byte{},
+		},
+		ExpectedValue: mdBuf,
+	}))
+	writeRsp, err = repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+
+	readBatch = rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
+	casRsp, err = readBatch.CASResponse(0)
+	require.NoError(t, err)
+	require.Nil(t, casRsp.GetKv().GetValue())
+
+	// Do the same CAS again with same session
+	entry = em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   fileMetadataKey,
 			Value: []byte{},
@@ -1061,9 +1151,13 @@ func TestBatchTransaction(t *testing.T) {
 	writeDefaultRangeDescriptor(t, em, repl)
 
 	txid := []byte("test-txid")
+	session := &rfpb.Session{
+		Id:    []byte(uuid.New()),
+		Index: 1,
+	}
 
 	{ // Do a DirectWrite.
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   []byte("foo"),
 				Value: []byte("bar"),
@@ -1074,8 +1168,9 @@ func TestBatchTransaction(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 	}
+	session.Index++
 	{ // Prepare a transaction
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetTransactionID(txid).Add(&rfpb.DirectWriteRequest{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).SetTransactionID(txid).Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   []byte("foo"),
 				Value: []byte("transaction-succeeded"),
@@ -1086,8 +1181,9 @@ func TestBatchTransaction(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 	}
+	session.Index++
 	{ // Attempt another direct write (should fail b/c of pending txn).
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   []byte("foo"),
 				Value: []byte("boop"),
@@ -1111,12 +1207,29 @@ func TestBatchTransaction(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []byte("bar"), directRead.GetKv().GetValue())
 	}
+	session.Index++
 	{ // Commit the transaction
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetTransactionID(txid).SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).SetTransactionID(txid).SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))
 		entries := []dbsm.Entry{entry}
 		rsp, err := repl.Update(entries)
 		require.NoError(t, err)
 		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+	{ // retry the entry to commit transaction with the same session; should not return error.
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).SetTransactionID(txid).SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+	session.Index++
+	{ // Commit transaction again; should return error.
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).SetTransactionID(txid).SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		err = rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError()
+		require.True(t, status.IsNotFoundError(err), "CommitTransaction should return NotFound error")
 	}
 	{ // Do a DirectRead and verify the value was updated by the txn.
 		buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
@@ -1131,8 +1244,9 @@ func TestBatchTransaction(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []byte("transaction-succeeded"), directRead.GetKv().GetValue())
 	}
+	session.Index++
 	{ // Value should be direct writable again (no more pending txns)
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   []byte("foo"),
 				Value: []byte("bar"),
