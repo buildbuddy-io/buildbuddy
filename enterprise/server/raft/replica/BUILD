@@ -52,7 +52,6 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/disk",
         "//server/util/ioutil",
-        "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/uuid",
