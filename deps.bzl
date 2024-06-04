@@ -1590,6 +1590,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.5.1",
     )
     go_repository(
+        name = "com_github_gabriel_vasile_mimetype",
+        importpath = "github.com/gabriel-vasile/mimetype",
+        sum = "h1:QjV6pZ7/XZ7ryI2KuyeEDE8wnh7fHP9YnQy+R0LnH8I=",
+        version = "v1.4.4",
+    )
+    go_repository(
         name = "com_github_garyburd_redigo",
         importpath = "github.com/garyburd/redigo",
         sum = "h1:LofdAjjjqCSXMwLGgOgnE+rdPuvX9DxCqaHwKy7i/ko=",
@@ -6548,8 +6554,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_crypto",
         importpath = "golang.org/x/crypto",
-        sum = "h1:X31++rzVUdKhX5sWmSOFZxx8UW/ldWx55cbf08iNAMA=",
-        version = "v0.21.0",
+        sum = "h1:dIJU/v2J8Mdglj/8rJ6UUOM3Zc9zLZxVZwwxMooUSAI=",
+        version = "v0.23.0",
     )
     go_repository(
         name = "org_golang_x_exp",
@@ -6590,8 +6596,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_net",
         importpath = "golang.org/x/net",
-        sum = "h1:7EYJ93RZ9vYSZAIb2x3lnuvqO5zneoD6IvWjuhfxjTs=",
-        version = "v0.23.0",
+        sum = "h1:d/OCCoBEUq33pjydKrGQhw7IlUPI2Oylr+8qLx49kac=",
+        version = "v0.25.0",
     )
     go_repository(
         name = "org_golang_x_oauth2",
@@ -6608,20 +6614,20 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_sys",
         importpath = "golang.org/x/sys",
-        sum = "h1:DBdB3niSjOA/O0blCZBqDefyWNYveAYMNF1Wum0DYQ4=",
-        version = "v0.18.0",
+        sum = "h1:Od9JTbYCk261bKm4M/mw7AklTlFYIa0bIp9BgSm1S8Y=",
+        version = "v0.20.0",
     )
     go_repository(
         name = "org_golang_x_term",
         importpath = "golang.org/x/term",
-        sum = "h1:FcHjZXDMxI8mM3nwhX9HlKop4C0YQvCVCdwYl2wOtE8=",
-        version = "v0.18.0",
+        sum = "h1:VnkxpohqXaOBYJtBmEppKUG6mXpi+4O6purfc2+sMhw=",
+        version = "v0.20.0",
     )
     go_repository(
         name = "org_golang_x_text",
         importpath = "golang.org/x/text",
-        sum = "h1:ScX5w1eTa3QqT8oi6+ziP7dTV1S2+ALU0bI+0zXKWiQ=",
-        version = "v0.14.0",
+        sum = "h1:h1V/4gjBv8v9cjcR6+AR5+/cIYK5N/WAgiv4xlsEtAk=",
+        version = "v0.15.0",
     )
     go_repository(
         name = "org_golang_x_time",
