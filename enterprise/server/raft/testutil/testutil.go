@@ -181,6 +181,7 @@ func StartShardWithRanges(t *testing.T, ctx context.Context, startingRanges []*r
 	require.NoError(t, err)
 }
 
+// TestingProposer can be used in the place of NodeHost.
 type TestingProposer struct {
 	t   testing.TB
 	id  string
@@ -228,4 +229,66 @@ func (tp *TestingProposer) ReadLocalNode(rs *dragonboat.RequestState, query inte
 }
 func (tp *TestingProposer) StaleRead(shardID uint64, query interface{}) (interface{}, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
+}
+
+// FakeStore implements replica.IStore without real functionality.
+type FakeStore struct{}
+
+func (fs *FakeStore) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica)    {}
+func (fs *FakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {}
+func (fs *FakeStore) Sender() *sender.Sender {
+	return nil
+}
+func (fs *FakeStore) SnapshotCluster(ctx context.Context, shardID uint64) error {
+	return nil
+}
+func (fs *FakeStore) NHID() string {
+	return ""
+}
+
+type TestingReplica struct {
+	t testing.TB
+	*replica.Replica
+	leaser pebble.Leaser
+}
+
+func NewTestingReplica(t testing.TB, shardID, replicaID uint64) *TestingReplica {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	store := &FakeStore{}
+	return &TestingReplica{
+		t:       t,
+		Replica: replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/),
+		leaser:  leaser,
+	}
+}
+
+func NewTestingReplicaWithLeaser(t testing.TB, shardID, replicaID uint64, leaser pebble.Leaser) *TestingReplica {
+	store := &FakeStore{}
+	return &TestingReplica{
+		t:       t,
+		Replica: replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/),
+		leaser:  leaser,
+	}
+}
+
+func (tr *TestingReplica) Leaser() pebble.Leaser {
+	return tr.leaser
+}
+
+func (tr *TestingReplica) DB() pebble.IPebbleDB {
+	db, err := tr.leaser.DB()
+	require.NoError(tr.t, err)
+	tr.t.Cleanup(func() {
+		db.Close()
+	})
+	return db
 }

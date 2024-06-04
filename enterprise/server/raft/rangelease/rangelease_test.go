@@ -12,8 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -22,32 +20,6 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
-
-type fakeStore struct{}
-
-func (fs *fakeStore) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica)    {}
-func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {}
-func (fs *fakeStore) Sender() *sender.Sender {
-	return nil
-}
-func (fs *fakeStore) SnapshotCluster(ctx context.Context, shardID uint64) error {
-	return nil
-}
-func (fs *fakeStore) NHID() string {
-	return ""
-}
-func newTestReplica(t testing.TB, rootDir string, shardID, replicaID uint64, store replica.IStore) *replica.Replica {
-	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
-	require.NoError(t, err)
-
-	leaser := pebble.NewDBLeaser(db)
-	t.Cleanup(func() {
-		leaser.Close()
-		db.Close()
-	})
-
-	return replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/)
-}
 
 const shardID = 1
 
@@ -83,15 +55,13 @@ func (t *testingSender) SyncRead(ctx context.Context, key []byte, batch *rfpb.Ba
 }
 
 func newTestingProposerAndSenderAndReplica(t testing.TB) (*testutil.TestingProposer, *testingSender, *replica.Replica) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	r := newTestReplica(t, rootDir, 1, 1, store)
+	r := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, r)
 
 	randID, err := random.RandomString(10)
 	require.NoError(t, err)
-	p := testutil.NewTestingProposer(t, randID, r)
-	return p, &testingSender{p}, r
+	p := testutil.NewTestingProposer(t, randID, r.Replica)
+	return p, &testingSender{p}, r.Replica
 }
 
 func TestAcquireAndRelease(t *testing.T) {
