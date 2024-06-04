@@ -50,6 +50,7 @@ import (
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -65,8 +66,13 @@ var (
 	zombieNodeScanInterval = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
 	zombieMinDuration      = flag.Duration("cache.raft.zombie_min_duration", 1*time.Minute, "The minimum duration a replica must remain in a zombie state to be considered a zombie.")
 	replicaScanInterval    = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
+	clientSessionTTL       = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
 	maxRangeSizeBytes      = flag.Int64("cache.raft.max_range_size_bytes", 1e8, "If set to a value greater than 0, ranges will be split until smaller than this size")
 	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
+)
+
+const (
+	deleteSessionsRateLimit = 1
 )
 
 type Store struct {
@@ -111,7 +117,8 @@ type Store struct {
 	updateTagsWorker *updateTagsWorker
 	txnCoordinator   *txn.Coordinator
 
-	driverQueue *driver.Queue
+	driverQueue         *driver.Queue
+	deleteSessionWorker *deleteSessionWorker
 
 	clock clockwork.Clock
 }
@@ -222,6 +229,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	if *enableDriver {
 		s.driverQueue = driver.NewQueue(s, gossipManager)
 	}
+	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s)
 
 	if err != nil {
 		return nil, err
@@ -449,13 +457,17 @@ func (s *Store) Start() error {
 		return nil
 	})
 	eg.Go(func() error {
-		s.scan(gctx)
+		s.scanReplicas(gctx)
 		return nil
 	})
 	eg.Go(func() error {
 		if s.driverQueue != nil {
 			s.driverQueue.Start(gctx)
 		}
+		return nil
+	})
+	eg.Go(func() error {
+		s.deleteSessionWorker.Start(gctx)
 		return nil
 	})
 
@@ -1355,6 +1367,90 @@ func (w *updateTagsWorker) updateTags() error {
 	return err
 }
 
+type deleteSessionWorker struct {
+	rateLimiter       *rate.Limiter
+	lastExecutionTime sync.Map // map of uint64 rangeID -> the timestamp we last delete sessions
+	session           *client.Session
+	clock             clockwork.Clock
+	store             *Store
+	deleteChan        chan *replica.Replica
+}
+
+func newDeleteSessionsWorker(clock clockwork.Clock, store *Store) *deleteSessionWorker {
+	return &deleteSessionWorker{
+		rateLimiter:       rate.NewLimiter(rate.Limit(deleteSessionsRateLimit), 1),
+		store:             store,
+		lastExecutionTime: sync.Map{},
+		session:           client.NewSessionWithClock(clock),
+		clock:             clock,
+		deleteChan:        make(chan *replica.Replica, 10000),
+	}
+}
+
+func (w *deleteSessionWorker) Enqueue(repl *replica.Replica) {
+	select {
+	case w.deleteChan <- repl:
+		break
+	default:
+		log.Warning("deleteSessionWorker queue full")
+	}
+}
+
+func (w *deleteSessionWorker) Start(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			for len(w.deleteChan) > 0 {
+				<-w.deleteChan
+			}
+			return
+		case repl := <-w.deleteChan:
+			w.deleteSessions(ctx, repl)
+		}
+	}
+}
+
+func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.Replica) error {
+	rd := repl.RangeDescriptor()
+	lastExecutionTimeI, found := w.lastExecutionTime.Load(rd.GetRangeId())
+	if found {
+		lastExecutionTime, ok := lastExecutionTimeI.(time.Time)
+		if ok {
+			if w.clock.Since(lastExecutionTime) <= client.SessionLifetime() {
+				// There are probably no client sessions to delete.
+				return nil
+			}
+		}
+
+		return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to parse lastExecutionTime", rd.GetRangeId())
+	}
+
+	if !w.store.HaveLease(rd.GetRangeId()) {
+		log.Infof("skip because the store doesn't have lease for range ID:= %d", rd.GetRangeId())
+		// The replica doesn't have the lease right now. skip.
+		return nil
+	}
+
+	if err := w.rateLimiter.Wait(ctx); err != nil {
+		return err
+	}
+	now := w.clock.Now()
+	request, err := rbuilder.NewBatchBuilder().Add(
+		&rfpb.DeleteSessionsRequest{
+			CreatedAtUsec: now.Add(-*clientSessionTTL).UnixMicro(),
+		}).ToProto()
+	if err != nil {
+		return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to build request: %s", rd.GetRangeId(), err)
+	}
+	rsp, err := w.session.SyncProposeLocal(ctx, w.store.NodeHost(), repl.ShardID(), request)
+	if err != nil {
+		return status.InternalErrorf("unable to delete sessions for rangeID=%d: SyncProposeLocal fails: %s", rd.GetRangeId(), err)
+	}
+	w.lastExecutionTime.Store(rd.GetRangeId(), now)
+	_, err = rbuilder.NewBatchResponseFromProto(rsp).DeleteSessionsResponse(0)
+	return status.InternalErrorf("unable to delete sessions for rangeID=%d: DeleteSessions fails: %s", rd.GetRangeId(), err)
+}
+
 func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
 	startTime := time.Now()
 	leftRange := req.GetRange()
@@ -1927,10 +2023,7 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, shardID, r
 	return newDescriptor, nil
 }
 
-func (store *Store) scan(ctx context.Context) {
-	if store.driverQueue == nil {
-		return
-	}
+func (store *Store) scanReplicas(ctx context.Context) {
 	scanDelay := store.clock.NewTicker(*replicaScanInterval)
 	for {
 		select {
@@ -1940,7 +2033,10 @@ func (store *Store) scan(ctx context.Context) {
 		}
 		replicas := store.getLeasedReplicas()
 		for _, repl := range replicas {
-			store.driverQueue.MaybeAdd(repl)
+			if store.driverQueue != nil {
+				store.driverQueue.MaybeAdd(repl)
+			}
+			store.deleteSessionWorker.Enqueue(repl)
 		}
 	}
 }
