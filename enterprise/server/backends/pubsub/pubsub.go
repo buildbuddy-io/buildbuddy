@@ -232,7 +232,9 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 		if startFromTail {
 			msgs, err := p.rdb.XRevRangeN(ctx, psChannel.name, "+", "-", 1).Result()
 			if err != nil {
-				log.CtxErrorf(ctx, "Unable to retrieve last element of stream!!! %q: %s", psChannel.name, err)
+				if err != context.Canceled {
+					log.CtxErrorf(ctx, "Unable to retrieve last element of stream: %q: %s", psChannel.name, err)
+				}
 				msgChan <- &Message{Err: err}
 				return
 			}
