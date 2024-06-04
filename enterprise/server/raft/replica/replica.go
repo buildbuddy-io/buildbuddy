@@ -1165,6 +1165,28 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 	return &rfpb.UpdateAtimeResponse{}, nil
 }
 
+func (sm *Replica) deleteSessions(wb pebble.Batch, req *rfpb.DeleteSessionsRequest) (*rfpb.DeleteSessionsResponse, error) {
+	start, end := keys.Range(sm.replicaLocalKey(constants.LocalSessionPrefix))
+	iterOpts := &pebble.IterOptions{
+		UpperBound: end,
+	}
+	iter := wb.NewIter(iterOpts)
+	defer iter.Close()
+
+	t := iter.SeekGE(start)
+	for ; t; t = iter.Next() {
+		session := &rfpb.Session{}
+		if err := proto.Unmarshal(iter.Value(), session); err != nil {
+			log.Errorf("deleteSessions unable to parse value of key(%q): %s", string(iter.Key()), err)
+			continue
+		}
+		if session.GetCreatedAtUsec() <= req.GetCreatedAtUsec() {
+			wb.Delete(iter.Key(), nil /* ignore write options */)
+		}
+	}
+	return &rfpb.DeleteSessionsResponse{}, nil
+}
+
 func statusProto(err error) *statuspb.Status {
 	s, _ := gstatus.FromError(err)
 	return s.Proto()
@@ -1224,6 +1246,12 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 		r, err := sm.updateAtime(wb, value.UpdateAtime)
 		rsp.Value = &rfpb.ResponseUnion_UpdateAtime{
 			UpdateAtime: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_DeleteSessions:
+		r, err := sm.deleteSessions(wb, value.DeleteSessions)
+		rsp.Value = &rfpb.ResponseUnion_DeleteSessions{
+			DeleteSessions: r,
 		}
 		rsp.Status = statusProto(err)
 	default:
