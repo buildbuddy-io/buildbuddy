@@ -32,6 +32,7 @@ go_test(
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
+        "//enterprise/server/raft/testutil",
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//server/testutil/testfs",
@@ -39,10 +40,6 @@ go_test(
         "//server/util/proto",
         "//server/util/random",
         "//server/util/status",
-        "@com_github_lni_dragonboat_v4//:dragonboat",
-        "@com_github_lni_dragonboat_v4//client",
-        "@com_github_lni_dragonboat_v4//statemachine",
-        "@com_github_lni_goutils//random",
         "@com_github_stretchr_testify//require",
     ],
 )
