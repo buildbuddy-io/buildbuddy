@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -14,6 +14,7 @@ go_library(
         "//server/environment",
         "//server/util/canary",
         "//server/util/grpc_client",
+        "//server/util/lockmap",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
@@ -24,5 +25,21 @@ go_library(
         "@com_github_lni_dragonboat_v4//statemachine",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "client_test",
+    srcs = ["client_test.go"],
+    deps = [
+        ":client",
+        "//enterprise/server/raft/logger",
+        "//enterprise/server/raft/rbuilder",
+        "//enterprise/server/raft/testutil",
+        "//proto:raft_go_proto",
+        "//server/util/random",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
