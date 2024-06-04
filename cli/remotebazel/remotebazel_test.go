@@ -2,6 +2,7 @@ package remotebazel
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
@@ -278,6 +279,54 @@ func TestGitConfig(t *testing.T) {
 		require.Equal(t, len(tc.expectedPatches), len(config.Patches))
 		if len(tc.expectedPatches) > 0 {
 			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0])
+		}
+	}
+}
+
+func TestGeneratingPatches(t *testing.T) {
+	// Setup the "remote" repo
+	remoteRepoPath, _ := testgit.MakeTempRepo(t, map[string]string{
+		"hello.txt": "echo HI",
+		"b.bin":     "",
+	})
+
+	// Setup a "local" repo
+	localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
+	// Remote bazel runs commands in the working directory, so make sure it
+	// is set correctly
+	err := os.Chdir(localRepoPath)
+	require.NoError(t, err)
+
+	testshell.Run(t, localRepoPath, `
+		# Generate a diff on a pre-existing file
+		echo "echo HELLO" > hello.txt
+
+		# Generate a diff for a new untracked file
+		echo "echo BYE" > bye.txt
+
+		# Generate a binary diff on a pre-existing file
+		echo -ne '\x00\x01\x02\x03\x04' > b.bin
+
+		# Generate a binary diff on an untracked file
+		echo -ne '\x00\x01\x02\x03\x04' > b2.bin
+`)
+
+	config, err := Config(localRepoPath)
+	require.NoError(t, err)
+
+	require.Equal(t, 4, len(config.Patches))
+	for _, patchBytes := range config.Patches {
+		p := string(patchBytes)
+		if strings.Contains(p, "hello.txt") {
+			require.Contains(t, p, "HELLO")
+		} else if strings.Contains(p, "bye.txt") {
+			require.Contains(t, p, "BYE")
+		} else if strings.Contains(p, "b.bin") {
+			require.Contains(t, p, "GIT binary patch")
+		} else if strings.Contains(p, "b2.bin") {
+			require.Contains(t, p, "GIT binary patch")
+		} else {
+			require.FailNowf(t, "unexpected patch %s", p)
 		}
 	}
 }
