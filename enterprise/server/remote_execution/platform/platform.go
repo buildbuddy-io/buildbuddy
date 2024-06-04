@@ -29,7 +29,6 @@ var (
 	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
 	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
-	enableOCI                  = flag.Bool("executor.enable_oci", false, "Enables running execution commands directly with an OCI runtime such as runc")
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
 	defaultImage               = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
@@ -126,7 +125,6 @@ const (
 	DockerContainerType      ContainerType = "docker"
 	FirecrackerContainerType ContainerType = "firecracker"
 	SandboxContainerType     ContainerType = "sandbox"
-	OCIContainerType         ContainerType = "oci"
 
 	// The app will mint a signed client identity token to workflows.
 	workflowClientIdentityTokenLifetime = 12 * time.Hour
@@ -369,14 +367,6 @@ func GetExecutorProperties() *ExecutorProperties {
 			log.Warning("Docker was enabled, but is unsupported on darwin. Ignoring.")
 		} else {
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, DockerContainerType)
-		}
-	}
-
-	if *enableOCI {
-		if runtime.GOOS == "darwin" {
-			log.Warning("OCI was enabled, but is unsupported on darwin. Ignoring.")
-		} else {
-			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, OCIContainerType)
 		}
 	}
 

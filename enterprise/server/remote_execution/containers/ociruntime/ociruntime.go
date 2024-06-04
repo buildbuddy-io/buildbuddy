@@ -17,7 +17,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -36,9 +35,9 @@ var (
 )
 
 const (
-	// Root dir where container runtime info will live.
-	// TODO: pick something better here
-	ociVersion   = "1.1.0-rc.3" // matches podman
+	ociVersion = "1.1.0-rc.3" // matches podman
+
+	// Execution root directory path relative to the container rootfs directory.
 	execrootPath = "buildbuddy-execroot"
 )
 
@@ -181,7 +180,7 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 }
 
 func (c *ociContainer) IsolationType() string {
-	return string(platform.OCIContainerType)
+	return "oci" // TODO: make const in platform.go
 }
 
 func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
@@ -507,7 +506,7 @@ func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, args ...string) 
 func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command, args ...string) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
-		// DO NOT SUBMIT
+		// TODO: better profiling/tracing
 		log.CtxDebugf(ctx, "[%s] %s %s\n", time.Since(start), c.runtime, args[0])
 	}()
 

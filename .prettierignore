@@ -2,3 +2,5 @@
 /tools/metrics/grafana/dashboards/*
 # Test data is not necessarily source code that needs to be formatted.
 **/testdata/**
+# seccomp.json is copied from podman - don't format for easier diffing with upstream.
+/enterprise/server/remote_execution/containers/ociruntime/seccomp.json

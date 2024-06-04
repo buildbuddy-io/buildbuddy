@@ -6,15 +6,17 @@ go_library(
     name = "ociruntime",
     srcs = ["ociruntime.go"],
     embedsrcs = [
+        # This is the default seccomp.json file that ships with podman.
+        # https://github.com/containers/podman/blob/c510959826cdc55e6a75c40b104a9d1aa28e3632/vendor/github.com/containers/common/pkg/seccomp/seccomp.json
         "seccomp.json",
         "hosts",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime",
+    target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -34,6 +36,7 @@ go_test(
         "manual",
         "no-sandbox",
     ],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":ociruntime",
         "//enterprise/server/remote_execution/container",
