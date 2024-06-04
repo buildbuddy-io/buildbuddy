@@ -318,7 +318,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
-    return rpc_service.service
+    const service = rpc_service.getRegionalServiceOrDefault(
+      this.props.model.stringCommandLineOption("remote_executor")
+    );
+    return service
       .getExecution({
         executionLookup: new execution_stats.ExecutionLookup({
           invocationId: this.props.model.getInvocationId(),

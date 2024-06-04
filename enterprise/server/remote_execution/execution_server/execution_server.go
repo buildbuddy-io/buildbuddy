@@ -656,6 +656,7 @@ type InProgressExecution struct {
 
 func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunning.Operation) (done bool, err error) {
 	stage := operation.ExtractStage(op)
+	log.CtxInfof(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
 	if stage < e.lastStage {
 		return false, nil
 	}
