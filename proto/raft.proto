@@ -199,8 +199,8 @@ message FindSplitPointResponse {
 }
 
 message DeleteSessionsRequest {
-	// Delete all client sessions created before created_at_usec;
-	int64 created_at_usec = 1;
+  // Delete all client sessions created before created_at_usec;
+  int64 created_at_usec = 1;
 }
 
 message DeleteSessionsResponse {}
@@ -217,7 +217,7 @@ message RequestUnion {
     ScanRequest scan = 4;
     CASRequest cas = 5;
     FindSplitPointRequest find_split_point = 14;
-	DeleteSessionsRequest delete_sessions = 16;
+    DeleteSessionsRequest delete_sessions = 16;
 
     // The following operations are for getting and setting FileMetadata blobs.
     GetRequest get = 7;
@@ -246,7 +246,7 @@ message ResponseUnion {
     ScanResponse scan = 5;
     CASResponse cas = 6;
     FindSplitPointResponse find_split_point = 15;
-	DeleteSessionsResponse delete_sessions = 17;
+    DeleteSessionsResponse delete_sessions = 17;
 
     // The following operations are for getting and setting FileMetadata blobs.
     GetResponse get = 8;
