@@ -1,7 +1,9 @@
 import { Cancelable, ServerStream } from "../service/rpc_service";
 import { ServerStreamHandler, ServerStreamingRpcMethod } from "../service/rpc_service";
 import { FetchError, GRPCStatusError } from "./errors";
+import { google as google_status } from "../../proto/grpc_status_ts_proto";
 import { google as google_code } from "../../proto/grpc_code_ts_proto";
+import { google as google_errdetails } from "../../proto/grpc_error_details_ts_proto";
 
 export const Code = google_code.rpc.Code;
 
@@ -118,4 +120,18 @@ function backoff({ multiplier = 1.6, jitter = 0.2, baseDelayMs = 250, maxDelayMs
     delay *= 1 + jitter * (Math.random() * 2 - 1);
     return Math.min(maxDelayMs, delay);
   };
+}
+
+/**
+ * Returns the given ErrorInfo.reason from the given status details if present,
+ * otherwise returns null.
+ */
+export function getErrorReason(status: google_status.rpc.IStatus): string | null {
+  for (const detail of status?.details || []) {
+    if (detail.typeUrl === google_errdetails.rpc.ErrorInfo.getTypeUrl()) {
+      const errorInfo = google_errdetails.rpc.ErrorInfo.decode(detail.value);
+      return errorInfo.reason ?? null;
+    }
+  }
+  return null;
 }

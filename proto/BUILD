@@ -2082,6 +2082,15 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "grpc_error_details_ts_proto",
+    proto = "@googleapis//google/rpc:error_details_proto",
+    deps = [
+        ":any_ts_proto",
+        ":duration_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "google_api_annotations_ts_proto",
     proto = "@googleapis//google/api:annotations_proto",
     deps = [
