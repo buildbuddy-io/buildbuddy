@@ -5,12 +5,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
+)
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+const (
+	// Error detail reason indicating that there was a problem reading from the
+	// pubsub channel.
+	pubsubChannelErrorReason = "PUBSUB_CHANNEL_ERROR"
 )
 
 type PubSub struct {
@@ -208,6 +213,9 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 			defer close(monChan)
 			for {
 				if err := p.checkMonitoredChannelExists(ctx, psChannel); err != nil {
+					// Wrap error with details so the client can differentiate
+					// pubsub channel errors from execution errors.
+					err = status.WithReason(err, pubsubChannelErrorReason)
 					monChan <- &Message{Err: err}
 					return
 				}

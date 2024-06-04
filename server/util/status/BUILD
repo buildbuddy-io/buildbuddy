@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_pkg_errors//:errors",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],

@@ -27,6 +27,7 @@ import Button, { OutlinedButton } from "../components/button/button";
 import Modal from "../components/modal/modal";
 import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
 import capabilities from "../capabilities/capabilities";
+import { getErrorReason } from "../util/rpc";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -143,8 +144,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     this.operationStream = waitExecution(service, executionId, {
       next: (operation) => {
+        // If the execution response is unavailable due to the pubsub channel
+        // having gone away, then we can't rely on the execution stream for the
+        // latest status, so just cancel the stream.
+        if (operation.response?.status && getErrorReason(operation.response.status) == "PUBSUB_CHANNEL_ERROR") {
+          this.operationStream?.cancel();
+          return;
+        }
+
         this.setState({ lastOperation: operation });
-        if (operation.response) {
+        if (operation.response && !this.state.executeResponse) {
           this.setState({ executeResponse: operation.response });
           console.log(operation.response);
         }

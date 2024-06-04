@@ -164,5 +164,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:grpc_code_ts_proto",
+        "//proto:grpc_error_details_ts_proto",
+        "//proto:grpc_status_ts_proto",
     ],
 )

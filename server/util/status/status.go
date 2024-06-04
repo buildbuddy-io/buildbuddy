@@ -6,6 +6,7 @@ import (
 	"runtime"
 
 	"github.com/pkg/errors"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -207,6 +208,27 @@ func WrapError(err error, msg string) error {
 // Wrapf is the "Printf" version of `Wrap`.
 func WrapErrorf(err error, format string, a ...interface{}) error {
 	return WrapError(err, fmt.Sprintf(format, a...))
+}
+
+// WithReason returns a new error with a reason code attached to the given
+// error. The reason code should be a unique, constant string identifier in
+// UPPER_SNAKE_CASE that identifies the proximate cause of an error. This can be
+// useful in cases where additional granularity is needed than just the gRPC
+// status code.
+func WithReason(err error, reason string) error {
+	info := &errdetails.ErrorInfo{
+		Reason: reason,
+		Domain: "buildbuddy.io",
+	}
+	st := status.New(status.Code(err), Message(err))
+	st, detailsErr := st.WithDetails(info)
+	if detailsErr != nil {
+		// Ideally we'd alert.UnexpectedEvent here but it'd cause a circular
+		// dep. This should never happen in practice, but conservatively just
+		// return an INTERNAL error for now.
+		return InternalErrorf("add error details to error %q: %s", err, detailsErr)
+	}
+	return st.Err()
 }
 
 // Message extracts the error message from a given error, which for gRPC errors
