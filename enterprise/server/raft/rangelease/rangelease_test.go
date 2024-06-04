@@ -149,7 +149,7 @@ func TestAcquireAndRelease(t *testing.T) {
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-1", sender)
-	session := client.NewDefaultSession()
+	session := client.NewSession()
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   []byte("a"),
@@ -188,7 +188,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-2", sender)
-	session := client.NewDefaultSession()
+	session := client.NewSession()
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   keys.MinByte,
@@ -227,7 +227,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-3", sender)
-	session := client.NewDefaultSession()
+	session := client.NewSession()
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   keys.MinByte,
@@ -274,7 +274,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
 	liveness := nodeliveness.New("replicaID-4", sender)
-	session := client.NewDefaultSession()
+	session := client.NewSession()
 
 	rd := &rfpb.RangeDescriptor{
 		Start:   []byte("a"),

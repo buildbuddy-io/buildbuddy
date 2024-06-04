@@ -36,8 +36,6 @@ var (
 // set.
 const DefaultContextTimeout = 10 * time.Second
 
-const DefaultSessionLifetime = 1 * time.Hour
-
 type NodeHost interface {
 	ID() string
 	GetNoOPSession(shardID uint64) *client.Session
@@ -169,36 +167,33 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 type Session struct {
 	id        string
 	index     uint64
-	expiredAt time.Time
+	createdAt time.Time
 
-	clock    clockwork.Clock
-	lifetime time.Duration
-	mu       sync.Mutex
+	clock     clockwork.Clock
+	refreshAt time.Time
+	mu        sync.Mutex
 }
 
 func (s *Session) ToProto() *rfpb.Session {
 	return &rfpb.Session{
-		Id:         []byte(s.id),
-		Index:      s.index,
-		ExpiryUsec: s.expiredAt.UnixMicro(),
+		Id:            []byte(s.id),
+		Index:         s.index,
+		CreatedAtUsec: s.createdAt.UnixMicro(),
 	}
 }
 
-func SessionLifetime() time.Duration {
-	return *sessionLifetime
+func NewSession() *Session {
+	return NewSessionWithClock(clockwork.NewRealClock())
 }
 
-func NewDefaultSession() *Session {
-	return NewSession(clockwork.NewRealClock(), *sessionLifetime)
-}
-
-func NewSession(clock clockwork.Clock, lifetime time.Duration) *Session {
+func NewSessionWithClock(clock clockwork.Clock) *Session {
+	now := clock.Now()
 	return &Session{
 		id:        uuid.New(),
 		index:     0,
-		lifetime:  lifetime,
 		clock:     clock,
-		expiredAt: clock.Now().Add(lifetime),
+		createdAt: now,
+		refreshAt: now.Add(*sessionLifetime),
 	}
 
 }
@@ -206,13 +201,13 @@ func NewSession(clock clockwork.Clock, lifetime time.Duration) *Session {
 // maybeRefresh resets the id and index when the session expired.
 func (s *Session) maybeRefresh() {
 	now := s.clock.Now()
-	if s.expiredAt.Before(now) {
+	if s.refreshAt.Before(now) {
 		return
 	}
 
 	s.id = uuid.New()
 	s.index = 0
-	s.expiredAt = now.Add(s.lifetime)
+	s.refreshAt = now.Add(*sessionLifetime)
 }
 
 func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {

@@ -304,9 +304,8 @@ message Session {
   // monotonically increasing.
   // Example: 1717100891000000000
   uint64 index = 2;
-  // A timestamp when the session will be cleaned up; and when the state machine
-  // can safely clean up the entry.
-  int64 expiry_usec = 3;
+  // The timestamp when the session is created.
+  int64 created_at_usec = 5;
 
   // Optional. The response associated with the command associated with the
   // index.
