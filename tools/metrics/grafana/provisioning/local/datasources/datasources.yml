@@ -5,8 +5,8 @@ datasources:
     type: prometheus
     access: proxy
     uid: vm
-    isDefault: false # TODO: make VM the default
-    url: http://host.docker.internal:8428
+    isDefault: true
+    url: ${GF_DATASOURCE_URL}
     version: 1
     editable: false
     jsonData:
