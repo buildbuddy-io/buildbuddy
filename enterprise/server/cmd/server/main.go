@@ -52,6 +52,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -154,6 +155,8 @@ func main() {
 	}
 
 	config.ReloadOnSIGHUP()
+
+	redisutil.ConfigureLogging()
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	enterpriseAppFS, err := enterprise_app_bundle.GetAppFS()
