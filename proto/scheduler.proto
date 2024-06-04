@@ -102,8 +102,8 @@ message SchedulingMetadata {
   // Task size used for scheduling purposes, when the scheduler is deciding
   // which executors (if any) may execute a task, and also when an executor is
   // deciding which task to dequeue. Executors may see a different value of this
-  // field than what the scheduler sees, depending on measured_task_size. See
-  // documentation of that field for more info.
+  // field than what the scheduler sees, depending on measured_task_size or
+  // predicted_task_size. See documentation of those fields for more info.
   TaskSize task_size = 1;
 
   // Task size measured from a previous task execution of a similar task, if
@@ -121,6 +121,14 @@ message SchedulingMetadata {
   // before enqueueing a task onto an executor, but the adjusted size should not
   // exceed the executor's limits.
   TaskSize predicted_task_size = 8;
+
+  // The resources explicitly requested by the user. These will be unset if the
+  // user did not explicitly request resources.
+  //
+  // These should NOT be used for scheduling purposes. See comments on other
+  // TaskSize fields in this message to understand how tasks are sized for
+  // scheduling.
+  TaskSize requested_task_size = 10;
 
   string os = 2;
   string arch = 3;
