@@ -368,7 +368,7 @@ func TestSessionIndexMismatchError(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
 
-	session.Index = 3
+	session.Index = 0
 	entry = em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).Add(&rfpb.IncrementRequest{
 		Key:   []byte("incr-key"),
 		Delta: 1,

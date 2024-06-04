@@ -1543,7 +1543,11 @@ func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Ses
 	}
 	sessionKey := keys.MakeKey(constants.LocalSessionPrefix, reqSession.GetId())
 	buf, err := sm.lookup(db, sessionKey)
-	if err != nil && !status.IsNotFoundError(err) {
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			// This is a new request
+			return nil, nil
+		}
 		return nil, err
 	}
 	storedSession := &rfpb.Session{}
@@ -1553,7 +1557,7 @@ func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Ses
 	if storedSession.GetIndex() == reqSession.GetIndex() {
 		return storedSession.GetRspData(), nil
 	}
-	if storedSession.GetIndex()+1 != reqSession.GetIndex() {
+	if storedSession.GetIndex() > reqSession.GetIndex() {
 		return nil, status.InternalErrorf("getLastRespFromSession session index mismatch: storedSession.Index=%d and reqSession.Index=%d", storedSession.GetIndex(), reqSession.GetIndex())
 	}
 	// This is a new request.

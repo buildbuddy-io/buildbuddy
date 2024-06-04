@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -172,6 +173,8 @@ type Session struct {
 	clock     clockwork.Clock
 	refreshAt time.Time
 	mu        sync.Mutex
+
+	locker lockmap.Locker
 }
 
 func (s *Session) ToProto() *rfpb.Session {
@@ -194,34 +197,37 @@ func NewSessionWithClock(clock clockwork.Clock) *Session {
 		clock:     clock,
 		createdAt: now,
 		refreshAt: now.Add(*sessionLifetime),
+		locker:    lockmap.New(),
 	}
-
 }
 
 // maybeRefresh resets the id and index when the session expired.
 func (s *Session) maybeRefresh() {
 	now := s.clock.Now()
-	if s.refreshAt.Before(now) {
+	if s.refreshAt.After(now) {
 		return
 	}
 
 	s.id = uuid.New()
 	s.index = 0
+	s.createdAt = now
 	s.refreshAt = now.Add(*sessionLifetime)
 }
 
 func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	// At most one SyncProposeLocal can be run per session.
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// At most one SyncProposeLocal can be run for the same replica per session.
+	unlockFn := s.locker.Lock(fmt.Sprintf("%d", shardID))
+	defer unlockFn()
 
+	s.mu.Lock()
 	// Refreshes the session if necessary
 	s.maybeRefresh()
+	s.index++
+	batch.Session = s.ToProto()
+	s.mu.Unlock()
 
 	sesh := nodehost.GetNoOPSession(shardID)
 
-	s.index++
-	batch.Session = s.ToProto()
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
