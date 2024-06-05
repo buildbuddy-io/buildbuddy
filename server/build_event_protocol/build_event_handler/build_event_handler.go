@@ -982,6 +982,8 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				e.unprocessedStartingEvents[child.String()] = struct{}{}
 			case *build_event_stream.BuildEventId_UnstructuredCommandLine:
 				e.unprocessedStartingEvents[child.String()] = struct{}{}
+			case *build_event_stream.BuildEventId_WorkflowConfigured:
+				e.unprocessedStartingEvents[child.String()] = struct{}{}
 			}
 		}
 	}
