@@ -737,7 +737,3 @@ func TestSplitAcrossClusters(t *testing.T) {
 		readRecord(ctx, t, s1, fr)
 	}
 }
-
-func BenchmarkDirectWrite(b *testing.B) {
-	flags.Set(b, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
-}
