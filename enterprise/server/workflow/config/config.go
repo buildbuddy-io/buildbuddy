@@ -85,10 +85,21 @@ type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
 	// NOTE: If nil, defaults to true.
 	MergeWithBase *bool `yaml:"merge_with_base"`
+	// If MergeWithBase is enabled, determines whether the CI runner should manually
+	// merge the pushed and target branches. If this is disabled, the runner
+	// will try to use the merge commit SHA provided by the CI provider as a
+	// performance optimization.
+	// If MergeWithBase is disabled, this does nothing.
+	ForceManualMergeWithBase *bool `yaml:"force_manual_merge_with_base"`
 }
 
 func (t *PullRequestTrigger) GetMergeWithBase() bool {
 	return t.MergeWithBase == nil || *t.MergeWithBase
+}
+
+// TODO(Maggie): Default this to false, after testing the merge commit SHA is stable.
+func (t *PullRequestTrigger) GetForceManualMerge() bool {
+	return t.GetMergeWithBase() && (t.ForceManualMergeWithBase == nil || *t.ForceManualMergeWithBase)
 }
 
 type ResourceRequests struct {
