@@ -35,7 +35,14 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const DefaultRunnerContainerImage = "docker://" + platform.Ubuntu20_04WorkflowsImage
+const (
+	DefaultRunnerContainerImage = "docker://" + platform.Ubuntu20_04WorkflowsImage
+
+	// Non-root user that has been pre-provisioned in workflow images.
+	// This is used by default.
+	nonRootUser = "buildbuddy"
+	rootUser    = "root"
+)
 
 type runnerService struct {
 	env              environment.Env
@@ -145,12 +152,26 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		image = req.GetContainerImage()
 	}
 
+	// By default, use the non-root user.
+	user := nonRootUser
+	for _, p := range req.ExecProperties {
+		if p.Name == platform.DockerUserPropertyName {
+			user = p.Value
+			break
+		}
+	}
+
+	wd := "/home/buildbuddy/workspace"
+	if user == rootUser {
+		wd = "/root/workspace"
+	}
+
 	// Hosted Bazel shares the same pool with workflows.
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			// Run from the scratch disk, since the workspace disk is hot-swapped
 			// between runs, which may not be very Bazel-friendly.
-			{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"},
+			{Name: "WORKDIR_OVERRIDE", Value: wd},
 			{Name: "GIT_BRANCH", Value: req.GetRepoState().GetBranch()},
 		},
 		Arguments: args,
