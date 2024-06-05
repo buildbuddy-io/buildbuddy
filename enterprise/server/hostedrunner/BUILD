@@ -7,7 +7,6 @@ go_library(
     srcs = ["hostedrunner.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner",
     deps = [
-        "//enterprise/server/cmd/ci_runner/bundle",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
@@ -25,6 +24,7 @@ go_library(
         "//server/util/git",
         "//server/util/log",
         "//server/util/prefix",
+        "//server/util/rexec",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto//googleapis/longrunning",

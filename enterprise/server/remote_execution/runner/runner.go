@@ -306,7 +306,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 	if err != nil {
 		return err
 	}
-	if r.PlatformProperties.WorkflowID != "" {
+	if platform.IsCICommand(r.task.GetCommand()) {
 		if err := r.Workspace.AddCIRunner(ctx); err != nil {
 			return err
 		}
