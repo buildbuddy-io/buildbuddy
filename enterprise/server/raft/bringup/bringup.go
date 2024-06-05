@@ -305,15 +305,17 @@ func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo 
 			if err != nil {
 				return err
 			}
+			shardID := bootstrapInfo.shardID
+			replicaID := node.index
 			_, err = apiClient.StartShard(ctx, &rfpb.StartShardRequest{
-				ShardId:       bootstrapInfo.shardID,
-				ReplicaId:     node.index,
+				ShardId:       shardID,
+				ReplicaId:     replicaID,
 				InitialMember: bootstrapInfo.initialMembers,
 				Batch:         batchProto,
 			})
 			if err != nil {
 				if !status.IsAlreadyExistsError(err) {
-					log.Errorf("Start cluster returned err: %s", err)
+					log.Errorf("Start cluster for node c%dn%d, returned err: %s", shardID, replicaID, err)
 					return err
 				}
 			}
