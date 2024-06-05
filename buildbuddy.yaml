@@ -8,6 +8,7 @@ actions:
       pull_request:
         branches:
           - "*"
+        force_manual_merge_with_base: false
     bazel_commands:
       - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
   - name: Test with BzlMod
@@ -19,6 +20,7 @@ actions:
       pull_request:
         branches:
           - "*"
+        force_manual_merge_with_base: false
     bazel_commands:
       - test //... --enable_bzlmod --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
   - name: Check style
@@ -30,6 +32,7 @@ actions:
       pull_request:
         branches:
           - "*"
+        force_manual_merge_with_base: false
     bazel_commands:
       - run //tools/checkstyle --config=linux-workflows
   - name: Test (darwin_amd64)
@@ -41,6 +44,7 @@ actions:
       pull_request:
         branches:
           - "*"
+        force_manual_merge_with_base: false
     # TODO: Fix the tests below on Mac, and re-enable.
     bazel_commands:
       - >-
@@ -70,6 +74,7 @@ actions:
       pull_request:
         branches:
           - "*"
+        force_manual_merge_with_base: false
     bazel_commands:
       # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
       - test //... --config=linux-workflows --config=race --remote_download_outputs=toplevel --test_tag_filters=+webdriver
@@ -83,6 +88,7 @@ actions:
       pull_request:
         branches:
           - "*"
+        force_manual_merge_with_base: false
     bazel_commands:
       # TODO(http://go/b/1249): Increase reliability of runner recycling when
       # executing with high concurrency, and remove `--jobs=3`
@@ -96,6 +102,7 @@ actions:
       pull_request:
         branches:
           - "*"
+        force_manual_merge_with_base: false
     bazel_commands:
       - test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare
   # TODO(http://go/b/2282): delete this workflow.
@@ -108,6 +115,7 @@ actions:
       pull_request:
         branches:
           - "*"
+        force_manual_merge_with_base: false
     bazel_commands:
       - test //... --host_platform=//:many_layered_image --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
 
