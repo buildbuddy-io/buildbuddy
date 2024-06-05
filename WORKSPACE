@@ -324,6 +324,12 @@ dockerfile_image(
     visibility = ["//visibility:public"],
 )
 
+dockerfile_image(
+    name = "xfsprogs_image",
+    dockerfile = "//dockerfiles/test_images/xfsprogs_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
 load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(

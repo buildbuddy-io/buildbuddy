@@ -31,7 +31,11 @@ go_test(
         "test.workload-isolation-type": "firecracker",
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "fastcopy_test",
+        "test.container-image": "docker://gcr.io/flame-public/test-xfsprogs@sha256:d751cc048dfe2b343d8c78eec537933c23fe41be8e70b506434c8044db537ef5",
+        "test.EstimatedFreeDiskBytes": "800MB",
     },
+    pure = "on",
+    static = "on",  # because test-xfsprogs image (alpine-based) doesn't have glibc.
     tags = ["docker"],
     deps = [
         ":fastcopy",
