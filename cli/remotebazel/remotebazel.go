@@ -194,22 +194,44 @@ func determineDefaultBranch(repo *git.Repository) (string, error) {
 }
 
 func runGit(args ...string) (string, error) {
+	return runCommand("git", args...)
+}
+
+func runCommand(name string, args ...string) (string, error) {
 	stdout := bytes.Buffer{}
 	stderr := bytes.Buffer{}
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command(name, args...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return stdout.String(), err
 		}
-		return stdout.String(), status.UnknownErrorf("error running git %s: %s\n%s", args, err, stderr.String())
+		return stdout.String(), status.UnknownErrorf("error running %s %s: %s\n%s", name, args, err, stderr.String())
 	}
 	return stdout.String(), nil
 }
 
+func isBinaryFile(path string) (bool, error) {
+	fileDetails, err := runCommand("file", "--mime", path)
+	if err != nil {
+		return false, err
+	}
+	isBinary := strings.Contains(fileDetails, "charset=binary")
+	return isBinary, nil
+}
+
 func diffUntrackedFile(path string) (string, error) {
-	patch, err := runGit("diff", "--no-index", "/dev/null", path)
+	isBinary, err := isBinaryFile(path)
+	if err != nil {
+		return "", err
+	}
+
+	args := []string{"diff", "--no-index", "/dev/null", path}
+	if isBinary {
+		args = append(args, "--binary")
+	}
+	patch, err := runGit(args...)
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return patch, nil
@@ -259,31 +281,11 @@ func Config(path string) (*RepoConfig, error) {
 		DefaultBranch: defaultBranch,
 	}
 
-	patch, err := runGit("diff", commit)
+	patches, err := generatePatches(commit)
 	if err != nil {
-		return nil, status.WrapError(err, "git diff")
+		return nil, status.WrapError(err, "generate patches")
 	}
-	if patch != "" {
-		repoConfig.Patches = append(repoConfig.Patches, []byte(patch))
-	}
-
-	untrackedFiles, err := runGit("ls-files", "--others", "--exclude-standard")
-	if err != nil {
-		return nil, status.WrapError(err, "get untracked files")
-	}
-	untrackedFiles = strings.Trim(untrackedFiles, "\n")
-	if untrackedFiles != "" {
-		for _, uf := range strings.Split(untrackedFiles, "\n") {
-			if strings.HasPrefix(uf, buildBuddyArtifactDir+"/") {
-				continue
-			}
-			patch, err := diffUntrackedFile(uf)
-			if err != nil {
-				return nil, status.WrapError(err, "diff untracked file")
-			}
-			repoConfig.Patches = append(repoConfig.Patches, []byte(patch))
-		}
-	}
+	repoConfig.Patches = patches
 
 	return repoConfig, nil
 }
@@ -362,6 +364,78 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 	log.Debugf("Using base commit hash: %s", commit)
 
 	return branch, commit, nil
+}
+
+// generates diffs between the current state of the repo and `baseCommit`
+func generatePatches(baseCommit string) ([][]byte, error) {
+	modifiedFiles, err := runGit("diff", baseCommit, "--name-only")
+	if err != nil {
+		return nil, status.WrapError(err, "get modified files")
+	}
+	modifiedFiles = strings.Trim(modifiedFiles, "\n")
+
+	binaryFilesToExclude := make([]string, 0)
+	binaryFiles := make([]string, 0)
+	if modifiedFiles != "" {
+		for _, mf := range strings.Split(modifiedFiles, "\n") {
+			isBinary, err := isBinaryFile(mf)
+			if err != nil {
+				return nil, status.WrapError(err, "check binary file")
+			}
+			if isBinary {
+				binaryFilesToExclude = append(binaryFilesToExclude, fmt.Sprintf(":!%s", mf))
+				binaryFiles = append(binaryFiles, mf)
+			}
+		}
+	}
+
+	patches := make([][]byte, 0)
+
+	// Generate patches for non-binary files
+	args := []string{"diff", baseCommit}
+	if len(binaryFilesToExclude) > 0 {
+		args = append(args, binaryFilesToExclude...)
+	}
+	patch, err := runGit(args...)
+	if err != nil {
+		return nil, status.WrapError(err, "git diff")
+	}
+	if patch != "" {
+		patches = append(patches, []byte(patch))
+	}
+
+	// Generate patches for binary files
+	if len(binaryFiles) > 0 {
+		binaryArgs := append([]string{"diff", baseCommit, "--binary", "--"}, binaryFiles...)
+		binaryPatch, err := runGit(binaryArgs...)
+		if err != nil {
+			return nil, status.WrapError(err, "git diff --binary")
+		}
+		if binaryPatch != "" {
+			patches = append(patches, []byte(binaryPatch))
+		}
+	}
+
+	// Generate patches for non-tracked files
+	untrackedFiles, err := runGit("ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, status.WrapError(err, "get untracked files")
+	}
+	untrackedFiles = strings.Trim(untrackedFiles, "\n")
+	if untrackedFiles != "" {
+		for _, uf := range strings.Split(untrackedFiles, "\n") {
+			if strings.HasPrefix(uf, buildBuddyArtifactDir+"/") {
+				continue
+			}
+			patch, err := diffUntrackedFile(uf)
+			if err != nil {
+				return nil, status.WrapError(err, "diff untracked file")
+			}
+			patches = append(patches, []byte(patch))
+		}
+	}
+
+	return patches, nil
 }
 
 func getTermWidth() int {
