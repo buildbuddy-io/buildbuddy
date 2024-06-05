@@ -632,6 +632,10 @@ func run() error {
 	if err := ensurePath(); err != nil {
 		return status.WrapError(err, "ensure PATH")
 	}
+	// Prevent git from asking for user input.
+	if err := os.Setenv("GIT_TERMINAL_PROMPT", "0"); err != nil {
+		return status.WrapError(err, "set GIT_TERMINAL_PROMPT")
+	}
 	// Write default bazelrc
 	if err := writeBazelrc(buildbuddyBazelrcPath, buildEventReporter.invocationID); err != nil {
 		return status.WrapError(err, "write "+buildbuddyBazelrcPath)
