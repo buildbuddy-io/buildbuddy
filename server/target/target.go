@@ -873,7 +873,7 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 		}
 
 		invocationID, err := uuid.Base64StringToString(row.InvocationUuid)
-		if (err != nil) {
+		if err != nil {
 			return err
 		}
 		callback := func(event *inpb.InvocationEvent) error {
@@ -886,8 +886,8 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 				for _, f := range tr.GetTestActionOutput() {
 					if f.GetName() == "test.xml" && strings.HasPrefix(f.GetUri(), "bytestream://") {
 						rsp.Samples = append(rsp.Samples, &trpb.FlakeSample{
-							InvocationId: invocationID,
-							Status: convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
+							InvocationId:   invocationID,
+							Status:         convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
 							TestXmlFileUri: f.GetUri(),
 						})
 					}
