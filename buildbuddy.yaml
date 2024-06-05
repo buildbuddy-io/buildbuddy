@@ -49,6 +49,7 @@ actions:
         //...
         -//server/backends/disk_cache:all
         -//enterprise/server/backends/pebble_cache:all
+        -//enterprise/server/raft/txn:all
         -//enterprise/server/raft/store:all
         -//enterprise/server/remote_execution/commandutil:all
         -//enterprise/server/remote_execution/runner:all
