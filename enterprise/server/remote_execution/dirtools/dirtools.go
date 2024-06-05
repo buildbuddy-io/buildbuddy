@@ -369,7 +369,6 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 }
 
 func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult) (*TransferInfo, error) {
-	txInfo := &TransferInfo{}
 	startTime := time.Now()
 	treesToUpload := make([]string, 0)
 	filesToUpload := make([]*fileToUpload, 0)
@@ -424,8 +423,6 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if _, ok := dirHelper.FindParentOutputPath(fqfn); !ok && !isOutputPath {
 					continue
 				}
-				txInfo.FileCount += 1
-				txInfo.BytesTransferred += dirNode.GetDigest().GetSizeBytes()
 				directory.Directories = append(directory.Directories, dirNode)
 			} else if info.Mode().IsRegular() {
 				if !dirHelper.ShouldUploadFile(fqfn) {
@@ -435,9 +432,6 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if err != nil {
 					return nil, err
 				}
-
-				txInfo.FileCount += 1
-				txInfo.BytesTransferred += fileNode.GetDigest().GetSizeBytes()
 				directory.Files = append(directory.Files, fileNode)
 			} else if info.Mode()&os.ModeSymlink == os.ModeSymlink {
 				if err := handleSymlink(dirHelper, rootDir, cmd, actionResult, directory, fqfn); err != nil {
@@ -499,8 +493,12 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		return nil, err
 	}
 	endTime := time.Now()
-	txInfo.TransferDuration = endTime.Sub(startTime)
-	return txInfo, nil
+	stats := uploader.Stats()
+	return &TransferInfo{
+		TransferDuration: endTime.Sub(startTime),
+		FileCount:        stats.BlobCount,
+		BytesTransferred: stats.ByteCount,
+	}, nil
 }
 
 type FilePointer struct {

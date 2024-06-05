@@ -1,6 +1,7 @@
 package dirtools_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -14,6 +15,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -1073,30 +1076,102 @@ func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
 	assert.Equal(t, "mytestdataB", string(targetContents), "symlinked file contents should match target file")
 }
 
+func TestUploadedBytesExcludesExistingLargeBlobs(t *testing.T) {
+	for _, test := range []struct {
+		Name                     string
+		ExistingFileSize         int64
+		NewFileSize              int64
+		ExpectedFileCount        int64
+		ExpectedBytesTransferred int64
+	}{
+		{
+			Name:             "BatchRequestNotShortCircuited",
+			ExistingFileSize: 42,
+			NewFileSize:      7,
+			// We don't bother short-circuiting batch requests, so we should
+			// upload both files even though one of them already exists.
+			ExpectedFileCount:        2,
+			ExpectedBytesTransferred: 42 + 7,
+		},
+		{
+			Name:             "BytestreamRequestShortCircuited",
+			ExistingFileSize: cachetools.MaxBatchUploadSizeBytes + 1,
+			NewFileSize:      7,
+			// We short circuit large bytestream writes, so we shouldn't record
+			// an upload for the file that already exists.
+			ExpectedFileCount:        1,
+			ExpectedBytesTransferred: 7,
+		},
+	} {
+		t.Run(fmt.Sprintf(test.Name), func(t *testing.T) {
+			env, ctx := testEnv(t)
+			root := testfs.MakeTempDir(t)
+			instanceName := ""
+			digestFunction := repb.DigestFunction_SHA256
+			cmd := &repb.Command{
+				OutputPaths: []string{"existing_file.txt", "new_file.txt"},
+			}
+			dir := dirtools.NewDirHelper(root, cmd.OutputDirectories, cmd.OutputPaths, 0755)
+			res := &repb.ActionResult{}
+
+			existingContents := make([]byte, test.ExistingFileSize)
+			newContents := make([]byte, test.NewFileSize)
+
+			// Ensure that the contents of existing_file.txt already exist in cache
+			d, err := digest.Compute(bytes.NewReader(existingContents), digestFunction)
+			require.NoError(t, err)
+			rn := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)
+			_, err = cachetools.UploadFromReader(ctx, env.GetByteStreamClient(), rn, bytes.NewReader(existingContents))
+			require.NoError(t, err)
+
+			// Write files to the working dir
+			err = os.WriteFile(filepath.Join(root, "existing_file.txt"), existingContents, 0644)
+			require.NoError(t, err)
+			err = os.WriteFile(filepath.Join(root, "new_file.txt"), newContents, 0644)
+			require.NoError(t, err)
+
+			// Try uploading the tree - should only count new_file.txt, not
+			// existing_file.txt
+			txInfo, err := dirtools.UploadTree(ctx, env, dir, instanceName, digestFunction, root, cmd, res)
+			require.NoError(t, err)
+
+			// TODO(https://buildbuddy-corp.slack.com/archives/C0694U6QC30/p1717603121337939):
+			// These exact assertions don't work because we upload some
+			// directories which aren't explicitly specified as output_paths. We
+			// should fix this bug then use the following exact assertions
+			// instead of the ones below:
+
+			// assert.Equal(t, test.ExpectedFileCount, txInfo.FileCount, "file count")
+			// assert.Equal(t, test.ExpectedBytesTransferred, txInfo.BytesTransferred, "bytes transferred")
+
+			assert.Equal(t, test.ExpectedFileCount+1, txInfo.FileCount, "file count (+1 for root dir)")
+			assert.Less(t, txInfo.BytesTransferred, test.ExpectedBytesTransferred+200, "bytes transferred (+ some margin for root dir)")
+		})
+	}
+}
+
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, env)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
-	if err != nil {
-		t.Error(err)
-	}
-	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+	err = content_addressable_storage_server.Register(env)
+	require.NoError(t, err)
+	err = byte_stream_server.Register(env)
+	require.NoError(t, err)
+	err = capabilities_server.Register(env)
+	require.NoError(t, err)
 	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
-	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
-	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
+	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
+	repb.RegisterContentAddressableStorageServer(grpcServer, env.GetCASServer())
+	bspb.RegisterByteStreamServer(grpcServer, env.GetByteStreamServer())
 	go runFunc()
 
 	conn, err := testenv.LocalGRPCConn(ctx, env)
 	if err != nil {
 		t.Error(err)
 	}
+	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	filecacheRootDir := testfs.MakeTempDir(t)
