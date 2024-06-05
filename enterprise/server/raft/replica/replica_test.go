@@ -1,7 +1,6 @@
 package replica_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"io"
@@ -14,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -42,45 +41,8 @@ var (
 	}
 )
 
-type fileReadFn func(fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
-
-type fakeStore struct {
-	fileReadFn fileReadFn
-}
-
-func (fs *fakeStore) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica)    {}
-func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {}
-func (fs *fakeStore) Sender() *sender.Sender {
-	return nil
-}
-func (fs *fakeStore) SnapshotCluster(ctx context.Context, shardID uint64) error {
-	return nil
-}
-func (fs *fakeStore) NHID() string {
-	return ""
-}
-func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
-	fs.fileReadFn = fn
-	return fs
-}
-
-func newTestReplica(t *testing.T, rootDir string, shardID, replicaID uint64, store replica.IStore) (*replica.Replica, pebble.IPebbleDB) {
-	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
-	require.NoError(t, err)
-
-	leaser := pebble.NewDBLeaser(db)
-	t.Cleanup(func() {
-		leaser.Close()
-		db.Close()
-	})
-
-	return replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/), db
-}
-
 func TestOpenCloseReplica(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -261,9 +223,7 @@ func (wt *replicaTester) delete(fileRecord *rfpb.FileRecord) {
 }
 
 func TestReplicaDirectReadWrite(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -271,7 +231,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
 	md := &rfpb.FileMetadata{StoredSizeBytes: 123}
 	val, err := proto.Marshal(md)
@@ -308,9 +268,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 }
 
 func TestReplicaIncrement(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -318,7 +276,7 @@ func TestReplicaIncrement(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
 	session := &rfpb.Session{
 		Id:    []byte(uuid.New()),
@@ -386,9 +344,7 @@ func TestReplicaIncrement(t *testing.T) {
 }
 
 func TestSessionIndexMismatchError(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -396,7 +352,7 @@ func TestSessionIndexMismatchError(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
 	session := &rfpb.Session{
 		Id:    []byte(uuid.New()),
@@ -422,9 +378,7 @@ func TestSessionIndexMismatchError(t *testing.T) {
 }
 
 func TestReplicaCAS(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -432,10 +386,10 @@ func TestReplicaCAS(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
 	// Do a write.
-	rt := newWriteTester(t, em, repl)
+	rt := newWriteTester(t, em, repl.Replica)
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
 	fr := rt.writeRandom(header, defaultPartition, 100)
 
@@ -520,9 +474,7 @@ func TestReplicaCAS(t *testing.T) {
 }
 
 func TestReplicaScan(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -530,7 +482,7 @@ func TestReplicaScan(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
-	writeLocalRangeDescriptor(t, em, repl, &rfpb.RangeDescriptor{
+	writeLocalRangeDescriptor(t, em, repl.Replica, &rfpb.RangeDescriptor{
 		Start:      keys.Key{constants.UnsplittableMaxByte},
 		End:        keys.MaxByte,
 		RangeId:    1,
@@ -630,9 +582,7 @@ func TestReplicaScan(t *testing.T) {
 }
 
 func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -640,17 +590,10 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
 	// Write a file to the replica's data dir.
 	r, buf := testdigest.RandomCASResourceBuf(t, 1000)
-
-	store = store.WithFileReadFn(func(fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
-		if fileRecord.GetDigest().GetHash() == r.GetDigest().GetHash() {
-			return io.NopCloser(bytes.NewReader(buf)), nil
-		}
-		return nil, status.NotFoundError("File not found")
-	})
 
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
@@ -663,14 +606,14 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	}
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
 
-	writeCommitter := writer(t, em, repl, header, fileRecord)
+	writeCommitter := writer(t, em, repl.Replica, header, fileRecord)
 
 	_, err = writeCommitter.Write(buf)
 	require.NoError(t, err)
 	require.Nil(t, writeCommitter.Commit())
 	require.Nil(t, writeCommitter.Close())
 
-	readCloser, err := reader(t, repl, header, fileRecord)
+	readCloser, err := reader(t, repl.Replica, header, fileRecord)
 	require.NoError(t, err)
 	require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 
@@ -689,8 +632,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	snapFile.Seek(0, 0)
 
 	// Restore a new replica from the created snapshot.
-	rootDir2 := testfs.MakeTempDir(t)
-	repl2, _ := newTestReplica(t, rootDir2, 2, 2, store)
+	repl2 := testutil.NewTestingReplica(t, 2, 2)
 	require.NotNil(t, repl2)
 	_, err = repl2.Open(stopc)
 	require.NoError(t, err)
@@ -699,15 +641,13 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify that the file is readable.
-	readCloser, err = reader(t, repl2, header, fileRecord)
+	readCloser, err = reader(t, repl2.Replica, header, fileRecord)
 	require.NoError(t, err)
 	require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 }
 
 func TestClearStateBeforeApplySnapshot(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, db := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -715,14 +655,14 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 	rd := &rfpb.RangeDescriptor{
 		Start:      keys.Key("a"),
 		End:        keys.Key("z"),
 		RangeId:    1,
 		Generation: 2,
 	}
-	writeLocalRangeDescriptor(t, em, repl, rd)
+	writeLocalRangeDescriptor(t, em, repl.Replica, rd)
 
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -735,7 +675,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 
-	wb := db.NewBatch()
+	wb := repl.DB().NewBatch()
 	txid := []byte("TX1")
 	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -764,17 +704,16 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	snapFile.Seek(0, 0)
 
 	// Restore a new replica from the created snapshot.
-	rootDir2 := testfs.MakeTempDir(t)
-	repl2, db2 := newTestReplica(t, rootDir2, 1, 2, store)
+	repl2 := testutil.NewTestingReplica(t, 1, 2)
 	require.NotNil(t, repl2)
 	_, err = repl2.Open(stopc)
 	require.NoError(t, err)
 
 	em2 := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em2, repl2)
+	writeDefaultRangeDescriptor(t, em2, repl2.Replica)
 
 	// Prepare a transaction before recovering from snapshot
-	wb2 := db2.NewBatch()
+	wb2 := repl2.DB().NewBatch()
 	txid2 := []byte("TX2")
 	cmd2, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -795,7 +734,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	// Verify that local range key exists, and the value is the same as the local
 	// range in the snapshot.
 	localRangeKey := keys.MakeKey(constants.LocalPrefix, []byte("c0001n0002-"), constants.LocalRangeKey)
-	buf, closer, err := db2.Get(localRangeKey)
+	buf, closer, err := repl2.DB().Get(localRangeKey)
 	require.NotEmpty(t, buf)
 	require.NoError(t, err)
 	gotRD := &rfpb.RangeDescriptor{}
@@ -806,7 +745,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 
 	// Verify that local last applied index key exists, and the value is not zero.
 	localIndexKey := keys.MakeKey(constants.LocalPrefix, []byte("c0001n0002-"), constants.LastAppliedIndexKey)
-	buf, closer, err = db2.Get(localIndexKey)
+	buf, closer, err = repl2.DB().Get(localIndexKey)
 	require.NotEmpty(t, buf)
 	require.NoError(t, err)
 	gotIndex := binary.LittleEndian.Uint64(buf)
@@ -825,9 +764,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 
 func TestReplicaFileWriteDelete(t *testing.T) {
 	fs := filestore.New()
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -835,7 +772,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
 	// Write a file to the replica's data dir.
 	r, buf := testdigest.RandomCASResourceBuf(t, 1000)
@@ -850,7 +787,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	}
 
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
-	writeCommitter := writer(t, em, repl, header, fileRecord)
+	writeCommitter := writer(t, em, repl.Replica, header, fileRecord)
 
 	_, err = writeCommitter.Write(buf)
 	require.NoError(t, err)
@@ -859,7 +796,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 
 	// Verify that the file is readable.
 	{
-		readCloser, err := reader(t, repl, header, fileRecord)
+		readCloser, err := reader(t, repl.Replica, header, fileRecord)
 		require.NoError(t, err)
 		require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 	}
@@ -881,16 +818,14 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	// Verify that the file is no longer readable and reading it returns a
 	// NotFoundError.
 	{
-		_, err := reader(t, repl, header, fileRecord)
+		_, err := reader(t, repl.Replica, header, fileRecord)
 		require.NotNil(t, err)
 		require.True(t, status.IsNotFoundError(err), err)
 	}
 }
 
 func TestUsage(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -898,9 +833,9 @@ func TestUsage(t *testing.T) {
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-	rt := newWriteTester(t, em, repl)
+	rt := newWriteTester(t, em, repl.Replica)
 
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
 	frDefault := rt.writeRandom(header, defaultPartition, 1000)
@@ -951,9 +886,7 @@ func TestUsage(t *testing.T) {
 }
 
 func TestTransactionPrepareAndCommit(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, db := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -961,9 +894,9 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-	wb := db.NewBatch()
+	wb := repl.DB().NewBatch()
 	txid := []byte("TX1")
 	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -977,7 +910,7 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 	require.NoError(t, wb.Commit(pebble.Sync))
 	require.NoError(t, wb.Close())
 
-	wb = db.NewBatch()
+	wb = repl.DB().NewBatch()
 	txid2 := []byte("TX2")
 	badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -1004,16 +937,14 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 	err = repl.CommitTransaction(txid)
 	require.NoError(t, err)
 
-	buf, closer, err := db.Get([]byte("foo"))
+	buf, closer, err := repl.DB().Get([]byte("foo"))
 	require.NoError(t, err)
 	defer closer.Close()
 	require.Equal(t, []byte("bar"), buf)
 }
 
 func TestTransactionPrepareAndRollback(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, db := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -1021,9 +952,9 @@ func TestTransactionPrepareAndRollback(t *testing.T) {
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-	wb := db.NewBatch()
+	wb := repl.DB().NewBatch()
 	txid := []byte("TX1")
 	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -1040,39 +971,32 @@ func TestTransactionPrepareAndRollback(t *testing.T) {
 	err = repl.RollbackTransaction(txid)
 	require.NoError(t, err)
 
-	buf, _, err := db.Get([]byte("foo"))
+	buf, _, err := repl.DB().Get([]byte("foo"))
 	require.Error(t, err)
 	require.Nil(t, buf)
 }
 
 func TestTransactionsSurviveRestart(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
-	require.NoError(t, err)
-
-	leaser := pebble.NewDBLeaser(db)
-	t.Cleanup(func() {
-		leaser.Close()
-		db.Close()
-	})
 	em := newEntryMaker(t)
 
-	store := &fakeStore{}
 	txid := []byte("TX1")
 	txid2 := []byte("TX2")
 
+	var leaser pebble.Leaser
+
 	{
-		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		repl := testutil.NewTestingReplica(t, 1, 1)
+		leaser = repl.Leaser()
 		require.NotNil(t, repl)
 
 		stopc := make(chan struct{})
-		_, err = repl.Open(stopc)
+		_, err := repl.Open(stopc)
 		require.NoError(t, err)
 
 		em := newEntryMaker(t)
-		writeDefaultRangeDescriptor(t, em, repl)
+		writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-		wb := db.NewBatch()
+		wb := repl.DB().NewBatch()
 		cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   []byte("foo"),
@@ -1099,17 +1023,17 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 	}
 
 	{
-		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		repl := testutil.NewTestingReplicaWithLeaser(t, 1, 1, leaser)
 		require.NotNil(t, repl)
 
 		stopc := make(chan struct{})
-		_, err = repl.Open(stopc)
+		_, err := repl.Open(stopc)
 		require.NoError(t, err)
 
 		err = repl.CommitTransaction(txid)
 		require.NoError(t, err)
 
-		buf, closer, err := db.Get([]byte("foo"))
+		buf, closer, err := repl.DB().Get([]byte("foo"))
 		require.NoError(t, err)
 		defer closer.Close()
 		require.Equal(t, []byte("bar"), buf)
@@ -1128,19 +1052,17 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 	}
 
 	{
-		repl := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		repl := testutil.NewTestingReplicaWithLeaser(t, 1, 1, leaser)
 		require.NotNil(t, repl)
 
 		stopc := make(chan struct{})
-		_, err = repl.Open(stopc)
+		_, err := repl.Open(stopc)
 		require.NoError(t, err)
 	}
 }
 
 func TestBatchTransaction(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -1148,7 +1070,7 @@ func TestBatchTransaction(t *testing.T) {
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
 	txid := []byte("test-txid")
 	session := &rfpb.Session{
@@ -1260,27 +1182,15 @@ func TestBatchTransaction(t *testing.T) {
 }
 
 func TestScanSharedDB(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
-	require.NoError(t, err)
-
-	leaser := pebble.NewDBLeaser(db)
-	t.Cleanup(func() {
-		leaser.Close()
-		db.Close()
-	})
-
-	store := &fakeStore{}
-
 	{
-		repl1 := replica.New(leaser, 1, 1, store, nil /*=usageUpdates=*/)
+		repl1 := testutil.NewTestingReplica(t, 1, 1)
 		require.NotNil(t, repl1)
 
-		repl2 := replica.New(leaser, 2, 1, store, nil /*=usageUpdates=*/)
-		require.NotNil(t, repl1)
+		repl2 := testutil.NewTestingReplicaWithLeaser(t, 2, 1, repl1.Leaser())
+		require.NotNil(t, repl2)
 
 		stopc := make(chan struct{})
-		_, err = repl1.Open(stopc)
+		_, err := repl1.Open(stopc)
 		require.NoError(t, err)
 
 		_, err = repl2.Open(stopc)
@@ -1294,8 +1204,8 @@ func TestScanSharedDB(t *testing.T) {
 			RangeId:    1,
 			Generation: 1,
 		}
-		writeLocalRangeDescriptor(t, em, repl1, metarangeDescriptor)
-		writeMetaRangeDescriptor(t, em, repl1, metarangeDescriptor)
+		writeLocalRangeDescriptor(t, em, repl1.Replica, metarangeDescriptor)
+		writeMetaRangeDescriptor(t, em, repl1.Replica, metarangeDescriptor)
 
 		secondRangeDescriptor := &rfpb.RangeDescriptor{
 			Start:      keys.Key{constants.UnsplittableMaxByte},
@@ -1303,8 +1213,8 @@ func TestScanSharedDB(t *testing.T) {
 			RangeId:    2,
 			Generation: 1,
 		}
-		writeLocalRangeDescriptor(t, em, repl2, secondRangeDescriptor)
-		writeMetaRangeDescriptor(t, em, repl1, secondRangeDescriptor)
+		writeLocalRangeDescriptor(t, em, repl2.Replica, secondRangeDescriptor)
+		writeMetaRangeDescriptor(t, em, repl1.Replica, secondRangeDescriptor)
 
 		buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
 			Start:    keys.RangeMetaKey(keys.Key("a")),
@@ -1333,9 +1243,7 @@ func TestScanSharedDB(t *testing.T) {
 }
 
 func TestDeleteSessions(t *testing.T) {
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl, _ := newTestReplica(t, rootDir, 1, 1, store)
+	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -1343,7 +1251,7 @@ func TestDeleteSessions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
 	now := time.Now()
 

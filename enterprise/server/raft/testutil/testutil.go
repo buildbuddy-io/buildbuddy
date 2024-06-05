@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
@@ -27,7 +29,10 @@ import (
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	dbcl "github.com/lni/dragonboat/v4/client"
 	dbConfig "github.com/lni/dragonboat/v4/config"
+	dbsm "github.com/lni/dragonboat/v4/statemachine"
+	dbrd "github.com/lni/goutils/random"
 )
 
 func localAddr(t *testing.T) string {
@@ -174,4 +179,116 @@ func StartShardWithRanges(t *testing.T, ctx context.Context, startingRanges []*r
 	require.Greater(t, len(stores), 0)
 	err := bringup.SendStartShardRequestsWithRanges(ctx, client.NewSession(), stores[0].NodeHost(), stores[0].APIClient(), MakeNodeGRPCAddressesMap(stores...), startingRanges)
 	require.NoError(t, err)
+}
+
+// TestingProposer can be used in the place of NodeHost.
+type TestingProposer struct {
+	t   testing.TB
+	id  string
+	r   *replica.Replica
+	idx uint64
+}
+
+func NewTestingProposer(t testing.TB, id string, r *replica.Replica) *TestingProposer {
+	return &TestingProposer{
+		t:  t,
+		id: id,
+		r:  r,
+	}
+}
+
+func (tp *TestingProposer) ID() string {
+	return tp.id
+}
+
+func (tp *TestingProposer) GetNoOPSession(shardID uint64) *dbcl.Session {
+	return dbcl.NewNoOPSession(shardID, dbrd.LockGuardedRand)
+}
+
+func (tp *TestingProposer) makeEntry(cmd []byte) dbsm.Entry {
+	tp.idx += 1
+	return dbsm.Entry{Cmd: cmd, Index: tp.idx}
+}
+
+func (tp *TestingProposer) SyncPropose(ctx context.Context, session *dbcl.Session, cmd []byte) (dbsm.Result, error) {
+	entries, err := tp.r.Update([]dbsm.Entry{tp.makeEntry(cmd)})
+	if err != nil {
+		return dbsm.Result{}, err
+	}
+	return entries[0].Result, nil
+}
+
+func (tp *TestingProposer) SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error) {
+	return nil, status.UnimplementedError("not implemented in testingProposer")
+}
+func (tp *TestingProposer) ReadIndex(shardID uint64, timeout time.Duration) (*dragonboat.RequestState, error) {
+	return nil, status.UnimplementedError("not implemented in testingProposer")
+}
+func (tp *TestingProposer) ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error) {
+	return nil, status.UnimplementedError("not implemented in testingProposer")
+}
+func (tp *TestingProposer) StaleRead(shardID uint64, query interface{}) (interface{}, error) {
+	return nil, status.UnimplementedError("not implemented in testingProposer")
+}
+
+// FakeStore implements replica.IStore without real functionality.
+type FakeStore struct{}
+
+func (fs *FakeStore) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica)    {}
+func (fs *FakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {}
+func (fs *FakeStore) Sender() *sender.Sender {
+	return nil
+}
+func (fs *FakeStore) SnapshotCluster(ctx context.Context, shardID uint64) error {
+	return nil
+}
+func (fs *FakeStore) NHID() string {
+	return ""
+}
+
+type TestingReplica struct {
+	t testing.TB
+	*replica.Replica
+	leaser pebble.Leaser
+}
+
+func NewTestingReplica(t testing.TB, shardID, replicaID uint64) *TestingReplica {
+	rootDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
+	require.NoError(t, err)
+
+	leaser := pebble.NewDBLeaser(db)
+	t.Cleanup(func() {
+		leaser.Close()
+		db.Close()
+	})
+
+	store := &FakeStore{}
+	return &TestingReplica{
+		t:       t,
+		Replica: replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/),
+		leaser:  leaser,
+	}
+}
+
+func NewTestingReplicaWithLeaser(t testing.TB, shardID, replicaID uint64, leaser pebble.Leaser) *TestingReplica {
+	store := &FakeStore{}
+	return &TestingReplica{
+		t:       t,
+		Replica: replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/),
+		leaser:  leaser,
+	}
+}
+
+func (tr *TestingReplica) Leaser() pebble.Leaser {
+	return tr.leaser
+}
+
+func (tr *TestingReplica) DB() pebble.IPebbleDB {
+	db, err := tr.leaser.DB()
+	require.NoError(tr.t, err)
+	tr.t.Cleanup(func() {
+		db.Close()
+	})
+	return db
 }
