@@ -1157,7 +1157,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		targetRepoURL = wd.TargetRepoURL
 		targetBranch = wd.TargetBranch
 
-		if workflowAction.Triggers.GetPullRequestTrigger().GetMergeWithBase() {
+		if !workflowAction.Triggers.GetPullRequestTrigger().GetForceManualMerge() {
 			mergeCommitSHA = wd.MergeCommitSHA
 		}
 	}
