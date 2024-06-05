@@ -767,8 +767,8 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 	pg.Limit = min(max(pg.Limit, int64(50)), int64(200))
 
 	qArgs = append(qArgs, pg.GetLimit()+1, pg.GetOffset())
-	// XXX: Order by sum...
-	qStr := fmt.Sprintf(`SELECT stats.label AS label, total_runs, successful_runs, flaky_runs, failed_runs, likely_flaky_runs
+	qStr := fmt.Sprintf(`SELECT stats.label AS label, total_runs, successful_runs, flaky_runs,
+	    failed_runs, likely_flaky_runs, flaky_runs + likely_flaky_runs as total_flakes
 	FROM (
 		SELECT label,
 		count(*) AS total_runs,
@@ -790,7 +790,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 				ORDER BY invocation_start_time_usec ASC
 				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
 		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status > 2 GROUP BY label) lf
-	ON lf.label=stats.label LIMIT ? OFFSET ?`, innerWhereClause, innerWhereClause)
+	ON lf.label=stats.label ORDER BY total_flakes LIMIT ? OFFSET ?`, innerWhereClause, innerWhereClause)
 
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
 
