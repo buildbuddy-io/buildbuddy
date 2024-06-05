@@ -123,6 +123,10 @@ service BuildBuddyService {
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
   rpc GetTargetHistory(target.GetTargetHistoryRequest)
       returns (target.GetTargetHistoryResponse);
+  rpc GetTargetStats(target.GetTargetStatsRequest)
+      returns (target.GetTargetStatsResponse);
+  rpc GetTargetFlakeSamples(target.GetTargetFlakeSamplesRequest)
+      returns (target.GetTargetFlakeSamplesResponse);
 
   // Workflow API
   rpc CreateWorkflow(workflow.CreateWorkflowRequest)

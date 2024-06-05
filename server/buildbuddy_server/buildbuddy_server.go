@@ -1150,6 +1150,14 @@ func (s *BuildBuddyServer) GetTargetHistory(ctx context.Context, req *trpb.GetTa
 	return target.GetTargetHistory(ctx, s.env, req)
 }
 
+func (s *BuildBuddyServer) GetTargetStats(ctx context.Context, req *trpb.GetTargetStatsRequest) (*trpb.GetTargetStatsResponse, error) {
+	return target.GetTargetStats(ctx, s.env, req)
+}
+
+func (s *BuildBuddyServer) GetTargetFlakeSamples(ctx context.Context, req *trpb.GetTargetFlakeSamplesRequest) (*trpb.GetTargetFlakeSamplesResponse, error) {
+	return target.GetTargetFlakeSamples(ctx, s.env, req)
+}
+
 func (s *BuildBuddyServer) GetEventLogChunk(ctx context.Context, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
 	resp, err := eventlog.GetEventLogChunk(ctx, s.env, req)
 	if err != nil {
