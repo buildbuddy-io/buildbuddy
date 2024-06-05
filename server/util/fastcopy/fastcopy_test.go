@@ -91,12 +91,6 @@ func TestFastCopyXFSReflink(t *testing.T) {
 		t.Skipf("test runs on linux only")
 	}
 
-	testshell.Run(t, "/tmp", `
-		command -v mkfs.xfs && exit
-		export DEBIAN_FRONTEND=noninteractive
-		apt-get update && apt-get install -y xfsprogs
-	`)
-
 	if _, err := exec.LookPath("mkfs.xfs"); err != nil {
 		t.Skipf("test requires xfsprogs")
 	}
