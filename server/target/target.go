@@ -790,7 +790,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 				ORDER BY invocation_start_time_usec ASC
 				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
 		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status > 2 GROUP BY label) lf
-	ON lf.label=stats.label ORDER BY total_flakes LIMIT ? OFFSET ?`, innerWhereClause, innerWhereClause)
+	ON lf.label=stats.label ORDER BY total_flakes DESC LIMIT ? OFFSET ?`, innerWhereClause, innerWhereClause)
 
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
 
