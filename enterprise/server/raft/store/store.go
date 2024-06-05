@@ -852,12 +852,15 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 		}
 		return nil, err
 	}
+	s.log.Infof("StartOnDiskReplica finished for node c%dn%d", req.GetShardId(), req.GetReplicaId())
 
 	if req.GetLastAppliedIndex() > 0 {
 		if err := s.waitForReplicaToCatchUp(ctx, req.GetShardId(), req.GetLastAppliedIndex()); err != nil {
 			return nil, err
 		}
 	}
+
+	s.log.Infof("waitForReplicaToCatchUp finished for node c%dn%d", req.GetShardId(), req.GetReplicaId())
 
 	rsp := &rfpb.StartShardResponse{}
 	if req.GetBatch() == nil || len(req.GetInitialMember()) == 0 {
@@ -871,11 +874,13 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	}
 	sort.Slice(replicaIDs, func(i, j int) bool { return replicaIDs[i] < replicaIDs[j] })
 	if req.GetReplicaId() == replicaIDs[len(replicaIDs)-1] {
+		s.log.Infof("syncProposeLocal started for node c%dn%d", req.GetShardId(), req.GetReplicaId())
 		batchResponse, err := s.session.SyncProposeLocal(ctx, s.nodeHost, req.GetShardId(), req.GetBatch())
 		if err != nil {
 			return nil, err
 		}
 		rsp.Batch = batchResponse
+		s.log.Infof("syncProposeLocal finished for node c%dn%d", req.GetShardId(), req.GetReplicaId())
 	}
 	return rsp, nil
 }

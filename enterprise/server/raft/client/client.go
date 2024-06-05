@@ -217,14 +217,18 @@ func (s *Session) maybeRefresh() {
 func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	// At most one SyncProposeLocal can be run for the same replica per session.
 	unlockFn := s.locker.Lock(fmt.Sprintf("%d", shardID))
+	log.Infof("lock finished with NHID=%s, shardID=%d, id=%s", nodehost.ID(), shardID, s.id)
+
 	defer unlockFn()
 
 	s.mu.Lock()
+	log.Infof("lock finished with NHID=%s, shardID=%d, id=%s", nodehost.ID(), shardID, s.id)
 	// Refreshes the session if necessary
 	s.maybeRefresh()
 	s.index++
 	batch.Session = s.ToProto()
 	s.mu.Unlock()
+	log.Infof("unlock finished with NHID=%s, shardID=%d, id=%s", nodehost.ID(), shardID, s.id)
 
 	sesh := nodehost.GetNoOPSession(shardID)
 
