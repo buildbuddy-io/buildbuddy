@@ -1605,6 +1605,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 		return entry, status.InternalErrorf("failed to unmarshal entry.Cmd: %s", err)
 	}
 
+	sm.log.Infof("singleUpdate: %+v", batchReq)
 	// All of the data in a BatchCmdRequest is handled in a single pebble
 	// write batch. That means that if any part of a batch update fails,
 	// none of the batch will be applied.

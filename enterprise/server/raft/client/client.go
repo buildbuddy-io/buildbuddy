@@ -222,7 +222,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shard
 	defer unlockFn()
 
 	s.mu.Lock()
-	log.Infof("lock finished with NHID=%s, shardID=%d, id=%s", nodehost.ID(), shardID, s.id)
+	log.Infof("lock mu finished with NHID=%s, shardID=%d, id=%s", nodehost.ID(), shardID, s.id)
 	// Refreshes the session if necessary
 	s.maybeRefresh()
 	s.index++
@@ -241,6 +241,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shard
 		defer canary.Start("nodehost.SyncPropose", time.Second)()
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
+			//log.Infof("called SyncPropose on NHID=%s, shardID=%d, err=%s", nodehost.ID(), shardID, err)
 			return err
 		}
 		if result.Value == constants.EntryErrorValue {

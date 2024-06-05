@@ -286,6 +286,8 @@ func TestRunTxn(t *testing.T) {
 	s2 := sf.NewStore(t)
 	//s3 := sf.NewStore(t)
 	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	stores := []*testutil.TestingStore{s1, s2}
 	testutil.StartShard(t, ctx, stores...)
 
