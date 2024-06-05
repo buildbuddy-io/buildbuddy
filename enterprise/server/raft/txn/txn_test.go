@@ -283,10 +283,10 @@ func TestFetchTxnRecordsSkipRecent(t *testing.T) {
 func TestRunTxn(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
-	//s2 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
 	//s3 := sf.NewStore(t)
 	ctx := context.Background()
-	stores := []*testutil.TestingStore{s1}
+	stores := []*testutil.TestingStore{s1, s2}
 	testutil.StartShard(t, ctx, stores...)
 
 	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
@@ -309,7 +309,7 @@ func TestRunTxn(t *testing.T) {
 	})
 	txnBuilder := rbuilder.NewTxn().AddStatement(&rfpb.ReplicaDescriptor{
 		ShardId:   2,
-		ReplicaId: 2,
+		ReplicaId: 3,
 	}, batch).AddStatement(&rfpb.ReplicaDescriptor{
 		ShardId:   1,
 		ReplicaId: 1,
