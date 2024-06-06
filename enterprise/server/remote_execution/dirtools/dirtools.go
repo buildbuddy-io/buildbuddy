@@ -489,6 +489,8 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		if err != nil {
 			return nil, err
 		}
+		txInfo.FileCount += 1
+		txInfo.BytesTransferred += td.GetSizeBytes()
 		actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
 			Path:       filepath.ToSlash(trimPathPrefix(fullFilePath, rootDir)),
 			TreeDigest: td,
