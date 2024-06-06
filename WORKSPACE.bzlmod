@@ -331,7 +331,7 @@ http_file(
     name = "aws_rds_certs",
     downloaded_file_path = "rds-combined-ca-bundle.pem",
     sha256 = "6a8ba1c9f858386edba0ea82b7bf8168ef513d1eb0df3a08cc7cf4bb89f856d0",
-    url = "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem",
+    url = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
 )
 
 HERMETIC_CC_TOOLCHAIN_VERSION = "v3.0.1"
