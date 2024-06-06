@@ -5,6 +5,7 @@ actions:
       push:
         branches:
           - "master"
+          - "bb_release_*"
       pull_request:
         branches:
           - "*"
@@ -68,6 +69,7 @@ actions:
       push:
         branches:
           - "master"
+          - "bb_release_*"
       pull_request:
         branches:
           - "*"
