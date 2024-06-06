@@ -102,6 +102,7 @@ require (
 	github.com/nishanths/exhaustive v0.7.11
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc3
+	github.com/opencontainers/runtime-spec v1.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/planetscale/vtprotobuf v0.6.0
 	github.com/pmezard/go-difflib v1.0.0
