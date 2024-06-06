@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +25,22 @@ var (
 		"How long to wait between flushing buffered redis commands. "+
 			"Setting this to 0 will disable buffering at the cost of higher redis QPS.")
 )
+
+// ConfigureLogging configures the Redis library to use our logger.
+func ConfigureLogging() {
+	redis.SetLogger(&logger{})
+}
+
+type logger struct{}
+
+func (*logger) Printf(ctx context.Context, format string, args ...any) {
+	_, file, line, ok := runtime.Caller(1)
+	if ok {
+		format = "%s:%d: " + format
+		args = append([]any{filepath.Base(file), line}, args...)
+	}
+	log.CtxInfof(ctx, format, args...)
+}
 
 func isRedisURI(redisTarget string) bool {
 	return strings.HasPrefix(redisTarget, "redis://") ||

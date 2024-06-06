@@ -65,6 +65,7 @@ go_library(
         "//enterprise/server/usage",
         "//enterprise/server/usage_service",
         "//enterprise/server/util/dsingleflight",
+        "//enterprise/server/util/redisutil",
         "//enterprise/server/webhooks/bitbucket",
         "//enterprise/server/webhooks/github",
         "//enterprise/server/workflow/service",
