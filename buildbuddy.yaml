@@ -30,6 +30,9 @@ actions:
       pull_request:
         branches:
           - "*"
+        force_manual_merge_with_base: false
+    # Need to fetch both HEAD and HEAD^1 to determine changed files that need to be linted.
+    git_fetch_depth: 2
     bazel_commands:
       - run //tools/checkstyle --config=linux-workflows
   - name: Test (darwin_amd64)
