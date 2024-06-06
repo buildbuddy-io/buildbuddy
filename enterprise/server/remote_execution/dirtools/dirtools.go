@@ -382,16 +382,17 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
-	treesToUpload := make([]string, 0)
+	outputDirectoryPaths := make([]string, 0)
 	filesToUpload := make([]*fileToUpload, 0)
-	uploadFileFn := func(parentDir string, info os.FileInfo) (*repb.FileNode, error) {
+
+	visitFile := func(parentDir string, info os.FileInfo) (*repb.FileNode, error) {
 		uploadableFile, err := newFileToUpload(instanceName, digestFunction, parentDir, info)
 		if err != nil {
 			return nil, err
 		}
 		filesToUpload = append(filesToUpload, uploadableFile)
-		fqfn := filepath.Join(parentDir, info.Name())
-		if _, ok := dirHelper.FindParentOutputPath(fqfn); !ok {
+		fileFullPath := filepath.Join(parentDir, info.Name())
+		if _, ok := dirHelper.FindParentOutputPath(fileFullPath); !ok {
 			// If this file is *not* a descendant of any output_path but wasn't
 			// skipped before the call to uploadFileFn, then it must be
 			// appended to OutputFiles.
@@ -401,15 +402,15 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		return uploadableFile.FileNode(), nil
 	}
 
-	var uploadDirFn func(parentDir, dirName string) (*repb.DirectoryNode, error)
-	uploadDirFn = func(parentDir, dirName string) (*repb.DirectoryNode, error) {
+	var walkDir func(parentFullPath, dirName string) (*repb.DirectoryNode, error)
+	walkDir = func(parentFullPath, dirName string) (*repb.DirectoryNode, error) {
 		directory := &repb.Directory{}
-		fullPath := filepath.Join(parentDir, dirName)
-		dirInfo, err := os.Stat(fullPath)
+		dirFullPath := filepath.Join(parentFullPath, dirName)
+		dirInfo, err := os.Stat(dirFullPath)
 		if err != nil {
 			return nil, err
 		}
-		entries, err := os.ReadDir(fullPath)
+		entries, err := os.ReadDir(dirFullPath)
 		if err != nil {
 			return nil, err
 		}
@@ -418,31 +419,33 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 			if err != nil {
 				return nil, err
 			}
-			fqfn := filepath.Join(fullPath, info.Name())
+			childFullPath := filepath.Join(dirFullPath, info.Name())
 			if info.IsDir() {
 				// Don't recurse on non-uploadable directories.
-				if !dirHelper.ShouldUploadAnythingInDir(fqfn) {
+				if !dirHelper.ShouldUploadAnythingInDir(childFullPath) {
 					continue
 				}
-				isOutputPath := dirHelper.IsOutputPath(fqfn)
-				if isOutputPath {
-					treesToUpload = append(treesToUpload, fqfn)
+				// If this is a dir and it's an output path, then we need to
+				// return it as an output_directory.
+				isOutputDirectory := dirHelper.IsOutputPath(childFullPath)
+				if isOutputDirectory {
+					outputDirectoryPaths = append(outputDirectoryPaths, childFullPath)
 				}
-				dirNode, err := uploadDirFn(fullPath, info.Name())
+				dirNode, err := walkDir(dirFullPath, info.Name())
 				if err != nil {
 					return nil, err
 				}
-				if _, ok := dirHelper.FindParentOutputPath(fqfn); !ok && !isOutputPath {
+				if _, ok := dirHelper.FindParentOutputPath(childFullPath); !ok && !isOutputDirectory {
 					continue
 				}
 				txInfo.FileCount += 1
 				txInfo.BytesTransferred += dirNode.GetDigest().GetSizeBytes()
 				directory.Directories = append(directory.Directories, dirNode)
 			} else if info.Mode().IsRegular() {
-				if !dirHelper.ShouldUploadFile(fqfn) {
+				if !dirHelper.ShouldUploadFile(childFullPath) {
 					continue
 				}
-				fileNode, err := uploadFileFn(fullPath, info)
+				fileNode, err := visitFile(dirFullPath, info)
 				if err != nil {
 					return nil, err
 				}
@@ -451,20 +454,20 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				txInfo.BytesTransferred += fileNode.GetDigest().GetSizeBytes()
 				directory.Files = append(directory.Files, fileNode)
 			} else if info.Mode()&os.ModeSymlink == os.ModeSymlink {
-				if err := handleSymlink(dirHelper, rootDir, cmd, actionResult, directory, fqfn); err != nil {
+				if err := handleSymlink(dirHelper, rootDir, cmd, actionResult, directory, childFullPath); err != nil {
 					return nil, err
 				}
 			}
 		}
 
-		uploadableDir, err := newDirToUpload(instanceName, digestFunction, parentDir, dirInfo, directory)
+		uploadableDir, err := newDirToUpload(instanceName, digestFunction, parentFullPath, dirInfo, directory)
 		if err != nil {
 			return nil, err
 		}
 		filesToUpload = append(filesToUpload, uploadableDir)
 		return uploadableDir.DirNode(), nil
 	}
-	if _, err := uploadDirFn(rootDir, ""); err != nil {
+	if _, err := walkDir(rootDir, ""); err != nil {
 		return nil, err
 	}
 
@@ -473,29 +476,29 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		return nil, err
 	}
 
-	// Make Trees of all of the paths specified in output_paths which were
+	// Make Trees for all of the paths specified in output_paths which were
 	// directories (which we noted in the filesystem walk above).
-	trees := make(map[string]*repb.Tree, 0)
-	for _, treeToUpload := range treesToUpload {
-		trees[treeToUpload] = &repb.Tree{}
+	outputDirectoryTrees := make(map[string]*repb.Tree, 0)
+	for _, outputDirectoryPath := range outputDirectoryPaths {
+		outputDirectoryTrees[outputDirectoryPath] = &repb.Tree{}
 	}
 
-	// For each of the filesToUpload, determine which Tree (if any) it is a part
-	// of and add it.
+	// For each Directory encountered, determine which Tree (if any) it is a
+	// part of, and add it.
 	for _, f := range filesToUpload {
 		if f.dir == nil {
+			// Not a Directory.
 			continue
 		}
-		fqfn := f.fullFilePath
-		if tree, ok := trees[fqfn]; ok {
+		if tree, ok := outputDirectoryTrees[f.fullFilePath]; ok {
 			tree.Root = f.dir
-		} else if treePath, ok := dirHelper.FindParentOutputPath(fqfn); ok {
-			tree = trees[treePath]
+		} else if treePath, ok := dirHelper.FindParentOutputPath(f.fullFilePath); ok {
+			tree = outputDirectoryTrees[treePath]
 			tree.Children = append(tree.Children, f.dir)
 		}
 	}
 
-	for fullFilePath, tree := range trees {
+	for fullFilePath, tree := range outputDirectoryTrees {
 		td, err := uploader.UploadProto(tree)
 		if err != nil {
 			return nil, err
