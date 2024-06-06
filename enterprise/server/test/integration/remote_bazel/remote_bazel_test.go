@@ -140,7 +140,7 @@ func TestWithPrivateRepo(t *testing.T) {
 		// to setup than a firecracker runner
 		"--runner_exec_properties=workload-isolation-type=none",
 		"--runner_exec_properties=container-image=",
-		"run",
+		"build",
 		":hello_world",
 		"--noenable_bzlmod",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
@@ -169,7 +169,7 @@ func TestWithPrivateRepo(t *testing.T) {
 		MinLines:     math.MaxInt32,
 	})
 	require.NoError(t, err)
-	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
+	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
 }
 
 func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {

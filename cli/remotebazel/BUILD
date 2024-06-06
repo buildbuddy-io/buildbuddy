@@ -15,7 +15,6 @@ go_library(
         "//cli/log",
         "//cli/login",
         "//cli/parser",
-        "//cli/setup",
         "//cli/storage",
         "//cli/terminal",
         "//enterprise/server/remote_execution/dirtools",
