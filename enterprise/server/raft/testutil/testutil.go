@@ -53,9 +53,14 @@ type StoreFactory struct {
 	fileDir     string
 	gossipAddrs []string
 	reg         registry.NodeRegistry
+	clock       clockwork.Clock
 }
 
 func NewStoreFactory(t *testing.T) *StoreFactory {
+	return NewStoreFactoryWithClock(t, clockwork.NewRealClock())
+}
+
+func NewStoreFactoryWithClock(t *testing.T, clock clockwork.Clock) *StoreFactory {
 	rootDir := testfs.MakeTempDir(t)
 	fileDir := filepath.Join(rootDir, "files")
 	err := disk.EnsureDirectoryExists(fileDir)
@@ -64,6 +69,7 @@ func NewStoreFactory(t *testing.T) *StoreFactory {
 		rootDir: rootDir,
 		fileDir: fileDir,
 		reg:     registry.NewStaticNodeRegistry(1, nil),
+		clock:   clock,
 	}
 }
 
@@ -78,10 +84,6 @@ func (sf *StoreFactory) Registry() registry.NodeRegistry {
 }
 
 func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
-	return sf.NewStoreWithClock(t, clockwork.NewRealClock())
-}
-
-func (sf *StoreFactory) NewStoreWithClock(t *testing.T, clock clockwork.Clock) *TestingStore {
 	nodeAddr := localAddr(t)
 	gm := newGossipManager(t, nodeAddr, sf.gossipAddrs)
 	sf.gossipAddrs = append(sf.gossipAddrs, nodeAddr)
@@ -130,7 +132,7 @@ func (sf *StoreFactory) NewStoreWithClock(t *testing.T, clock clockwork.Clock) *
 	require.NoError(t, err)
 	ts.db = db
 	leaser := pebble.NewDBLeaser(db)
-	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, s, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser, clock, client.NewSession())
+	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, s, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser, sf.clock)
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
@@ -169,15 +171,15 @@ func (ts *TestingStore) NewReplica(shardID, replicaID uint64) *replica.Replica {
 	return sm.(*replica.Replica)
 }
 
-func StartShard(t *testing.T, ctx context.Context, stores ...*TestingStore) {
+func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
-	err := bringup.SendStartShardRequests(ctx, client.NewSession(), stores[0].NodeHost(), stores[0].APIClient(), MakeNodeGRPCAddressesMap(stores...))
+	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0].NodeHost(), stores[0].APIClient(), MakeNodeGRPCAddressesMap(stores...))
 	require.NoError(t, err)
 }
 
-func StartShardWithRanges(t *testing.T, ctx context.Context, startingRanges []*rfpb.RangeDescriptor, stores ...*TestingStore) {
+func (sf *StoreFactory) StartShardWithRanges(t *testing.T, ctx context.Context, startingRanges []*rfpb.RangeDescriptor, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
-	err := bringup.SendStartShardRequestsWithRanges(ctx, client.NewSession(), stores[0].NodeHost(), stores[0].APIClient(), MakeNodeGRPCAddressesMap(stores...), startingRanges)
+	err := bringup.SendStartShardRequestsWithRanges(ctx, client.NewSessionWithClock(sf.clock), stores[0].NodeHost(), stores[0].APIClient(), MakeNodeGRPCAddressesMap(stores...), startingRanges)
 	require.NoError(t, err)
 }
 

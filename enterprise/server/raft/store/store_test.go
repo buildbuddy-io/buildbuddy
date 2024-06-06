@@ -81,11 +81,11 @@ func TestAddGetRemoveRange(t *testing.T) {
 
 func TestCleanupZombieShards(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStoreWithClock(t, clock)
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
 	ctx := context.Background()
 
-	testutil.StartShard(t, ctx, s1)
+	sf.StartShard(t, ctx, s1)
 
 	stores := []*testutil.TestingStore{s1}
 	waitForRangeLease(t, stores, 2)
@@ -117,13 +117,13 @@ func TestCleanupZombieShards(t *testing.T) {
 func TestCleanupZombieReplicas(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 
-	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStoreWithClock(t, clock)
-	s2 := sf.NewStoreWithClock(t, clock)
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2}
-	testutil.StartShard(t, ctx, stores...)
+	sf.StartShard(t, ctx, stores...)
 
 	waitForRangeLease(t, stores, 2)
 
@@ -200,7 +200,7 @@ func TestAutomaticSplitting(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1}
-	testutil.StartShard(t, ctx, stores...)
+	sf.StartShard(t, ctx, stores...)
 
 	waitForRangeLease(t, stores, 2)
 	writeNRecords(ctx, t, s1, 15) // each write is 1000 bytes
@@ -214,7 +214,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	s2 := sf.NewStore(t)
 	ctx := context.Background()
 
-	testutil.StartShard(t, ctx, s1)
+	sf.StartShard(t, ctx, s1)
 
 	stores := []*testutil.TestingStore{s1, s2}
 	s := getStoreWithRangeLease(t, stores, 2)
@@ -264,7 +264,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2}
-	testutil.StartShard(t, ctx, stores...)
+	sf.StartShard(t, ctx, stores...)
 
 	s := getStoreWithRangeLease(t, stores, 2)
 
@@ -377,7 +377,7 @@ func TestSplitMetaRange(t *testing.T) {
 	s1 := sf.NewStore(t)
 	ctx := context.Background()
 
-	testutil.StartShard(t, ctx, s1)
+	sf.StartShard(t, ctx, s1)
 
 	rd := s1.GetRange(1)
 
@@ -431,7 +431,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
-	testutil.StartShard(t, ctx, stores...)
+	sf.StartShard(t, ctx, stores...)
 
 	s := getStoreWithRangeLease(t, stores, 2)
 	rd := s.GetRange(2)
@@ -501,7 +501,7 @@ func TestListReplicas(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
-	testutil.StartShard(t, ctx, stores...)
+	sf.StartShard(t, ctx, stores...)
 	waitForRangeLease(t, stores, 2)
 
 	list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
@@ -516,7 +516,7 @@ func TestPostFactoSplit(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2}
-	testutil.StartShard(t, ctx, s1)
+	sf.StartShard(t, ctx, s1)
 
 	s := getStoreWithRangeLease(t, stores, 2)
 	rd := s.GetRange(2)
@@ -605,7 +605,7 @@ func TestManySplits(t *testing.T) {
 	ctx := context.Background()
 	stores := []*testutil.TestingStore{s1}
 
-	testutil.StartShard(t, ctx, stores...)
+	sf.StartShard(t, ctx, stores...)
 	s := getStoreWithRangeLease(t, stores, 2)
 
 	var written []*rfpb.FileRecord
@@ -670,7 +670,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 			Generation: 1,
 		},
 	}
-	testutil.StartShardWithRanges(t, ctx, startingRanges, s1)
+	sf.StartShardWithRanges(t, ctx, startingRanges, s1)
 	waitForRangeLease(t, stores, 1)
 
 	// Bringup new peers.
