@@ -44,6 +44,7 @@ func groupIDStringFromContext(ctx context.Context) string {
 var DownloadDeduper = singleflight.Group{}
 
 type TransferInfo struct {
+	TreeCount        int64
 	FileCount        int64
 	BytesTransferred int64
 	TransferDuration time.Duration
@@ -391,6 +392,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				Digest: d,
 			})
 		}
+
 		if tree, treeFound := trees[relPath]; treeFound {
 			// Ensure consistent ordering within Tree
 			slices.SortStableFunc(tree.Root.Directories, func(a, b *repb.DirectoryNode) int {
@@ -404,14 +406,18 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 			if err != nil {
 				return nil, fmt.Errorf("failed to upload tree for directory with path %s: %v", relPath, err)
 			}
-			// TODO(sluongng): should we count Tree uploads?
-			// txInfo.FileCount += 1
-			// txInfo.BytesTransferred += td.GetSizeBytes()
+			txInfo.FileCount += 1
+			txInfo.TreeCount += 1
+			txInfo.BytesTransferred += td.GetSizeBytes()
 			actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
 				Path:       filepath.ToSlash(relPath),
 				TreeDigest: td,
 			})
 		}
+	}
+	log.Info("Current trees are:")
+	for k, v := range trees {
+		log.Infof("\t%s: %v", k, v)
 	}
 
 	// ensure consistent ordering within ActionResult

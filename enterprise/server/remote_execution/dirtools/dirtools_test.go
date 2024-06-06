@@ -113,8 +113,9 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        2,
-				BytesTransferred: 84,
+				TreeCount:        1,
+				FileCount:        3,
+				BytesTransferred: 169,
 			},
 		},
 		{
@@ -282,8 +283,9 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        2,
-				BytesTransferred: 84,
+				TreeCount:        1,
+				FileCount:        3,
+				BytesTransferred: 169,
 			},
 		},
 		{
@@ -336,8 +338,9 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        2,
-				BytesTransferred: 84,
+				TreeCount:        1,
+				FileCount:        3,
+				BytesTransferred: 169,
 			},
 		},
 		{
@@ -388,8 +391,9 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        2,
-				BytesTransferred: 84,
+				TreeCount:        1,
+				FileCount:        3,
+				BytesTransferred: 169,
 			},
 		},
 		{
@@ -426,8 +430,9 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        2,
-				BytesTransferred: 104,
+				TreeCount:        1,
+				FileCount:        3,
+				BytesTransferred: 209,
 			},
 		},
 		{
@@ -501,16 +506,18 @@ func TestUploadTree(t *testing.T) {
 		{
 			name: "LotsOfNesting",
 			cmd: &repb.Command{
-				OutputDirectories: []string{"a/b"},
+				OutputDirectories: []string{"a/b", "a/c"},
 			},
 			directoryPaths: []string{
 				"a/f",
+				"a/c/",
 				"a/b/c",
 				"a/b/c/d",
 				"a/b/e/g",
 			},
 			fileContents: map[string]string{
 				"a/b/c/fileA.txt": "a",
+				"a/c/fileB.txt":   "b",
 			},
 			symlinkPaths: map[string]string{},
 			expectedResult: &repb.ActionResult{
@@ -522,9 +529,17 @@ func TestUploadTree(t *testing.T) {
 							Hash:      "e104e3e264a241d5667907d195a16a9ed17decf910042eb50e5241e10eaeff7f",
 						},
 					},
+					{
+						Path: "a/c",
+						TreeDigest: &repb.Digest{
+							SizeBytes: 85,
+							Hash:      "a3263045b59ee169a2c7072c22d93caeec7337beedd728a144b9f87ea9b6d694",
+						},
+					},
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
+				TreeCount: 2,
 				// This should includes:
 				//
 				//   Dir:  a/b
@@ -532,10 +547,16 @@ func TestUploadTree(t *testing.T) {
 				//   Dir:  a/b/c/d
 				//   Dir:  a/b/e
 				//   Dir:  a/b/e/g
-				//   File: a/b/c/fileA.txt
+				//   Dir:  a/c
 				//
-				FileCount:        6,
-				BytesTransferred: 381,
+				//   File: a/b/c/fileA.txt
+				//   File: a/c/fileB.txt
+				//
+				//   Tree: a/b
+				//   Tree: a/c
+				//
+				FileCount:        10,
+				BytesTransferred: 942,
 			},
 		},
 		{
@@ -571,8 +592,9 @@ func TestUploadTree(t *testing.T) {
 				},
 			},
 			expectedInfo: &dirtools.TransferInfo{
-				FileCount:        2,
-				BytesTransferred: 84,
+				TreeCount:        1,
+				FileCount:        3,
+				BytesTransferred: 169,
 			},
 		},
 		{
@@ -626,6 +648,7 @@ func TestUploadTree(t *testing.T) {
 
 			assert.Equal(t, tc.expectedInfo.FileCount, txInfo.FileCount)
 			assert.Equal(t, tc.expectedInfo.BytesTransferred, txInfo.BytesTransferred)
+			assert.Equal(t, tc.expectedInfo.TreeCount, txInfo.TreeCount)
 
 			for _, file := range tc.expectedResult.OutputFiles {
 				has, err := env.GetCache().Contains(ctx, &rspb.ResourceName{
