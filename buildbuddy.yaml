@@ -31,6 +31,9 @@ actions:
       pull_request:
         branches:
           - "*"
+    # Do a non-shallow fetch so that we can diff against the previous commit
+    # when running on push to master.
+    git_fetch_depth: 0
     bazel_commands:
       - run //tools/checkstyle --config=linux-workflows
   - name: Test (darwin_amd64)

@@ -5,38 +5,41 @@ set -e
 
 : "${PRETTIER_PATH:=}"
 
+# File patterns to format using prettier, using git's file pattern syntax.
+GIT_FILE_PATTERNS=(
+  '*.css'
+  '*.html'
+  '*.js'
+  '*.json'
+  '*.jsx'
+  '*.md'
+  '*.ts'
+  '*.tsx'
+  '*.xml'
+  '*.yaml'
+)
+
 # Replacement for GNU realpath (not available on Mac)
 realpath() {
   [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
 }
 
-# Diagram showing what `git merge-base HEAD refs/remotes/origin/master` is doing:
+# paths_to_format returns the files that have changed relative to the base
+# branch. The base branch is computed as the latest common commit between
+# the current branch commit (HEAD) and master.
 #
-# o <- fetched remote master branch (refs/remotes/origin/master)
-# |
-# o  o <- current local branch (HEAD)
-# | /
-# o <- $(git merge-base HEAD refs/remotes/origin/master)
-# |
-#
-# We're finding the latest common ancestor between the remote master branch
-# and the current branch, so that we only run the lint check on files added
-# in this branch.
-
+# If we are on the master branch already, then look one commit back.
+# This is needed to support workflows that run on push.
 function paths_to_format() {
-  git merge-base HEAD refs/remotes/origin/master |
-    xargs git diff --name-only --diff-filter=AMRCT |
-    while read -r path; do
-      if [[ "$path" =~ \.(js|jsx|ts|tsx|html|css|yaml|json|md|xml)$ ]]; then
-        echo "$path"
-      fi
-    done
+  if [[ "$(git rev-parse --abbrev-ref HEAD)" == master ]]; then
+    DIFF_BASE='HEAD~1'
+  else
+    DIFF_BASE=$(git merge-base HEAD master)
+  fi
+  git diff --name-only --diff-filter=AMRCT "$DIFF_BASE" -- "${GIT_FILE_PATTERNS[@]}"
 }
 
-paths=()
-while read -r path; do
-  paths+=("$path")
-done < <(paths_to_format)
+mapfile -t paths < <(paths_to_format)
 
 if [[ -z "${paths[*]}" ]]; then
   exit 0
