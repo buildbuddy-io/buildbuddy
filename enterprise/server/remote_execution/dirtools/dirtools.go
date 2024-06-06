@@ -83,7 +83,14 @@ type DirHelper struct {
 	dirPerms fs.FileMode
 }
 
-func NewDirHelper(rootDir string, outputDirectories, outputPaths []string, dirPerms fs.FileMode) *DirHelper {
+func NewDirHelper(rootDir string, cmd *repb.Command, dirPerms fs.FileMode) *DirHelper {
+	// Convert the older output_directories and output_files fields to
+	// output_paths, if applicable.
+	outputPaths := cmd.GetOutputPaths()
+	if len(outputPaths) == 0 {
+		outputPaths = append(cmd.GetOutputFiles(), cmd.GetOutputDirectories()...)
+	}
+
 	c := &DirHelper{
 		rootDir:      rootDir,
 		prefixes:     make(map[string]struct{}, 0),
@@ -93,6 +100,10 @@ func NewDirHelper(rootDir string, outputDirectories, outputPaths []string, dirPe
 		dirPerms:     dirPerms,
 	}
 
+	// Per the API documentation, create the parent dir of each output path. We
+	// are not responsible for creating the output path itself, since we don't
+	// know yet whether it's a file or a directory. Instead, the action is
+	// responsible for creating these paths.
 	for _, outputPath := range outputPaths {
 		fullPath := filepath.Join(c.rootDir, outputPath)
 		c.fullPaths[fullPath] = struct{}{}
@@ -112,7 +123,7 @@ func NewDirHelper(rootDir string, outputDirectories, outputPaths []string, dirPe
 	// As of Bazel 6.0.0, the output directories are included as part of the
 	// InputRoot, so this hack is only needed for older clients.
 	// See: https://github.com/bazelbuild/bazel/pull/15366 for more info.
-	for _, outputDirectory := range outputDirectories {
+	for _, outputDirectory := range cmd.GetOutputDirectories() {
 		fullPath := filepath.Join(c.rootDir, outputDirectory)
 		c.dirsToCreate = append(c.dirsToCreate, fullPath)
 	}

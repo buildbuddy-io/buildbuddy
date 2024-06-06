@@ -612,13 +612,7 @@ func TestUploadTree(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			outputDirs := []string{}
-			outputPaths := tc.cmd.GetOutputPaths()
-			if len(outputPaths) == 0 {
-				outputDirs = tc.cmd.GetOutputDirectories()
-				outputPaths = append(tc.cmd.GetOutputFiles(), tc.cmd.GetOutputDirectories()...)
-			}
-			dirHelper := dirtools.NewDirHelper(rootDir, outputDirs, outputPaths, fs.FileMode(0o755))
+			dirHelper := dirtools.NewDirHelper(rootDir, tc.cmd, fs.FileMode(0o755))
 
 			actionResult := &repb.ActionResult{}
 			txInfo, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, tc.cmd, actionResult)

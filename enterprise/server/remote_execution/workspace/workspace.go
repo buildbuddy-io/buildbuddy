@@ -133,13 +133,7 @@ func (ws *Workspace) SetTask(ctx context.Context, task *repb.ExecutionTask) {
 	log.CtxDebugf(ctx, "Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
 	ws.task = task
 	cmd := task.GetCommand()
-	outputDirs := make([]string, 0)
-	outputPaths := cmd.GetOutputPaths()
-	if len(outputPaths) == 0 {
-		outputDirs = cmd.GetOutputDirectories()
-		outputPaths = append(cmd.GetOutputFiles(), cmd.GetOutputDirectories()...)
-	}
-	ws.dirHelper = dirtools.NewDirHelper(ws.inputRoot(), outputDirs, outputPaths, ws.dirPerms)
+	ws.dirHelper = dirtools.NewDirHelper(ws.inputRoot(), cmd, ws.dirPerms)
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
