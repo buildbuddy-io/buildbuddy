@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -30,7 +29,6 @@ import (
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -78,7 +76,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, ci_runner_bundle.CiRunnerBytes)
+	runnerUpload, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, ci_runner_bundle.CiRunnerBytes)
 	if err != nil {
 		return nil, status.WrapError(err, "upload runner bin")
 	}
@@ -87,7 +85,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	dir := &repb.Directory{
 		Files: []*repb.FileNode{{
 			Name:         runnerName,
-			Digest:       runnerBinDigest,
+			Digest:       runnerUpload.ResourceName.GetDigest(),
 			IsExecutable: true,
 		}},
 	}
@@ -98,12 +96,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	var patchURIs []string
 	for _, patch := range req.GetRepoState().GetPatch() {
-		patchDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, patch)
+		patchUpload, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, patch)
 		if err != nil {
 			return nil, status.WrapError(err, "upload patch")
 		}
-		rn := digest.NewResourceName(patchDigest, req.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
-		uri, err := rn.DownloadString()
+		uri, err := patchUpload.ResourceName.DownloadString()
 		if err != nil {
 			return nil, status.WrapError(err, "patch download string")
 		}

@@ -86,11 +86,11 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 	var commandDigest, inputRootDigest *repb.Digest
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		d, err := cachetools.UploadProto(egctx, env.GetByteStreamClient(), instanceName, digestFunction, cmd)
+		res, err := cachetools.UploadProto(egctx, env.GetByteStreamClient(), instanceName, digestFunction, cmd)
 		if err != nil {
 			return err
 		}
-		commandDigest = d
+		commandDigest = res.ResourceName.GetDigest()
 		return nil
 	})
 	if inputRootDir != "" {
@@ -114,12 +114,11 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 	}
 	action.CommandDigest = commandDigest
 	action.InputRootDigest = inputRootDigest
-	actionDigest, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, digestFunction, action)
+	res, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, digestFunction, action)
 	if err != nil {
 		return nil, err
 	}
-	actionResourceName := digest.NewResourceName(actionDigest, instanceName, rspb.CacheType_CAS, digestFunction).ToProto()
-	return actionResourceName, nil
+	return res.ResourceName.ToProto(), nil
 }
 
 // Start begins an Execute stream for the given remote action.

@@ -213,12 +213,12 @@ func (p *FetchServer) rewriteToCache(ctx context.Context, blobDigest *repb.Diges
 	}()
 
 	bsClient := p.env.GetByteStreamClient()
-	storageDigest, err := cachetools.UploadFile(ctx, bsClient, instanceName, toFunc, tmpFilePath)
+	res, err := cachetools.UploadFile(ctx, bsClient, instanceName, toFunc, tmpFilePath)
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to re-upload blob with new digestFunc %s for %s: %s", toFunc, digest.String(blobDigest), err)
 		return nil
 	}
-	return storageDigest
+	return res.ResourceName.GetDigest()
 }
 
 func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, checksumFunc repb.DigestFunction_Value, expectedChecksum string) *repb.Digest {
@@ -317,10 +317,11 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 			return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, checksumDigestRN.GetDigest().Hash, expectedChecksum)
 		}
 	}
-	blobDigest, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, storageFunc, tmpFilePath)
+	result, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, storageFunc, tmpFilePath)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
 	}
+	blobDigest := result.ResourceName.GetDigest()
 	// If the requested digestFunc is supplied is the same with the checksum sri,
 	// verify the expected checksum of the downloaded file after storing it in our cache.
 	if checksumFunc == storageFunc && expectedChecksum != "" && blobDigest.Hash != expectedChecksum {

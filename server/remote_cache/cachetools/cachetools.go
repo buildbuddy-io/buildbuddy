@@ -236,12 +236,16 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
-func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*repb.Digest, error) {
+func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*UploadResult, error) {
+	if r.IsEmpty() {
+		return &UploadResult{
+			ResourceName:  r,
+			BytesUploaded: 0,
+			AlreadyExists: true,
+		}, nil
+	}
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
-	}
-	if r.IsEmpty() {
-		return r.GetDigest(), nil
 	}
 	resourceName, err := r.UploadString()
 	if err != nil {
@@ -266,7 +270,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 	buf := make([]byte, uploadBufSizeBytes)
 	bytesUploaded := int64(0)
-	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	sender := rpcutil.NewSender(ctx, stream)
 	for {
 		n, err := rc.Read(buf)
 		if err != nil && err != io.EOF {
@@ -315,14 +319,37 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		}
 	}
 
-	return r.GetDigest(), nil
+	return &UploadResult{
+		ResourceName:  r,
+		BytesUploaded: bytesUploaded,
+		AlreadyExists: remoteSize == -1,
+	}, nil
 }
 
-func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*repb.Digest, error) {
+// UploadResult represents a bytestream upload result.
+type UploadResult struct {
+	// ResourceName is the uploaded resource name. This is mainly useful for
+	// retrieving the digest from Upload functions which compute the digest
+	// internally.
+	ResourceName *digest.ResourceName
+
+	// BytesUploaded is the total number of bytes uploaded. This may be less
+	// than the digest size if the resource was compressed. If the write was
+	// short-circuited, then AlreadyExists will be set to true, and this field
+	// will contain the number of bytes sent before we received the
+	// short-circuit response from the server.
+	BytesUploaded int64
+
+	// AlreadyExists is set to true if the upload was short-circuited due to
+	// the bytestream resource already existing in cache.
+	AlreadyExists bool
+}
+
+func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*UploadResult, error) {
 	// We can only retry if we can rewind the reader back to the beginning.
 	seeker, retryable := in.(io.Seeker)
 	if retryable {
-		return retry.Do(ctx, retryOptions("ByteStream.Write"), func(ctx context.Context) (*repb.Digest, error) {
+		return retry.Do(ctx, retryOptions("ByteStream.Write"), func(ctx context.Context) (*UploadResult, error) {
 			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
 				return nil, retry.NonRetryableError(err)
 			}
@@ -378,7 +405,7 @@ func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r 
 	return err
 }
 
-func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*repb.Digest, error) {
+func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*UploadResult, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
@@ -395,7 +422,7 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 	return UploadFromReader(ctx, bsClient, resourceName, reader)
 }
 
-func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
+func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*UploadResult, error) {
 	resourceName, err := computeDigest(in, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
@@ -407,7 +434,7 @@ func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	return UploadFromReader(ctx, bsClient, resourceName, in)
 }
 
-func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, fullFilePath string) (*repb.Digest, error) {
+func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, fullFilePath string) (*UploadResult, error) {
 	f, err := os.Open(fullFilePath)
 	if err != nil {
 		return nil, err
@@ -493,16 +520,13 @@ func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, cacheType r
 	return UploadBytesToCache(ctx, cache, cacheType, instanceName, digestFunction, reader)
 }
 
-func UploadBlobToCAS(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, blob []byte) (*repb.Digest, error) {
+func UploadBlobToCAS(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, blob []byte) (*UploadResult, error) {
 	reader := bytes.NewReader(blob)
 	d, err := digest.Compute(reader, digestFunction)
 	if err != nil {
 		return nil, err
 	}
 	resourceName := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)
-	if resourceName.IsEmpty() {
-		return d, nil
-	}
 	return UploadFromReader(ctx, bsClient, resourceName, reader)
 }
 
@@ -533,6 +557,25 @@ func SupportsCompression(ctx context.Context, capabilitiesClient repb.Capabiliti
 	return supportsBytestreamCompression && supportsBatchUpdateCompression, nil
 }
 
+type TransferStats struct {
+	// BlobCount is the number of blobs transferred.
+	BlobCount int64
+
+	// UncompressedByteCount is the total number of uncompressed bytes
+	// transferred.
+	UncompressedByteCount int64
+
+	// CompressedByteCount is the total number of compressed bytes transferred.
+	// If compression is not enabled, this will equal UncompressedByteCount.
+	CompressedByteCount int64
+}
+
+func (s *TransferStats) Add(stats TransferStats) {
+	s.BlobCount += stats.BlobCount
+	s.UncompressedByteCount += stats.UncompressedByteCount
+	s.CompressedByteCount += stats.CompressedByteCount
+}
+
 // BatchCASUploader uploads many files to CAS concurrently, batching small
 // uploads together and falling back to bytestream uploads for large files.
 type BatchCASUploader struct {
@@ -547,6 +590,9 @@ type BatchCASUploader struct {
 	instanceName    string
 	digestFunction  repb.DigestFunction_Value
 	unsentBatchSize int64
+
+	mu    sync.Mutex
+	stats TransferStats
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
@@ -620,8 +666,18 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		}
 		ul.eg.Go(func() error {
 			defer r.Close()
-			_, err := UploadFromReader(ul.ctx, byteStreamClient, resourceName, r)
-			return err
+			result, err := UploadFromReader(ul.ctx, byteStreamClient, resourceName, r)
+			if err != nil {
+				return err
+			}
+
+			ul.mu.Lock()
+			ul.stats.BlobCount += 1
+			ul.stats.CompressedByteCount += result.BytesUploaded
+			ul.stats.UncompressedByteCount += resourceName.GetDigest().GetSizeBytes()
+			ul.mu.Unlock()
+
+			return nil
 		})
 		return nil
 	}
@@ -713,12 +769,26 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 		if err != nil {
 			return err
 		}
-		for _, fileResponse := range rsp.GetResponses() {
-			if fileResponse.GetStatus().GetCode() != int32(gcodes.OK) {
-				return gstatus.Error(gcodes.Code(fileResponse.GetStatus().GetCode()), fmt.Sprintf("Error uploading file: %v", fileResponse.GetDigest()))
-			}
+		if len(rsp.GetResponses()) != len(req.GetRequests()) {
+			return status.InternalErrorf("invalid BatchUpdateBlobs response: response batch size %d does not equal request batch size %d", len(rsp.GetResponses()), len(req.GetRequests()))
 		}
-		return nil
+		var lastErr error
+		var batchStats TransferStats
+		for i, fileResponse := range rsp.GetResponses() {
+			if fileResponse.GetStatus().GetCode() != int32(gcodes.OK) {
+				lastErr = gstatus.Error(gcodes.Code(fileResponse.GetStatus().GetCode()), fmt.Sprintf("Error uploading file: %v", fileResponse.GetDigest()))
+				continue
+			}
+			batchStats.BlobCount += 1
+			batchStats.CompressedByteCount += int64(len(req.Requests[i].GetData()))
+			batchStats.UncompressedByteCount += req.Requests[i].GetDigest().GetSizeBytes()
+		}
+
+		ul.mu.Lock()
+		ul.stats.Add(batchStats)
+		ul.mu.Unlock()
+
+		return lastErr
 	})
 	return nil
 }
@@ -730,6 +800,13 @@ func (ul *BatchCASUploader) Wait() error {
 		}
 	}
 	return ul.eg.Wait()
+}
+
+// Stats returns stats for all files uploaded.
+func (ul *BatchCASUploader) Stats() TransferStats {
+	ul.mu.Lock()
+	defer ul.mu.Unlock()
+	return ul.stats
 }
 
 type bytesReadSeekCloser struct {

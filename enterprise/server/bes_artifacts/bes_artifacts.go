@@ -152,7 +152,11 @@ func (u *Uploader) uploadFile(setID, path, name string) chan *Result {
 			Name:       name,
 			Path:       path,
 		}
-		result.Digest, result.Err = cachetools.UploadFile(u.ctx, u.bsClient, u.instanceName, repb.DigestFunction_SHA256, path)
+		r, err := cachetools.UploadFile(u.ctx, u.bsClient, u.instanceName, repb.DigestFunction_SHA256, path)
+		result.Err = err
+		if r != nil {
+			result.Digest = r.ResourceName.GetDigest()
+		}
 		result.Duration = time.Since(start)
 		ch <- result
 
