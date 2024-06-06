@@ -517,10 +517,76 @@ func TestUploadTree(t *testing.T) {
 				OutputDirectories: []*repb.OutputDirectory{
 					{
 						Path: "a/b",
-						TreeDigest: &repb.Digest{
-							SizeBytes: 392,
-							Hash:      "59620196c9761b313ff20ed0dfb06bf81b824afe2bf7046ce49949ab51605b6b",
-						},
+						TreeDigest: getDigestForMsg(t, &repb.Tree{
+							Root: &repb.Directory{
+								Directories: []*repb.DirectoryNode{
+									{
+										Name: "c",
+										Digest: getDigestForMsg(t, &repb.Directory{
+											Directories: []*repb.DirectoryNode{
+												{
+													Name:   "d",
+													Digest: getDigestForMsg(t, &repb.Directory{}),
+												},
+											},
+											Files: []*repb.FileNode{
+												{
+													Name: "fileA.txt",
+													Digest: &repb.Digest{
+														SizeBytes: 1,
+														Hash:      hash.String("a"),
+													},
+												},
+											},
+										}),
+									},
+									{
+										Name: "e",
+										Digest: getDigestForMsg(t, &repb.Directory{
+											Directories: []*repb.DirectoryNode{
+												{
+													Name:   "g",
+													Digest: getDigestForMsg(t, &repb.Directory{}),
+												},
+											},
+										}),
+									},
+								},
+							},
+							Children: []*repb.Directory{
+								// d
+								{},
+								// c
+								{
+									Files: []*repb.FileNode{
+										{
+											Name: "fileA.txt",
+											Digest: &repb.Digest{
+												Hash:      hash.String("a"),
+												SizeBytes: 1,
+											},
+										},
+									},
+									Directories: []*repb.DirectoryNode{
+										{
+											Name:   "d",
+											Digest: getDigestForMsg(t, &repb.Directory{}),
+										},
+									},
+								},
+								// g
+								{},
+								// e
+								{
+									Directories: []*repb.DirectoryNode{
+										{
+											Name:   "g",
+											Digest: getDigestForMsg(t, &repb.Directory{}),
+										},
+									},
+								},
+							},
+						}),
 					},
 				},
 			},
