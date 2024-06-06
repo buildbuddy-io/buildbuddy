@@ -453,7 +453,9 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		if err != nil {
 			return nil, err
 		}
-		filesToUpload = append(filesToUpload, uploadableDir)
+		if dirHelper.IsOutputPath(fullPath) || len(entries) == 0 {
+			filesToUpload = append(filesToUpload, uploadableDir)
+		}
 		return uploadableDir.DirNode(), nil
 	}
 	if _, err := uploadDirFn(rootDir, ""); err != nil {
