@@ -274,8 +274,11 @@ func (f *fileToUpload) DirNode() *repb.DirectoryNode {
 	}
 }
 
-func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
+func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload, txInfo *TransferInfo) error {
 	for _, uploadableFile := range filesToUpload {
+		log.Infof("uploading %s", uploadableFile.fullFilePath)
+		txInfo.FileCount += 1
+		txInfo.BytesTransferred += uploadableFile.info.Size()
 		// Add output files to the filecache.
 		if fc != nil && uploadableFile.dir == nil {
 			node := uploadableFile.FileNode()
@@ -424,8 +427,8 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if _, ok := dirHelper.FindParentOutputPath(fqfn); !ok && !isOutputPath {
 					continue
 				}
-				txInfo.FileCount += 1
-				txInfo.BytesTransferred += dirNode.GetDigest().GetSizeBytes()
+				// txInfo.FileCount += 1
+				// txInfo.BytesTransferred += dirNode.GetDigest().GetSizeBytes()
 				directory.Directories = append(directory.Directories, dirNode)
 			} else if info.Mode().IsRegular() {
 				if !dirHelper.ShouldUploadFile(fqfn) {
@@ -436,8 +439,8 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 					return nil, err
 				}
 
-				txInfo.FileCount += 1
-				txInfo.BytesTransferred += fileNode.GetDigest().GetSizeBytes()
+				// txInfo.FileCount += 1
+				// txInfo.BytesTransferred += fileNode.GetDigest().GetSizeBytes()
 				directory.Files = append(directory.Files, fileNode)
 			} else if info.Mode()&os.ModeSymlink == os.ModeSymlink {
 				if err := handleSymlink(dirHelper, rootDir, cmd, actionResult, directory, fqfn); err != nil {
@@ -458,7 +461,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	}
 
 	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
-	if err := uploadFiles(ctx, uploader, env.GetFileCache(), filesToUpload); err != nil {
+	if err := uploadFiles(ctx, uploader, env.GetFileCache(), filesToUpload, txInfo); err != nil {
 		return nil, err
 	}
 
