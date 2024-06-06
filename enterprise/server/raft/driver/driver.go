@@ -666,7 +666,11 @@ func (rq *Queue) postProcess(repl IReplica) {
 	if !ok {
 		alert.UnexpectedEvent("unexpected_pq_item_map_type_error_in_replicate_queue")
 	}
-	if item.requeue {
+	rq.mu.Lock()
+	requeue := item.requeue
+	rq.mu.Unlock()
+
+	if requeue {
 		rq.MaybeAdd(repl)
 	}
 	rq.pqItemMap.Delete(rd.GetRangeId())
