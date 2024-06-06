@@ -67,6 +67,14 @@ func TestMatchesAnyTrigger_SupportsBasicWildcard(t *testing.T) {
 		{"gh-readonly-queue/*", "gh-readonly-queue/", true},
 		{"gh-readonly-queue/*", "gh-readonly-queue/main/pr-1-1111111111111111111111111111111111111111", true},
 		{"gh-readonly-queue/*", "gh-READONLY-queue/main/pr-1-1111111111111111111111111111111111111111", false},
+		{"release-*", "release-20240101", true},
+		{"release-*", "releasefoo", false},
+		{"*-release", "20240101-release", true},
+		{"*-release", "foorelease", false},
+		{"prefix*suffix", "prefix_suffix", true},
+		{"prefix*suffix", "_prefix_suffix", false},
+		{"prefix*suffix", "prefix_suffix_", false},
+		{"prefix*suffix", "prefixsuffix", true},
 	} {
 		action := &config.Action{
 			Triggers: &config.Triggers{
