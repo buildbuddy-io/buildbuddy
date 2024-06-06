@@ -128,17 +128,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		affinityKey = repoURL.String()
 	}
 
-	image := DefaultRunnerContainerImage
-	isolationType := "firecracker"
-	// Containers/VMs aren't supported on darwin - default to bare execution.
-	if req.GetOs() == "darwin" {
-		image = ""
-		isolationType = "none"
-	}
-	if req.GetContainerImage() != "" {
-		image = req.GetContainerImage()
-	}
-
 	// By default, use the non-root user.
 	user := nonRootUser
 	for _, p := range req.ExecProperties {
@@ -148,16 +137,29 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		}
 	}
 
+	// Run from the scratch disk, since the workspace disk is hot-swapped
+	// between runs, which may not be very Bazel-friendly.
 	wd := "/home/buildbuddy/workspace"
 	if user == rootUser {
 		wd = "/root/workspace"
+	}
+	image := DefaultRunnerContainerImage
+	isolationType := "firecracker"
+
+	// Containers/VMs aren't supported on darwin - default to bare execution
+	// and use the action workspace as the working directory.
+	if req.GetOs() == "darwin" {
+		wd = ""
+		image = ""
+		isolationType = "none"
+	}
+	if req.GetContainerImage() != "" {
+		image = req.GetContainerImage()
 	}
 
 	// Hosted Bazel shares the same pool with workflows.
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			// Run from the scratch disk, since the workspace disk is hot-swapped
-			// between runs, which may not be very Bazel-friendly.
 			{Name: "WORKDIR_OVERRIDE", Value: wd},
 			{Name: "GIT_BRANCH", Value: req.GetRepoState().GetBranch()},
 		},
