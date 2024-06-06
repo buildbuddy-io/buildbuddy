@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
 	"github.com/docker/go-units"
@@ -683,7 +684,9 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		printCommandLine(os.Stderr, *bazelCommand, args...)
+		if err := printCommandLine(os.Stderr, *bazelCommand, args...); err != nil {
+			return err
+		}
 		if err := runCommand(ctx, *bazelCommand, args, nil, wsPath, os.Stderr); err != nil {
 			return err
 		}
@@ -996,7 +999,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
-		printCommandLine(ar.reporter, *bazelCommand, args...)
+		if err := printCommandLine(ar.reporter, *bazelCommand, args...); err != nil {
+			return err
+		}
 		// Transparently set the invocation ID from the one we computed ahead of
 		// time. The UI is expecting this invocation ID so that it can render a
 		// BuildBuddy invocation URL for each bazel_command that is executed.
@@ -1426,13 +1431,18 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 	}, nil
 }
 
-func printCommandLine(out io.Writer, command string, args ...string) {
+func printCommandLine(out io.Writer, command string, args ...string) error {
 	cmdLine := command
 	for _, arg := range args {
 		cmdLine += " " + toShellToken(arg)
 	}
+	redactedCmdLine, err := redact.RedactCommand(cmdLine)
+	if err != nil {
+		return status.WrapError(err, "redact command")
+	}
 	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
-	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), cmdLine))
+	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), redactedCmdLine))
+	return nil
 }
 
 // TODO: Handle shell variable expansion. Probably want to run this with sh -c
@@ -1942,7 +1952,9 @@ func isAlreadyUpToDate(err error) bool {
 func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError) {
 	var buf bytes.Buffer
 	w := io.MultiWriter(out, &buf)
-	printCommandLine(out, "git", args...)
+	if err := printCommandLine(out, "git", args...); err != nil {
+		return "", &gitError{err, ""}
+	}
 	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, w); err != nil {
 		return "", &gitError{err, buf.String()}
 	}

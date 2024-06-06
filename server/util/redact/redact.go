@@ -353,12 +353,11 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 
 				// Redact bazel sub command (for remote runners)
 				if option.OptionName == "bazel_sub_command" {
-					cmdLineTokens, err := shlex.Split(option.OptionValue)
+					redactedCmd, err := RedactCommand(option.OptionValue)
 					if err != nil {
-						return status.WrapError(err, "split bazel_sub_command")
+						return status.WrapError(err, "redact command")
 					}
-					redactCmdLine(cmdLineTokens)
-					option.OptionValue = strings.Join(cmdLineTokens, " ")
+					option.OptionValue = redactedCmd
 				}
 			}
 			continue
@@ -561,9 +560,35 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 		}
 	case *bespb.BuildEvent_WorkflowConfigured:
 		{
+			for _, m := range p.WorkflowConfigured.Invocation {
+				redactedCmd, err := RedactCommand(m.BazelCommand)
+				if err != nil {
+					return status.WrapError(err, "redact command")
+				}
+				m.BazelCommand = redactedCmd
+			}
+		}
+	case *bespb.BuildEvent_ChildInvocationsConfigured:
+		{
+			for _, m := range p.ChildInvocationsConfigured.Invocation {
+				redactedCmd, err := RedactCommand(m.BazelCommand)
+				if err != nil {
+					return status.WrapError(err, "redact command")
+				}
+				m.BazelCommand = redactedCmd
+			}
 		}
 	}
 	return nil
+}
+
+func RedactCommand(cmd string) (string, error) {
+	cmdTokens, err := shlex.Split(cmd)
+	if err != nil {
+		return "", status.WrapError(err, "split command")
+	}
+	redactCmdLine(cmdTokens)
+	return strings.Join(cmdTokens, " "), nil
 }
 
 func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
