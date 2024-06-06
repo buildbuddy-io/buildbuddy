@@ -241,15 +241,24 @@ func MatchesAnyActionName(action *Action, names []string) bool {
 	return false
 }
 
+// Returns whether the given pattern matches the given text.
+// The pattern is allowed to contain a single wildcard character, "*", which
+// matches anything. If there is more than one wildcard, then all wildcards
+// after the first one are treated as literals.
+func matchesRestrictedGlob(pattern, text string) bool {
+	idx := strings.Index(pattern, "*")
+	if idx == -1 {
+		// No wildcard; exact match.
+		return pattern == text
+	}
+	prefix := pattern[:idx]
+	suffix := pattern[idx+1:]
+	return strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix)
+}
+
 func matchesAnyBranch(branches []string, branch string) bool {
-	for _, b := range branches {
-		if b == "*" {
-			return true
-		}
-		if b == branch {
-			return true
-		}
-		if b == "gh-readonly-queue/*" && strings.HasPrefix(branch, "gh-readonly-queue/") {
+	for _, branchPattern := range branches {
+		if matchesRestrictedGlob(branchPattern, branch) {
 			return true
 		}
 	}
