@@ -271,13 +271,6 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 	}
 }
 
-func (f *fileToUpload) OutputDirectory(rootDir string) *repb.OutputDirectory {
-	return &repb.OutputDirectory{
-		Path:       trimPathPrefix(f.fullFilePath, rootDir),
-		TreeDigest: f.resourceName.GetDigest(),
-	}
-}
-
 func (f *fileToUpload) DirNode() *repb.DirectoryNode {
 	return &repb.DirectoryNode{
 		Name:   f.info.Name(),

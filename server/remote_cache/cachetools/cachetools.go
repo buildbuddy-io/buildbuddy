@@ -649,49 +649,6 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	return nil
 }
 
-func (ul *BatchCASUploader) UploadProto(in proto.Message) (*repb.Digest, error) {
-	data, err := proto.Marshal(in)
-	if err != nil {
-		return nil, err
-	}
-	d, err := digest.Compute(bytes.NewReader(data), ul.digestFunction)
-	if err != nil {
-		return nil, err
-	}
-	if err := ul.Upload(d, NewBytesReadSeekCloser(data)); err != nil {
-		return nil, err
-	}
-	return d, nil
-}
-
-func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	d, err := digest.Compute(f, ul.digestFunction)
-	if err != nil {
-		return nil, err
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-
-	// Add output files to the filecache.
-	if ul.env.GetFileCache() != nil {
-		if err := ul.env.GetFileCache().AddFile(ul.ctx, &repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path); err != nil {
-			log.Warningf("Error adding file to filecache: %s", err)
-		}
-	}
-
-	// Note: uploader.Upload will close the file.
-	if err := ul.Upload(d, f); err != nil {
-		return nil, err
-	}
-	return d, nil
-}
-
 func (ul *BatchCASUploader) flushCurrentBatch() error {
 	casClient := ul.env.GetContentAddressableStorageClient()
 	if casClient == nil {
