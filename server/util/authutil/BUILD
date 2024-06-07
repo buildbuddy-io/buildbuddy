@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "authutil",
@@ -15,5 +15,15 @@ go_library(
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "authutil_test",
+    size = "small",
+    srcs = ["authutil_test.go"],
+    embed = [":authutil"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
     ],
 )

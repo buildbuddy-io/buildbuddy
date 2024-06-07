@@ -3,7 +3,6 @@ package testauth
 import (
 	"context"
 	"net/http"
-	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
@@ -38,8 +37,7 @@ const (
 )
 
 var (
-	testApiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
-	jwtTestKey      = []byte("testKey")
+	jwtTestKey = []byte("testKey")
 )
 
 type TestUser = claims.Claims
@@ -195,23 +193,6 @@ func (a *TestAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 
 func (a *TestAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
 	return status.UnimplementedError("Auth not implemented")
-}
-
-func (a *TestAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
-	matches := testApiKeyRegex.FindAllStringSubmatch(input, -1)
-	l := len(matches)
-	if l == 0 {
-		// The api key header is not present
-		return "", nil
-	}
-	lastMatch := matches[l-1]
-	if len(lastMatch) != 2 {
-		return "", status.UnauthenticatedError("failed to parse API key: invalid input")
-	}
-	if apiKey := lastMatch[1]; apiKey != "" {
-		return apiKey, nil
-	}
-	return "", status.UnauthenticatedError("failed to parse API key: missing API Key")
 }
 
 func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {

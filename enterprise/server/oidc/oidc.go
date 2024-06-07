@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -88,10 +87,6 @@ const (
 
 	// Maximum number of entries in API Key -> Group cache.
 	apiKeyGroupCacheSize = 10_000
-)
-
-var (
-	apiKeyRegex = regexp.MustCompile(authutil.APIKeyHeader + "=([a-zA-Z0-9]*)")
 )
 
 type userToken struct {
@@ -462,23 +457,6 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKeyID(ctx context.Context,
 		return nil, status.FailedPreconditionError("AuthDB not configured")
 	}
 	return authDB.GetAPIKeyGroupFromAPIKeyID(ctx, apiKeyID)
-}
-
-func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
-	matches := apiKeyRegex.FindAllStringSubmatch(input, -1)
-	l := len(matches)
-	if l == 0 {
-		// The api key header is not present
-		return "", nil
-	}
-	lastMatch := matches[l-1]
-	if len(lastMatch) != 2 {
-		return "", status.UnauthenticatedError("failed to parse API key: invalid input")
-	}
-	if apiKey := lastMatch[1]; apiKey != "" {
-		return apiKey, nil
-	}
-	return "", status.UnauthenticatedError("failed to parse API key: missing API Key")
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {

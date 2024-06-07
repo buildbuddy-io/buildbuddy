@@ -3,6 +3,7 @@ package authutil
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -38,6 +39,10 @@ const (
 	UserNotFoundMsg   = "User not found"
 	LoggedOutMsg      = "User logged out"
 	ExpiredSessionMsg = "User session expired"
+)
+
+var (
+	apiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
 )
 
 // AuthorizeOrgAdmin checks whether the given user has ORG_ADMIN capability
@@ -123,6 +128,24 @@ func IsAnonymousUserError(err error) bool {
 		}
 	}
 	return false
+}
+
+// Parses and returns a BuildBuddy API key from the given string.
+func ParseAPIKeyFromString(input string) (string, error) {
+	matches := apiKeyRegex.FindAllStringSubmatch(input, -1)
+	l := len(matches)
+	if l == 0 {
+		// The api key header is not present
+		return "", nil
+	}
+	lastMatch := matches[l-1]
+	if len(lastMatch) != 2 {
+		return "", status.UnauthenticatedError("failed to parse API key: invalid input")
+	}
+	if apiKey := lastMatch[1]; apiKey != "" {
+		return apiKey, nil
+	}
+	return "", status.UnauthenticatedError("failed to parse API key: missing API Key")
 }
 
 func AuthContextWithError(ctx context.Context, err error) context.Context {
