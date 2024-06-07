@@ -13,6 +13,7 @@ go_library(
         "//proto:target_go_proto",
         "//proto:target_pagination_go_proto",
         "//proto/api/v1:common_go_proto",
+        "//server/build_event_protocol/build_event_handler",
         "//server/build_event_protocol/event_index",
         "//server/environment",
         "//server/util/db",

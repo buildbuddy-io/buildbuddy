@@ -90,6 +90,8 @@ var (
 		"GetStatDrilldown",
 		"GetSuggestion",
 		"SearchExecution",
+		"GetTargetStats",
+		"GetTargetFlakeSamples",
 		// Workflow configuration and history (read-only).
 		"GetWorkflows",
 		"GetRepos",

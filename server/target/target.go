@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -738,6 +739,173 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 		JOIN "TargetStatuses" as ts ON ts.target_id = t.target_id`)
 	q.AddJoinClause(joinQuery, "i", "ts.invocation_uuid = i.invocation_uuid")
 	return fetchTargetsFromPrimaryDB(ctx, env, q, repo)
+}
+
+func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTargetStatsRequest) (*trpb.GetTargetStatsResponse, error) {
+	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !isReadFromOLAPDBEnabled(env) {
+		return nil, status.UnimplementedError("Target stats requires an OLAP DB.")
+	}
+	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
+	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ?"
+	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo}
+	if len(req.GetLabels()) > 0 {
+		innerWhereClause = innerWhereClause + " AND label IN ?"
+		qArgs = append(qArgs, req.GetLabels())
+	}
+
+	qArgs = append(qArgs, qArgs...)
+
+	pg, err := paging.DecodeOffsetLimit(req.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	pg.Offset = max(pg.Offset, int64(0))
+	pg.Limit = min(max(pg.Limit, int64(50)), int64(200))
+
+	qArgs = append(qArgs, pg.GetLimit()+1, pg.GetOffset())
+	qStr := fmt.Sprintf(`SELECT stats.label AS label, total_runs, successful_runs, flaky_runs,
+	    failed_runs, likely_flaky_runs, flaky_runs + likely_flaky_runs as total_flakes
+	FROM (
+		SELECT label,
+		count(*) AS total_runs,
+		countIf(status = 1) AS successful_runs,
+		countIf(status = 2) AS flaky_runs,
+		countIf(status > 2) AS failed_runs
+		FROM "TestTargetStatuses" WHERE (%s) GROUP BY label) stats
+	INNER JOIN (SELECT label, count(*) AS likely_flaky_runs
+		FROM (
+			SELECT
+				label,
+				first_value(status) OVER win AS first_status,
+				status,
+				last_value(status) OVER win AS last_status
+			FROM "TestTargetStatuses"
+			WHERE (%s)
+			WINDOW win AS (
+				PARTITION BY label
+				ORDER BY invocation_start_time_usec ASC
+				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
+		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status > 2 GROUP BY label) lf
+	ON lf.label=stats.label ORDER BY total_flakes DESC LIMIT ? OFFSET ?`, innerWhereClause, innerWhereClause)
+
+	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
+
+	count := int64(0)
+	rsp := &trpb.GetTargetStatsResponse{}
+	db.ScanEach(rq, func(ctx context.Context, row *trpb.TargetStats) error {
+		// We fetch limit+1 rows just to see if there's going to be another page of results.
+		count++
+		if count > pg.GetLimit() {
+			return nil
+		}
+		rsp.Stats = append(rsp.Stats, row)
+		return nil
+	})
+	if count > pg.GetLimit() {
+		if rsp.NextPageToken, err = paging.EncodeOffsetLimit(&pgpb.OffsetLimit{Offset: pg.GetOffset() + pg.GetLimit(), Limit: pg.GetLimit()}); err != nil {
+			return nil, err
+		}
+	}
+	return rsp, nil
+}
+
+func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.GetTargetFlakeSamplesRequest) (*trpb.GetTargetFlakeSamplesResponse, error) {
+	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !isReadFromOLAPDBEnabled(env) {
+		return nil, status.UnimplementedError("Flake sampling requires an OLAP DB.")
+	}
+
+	pg, err := paging.DecodeOffsetLimit(req.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	pg.Offset = max(pg.Offset, int64(0))
+	pg.Limit = 5
+
+	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ? AND label = ?"
+	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
+	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo, req.GetLabel()}
+	qArgs = append(qArgs, qArgs...)
+	qArgs = append(qArgs, pg.GetLimit(), pg.GetOffset())
+
+	qStr := fmt.Sprintf(`SELECT status, invocation_start_time_usec, invocation_uuid
+	FROM (
+		SELECT status, invocation_start_time_usec, invocation_uuid
+		FROM "TestTargetStatuses" WHERE (status = 2 AND %s)
+	UNION ALL (SELECT status, invocation_start_time_usec, invocation_uuid
+		FROM (
+			SELECT
+				invocation_start_time_usec,
+				invocation_uuid,      
+				first_value(status) OVER win AS first_status,
+				status,
+				last_value(status) OVER win AS last_status
+			FROM "TestTargetStatuses"
+			WHERE (%s)
+			WINDOW win AS (
+				PARTITION BY label
+				ORDER BY invocation_start_time_usec ASC
+				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
+		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status > 2))
+	ORDER BY invocation_start_time_usec DESC LIMIT ? OFFSET ?`, innerWhereClause, innerWhereClause)
+
+	type queryOut struct {
+		InvocationUuid          string
+		Status                  int64
+		InvocationStartTimeUsec int64
+	}
+
+	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
+	count := int64(0)
+	rsp := &trpb.GetTargetFlakeSamplesResponse{}
+	db.ScanEach(rq, func(ctx context.Context, row *queryOut) error {
+		// We fetch limit+1 rows just to see if there's going to be another page of results.
+		count++
+		if count > pg.GetLimit() {
+			return nil
+		}
+
+		invocationID, err := uuid.Base64StringToString(row.InvocationUuid)
+		if err != nil {
+			return err
+		}
+		callback := func(event *inpb.InvocationEvent) error {
+			_, ok := event.GetBuildEvent().GetPayload().(*build_event_stream.BuildEvent_TestResult)
+			if ok && event.GetBuildEvent().GetId().GetTestResult().GetLabel() == req.GetLabel() {
+				tr := event.GetBuildEvent().GetTestResult()
+				if tr.GetStatus() < 2 {
+					return nil
+				}
+				for _, f := range tr.GetTestActionOutput() {
+					if f.GetName() == "test.xml" && strings.HasPrefix(f.GetUri(), "bytestream://") {
+						rsp.Samples = append(rsp.Samples, &trpb.FlakeSample{
+							InvocationId:   invocationID,
+							Status:         convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
+							TestXmlFileUri: f.GetUri(),
+						})
+					}
+				}
+			}
+			return nil
+		}
+		build_event_handler.LookupInvocationWithCallback(ctx, env, invocationID, callback)
+		return nil
+	})
+
+	if count > pg.GetLimit() {
+		if rsp.NextPageToken, err = paging.EncodeOffsetLimit(&pgpb.OffsetLimit{Offset: pg.GetOffset() + pg.GetLimit(), Limit: pg.GetLimit()}); err != nil {
+			return nil, err
+		}
+	}
+
+	return rsp, nil
 }
 
 func isReadFromOLAPDBEnabled(env environment.Env) bool {
