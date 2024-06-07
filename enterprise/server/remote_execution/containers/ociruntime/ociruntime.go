@@ -1,6 +1,7 @@
 package ociruntime
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -175,6 +176,7 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 		return err
 	}
 	os.Stderr.Write(b)
+	os.Stderr.WriteString("\n")
 
 	return nil
 }
@@ -208,12 +210,13 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 	if err := c.createBundle(ctx, pid1); err != nil {
 		return status.UnavailableErrorf("create OCI bundle: %s", err)
 	}
-	// Create container
-	if err := c.invokeRuntimeSimple(ctx, "create", "--bundle="+c.bundlePath(), cid); err != nil {
+	// Create container (discard output as pid 1 is sleep, which inherits and never closes
+	// stdout/stderr)
+	if err := c.invokeRuntimeSimple(ctx, nil, "create", "--bundle="+c.bundlePath(), c.cid); err != nil {
 		return status.UnavailableErrorf("create container: %s", err)
 	}
 	// Start container
-	if err := c.invokeRuntimeSimple(ctx, "start", c.cid); err != nil {
+	if err := c.invokeRuntimeSimple(ctx, &interfaces.Stdio{}, "start", c.cid); err != nil {
 		return status.UnavailableErrorf("start container: %s", err)
 	}
 	return nil
@@ -221,7 +224,7 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	// TODO: wire up stdio
-	return c.invokeRuntime(ctx, cmd, "exec", "--cwd="+execrootPath, c.cid)
+	return c.invokeRuntime(ctx, cmd, stdio, "exec", "--cwd="+execrootPath, "--detach", c.cid)
 }
 
 func (c *ociContainer) Pause(ctx context.Context) error {
@@ -240,7 +243,7 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 	var firstErr error
 
-	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil {
+	if err := c.invokeRuntimeSimple(ctx, &interfaces.Stdio{}, "delete", "--force", c.cid); err != nil {
 		firstErr = status.UnavailableErrorf("failed to delete container: %s", err)
 	}
 
@@ -487,8 +490,8 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 	return &spec, nil
 }
 
-func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, args ...string) error {
-	res := c.invokeRuntime(ctx, &repb.Command{}, args...)
+func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, stdio *interfaces.Stdio, args ...string) error {
+	res := c.invokeRuntime(ctx, &repb.Command{}, stdio, args...)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -503,7 +506,7 @@ func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, args ...string) 
 	return nil
 }
 
-func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command, args ...string) *interfaces.CommandResult {
+func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
 		// TODO: better profiling/tracing
@@ -533,20 +536,42 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 
 	cmd := exec.Command(runtimeArgs[0], runtimeArgs[1:]...)
 	cmd.Dir = wd
-	// TODO: figure out process I/O. crun's process model does not seem to be
-	// compatible with just setting stdout/stderr to an io.Writer like we would
-	// expect - if we set stdout to a bytes.Buffer here for example, then
-	// cmd.Run() will hang. One observation is that crun seems to re-exec
-	// itself, which might have something to do with it.
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var stdout *bytes.Buffer
+	var stderr *bytes.Buffer
+	// If stdio is nil, the output will be discarded.
+	if stdio != nil {
+		cmd.Stdin = stdio.Stdin
+		if stdio.Stdout == nil {
+			stdout = &bytes.Buffer{}
+			cmd.Stdout = stdout
+		} else {
+			stdout = nil
+			cmd.Stdout = stdio.Stdout
+		}
+		if stdio.Stderr == nil {
+			stderr = &bytes.Buffer{}
+			cmd.Stderr = stderr
+		} else {
+			stderr = nil
+			cmd.Stderr = stdio.Stderr
+		}
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// TODO: Avoid hanging indefinitely if the container doesn't close stdout/stderr after exiting.
+	cmd.WaitDelay = 5 * time.Second
 	runError := cmd.Run()
 	code, err := commandutil.ExitCode(ctx, cmd, runError)
-	return &interfaces.CommandResult{
+	result := &interfaces.CommandResult{
 		ExitCode: code,
 		Error:    err,
 	}
+	if stdout != nil {
+		result.Stdout = stdout.Bytes()
+	}
+	if stderr != nil {
+		result.Stderr = stderr.Bytes()
+	}
+	return result
 }
 
 func statDevice(path string) (*specs.LinuxDevice, error) {

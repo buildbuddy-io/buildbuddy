@@ -41,6 +41,7 @@ go_test(
         ":ociruntime",
         "//enterprise/server/remote_execution/container",
         "//proto:remote_execution_go_proto",
+        "//server/interfaces",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/testing/flags",
