@@ -372,7 +372,6 @@ proto_library(
     ],
     deps = [
         ":context_proto",
-        ":firecracker_proto",
         ":git_proto",
         ":remote_execution_proto",
     ],
@@ -1217,7 +1216,6 @@ go_proto_library(
     proto = ":runner_proto",
     deps = [
         ":context_go_proto",
-        ":firecracker_go_proto",
         ":git_go_proto",
         ":remote_execution_go_proto",
     ],
@@ -2258,7 +2256,6 @@ ts_proto_library(
     proto = ":runner_proto",
     deps = [
         ":context_ts_proto",
-        ":firecracker_ts_proto",
         ":git_ts_proto",
         ":remote_execution_ts_proto",
     ],
