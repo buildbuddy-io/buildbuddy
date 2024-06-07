@@ -457,8 +457,8 @@ web_test_go_repositories()
 http_file(
     name = "aws_rds_certs",
     downloaded_file_path = "rds-combined-ca-bundle.pem",
-    sha256 = "6a8ba1c9f858386edba0ea82b7bf8168ef513d1eb0df3a08cc7cf4bb89f856d0",
-    url = "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem",
+    sha256 = "51b107da46717aed974d97464b63f7357b220fe8737969db1492d1cae74b3947",
+    url = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
 )
 
 # Proto rules
