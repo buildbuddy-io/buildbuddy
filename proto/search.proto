@@ -35,6 +35,18 @@ message SearchRequest {
   context.RequestContext request_context = 1;
 
   Query query = 2;
+
+  // Required. The search namespace to operate in. Namespaces are logically
+  // distinct domains. Documents indexed in one namespace are not visible from
+  // another. The search server does not itself apply restrictions on who can
+  // query -- so the application should enforce separation by putting users into
+  // different namespaces.
+  //
+  // Ex. "gr12345" or "anon", or "public" or "foobarbaz".
+  string namespace = 3;
+
+  // The maximum number of results to send back.
+  int32 num_results = 4;
 }
 
 message SearchResponse {

@@ -39,6 +39,10 @@ const (
 	languageField = "language"
 	repoField     = "repo"
 	shaField      = "sha"
+
+	// Used to control how many results may be returned at a time.
+	defaultNumResults = 10
+	maxNumResults     = 1000
 )
 
 func New(rootDirectory, scratchDirectory string) (*codesearchServer, error) {
@@ -92,7 +96,9 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 	if gitRepo == nil || gitRepo.GetOwnerRepo() == "" {
 		return nil, fmt.Errorf("a git_repo must be specified")
 	}
-
+	if req.GetNamespace() == "" {
+		return nil, fmt.Errorf("a non-empty namespace must be specified")
+	}
 	// https://github.com/buildbuddy-io/buildbuddy/archive/1d8a3184c996c3d167a281b70a4eeccd5188e5e1.tar.gz
 	archiveURL := fmt.Sprintf("https://github.com/%s/archive/%s.zip", gitRepo.GetOwnerRepo(), gitRepo.GetCommitSha())
 	log.Debugf("archive URL is %q", archiveURL)
@@ -123,9 +129,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 	}
 	defer zipReader.Close()
 
-	// TODO(tylerw): pull namespace from index request.
-	namespace := ""
-	iw, err := index.NewWriter(css.db, namespace)
+	iw, err := index.NewWriter(css.db, req.GetNamespace())
 	if err != nil {
 		return nil, err
 	}
@@ -167,11 +171,14 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 }
 
 func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
-	// TODO(tylerw): pull namespace and numResultsfrom search request.
-	namespace := ""
-	numResults := 10
-
-	codesearcher := searcher.New(index.NewReader(css.db, namespace))
+	if req.GetNamespace() == "" {
+		return nil, fmt.Errorf("a non-empty namespace must be specified")
+	}
+	numResults := defaultNumResults
+	if req.GetNumResults() > 0 && req.GetNumResults() < maxNumResults {
+		numResults = int(req.GetNumResults())
+	}
+	codesearcher := searcher.New(index.NewReader(css.db, req.GetNamespace()))
 	q, err := query.NewReQuery(req.GetQuery().GetTerm(), numResults)
 	if err != nil {
 		return nil, err
