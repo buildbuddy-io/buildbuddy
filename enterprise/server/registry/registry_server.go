@@ -3,9 +3,11 @@ package registry
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -38,6 +40,13 @@ func (t *RegistryServer) Start() {
 	proxy := httputil.NewSingleHostReverseProxy(url)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		urlParts := strings.Split(req.URL.Path, "/")
+
+		if len(urlParts) > 3 && urlParts[1] == "modules" && strings.HasPrefix(urlParts[3], "github.") {
+			handleGitHub(w, req)
+			return
+		}
+
 		req.Host = req.URL.Host
 		proxy.ServeHTTP(w, req)
 	})
@@ -48,4 +57,18 @@ func (t *RegistryServer) Start() {
 			log.Fatal(err.Error())
 		}
 	}()
+}
+
+func request(url string) ([]byte, int, error) {
+	log.Debugf("fetching: %s", url)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, 500, err
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 500, err
+	}
+	return body, resp.StatusCode, nil
 }
