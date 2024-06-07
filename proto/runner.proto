@@ -1,7 +1,6 @@
 syntax = "proto3";
 
 import "proto/context.proto";
-import "proto/firecracker.proto";
 import "proto/git.proto";
 import "proto/remote_execution.proto";
 
