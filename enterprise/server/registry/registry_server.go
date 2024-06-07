@@ -3,7 +3,7 @@ package registry
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -40,10 +40,16 @@ func (t *RegistryServer) Start() {
 	proxy := httputil.NewSingleHostReverseProxy(url)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-		urlParts := strings.Split(req.URL.Path, "/")
+		path := req.URL.Path
+		pathPaths := strings.Split(path, "/")
 
-		if len(urlParts) > 3 && urlParts[1] == "modules" && strings.HasPrefix(urlParts[3], "github.") {
-			handleGitHub(w, req)
+		if len(pathPaths) > 3 && pathPaths[1] == "modules" && strings.HasPrefix(pathPaths[3], "github.") {
+			bytes, status, err := handleGitHub(path)
+			w.WriteHeader(status)
+			if err != nil {
+				log.Printf("error serving github module %s: %s", path, err)
+			}
+			w.Write(bytes)
 			return
 		}
 
@@ -66,7 +72,7 @@ func request(url string) ([]byte, int, error) {
 		return nil, 500, err
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, 500, err
 	}

@@ -1,26 +1,24 @@
 package registry
 
 import (
-	"net/http"
 	"regexp"
 	"strings"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
-func handleGitHub(w http.ResponseWriter, req *http.Request) {
-	urlParts := strings.Split(req.URL.Path, "/")
+func handleGitHub(path string) ([]byte, int, error) {
+	urlParts := strings.Split(path, "/")
 
 	switch urlParts[len(urlParts)-1] {
 	case "MODULE.bazel":
-		githubModule(w, req)
+		return githubModule(path)
 	case "source.json":
-		githubSource(w, req)
+		return githubSource(path)
 	}
+	return nil, 404, nil
 }
 
-func parseGithubRequest(req *http.Request) (string, string, string, string) {
-	urlParts := strings.Split(req.URL.Path, "/")
+func parseGithubRequest(path string) (string, string, string, string) {
+	urlParts := strings.Split(path, "/")
 	repo := urlParts[2]
 	version := urlParts[3]
 	versionParts := strings.Split(version, "+")
@@ -32,18 +30,15 @@ func parseGithubRequest(req *http.Request) (string, string, string, string) {
 	return repo, owner, version, tag
 }
 
-func githubModule(w http.ResponseWriter, req *http.Request) {
-	repo, owner, version, tag := parseGithubRequest(req)
+func githubModule(path string) ([]byte, int, error) {
+	repo, owner, version, tag := parseGithubRequest(path)
 	moduleRegex := regexp.MustCompile(`(?s)module\(.*?\)`)
 	body, status, err := request("https://raw.githubusercontent.com/" + owner + "/" + repo + "/" + tag + "/MODULE.bazel")
 	if err != nil {
-		log.Errorf("%s", err)
-		w.WriteHeader(status)
-		return
+		return nil, status, err
 	}
 	if status > 300 {
-		w.WriteHeader(status)
-		return
+		return nil, status, nil
 	}
 
 	moduleSnippet := []byte(`module(name="` + repo + `", version="` + version + `")`)
@@ -54,14 +49,14 @@ func githubModule(w http.ResponseWriter, req *http.Request) {
 		moduleSnippet = append(moduleSnippet, []byte("\n\n")...)
 		moduleSnippet = append(moduleSnippet, body...)
 	}
-	w.Write(moduleSnippet)
+	return moduleSnippet, 200, nil
 }
 
-func githubSource(w http.ResponseWriter, req *http.Request) {
-	repo, owner, _, tag := parseGithubRequest(req)
-	w.Write([]byte(`{
+func githubSource(path string) ([]byte, int, error) {
+	repo, owner, _, tag := parseGithubRequest(path)
+	return []byte(`{
 		"integrity": "",
 		"strip_prefix": "` + repo + `-` + tag + `",
 		"url": "https://github.com/` + owner + `/` + repo + `/archive/` + tag + `.zip"
-	}`))
+	}`), 200, nil
 }
