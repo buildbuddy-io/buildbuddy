@@ -6894,24 +6894,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-linux-arm64"],
     )
     http_file(
-        name = "io_bazel_bazel-6.0.0-darwin-x86_64",
-        executable = True,
-        sha256 = "8e543c5c9f1c8c91df945cd2fb4c3b43587929a43044a0ed87d13da0d19f96e8",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/6.0.0/bazel-6.0.0-darwin-x86_64"],
-    )
-    http_file(
-        name = "io_bazel_bazel-6.0.0-linux-x86_64",
-        executable = True,
-        sha256 = "f03d44ecaac3878e3d19489e37caa4ca1dc57427b686a78a85065ea3c27ebe68",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/6.0.0/bazel-6.0.0-linux-x86_64"],
-    )
-    http_file(
-        name = "io_bazel_bazel-6.0.0-linux-arm64",
-        executable = True,
-        sha256 = "408c33a0edb8f31374da47e011eef88c360264f268e9a4e3d9e699fbd5e57ad3",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/6.0.0/bazel-6.0.0-linux-arm64"],
-    )
-    http_file(
         name = "io_bazel_bazel-6.5.0-darwin-x86_64",
         executable = True,
         sha256 = "bbf9c2c03bac48e0514f46db0295027935535d91f6d8dcd960c53393559eab29",
