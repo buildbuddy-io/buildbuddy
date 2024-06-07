@@ -3,6 +3,7 @@ package store_test
 import (
 	"bytes"
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -651,6 +652,93 @@ func TestManySplits(t *testing.T) {
 			readRecord(ctx, t, s, fr)
 		}
 	}
+}
+
+func readSessionIDs(t *testing.T, ctx context.Context, shardID uint64, store *testutil.TestingStore) []string {
+	rd := store.GetRange(shardID)
+	start, end := keys.Range(constants.LocalSessionPrefix)
+	req, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
+		Start:    start,
+		End:      end,
+		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
+	}).SetHeader(&rfpb.Header{
+		RangeId:         rd.GetRangeId(),
+		Generation:      rd.GetGeneration(),
+		ConsistencyMode: rfpb.Header_STALE,
+	}).ToProto()
+	require.NoError(t, err)
+
+	rsp, err := client.SyncReadLocal(ctx, store.NodeHost(), shardID, req)
+	require.NoError(t, err)
+	readBatch := rbuilder.NewBatchResponseFromProto(rsp)
+	scanRsp, err := readBatch.ScanResponse(0)
+	require.NoError(t, err)
+	sessionIDs := make([]string, 0, len(scanRsp.GetKvs()))
+	for _, kv := range scanRsp.GetKvs() {
+		session := &rfpb.Session{}
+		err := proto.Unmarshal(kv.GetValue(), session)
+		require.NoError(t, err)
+		sessionIDs = append(sessionIDs, string(session.GetId()))
+	}
+	return sessionIDs
+}
+
+func TestCleanupExpiredSessions(t *testing.T) {
+	flags.Set(t, "cache.raft.client_session_ttl", 5*time.Hour)
+	clock := clockwork.NewFakeClock()
+	log.Infof("now=%s", clock.Now())
+
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1, s2}
+	sf.StartShard(t, ctx, stores...)
+
+	// write some records
+	writeNRecords(ctx, t, s1, 10)
+
+	sessionIDsShard1S1 := readSessionIDs(t, ctx, 1, s1)
+	sessionIDsShard1S2 := readSessionIDs(t, ctx, 1, s2)
+	require.Greater(t, len(sessionIDsShard1S1), 0)
+	require.ElementsMatch(t, sessionIDsShard1S1, sessionIDsShard1S2)
+	sessionIDsShard2S1 := readSessionIDs(t, ctx, 2, s1)
+	sessionIDsShard2S2 := readSessionIDs(t, ctx, 2, s1)
+	require.Greater(t, len(sessionIDsShard2S1), 0)
+	require.ElementsMatch(t, sessionIDsShard2S1, sessionIDsShard2S2)
+
+	// Returns true if l1 contains at least one element from l2.
+	containsAny := func(l1 []string, l2 []string) bool {
+		for _, s := range l2 {
+			if slices.Contains(l1, s) {
+				return true
+			}
+		}
+		return false
+	}
+
+	clock.Advance(5*time.Hour + 10*time.Minute)
+	for {
+		sessionIDsShard1S1After := readSessionIDs(t, ctx, 1, s1)
+		if !containsAny(sessionIDsShard1S1After, sessionIDsShard1S1) {
+			break
+		}
+		sessionIDsShard1S2After := readSessionIDs(t, ctx, 1, s2)
+		if !containsAny(sessionIDsShard1S2After, sessionIDsShard1S2) {
+			break
+		}
+		sessionIDsShard2S1After := readSessionIDs(t, ctx, 2, s1)
+		if !containsAny(sessionIDsShard2S1After, sessionIDsShard2S1) {
+			break
+		}
+		sessionIDsShard2S2After := readSessionIDs(t, ctx, 2, s2)
+		if !containsAny(sessionIDsShard2S2After, sessionIDsShard2S2) {
+			break
+		}
+		clock.Advance(65 * time.Second)
+	}
+
 }
 
 func TestSplitAcrossClusters(t *testing.T) {

@@ -330,3 +330,7 @@ func SyncReadLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shar
 	}
 	return rbuilder.NewBatchResponseFromProto(rsp), nil
 }
+
+func SessionLifetime() time.Duration {
+	return *sessionLifetime
+}
