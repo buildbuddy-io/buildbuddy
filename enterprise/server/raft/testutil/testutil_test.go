@@ -5,12 +5,13 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
+	"github.com/jonboulle/clockwork"
 )
 
 func TestStartShard(t *testing.T) {
-	sf := testutil.NewStoreFactory(t)
+	sf := testutil.NewStoreFactoryWithClock(t, clockwork.NewRealClock())
 	s1 := sf.NewStore(t)
 	ctx := context.Background()
 
-	testutil.StartShard(t, ctx, s1)
+	sf.StartShard(t, ctx, s1)
 }

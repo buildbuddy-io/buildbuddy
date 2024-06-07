@@ -70,12 +70,12 @@ type LeaseKeeper struct {
 	nodeLivenessUpdates <-chan *rfpb.NodeLivenessRecord
 }
 
-func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event) *LeaseKeeper {
+func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event, session *client.Session) *LeaseKeeper {
 	return &LeaseKeeper{
 		nodeHost:            nodeHost,
 		log:                 log,
 		liveness:            liveness,
-		session:             client.NewSession(),
+		session:             session,
 		listener:            listener,
 		broadcast:           broadcast,
 		mu:                  sync.Mutex{},

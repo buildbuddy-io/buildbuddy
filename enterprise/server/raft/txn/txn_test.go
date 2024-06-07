@@ -33,7 +33,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	store := sf.NewStore(t)
 	ctx := context.Background()
-	testutil.StartShard(t, ctx, store)
+	sf.StartShard(t, ctx, store)
 
 	{ // Do a DirectWrite.
 		key := []byte("foo")
@@ -137,7 +137,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	store := sf.NewStore(t)
 	ctx := context.Background()
-	testutil.StartShard(t, ctx, store)
+	sf.StartShard(t, ctx, store)
 
 	{ // Do a DirectWrite.
 		key := []byte("foo")
@@ -246,7 +246,7 @@ func TestFetchTxnRecordsSkipRecent(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	store := sf.NewStore(t)
 	ctx := context.Background()
-	testutil.StartShard(t, ctx, store)
+	sf.StartShard(t, ctx, store)
 	tc := txn.NewCoordinator(store, store.APIClient(), clock)
 
 	err := tc.WriteTxnRecord(ctx, &rfpb.TxnRecord{
@@ -286,7 +286,7 @@ func TestRunTxn(t *testing.T) {
 	s2 := sf.NewStore(t)
 	s3 := sf.NewStore(t)
 	ctx := context.Background()
-	testutil.StartShard(t, ctx, s1, s2, s3)
+	sf.StartShard(t, ctx, s1, s2, s3)
 
 	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
