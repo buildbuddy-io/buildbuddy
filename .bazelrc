@@ -230,6 +230,9 @@ common:macos --host_cxxopt=-std=c++17
 common:macos --cxxopt=-std=c++17
 common:windows --host_cxxopt=/std:c++17
 common:windows --cxxopt=/std:c++17
+# Workaround for https://github.com/actions/runner-images/issues/10004#issuecomment-2153445161
+common:windows --host_copt=/D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
+common:windows --copt=/D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
 
 # Ensure that we don't use the apple_support cc_toolchain
 common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
