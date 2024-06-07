@@ -38,6 +38,7 @@ const (
 	contentField  = "content"
 	languageField = "language"
 	repoField     = "repo"
+	shaField      = "sha"
 )
 
 func New(rootDirectory, scratchDirectory string) (*codesearchServer, error) {
@@ -56,7 +57,7 @@ type codesearchServer struct {
 	scratchDirectory string
 }
 
-func makeDoc(name, repo string, buf []byte) (types.Document, error) {
+func makeDoc(name, repo, commitSha string, buf []byte) (types.Document, error) {
 	// Skip long files.
 	if len(buf) > maxFileLen {
 		return nil, fmt.Errorf("%s: too long, ignoring\n", name)
@@ -80,6 +81,7 @@ func makeDoc(name, repo string, buf []byte) (types.Document, error) {
 			contentField:  types.NewNamedField(types.TrigramField, contentField, buf, true /*=stored*/),
 			languageField: types.NewNamedField(types.StringTokenField, languageField, []byte(lang), true /*=stored*/),
 			repoField:     types.NewNamedField(types.StringTokenField, repoField, []byte(repo), true /*=stored*/),
+			shaField:      types.NewNamedField(types.StringTokenField, shaField, []byte(commitSha), true /*=stored*/),
 		},
 	)
 	return doc, nil
@@ -144,7 +146,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		if err != nil {
 			return nil, err
 		}
-		doc, err := makeDoc(filename, gitRepo.GetOwnerRepo(), buf)
+		doc, err := makeDoc(filename, gitRepo.GetOwnerRepo(), gitRepo.GetCommitSha(), buf)
 		if err != nil {
 			log.Debugf(err.Error())
 			continue
@@ -187,6 +189,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 			Repo:       string(doc.Field(repoField).Contents()),
 			Filename:   string(doc.Field(filenameField).Contents()),
 			MatchCount: int32(len(regions)),
+			Sha:        string(doc.Field(shaField).Contents()),
 		}
 		for _, region := range regions {
 			result.Snippets = append(result.Snippets, &srpb.Snippet{

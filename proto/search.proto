@@ -13,9 +13,13 @@ message Snippet {
   string lines = 1;
 }
 
+// Next tag: 6
 message Result {
   // The repository this result came from.
   string repo = 1;
+
+  // The commit sha of the file.
+  string sha = 5;
 
   // The name of the file the match was found in.
   string filename = 2;
