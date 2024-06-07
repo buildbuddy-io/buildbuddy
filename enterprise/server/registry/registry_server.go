@@ -53,6 +53,16 @@ func (t *RegistryServer) Start() {
 			return
 		}
 
+		if len(pathPaths) > 3 && pathPaths[1] == "modules" && strings.HasPrefix(pathPaths[3], "npm") {
+			bytes, status, err := handleNPM(path)
+			w.WriteHeader(status)
+			if err != nil {
+				log.Printf("error serving npm module %s: %s", path, err)
+			}
+			w.Write(bytes)
+			return
+		}
+
 		req.Host = req.URL.Host
 		proxy.ServeHTTP(w, req)
 	})
