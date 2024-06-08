@@ -47,7 +47,7 @@ func (t *RegistryServer) Start() {
 			bytes, status, err := handleGitHub(path)
 			w.WriteHeader(status)
 			if err != nil {
-				log.Printf("error serving github module %s: %s", path, err)
+				log.Errorf("error serving github module %s: %s", path, err)
 			}
 			w.Write(bytes)
 			return
@@ -57,7 +57,7 @@ func (t *RegistryServer) Start() {
 			bytes, status, err := handleNPM(path)
 			w.WriteHeader(status)
 			if err != nil {
-				log.Printf("error serving npm module %s: %s", path, err)
+				log.Errorf("error serving npm module %s: %s", path, err)
 			}
 			w.Write(bytes)
 			return
