@@ -45,7 +45,7 @@ func buildFile(moduleName string, packageJson *NPMPackage) []byte {
 +++ BUILD.bazel
 @@ -0,0 +1,2 @@
 +exports_files(glob(["**"]))
-+filegroup(name="`+moduleName+`", srcs = glob(["**"]), visibility = ["//visibility:public"])`)
++filegroup(name="` + moduleName + `", srcs = glob(["**"]), visibility = ["//visibility:public"])`)
 }
 
 func npmBuildPatch(path string) ([]byte, int, error) {
