@@ -32,7 +32,7 @@ import (
 var skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*$`)
 
 const (
-	maxFileLen = 1 << 30
+	maxFileLen = 10_000_000
 
 	// The maximum amount of bytes from a file to use for language and
 	// mimetype detection.
