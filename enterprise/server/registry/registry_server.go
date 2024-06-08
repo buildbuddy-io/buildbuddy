@@ -44,22 +44,22 @@ func (t *RegistryServer) Start() {
 		pathPaths := strings.Split(path, "/")
 
 		if len(pathPaths) > 3 && pathPaths[1] == "modules" && strings.HasPrefix(pathPaths[3], "github.") {
-			bytes, status, err := handleGitHub(path)
+			buf, status, err := handleGitHub(path)
 			w.WriteHeader(status)
 			if err != nil {
 				log.Errorf("error serving github module %s: %s", path, err)
 			}
-			w.Write(bytes)
+			w.Write(buf)
 			return
 		}
 
 		if len(pathPaths) > 3 && pathPaths[1] == "modules" && strings.HasPrefix(pathPaths[3], "npm") {
-			bytes, status, err := handleNPM(path)
+			buf, status, err := handleNPM(path)
 			w.WriteHeader(status)
 			if err != nil {
 				log.Errorf("error serving npm module %s: %s", path, err)
 			}
-			w.Write(bytes)
+			w.Write(buf)
 			return
 		}
 
