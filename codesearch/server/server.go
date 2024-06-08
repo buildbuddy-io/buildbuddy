@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
 	"github.com/gabriel-vasile/mimetype"
@@ -46,6 +47,9 @@ const (
 )
 
 func New(rootDirectory, scratchDirectory string) (*codesearchServer, error) {
+	if err := disk.EnsureDirectoryExists(scratchDirectory); err != nil {
+		return nil, err
+	}
 	db, err := pebble.Open(rootDirectory, &pebble.Options{})
 	if err != nil {
 		return nil, err
