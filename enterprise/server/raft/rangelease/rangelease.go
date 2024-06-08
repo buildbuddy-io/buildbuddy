@@ -205,11 +205,21 @@ func (l *Lease) renewLease(ctx context.Context) error {
 	}
 
 	if bytes.Equal(newVal, expectedValue) {
-		// For node-epoch based leases, forcing renewal is kind of non-
-		// sensical. Rather than prevent this at a higher level, we
-		// detect the case where we are trying to set the lease to the
-		// already set value, and short-circuit renewal.
-		return nil
+		var replicaRLValue []byte
+		replicaRL := l.replica.GetRangeLease()
+		if replicaRL != nil {
+			replicaRLValue, err = proto.Marshal(replicaRL)
+			if err != nil {
+				return err
+			}
+		}
+		if bytes.Equal(replicaRLValue, expectedValue) {
+			// For node-epoch based leases, forcing renewal is kind of non-
+			// sensical. Rather than prevent this at a higher level, we
+			// detect the case where we are trying to set the lease to the
+			// already set value, and short-circuit renewal.
+			return nil
+		}
 	}
 
 	kv, err := l.sendCasRequest(ctx, expectedValue, newVal)
