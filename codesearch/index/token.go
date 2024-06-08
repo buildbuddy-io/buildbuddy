@@ -3,12 +3,67 @@ package index
 import (
 	"bufio"
 	"fmt"
+	"io"
 
-	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"io"
 )
+
+type Set struct {
+	dense  []uint32
+	sparse []uint32
+}
+
+// This is sparse.Set from:
+// https://github.com/google/codesearch/blob/master/sparse/set.go
+//
+// NewSet returns a new Set with a given maximum size.
+// The set can contain numbers in [0, max-1].
+func NewSet(max uint32) *Set {
+	return &Set{
+		sparse: make([]uint32, max),
+	}
+}
+
+// Init initializes a Set to have a given maximum size.
+// The set can contain numbers in [0, max-1].
+func (s *Set) Init(max uint32) {
+	s.sparse = make([]uint32, max)
+}
+
+// Reset clears (empties) the set.
+func (s *Set) Reset() {
+	s.dense = s.dense[:0]
+}
+
+// Add adds x to the set if it is not already there.
+func (s *Set) Add(x uint32) {
+	v := s.sparse[x]
+	if v < uint32(len(s.dense)) && s.dense[v] == x {
+		return
+	}
+	n := len(s.dense)
+	s.sparse[x] = uint32(n)
+	s.dense = append(s.dense, x)
+}
+
+// Has reports whether x is in the set.
+func (s *Set) Has(x uint32) bool {
+	v := s.sparse[x]
+	return v < uint32(len(s.dense)) && s.dense[v] == x
+}
+
+// Dense returns the values in the set.
+// The values are listed in the order in which they
+// were inserted.
+func (s *Set) Dense() []uint32 {
+	return s.dense
+}
+
+// Len returns the number of values in the set.
+func (s *Set) Len() int {
+	return len(s.dense)
+}
 
 type byteToken struct {
 	fieldType types.FieldType
@@ -55,7 +110,7 @@ func trigramToBytes(tv uint32) []byte {
 type TrigramTokenizer struct {
 	r io.ByteReader
 
-	trigrams *roaring.Bitmap
+	trigrams *Set
 	buf      []byte
 
 	n  int64
@@ -64,7 +119,7 @@ type TrigramTokenizer struct {
 
 func NewTrigramTokenizer() *TrigramTokenizer {
 	return &TrigramTokenizer{
-		trigrams: roaring.New(),
+		trigrams: NewSet(1 << 24),
 		buf:      make([]byte, 16384),
 	}
 }
@@ -75,7 +130,7 @@ func (tt *TrigramTokenizer) Reset(r io.Reader) {
 	} else {
 		tt.r = bufio.NewReader(r)
 	}
-	tt.trigrams.Clear()
+	tt.trigrams.Reset()
 	tt.buf = tt.buf[:0]
 	tt.n = 0
 	tt.tv = 0
@@ -96,7 +151,7 @@ func (tt *TrigramTokenizer) Next() (types.Token, error) {
 			continue
 		}
 
-		alreadySeen := tt.trigrams.Contains(tt.tv)
+		alreadySeen := tt.trigrams.Has(tt.tv)
 		if !alreadySeen && tt.tv != 1<<24-1 {
 			tt.trigrams.Add(tt.tv)
 			return newByteToken(types.TrigramField, trigramToBytes(tt.tv)), nil

@@ -45,7 +45,11 @@ var (
 )
 
 const (
-	maxFileLen = 1 << 30
+	maxFileLen = 10_000_000
+
+	// The maximum amount of bytes from a file to use for language and
+	// mimetype detection.
+	detectionBufferSize = 1000
 )
 
 func printMainHelpAndDie() {
@@ -131,14 +135,21 @@ func makeDoc(name string) (types.Document, error) {
 	// Compute a hash of the file.
 	docID := xxhash.Sum64(buf)
 
+	var shortBuf []byte
+	if len(buf) > detectionBufferSize {
+		shortBuf = buf[:detectionBufferSize]
+	} else {
+		shortBuf = buf
+	}
+
 	// Check the mimetype and skip if bad.
-	mtype, err := mimetype.DetectReader(bytes.NewReader(buf))
+	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
 	if err == nil && skipMime.MatchString(mtype.String()) {
 		return nil, fmt.Errorf("%q: skipping (invalid mime type: %q)", name, mtype.String())
 	}
 
 	// Compute filetype
-	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), buf))
+	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
 	doc := types.NewMapDocument(
 		docID,
 		map[string]types.NamedField{
