@@ -14,6 +14,9 @@ type Set struct {
 	sparse []uint32
 }
 
+// This is sparse.Set from:
+// https://github.com/google/codesearch/blob/master/sparse/set.go
+//
 // NewSet returns a new Set with a given maximum size.
 // The set can contain numbers in [0, max-1].
 func NewSet(max uint32) *Set {
