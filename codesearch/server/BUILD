@@ -12,6 +12,7 @@ go_library(
         "//codesearch/types",
         "//proto:index_go_proto",
         "//proto:search_go_proto",
+        "//server/util/disk",
         "//server/util/log",
         "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_cockroachdb_pebble//:pebble",
