@@ -1413,6 +1413,12 @@ func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSugge
 }
 func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
 	if css := s.env.GetCodesearchService(); css != nil {
+		namespace, err := prefix.UserPrefix(ctx, s.env)
+		if err != nil {
+			return nil, err
+		}
+		// Force the namespace to match the authenticated user.
+		req.Namespace = namespace
 		return css.Search(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
