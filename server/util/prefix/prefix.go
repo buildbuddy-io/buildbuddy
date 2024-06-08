@@ -36,6 +36,14 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 	return addPrefix(u.GetGroupID(), key), nil
 }
 
+func UserPrefix(ctx context.Context, env environment.Env) (string, error) {
+	prefix, err := userPrefixCacheKey(ctx, env, "")
+	if err != nil {
+		return "", err
+	}
+	return prefix, nil
+}
+
 func AttachUserPrefixToContext(ctx context.Context, env environment.Env) (context.Context, error) {
 	prefix, err := userPrefixCacheKey(ctx, env, "")
 	if err != nil {
