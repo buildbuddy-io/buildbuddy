@@ -265,6 +265,9 @@ func provisionArtifactsDir(ws *workspace, bazelCommandIndex int) error {
 
 func provisionKythe(ctx context.Context, ws *workspace) error {
 	kytheRootPath := filepath.Join(ws.rootDir, kytheDirName)
+	if err := os.Setenv(kytheDirEnvVarName, kytheRootPath); err != nil {
+		return err
+	}
 	if _, err := os.Stat(kytheRootPath); err == nil {
 		return nil // dir already exists; we're done.
 	}
@@ -274,9 +277,6 @@ func provisionKythe(ctx context.Context, ws *workspace) error {
 	cmd := fmt.Sprintf(`curl -sL "%s" | tar -xz -C %s --strip-components 1`, kytheArchiveURL, kytheRootPath)
 	args := []string{"-c", cmd}
 	if err := runCommand(ctx, "bash", args, nil /*=env*/, "" /*=dir*/, ws.log); err != nil {
-		return err
-	}
-	if err := os.Setenv(kytheDirEnvVarName, kytheRootPath); err != nil {
 		return err
 	}
 	return nil
