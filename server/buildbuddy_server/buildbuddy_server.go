@@ -1417,8 +1417,10 @@ func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) 
 		if err != nil {
 			return nil, err
 		}
-		// Force the namespace to match the authenticated user.
-		req.Namespace = namespace
+		// Force the namespace to match the authenticated user, but
+		// allow for clients to use a custom namespace within that
+		// subspace.
+		req.Namespace = path.Clean(namespace) + ":" + req.GetNamespace()
 		return css.Search(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
