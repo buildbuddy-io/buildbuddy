@@ -1601,11 +1601,12 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if params.Get("artifact") != "" {
 		code, err = s.serveArtifact(r.Context(), w, params)
-	} else if params.Get("bytestream_url") != "" && strings.HasPrefix(params.Get("bytestream_url"), "bytestream://") {
+	} else if params.Get("bytestream_url") != "" {
 		// bytestream request
 		code, err = s.serveBytestream(r.Context(), w, params)
-		if err != nil && code == http.StatusNotFound {
-			// Fall back to blobstore if object is not in cache
+		// For CAS (bytestream://) only, fall back to blobstore if object is not
+		// in cache.
+		if err != nil && code == http.StatusNotFound && strings.HasPrefix(params.Get("bytestream_url"), "bytestream://") {
 			code, err = s.serveArtifact(r.Context(), w, params)
 		}
 	} else {
