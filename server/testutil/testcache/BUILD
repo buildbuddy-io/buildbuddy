@@ -10,9 +10,11 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/capabilities_server",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/testutil/testenv",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:go_default_library",
     ],
 )
