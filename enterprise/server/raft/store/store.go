@@ -475,10 +475,11 @@ func (s *Store) Start() error {
 }
 
 func (s *Store) Stop(ctx context.Context) error {
+	s.log.Info("Store: started to shut down")
 	s.dropLeadershipForShutdown()
 	now := time.Now()
 	defer func() {
-		s.log.Infof("Store shutdown finished in %s", time.Since(now))
+		s.log.Infof("Store: shutdown finished in %s", time.Since(now))
 	}()
 
 	if s.egCancel != nil {
@@ -496,11 +497,11 @@ func (s *Store) Stop(ctx context.Context) error {
 	if err := s.db.Flush(); err != nil {
 		return err
 	}
-	log.Info("Store: db flushed")
+	s.log.Info("Store: db flushed")
 
 	// Wait for all active requests to be finished.
 	s.leaser.Close()
-	log.Info("Store: leaser closed")
+	s.log.Info("Store: leaser closed")
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
