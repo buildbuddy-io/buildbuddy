@@ -102,7 +102,7 @@ type IReplica interface {
 
 type IStore interface {
 	GetReplica(rangeID uint64) (*replica.Replica, error)
-	HaveLease(rangeID uint64) bool
+	HaveLease(ctx context.Context, rangeID uint64) bool
 	AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error)
 	RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error)
 	GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) map[uint64]constants.ReplicaState
@@ -229,10 +229,10 @@ func NewQueue(store IStore, gossipManager interfaces.GossipService) *Queue {
 	}
 }
 
-func (rq *Queue) shouldQueue(repl IReplica) (bool, float64) {
+func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64) {
 	rd := repl.RangeDescriptor()
 
-	if !rq.store.HaveLease(rd.GetRangeId()) {
+	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		// The store doesn't have lease for this range. do not queue.
 		log.Debugf("should not queue because we don't have lease")
 		return false, 0
@@ -288,8 +288,8 @@ func (rq *Queue) Len() int {
 // MaybeAdd adds a replica to the queue if the store has the lease for the range,
 // and there is work needs to be done.
 // When the queue is full, it deletes the least important replica from the queue.
-func (rq *Queue) MaybeAdd(replica IReplica) {
-	shouldQueue, priority := rq.shouldQueue(replica)
+func (rq *Queue) MaybeAdd(ctx context.Context, replica IReplica) {
+	shouldQueue, priority := rq.shouldQueue(ctx, replica)
 	if !shouldQueue {
 		return
 	}
@@ -360,7 +360,7 @@ func (rq *Queue) Start(ctx context.Context) {
 				continue
 			}
 
-			requeue, err := rq.processReplica(repl)
+			requeue, err := rq.processReplica(ctx, repl)
 			if err != nil {
 				// TODO: check if err can be retried.
 				log.Errorf("failed to process replica: %s", err)
@@ -370,7 +370,7 @@ func (rq *Queue) Start(ctx context.Context) {
 			rq.mu.Lock()
 			item.requeue = requeue
 			rq.mu.Unlock()
-			rq.postProcess(repl)
+			rq.postProcess(ctx, repl)
 		}
 	}()
 }
@@ -607,9 +607,9 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 
 }
 
-func (rq *Queue) processReplica(repl IReplica) (bool, error) {
+func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error) {
 	rd := repl.RangeDescriptor()
-	if !rq.store.HaveLease(rd.GetRangeId()) {
+	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		// the store doesn't have the lease of this range.
 		log.Debugf("store doesn't have lease for shard_id: %d, replica_id:%d, do not process", repl.ReplicaID(), repl.ShardID())
 		return false, nil
@@ -645,7 +645,7 @@ func (rq *Queue) processReplica(repl IReplica) (bool, error) {
 		return false, nil
 	}
 
-	err := rq.applyChange(context.TODO(), change)
+	err := rq.applyChange(ctx, change)
 	if err != nil {
 		log.Warningf("Error apply change: %s", err)
 	}
@@ -656,7 +656,7 @@ func (rq *Queue) processReplica(repl IReplica) (bool, error) {
 	return true, err
 }
 
-func (rq *Queue) postProcess(repl IReplica) {
+func (rq *Queue) postProcess(ctx context.Context, repl IReplica) {
 	rd := repl.RangeDescriptor()
 	itemIface, ok := rq.pqItemMap.Load(rd.GetRangeId())
 	if !ok {
@@ -671,7 +671,7 @@ func (rq *Queue) postProcess(repl IReplica) {
 	rq.mu.Unlock()
 
 	if requeue {
-		rq.MaybeAdd(repl)
+		rq.MaybeAdd(ctx, repl)
 	}
 	rq.pqItemMap.Delete(rd.GetRangeId())
 }

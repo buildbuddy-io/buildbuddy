@@ -65,7 +65,7 @@ func newTestingProposerAndSenderAndReplica(t testing.TB) (*testutil.TestingPropo
 }
 
 func TestAcquireAndRelease(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
@@ -89,17 +89,17 @@ func TestAcquireAndRelease(t *testing.T) {
 	require.NoError(t, err)
 
 	// Rangelease should be valid.
-	valid := l.Valid()
+	valid := l.Valid(ctx)
 	require.True(t, valid)
 
-	log.Printf("RangeLease: %s", l)
+	log.Printf("RangeLease: %s", l.Desc(ctx))
 
 	// Should be able to release a rangelease.
 	err = l.Release(ctx)
 	require.NoError(t, err)
 
 	// Rangelease should be invalid after release.
-	valid = l.Valid()
+	valid = l.Valid(ctx)
 	require.False(t, valid)
 }
 
@@ -128,17 +128,17 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	require.NoError(t, err)
 
 	// Rangelease should be valid.
-	valid := l.Valid()
+	valid := l.Valid(ctx)
 	require.True(t, valid)
 
-	log.Printf("RangeLease: %s", l)
+	log.Printf("RangeLease: %s", l.Desc(ctx))
 
 	// Should be able to release a rangelease.
 	err = l.Release(ctx)
 	require.NoError(t, err)
 
 	// Rangelease should be invalid after release.
-	valid = l.Valid()
+	valid = l.Valid(ctx)
 	require.False(t, valid)
 }
 
@@ -169,15 +169,15 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	require.NoError(t, err)
 
 	// Rangelease should be valid.
-	valid := l.Valid()
+	valid := l.Valid(ctx)
 	require.True(t, valid)
 
-	log.Printf("RangeLease: %s", l)
+	log.Printf("RangeLease: %s", l.Desc(ctx))
 	time.Sleep(2 * leaseDuration)
-	log.Printf("RangeLease: %s", l)
+	log.Printf("RangeLease: %s", l.Desc(ctx))
 
 	// Rangelease should have auto-renewed itself and should still be valid.
-	valid = l.Valid()
+	valid = l.Valid(ctx)
 	require.True(t, valid)
 
 	// Should be able to release a rangelease.
@@ -185,7 +185,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	require.NoError(t, err)
 
 	// Rangelease should be invalid after release.
-	valid = l.Valid()
+	valid = l.Valid(ctx)
 	require.False(t, valid)
 }
 
@@ -214,17 +214,17 @@ func TestNodeEpochInvalidation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Rangelease should be valid.
-	valid := l.Valid()
+	valid := l.Valid(ctx)
 	require.True(t, valid)
 
-	log.Printf("RangeLease: %s", l)
+	log.Printf("RangeLease: %s", l.Desc(ctx))
 
 	err = liveness.Release()
 	require.NoError(t, err)
 
 	// Rangelease should be invalid after the nodeliveness record it's
 	// dependent on is released.
-	valid = l.Valid()
+	valid = l.Valid(ctx)
 	require.False(t, valid)
 
 	// Should be able to re-lease it again.
@@ -232,6 +232,6 @@ func TestNodeEpochInvalidation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Rangelease should be valid again.
-	valid = l.Valid()
+	valid = l.Valid(ctx)
 	require.True(t, valid)
 }
