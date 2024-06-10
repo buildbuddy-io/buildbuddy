@@ -1850,6 +1850,9 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"extensions.partialClone", "true"},
 		// Disable this check for `git fetch` performance improvements
 		{"fetch.showForcedUpdates", "false"},
+		// Disable automatic gc - it can interfere with running `rm -rf .git` in
+		// the case where we don't sync successfully.
+		{"gc.auto", "0"},
 	}
 	writeCommandSummary(ws.log, "Configuring repository...")
 	for _, kv := range cfg {
