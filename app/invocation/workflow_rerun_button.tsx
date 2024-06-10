@@ -74,7 +74,9 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       try {
         await this.invalidateSnapshot();
       } catch (e) {
-        errorService.handleError(`Failed to invalidate snapshot: ${e}`);
+        errorService.handleError(`Failed to invalidate snapshot: ${e}.
+        To work around this, you can invalidate snapshots for ALL workflows by
+        clicking "Invalidate all workflow VM snapshots" in the 3-dot menu on the Workflows page`);
         this.setState({ isLoading: false });
         return;
       }
@@ -145,9 +147,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     const executeResponseBuffer = await rpcService
       .fetchBytestreamFile(executeResponseUrl, this.props.model.getInvocationId(), "arraybuffer")
       .catch((e) => {
-        throw new Error(
-          `workflow execute response does not exist in the cache. Try invalidating from a more recent workflow run`
-        );
+        throw new Error(`workflow execute response does not exist in the cache`);
       });
 
     const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(executeResponseBuffer));
