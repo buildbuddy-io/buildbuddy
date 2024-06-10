@@ -140,7 +140,7 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 
 	t.Cleanup(func() {
 		ctx := context.Background()
-		ctx, cancelFn := context.WithTimeout(ctx, 10*time.Second)
+		ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
 		defer cancelFn()
 		store.Stop(ctx)
 	})
