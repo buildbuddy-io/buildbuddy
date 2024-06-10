@@ -39,7 +39,10 @@ function paths_to_format() {
   git diff --name-only --diff-filter=AMRCT "$DIFF_BASE" -- "${GIT_FILE_PATTERNS[@]}"
 }
 
-mapfile -t paths < <(paths_to_format)
+paths=()
+while read -r path; do
+  paths+=("$path")
+done < <(paths_to_format)
 
 if [[ -z "${paths[*]}" ]]; then
   exit 0
