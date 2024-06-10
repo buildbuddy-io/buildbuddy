@@ -54,16 +54,10 @@ var (
 	newConsistentHashVNodes      = flag.Int("cache.distributed_cache.new_consistent_hash_vnodes", 100, "The number of copies of each peer on the new consistent hash ring")
 	newNodesReadOnly             = flag.Bool("cache.distributed_cache.new_nodes_read_only", false, "If true, only attempt to read from the newNodes set; do not write to them yet")
 
-	lookasideCacheSizeBytes = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 0, "If > 0 ; lookaside cache will be enabled")
-	lookasideCacheTTL       = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 15*time.Minute, "How long to hold stuff in the lookaside cache. Should be << atime_update_threshold")
-	maxLookasideEntryBytes  = flag.Int64("cache.distributed_cache.max_lookaside_entry_bytes", 10_000, "The biggest allowed entry size in the lookaside cache.")
-)
-
-const (
-	// Each hinted handoff is a digest (~64 bytes), prefix, and peer
-	// (40 bytes). So keeping around 100000 of these means an extra 10MB
-	// per peer.
-	maxHintedHandoffsPerPeer = 100000
+	lookasideCacheSizeBytes  = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 0, "If > 0 ; lookaside cache will be enabled")
+	lookasideCacheTTL        = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 15*time.Minute, "How long to hold stuff in the lookaside cache. Should be << atime_update_threshold")
+	maxLookasideEntryBytes   = flag.Int64("cache.distributed_cache.max_lookaside_entry_bytes", 10_000, "The biggest allowed entry size in the lookaside cache.")
+	maxHintedHandoffsPerPeer = flag.Int64("cache.distributed_cache.max_hinted_handoffs_per_peer", 100_000, "The maximum number of hinted handoffs to keep in memory. Each hinted handoff is a digest (~64 bytes), prefix, and peer (40 bytes). So keeping around 100000 of these means an extra 10MB per peer.")
 )
 
 type CacheConfig struct {
@@ -462,7 +456,7 @@ func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *r
 	if _, ok := c.hintedHandoffsByPeer[peer]; !ok {
 		// If this is the first hinted handoff for this peer we've
 		// received, then initialize the channel.
-		c.hintedHandoffsByPeer[peer] = make(chan *hintedHandoffOrder, maxHintedHandoffsPerPeer)
+		c.hintedHandoffsByPeer[peer] = make(chan *hintedHandoffOrder, *maxHintedHandoffsPerPeer)
 	}
 	order := &hintedHandoffOrder{
 		ctx: ctx,
