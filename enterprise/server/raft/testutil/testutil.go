@@ -139,7 +139,10 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	ts.Store = store
 
 	t.Cleanup(func() {
-		store.Stop(context.TODO())
+		ctx := context.Background()
+		ctx, cancelFn := context.WithTimeout(ctx, 10*time.Second)
+		defer cancelFn()
+		store.Stop(ctx)
 	})
 	return ts
 }
