@@ -362,17 +362,17 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:3172df37ef8caa768ce74ebbc7f0e2b6a2641d3b35d18659d36f3815e30fe620",
+    digest = "sha256:388145607c79313a1e49b783a7ee71e4ef3df31d87c45adb46bfb9b257b643d1",
     registry = "gcr.io",
-    repository = "distroless/cc-debian11",
+    repository = "distroless/cc-debian12",
 )
 
 # Base image that can be used to build images that are capable of running the Bazel binary.
 container_pull(
     name = "bazel_image_base",
-    digest = "sha256:ab0c5fbe16bc01c03eb081a5724ba618110cbd24940ab123a8dbee0382a4c175",
+    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
     registry = "gcr.io",
-    repository = "distroless/java11-debian11",
+    repository = "distroless/java17-debian12",
 )
 
 dockerfile_image(
