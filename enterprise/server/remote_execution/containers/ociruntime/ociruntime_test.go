@@ -52,3 +52,23 @@ func TestCreateExecRemove(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, "buildbuddy was here: /buildbuddy-execroot\n", string(res.Stdout))
 }
+
+func TestCreateFailureHasStderr(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Create
+	c, err := provider.New(ctx, &container.Init{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd+"nonexistent")
+	require.ErrorContains(t, err, "nonexistent")
+}

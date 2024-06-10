@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -210,21 +211,31 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 	if err := c.createBundle(ctx, pid1); err != nil {
 		return status.UnavailableErrorf("create OCI bundle: %s", err)
 	}
-	// Create container (discard output as pid 1 is sleep, which inherits and never closes
-	// stdout/stderr)
-	if err := c.invokeRuntimeSimple(ctx, nil, "create", "--bundle="+c.bundlePath(), c.cid); err != nil {
+	// Creating the container, at least with crun, already invokes the entrypoint and has it
+	// inherit the stdout and stderr create is invoked with:
+	// https://github.com/containers/crun/blob/f44da38333321335611d45638401e99f5f9548f2/src/libcrun/container.c#L2909
+	// https://github.com/containers/crun/blob/f44da38333321335611d45638401e99f5f9548f2/src/libcrun/container.c#L2459C9-L2459C36
+	// https://github.com/containers/crun/blob/f44da38333321335611d45638401e99f5f9548f2/src/libcrun/linux.c#L4950
+	// https://github.com/containers/crun/blob/f44da38333321335611d45638401e99f5f9548f2/src/libcrun/container.c#L1548
+	// By default, exec.Cmd.Wait() will wait until both the process has exited and the stdout and
+	// stderr pipes have been closed. But since these pipes are inherited by the sleep pid1 process,
+	// they are never closed. We use a very short waitDelay to forcibly close the pipes right after
+	// the process exit.
+	result := c.invokeRuntime(ctx, &repb.Command{}, &interfaces.Stdio{}, 1*time.Nanosecond, "create", "--bundle="+c.bundlePath(), c.cid)
+	if err := asError(result); err != nil {
 		return status.UnavailableErrorf("create container: %s", err)
 	}
 	// Start container
-	if err := c.invokeRuntimeSimple(ctx, &interfaces.Stdio{}, "start", c.cid); err != nil {
+	if err := c.invokeRuntimeSimple(ctx, "start", c.cid); err != nil {
 		return status.UnavailableErrorf("start container: %s", err)
 	}
 	return nil
 }
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	// TODO: wire up stdio
-	return c.invokeRuntime(ctx, cmd, stdio, "exec", "--cwd="+execrootPath, "--detach", c.cid)
+	// TODO: Should we specify a non-zero waitDelay so that a process that spawns children won't
+	//  block forever?
+	return c.invokeRuntime(ctx, cmd, stdio, 0, "exec", "--cwd="+execrootPath, c.cid)
 }
 
 func (c *ociContainer) Pause(ctx context.Context) error {
@@ -243,7 +254,7 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 	var firstErr error
 
-	if err := c.invokeRuntimeSimple(ctx, &interfaces.Stdio{}, "delete", "--force", c.cid); err != nil {
+	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil {
 		firstErr = status.UnavailableErrorf("failed to delete container: %s", err)
 	}
 
@@ -490,8 +501,12 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 	return &spec, nil
 }
 
-func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, stdio *interfaces.Stdio, args ...string) error {
-	res := c.invokeRuntime(ctx, &repb.Command{}, stdio, args...)
+func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, args ...string) error {
+	res := c.invokeRuntime(ctx, &repb.Command{}, &interfaces.Stdio{}, 0, args...)
+	return asError(res)
+}
+
+func asError(res *interfaces.CommandResult) error {
 	if res.Error != nil {
 		return res.Error
 	}
@@ -506,7 +521,7 @@ func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, stdio *interface
 	return nil
 }
 
-func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {
+func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio, waitDelay time.Duration, args ...string) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
 		// TODO: better profiling/tracing
@@ -557,9 +572,14 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		}
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	// TODO: Avoid hanging indefinitely if the container doesn't close stdout/stderr after exiting.
-	cmd.WaitDelay = 5 * time.Second
+	cmd.WaitDelay = waitDelay
 	runError := cmd.Run()
+	if errors.Is(runError, exec.ErrWaitDelay) {
+		// The stdio streams were forcibly closed after a non-zero waitDelay. Any error from the
+		// process takes precedence over ErrWaitDelay, so we can ignore the error here without
+		// a risk of shadowing a more important error.
+		runError = nil
+	}
 	code, err := commandutil.ExitCode(ctx, cmd, runError)
 	result := &interfaces.CommandResult{
 		ExitCode: code,
