@@ -36,6 +36,7 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/lockingbuffer",
         "//server/util/log",
+        "//server/util/redact",
         "//server/util/status",
         "@com_github_creack_pty//:pty",
         "@com_github_docker_go_units//:go-units",
