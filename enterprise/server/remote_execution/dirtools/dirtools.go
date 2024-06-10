@@ -288,16 +288,6 @@ func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc 
 	return nil
 }
 
-func uploadDirs(ctx context.Context, uploader *cachetools.BatchCASUploader, dirsToUpload []*dirToUpload) error {
-	for _, d := range dirsToUpload {
-		rsc := cachetools.NewBytesReadSeekCloser(d.directoryBytes)
-		if err := uploader.Upload(d.directoryDigest, rsc); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // handleSymlink adds the symlink to the directory and actionResult proto so that
 // they could be recreated on the Bazel client side if needed.
 func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, directory *repb.Directory, fqfn string) error {
@@ -471,8 +461,11 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 
 	// Upload Directory protos.
 	// TODO: skip uploading Directory protos which are not part of any tree?
-	if err := uploadDirs(ctx, uploader, visitedDirectories); err != nil {
-		return nil, err
+	for _, d := range visitedDirectories {
+		rsc := cachetools.NewBytesReadSeekCloser(d.directoryBytes)
+		if err := uploader.Upload(d.directoryDigest, rsc); err != nil {
+			return nil, err
+		}
 	}
 
 	// Make Trees for all of the paths specified in output_paths which were
