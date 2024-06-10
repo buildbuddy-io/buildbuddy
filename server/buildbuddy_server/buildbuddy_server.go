@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -1411,6 +1412,7 @@ func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSugge
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
+
 func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
 	if css := s.env.GetCodesearchService(); css != nil {
 		namespace, err := prefix.UserPrefix(ctx, s.env)
@@ -1420,7 +1422,11 @@ func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) 
 		// Force the namespace to match the authenticated user, but
 		// allow for clients to use a custom namespace within that
 		// subspace.
-		req.Namespace = path.Clean(namespace) + ":" + req.GetNamespace()
+		relPath, err := filepath.Abs(req.GetNamespace())
+		if err != nil {
+			return nil, err
+		}
+		req.Namespace = filepath.Join(namespace, relPath)
 		return css.Search(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
