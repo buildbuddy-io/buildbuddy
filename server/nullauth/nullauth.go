@@ -66,10 +66,6 @@ func (a *NullAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error
 	return status.UnimplementedError("Auth not implemented")
 }
 
-func (a *NullAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
-	return "", nil
-}
-
 func (a *NullAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
 	return ctx
 }

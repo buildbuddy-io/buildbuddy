@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -1100,7 +1101,7 @@ func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.Bui
 	if err != nil {
 		return false, err
 	}
-	apiKey, err := auth.ParseAPIKeyFromString(options)
+	apiKey, err := authutil.ParseAPIKeyFromString(options)
 	if err != nil {
 		return false, err
 	}

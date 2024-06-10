@@ -35,6 +35,7 @@ go_library(
         "//server/remote_cache/scorecard",
         "//server/tables",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/background",
         "//server/util/capabilities",
         "//server/util/git",
