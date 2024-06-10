@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
-	"github.com/buildbuddy-io/buildbuddy/cli/setup"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
@@ -872,7 +871,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	return exitCode, nil
 }
 
-func HandleRemoteBazel(args []string) (int, error) {
+func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
 	if err != nil {
 		return 1, err
@@ -881,24 +880,10 @@ func HandleRemoteBazel(args []string) (int, error) {
 		os.RemoveAll(tempDir)
 	}()
 
-	_, bazelArgs, execArgs, err := setup.Setup(args, tempDir)
+	bazelArgs, execArgs, err := parseArgs(commandLineArgs)
 	if err != nil {
-		return 1, status.WrapError(err, "bazel setup")
+		return 1, status.WrapError(err, "parse args")
 	}
-
-	bazelArgs, err = parseRemoteCliFlags(bazelArgs)
-	if err != nil {
-		return 1, status.WrapError(err, "parse remote bazel cli flags")
-	}
-
-	bazelArgs = arg.Remove(bazelArgs, "bes_backend")
-	bazelArgs = arg.Remove(bazelArgs, "remote_cache")
-
-	// Ensure all bazel remote runs use the remote cache.
-	// The goal is to keep remote workloads close to our servers, so use the same
-	// app backend as the remote runner.
-	bazelArgs = append(bazelArgs, "--bes_backend="+*remoteRunner)
-	bazelArgs = append(bazelArgs, "--remote_cache="+*remoteRunner)
 
 	ctx := context.Background()
 	repoConfig, err := Config(".")
@@ -940,6 +925,33 @@ func HandleRemoteBazel(args []string) (int, error) {
 		Args:              arg.JoinExecutableArgs(bazelArgs, execArgs),
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
+}
+
+func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string, err error) {
+	bazelArgs, execArgs = arg.SplitExecutableArgs(commandLineArgs)
+
+	bazelArgs, err = login.ConfigureAPIKey(bazelArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+	bazelArgs, err = parseRemoteCliFlags(bazelArgs)
+	if err != nil {
+		return nil, nil, status.WrapError(err, "parse remote bazel cli flags")
+	}
+
+	// Ensure all bazel remote runs use the remote cache.
+	// The goal is to keep remote workloads close to our servers, so use the same
+	// app backend as the remote runner.
+	bazelArgs = arg.Remove(bazelArgs, "bes_backend")
+	bazelArgs = arg.Remove(bazelArgs, "remote_cache")
+	bazelArgs = append(bazelArgs, "--bes_backend="+*remoteRunner)
+	bazelArgs = append(bazelArgs, "--remote_cache="+*remoteRunner)
+
+	return bazelArgs, execArgs, nil
 }
 
 // parseRemoteCliFlags parses flags that affect configuration of remote bazel.
