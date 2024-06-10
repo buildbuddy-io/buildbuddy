@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"flag"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -196,19 +195,17 @@ func trimPathPrefix(fullPath, prefix string) string {
 	return r
 }
 
-type fileToUpload struct {
-	resourceName *digest.ResourceName
-	info         os.FileInfo
-	fullFilePath string
+// dirToUpload represents a directory to be uploaded to cache.
+type dirToUpload struct {
+	info     os.FileInfo
+	fullPath string
 
-	// If this was a directory, this is set, because the bytes to be
-	// uploaded are the contents of a directory proto, not the contents
-	// of the file at fullFilePath.
-	data []byte
-	dir  *repb.Directory
+	directory       *repb.Directory
+	directoryBytes  []byte
+	directoryDigest *repb.Digest
 }
 
-func newDirToUpload(instanceName string, digestFunction repb.DigestFunction_Value, parentDir string, info os.FileInfo, dir *repb.Directory) (*fileToUpload, error) {
+func newDirToUpload(digestFunction repb.DigestFunction_Value, fullPath string, info os.FileInfo, dir *repb.Directory) (*dirToUpload, error) {
 	data, err := proto.Marshal(dir)
 	if err != nil {
 		return nil, err
@@ -219,46 +216,45 @@ func newDirToUpload(instanceName string, digestFunction repb.DigestFunction_Valu
 	if err != nil {
 		return nil, err
 	}
-	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)
-
-	return &fileToUpload{
-		fullFilePath: filepath.Join(parentDir, info.Name()),
-		info:         info,
-		resourceName: r,
-		data:         data,
-		dir:          dir,
+	return &dirToUpload{
+		info:            info,
+		fullPath:        fullPath,
+		directory:       dir,
+		directoryBytes:  data,
+		directoryDigest: d,
 	}, nil
 }
 
-func newFileToUpload(instanceName string, digestFunction repb.DigestFunction_Value, parentDir string, info os.FileInfo) (*fileToUpload, error) {
-	fullFilePath := filepath.Join(parentDir, info.Name())
-	ad, err := cachetools.ComputeFileDigest(fullFilePath, instanceName, digestFunction)
+func (d *dirToUpload) DirectoryNode() *repb.DirectoryNode {
+	return &repb.DirectoryNode{
+		Name:   d.info.Name(),
+		Digest: d.directoryDigest,
+	}
+}
+
+// fileToUpload represents a regular file to be uploaded to cache.
+type fileToUpload struct {
+	fullPath string
+	digest   *repb.Digest
+	info     os.FileInfo
+}
+
+func newFileToUpload(digestFunction repb.DigestFunction_Value, fullPath string, info os.FileInfo) (*fileToUpload, error) {
+	d, err := digest.ComputeForFile(fullPath, digestFunction)
 	if err != nil {
 		return nil, err
 	}
 	return &fileToUpload{
-		fullFilePath: fullFilePath,
-		info:         info,
-		resourceName: ad,
+		digest:   d,
+		fullPath: fullPath,
+		info:     info,
 	}, nil
-}
-
-func (f *fileToUpload) ReadSeekCloser() (io.ReadSeekCloser, error) {
-	if f.data != nil {
-		return cachetools.NewBytesReadSeekCloser(f.data), nil
-	}
-	file, err := os.Open(f.fullFilePath)
-	// Note: Caller is responsible for closing.
-	if err != nil {
-		return nil, err
-	}
-	return file, nil
 }
 
 func (f *fileToUpload) OutputFile(rootDir string) *repb.OutputFile {
 	return &repb.OutputFile{
-		Path:         filepath.ToSlash(trimPathPrefix(f.fullFilePath, rootDir)),
-		Digest:       f.resourceName.GetDigest(),
+		Path:         filepath.ToSlash(trimPathPrefix(f.fullPath, rootDir)),
+		Digest:       f.digest,
 		IsExecutable: f.info.Mode()&0111 != 0,
 	}
 }
@@ -266,45 +262,29 @@ func (f *fileToUpload) OutputFile(rootDir string) *repb.OutputFile {
 func (f *fileToUpload) FileNode() *repb.FileNode {
 	return &repb.FileNode{
 		Name:         f.info.Name(),
-		Digest:       f.resourceName.GetDigest(),
+		Digest:       f.digest,
 		IsExecutable: f.info.Mode()&0111 != 0,
-	}
-}
-
-func (f *fileToUpload) OutputDirectory(rootDir string) *repb.OutputDirectory {
-	return &repb.OutputDirectory{
-		Path:       trimPathPrefix(f.fullFilePath, rootDir),
-		TreeDigest: f.resourceName.GetDigest(),
-	}
-}
-
-func (f *fileToUpload) DirNode() *repb.DirectoryNode {
-	return &repb.DirectoryNode{
-		Name:   f.info.Name(),
-		Digest: f.resourceName.GetDigest(),
 	}
 }
 
 func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
-		if fc != nil && uploadableFile.dir == nil {
+		if fc != nil {
 			node := uploadableFile.FileNode()
-			if err := fc.AddFile(ctx, node, uploadableFile.fullFilePath); err != nil {
+			if err := fc.AddFile(ctx, node, uploadableFile.fullPath); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
 			}
 		}
-
-		rsc, err := uploadableFile.ReadSeekCloser()
+		f, err := os.Open(uploadableFile.fullPath)
 		if err != nil {
-			return err
+			return status.UnavailableErrorf("open output file: %s", err)
 		}
 		// Note: uploader.Upload closes the file after it is uploaded.
-		if err := uploader.Upload(uploadableFile.resourceName.GetDigest(), rsc); err != nil {
+		if err := uploader.Upload(uploadableFile.digest, f); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -384,15 +364,15 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	startTime := time.Now()
 	outputDirectoryPaths := make([]string, 0)
 	filesToUpload := make([]*fileToUpload, 0)
+	visitedDirectories := make([]*dirToUpload, 0)
 
-	visitFile := func(parentDir string, info os.FileInfo) (*repb.FileNode, error) {
-		uploadableFile, err := newFileToUpload(instanceName, digestFunction, parentDir, info)
+	visitFile := func(fullPath string, info os.FileInfo) (*repb.FileNode, error) {
+		uploadableFile, err := newFileToUpload(digestFunction, fullPath, info)
 		if err != nil {
 			return nil, err
 		}
 		filesToUpload = append(filesToUpload, uploadableFile)
-		fileFullPath := filepath.Join(parentDir, info.Name())
-		if _, ok := dirHelper.FindParentOutputPath(fileFullPath); !ok {
+		if _, ok := dirHelper.FindParentOutputPath(fullPath); !ok {
 			// If this file is *not* a descendant of any output_path but wasn't
 			// skipped before the call to uploadFileFn, then it must be
 			// appended to OutputFiles.
@@ -445,7 +425,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if !dirHelper.ShouldUploadFile(childFullPath) {
 					continue
 				}
-				fileNode, err := visitFile(dirFullPath, info)
+				fileNode, err := visitFile(childFullPath, info)
 				if err != nil {
 					return nil, err
 				}
@@ -460,20 +440,32 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 			}
 		}
 
-		uploadableDir, err := newDirToUpload(instanceName, digestFunction, parentFullPath, dirInfo, directory)
+		d, err := newDirToUpload(digestFunction, dirFullPath, dirInfo, directory)
 		if err != nil {
 			return nil, err
 		}
-		filesToUpload = append(filesToUpload, uploadableDir)
-		return uploadableDir.DirNode(), nil
+		visitedDirectories = append(visitedDirectories, d)
+		return d.DirectoryNode(), nil
 	}
 	if _, err := walkDir(rootDir, ""); err != nil {
 		return nil, err
 	}
 
 	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
+
+	// Upload output files to the remote cache and also add them to the local
+	// cache since they are likely to be used as inputs to subsequent actions.
 	if err := uploadFiles(ctx, uploader, env.GetFileCache(), filesToUpload); err != nil {
 		return nil, err
+	}
+
+	// Upload Directory protos.
+	// TODO: skip uploading Directory protos which are not part of any tree?
+	for _, d := range visitedDirectories {
+		rsc := cachetools.NewBytesReadSeekCloser(d.directoryBytes)
+		if err := uploader.Upload(d.directoryDigest, rsc); err != nil {
+			return nil, err
+		}
 	}
 
 	// Make Trees for all of the paths specified in output_paths which were
@@ -485,19 +477,16 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 
 	// For each Directory encountered, determine which Tree (if any) it is a
 	// part of, and add it.
-	for _, f := range filesToUpload {
-		if f.dir == nil {
-			// Not a Directory.
-			continue
-		}
-		if tree, ok := outputDirectoryTrees[f.fullFilePath]; ok {
-			tree.Root = f.dir
-		} else if treePath, ok := dirHelper.FindParentOutputPath(f.fullFilePath); ok {
-			tree = outputDirectoryTrees[treePath]
-			tree.Children = append(tree.Children, f.dir)
+	for _, d := range visitedDirectories {
+		if tree, ok := outputDirectoryTrees[d.fullPath]; ok {
+			tree.Root = d.directory
+		} else if parentOutputPath, ok := dirHelper.FindParentOutputPath(d.fullPath); ok {
+			tree = outputDirectoryTrees[parentOutputPath]
+			tree.Children = append(tree.Children, d.directory)
 		}
 	}
 
+	// Upload Tree protos for each output directory.
 	for fullFilePath, tree := range outputDirectoryTrees {
 		td, err := uploader.UploadProto(tree)
 		if err != nil {
