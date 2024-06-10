@@ -2,13 +2,12 @@ package ociruntime_test
 
 import (
 	"context"
-	"os"
-	"runtime"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -42,12 +41,34 @@ func TestCreateExecRemove(t *testing.T) {
 	})
 
 	// Exec
-	cmd := &repb.Command{Arguments: []string{"pwd"}}
-	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "cat && pwd"}}
+	stdio := interfaces.Stdio{
+		Stdin: strings.NewReader("buildbuddy was here: "),
+	}
+	res := c.Exec(ctx, cmd, &stdio)
 	require.NoError(t, res.Error)
 
 	assert.Equal(t, 0, res.ExitCode)
-	// TODO: get stdout/stderr working
-	// assert.Empty(t, string(res.Stderr))
-	// assert.Equal(t, "/buildbuddy-execroot\n", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, "buildbuddy was here: /buildbuddy-execroot\n", string(res.Stdout))
+}
+
+func TestCreateFailureHasStderr(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Create
+	c, err := provider.New(ctx, &container.Init{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd+"nonexistent")
+	require.ErrorContains(t, err, "nonexistent")
 }

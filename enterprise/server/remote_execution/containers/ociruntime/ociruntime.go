@@ -1,9 +1,11 @@
 package ociruntime
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -175,6 +177,7 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 		return err
 	}
 	os.Stderr.Write(b)
+	os.Stderr.WriteString("\n")
 
 	return nil
 }
@@ -208,8 +211,18 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 	if err := c.createBundle(ctx, pid1); err != nil {
 		return status.UnavailableErrorf("create OCI bundle: %s", err)
 	}
-	// Create container
-	if err := c.invokeRuntimeSimple(ctx, "create", "--bundle="+c.bundlePath(), cid); err != nil {
+	// Creating the container, at least with crun, already invokes the entrypoint and has it
+	// inherit the stdout and stderr create is invoked with:
+	// https://github.com/containers/crun/blob/f44da38333321335611d45638401e99f5f9548f2/src/libcrun/container.c#L2909
+	// https://github.com/containers/crun/blob/f44da38333321335611d45638401e99f5f9548f2/src/libcrun/container.c#L2459C9-L2459C36
+	// https://github.com/containers/crun/blob/f44da38333321335611d45638401e99f5f9548f2/src/libcrun/linux.c#L4950
+	// https://github.com/containers/crun/blob/f44da38333321335611d45638401e99f5f9548f2/src/libcrun/container.c#L1548
+	// By default, exec.Cmd.Wait() will wait until both the process has exited and the stdout and
+	// stderr pipes have been closed. But since these pipes are inherited by the sleep pid1 process,
+	// they are never closed. We use a very short waitDelay to forcibly close the pipes right after
+	// the process exit.
+	result := c.invokeRuntime(ctx, &repb.Command{}, &interfaces.Stdio{}, 1*time.Nanosecond, "create", "--bundle="+c.bundlePath(), c.cid)
+	if err := asError(result); err != nil {
 		return status.UnavailableErrorf("create container: %s", err)
 	}
 	// Start container
@@ -220,8 +233,9 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 }
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	// TODO: wire up stdio
-	return c.invokeRuntime(ctx, cmd, "exec", "--cwd="+execrootPath, c.cid)
+	// TODO: Should we specify a non-zero waitDelay so that a process that spawns children won't
+	//  block forever?
+	return c.invokeRuntime(ctx, cmd, stdio, 0, "exec", "--cwd="+execrootPath, c.cid)
 }
 
 func (c *ociContainer) Pause(ctx context.Context) error {
@@ -488,7 +502,11 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 }
 
 func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, args ...string) error {
-	res := c.invokeRuntime(ctx, &repb.Command{}, args...)
+	res := c.invokeRuntime(ctx, &repb.Command{}, &interfaces.Stdio{}, 0, args...)
+	return asError(res)
+}
+
+func asError(res *interfaces.CommandResult) error {
 	if res.Error != nil {
 		return res.Error
 	}
@@ -503,7 +521,7 @@ func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, args ...string) 
 	return nil
 }
 
-func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command, args ...string) *interfaces.CommandResult {
+func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio, waitDelay time.Duration, args ...string) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
 		// TODO: better profiling/tracing
@@ -533,20 +551,47 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 
 	cmd := exec.Command(runtimeArgs[0], runtimeArgs[1:]...)
 	cmd.Dir = wd
-	// TODO: figure out process I/O. crun's process model does not seem to be
-	// compatible with just setting stdout/stderr to an io.Writer like we would
-	// expect - if we set stdout to a bytes.Buffer here for example, then
-	// cmd.Run() will hang. One observation is that crun seems to re-exec
-	// itself, which might have something to do with it.
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var stdout *bytes.Buffer
+	var stderr *bytes.Buffer
+	// If stdio is nil, the output will be discarded.
+	if stdio != nil {
+		cmd.Stdin = stdio.Stdin
+		if stdio.Stdout == nil {
+			stdout = &bytes.Buffer{}
+			cmd.Stdout = stdout
+		} else {
+			stdout = nil
+			cmd.Stdout = stdio.Stdout
+		}
+		if stdio.Stderr == nil {
+			stderr = &bytes.Buffer{}
+			cmd.Stderr = stderr
+		} else {
+			stderr = nil
+			cmd.Stderr = stdio.Stderr
+		}
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.WaitDelay = waitDelay
 	runError := cmd.Run()
+	if errors.Is(runError, exec.ErrWaitDelay) {
+		// The stdio streams were forcibly closed after a non-zero waitDelay. Any error from the
+		// process takes precedence over ErrWaitDelay, so we can ignore the error here without
+		// a risk of shadowing a more important error.
+		runError = nil
+	}
 	code, err := commandutil.ExitCode(ctx, cmd, runError)
-	return &interfaces.CommandResult{
+	result := &interfaces.CommandResult{
 		ExitCode: code,
 		Error:    err,
 	}
+	if stdout != nil {
+		result.Stdout = stdout.Bytes()
+	}
+	if stderr != nil {
+		result.Stderr = stderr.Bytes()
+	}
+	return result
 }
 
 func statDevice(path string) (*specs.LinuxDevice, error) {
