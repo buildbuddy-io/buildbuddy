@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -1411,16 +1413,22 @@ func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSugge
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
+
+var isAlphaNumPath = regexp.MustCompile(`^[A-Za-z/0-9]*$`).MatchString
+
 func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
 	if css := s.env.GetCodesearchService(); css != nil {
 		namespace, err := prefix.UserPrefix(ctx, s.env)
 		if err != nil {
 			return nil, err
 		}
+		if !isAlphaNumPath(req.GetNamespace()) {
+			return nil, status.InvalidArgumentError("namespace must match a/b/c")
+		}
 		// Force the namespace to match the authenticated user, but
 		// allow for clients to use a custom namespace within that
 		// subspace.
-		req.Namespace = path.Clean(namespace) + ":" + req.GetNamespace()
+		req.Namespace = filepath.Join(namespace, req.GetNamespace())
 		return css.Search(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
