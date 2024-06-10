@@ -241,7 +241,7 @@ type workspace struct {
 	// log contains logs from the workspace setup phase (cloning the git repo and
 	// deciding which actions to run), which are reported as part of the first
 	// action's logs.
-	log io.Writer
+	log *buildEventReporter
 }
 
 func artifactsRootPath(ws *workspace) string {
@@ -1606,12 +1606,11 @@ func (ws *workspace) setup(ctx context.Context) error {
 		if !*fallbackToCleanCheckout {
 			return err
 		}
-		log.Warningf(
+		ws.log.Printf(
 			"Failed to sync existing repo (maybe due to destructive '.git' dir edit or incompatible remote update). "+
 				"Deleting and initializing from scratch. Error: %s",
 			err,
 		)
-		writeCommandSummary(ws.log, "Failed to sync existing git repo. Deleting repo and trying again.")
 		if err := os.Chdir(".."); err != nil {
 			return status.WrapError(err, "cd")
 		}
@@ -1936,8 +1935,12 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 }
 
 type gitError struct {
-	error
+	Err    error
 	Output string
+}
+
+func (e *gitError) Error() string {
+	return fmt.Sprintf("%s: %q", e.Err.Error(), e.Output)
 }
 
 func isRemoteAlreadyExists(err error) bool {
