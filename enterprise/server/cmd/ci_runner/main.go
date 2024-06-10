@@ -633,10 +633,12 @@ func run() error {
 	if err := ensurePath(); err != nil {
 		return status.WrapError(err, "ensure PATH")
 	}
-	// Prevent git from asking for user input.
-	if err := os.Setenv("GIT_TERMINAL_PROMPT", "0"); err != nil {
-		return status.WrapError(err, "set GIT_TERMINAL_PROMPT")
+	// Try to disable interactivity since we don't provide a real terminal
+	// connection.
+	if err := disableInteractivity(); err != nil {
+		return status.WrapError(err, "disable interactivity")
 	}
+
 	// Write default bazelrc
 	if err := writeBazelrc(buildbuddyBazelrcPath, buildEventReporter.invocationID); err != nil {
 		return status.WrapError(err, "write "+buildbuddyBazelrcPath)
@@ -1536,6 +1538,20 @@ func ensurePath() error {
 		return nil
 	}
 	return os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+}
+
+func disableInteractivity() error {
+	// Prevent git from asking for user input.
+	if err := os.Setenv("GIT_TERMINAL_PROMPT", "0"); err != nil {
+		return err
+	}
+	if runtime.GOOS == "linux" {
+		// Prevent `apt-get install` from asking for input.
+		if err := os.Setenv("DEBIAN_FRONTEND", "noninteractive"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // extractBazelisk copies the embedded bazelisk to the given path if it does
