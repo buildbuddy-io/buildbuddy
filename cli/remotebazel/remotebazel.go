@@ -462,7 +462,7 @@ func splitLogBuffer(buf []byte) []string {
 
 // streamLogs streams the logs with real-time progress updates. It uses ANSI
 // escape sequences to delete and rewrite outdated progress messages
-func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, stopChan chan struct{}, invocationID string) error {
 	chunkID := ""
 	moveBack := 0
 
@@ -490,6 +490,12 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 	var chunks []*elpb.GetEventLogChunkResponse
 	wasLive := false
 	for {
+		select {
+		case <-stopChan:
+			return nil
+		default:
+		}
+
 		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 			InvocationId: invocationID,
 			ChunkId:      chunkID,
@@ -527,10 +533,16 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 }
 
 // printLogs prints the logs with real-time streaming updates disabled
-func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, stopChan chan struct{}, invocationID string) error {
 	chunkID := ""
 
 	for {
+		select {
+		case <-stopChan:
+			return nil
+		default:
+		}
+
 		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 			InvocationId: invocationID,
 			ChunkId:      chunkID,
@@ -684,6 +696,15 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	healthChecker := healthcheck.NewHealthChecker("remote-bazel-client")
 	env := real_environment.NewRealEnv(healthChecker)
 
+	// Handle interrupts to cancel the remote run.
+	sigChan := make(chan os.Signal, 1)
+	stopChan := make(chan struct{})
+	go func() {
+		<-sigChan
+		close(stopChan)
+	}()
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
 	conn, err := grpc_client.DialSimple(opts.Server)
 	if err != nil {
 		return 0, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
@@ -781,25 +802,24 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	log.Debugf("Invocation ID: %s", iid)
 
 	// If the remote bazel process is canceled or killed, cancel the remote run
-	sigChan := make(chan os.Signal, 1)
 	go func() {
-		<-sigChan
+		<-stopChan
 		_, err = bbClient.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
 			InvocationId: iid,
 		})
 		if err != nil {
 			log.Warnf("Failed to cancel remote run: %s", err)
 		}
+		os.Exit(1)
 	}()
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
 	if interactive {
-		if err := streamLogs(ctx, bbClient, iid); err != nil {
+		if err := streamLogs(ctx, bbClient, stopChan, iid); err != nil {
 			return 0, err
 		}
 	} else {
-		if err := printLogs(ctx, bbClient, iid); err != nil {
+		if err := printLogs(ctx, bbClient, stopChan, iid); err != nil {
 			return 0, err
 		}
 	}
