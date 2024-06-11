@@ -133,7 +133,7 @@ func Register(env *real_environment.RealEnv) error {
 	statusz.AddSection("raft_cache", "Raft Cache", rc)
 	env.GetHealthChecker().RegisterShutdownFunction(
 		func(ctx context.Context) error {
-			rc.Stop()
+			rc.Stop(ctx)
 			return nil
 		},
 	)
@@ -185,7 +185,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	}()
 
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		return rc.Stop()
+		return rc.Stop(ctx)
 	})
 	return rc, nil
 }
@@ -355,10 +355,10 @@ func (rc *RaftCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfac
 	return wc, nil
 }
 
-func (rc *RaftCache) Stop() error {
+func (rc *RaftCache) Stop(ctx context.Context) error {
 	rc.shutdownOnce.Do(func() {
 		close(rc.shutdown)
-		rc.store.Stop(context.Background())
+		rc.store.Stop(ctx)
 		rc.gossipManager.Leave()
 		rc.gossipManager.Shutdown()
 	})
