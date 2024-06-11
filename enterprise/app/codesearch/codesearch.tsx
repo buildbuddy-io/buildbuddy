@@ -52,7 +52,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
   }
 
   componentDidMount() {
-    this.query = this.props.search.get("q");
+    this.query = this.props.search.get("q") ?? "";
     this.search();
   }
 
@@ -118,7 +118,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
               <input
                 type="text"
                 className="searchbox"
-                value={this.props.search.get("q")}
+                defaultValue={this.props.search.get("q") ?? ""}
                 onChange={this.handleQueryChange.bind(this)}
               />
               <FilledButton type="submit">SEARCH</FilledButton>
