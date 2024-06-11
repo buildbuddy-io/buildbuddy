@@ -821,8 +821,8 @@ github.com/bazelbuild/bazel-gazelle v0.35.0 h1:Bvg+zEHWYwWrhJT4WxyvcU3y1DEJpT/Xl
 github.com/bazelbuild/bazel-gazelle v0.35.0/go.mod h1:o2+s90f3w3U6jjw0gcdok0EJOfNK0AK/9RyVP7QkRDk=
 github.com/bazelbuild/bazelisk v1.19.0 h1:TOh9touXYcKKiZqE+Dj4XD/FHrzsqmu9iDvPTsW9jIc=
 github.com/bazelbuild/bazelisk v1.19.0/go.mod h1:EwrQdJpNWr17zu6UWVk49YBNZ9MkIgTkOUwfTIeaRnc=
-github.com/bazelbuild/buildtools v0.0.0-20240207142252-03bf520394af h1:wycIfuqZJzkloRT+fcazTM3NjvAMyAi1qC2QXmEZP4s=
-github.com/bazelbuild/buildtools v0.0.0-20240207142252-03bf520394af/go.mod h1:689QdV3hBP7Vo9dJMmzhoYIyo/9iMhEmHkJcnaPRCbo=
+github.com/bazelbuild/buildtools v0.0.0-20240606140350-80f1f6802857 h1:3UwzfrfwoxlyGlPhbQR1O1HLOd4qNEyAwxHRSE+Yde4=
+github.com/bazelbuild/buildtools v0.0.0-20240606140350-80f1f6802857/go.mod h1:689QdV3hBP7Vo9dJMmzhoYIyo/9iMhEmHkJcnaPRCbo=
 github.com/bazelbuild/rules_go v0.46.0 h1:CTefzjN/D3Cdn3rkrM6qMWuQj59OBcuOjyIp3m4hZ7s=
 github.com/bazelbuild/rules_go v0.46.0/go.mod h1:Dhcz716Kqg1RHNWos+N6MlXNkjNP2EwZQ0LukRKJfMs=
 github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95 h1:zmBkl2nxjRojoW9PtGVEtW/91kHieotlD7cL9vFq06c=

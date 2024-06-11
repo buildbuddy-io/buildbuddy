@@ -38,7 +38,7 @@ require (
 	github.com/awslabs/soci-snapshotter v0.1.0
 	github.com/bazelbuild/bazel-gazelle v0.35.0
 	github.com/bazelbuild/bazelisk v1.19.0
-	github.com/bazelbuild/buildtools v0.0.0-20240207142252-03bf520394af
+	github.com/bazelbuild/buildtools v0.0.0-20240606140350-80f1f6802857
 	github.com/bazelbuild/rules_go v0.46.0
 	github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
