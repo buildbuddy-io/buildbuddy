@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"flag"
 	"fmt"
@@ -235,7 +236,10 @@ func handleSearch(args []string) {
 		}
 		fmt.Printf("%q [%d matches]\n", doc.Field("filename").Contents(), len(regions))
 		for _, region := range regions {
-			fmt.Print("  " + region.String())
+			scanner := bufio.NewScanner(strings.NewReader(region.String()))
+			for scanner.Scan() {
+				fmt.Print("  " + scanner.Text() + "\n")
+			}
 		}
 	}
 }

@@ -27,7 +27,9 @@ const (
 var (
 	nl = []byte{'\n'}
 
-	_ types.Query = (*ReQuery)(nil)
+	_ types.Query             = (*ReQuery)(nil)
+	_ types.HighlightedRegion = (*regionMatch)(nil)
+	_ types.Scorer            = (*reScorer)(nil)
 )
 
 func countNL(b []byte) int {
@@ -114,15 +116,37 @@ type reHighlighter struct {
 }
 
 type regionMatch struct {
-	fieldName string
-	snippet   string
+	field  types.Field
+	region region
 }
 
 func (rm regionMatch) FieldName() string {
-	return rm.fieldName
+	return rm.field.Name()
 }
+
+func makeLine(line []byte, lineNumber int) string {
+	return fmt.Sprintf("%d: %s\n", lineNumber, line)
+}
+
+func (rm regionMatch) CustomSnippet(linesBefore, linesAfter int) string {
+	lineNumber := rm.region.lineNumber
+	snippetText := ""
+
+	firstLine := max(lineNumber-linesBefore, 1)
+	lastLine := lineNumber + linesAfter
+
+	for n := firstLine; n <= lastLine; n++ {
+		buf := extractLine(rm.field.Contents(), n)
+		if buf == nil {
+			continue
+		}
+		snippetText += makeLine(buf, n)
+	}
+	return snippetText
+}
+
 func (rm regionMatch) String() string {
-	return rm.snippet
+	return rm.CustomSnippet(0, 0)
 }
 
 func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion {
@@ -134,10 +158,10 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 			continue
 		}
 		for _, region := range match(matcher, field.Contents()) {
-			line := extractLine(field.Contents(), region.lineNumber)
+			region := region
 			results = append(results, types.HighlightedRegion(regionMatch{
-				fieldName: fieldName,
-				snippet:   fmt.Sprintf("%d: %s\n", region.lineNumber, line),
+				field:  field,
+				region: region,
 			}))
 		}
 	}

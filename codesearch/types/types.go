@@ -68,6 +68,7 @@ type Scorer interface {
 type HighlightedRegion interface {
 	FieldName() string
 	String() string
+	CustomSnippet(linesBefore, linesAfter int) string
 }
 
 type Highlighter interface {

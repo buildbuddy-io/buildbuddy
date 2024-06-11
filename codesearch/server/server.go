@@ -218,7 +218,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		}
 		for _, region := range regions {
 			result.Snippets = append(result.Snippets, &srpb.Snippet{
-				Lines: region.String(),
+				Lines: region.CustomSnippet(1, 1),
 			})
 		}
 		rsp.Results = append(rsp.Results, result)
