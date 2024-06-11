@@ -810,7 +810,6 @@ ts_library(
         "//app/errors:error_service",
         "//app/format",
         "//app/invocation:invocation_model",
-        "//app/invocation:invocation_suggestion_card",
         "//app/service:rpc_service",
         "//app/util:color",
         "//app/util:lcov",
