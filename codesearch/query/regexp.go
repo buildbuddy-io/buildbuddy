@@ -354,6 +354,7 @@ func (q *Query) String() string {
 }
 
 func (q *Query) SQuery(fieldName string) string {
+	log.Printf("q.String() is: %s", q.String())
 	if q == nil {
 		return ""
 	}
