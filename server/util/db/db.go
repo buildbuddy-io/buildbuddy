@@ -512,19 +512,16 @@ func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConf
 	// connection.
 	db := sql.OpenDB(&connector{d: drv, ds: ds})
 
-	cachePreparedStatements := false
 	var dialector gorm.Dialector
 	switch ds.DriverName() {
 	case sqliteDriver:
 		dialector = sqlite.Dialector{Conn: db}
 	case mysqlDriver:
-		cachePreparedStatements = true
 		// Set default string size to 255 to avoid unnecessary schema modifications by GORM.
 		// Newer versions of GORM use a smaller default size (191) to account for InnoDB index limits
 		// that don't apply to modern MysQL installations.
 		dialector = mysql.New(mysql.Config{Conn: db, DefaultStringSize: 255})
 	case postgresDriver:
-		cachePreparedStatements = true
 		dialector = postgres.Dialector{Config: &postgres.Config{Conn: db}}
 	default:
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
@@ -540,7 +537,6 @@ func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConf
 	config := gorm.Config{
 		Logger:                 l,
 		SkipDefaultTransaction: true,
-		PrepareStmt:            cachePreparedStatements,
 	}
 	gdb, err := gorm.Open(dialector, &config)
 	if err != nil {
@@ -685,6 +681,7 @@ func ParseDatasource(ctx context.Context, datasource string, advancedConfig *Adv
 				cfg.Params["sql_mode"] += ","
 			}
 			cfg.Params["sql_mode"] += "ANSI_QUOTES"
+			cfg.InterpolateParams = true
 			connString = cfg.FormatDSN()
 		}
 		return &fixedDSNDataSource{driver: driverName, dsn: connString}, nil
