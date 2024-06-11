@@ -2,8 +2,6 @@ common --noenable_bzlmod
 common --lockfile_mode=update
 
 common --enable_platform_specific_config=true
-# TODO(http://go/b/3325): re-enable after bazel 7.2.0
-common --experimental_worker_for_repo_fetching=off
 
 # Build with --config=local to send build logs to your local server
 common:local --bes_results_url=http://localhost:8080/invocation/
