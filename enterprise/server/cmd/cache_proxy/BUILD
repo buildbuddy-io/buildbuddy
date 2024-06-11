@@ -30,7 +30,7 @@ go_library(
         "//server/util/tracing",
         "//server/version",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
 

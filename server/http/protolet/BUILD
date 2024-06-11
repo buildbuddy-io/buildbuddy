@@ -9,7 +9,7 @@ go_library(
         "//server/util/proto",
         "//server/util/request_context",
         "@io_opentelemetry_go_otel_trace//:trace",
-        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//encoding/prototext",
