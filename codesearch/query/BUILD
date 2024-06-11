@@ -18,6 +18,13 @@ go_library(
 
 go_test(
     name = "query_test",
-    srcs = ["regexp_test.go"],
+    srcs = [
+        "regexp_query_test.go",
+        "regexp_test.go",
+    ],
     embed = [":query"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )

@@ -112,12 +112,12 @@ func (c *CodeSearcher) Search(q types.Query) ([]types.Document, error) {
 	scorer := q.GetScorer()
 	squery := q.SQuery()
 
-	candidateDocIDs, err := c.indexReader.RawQuery([]byte(squery))
+	fieldDocidMatches, err := c.indexReader.RawQuery([]byte(squery))
 	if err != nil {
 		return nil, err
 	}
 
-	topDocIDs, err := c.scoreDocs(scorer, candidateDocIDs, q.NumResults())
+	topDocIDs, err := c.scoreDocs(scorer, fieldDocidMatches, q.NumResults())
 	if err != nil {
 		return nil, err
 	}
