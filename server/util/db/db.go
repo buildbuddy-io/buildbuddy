@@ -490,7 +490,11 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not generate DSN: %s", err)
 	}
-	return c.d.Open(dsn)
+	start := time.Now()
+	log.Info("open new db connection")
+	conn, err := c.d.Open(dsn)
+	log.Infof("new db connection took %s", time.Since(start))
+	return conn, err
 }
 
 func (c *connector) Driver() driver.Driver {
