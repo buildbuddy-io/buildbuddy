@@ -458,12 +458,21 @@ export default class InvocationModel {
   }
 
   getIsExecutionLogEnabled() {
-    return Boolean(this.buildToolLogs?.log.find(
-        (l: any) => (l.name == "execution.log" || l.name == "execution_log.binpb.zst") && l.uri.startsWith("bytestream://")));
+    return Boolean(
+      this.buildToolLogs?.log.find(
+        (l: any) =>
+          (l.name == "execution.log" || l.name == "execution_log.binpb.zst") && l.uri.startsWith("bytestream://")
+      )
+    );
   }
 
   hasCoverage() {
-    return this.getCommand() == "coverage" && Boolean(this.buildToolLogs?.log.find((l: any) => l.name == "coverage_report.lcov" && l.uri.startsWith("bytestream://")));
+    return (
+      this.getCommand() == "coverage" &&
+      Boolean(
+        this.buildToolLogs?.log.find((l: any) => l.name == "coverage_report.lcov" && l.uri.startsWith("bytestream://"))
+      )
+    );
   }
 
   getFetchURLs() {
