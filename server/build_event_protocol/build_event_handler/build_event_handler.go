@@ -598,8 +598,9 @@ func (w *webhookNotifier) Start() {
 		w.notifyGroup.Go(func() error {
 			defer metrics.WebhookNotifyWorkers.Dec()
 			for task := range w.tasks {
+				ctx := log.EnrichContext(ctx, log.InvocationIDKey, task.invocation.GetInvocationId())
 				if err := notifyWithTimeout(ctx, w.env, task); err != nil {
-					log.Warningf("Failed to notify webhook for invocation %s: %s", task.invocation.GetInvocationId(), err)
+					log.CtxWarningf(ctx, "Failed to notify invocation webhook: %s", err)
 				}
 			}
 			return nil
