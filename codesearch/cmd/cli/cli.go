@@ -230,6 +230,9 @@ func handleSearch(args []string) {
 	highlighter := q.GetHighlighter()
 	for _, doc := range docs {
 		regions := highlighter.Highlight(doc)
+		if len(regions) == 0 {
+			continue
+		}
 		fmt.Printf("%q [%d matches]\n", doc.Field("filename").Contents(), len(regions))
 		for _, region := range regions {
 			fmt.Print("  " + region.String())
