@@ -180,18 +180,14 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 	fileMatcher := regexp.MustCompile(`(?:file:|f:|path:)(?P<filepath>[[:graph:]]+)`)
 	fileMatch := fileMatcher.FindStringSubmatch(q)
 
-	log.Printf("fileMatch: %+v", fileMatch)
 	if len(fileMatch) == 2 {
 		q = fileMatcher.ReplaceAllString(q, "")
-		log.Printf("q is now: %q", q)
-		log.Printf("fileMatch[1] is: %q", fileMatch[1])
 		syn, err := syntax.Parse(fileMatch[1], syntax.Perl)
 		if err != nil {
 			return nil, err
 		}
 		subQ := RegexpQuery(syn).SQuery(filenameField)
 		requiredSClauses = append(requiredSClauses, subQ)
-		log.Printf("Added %q to %+v", subQ, requiredSClauses)
 		fileMatchRe, err := regexp.Compile(fileMatch[1])
 		if err != nil {
 			return nil, err
