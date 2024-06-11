@@ -33,6 +33,7 @@
 .code-search .title-bar {
   display: flex;
   align-items: center;
+  gap: 24px;
 }
 
 .code-search .search-input {
@@ -64,4 +65,20 @@
 .code-search .form-bs {
   margin: 0;
   margin-block-end: 0;
+  display: contents;
+}
+
+.code-search .searchbox {
+  display: block;
+  width: 400px;
+  max-width: 100%;
+  height: 40px;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 16px;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid gray;
+  border-radius: 2px;
 }
