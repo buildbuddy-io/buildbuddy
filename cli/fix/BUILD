@@ -54,6 +54,7 @@ go_library(
         "@bazel_gazelle//resolve",
         "@bazel_gazelle//rule",
         "@bazel_gazelle//walk",
+        "@com_github_bazelbuild_buildtools//build",
         "@com_github_pmezard_go_difflib//difflib",
     ],
 )

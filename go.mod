@@ -36,7 +36,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.19.2
 	github.com/aws/smithy-go v1.13.5
 	github.com/awslabs/soci-snapshotter v0.1.0
-	github.com/bazelbuild/bazel-gazelle v0.35.0
+	github.com/bazelbuild/bazel-gazelle v0.37.0
 	github.com/bazelbuild/bazelisk v1.19.0
 	github.com/bazelbuild/buildtools v0.0.0-20240606140350-80f1f6802857
 	github.com/bazelbuild/rules_go v0.46.0
@@ -134,7 +134,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	golang.org/x/crypto v0.23.0
 	golang.org/x/exp v0.0.0-20231127185646-65229373498e
-	golang.org/x/mod v0.14.0
+	golang.org/x/mod v0.16.0
 	golang.org/x/oauth2 v0.17.0
 	golang.org/x/sync v0.6.0
 	golang.org/x/sys v0.20.0
