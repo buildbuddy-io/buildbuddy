@@ -154,7 +154,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		image = req.GetContainerImage()
 	}
 
-	// By default, use the non-root user.
+	// By default, use the non-root user as the operating user on the runner.
 	user := nonRootUser
 	for _, p := range req.ExecProperties {
 		if p.Name == platform.DockerUserPropertyName {

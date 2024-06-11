@@ -1156,11 +1156,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 }
 
 func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
+	buildUser := os.Getenv("BUILD_USER")
+	if buildUser == "" {
+		buildUser = ar.username
+	}
 	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bespb.WorkspaceStatus{
 			Item: []*bespb.WorkspaceStatus_Item{
-				{Key: "BUILD_USER", Value: ar.username},
+				{Key: "BUILD_USER", Value: buildUser},
 				{Key: "BUILD_HOST", Value: ar.hostname},
 				{Key: "GIT_BRANCH", Value: *pushedBranch},
 				{Key: "GIT_TREE_STATUS", Value: "Clean"},
@@ -2030,7 +2034,6 @@ func writeBazelrc(path, invocationID string) error {
 	defer f.Close()
 
 	lines := []string{
-		"build --build_metadata=ROLE=CI",
 		"build --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
 		// Note: these pieces of metadata are set to match the WorkspaceStatus event
 		// for the outer (workflow) invocation.
@@ -2049,12 +2052,16 @@ func writeBazelrc(path, invocationID string) error {
 		// artifact for easier debugging.
 		"build --heap_dump_on_oom",
 	}
-	if *workflowID != "" {
+	isWorkflow := *workflowID != ""
+	if isWorkflow {
 		lines = append(lines, "build --build_metadata=WORKFLOW_ID="+*workflowID)
+		lines = append(lines, "build --build_metadata=ROLE=CI")
+	}
+	if !isWorkflow || *prNumber != 0 {
+		lines = append(lines, "build --build_metadata=DISABLE_TARGET_TRACKING=true")
 	}
 	if *prNumber != 0 {
 		lines = append(lines, "build --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
-		lines = append(lines, "build --build_metadata=DISABLE_TARGET_TRACKING=true")
 	}
 	if isPushedRefInFork() {
 		lines = append(lines, "build --build_metadata=FORK_REPO_URL="+*pushedRepoURL)

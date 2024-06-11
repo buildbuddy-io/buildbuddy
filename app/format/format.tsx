@@ -360,6 +360,9 @@ export function formatRole(role: string): string | null {
   if (role === "CI") {
     return "CI";
   }
+  if (role === "HOSTED_BAZEL") {
+    return "Remote Bazel";
+  }
   // Don't render unknown roles for now.
   return null;
 }
