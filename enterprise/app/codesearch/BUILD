@@ -9,9 +9,11 @@ ts_library(
     srcs = ["codesearch.tsx"],
     deps = [
         "//app/components/button",
+        "//app/components/filter_input",
         "//app/components/input",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/router",
         "//app/service:rpc_service",
         "//proto:search_ts_proto",
         "@npm//@types/react",

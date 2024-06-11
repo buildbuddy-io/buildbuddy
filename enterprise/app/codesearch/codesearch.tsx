@@ -4,8 +4,10 @@ import errorService from "../../../app/errors/error_service";
 import { search } from "../../../proto/search_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
 import { File } from "lucide-react";
+import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import TextInput from "../../../app/components/input/input";
 import FilledButton from "../../../app/components/button/button";
+import router from "../../../app/router/router";
 
 interface State {
   lastQuery: string;
@@ -15,21 +17,22 @@ interface State {
 
 interface Props {
   path: string;
+  search: URLSearchParams;
 }
 
 export default class CodeSearchComponent extends React.Component<Props, State> {
-  searchBoxRef = React.createRef<HTMLInputElement>();
-
+  query: string = "";
   state: State = {
     lastQuery: "",
     loading: false,
   };
 
   search() {
-    if (!this.searchBoxRef.current?.value) {
+    if (!this.query) {
       return;
     }
-    const query = this.searchBoxRef.current.value;
+    const query = this.query;
+
     this.setState({ loading: true, response: undefined, lastQuery: query });
     rpcService.service
       .search(new search.SearchRequest({ query: new search.Query({ term: query }) }))
@@ -43,8 +46,14 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       .finally(() => this.setState({ loading: false }));
   }
 
+  handleQueryChange(event: React.ChangeEvent<HTMLInputElement>) {
+    this.query = event.target.value;
+    router.setQueryParam("q", this.query);
+  }
+
   componentDidMount() {
-    return;
+    this.query = this.props.search.get("q") ?? "";
+    this.search();
   }
 
   renderLine(line: string) {
@@ -106,7 +115,12 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
                 e.preventDefault();
                 this.search();
               }}>
-              <TextInput className="search-input" ref={this.searchBoxRef} defaultValue="" autoFocus={true}></TextInput>
+              <input
+                type="text"
+                className="searchbox"
+                defaultValue={this.props.search.get("q") ?? ""}
+                onChange={this.handleQueryChange.bind(this)}
+              />
               <FilledButton type="submit">SEARCH</FilledButton>
             </form>
           </div>
