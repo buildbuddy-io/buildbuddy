@@ -549,7 +549,7 @@ func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConf
 	if *logQueries {
 		l.LogLevel = logger.Info
 	}
-	config := gorm.Config{Logger: l, SkipDefaultTransaction: true}
+	config := gorm.Config{Logger: l, SkipDefaultTransaction: true, PrepareStmt: true}
 	gdb, err := gorm.Open(dialector, &config)
 	if err != nil {
 		return nil, "", err
