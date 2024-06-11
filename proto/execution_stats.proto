@@ -132,6 +132,10 @@ message Execution {
 message ExecutionLookup {
   // The invocation_id: a fully qualified execution ID
   string invocation_id = 1;
+
+  // Optional action digest filter. Only the executions for this action digest
+  // will be returned.
+  string action_digest_hash = 2;
 }
 
 message GetExecutionRequest {

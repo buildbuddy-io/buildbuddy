@@ -7,7 +7,7 @@ import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
-import rpcService, { Cancelable } from "../service/rpc_service";
+import rpcService, { Cancelable, CancelablePromise } from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
 import TerminalComponent from "../terminal/terminal";
@@ -28,6 +28,9 @@ import Modal from "../components/modal/modal";
 import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
 import capabilities from "../capabilities/capabilities";
 import { getErrorReason } from "../util/rpc";
+import rpc_service from "../service/rpc_service";
+import { execution_stats } from "../../proto/execution_stats_ts_proto";
+import { BuildBuddyError } from "../util/errors";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -41,6 +44,7 @@ interface Props {
 interface State {
   action?: build.bazel.remote.execution.v2.Action;
   loadingAction: boolean;
+  executionId?: string;
   executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   // The first entry in the tuple is the size, the second is the number of files.
@@ -78,28 +82,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   componentDidMount() {
     this.fetchAction();
-    // Prefer executeResponseDigest since it is always specific to the current
-    // invocation (later executions of the same action digest don't overwrite
-    // it) and also has additional useful info such as gRPC status.
-    if (this.props.search.has("executeResponseDigest")) {
-      this.fetchExecuteResponse();
-    } else {
-      this.fetchActionResult();
-    }
+    this.fetchExecuteResponseOrActionResult();
     if (this.props.search.has("executionId")) {
       this.streamExecution();
     }
   }
 
   componentDidUpdate(prevProps: Readonly<Props>): void {
-    if (prevProps.search.get("actionDigest") != this.props.search.get("actionDigest")) {
+    if (prevProps.search.get("actionDigest") !== this.props.search.get("actionDigest")) {
       this.fetchAction();
-      if (!this.props.search.has("executeResponseDigest")) {
-        this.fetchActionResult();
-      }
-    }
-    if (prevProps.search.get("executeResponseDigest") != this.props.search.get("executeResponseDigest")) {
-      this.fetchExecuteResponse();
+      this.fetchExecuteResponseOrActionResult();
+    } else if (prevProps.search.get("executeResponseDigest") !== this.props.search.get("executeResponseDigest")) {
+      this.fetchExecuteResponseOrActionResult();
     }
     if (prevProps.search.get("executionId") !== this.props.search.get("executionId")) {
       this.streamExecution();
@@ -211,15 +205,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .catch((e) => console.error("Failed to fetch input root:", e));
   }
 
+  /**
+   * Fetches the latest ActionResult from AC as a fallback in case we couldn't
+   * locate the ExecuteResponse that was returned for this particular
+   * invocation.
+   */
   fetchActionResult() {
-    let digestParam = this.props.search.get("actionResultDigest") ?? this.props.search.get("actionDigest");
+    let digestParam = this.props.search.get("actionDigest");
     if (!digestParam) {
       alert_service.error("Missing action digest in URL");
       return;
     }
     const digest = parseActionDigest(digestParam);
     const actionResultUrl = this.props.model.getActionCacheURL(digest);
-    rpcService
+    this.actionResultRPC = rpcService
       .fetchBytestreamFile(actionResultUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer));
@@ -230,26 +229,53 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .catch((e) => console.error("Failed to fetch action result:", e));
   }
 
-  fetchExecuteResponse() {
-    this.setState({ executeResponse: undefined });
-    const digestParam = this.props.search.get("executeResponseDigest");
-    if (!digestParam) {
-      alert_service.error("Missing execute response digest in URL");
+  private executeResponseRPC?: CancelablePromise<build.bazel.remote.execution.v2.ExecuteResponse | null>;
+  private actionResultRPC?: Cancelable;
+  private stdoutRPC?: Cancelable;
+  private stderrRPC?: Cancelable;
+  private serverLogsRPCs?: Cancelable[];
+
+  fetchExecuteResponseOrActionResult() {
+    this.executeResponseRPC?.cancel();
+    this.actionResultRPC?.cancel();
+    this.stdoutRPC?.cancel();
+    this.stderrRPC?.cancel();
+    this.serverLogsRPCs?.forEach((rpc) => rpc.cancel());
+
+    this.setState({
+      executeResponse: undefined,
+      executionId: undefined,
+      actionResult: undefined,
+      stdout: undefined,
+      stderr: undefined,
+      serverLogs: undefined,
+    });
+
+    const actionDigestParam = this.props.search.get("actionDigest");
+    if (!actionDigestParam) {
+      alert_service.error("Missing action digest in URL");
       return;
     }
-    const digest = parseActionDigest(digestParam);
-    rpcService
-      .fetchBytestreamFile(
-        this.props.model.getActionCacheURL(digest),
-        this.props.model.getInvocationId(),
-        "arraybuffer"
-      )
-      .then((buffer) => {
-        const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer));
-        // ExecuteResponse is encoded in ActionResult.stdout_raw field. See
-        // proto field docs on `Execution.execute_response_digest`.
-        const executeResponseBytes = actionResult.stdoutRaw;
-        const executeResponse = build.bazel.remote.execution.v2.ExecuteResponse.decode(executeResponseBytes);
+
+    const executeResponseDigestParam = this.props.search.get("executeResponseDigest");
+    if (executeResponseDigestParam) {
+      // If we have the executeResponseDigest in the URL, we can skip the
+      // execution table lookup.
+      const executeResponseDigest = parseActionDigest(executeResponseDigestParam);
+      this.executeResponseRPC = this.fetchExecuteResponseByDigest(executeResponseDigest);
+    } else {
+      const actionDigest = parseActionDigest(actionDigestParam);
+      this.executeResponseRPC = this.fetchExecuteResponseByActionDigest(actionDigest);
+    }
+    // Whether to fall back to fetching the latest action result.
+    let fallback = false;
+
+    this.executeResponseRPC
+      .then((executeResponse) => {
+        if (!executeResponse) {
+          fallback = true;
+          return;
+        }
         this.setState({ executeResponse });
         if (executeResponse.result) {
           const actionResult = executeResponse.result;
@@ -259,14 +285,64 @@ export default class InvocationActionCardComponent extends React.Component<Props
           this.fetchServerLogs(executeResponse);
         }
       })
-      .catch((e) => console.error("Failed to fetch execute response:", e));
+      .catch((e) => {
+        const error = BuildBuddyError.parse(e);
+        if (error.code === "NotFound") {
+          fallback = true;
+          return;
+        }
+        errorService.handleError(e);
+      })
+      .finally(() => {
+        if (fallback) {
+          this.fetchActionResult();
+        }
+      });
+  }
+
+  fetchExecuteResponseByDigest(executeResponseDigest: build.bazel.remote.execution.v2.Digest) {
+    return rpcService
+      .fetchBytestreamFile(
+        this.props.model.getActionCacheURL(executeResponseDigest),
+        this.props.model.getInvocationId(),
+        "arraybuffer"
+      )
+      .then((buffer) => {
+        const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer));
+        // ExecuteResponse is encoded in ActionResult.stdout_raw field. See
+        // proto field docs on `Execution.execute_response_digest`.
+        const executeResponseBytes = actionResult.stdoutRaw;
+        const executeResponse = build.bazel.remote.execution.v2.ExecuteResponse.decode(executeResponseBytes);
+        return executeResponse;
+      });
+  }
+
+  fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
+    const service = rpc_service.getRegionalServiceOrDefault(
+      this.props.model.stringCommandLineOption("remote_executor")
+    );
+    return service
+      .getExecution({
+        executionLookup: new execution_stats.ExecutionLookup({
+          invocationId: this.props.model.getInvocationId(),
+          actionDigestHash: actionDigest.hash,
+        }),
+        inlineExecuteResponse: true,
+      })
+      .then((response) => {
+        const execution = response.execution?.[0];
+        if (execution?.executionId) {
+          this.setState({ executionId: execution.executionId });
+        }
+        return execution?.executeResponse ?? null;
+      });
   }
 
   fetchStdout(actionResult: build.bazel.remote.execution.v2.ActionResult) {
     if (!actionResult.stdoutDigest) return;
 
     let stdoutUrl = this.props.model.getBytestreamURL(actionResult.stdoutDigest);
-    rpcService
+    this.stdoutRPC = rpcService
       .fetchBytestreamFile(stdoutUrl, this.props.model.getInvocationId())
       .then((stdout) => this.setState({ stdout }))
       .catch((e) => console.error("Failed to fetch stdout:", e));
@@ -276,17 +352,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (!actionResult.stderrDigest) return;
 
     let stderrUrl = this.props.model.getBytestreamURL(actionResult.stderrDigest);
-    rpcService
+    this.stderrRPC = rpcService
       .fetchBytestreamFile(stderrUrl, this.props.model.getInvocationId())
       .then((stderr) => this.setState({ stderr }))
       .catch((e) => console.error("Failed to fetch stderr:", e));
   }
 
   fetchServerLogs(executeResponse: build.bazel.remote.execution.v2.ExecuteResponse) {
+    this.serverLogsRPCs = [];
     for (const [name, file] of Object.entries(executeResponse.serverLogs)) {
       if (!file.digest) continue;
       const logsURL = this.props.model.getBytestreamURL(file.digest);
-      rpcService
+      const rpc = rpcService
         .fetchBytestreamFile(logsURL, this.props.model.getInvocationId())
         .then((text) => {
           const log: ServerLog = { name, text };
@@ -295,6 +372,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           this.setState({ serverLogs: serverLogs });
         })
         .catch((e) => console.error(`Failed to fetch server log ${name}: ${e}`));
+      this.serverLogsRPCs.push(rpc);
     }
   }
 
@@ -789,7 +867,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
     const vmMetadata = this.getFirecrackerVMMetadata();
-    const executionId = this.props.search.get("executionId");
+    const executionId = this.props.search.get("executionId") || this.state.executionId;
 
     return (
       <div className="invocation-action-card">
