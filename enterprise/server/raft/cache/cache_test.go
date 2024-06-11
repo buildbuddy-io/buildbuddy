@@ -85,10 +85,11 @@ func allHealthy(caches ...*raft_cache.RaftCache) bool {
 
 func parallelShutdown(caches ...*raft_cache.RaftCache) {
 	eg := errgroup.Group{}
+	ctx := context.Background()
 	for _, cache := range caches {
 		cache := cache
 		eg.Go(func() error {
-			cache.Stop()
+			cache.Stop(ctx)
 			return nil
 		})
 	}
