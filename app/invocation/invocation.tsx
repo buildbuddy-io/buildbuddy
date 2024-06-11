@@ -44,6 +44,7 @@ import { InvocationBotCard } from "./invocation_bot_card";
 import TargetV2Component from "../target/target_v2";
 import { ExecuteOperation, ExecutionStage, executionStatusLabel, waitExecution } from "./execution_status";
 import { PlayCircle, PlayCircleIcon } from "lucide-react";
+import InvocationCoverageCardComponent from "./invocation_coverage_card";
 
 interface State {
   loading: boolean;
@@ -485,6 +486,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
               this.state.model.isWorkflowInvocation() ||
               this.state.model.isHostedBazelInvocation()
             }
+            hasCoverage={this.state.model.hasCoverage()}
             hasSuggestions={suggestions.length > 0}
           />
 
@@ -580,6 +582,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
 
           {activeTab === "timing" && <TimingCardComponent model={this.state.model} />}
+
+          {activeTab === "coverage" && <InvocationCoverageCardComponent model={this.state.model} />}
 
           {activeTab === "action" && (
             <InvocationActionCardComponent

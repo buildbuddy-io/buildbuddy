@@ -19,6 +19,7 @@ ts_library(
         "//app/invocation:invocation_bot_card",
         "//app/invocation:invocation_build_logs_card",
         "//app/invocation:invocation_cache_card",
+        "//app/invocation:invocation_coverage_card",
         "//app/invocation:invocation_details_card",
         "//app/invocation:invocation_error_card",
         "//app/invocation:invocation_execution_card",
@@ -797,5 +798,26 @@ ts_library(
         "//app/util:rpc",
         "//proto:execution_stats_ts_proto",
         "//proto:remote_execution_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "invocation_coverage_card",
+    srcs = ["invocation_coverage_card.tsx"],
+    deps = [
+        "//app/components/button",
+        "//app/docs:setup_code",
+        "//app/errors:error_service",
+        "//app/format",
+        "//app/invocation:invocation_model",
+        "//app/invocation:invocation_suggestion_card",
+        "//app/service:rpc_service",
+        "//app/util:color",
+        "//app/util:lcov",
+        "//proto:build_event_stream_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
