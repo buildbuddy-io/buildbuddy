@@ -148,7 +148,6 @@ type ReQuery struct {
 	log           log.Logger
 	squery        []byte
 	numResults    int
-	re            *regexp.Regexp
 	fieldMatchers map[string]*regexp.Regexp
 }
 
