@@ -82,8 +82,8 @@ func (tp *testingProposer) SyncRead(ctx context.Context, _ []byte, batch *rfpb.B
 
 func TestAcquireAndRelease(t *testing.T) {
 	proposer := newTestingProposer(t)
-	liveness := nodeliveness.New("replicaID-1", proposer)
 	ctx := context.Background()
+	liveness := nodeliveness.New(ctx, "replicaID-1", proposer)
 
 	// Should be able to lease a liveness record.
 	err := liveness.Lease(ctx)
@@ -106,8 +106,8 @@ func TestKeepalive(t *testing.T) {
 	proposer := newTestingProposer(t)
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	liveness := nodeliveness.New("replicaID-2", proposer).WithTimeouts(leaseDuration, gracePeriod)
 	ctx := context.Background()
+	liveness := nodeliveness.New(ctx, "replicaID-2", proposer).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to lease a liveness record.
 	err := liveness.Lease(ctx)
@@ -127,8 +127,8 @@ func TestKeepalive(t *testing.T) {
 
 func TestEpochChangeOnLease(t *testing.T) {
 	proposer := newTestingProposer(t)
-	liveness := nodeliveness.New("replicaID-3", proposer)
 	ctx := context.Background()
+	liveness := nodeliveness.New(ctx, "replicaID-3", proposer)
 
 	// Should be able to lease a liveness record.
 	err := liveness.Lease(ctx)
@@ -149,7 +149,7 @@ func TestEpochChangeOnLease(t *testing.T) {
 
 	// Re-acquire it, using a new nodeliveness object, but
 	// the same stored data.
-	liveness2 := nodeliveness.New("replicaID-3", proposer)
+	liveness2 := nodeliveness.New(ctx, "replicaID-3", proposer)
 
 	err = liveness2.Lease(ctx)
 	require.NoError(t, err)
