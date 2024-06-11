@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -122,6 +123,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"./" + runnerName,
 		"--bes_backend=" + events_api_url.String(),
 		"--cache_backend=" + cache_api_url.String(),
+		"--rbe_backend=" + remote_exec_api_url.String(),
 		"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
 		"--target_repo_url=" + repoURL.String(),
 		"--pushed_repo_url=" + repoURL.String(),
