@@ -984,6 +984,11 @@ code .comment {
   background: #cfd8dc;
 }
 
+.role-badge.HOSTED_BAZEL {
+  background: #a1a6a8;
+  color: white;
+}
+
 .empty-state .button {
   width: 100%;
   padding: 16px 32px;
