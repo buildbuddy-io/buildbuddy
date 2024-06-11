@@ -99,7 +99,7 @@ func (l *Lease) dropLease(ctx context.Context) error {
 	}
 
 	// clear existing lease if it's valid.
-	valid := l.verifyLease(l.leaseRecord) == nil
+	valid := l.verifyLease(ctx, l.leaseRecord) == nil
 	if !valid {
 		return nil
 	}
@@ -110,7 +110,7 @@ func (l *Lease) GetRangeDescriptor() *rfpb.RangeDescriptor {
 	return l.rangeDescriptor
 }
 
-func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
+func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) error {
 	if rl == nil {
 		return status.FailedPreconditionError("Invalid rangeLease: nil")
 	}
@@ -121,7 +121,7 @@ func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
 
 	// This is a node epoch based lease, so check node and epoch.
 	if nl := rl.GetNodeLiveness(); nl != nil {
-		return l.liveness.BlockingValidateNodeLiveness(nl)
+		return l.liveness.BlockingValidateNodeLiveness(ctx, nl)
 	}
 
 	// This is a time based lease, so check expiration time.
@@ -160,7 +160,7 @@ func (l *Lease) clearLeaseValue(ctx context.Context) error {
 	return nil
 }
 
-func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
+func (l *Lease) assembleLeaseRequest(ctx context.Context) (*rfpb.RangeLeaseRecord, error) {
 	// To prevent circular dependencies:
 	//    (metarange -> range lease -> node liveness -> metarange)
 	// any range that includes the metarange will be leased with a
@@ -174,7 +174,7 @@ func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
 			},
 		}
 	} else {
-		nl, err := l.liveness.BlockingGetCurrentNodeLiveness()
+		nl, err := l.liveness.BlockingGetCurrentNodeLiveness(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +195,7 @@ func (l *Lease) renewLease(ctx context.Context) error {
 		expectedValue = buf
 	}
 
-	leaseRequest, err := l.assembleLeaseRequest()
+	leaseRequest, err := l.assembleLeaseRequest(ctx)
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 	defer l.mu.Unlock()
 
 	alreadyValid := false
-	if err := l.verifyLease(l.leaseRecord); err == nil {
+	if err := l.verifyLease(ctx, l.leaseRecord); err == nil {
 		alreadyValid = true
 	}
 
@@ -269,7 +269,7 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 		if err := l.renewLease(ctx); err != nil {
 			return nil, err
 		}
-		if err := l.verifyLease(l.leaseRecord); err == nil {
+		if err := l.verifyLease(ctx, l.leaseRecord); err == nil {
 			renewed = true
 		}
 	}
@@ -282,7 +282,7 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 		if l.leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
 			// Only start the renew-goroutine for time-based
 			// leases which need periodic renewal.
-			go l.keepLeaseAlive(context.TODO(), l.quitLease)
+			go l.keepLeaseAlive(ctx, l.quitLease)
 		}
 	}
 	return l.leaseRecord, nil
@@ -303,19 +303,19 @@ func (l *Lease) keepLeaseAlive(ctx context.Context, quit chan struct{}) {
 	}
 }
 
-func (l *Lease) Valid() bool {
+func (l *Lease) Valid(ctx context.Context) bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	if err := l.verifyLease(l.leaseRecord); err == nil {
+	if err := l.verifyLease(ctx, l.leaseRecord); err == nil {
 		return true
 	}
 	return false
 }
 
-func (l *Lease) string(rd *rfpb.RangeDescriptor, lr *rfpb.RangeLeaseRecord) string {
+func (l *Lease) string(ctx context.Context, rd *rfpb.RangeDescriptor, lr *rfpb.RangeLeaseRecord) string {
 	// Don't lock here (to avoid recursive locking).
 	leaseName := fmt.Sprintf("RangeLease(%d) [%q, %q)", rd.GetRangeId(), rd.GetStart(), rd.GetEnd())
-	err := l.verifyLease(lr)
+	err := l.verifyLease(ctx, lr)
 	if err != nil {
 		return fmt.Sprintf("%s invalid (%s)", leaseName, err)
 	}
@@ -326,8 +326,8 @@ func (l *Lease) string(rd *rfpb.RangeDescriptor, lr *rfpb.RangeLeaseRecord) stri
 	return fmt.Sprintf("%s [expires in: %s]", leaseName, lifetime)
 }
 
-func (l *Lease) String() string {
+func (l *Lease) Desc(ctx context.Context) string {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	return l.string(l.rangeDescriptor, l.leaseRecord)
+	return l.string(ctx, l.rangeDescriptor, l.leaseRecord)
 }

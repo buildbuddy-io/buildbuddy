@@ -130,7 +130,7 @@ type leaseAgent struct {
 }
 
 func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction leaseInstruction) {
-	valid := la.l.Valid()
+	valid := la.l.Valid(ctx)
 	start := time.Now()
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -139,22 +139,22 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction lease
 	switch instruction.action {
 	case Acquire:
 		if err := la.l.Lease(ctx); err != nil {
-			la.log.Errorf("Error acquiring rangelease (%s): %s %s", la.l.String(), err, instruction)
+			la.log.Errorf("Error acquiring rangelease (%s): %s %s", la.l.Desc(ctx), err, instruction)
 			return
 		}
 		if !valid {
 			la.broadcastLeaseStatus(events.EventRangeLeaseAcquired)
-			la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.String(), time.Since(start), instruction)
+			la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
 		}
 	case Drop:
 		// This is a no-op if we don't have the lease.
 		if err := la.l.Release(ctx); err != nil {
-			la.log.Errorf("Error dropping rangelease (%s): %s (%s)", la.l, err, instruction)
+			la.log.Errorf("Error dropping rangelease (%s): %s (%s)", la.l.Desc(ctx), err, instruction)
 			return
 		}
 		if valid {
 			la.broadcastLeaseStatus(events.EventRangeLeaseDropped)
-			la.log.Debugf("Dropped lease [%s] %s after callback (%s)", la.l.String(), time.Since(start), instruction)
+			la.log.Debugf("Dropped lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
 		}
 	}
 }
@@ -333,11 +333,11 @@ func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica)
 	}
 }
 
-func (lk *LeaseKeeper) LeaseCount() int64 {
+func (lk *LeaseKeeper) LeaseCount(ctx context.Context) int64 {
 	leaseCount := int64(0)
 	lk.leases.Range(func(key, value any) bool {
 		la := value.(leaseAgent)
-		if la.l.Valid() {
+		if la.l.Valid(ctx) {
 			leaseCount += 1
 		}
 		return true
@@ -345,10 +345,10 @@ func (lk *LeaseKeeper) LeaseCount() int64 {
 	return leaseCount
 }
 
-func (lk *LeaseKeeper) HaveLease(shard uint64) bool {
+func (lk *LeaseKeeper) HaveLease(ctx context.Context, shard uint64) bool {
 	if lacI, ok := lk.leases.Load(shardID(shard)); ok {
 		la := lacI.(leaseAgent)
-		valid := la.l.Valid()
+		valid := la.l.Valid(ctx)
 
 		lk.mu.Lock()
 		leader := lk.leaders[shardID(shard)]

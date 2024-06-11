@@ -75,8 +75,8 @@ func (h *Liveness) Valid() bool {
 	return false
 }
 
-func (h *Liveness) Lease() error {
-	_, err := h.ensureValidLease(false)
+func (h *Liveness) Lease(ctx context.Context) error {
+	_, err := h.ensureValidLease(ctx, false)
 	return err
 }
 
@@ -117,8 +117,8 @@ func (h *Liveness) AddListener() <-chan *rfpb.NodeLivenessRecord {
 	return ch
 }
 
-func (h *Liveness) BlockingGetCurrentNodeLiveness() (*rfpb.RangeLeaseRecord_NodeLiveness, error) {
-	l, err := h.ensureValidLease(false /*=renew*/)
+func (h *Liveness) BlockingGetCurrentNodeLiveness(ctx context.Context) (*rfpb.RangeLeaseRecord_NodeLiveness, error) {
+	l, err := h.ensureValidLease(ctx, false /*=renew*/)
 	if err != nil {
 		return nil, err
 	}
@@ -128,11 +128,11 @@ func (h *Liveness) BlockingGetCurrentNodeLiveness() (*rfpb.RangeLeaseRecord_Node
 	}, nil
 }
 
-func (h *Liveness) BlockingValidateNodeLiveness(nl *rfpb.RangeLeaseRecord_NodeLiveness) error {
+func (h *Liveness) BlockingValidateNodeLiveness(ctx context.Context, nl *rfpb.RangeLeaseRecord_NodeLiveness) error {
 	if !bytes.Equal(nl.GetNhid(), h.nhid) {
 		return status.FailedPreconditionErrorf("Invalid rangeLease: replicaID mismatch")
 	}
-	l, err := h.ensureValidLease(false /*=renew*/)
+	l, err := h.ensureValidLease(ctx, false /*=renew*/)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func (h *Liveness) setLastLivenessRecord(nlr *rfpb.NodeLivenessRecord) {
 	}
 }
 
-func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord, error) {
+func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.NodeLivenessRecord, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -187,7 +187,7 @@ func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord
 
 	renewed := false
 	for !renewed {
-		if err := h.renewLease(); err != nil {
+		if err := h.renewLease(ctx); err != nil {
 			return nil, err
 		}
 		if err := h.verifyLease(h.lastLivenessRecord); err == nil {
@@ -238,7 +238,7 @@ func (h *Liveness) clearLease() error {
 	return nil
 }
 
-func (h *Liveness) renewLease() error {
+func (h *Liveness) renewLease(ctx context.Context) error {
 	var expectedValue []byte
 	if h.lastLivenessRecord != nil {
 		buf, err := proto.Marshal(h.lastLivenessRecord)
@@ -257,7 +257,7 @@ func (h *Liveness) renewLease() error {
 		return err
 	}
 
-	kv, err := h.sendCasRequest(context.TODO(), expectedValue, newVal)
+	kv, err := h.sendCasRequest(ctx, expectedValue, newVal)
 	if err == nil {
 		// This means we set the lease succesfully.
 		h.setLastLivenessRecord(leaseRequest)
@@ -293,7 +293,7 @@ func (h *Liveness) keepLeaseAlive(quitLease chan struct{}) {
 			// TODO(tylerw): attempt to drop lease gracefully.
 			return
 		case <-time.After(ttr):
-			h.ensureValidLease(true /*=forceRenewal*/)
+			h.ensureValidLease(context.TODO(), true /*=forceRenewal*/)
 		}
 	}
 }

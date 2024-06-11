@@ -347,7 +347,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("%36s | Replicas: %4d | Leases: %4d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
 		su.GetNode().GetNhid(),
 		su.GetReplicaCount(),
-		s.leaseKeeper.LeaseCount(),
+		s.leaseKeeper.LeaseCount(ctx),
 		su.GetReadQps(),
 		su.GetRaftProposeQps(),
 		su.GetTotalBytesUsed()/1e6,
@@ -372,7 +372,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 		}
 		isLeader := 0
 		if rd := s.lookupRange(r.ShardID()); rd != nil {
-			if s.leaseKeeper.HaveLease(rd.GetRangeId()) {
+			if s.leaseKeeper.HaveLease(ctx, rd.GetRangeId()) {
 				isLeader = 1
 			}
 		}
@@ -692,9 +692,9 @@ func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.Ran
 	return r, rd, nil
 }
 
-func (s *Store) HaveLease(rangeID uint64) bool {
+func (s *Store) HaveLease(ctx context.Context, rangeID uint64) bool {
 	if r, err := s.GetReplica(rangeID); err == nil {
-		return s.leaseKeeper.HaveLease(r.ShardID())
+		return s.leaseKeeper.HaveLease(ctx, r.ShardID())
 	}
 	s.log.Warningf("HaveLease check for unheld range: %d", rangeID)
 	return false
@@ -703,7 +703,7 @@ func (s *Store) HaveLease(rangeID uint64) bool {
 // LeasedRange verifies that the header is valid and the client is using
 // an up-to-date range descriptor. It also checks that a local replica owns
 // the range lease for the requested range.
-func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
+func (s *Store) LeasedRange(ctx context.Context, header *rfpb.Header) (*replica.Replica, error) {
 	r, _, err := s.validatedRange(header)
 	if err != nil {
 		return nil, err
@@ -714,7 +714,7 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 		return r, nil
 	}
 
-	if s.HaveLease(header.GetRangeId()) {
+	if s.HaveLease(ctx, header.GetRangeId()) {
 		return r, nil
 	}
 	return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
@@ -833,7 +833,7 @@ func (s *Store) ListReplicas(ctx context.Context, req *rfpb.ListReplicasRequest)
 	return rsp, nil
 }
 
-func (s *Store) getLeasedReplicas() []*replica.Replica {
+func (s *Store) getLeasedReplicas(ctx context.Context) []*replica.Replica {
 	s.rangeMu.RLock()
 	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
 	for _, rd := range s.openRanges {
@@ -847,7 +847,7 @@ func (s *Store) getLeasedReplicas() []*replica.Replica {
 			RangeId:    rd.GetRangeId(),
 			Generation: rd.GetGeneration(),
 		}
-		r, err := s.LeasedRange(header)
+		r, err := s.LeasedRange(ctx, header)
 		if err != nil {
 			continue
 		}
@@ -920,7 +920,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	if header.GetRangeId() == 0 && header.GetReplica() != nil {
 		shardID = header.GetReplica().GetShardId()
 	} else {
-		r, err := s.LeasedRange(req.GetHeader())
+		r, err := s.LeasedRange(ctx, req.GetHeader())
 		if err != nil {
 			return nil, err
 		}
@@ -945,7 +945,7 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	batch.Header = req.GetHeader()
 
 	if batch.Header != nil {
-		if _, err := s.LeasedRange(batch.Header); err != nil {
+		if _, err := s.LeasedRange(ctx, batch.Header); err != nil {
 			return nil, err
 		}
 	} else {
@@ -1010,7 +1010,7 @@ func (s *Store) acquireNodeLiveness(ctx context.Context) {
 			if s.liveness.Valid() {
 				return
 			}
-			err := s.liveness.Lease()
+			err := s.liveness.Lease(ctx)
 			if err == nil {
 				return
 			}
@@ -1158,7 +1158,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
 			switch e.EventType() {
 			case events.EventRangeUsageUpdated:
 				rangeUsageEvent := e.(events.RangeUsageEvent)
-				if !s.leaseKeeper.HaveLease(rangeUsageEvent.RangeDescriptor.GetRangeId()) {
+				if !s.leaseKeeper.HaveLease(ctx, rangeUsageEvent.RangeDescriptor.GetRangeId()) {
 					continue
 				}
 				if rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed() < *maxRangeSizeBytes {
@@ -1189,7 +1189,7 @@ func (s *Store) updateStoreUsageTag(ctx context.Context) {
 			switch e.EventType() {
 			case events.EventRangeUsageUpdated:
 				rangeUsageEvent := e.(events.RangeUsageEvent)
-				if !s.leaseKeeper.HaveLease(rangeUsageEvent.RangeDescriptor.GetRangeId()) {
+				if !s.leaseKeeper.HaveLease(ctx, rangeUsageEvent.RangeDescriptor.GetRangeId()) {
 					continue
 				}
 				s.updateTagsWorker.Enqueue()
@@ -1237,7 +1237,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	su.ReplicaCount = int64(len(s.openRanges))
 	s.rangeMu.RUnlock()
 
-	su.LeaseCount = s.leaseKeeper.LeaseCount()
+	su.LeaseCount = s.leaseKeeper.LeaseCount(context.TODO())
 	s.replicas.Range(func(key, value any) bool {
 		r, _ := value.(*replica.Replica)
 		ru, err := r.Usage()
@@ -1426,7 +1426,7 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 		return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to parse lastExecutionTime", rd.GetRangeId())
 	}
 
-	if !w.store.HaveLease(rd.GetRangeId()) {
+	if !w.store.HaveLease(ctx, rd.GetRangeId()) {
 		log.Infof("skip because the store doesn't have lease for range ID:= %d", rd.GetRangeId())
 		// The replica doesn't have the lease right now. skip.
 		return nil
@@ -2032,10 +2032,10 @@ func (store *Store) scanReplicas(ctx context.Context) {
 			return
 		case <-scanDelay.Chan():
 		}
-		replicas := store.getLeasedReplicas()
+		replicas := store.getLeasedReplicas(ctx)
 		for _, repl := range replicas {
 			if store.driverQueue != nil {
-				store.driverQueue.MaybeAdd(repl)
+				store.driverQueue.MaybeAdd(ctx, repl)
 			}
 			store.deleteSessionWorker.Enqueue(repl)
 		}
