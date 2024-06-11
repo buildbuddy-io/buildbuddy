@@ -3,7 +3,6 @@ package hostedrunner
 import (
 	"context"
 	"io"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -23,13 +22,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -75,26 +74,8 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 // uploading any logs to an invcocation page with the specified ID.
 // TODO(Maggie): Refactor this function to use rexec.Prepare
 func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, invocationID string) (*repb.Digest, error) {
-	cache := r.env.GetCache()
-	if cache == nil {
-		return nil, status.UnavailableError("No cache configured.")
-	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, ci_runner_bundle.CiRunnerBytes)
-	if err != nil {
-		return nil, status.WrapError(err, "upload runner bin")
-	}
-	// Save this to use when constructing the command to run below.
-	runnerName := filepath.Base(ci_runner_bundle.RunnerName)
-	dir := &repb.Directory{
-		Files: []*repb.FileNode{{
-			Name:         runnerName,
-			Digest:       runnerBinDigest,
-			IsExecutable: true,
-		}},
-	}
-	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, dir)
-	if err != nil {
-		return nil, status.WrapError(err, "upload input root")
+	if r.env.GetByteStreamClient() == nil {
+		return nil, status.UnavailableError("no bytestream client configured")
 	}
 
 	var patchURIs []string
@@ -120,7 +101,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	// NOTE: Be cautious when adding new flags. See
 	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
 	args := []string{
-		"./" + runnerName,
+		"./buildbuddy_ci_runner",
 		"--bes_backend=" + events_api_url.String(),
 		"--cache_backend=" + cache_api_url.String(),
 		"--rbe_backend=" + remote_exec_api_url.String(),
@@ -149,11 +130,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		affinityKey = repoURL.String()
 	}
 
-	image := DefaultRunnerContainerImage
-	if req.GetContainerImage() != "" {
-		image = req.GetContainerImage()
-	}
-
 	// By default, use the non-root user.
 	user := nonRootUser
 	for _, p := range req.ExecProperties {
@@ -163,16 +139,29 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		}
 	}
 
+	// Run from the scratch disk, since the workspace disk is hot-swapped
+	// between runs, which may not be very Bazel-friendly.
 	wd := "/home/buildbuddy/workspace"
 	if user == rootUser {
 		wd = "/root/workspace"
+	}
+	image := DefaultRunnerContainerImage
+	isolationType := "firecracker"
+
+	// Containers/VMs aren't supported on darwin - default to bare execution
+	// and use the action workspace as the working directory.
+	if req.GetOs() == "darwin" {
+		wd = ""
+		image = ""
+		isolationType = "none"
+	}
+	if req.GetContainerImage() != "" {
+		image = req.GetContainerImage()
 	}
 
 	// Hosted Bazel shares the same pool with workflows.
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			// Run from the scratch disk, since the workspace disk is hot-swapped
-			// between runs, which may not be very Bazel-friendly.
 			{Name: "WORKDIR_OVERRIDE", Value: wd},
 			{Name: "GIT_BRANCH", Value: req.GetRepoState().GetBranch()},
 		},
@@ -183,7 +172,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
 				{Name: "container-image", Value: image},
 				{Name: "recycle-runner", Value: "true"},
-				{Name: "workload-isolation-type", Value: "firecracker"},
+				{Name: "workload-isolation-type", Value: isolationType},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 				{Name: platform.DockerUserPropertyName, Value: user},
@@ -214,16 +203,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	cmd.Platform.Properties = append(cmd.Platform.Properties, req.GetExecProperties()...)
 	cmd.Platform.Properties = normalizePlatform(cmd.Platform.Properties)
 
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, cmd)
-	if err != nil {
-		return nil, status.WrapError(err, "upload command")
-	}
 	action := &repb.Action{
-		CommandDigest:   cmdDigest,
-		InputRootDigest: inputRootDigest,
-		DoNotCache:      true,
+		DoNotCache: true,
 	}
-
 	if req.GetTimeout() != "" {
 		d, err := time.ParseDuration(req.GetTimeout())
 		if err != nil {
@@ -232,11 +214,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		action.Timeout = durationpb.New(d)
 	}
 
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, action)
+	rn, err := rexec.Prepare(ctx, r.env, req.GetInstanceName(), repb.DigestFunction_BLAKE3, action, cmd, "" /*=inputRootDir*/)
 	if err != nil {
-		return nil, status.WrapError(err, "upload action")
+		return nil, status.WrapError(err, "prepare remote action")
 	}
-	return actionDigest, nil
+	return rn.GetDigest(), nil
 }
 
 func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
