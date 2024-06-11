@@ -16,6 +16,7 @@ go_library(
         "//server/endpoint_urls/build_buddy_url",
         "//server/endpoint_urls/cache_api_url",
         "//server/endpoint_urls/events_api_url",
+        "//server/endpoint_urls/remote_exec_api_url",
         "//server/environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
