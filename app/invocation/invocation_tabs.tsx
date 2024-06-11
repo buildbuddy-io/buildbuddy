@@ -13,6 +13,7 @@ export type TabsContext = {
   role: string;
   executionsEnabled?: boolean;
   hasSuggestions?: boolean;
+  hasCoverage?: boolean;
 };
 
 export type TabId =
@@ -27,6 +28,7 @@ export type TabId =
   | "raw"
   | "execution"
   | "fetches"
+  | "coverage"
   | "action";
 
 export function getTabId(tab: string): TabId {
@@ -62,6 +64,7 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
         {this.renderTab("artifacts", { label: "Artifacts" })}
         {isBazelInvocation && this.renderTab("timing", { label: "Timing" })}
         {isBazelInvocation && this.renderTab("cache", { label: "Cache" })}
+        {this.props.hasCoverage && this.renderTab("coverage", { label: "Coverage" })}
         {this.props.executionsEnabled && this.renderTab("execution", { label: "Executions" })}
         {this.props.hasSuggestions && this.renderTab("suggestions", { label: "Suggestions" })}
         {this.renderTab("raw", { label: "Raw" })}
