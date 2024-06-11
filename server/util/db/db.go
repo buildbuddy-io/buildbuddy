@@ -485,6 +485,17 @@ type connector struct {
 	ds DataSource
 }
 
+type wrappedConn struct {
+	driver.Conn
+}
+
+func (wc *wrappedConn) Prepare(query string) (driver.Stmt, error) {
+	start := time.Now()
+	s, err := wc.Conn.Prepare(query)
+	log.Infof("Prepare %q took %q", query, time.Since(start))
+	return s, err
+}
+
 func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	dsn, err := c.ds.DSN()
 	if err != nil {
@@ -494,7 +505,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	log.Info("open new db connection")
 	conn, err := c.d.Open(dsn)
 	log.Infof("new db connection took %s", time.Since(start))
-	return conn, err
+	return &wrappedConn{conn}, err
 }
 
 func (c *connector) Driver() driver.Driver {
