@@ -65,11 +65,12 @@ func newTestingProposerAndSenderAndReplica(t testing.TB) (*testutil.TestingPropo
 }
 
 func TestAcquireAndRelease(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	bgCtx := context.Background()
+	ctx, cancel := context.WithTimeout(bgCtx, 3*time.Second)
 	defer cancel()
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
-	liveness := nodeliveness.New("replicaID-1", sender)
+	liveness := nodeliveness.New(bgCtx, "replicaID-1", sender)
 	session := client.NewSession()
 
 	rd := &rfpb.RangeDescriptor{
@@ -104,11 +105,12 @@ func TestAcquireAndRelease(t *testing.T) {
 }
 
 func TestAcquireAndReleaseMetaRange(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	bgCtx := context.Background()
+	ctx, cancel := context.WithTimeout(bgCtx, 3*time.Second)
 	defer cancel()
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
-	liveness := nodeliveness.New("replicaID-2", sender)
+	liveness := nodeliveness.New(bgCtx, "replicaID-2", sender)
 	session := client.NewSession()
 
 	rd := &rfpb.RangeDescriptor{
@@ -143,11 +145,12 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 }
 
 func TestMetaRangeLeaseKeepalive(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	bgCtx := context.Background()
+	ctx, cancel := context.WithTimeout(bgCtx, 3*time.Second)
 	defer cancel()
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
-	liveness := nodeliveness.New("replicaID-3", sender)
+	liveness := nodeliveness.New(bgCtx, "replicaID-3", sender)
 	session := client.NewSession()
 
 	rd := &rfpb.RangeDescriptor{
@@ -190,11 +193,12 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 }
 
 func TestNodeEpochInvalidation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+	bgCtx := context.Background()
+	ctx, cancel := context.WithTimeout(bgCtx, 3*time.Second)
 	defer cancel()
 
 	proposer, sender, rep := newTestingProposerAndSenderAndReplica(t)
-	liveness := nodeliveness.New("replicaID-4", sender)
+	liveness := nodeliveness.New(bgCtx, "replicaID-4", sender)
 	session := client.NewSession()
 
 	rd := &rfpb.RangeDescriptor{

@@ -172,7 +172,7 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 }
 
 func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser, clock clockwork.Clock) (*Store, error) {
-	nodeLiveness := nodeliveness.New(nodeHost.ID(), sender)
+	nodeLiveness := nodeliveness.New(env.GetServerContext(), nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
 	eventsChan := make(chan events.Event, 100)

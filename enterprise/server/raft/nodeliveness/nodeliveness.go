@@ -38,14 +38,18 @@ type Liveness struct {
 	mu                    sync.RWMutex
 	lastLivenessRecord    *rfpb.NodeLivenessRecord
 	stopped               bool
-	quitLease             chan struct{}
+	ctx                   context.Context
+	cancelFn              context.CancelFunc
 	timeUntilLeaseRenewal time.Duration
 
 	livenessListeners []chan<- *rfpb.NodeLivenessRecord
 }
 
-func New(nodehostID string, sender sender.ISender) *Liveness {
+func New(ctx context.Context, nodehostID string, sender sender.ISender) *Liveness {
+	ctx, cancelFn := context.WithCancel(ctx)
 	return &Liveness{
+		ctx:                   ctx,
+		cancelFn:              cancelFn,
 		nhid:                  []byte(nodehostID),
 		sender:                sender,
 		clock:                 &serf.LamportClock{},
@@ -54,7 +58,6 @@ func New(nodehostID string, sender sender.ISender) *Liveness {
 		mu:                    sync.RWMutex{},
 		lastLivenessRecord:    &rfpb.NodeLivenessRecord{},
 		stopped:               true,
-		quitLease:             make(chan struct{}),
 		timeUntilLeaseRenewal: 0 * time.Second,
 		livenessListeners:     make([]chan<- *rfpb.NodeLivenessRecord, 0),
 	}
@@ -87,7 +90,7 @@ func (h *Liveness) Release() error {
 	// close the background lease-renewal thread.
 	if !h.stopped {
 		h.stopped = true
-		close(h.quitLease)
+		h.cancelFn()
 	}
 
 	// clear existing lease if it's valid.
@@ -185,13 +188,18 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (*rf
 		return h.lastLivenessRecord, nil
 	}
 
-	renewed := false
-	for !renewed {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+			// continue with for loop
+		}
 		if err := h.renewLease(ctx); err != nil {
 			return nil, err
 		}
 		if err := h.verifyLease(h.lastLivenessRecord); err == nil {
-			renewed = true
+			break
 		}
 	}
 
@@ -203,8 +211,7 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (*rf
 	// thread running to keep it renewed, start one now.
 	if h.stopped {
 		h.stopped = false
-		h.quitLease = make(chan struct{})
-		go h.keepLeaseAlive(h.quitLease)
+		go h.keepLeaseAlive()
 	}
 	return h.lastLivenessRecord, nil
 }
@@ -282,18 +289,18 @@ func (h *Liveness) renewLease(ctx context.Context) error {
 	return nil
 }
 
-func (h *Liveness) keepLeaseAlive(quitLease chan struct{}) {
+func (h *Liveness) keepLeaseAlive() {
 	for {
 		h.mu.Lock()
 		ttr := h.timeUntilLeaseRenewal
 		h.mu.Unlock()
 
 		select {
-		case <-quitLease:
+		case <-h.ctx.Done():
 			// TODO(tylerw): attempt to drop lease gracefully.
 			return
 		case <-time.After(ttr):
-			h.ensureValidLease(context.TODO(), true /*=forceRenewal*/)
+			h.ensureValidLease(h.ctx, true /*=forceRenewal*/)
 		}
 	}
 }
