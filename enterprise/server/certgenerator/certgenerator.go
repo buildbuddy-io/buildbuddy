@@ -46,7 +46,8 @@ var (
 
 const (
 	// Allow user to get an interactive prompt when using SSH.
-	allowPty = "permit-pty"
+	allowPty            = "permit-pty"
+	allowPortForwarding = "permit-port-forwarding"
 )
 
 type generator struct {
@@ -91,7 +92,7 @@ func (g *generator) Generate(ctx context.Context, req *cgpb.GenerateRequest) (*c
 		ValidAfter:      uint64(time.Now().Unix()),
 		ValidBefore:     uint64(time.Now().Add(*sshCertDuration).Unix()),
 	}
-	cert.Permissions.Extensions = map[string]string{allowPty: ""}
+	cert.Permissions.Extensions = map[string]string{allowPty: "", allowPortForwarding: ""}
 	if err := cert.SignCert(rand.Reader, g.sshSigner); err != nil {
 		return nil, err
 	}
