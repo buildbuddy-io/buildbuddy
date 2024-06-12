@@ -791,8 +791,14 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	log.Debugf("Invocation ID: %s", iid)
 
 	// If the remote bazel process is canceled or killed, cancel the remote run
+	isInvocationRunning := true
 	go func() {
 		<-ctx.Done()
+
+		if !isInvocationRunning {
+			return
+		}
+
 		// Use a non-cancelled context to ensure the remote executions are
 		// canceled
 		_, err = bbClient.CancelExecutions(context.WithoutCancel(ctx), &inpb.CancelExecutionsRequest{
@@ -801,7 +807,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		if err != nil {
 			log.Warnf("Failed to cancel remote run: %s", err)
 		}
-		os.Exit(1)
 	}()
 
 	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
@@ -814,6 +819,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			return 0, err
 		}
 	}
+	isInvocationRunning = false
 
 	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
 	if err != nil {
