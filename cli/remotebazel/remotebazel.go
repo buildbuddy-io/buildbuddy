@@ -490,18 +490,15 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 	var chunks []*elpb.GetEventLogChunkResponse
 	wasLive := false
 	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-
 		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 			InvocationId: invocationID,
 			ChunkId:      chunkID,
 			MinLines:     100,
 		})
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			return status.UnknownErrorf("error streaming logs: %s", err)
 		}
 
@@ -537,18 +534,15 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 	chunkID := ""
 
 	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-
 		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 			InvocationId: invocationID,
 			ChunkId:      chunkID,
 			MinLines:     100,
 		})
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			return status.UnknownErrorf("error streaming logs: %s", err)
 		}
 
@@ -801,9 +795,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		<-ctx.Done()
 		// Use a non-cancelled context to ensure the remote executions are
 		// canceled
-		nonCanceledCtx := context.Background()
-		nonCanceledCtx = metadata.AppendToOutgoingContext(nonCanceledCtx, "x-buildbuddy-api-key", opts.APIKey)
-		_, err = bbClient.CancelExecutions(nonCanceledCtx, &inpb.CancelExecutionsRequest{
+		_, err = bbClient.CancelExecutions(context.WithoutCancel(ctx), &inpb.CancelExecutionsRequest{
 			InvocationId: iid,
 		})
 		if err != nil {
@@ -825,6 +817,9 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
 	if err != nil {
+		if ctx.Err() != nil {
+			return 0, nil
+		}
 		return 0, fmt.Errorf("could not retrieve invocation: %s", err)
 	}
 	if len(inRsp.GetInvocation()) == 0 {
