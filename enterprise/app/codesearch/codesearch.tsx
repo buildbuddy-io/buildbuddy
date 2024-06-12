@@ -31,7 +31,6 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
   search() {
     router.setQueryParam("q", this.query);
     if (!this.query) {
-      this.setState({ response: undefined });
       return;
     }
     const query = this.query;
