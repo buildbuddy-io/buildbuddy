@@ -55,13 +55,10 @@ go_test(
     ],
 )
 
-genrule(
-    name = "crun_copy",
-    srcs = select({
-        "@platforms//cpu:x86_64": ["@com_github_containers_crun_crun-linux-amd64//file"],
-        "@platforms//cpu:aarch64": ["@com_github_containers_crun_crun-linux-arm64//file"],
+alias(
+    name = "crun",
+    actual = select({
+        "@platforms//cpu:x86_64": "@com_github_containers_crun_crun-linux-amd64//file",
+        "@platforms//cpu:aarch64": "@com_github_containers_crun_crun-linux-arm64//file",
     }),
-    outs = ["crun"],
-    cmd_bash = "ln $(SRCS) $@ || cp $(SRCS) $@",
-    target_compatible_with = ["@platforms//os:linux"],
 )
