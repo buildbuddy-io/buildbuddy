@@ -170,6 +170,7 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 
 type ReQuery struct {
 	log           log.Logger
+	parsed        string
 	squery        []byte
 	numResults    int
 	fieldMatchers map[string]*regexp.Regexp
@@ -275,6 +276,7 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 	req := &ReQuery{
 		log:           subLog,
 		squery:        []byte(squery),
+		parsed:        q,
 		numResults:    numResults,
 		fieldMatchers: fieldMatchers,
 	}
@@ -283,6 +285,10 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 
 func (req *ReQuery) SQuery() []byte {
 	return req.squery
+}
+
+func (req *ReQuery) ParsedQuery() string {
+	return req.parsed
 }
 
 func (req *ReQuery) NumResults() int {

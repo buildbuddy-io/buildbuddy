@@ -204,7 +204,13 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	}
 	highlighter := q.GetHighlighter()
 
-	rsp := &srpb.SearchResponse{}
+	rsp := &srpb.SearchResponse{
+		ParsedQuery: &srpb.ParsedQuery{
+			RawQuery:    req.GetQuery().GetTerm(),
+			ParsedQuery: q.ParsedQuery(),
+			Squery:      string(q.SQuery()),
+		},
+	}
 	for _, doc := range docs {
 		regions := highlighter.Highlight(doc)
 		if len(regions) == 0 {
