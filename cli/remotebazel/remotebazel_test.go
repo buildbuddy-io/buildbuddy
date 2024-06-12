@@ -203,7 +203,7 @@ func TestParseRemoteCliFlags(t *testing.T) {
 		}
 
 		for flag, expectedVal := range tc.expectedFlagValue {
-			actualVal := remoteFlagset.Lookup(flag).Value
+			actualVal := RemoteFlagset.Lookup(flag).Value
 			require.Equal(t, expectedVal, actualVal.String(), tc.name)
 		}
 	}
