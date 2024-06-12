@@ -77,6 +77,7 @@ export default class SuggestionButton extends React.Component<SuggestionButtonPr
       !capabilities.config.botSuggestionsEnabled ||
       !this.props.user ||
       !this.props.user?.selectedGroup?.botSuggestionsEnabled ||
+      !this.props.model.isBazelInvocation() ||
       this.props.model.invocation.bazelExitCode == "SUCCESS"
     ) {
       return <></>;
