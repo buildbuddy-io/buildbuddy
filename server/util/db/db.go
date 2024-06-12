@@ -678,6 +678,7 @@ func ParseDatasource(ctx context.Context, datasource string, advancedConfig *Adv
 				cfg.Params["sql_mode"] += ","
 			}
 			cfg.Params["sql_mode"] += "ANSI_QUOTES"
+			cfg.InterpolateParams = true
 			connString = cfg.FormatDSN()
 		}
 		return &fixedDSNDataSource{driver: driverName, dsn: connString}, nil
