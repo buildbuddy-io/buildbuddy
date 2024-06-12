@@ -451,6 +451,10 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		scim.RegisterHandlers(mux)
 	}
 
+	if reg := env.GetRegistryService(); reg != nil {
+		reg.RegisterHandlers(mux)
+	}
+
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}

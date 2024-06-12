@@ -1515,3 +1515,7 @@ type CodesearchService interface {
 type AuthService interface {
 	Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error)
 }
+
+type RegistryService interface {
+	RegisterHandlers(mux HttpServeMux)
+}

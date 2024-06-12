@@ -284,6 +284,9 @@ func main() {
 	if err := codesearch.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := registry.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	executionService := execution_service.NewExecutionService(realEnv)
 	realEnv.SetExecutionService(executionService)
@@ -293,9 +296,6 @@ func main() {
 
 	telemetryServer := telserver.NewTelemetryServer(realEnv, realEnv.GetDBHandle())
 	telemetryServer.StartOrDieIfEnabled()
-
-	registryServer := registry.NewRegistryServer(realEnv, realEnv.GetDBHandle())
-	registryServer.Start()
 
 	telemetryClient := telemetry.NewTelemetryClient(realEnv)
 	telemetryClient.Start()
