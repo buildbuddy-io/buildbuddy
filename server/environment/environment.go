@@ -124,4 +124,5 @@ type Env interface {
 	GetCodesearchService() interfaces.CodesearchService
 	GetSnapshotService() interfaces.SnapshotService
 	GetAuthService() interfaces.AuthService
+	GetRegistryService() interfaces.RegistryService
 }
