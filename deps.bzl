@@ -6961,3 +6961,16 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/buildbuddy-io/podman-static/releases/download/buildbuddy-{podman_version}/podman-linux-arm64.tar.gz".format(podman_version = PODMAN_VERSION)],
         sha256 = PODMAN_STATIC_SHA256_ARM64,
     )
+
+    http_file(
+        name = "com_github_containers_crun_crun-linux-amd64",
+        urls = ["https://github.com/containers/crun/releases/download/1.15/crun-1.15-linux-amd64-disable-systemd"],
+        sha256 = "03fd3ec6a7799183eaeefba5ebd3f66f9b5fb41a5b080c196285879631ff5dc1",
+        executable = True,
+    )
+    http_file(
+        name = "com_github_containers_crun_crun-linux-arm64",
+        urls = ["https://github.com/containers/crun/releases/download/1.15/crun-1.15-linux-arm64-disable-systemd"],
+        sha256 = "1bd840c95e9ae8edc25654dcf2481309724b9ff18ce95dbcd2535da9b026a47d",
+        executable = True,
+    )
