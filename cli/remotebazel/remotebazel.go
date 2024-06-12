@@ -496,10 +496,7 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 			MinLines:     100,
 		})
 		if err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			return status.UnknownErrorf("error streaming logs: %s", err)
+			return err
 		}
 
 		chunks = append(chunks, l)
@@ -540,10 +537,7 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 			MinLines:     100,
 		})
 		if err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			return status.UnknownErrorf("error streaming logs: %s", err)
+			return err
 		}
 
 		if l.GetLive() {
@@ -812,20 +806,17 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
 	if interactive {
 		if err := streamLogs(ctx, bbClient, iid); err != nil {
-			return 0, err
+			return 0, status.WrapError(err, "streaming logs")
 		}
 	} else {
 		if err := printLogs(ctx, bbClient, iid); err != nil {
-			return 0, err
+			return 0, status.WrapError(err, "streaming logs")
 		}
 	}
 	isInvocationRunning = false
 
 	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
 	if err != nil {
-		if ctx.Err() != nil {
-			return 0, nil
-		}
 		return 0, fmt.Errorf("could not retrieve invocation: %s", err)
 	}
 	if len(inRsp.GetInvocation()) == 0 {
@@ -855,7 +846,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	if exitCode == -1 {
 		if ctx.Err() != nil {
-			return 0, nil
+			return 0, ctx.Err()
 		}
 		return 0, fmt.Errorf("could not determine remote Bazel exit code")
 	}
@@ -953,12 +944,16 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		}
 	}
 
-	return Run(ctx, RunOpts{
+	exitCode, err := Run(ctx, RunOpts{
 		Server:            runner,
 		APIKey:            apiKey,
 		Args:              arg.JoinExecutableArgs(bazelArgs, execArgs),
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
+	if err != nil && strings.Contains(err.Error(), "context canceled") {
+		return exitCode, nil
+	}
+	return exitCode, err
 }
 
 func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string, err error) {

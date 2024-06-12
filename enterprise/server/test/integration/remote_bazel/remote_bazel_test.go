@@ -319,7 +319,7 @@ func TestCancel(t *testing.T) {
 	require.NoError(t, err)
 	repoConfig, err := remotebazel.Config(".")
 	require.NoError(t, err)
-	_, _ = remotebazel.Run(
+	_, err = remotebazel.Run(
 		ctxWithCancel,
 		remotebazel.RunOpts{
 			Server: bbServer.GRPCAddress(),
@@ -330,6 +330,7 @@ func TestCancel(t *testing.T) {
 			},
 			WorkspaceFilePath: wsFilePath,
 		}, repoConfig)
+	require.Contains(t, err.Error(), "context canceled")
 
 	// Check the invocation logs to make sure the invocation was canceled
 	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
