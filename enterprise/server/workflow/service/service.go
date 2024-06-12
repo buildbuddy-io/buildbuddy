@@ -1163,7 +1163,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	// NOTE: For non-Linux workflows, the executor is responsible for ensuring the
 	// buildbuddy_ci_runner binary exists at the workspace root when it sees
 	// the `workflow-id` platform property.
-	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_BLAKE3)
+	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
@@ -1171,7 +1171,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		// On Linux, because we can build the binary with the apps with the right architecture,
 		// upload the ci_runner binary to the cache to ensure the executors are using
 		// the most up-to-date version of the binary
-		runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, ws.env.GetByteStreamClient(), instanceName, repb.DigestFunction_BLAKE3, ci_runner_bundle.CiRunnerBytes)
+		runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, ws.env.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, ci_runner_bundle.CiRunnerBytes)
 		if err != nil {
 			return nil, status.WrapError(err, "upload runner bin")
 		}
@@ -1183,7 +1183,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				IsExecutable: true,
 			}},
 		}
-		inputRootDigest, err = cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, dir)
+		inputRootDigest, err = cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, dir)
 		if err != nil {
 			return nil, status.WrapError(err, "upload input root")
 		}
@@ -1281,7 +1281,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			Value: "true",
 		})
 	}
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, cmd)
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -1296,7 +1296,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		Timeout: durationpb.New(timeout + timeoutGracePeriod),
 	}
 
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, action)
 	return actionDigest, err
 }
 

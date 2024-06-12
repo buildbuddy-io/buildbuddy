@@ -99,13 +99,14 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	var workflowService interfaces.WorkflowService
 
 	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
-		EnvModifier: func(env *testenv.TestEnv) {
-			env.SetRepoDownloader(repo_downloader.NewRepoDownloader())
-			env.SetGitProviders([]interfaces.GitProvider{gp})
-			workflowService = service.NewWorkflowService(env)
-			env.SetWorkflowService(workflowService)
-			iss := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
-			env.SetInvocationSearchService(iss)
+		EnvModifier: func(e *testenv.TestEnv) {
+			e.SetRepoDownloader(repo_downloader.NewRepoDownloader())
+			e.SetGitProviders([]interfaces.GitProvider{gp})
+			workflowService = service.NewWorkflowService(e)
+			e.SetWorkflowService(workflowService)
+			iss := invocation_search_service.NewInvocationSearchService(e, e.GetDBHandle(), e.GetOLAPDBHandle())
+			e.SetInvocationSearchService(iss)
+			e.SetByteStreamClient(env.GetByteStreamClient())
 		},
 	})
 
