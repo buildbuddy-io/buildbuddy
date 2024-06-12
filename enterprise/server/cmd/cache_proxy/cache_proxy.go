@@ -13,8 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -65,7 +65,11 @@ func main() {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(healthChecker)
 	env.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
-	env.SetAuthenticator(&nullauth.NullAuthenticator{})
+	authenticator, err := remoteauth.NewRemoteAuthenticator()
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	env.SetAuthenticator(authenticator)
 
 	// Configure a local cache.
 	if err := pebble_cache.Register(env); err != nil {
