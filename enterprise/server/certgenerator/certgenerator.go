@@ -47,7 +47,7 @@ var (
 	caKeyFile = flag.String("certgenerator.ca_key_file", "", "Path to a PEM encoded certificate authority key file used to issue temporary user certificates.")
 	caKey     = flag.String("certgenerator.ca_key", "", "PEM encoded certificate authority key used to issue temporary user certificates.", flag.Secret)
 
-	kubernetesClusters     = flag.Slice("certgenerator.kubernetes.clusters", []KubernetesCluster{}, "")
+	kubernetesClusters     = flag.Slice("certgenerator.kubernetes.clusters", []KubernetesCluster{}, "List of clusters for which certificates will be generated.")
 	kubernetesCertDuration = flag.Duration("certgenerator.kubernetes.validity", 12*time.Hour, "How long the generated certificate will be valid.")
 )
 
