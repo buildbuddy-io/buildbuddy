@@ -28,6 +28,10 @@ const (
 	Acquire
 )
 
+const (
+	listenerID = "leaseKeeper"
+)
+
 func (a leaseAction) String() string {
 	switch a {
 	case Acquire:
@@ -82,7 +86,7 @@ func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.L
 		leases:              sync.Map{},
 		leaders:             make(map[shardID]bool),
 		open:                make(map[shardID]bool),
-		leaderUpdates:       listener.AddLeaderChangeListener(),
+		leaderUpdates:       listener.AddLeaderChangeListener(listenerID),
 		nodeLivenessUpdates: liveness.AddListener(),
 	}
 }
@@ -210,7 +214,11 @@ func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replic
 func (lk *LeaseKeeper) watchLeases() {
 	for {
 		select {
-		case info := <-lk.leaderUpdates:
+		case info, ok := <-lk.leaderUpdates:
+			if !ok {
+				// channel was closed and drained
+				continue
+			}
 			leader := info.LeaderID == info.ReplicaID && info.Term > 0
 			shard := shardID(info.ShardID)
 
@@ -240,6 +248,7 @@ func (lk *LeaseKeeper) watchLeases() {
 				la.stop()
 				return true // continue iterating
 			})
+			lk.listener.RemoveLeaderChangeListener(listenerID)
 			return
 		case <-lk.nodeLivenessUpdates:
 			lk.leases.Range(func(key, val any) bool {
