@@ -81,6 +81,16 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
     window.open(this.props.model.getBuildkiteUrl(), "_blank");
   }
 
+  invocationType() {
+    if (this.props.model.isWorkflowInvocation()) {
+      return "Workflow";
+    }
+    if (this.props.model.isHostedBazelInvocation()) {
+      return "Remote Bazel";
+    }
+    return "Invocation";
+  }
+
   render() {
     const ownerGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
     const isBazelInvocation = this.props.model.isBazelInvocation();
@@ -103,7 +113,9 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
                 {parentWorkflowId ? "Workflow" : "Bazel invocation"} {parentInvocationId}
               </Link>
             )}
-            <span>Invocation {this.props.model.getInvocationId()}</span>
+            <span>
+              {this.invocationType()} {this.props.model.getInvocationId()}
+            </span>
           </div>
           <InvocationButtons model={this.props.model} user={this.props.user} />
         </div>
