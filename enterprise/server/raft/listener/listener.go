@@ -11,26 +11,35 @@ type RaftListener struct {
 	mu sync.Mutex
 
 	lastLeaderInfo        *raftio.LeaderInfo
-	leaderChangeListeners []chan raftio.LeaderInfo
+	leaderChangeListeners map[string]chan raftio.LeaderInfo
 }
 
 func NewRaftListener() *RaftListener {
 	return &RaftListener{
 		mu: sync.Mutex{},
 
-		leaderChangeListeners: make([]chan raftio.LeaderInfo, 0),
+		leaderChangeListeners: make(map[string]chan raftio.LeaderInfo),
 	}
+}
+
+func (rl *RaftListener) RemoveLeaderChangeListener(id string) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	ch := rl.leaderChangeListeners[id]
+	close(ch)
+	delete(rl.leaderChangeListeners, id)
 }
 
 // AddLeaderChangeListener returns a channel where updates to raftio.LeaderInfo
 // will be published when callbacks are received by the library.
 // Listeners *must not block* or they risk dropping updates.
-func (rl *RaftListener) AddLeaderChangeListener() <-chan raftio.LeaderInfo {
+func (rl *RaftListener) AddLeaderChangeListener(id string) <-chan raftio.LeaderInfo {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
 	ch := make(chan raftio.LeaderInfo, 10)
-	rl.leaderChangeListeners = append(rl.leaderChangeListeners, ch)
+	rl.leaderChangeListeners[id] = ch
 	if rl.lastLeaderInfo != nil {
 		ch <- *rl.lastLeaderInfo
 	}
