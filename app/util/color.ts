@@ -219,12 +219,30 @@ function hash(value: string) {
 }
 
 /**
- * Returns a color between red and green based on a percentage value between 0 and 1.
+ * Returns a color between red and green based on a percentage value between 0
+ * and 1. The color returned comes from a discrete list of material colors that
+ * have high contrast against a white background. Each color corresponds to a
+ * small range of values.
  *
  * @param value the percentage value between 0 and 1
  * @returns a color between red and green
  */
 export function percentageColor(value: number) {
-  var hue = (value * 120).toString(10);
-  return ["hsl(", hue, ",75%,50%)"].join("");
+  return RED_TO_GREEN_SCALE[Math.floor(value * (RED_TO_GREEN_SCALE.length - 1))];
 }
+
+export const RED_TO_GREEN_SCALE = [
+  "#D32F2F", // red 700
+  "#E53935", // red 600
+  "#F4511E", // deep orange 600
+  "#FF5722", // deep orange 500
+  "#F57C00", // orange 700
+  "#FB8C00", // orange 600
+  "#FF9800", // orange 500
+  "#AFB42B", // lime 700
+  "#9E9D24", // lime 800
+  "#7CB342", // light green 600
+  "#689F38", // light green 700
+  "#43A047", // green 600
+  "#388E3C", // green 700
+];
