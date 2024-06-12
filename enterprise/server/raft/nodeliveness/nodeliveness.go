@@ -37,12 +37,14 @@ type Liveness struct {
 
 	mu                    sync.RWMutex
 	lastLivenessRecord    *rfpb.NodeLivenessRecord
-	stopped               bool
 	ctx                   context.Context
 	cancelFn              context.CancelFunc
 	timeUntilLeaseRenewal time.Duration
 
 	livenessListeners []chan<- *rfpb.NodeLivenessRecord
+
+	stopMu  sync.Mutex // protected stopped
+	stopped bool
 }
 
 func New(ctx context.Context, nodehostID string, sender sender.ISender) *Liveness {
@@ -84,15 +86,16 @@ func (h *Liveness) Lease(ctx context.Context) error {
 }
 
 func (h *Liveness) Release() error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
+	h.stopMu.Lock()
 	// close the background lease-renewal thread.
 	if !h.stopped {
 		h.stopped = true
 		h.cancelFn()
 	}
+	h.stopMu.Unlock()
 
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	// clear existing lease if it's valid.
 	valid := h.verifyLease(h.lastLivenessRecord) == nil
 	if !valid {
@@ -209,10 +212,12 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (*rf
 
 	// We just renewed the lease. If there isn't already a background
 	// thread running to keep it renewed, start one now.
+	h.stopMu.Lock()
 	if h.stopped {
 		h.stopped = false
 		go h.keepLeaseAlive()
 	}
+	h.stopMu.Unlock()
 	return h.lastLivenessRecord, nil
 }
 
