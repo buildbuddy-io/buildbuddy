@@ -35,3 +35,5 @@ go_test(
         "@org_golang_google_grpc//metadata",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])
