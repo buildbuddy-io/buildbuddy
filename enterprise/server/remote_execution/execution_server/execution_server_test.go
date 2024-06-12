@@ -161,7 +161,7 @@ func TestCancel(t *testing.T) {
 	}
 	createExecution(ctx, t, env.GetDBHandle(), execution)
 
-	err = s.Cancel(ctx, testInvocationID)
+	err = s.CancelInvocation(ctx, testInvocationID)
 	require.NoError(t, err)
 
 	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
@@ -193,7 +193,7 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 	createExecution(ctx, t, env.GetDBHandle(), completeExecution)
 	createExecution(ctx, t, env.GetDBHandle(), incompleteExecution)
 
-	err = s.Cancel(ctx, testInvocationID)
+	err = s.CancelInvocation(ctx, testInvocationID)
 	require.NoError(t, err)
 
 	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
@@ -232,7 +232,7 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 	createExecution(ctx, t, env.GetDBHandle(), incompleteExecution1)
 	createExecution(ctx, t, env.GetDBHandle(), incompleteExecution2)
 
-	err = s.Cancel(ctx, testInvocationID)
+	err = s.CancelInvocation(ctx, testInvocationID)
 	require.NoError(t, err)
 
 	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)

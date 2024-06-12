@@ -217,13 +217,22 @@ func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.Cance
 		return nil, status.FailedPreconditionError("Remote execution not enabled")
 	}
 
-	err := s.authorizeInvocationWrite(ctx, req.GetInvocationId())
-	if err != nil {
-		return nil, err
+	if req.InvocationId != "" && len(req.ExecutionIds) > 0 {
+		return nil, status.InternalError("only one of `invocation_id` or `execution_ids` should be set")
 	}
 
-	if err = res.Cancel(ctx, req.GetInvocationId()); err != nil {
-		return nil, err
+	// TODO: What should auth look like for executions?
+
+	if req.GetInvocationId() != "" {
+		if err := s.authorizeInvocationWrite(ctx, req.GetInvocationId()); err != nil {
+			return nil, err
+		}
+
+		if err := res.CancelInvocation(ctx, req.GetInvocationId()); err != nil {
+			return nil, err
+		}
+	} else if len(req.ExecutionIds) > 0 {
+		_ = res.CancelExecutions(ctx, req.ExecutionIds)
 	}
 
 	return &inpb.CancelExecutionsResponse{}, nil

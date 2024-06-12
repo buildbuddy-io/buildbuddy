@@ -1070,15 +1070,29 @@ func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
 	return dur, nil
 }
 
-func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error {
+func (s *ExecutionServer) CancelInvocation(ctx context.Context, invocationID string) error {
 	ids, err := s.executionIDs(ctx, invocationID)
 	if err != nil {
 		return status.InternalErrorf("failed to lookup execution IDs for invocation %q: %s", invocationID, err)
 	}
+
+	log.CtxInfof(ctx, "Cancelling executions for invocation %s due to user request: %v", invocationID, ids)
+	numCanceled := s.cancelExecutions(ctx, ids)
+	log.CtxInfof(ctx, "Cancelled %d executions for invocation %s", numCanceled, invocationID)
+	return nil
+}
+
+func (s *ExecutionServer) CancelExecutions(ctx context.Context, executionIDs []string) int {
+	log.CtxInfof(ctx, "Cancelling executions due to user request: %v", executionIDs)
+	numCanceled := s.cancelExecutions(ctx, executionIDs)
+	log.CtxInfof(ctx, "Cancelled %d executions", numCanceled)
+	return numCanceled
+}
+
+func (s *ExecutionServer) cancelExecutions(ctx context.Context, executionIDs []string) int {
 	numCancelled := 0
-	for _, id := range ids {
+	for _, id := range executionIDs {
 		ctx := log.EnrichContext(ctx, log.ExecutionIDKey, id)
-		log.CtxInfof(ctx, "Cancelling execution %q due to user request for invocation %q", id, invocationID)
 		cancelled, err := s.env.GetSchedulerService().CancelTask(ctx, id)
 		if cancelled {
 			numCancelled++
@@ -1093,8 +1107,7 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 			}
 		}
 	}
-	log.CtxInfof(ctx, "Cancelled %d executions for invocation %s", numCancelled, invocationID)
-	return nil
+	return numCancelled
 }
 
 func (s *ExecutionServer) executionIDs(ctx context.Context, invocationID string) ([]string, error) {

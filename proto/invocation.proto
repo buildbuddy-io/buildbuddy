@@ -228,8 +228,12 @@ message DeleteInvocationResponse {
 message CancelExecutionsRequest {
   context.RequestContext request_context = 1;
 
-  // The ID of the invocation to be canceled.
+  // One of either invocation_id or execution_ids should be set.
+
+  // The ID of the invocation for which all executions should be canceled.
   string invocation_id = 2;
+
+  repeated string execution_ids = 3;
 }
 
 message CancelExecutionsResponse {
