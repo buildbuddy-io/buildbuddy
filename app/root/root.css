@@ -1920,3 +1920,9 @@ code .comment {
 .coverage-details {
   color: #aaa;
 }
+
+.coverage-record-total {
+  border-top: 1px solid #eee;
+  padding-top: 8px;
+  margin-top: 8px;
+}

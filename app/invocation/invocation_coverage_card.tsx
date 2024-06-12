@@ -3,7 +3,7 @@ import SetupCodeComponent from "../docs/setup_code";
 import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
-import { Clock, ListChecks } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import errorService from "../errors/error_service";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { parseLcov } from "../util/lcov";
@@ -17,11 +17,13 @@ interface Props {
 interface State {
   report: any[] | null;
   loading: boolean;
+  sort: "file" | "most" | "least";
 }
 
 export default class InvocationCoverageCardComponent extends React.Component<Props, State> {
   state: State = {
     report: null,
+    sort: "file",
     loading: true,
   };
 
@@ -121,6 +123,21 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
     );
   }
 
+  handleSortClicked(sort: "file" | "most" | "least") {
+    this.setState({ sort: sort });
+  }
+
+  sort(a: any, b: any) {
+    if (this.state.sort == "most") {
+      return b.numLinesHit / b.numLinesFound - a.numLinesHit / a.numLinesFound;
+    }
+    if (this.state.sort == "least") {
+      return a.numLinesHit / a.numLinesFound - b.numLinesHit / b.numLinesFound;
+    }
+
+    return a.sourceFile.localeCompare(b.sourceFile);
+  }
+
   render() {
     if (!this.state.report) {
       return (
@@ -143,13 +160,31 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
       repoPath = `/code/${format.formatGitUrl(this.props.model.getRepo())}/`;
     }
 
+    let total = 0;
+    let hit = 0;
+
+    for (let record of this.state.report) {
+      total += record.numLinesFound;
+      hit += record.numLinesHit;
+    }
+
+    let totalPercent = hit / total;
+
     return (
       <>
         <div className="card">
           <ListChecks className="icon" />
           <div className="content">
             <div className="header">
-              <div className="title">Coverage</div>
+              <div className="title">
+                Coverage
+                <span
+                  className="coverage-percent"
+                  style={{ color: percentageColor(totalPercent) }}
+                  title={`(${format.formatWithCommas(hit)} hits / ${format.formatWithCommas(total)} lines)`}>
+                  &nbsp;{format.percent(totalPercent)}%
+                </span>
+              </div>
               {Boolean(this.getReportFile()?.uri) && (
                 <div className="button">
                   <Button className="download-gz-file" onClick={this.downloadReport.bind(this)}>
@@ -158,12 +193,34 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
                 </div>
               )}
             </div>
-
+            <div className="sort-controls">
+              <div className="sort-control">
+                Sort by&nbsp;
+                <u
+                  onClick={this.handleSortClicked.bind(this, "file")}
+                  className={`clickable ${this.state.sort == "file" && "selected"}`}>
+                  file name
+                </u>{" "}
+                |&nbsp;
+                <u
+                  onClick={this.handleSortClicked.bind(this, "least")}
+                  className={`clickable ${this.state.sort == "least" && "selected"}`}>
+                  least coverage
+                </u>{" "}
+                |&nbsp;
+                <u
+                  onClick={this.handleSortClicked.bind(this, "most")}
+                  className={`clickable ${this.state.sort == "most" && "selected"}`}>
+                  most coverage
+                </u>
+              </div>
+            </div>
             <div className="details">
               {this.state.report &&
                 this.state.report.length > 0 &&
                 this.state.report
                   .filter((record) => Boolean(record.sourceFile))
+                  .sort(this.sort.bind(this))
                   .map((record) => {
                     const percent = (record.numLinesHit * 1.0) / record.numLinesFound;
                     return (
@@ -181,12 +238,22 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
                             {format.percent(percent)}%
                           </span>{" "}
                           <span className="coverage-details">
-                            ({record.numLinesHit} hits / {record.numLinesFound} lines)
+                            ({format.formatWithCommas(record.numLinesHit)} hits /{" "}
+                            {format.formatWithCommas(record.numLinesFound)} lines)
                           </span>
                         </a>
                       </div>
                     );
                   })}
+            </div>
+            <div className="coverage-record coverage-record-total">
+              <span className="coverage-source">Total</span>{" "}
+              <span className="coverage-percent" style={{ color: percentageColor(totalPercent) }}>
+                {format.percent(totalPercent)}%
+              </span>{" "}
+              <span className="coverage-details">
+                ({format.formatWithCommas(hit)} total hits / {format.formatWithCommas(total)} total lines)
+              </span>
             </div>
           </div>
         </div>
