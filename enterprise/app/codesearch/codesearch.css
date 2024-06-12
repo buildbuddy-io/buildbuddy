@@ -82,3 +82,34 @@
   border: 1px solid gray;
   border-radius: 2px;
 }
+
+.code-search .no-results {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.code-search .icon {
+  width: 180px;
+  height: 180px;
+}
+
+.code-search .circle {
+  width: 400px;
+  height: 400px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.code-search ul {
+  list-style: initial;
+  margin: 16px 0;
+  list-style-type: none;
+}
+
+.code-search ul li {
+  margin-bottom: 16px;
+}
