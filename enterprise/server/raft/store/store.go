@@ -69,6 +69,7 @@ var (
 	clientSessionTTL       = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
 	maxRangeSizeBytes      = flag.Int64("cache.raft.max_range_size_bytes", 1e8, "If set to a value greater than 0, ranges will be split until smaller than this size")
 	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
+	enableTxnCleanup       = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 )
 
 const (
@@ -453,7 +454,9 @@ func (s *Store) Start() error {
 		return nil
 	})
 	eg.Go(func() error {
-		s.txnCoordinator.Start(gctx)
+		if *enableTxnCleanup {
+			s.txnCoordinator.Start(gctx)
+		}
 		return nil
 	})
 	eg.Go(func() error {
