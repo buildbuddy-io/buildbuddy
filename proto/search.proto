@@ -49,8 +49,26 @@ message SearchRequest {
   int32 num_results = 4;
 }
 
+message ParsedQuery {
+  // raw query is the string entered by the user.
+  // Ex. "case:y lang:java System.out.println\(.*"
+  string raw_query = 1;
+
+  // parsed_query is the raw_query with all atoms extracted. For example, the
+  // parsed query, given the raw query above, would be:
+  // Ex. "System.out.println\(.*"
+  string parsed_query = 2;
+
+  // squery is the s-expression query evaluated against the index along with the
+  // parsed query.
+  // Ex. (:and (:eq * \"_ca\") (:eq * \"ach\") (:eq * \"bbl\"))
+  string squery = 3;
+}
+
 message SearchResponse {
   context.ResponseContext response_context = 1;
 
   repeated Result results = 2;
+
+  ParsedQuery parsed_query = 3;
 }

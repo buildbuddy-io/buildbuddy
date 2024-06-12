@@ -77,6 +77,7 @@ type Highlighter interface {
 
 type Query interface {
 	SQuery() []byte
+	ParsedQuery() string
 	NumResults() int
 	GetScorer() Scorer
 	GetHighlighter() Highlighter
