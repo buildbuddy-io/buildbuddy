@@ -69,6 +69,8 @@ interface State {
   prTitle: string;
   prBody: string;
 
+  loading: boolean;
+
   requestingReview: boolean;
   updatingPR: boolean;
   reviewRequestModalVisible: boolean;
@@ -117,6 +119,8 @@ export default class CodeComponent extends React.Component<Props, State> {
     prBranch: "",
     prNumber: new Long(0),
 
+    loading: false,
+
     requestingReview: false,
     updatingPR: false,
     reviewRequestModalVisible: false,
@@ -159,8 +163,16 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.diffEditor?.layout();
   }
 
+  needsGithubLink() {
+    return this.currentRepo() && (!this.isSingleFile() || this.isLcov()) && !this.props.user.githubLinked;
+  }
+
+  isLcov() {
+    return Boolean(this.props.search.get("lcov"));
+  }
+
   isSingleFile() {
-    return Boolean(this.props.search.get("bytestream_url")) || Boolean(this.props.search.get("lcov"));
+    return Boolean(this.props.search.get("bytestream_url")) || this.isLcov();
   }
 
   componentDidMount() {
@@ -272,19 +284,17 @@ export default class CodeComponent extends React.Component<Props, State> {
     if (!this.currentRepo() && !this.isSingleFile()) {
       return;
     }
-
     window.addEventListener("resize", () => this.handleWindowResize());
     window.addEventListener("hashchange", () => this.focusLineNumber());
 
     this.editor = monaco.editor.create(this.codeViewer.current!, {
-      value: ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n"),
+      value: "",
       theme: "vs",
       readOnly: this.isSingleFile(),
     });
     this.forceUpdate();
 
     const bytestreamURL = this.props.search.get("bytestream_url") || "";
-    const invocationID = this.props.search.get("invocation_id") || "";
     const compareBytestreamURL = this.props.search.get("compare_bytestream_url") || "";
     if (compareBytestreamURL) {
       this.showBytestreamCompare();
@@ -293,55 +303,20 @@ export default class CodeComponent extends React.Component<Props, State> {
       this.showBytestreamFile();
       return;
     }
-
-    const lcovURL = this.props.search.get("lcov");
-    const commit = this.props.search.get("commit");
-    if (this.isSingleFile() && lcovURL) {
-      rpcService.service
-        .getGithubContent(
-          new github.GetGithubContentRequest({
-            owner: this.currentOwner(),
-            repo: this.currentRepo(),
-            path: this.currentPath(),
-            ref: commit || this.getRef(),
-          })
-        )
-        .then((response) => {
-          this.navigateToContent(this.currentPath(), response.content);
-          rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result) => {
-            let records = parseLcov(result);
-            for (let record of records) {
-              if (record.sourceFile == this.currentPath()) {
-                this.editor?.deltaDecorations(
-                  [],
-                  record.data.map((r) => {
-                    const parts = r.split(",");
-                    const lineNum = parseInt(parts[0]);
-                    const hit = parts[1] == "1";
-                    return {
-                      range: new monaco.Range(lineNum, 0, lineNum, 0),
-                      options: {
-                        isWholeLine: true,
-                        className: hit ? "codeCoverageHit" : "codeCoverageMiss",
-                        marginClassName: hit ? "codeCoverageHit" : "codeCoverageMiss",
-                        minimap: { color: hit ? "#c5e1a5" : "#ef9a9a", position: 1 },
-                      },
-                    };
-                  })
-                );
-              }
-            }
-            console.log(result);
-          });
-        });
+    if (this.isSingleFile() && this.isLcov()) {
+      this.showLcov();
       return;
     }
 
     if (this.currentPath()) {
       if (!this.state.fullPathToModelMap.has(this.currentPath())) {
-        this.fetchContentForPath(this.currentPath()).then((response) => {
-          this.navigateToContent(this.currentPath(), response.content);
-        });
+        this.setState({ loading: true });
+        this.fetchContentForPath(this.currentPath())
+          .then((response) => {
+            this.navigateToContent(this.currentPath(), response.content);
+          })
+          .catch((e) => error_service.handleError(e))
+          .finally(() => this.setState({ loading: false }));
       }
 
       this.focusLineNumber();
@@ -357,6 +332,10 @@ export default class CodeComponent extends React.Component<Props, State> {
       } else {
         this.editor.setModel(this.state.fullPathToModelMap.get(this.currentPath()) || null);
       }
+    } else {
+      this.editor.setValue(
+        ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n")
+      );
     }
 
     this.editor.onDidChangeModelContent(() => {
@@ -477,6 +456,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   async showBytestreamCompare() {
+    this.setState({ loading: true });
     const bytestreamURL = this.props.search.get("bytestream_url") || "";
     const invocationID = this.props.search.get("invocation_id") || "";
     const zip = this.props.search.get("z") || undefined;
@@ -495,20 +475,70 @@ export default class CodeComponent extends React.Component<Props, State> {
     let diffModel = { original: await modelA, modified: await modelB };
     this.diffEditor?.setModel(diffModel);
     this.state.fullPathToDiffModelMap.set(filename, diffModel);
-    this.updateState({ fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
+    this.updateState({ loading: false, fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
       this.diffEditor?.layout();
     });
   }
 
   async showBytestreamFile() {
+    this.setState({ loading: true });
     const bytestreamURL = this.props.search.get("bytestream_url") || "";
     const invocationID = this.props.search.get("invocation_id") || "";
     const zip = this.props.search.get("z") || undefined;
     let filename = this.props.search.get("filename") || "file";
 
     let modelA = await this.modelForBytestreamUrl(bytestreamURL, invocationID, filename, zip);
+    this.setState({ loading: false });
 
     this.setModel(filename, modelA);
+  }
+
+  async showLcov() {
+    this.setState({ loading: true });
+    const commit = this.props.search.get("commit");
+    const lcovURL = this.props.search.get("lcov")!;
+    const invocationID = this.props.search.get("invocation_id") || "";
+
+    rpcService.service
+      .getGithubContent(
+        new github.GetGithubContentRequest({
+          owner: this.currentOwner(),
+          repo: this.currentRepo(),
+          path: this.currentPath(),
+          ref: commit || this.getRef(),
+        })
+      )
+      .then((response) => {
+        this.navigateToContent(this.currentPath(), response.content);
+        rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result) => {
+          let records = parseLcov(result);
+          for (let record of records) {
+            if (record.sourceFile == this.currentPath()) {
+              this.editor?.deltaDecorations(
+                [],
+                record.data.map((r) => {
+                  const parts = r.split(",");
+                  const lineNum = parseInt(parts[0]);
+                  const hit = parts[1] == "1";
+                  return {
+                    range: new monaco.Range(lineNum, 0, lineNum, 0),
+                    options: {
+                      isWholeLine: true,
+                      className: hit ? "codeCoverageHit" : "codeCoverageMiss",
+                      marginClassName: hit ? "codeCoverageHit" : "codeCoverageMiss",
+                      minimap: { color: hit ? "#c5e1a5" : "#ef9a9a", position: 1 },
+                    },
+                  };
+                })
+              );
+            }
+          }
+          console.log(result);
+        });
+      })
+      .finally(() => {
+        this.setState({ loading: false });
+      });
   }
 
   // TODO(siggisim): Support moving files around
@@ -1360,15 +1390,26 @@ export default class CodeComponent extends React.Component<Props, State> {
             )}
             <div className="code-viewer-container">
               {!this.currentRepo() && !this.isSingleFile() && <CodeEmptyStateComponent />}
-              {this.currentRepo() && !this.isSingleFile() && !this.props.user.githubLinked && (
+              {this.needsGithubLink() && (
                 <div className="code-editor-link-github github-button">
                   <button onClick={this.handleGitHubClicked.bind(this)}>
                     <GithubIcon /> Continue with GitHub
                   </button>
                 </div>
               )}
-              <div className={`code-viewer ${showDiffView ? "hidden-viewer" : ""}`} ref={this.codeViewer} />
-              <div className={`diff-viewer ${showDiffView ? "" : "hidden-viewer"}`} ref={this.diffViewer} />
+              {this.state.loading && <Spinner className="code-spinner" />}
+              <div
+                className={`code-viewer ${this.state.loading || this.needsGithubLink() ? "hidden-viewer" : ""} ${
+                  showDiffView ? "hidden-viewer" : ""
+                }`}
+                ref={this.codeViewer}
+              />
+              <div
+                className={`diff-viewer ${this.state.loading || this.needsGithubLink() ? "hidden-viewer" : ""} ${
+                  showDiffView ? "" : "hidden-viewer"
+                }`}
+                ref={this.diffViewer}
+              />
             </div>
             {this.state.changes.size > 0 && (
               <div className="code-diff-viewer">

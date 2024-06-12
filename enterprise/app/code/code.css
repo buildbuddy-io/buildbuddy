@@ -452,3 +452,12 @@
 .code-editor .monaco-editor .view-overlays .current-line-exact {
   border: 2px solid #eee;
 }
+
+.code-spinner {
+  position: absolute;
+  z-index: 100;
+  width: 64px;
+  height: 64px;
+  top: calc(50% - 32px);
+  left: calc(50% - 32px);
+}
