@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"os/exec"
@@ -274,5 +274,5 @@ func Pull(ctx context.Context, layersDir, imageName string, creds Credentials) (
 }
 
 func tmpSuffix() string {
-	return fmt.Sprintf(".%d.tmp", rand.Int63n(1e16))
+	return fmt.Sprintf(".%d.tmp", rand.Int64N(1e18))
 }
