@@ -1628,6 +1628,9 @@ function getOrCreateModel(url: string, value: string) {
 
 // This revives any non-serializable objects in state from their seralized form.
 function stateReviver(key: string, value: any) {
+  if (key == "loading") {
+    return false;
+  }
   if (typeof value === "object" && value !== null) {
     if (value.dataType === "Map") {
       return new Map(value.value);
