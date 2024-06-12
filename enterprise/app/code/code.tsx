@@ -315,7 +315,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           .then((response) => {
             this.navigateToContent(this.currentPath(), response.content);
           })
-          .catch(() => error_service.handleError)
+          .catch((e) => error_service.handleError(e))
           .finally(() => this.setState({ loading: false }));
       }
 
