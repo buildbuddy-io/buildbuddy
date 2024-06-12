@@ -32,11 +32,15 @@ go_library(
 go_test(
     name = "ociruntime_test",
     srcs = ["ociruntime_test.go"],
+    data = [":crun"],
     tags = [
         "manual",
         "no-sandbox",
     ],
     target_compatible_with = ["@platforms//os:linux"],
+    x_defs = {
+        "crunRlocationpath": "$(rlocationpath :crun)",
+    },
     deps = [
         ":ociruntime",
         "//enterprise/server/remote_execution/container",
@@ -47,5 +51,14 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@io_bazel_rules_go//go/runfiles:go_default_library",
     ],
+)
+
+alias(
+    name = "crun",
+    actual = select({
+        "@platforms//cpu:x86_64": "@com_github_containers_crun_crun-linux-amd64//file",
+        "@platforms//cpu:aarch64": "@com_github_containers_crun_crun-linux-arm64//file",
+    }),
 )

@@ -2,9 +2,11 @@ package ociruntime_test
 
 import (
 	"context"
+	"log"
 	"strings"
 	"testing"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -16,6 +18,17 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+// Set via x_defs in BUILD file.
+var crunRlocationpath string
+
+func init() {
+	runtimePath, err := runfiles.Rlocation(crunRlocationpath)
+	if err != nil {
+		log.Fatalf("Failed to locate crun in runfiles: %s", err)
+	}
+	*ociruntime.Runtime = runtimePath
+}
 
 func TestCreateExecRemove(t *testing.T) {
 	ctx := context.Background()

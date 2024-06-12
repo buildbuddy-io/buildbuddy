@@ -32,7 +32,7 @@ import (
 )
 
 var (
-	runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
+	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
 	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
 )
 
@@ -87,7 +87,7 @@ type provider struct {
 
 func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 	// Try to find a usable runtime if the runtime flag is not explicitly set.
-	rt := *runtime
+	rt := *Runtime
 	if rt == "" {
 		for _, r := range []string{"crun", "runc", "runsc"} {
 			if _, err := exec.LookPath(r); err == nil {
