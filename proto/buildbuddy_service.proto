@@ -177,6 +177,8 @@ service BuildBuddyService {
   // Eventlog API
   rpc GetEventLogChunk(eventlog.GetEventLogChunkRequest)
       returns (eventlog.GetEventLogChunkResponse);
+  rpc GetEventLog(eventlog.GetEventLogChunkRequest)
+      returns (stream eventlog.GetEventLogChunkResponse);
 
   // Usage API
   rpc GetUsage(usage.GetUsageRequest) returns (usage.GetUsageResponse);

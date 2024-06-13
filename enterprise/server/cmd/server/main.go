@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
@@ -185,6 +186,9 @@ func main() {
 	}
 	if err := redis_client.RegisterDefault(realEnv); err != nil {
 		log.Fatalf("%v", err)
+	}
+	if realEnv.GetDefaultRedisClient() != nil {
+		realEnv.SetPubSub(pubsub.NewPubSub(realEnv.GetDefaultRedisClient()))
 	}
 	if err := server_notification.Register(realEnv, "app"); err != nil {
 		log.Fatalf("%v", err)

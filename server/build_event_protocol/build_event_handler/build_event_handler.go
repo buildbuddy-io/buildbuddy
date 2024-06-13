@@ -1061,6 +1061,8 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				e.ctx,
 				e.env.GetBlobstore(),
 				e.env.GetKeyValStore(),
+				e.env.GetPubSub(),
+				eventlog.GetEventLogPubSubChannel(iid),
 				eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
 				numLinesToRetain,
 			)

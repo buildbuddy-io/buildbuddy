@@ -1,5 +1,7 @@
 app:
   log_error_stack_traces: true
+  streaming_http_enabled: true
+  invocation_log_streaming_enabled: true
 storage:
   ttl_seconds: 86400 # One day in seconds.
   disk:

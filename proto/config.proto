@@ -153,6 +153,9 @@ message FrontendConfig {
 
   // Enables reader/writer roles in the UI.
   bool reader_writer_roles_enabled = 51;
+
+  // Whether to stream invocation logs.
+  bool invocation_log_streaming_enabled = 52;
 }
 
 message Region {

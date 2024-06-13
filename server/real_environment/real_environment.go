@@ -125,6 +125,7 @@ type RealEnv struct {
 	snapshotService                  interfaces.SnapshotService
 	authService                      interfaces.AuthService
 	registryService                  interfaces.RegistryService
+	pubsub                           interfaces.PubSub
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -750,4 +751,11 @@ func (r *RealEnv) GetRegistryService() interfaces.RegistryService {
 }
 func (r *RealEnv) SetRegistryService(reg interfaces.RegistryService) {
 	r.registryService = reg
+}
+
+func (r *RealEnv) GetPubSub() interfaces.PubSub {
+	return r.pubsub
+}
+func (r *RealEnv) SetPubSub(value interfaces.PubSub) {
+	r.pubsub = value
 }

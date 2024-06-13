@@ -6,6 +6,8 @@ app:
   default_redis_target: "localhost:6379"
   enable_target_tracking: true
   user_owned_keys_enabled: true
+  streaming_http_enabled: true
+  invocation_log_streaming_enabled: true
 database:
   data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
 #olap_database:

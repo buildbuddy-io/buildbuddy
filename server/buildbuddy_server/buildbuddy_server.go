@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -40,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -1166,6 +1168,64 @@ func (s *BuildBuddyServer) GetEventLogChunk(ctx context.Context, req *elpb.GetEv
 		log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, req)
 	}
 	return resp, err
+}
+
+func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream bbspb.BuildBuddyService_GetEventLogServer) error {
+	ctx := stream.Context()
+	// Fetch the event log once as soon as we get the request, once whenever
+	// we see an update from Redis, and once every 3s (as a fallback).
+	initialFetch := make(chan struct{}, 1)
+	initialFetch <- struct{}{}
+
+	// If redis is available, listen for log updates.
+	logsUpdated := make(<-chan string)
+	pubsub := s.env.GetPubSub()
+	if pubsub != nil {
+		subscriber := pubsub.Subscribe(ctx, eventlog.GetEventLogPubSubChannel(req.GetInvocationId()))
+		defer subscriber.Close()
+		logsUpdated = subscriber.Chan()
+	}
+
+	// Clone the request since we'll be mutating it each time we fetch a new log
+	// chunk.
+	req = req.CloneVT()
+	// Apply a rate limit in case we're getting a high rate of progress events.
+	rateLimit := rate.NewLimiter(rate.Every(100*time.Millisecond), 1)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-initialFetch:
+		case <-logsUpdated:
+		case <-time.After(3 * time.Second):
+		}
+		if err := rateLimit.Wait(ctx); err != nil {
+			return err
+		}
+		// Fetch all available chunks.
+		for {
+			rsp, err := eventlog.GetEventLogChunk(ctx, s.env, req)
+			if err != nil {
+				return err
+			}
+			if err := stream.Send(rsp); err != nil {
+				return err
+			}
+			// Empty next chunk ID means the invocation is complete and we've
+			// reached the end of the log.
+			if rsp.NextChunkId == "" {
+				return nil
+			}
+			// Unchanged next chunk ID means the invocation is still in
+			// progress; break and wait until logs are updated or the poll
+			// interval elapses.
+			if req.GetChunkId() == rsp.GetNextChunkId() {
+				break
+			}
+			// Continue on to fetching the next chunk.
+			req.ChunkId = rsp.GetNextChunkId()
+		}
+	}
 }
 
 func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {

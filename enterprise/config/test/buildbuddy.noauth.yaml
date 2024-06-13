@@ -4,6 +4,8 @@ app:
   create_group_per_user: true
   add_user_to_domain_group: true
   enable_target_tracking: true
+  streaming_http_enabled: true
+  invocation_log_streaming_enabled: true
 database:
   data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
 storage:
