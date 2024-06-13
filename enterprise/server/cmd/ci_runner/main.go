@@ -446,15 +446,9 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	return nil
 }
 
-func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
-	if r.cancelBackgroundFlush != nil {
-		r.cancelBackgroundFlush()
-		r.cancelBackgroundFlush = nil
-	}
-	r.FlushProgress()
+func (r *buildEventReporter) PublishFinishedEvent(exitCode int, exitCodeName string) {
 	now := time.Now()
-
-	r.Publish(&bespb.BuildEvent{
+	_ = r.Publish(&bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
 		Children: []*bespb.BuildEventId{
 			{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
@@ -467,10 +461,19 @@ func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 			FinishTime: timestamppb.New(now),
 		}},
 	})
+}
+
+func (r *buildEventReporter) Stop() error {
+	if r.cancelBackgroundFlush != nil {
+		r.cancelBackgroundFlush()
+		r.cancelBackgroundFlush = nil
+	}
+	r.FlushProgress()
+
 	elapsedTimeSeconds := float64(time.Since(r.startTime)) / float64(time.Second)
 	// NB: This is the last message -- if more are added afterwards, be sure to
 	// update the `LastMessage` flag
-	r.Publish(&bespb.BuildEvent{
+	_ = r.Publish(&bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
 		Payload: &bespb.BuildEvent_BuildToolLogs{BuildToolLogs: &bespb.BuildToolLogs{
 			Log: []*bespb.File{
@@ -703,23 +706,22 @@ func run() error {
 		return nil
 	}
 
-	defer func() {
-		// After the invocation is complete, attempt to reclaim disk space if
-		// we're low on disk.
-		if err := reclaimDiskSpace(ctx); err != nil {
-			log.Warningf("Failed to reclaim disk space: %s", err)
-		}
-	}()
-
 	if err := buildEventReporter.Start(ws.startTime); err != nil {
 		return status.WrapError(err, "could not publish started event")
 	}
 	result, err := ws.RunAction(ctx, buildEventReporter)
 	if err != nil {
-		_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
+		buildEventReporter.PublishFinishedEvent(noExitCode, failedExitCodeName)
+		_ = buildEventReporter.Stop()
 		return err
 	}
-	if err := buildEventReporter.Stop(result.exitCode, result.exitCodeName); err != nil {
+	buildEventReporter.PublishFinishedEvent(result.exitCode, result.exitCodeName)
+	// After the invocation is complete, attempt to reclaim disk space if
+	// we're low on disk.
+	if err := reclaimDiskSpace(ctx, buildEventReporter); err != nil {
+		log.Warningf("Failed to reclaim disk space: %s", err)
+	}
+	if err := buildEventReporter.Stop(); err != nil {
 		return err
 	}
 	if result.exitCode != 0 {
@@ -2287,11 +2289,11 @@ func runCredentialHelper() error {
 }
 
 // Attempts to free up disk space.
-func reclaimDiskSpace(ctx context.Context) error {
+func reclaimDiskSpace(ctx context.Context, log *buildEventReporter) error {
 	// We should be in the git repo root at this point - run git gc.
-	log.Infof("Running git maintenance...")
+	log.Printf("Running git maintenance...")
 	if err := runGitMaintenance(ctx); err != nil {
-		log.Warningf("git maintenance failed: %s", err)
+		log.Printf("WARNING: git maintenance failed: %s", err)
 	}
 
 	// TODO: attempt to clean up old bazel cache objects?
