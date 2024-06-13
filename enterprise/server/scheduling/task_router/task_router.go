@@ -132,7 +132,7 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 	// executor on the same host.
 	nodeByHostID := map[string]interfaces.ExecutionNode{}
 	for _, node := range nodes {
-		nodeByHostID[node.GetExecutorHostID()] = node
+		nodeByHostID[node.GetExecutorHostId()] = node
 	}
 
 	// Executor IDs of the nodes we've added to the front of the list so far.
@@ -157,17 +157,17 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 			if node == nil {
 				continue
 			}
-			if _, ok := preferredSet[node.GetExecutorID()]; ok {
+			if _, ok := preferredSet[node.GetExecutorId()]; ok {
 				continue
 			}
-			preferredSet[node.GetExecutorID()] = struct{}{}
+			preferredSet[node.GetExecutorId()] = struct{}{}
 			ranked = append(ranked, rankedExecutionNode{node: node, preferred: true})
 		}
 	}
 
 	// Randomly shuffle non-preferred nodes at the end of the ranking.
 	for _, node := range nodes {
-		if _, ok := preferredSet[node.GetExecutorID()]; ok {
+		if _, ok := preferredSet[node.GetExecutorId()]; ok {
 			continue
 		}
 		ranked = append(ranked, rankedExecutionNode{node: node})

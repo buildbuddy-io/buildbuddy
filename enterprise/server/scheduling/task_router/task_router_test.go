@@ -53,7 +53,7 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsLatestRunnerThatExecutedWorkflow(
 	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
 
 	requireSameExecutionNodes(t, nodes, ranked)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
 
 	// The remaining nodes should be shuffled.
 	requireNonSequential(t, ranked[1:])
@@ -68,7 +68,7 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsLatestRunnerThatExecutedWorkflow(
 	ranked = router.RankNodes(ctx, cmd, instanceName, nodes)
 
 	requireSameExecutionNodes(t, nodes, ranked)
-	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostId())
 	requireNonSequential(t, ranked[2:])
 }
 
@@ -96,7 +96,7 @@ func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComple
 	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
 
 	requireSameExecutionNodes(t, nodes, ranked)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
 	requireNonSequential(t, ranked[1:])
 
 	// Mark the same task complete by executor 2 as well.
@@ -110,7 +110,7 @@ func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComple
 	// tasks.
 
 	requireSameExecutionNodes(t, nodes, ranked)
-	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostId())
 	require.True(t, ranked[0].IsPreferred())
 
 	requireNotAlwaysRanked(1, executorHostID1, t, router, ctx, cmd, instanceName)
@@ -145,14 +145,14 @@ func TestTaskRouter_RankNodes_RoutesByHostID(t *testing.T) {
 	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
 
 	requireSameExecutionNodes(t, nodes, ranked)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
 	requireNonSequential(t, ranked[1:])
 
 	// Simulate executor 1 restarting by updating its executor ID but keeping
 	// the host ID the same.
 
 	idx := slices.IndexFunc(nodes, func(n interfaces.ExecutionNode) bool {
-		return n.GetExecutorHostID() == executorHostID1
+		return n.GetExecutorHostId() == executorHostID1
 	})
 	require.NotEqual(t, -1, idx)
 	nodes[idx].(*testNode).executorID = "new-executor-id"
@@ -162,7 +162,7 @@ func TestTaskRouter_RankNodes_RoutesByHostID(t *testing.T) {
 	ranked = router.RankNodes(ctx, cmd, instanceName, nodes)
 
 	requireSameExecutionNodes(t, nodes, ranked)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
 	requireNonSequential(t, ranked[1:])
 }
 
@@ -211,7 +211,7 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	ranked = router.RankNodes(ctx, secondCmd, instanceName, nodes)
 
 	requireSameExecutionNodes(t, nodes, ranked)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
 	require.True(t, ranked[0].IsPreferred())
 	requireNonSequential(t, ranked[1:])
 	requireNonePreferred(t, ranked[1:])
@@ -238,7 +238,7 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 
 	// Task should now be routed to executor 2, with executor 1 ranked randomly
 	requireSameExecutionNodes(t, nodes, ranked)
-	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostId())
 	require.True(t, ranked[0].IsPreferred())
 	requireNonSequential(t, ranked[1:])
 	requireNonePreferred(t, ranked[1:])
@@ -347,7 +347,7 @@ func TestTaskRouter_RankNodes_RunnerRecyclingTakesPrecedence(t *testing.T) {
 	ranked := router.RankNodes(ctx, oaCmd, instanceName, nodes)
 
 	requireSameExecutionNodes(t, nodes, ranked)
-	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostId())
 	requireNonSequential(t, ranked[1:])
 }
 
@@ -438,7 +438,7 @@ func TestTaskRouter_WorkflowGitRefRouting(t *testing.T) {
 	// executor1 should now be the preferred executor when running this workflow
 	// on the main branch.
 	ranked := router.RankNodes(ctx, mainBranchCmd, instanceName, nodes)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
 
 	// executor1 should not necessarily be preferred when running this workflow
 	// on a different branch.
@@ -491,7 +491,7 @@ func TestTaskRouter_WorkflowGitRefRouting_DefaultRef(t *testing.T) {
 		Arguments: []string{"./buildbuddy_ci_runner"},
 	}
 	ranked := router.RankNodes(ctx, prBranchCmd, instanceName, nodes)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
 	// Mark executor1 as having completed a workflow run on the pr branch.
 	router.MarkComplete(ctx, prBranchCmd, instanceName, executorHostID1)
 
@@ -501,7 +501,7 @@ func TestTaskRouter_WorkflowGitRefRouting_DefaultRef(t *testing.T) {
 	// The router should prioritize routing a workflow for the pr branch to the
 	// executor that last ran the pr branch, not the one that last ran the default branch.
 	ranked = router.RankNodes(ctx, prBranchCmd, instanceName, nodes)
-	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostID())
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
 }
 
 func requireNonePreferred(t *testing.T, rankedNodes []interfaces.RankedExecutionNode) {
@@ -527,7 +527,7 @@ func requireNotAlwaysRanked(rank int, executorID string, t *testing.T, router in
 		ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
 
 		require.Equal(t, len(nodes), len(ranked))
-		if ranked[rank].GetExecutionNode().GetExecutorHostID() != executorID {
+		if ranked[rank].GetExecutionNode().GetExecutorHostId() != executorID {
 			return
 		}
 	}
@@ -544,7 +544,7 @@ func requireReordered(t *testing.T, nodes []interfaces.ExecutionNode, ranked []i
 	requireSameExecutionNodes(t, nodes, ranked)
 
 	for i := range nodes {
-		if nodes[i].GetExecutorHostID() != ranked[i].GetExecutionNode().GetExecutorHostID() {
+		if nodes[i].GetExecutorHostId() != ranked[i].GetExecutionNode().GetExecutorHostId() {
 			return
 		}
 	}
@@ -609,10 +609,10 @@ type testNode struct {
 	executorHostID string
 }
 
-func (n *testNode) GetExecutorID() string {
+func (n *testNode) GetExecutorId() string {
 	return n.executorID
 }
 
-func (n *testNode) GetExecutorHostID() string {
+func (n *testNode) GetExecutorHostId() string {
 	return n.executorHostID
 }
