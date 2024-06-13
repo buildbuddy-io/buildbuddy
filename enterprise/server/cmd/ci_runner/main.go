@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
 	"github.com/docker/go-units"
+	"github.com/elastic/gosigar"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
@@ -72,6 +73,10 @@ const (
 	// Name of the bazel output base dir. This is written under the workspace
 	// so that it can be cleaned up when the workspace is cleaned up.
 	outputBaseDirName = "output-base"
+
+	// Fraction of disk space that must be in use before we attempt to reclaim
+	// disk space.
+	highDiskUsageThreshold = 0.9
 
 	// Name of the dir where artifacts can be written.
 	// The CI runner provisions subdirectories under this directory, one per
@@ -697,6 +702,14 @@ func run() error {
 		log.Info("Shutdown complete.")
 		return nil
 	}
+
+	defer func() {
+		// After the invocation is complete, attempt to reclaim disk space if
+		// we're low on disk.
+		if err := reclaimDiskSpace(ctx); err != nil {
+			log.Warningf("Failed to reclaim disk space: %s", err)
+		}
+	}()
 
 	if err := buildEventReporter.Start(ws.startTime); err != nil {
 		return status.WrapError(err, "could not publish started event")
@@ -2271,4 +2284,51 @@ func runCredentialHelper() error {
 		// Do nothing
 		return nil
 	}
+}
+
+// Attempts to free up disk space if necessary.
+func reclaimDiskSpace(ctx context.Context) error {
+	if runtime.GOOS != "linux" {
+		// Only do this on Linux VMs for now.
+		return nil
+	}
+	usage, err := diskUsageFraction()
+	if err != nil {
+		return fmt.Errorf("get disk usage: %w", err)
+	}
+	if usage < highDiskUsageThreshold {
+		return nil
+	}
+
+	// We should be in the git repo root at this point - run git gc.
+	log.Infof("Running git gc...")
+	if _, err := git(ctx, os.Stderr, "gc"); err != nil {
+		log.Warningf("git gc failed: %s", err)
+	}
+
+	// TODO: bazel clean?
+
+	// If we still have high disk usage after cleaning, print some debug info so
+	// that we can see where the disk usage is coming from.
+	usage, err = diskUsageFraction()
+	if err != nil {
+		return fmt.Errorf("get disk usage: %s", err)
+	}
+	if usage < highDiskUsageThreshold {
+		return nil
+	}
+	// Just print a few dirs for now so this doesn't take excessively long.
+	duArgs := []string{"--human-readable", "--max-depth=1", ".", filepath.Join("..", outputBaseDirName)}
+	if err = runCommand(ctx, "du", duArgs, nil /*=env*/, "" /*=dir*/, os.Stderr); err != nil {
+		return fmt.Errorf("du: %w", err)
+	}
+	return nil
+}
+
+func diskUsageFraction() (float64, error) {
+	fsu := gosigar.FileSystemUsage{}
+	if err := fsu.Get("."); err != nil {
+		return 0, err
+	}
+	return fsu.UsePercent() / 100.0, nil
 }
