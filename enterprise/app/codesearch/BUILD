@@ -15,9 +15,21 @@ ts_library(
         "//app/errors:error_service",
         "//app/router",
         "//app/service:rpc_service",
+        "//enterprise/app/codesearch:result",
         "//proto:search_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "result",
+    srcs = ["result.tsx"],
+    deps = [
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
