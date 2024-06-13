@@ -268,11 +268,15 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   getRef() {
-    return this.state.commitSHA || this.getBranch();
+    return this.props.search.get("commit") || this.state.commitSHA || this.getBranch();
   }
 
   getBranch() {
     return this.props.search.get("branch") || this.state.repoResponse?.defaultBranch;
+  }
+
+  getQuery() {
+    return this.props.search.get("pq");
   }
 
   fetchInitialContent() {
@@ -285,13 +289,14 @@ export default class CodeComponent extends React.Component<Props, State> {
       return;
     }
     window.addEventListener("resize", () => this.handleWindowResize());
-    window.addEventListener("hashchange", () => this.focusLineNumber());
+    window.addEventListener("hashchange", () => this.focusLineNumberAndHighlightQuery());
 
     this.editor = monaco.editor.create(this.codeViewer.current!, {
       value: "",
       theme: "vs",
-      readOnly: this.isSingleFile(),
+      readOnly: this.isSingleFile() || Boolean(this.getQuery()),
     });
+
     this.forceUpdate();
 
     const bytestreamURL = this.props.search.get("bytestream_url") || "";
@@ -314,12 +319,13 @@ export default class CodeComponent extends React.Component<Props, State> {
         this.fetchContentForPath(this.currentPath())
           .then((response) => {
             this.navigateToContent(this.currentPath(), response.content);
+            this.focusLineNumberAndHighlightQuery();
           })
           .catch((e) => error_service.handleError(e))
           .finally(() => this.setState({ loading: false }));
+      } else {
+        this.focusLineNumberAndHighlightQuery();
       }
-
-      this.focusLineNumber();
 
       if (this.state.mergeConflicts.has(this.currentPath())) {
         this.handleViewConflictClicked(
@@ -340,15 +346,43 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     this.editor.onDidChangeModelContent(() => {
       this.handleContentChanged();
+      this.highlightQuery();
     });
   }
 
-  focusLineNumber() {
+  highlightQuery() {
+    if (this.getQuery()) {
+      let ranges = this.editor
+        ?.getModel()
+        ?.findMatches(
+          this.getQuery()!,
+          /* searchOnlyEditableRanges= */ false,
+          /* isRegex= */ true,
+          /* matchCase= */ false,
+          /* wordSeparators= */ null,
+          /* captureMatches= */ false
+        );
+      this.editor?.removeDecorations(
+        this.editor
+          ?.getModel()
+          ?.getAllDecorations()
+          .map((d) => d.id) || []
+      );
+      this.editor?.createDecorationsCollection(
+        ranges?.map((r) => {
+          return { range: r.range, options: { inlineClassName: "code-query-highlight" } };
+        })
+      );
+    }
+  }
+
+  focusLineNumberAndHighlightQuery() {
     let focusedLineNumber = window.location.hash.startsWith("#L") ? parseInt(window.location.hash.substr(2)) : 0;
     setTimeout(() => {
       this.editor?.setSelection(new monaco.Selection(focusedLineNumber, 0, focusedLineNumber, 0));
       this.editor?.revealLinesInCenter(focusedLineNumber, focusedLineNumber);
       this.editor?.focus();
+      this.highlightQuery();
     });
   }
 
@@ -1300,7 +1334,7 @@ export default class CodeComponent extends React.Component<Props, State> {
               </OutlinedButton>
             </div>
           )}
-          {!this.isSingleFile() && this.currentRepo() && (
+          {!this.isSingleFile() && this.currentRepo() && !this.getQuery() && (
             <div className="code-menu-actions">
               {this.state.changes.size > 0 && !this.state.prBranch && (
                 <OutlinedButton
@@ -1411,7 +1445,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                 ref={this.diffViewer}
               />
             </div>
-            {this.state.changes.size > 0 && (
+            {this.state.changes.size > 0 && !this.getQuery() && (
               <div className="code-diff-viewer">
                 <div className="code-diff-viewer-title">
                   Changes{" "}

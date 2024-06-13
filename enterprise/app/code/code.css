@@ -461,3 +461,8 @@
   top: calc(50% - 32px);
   left: calc(50% - 32px);
 }
+
+.code-query-highlight {
+  font-weight: 600;
+  background-color: #ffe0b2;
+}
