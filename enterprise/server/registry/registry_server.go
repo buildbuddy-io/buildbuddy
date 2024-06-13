@@ -2,35 +2,39 @@ package registry
 
 import (
 	"flag"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 var (
-	registryPort    = flag.Int("registry_port", 0, "The port on which to listen for registry requests")
-	registryBackend = flag.String("registry_backend", "https://bcr.bazel.build/", "The registry backend to forward requests to")
+	registryEnabled = flag.Bool("registry.enabled", false, "Whether the registry service should be enabled.")
+	registryBackend = flag.String("registry.backend", "https://bcr.bazel.build/", "The registry backend to forward requests to")
 )
 
 type RegistryServer struct{}
 
-func NewRegistryServer(env environment.Env, h interfaces.DBHandle) *RegistryServer {
+func NewRegistryServer(realEnv *real_environment.RealEnv) *RegistryServer {
 	return &RegistryServer{}
 }
 
-func (t *RegistryServer) Start() {
-	if *registryPort <= 0 {
-		log.Debug("Registry server disabled")
-		return
+func Register(realEnv *real_environment.RealEnv) error {
+	if !*registryEnabled {
+		return nil
 	}
-	log.Debug("Registry server enabled")
+	rs := NewRegistryServer(realEnv)
+	realEnv.SetRegistryService(rs)
+	return nil
+}
+
+func (t *RegistryServer) RegisterHandlers(mux interfaces.HttpServeMux) {
+	log.Debug("Registry enabled")
 
 	url, err := url.Parse(*registryBackend)
 	if err != nil {
@@ -39,7 +43,11 @@ func (t *RegistryServer) Start() {
 
 	proxy := httputil.NewSingleHostReverseProxy(url)
 
-	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+	mux.Handle("/bazel_registry.json", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Write([]byte("{}"))
+	}))
+
+	mux.Handle("/modules/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		path := req.URL.Path
 		pathPaths := strings.Split(path, "/")
 
@@ -65,14 +73,7 @@ func (t *RegistryServer) Start() {
 
 		req.Host = req.URL.Host
 		proxy.ServeHTTP(w, req)
-	})
-
-	go func() {
-		err := http.ListenAndServe(fmt.Sprintf(":%d", *registryPort), nil)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-	}()
+	}))
 }
 
 func request(url string) ([]byte, int, error) {

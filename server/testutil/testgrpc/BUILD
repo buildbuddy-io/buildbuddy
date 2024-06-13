@@ -11,7 +11,7 @@ go_library(
         "//server/util/status",
         "@com_github_mwitkow_grpc_proxy//proxy",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
     ],
 )

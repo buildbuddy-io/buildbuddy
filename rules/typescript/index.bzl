@@ -1,7 +1,7 @@
 load("@aspect_rules_swc//swc:swc.bzl", "swc_transpiler")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild")
-load("@npm//@bazel/typescript:index.bzl", "ts_project")
 load("@npm//@bazel/jasmine:index.bzl", "jasmine_node_test")
+load("@npm//@bazel/typescript:index.bzl", "ts_project")
 
 def _swc(**kwargs):
     swc_transpiler(

@@ -11,8 +11,8 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/registry",
     deps = [
-        "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/util/log",
     ],
 )
