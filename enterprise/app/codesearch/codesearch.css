@@ -21,6 +21,10 @@
   font-weight: 600;
 }
 
+.code-search .filename:hover {
+  text-decoration: underline;
+}
+
 .code-search .snippet {
   border-bottom: solid #e5e5e5 1px;
   padding: 2px 32px;
@@ -53,7 +57,7 @@
 }
 
 .code-search .highlight {
-  background-color: #64ffda;
+  background-color: #ceead6;
 }
 
 .code-search .cs-title {
@@ -112,4 +116,8 @@
 
 .code-search ul li {
   margin-bottom: 16px;
+}
+
+.code-search .code-line:hover {
+  background: #f5f5f5;
 }
