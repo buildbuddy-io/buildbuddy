@@ -101,6 +101,7 @@ func main() {
 		} else {
 			certificateFile = defaultEDDSACertificateFile
 		}
+		break
 	}
 
 	if pub == nil {
