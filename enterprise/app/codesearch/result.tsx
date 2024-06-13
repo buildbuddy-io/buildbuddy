@@ -14,7 +14,7 @@ class SnippetComponent extends React.Component<SnippetProps> {
     let filename = this.props.result.filename;
     let parsedQuery = this.props.highlight.source;
     let sha = this.props.result.sha;
-    return `/code/${ownerRepo}/${filename}?pq=${parsedQuery}#L${lineNumber}#commit=${sha}`;
+    return `/code/${ownerRepo}/${filename}?commit=${sha}&pq=${parsedQuery}#L${lineNumber}`;
   }
 
   renderLine(line: string) {
