@@ -1,5 +1,6 @@
 load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@com_github_bazelbuild_buildtools//buildifier:def.bzl", "buildifier")
 load("@com_github_sluongng_nogo_analyzer//staticcheck:def.bzl", "ANALYZERS", "staticcheck_analyzers")
 load("@io_bazel_rules_go//go:def.bzl", "nogo")
 load("@npm//@bazel/typescript:index.bzl", "ts_config")
@@ -183,6 +184,10 @@ gazelle_binary(
 gazelle(
     name = "gazelle",
     gazelle = ":bb_gazelle_binary",
+)
+
+buildifier(
+    name = "buildifier",
 )
 
 go_sdk_tool(

@@ -9,7 +9,7 @@ if [[ "$GAZELLE_PATH" ]]; then
   GAZELLE_COMMAND=("$GAZELLE_PATH")
 fi
 
-GO_COMMAND=(bazelisk run //:go --)
+GO_COMMAND=(bazelisk run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:go --)
 if [[ "$GO_PATH" ]]; then
   GO_COMMAND=("$GO_PATH")
 fi
