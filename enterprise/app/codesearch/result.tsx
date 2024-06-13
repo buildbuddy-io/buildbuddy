@@ -18,7 +18,11 @@ class SnippetComponent extends React.Component<SnippetProps> {
   }
 
   renderLine(line: string) {
-    let lineNumber = parseInt(line.match(/\d+:/g), 10);
+    let lineNumber = 1;
+    let lineNumberMatch = line.match(/\d+:/g);
+    if (lineNumberMatch) {
+      lineNumber = parseInt(lineNumberMatch[0], 10);
+    }
     let regionsToHighlight = [...line.matchAll(this.props.highlight)];
     let out: JSX.Element[] = [];
     let start = 0;
@@ -42,7 +46,11 @@ class SnippetComponent extends React.Component<SnippetProps> {
       }
     }
 
-    return <a href={this.getFileAndLineURL(lineNumber)}><pre className="code-line">{out}</pre></a>;
+    return (
+      <a href={this.getFileAndLineURL(lineNumber)}>
+        <pre className="code-line">{out}</pre>
+      </a>
+    );
   }
 
   render() {
@@ -70,10 +78,17 @@ export default class ResultComponent extends React.Component<ResultProps> {
         <div className="result-title-bar">
           <File size={16}></File>
           <div className="repo-name">[{this.props.result.repo}]</div>
-          <div className="filename"><a href={this.getFileOnlyURL()}>{this.props.result.filename}</a></div>
+          <div className="filename">
+            <a href={this.getFileOnlyURL()}>{this.props.result.filename}</a>
+          </div>
         </div>
         {this.props.result.snippets.map((snippet) => {
-          return <SnippetComponent snippet={snippet} highlight={this.props.highlight} result={this.props.result}></SnippetComponent>;
+          return (
+            <SnippetComponent
+              snippet={snippet}
+              highlight={this.props.highlight}
+              result={this.props.result}></SnippetComponent>
+          );
         })}
       </div>
     );
