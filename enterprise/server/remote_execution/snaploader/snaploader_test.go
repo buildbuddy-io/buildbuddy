@@ -274,8 +274,7 @@ func TestNonMasterSnapshotsWithSnapshotID(t *testing.T) {
 
 		// Start VM D from a snapshot key for VM A - should be valid, even though
 		// the master key is pointing to VM B
-		keyA := masterKey.GetBranchKey()
-		keyA.SnapshotId = "snapshot-id-a"
+		keyA := &fcpb.SnapshotKey{SnapshotId: "snapshot-id-a"}
 		workDirD := testfs.MakeDirAll(t, workDir, "VM-D")
 		mustUnpack(t, ctx, loader, &fcpb.SnapshotKeySet{
 			BranchKey: keyA,
