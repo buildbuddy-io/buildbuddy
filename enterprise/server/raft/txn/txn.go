@@ -207,19 +207,17 @@ func (tc *Coordinator) FinalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 }
 
 func (tj *Coordinator) Start(ctx context.Context) {
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tj.clock.After(txnCleanupPeriod):
-				err := tj.processTxnRecords(ctx)
-				if err != nil {
-					log.Warningf("Failed to processTxnRecords: %s", err)
-				}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tj.clock.After(txnCleanupPeriod):
+			err := tj.processTxnRecords(ctx)
+			if err != nil {
+				log.Warningf("Failed to processTxnRecords: %s", err)
 			}
 		}
-	}()
+	}
 }
 
 func (tc *Coordinator) processTxnRecords(ctx context.Context) error {

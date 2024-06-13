@@ -337,42 +337,40 @@ func (rq *Queue) remove(item *pqItem) {
 }
 
 func (rq *Queue) Start(ctx context.Context) {
-	go func() {
-		queueDelay := time.NewTicker(queueWaitDuration)
-		defer queueDelay.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-queueDelay.C:
-			}
-			if rq.Len() == 0 {
-				continue
-			}
-			rq.mu.Lock()
-			item := heap.Pop(rq.pq).(*pqItem)
-			item.processing = true
-			rq.mu.Unlock()
-			repl, err := rq.store.GetReplica(item.rangeID)
-			if err != nil || repl.ReplicaID() != item.replicaID {
-				log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
-				rq.pqItemMap.Delete(item.rangeID)
-				continue
-			}
-
-			requeue, err := rq.processReplica(ctx, repl)
-			if err != nil {
-				// TODO: check if err can be retried.
-				log.Errorf("failed to process replica: %s", err)
-			} else {
-				log.Debugf("successfully processed replica: %d", repl.ShardID())
-			}
-			rq.mu.Lock()
-			item.requeue = requeue
-			rq.mu.Unlock()
-			rq.postProcess(ctx, repl)
+	queueDelay := time.NewTicker(queueWaitDuration)
+	defer queueDelay.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-queueDelay.C:
 		}
-	}()
+		if rq.Len() == 0 {
+			continue
+		}
+		rq.mu.Lock()
+		item := heap.Pop(rq.pq).(*pqItem)
+		item.processing = true
+		rq.mu.Unlock()
+		repl, err := rq.store.GetReplica(item.rangeID)
+		if err != nil || repl.ReplicaID() != item.replicaID {
+			log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
+			rq.pqItemMap.Delete(item.rangeID)
+			continue
+		}
+
+		requeue, err := rq.processReplica(ctx, repl)
+		if err != nil {
+			// TODO: check if err can be retried.
+			log.Errorf("failed to process replica: %s", err)
+		} else {
+			log.Debugf("successfully processed replica: %d", repl.ShardID())
+		}
+		rq.mu.Lock()
+		item.requeue = requeue
+		rq.mu.Unlock()
+		rq.postProcess(ctx, repl)
+	}
 }
 
 // findReplacingReplica finds a dead replica to be removed.
