@@ -10,6 +10,7 @@ go_library(
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/status",
     ],
 )
 

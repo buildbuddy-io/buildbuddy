@@ -178,7 +178,7 @@ func (s *SSLService) populateTLSConfig() error {
 		s.httpTLSConfig = httpTLSConfig
 		s.grpcTLSConfig = grpcTLSConfig
 	} else if *selfSigned {
-		cert, key, err := generateCert(pkix.Name{CommonName: "Server"}, nil)
+		cert, key, err := GenerateCert(pkix.Name{CommonName: "Server"}, nil, *clientCertExp)
 		if err != nil {
 			return err
 		}
@@ -256,20 +256,20 @@ func (s *SSLService) GetGRPCSTLSCreds() (credentials.TransportCredentials, error
 }
 
 type CACert struct {
-	cert *x509.Certificate
-	key  *rsa.PrivateKey
+	Cert *x509.Certificate
+	Key  any
 }
 
-// generateCert generates a cert and returns the cert + private key pair.
+// GenerateCert generates a cert and returns the cert + private key pair.
 // An optional CA cert may be specified to sign the generated cert. If omitted,
 // the returned cert will be self-signed.
-func generateCert(subject pkix.Name, caCert *CACert) (string, string, error) {
+func GenerateCert(subject pkix.Name, caCert *CACert, validity time.Duration) (string, string, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return "", "", err
 	}
 	notBefore := time.Now()
-	notAfter := notBefore.Add(*clientCertExp)
+	notAfter := notBefore.Add(validity)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
@@ -287,12 +287,12 @@ func generateCert(subject pkix.Name, caCert *CACert) (string, string, error) {
 
 	if caCert == nil {
 		caCert = &CACert{
-			cert: &template,
-			key:  priv,
+			Cert: &template,
+			Key:  priv,
 		}
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert.cert, &priv.PublicKey, caCert.key)
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert.Cert, &priv.PublicKey, caCert.Key)
 	if err != nil {
 		return "", "", err
 	}
@@ -322,7 +322,7 @@ func (s *SSLService) GenerateCerts(apiKeyID string) (string, string, error) {
 		CommonName:   "BuildBuddy ID",
 		SerialNumber: apiKeyID,
 	}
-	return generateCert(subject, &CACert{cert: s.AuthorityCert, key: s.AuthorityKey})
+	return GenerateCert(subject, &CACert{Cert: s.AuthorityCert, Key: s.AuthorityKey}, *clientCertExp)
 }
 
 func (s *SSLService) ValidateCert(certString string) (string, string, error) {

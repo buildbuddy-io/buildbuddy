@@ -9,9 +9,31 @@ message GenerateRequest {
   string ssh_public_key = 2;
 }
 
+message KubernetesClusterCredentials {
+  // Cluster name.
+  string name = 1;
+
+  // URL at which the cluster API can be reached.
+  string server = 2;
+
+  // Server CA certificate (PEM encoded).
+  string server_ca = 3;
+
+  // Client CA certificate (PEM encoded).
+  string client_ca = 4;
+
+  // Generated client certificate (PEM encoded).
+  string client_cert = 5;
+
+  // Key for the generated client certificate (PEM encoded).
+  string client_cert_key = 6;
+}
+
 message GenerateResponse {
   // Signed SSH certificate, in OpenSSH format.
   string ssh_cert = 1;
+
+  repeated KubernetesClusterCredentials kubernetes_credentials = 2;
 }
 
 // Service responsible for generating short-lived user certificates.

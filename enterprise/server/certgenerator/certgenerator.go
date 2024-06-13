@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"os"
@@ -42,6 +46,9 @@ var (
 
 	caKeyFile = flag.String("certgenerator.ca_key_file", "", "Path to a PEM encoded certificate authority key file used to issue temporary user certificates.")
 	caKey     = flag.String("certgenerator.ca_key", "", "PEM encoded certificate authority key used to issue temporary user certificates.", flag.Secret)
+
+	kubernetesClusters     = flag.Slice("certgenerator.kubernetes.clusters", []KubernetesCluster{}, "List of clusters for which certificates will be generated.")
+	kubernetesCertDuration = flag.Duration("certgenerator.kubernetes.validity", 12*time.Hour, "How long the generated certificate will be valid.")
 )
 
 const (
@@ -50,10 +57,69 @@ const (
 	allowPortForwarding = "permit-port-forwarding"
 )
 
+type KubernetesCluster struct {
+	Name        string `yaml:"name"`
+	Server      string `yaml:"server"`
+	ServerCA    string `yaml:"server_ca"`
+	ClientCA    string `yaml:"client_ca"`
+	ClientCAKey string `yaml:"client_ca_key"`
+}
+
+type parsedKubernetesCluster struct {
+	*KubernetesCluster
+	parsedClientCA    *x509.Certificate
+	parsedClientCAKey *ecdsa.PrivateKey
+}
+
+func parseCertificate(data []byte) (*x509.Certificate, error) {
+	cd, _ := pem.Decode(data)
+	if cd == nil {
+		return nil, status.InvalidArgumentError("certificate did not contain valid PEM data")
+	}
+	cert, err := x509.ParseCertificate(cd.Bytes)
+	if err != nil {
+		return nil, status.UnknownErrorf("could not parse certificate: %s", err)
+	}
+	return cert, nil
+}
+
+func parseCertificateKey(data []byte) (*ecdsa.PrivateKey, error) {
+	kd, _ := pem.Decode(data)
+	if kd == nil {
+		return nil, status.InvalidArgumentErrorf("certificate key did not contain valid PEM data")
+	}
+	key, err := x509.ParseECPrivateKey(kd.Bytes)
+	if err != nil {
+		return nil, status.UnknownErrorf("could not parse certificate key: %s", err)
+	}
+	return key, nil
+}
+
+func parseKubernetesClusterConfig(c *KubernetesCluster) (*parsedKubernetesCluster, error) {
+	_, err := parseCertificate([]byte(c.ServerCA))
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("could not load server CA for cluster %q: %s", c.Name, err)
+	}
+	pca, err := parseCertificate([]byte(c.ClientCA))
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("could not load client CA for cluster %q: %s", c.Name, err)
+	}
+	pk, err := parseCertificateKey([]byte(c.ClientCAKey))
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("could not load client CA key for cluster %q: %s", c.Name, err)
+	}
+	return &parsedKubernetesCluster{
+		KubernetesCluster: c,
+		parsedClientCA:    pca,
+		parsedClientCAKey: pk,
+	}, nil
+}
+
 type generator struct {
 	verifier *oidc.IDTokenVerifier
 
-	sshSigner ssh.Signer
+	sshSigner          ssh.Signer
+	kubernetesClusters []*parsedKubernetesCluster
 }
 
 func (g *generator) Generate(ctx context.Context, req *cgpb.GenerateRequest) (*cgpb.GenerateResponse, error) {
@@ -82,7 +148,9 @@ func (g *generator) Generate(ctx context.Context, req *cgpb.GenerateRequest) (*c
 		return nil, status.InvalidArgumentErrorf("could not parse public key: %s", err)
 	}
 
-	log.Infof("Generating certificate for: %+v", claims)
+	log.Infof("Generating certificates for: %+v", claims)
+
+	rsp := &cgpb.GenerateResponse{}
 
 	cert := ssh.Certificate{
 		Key:             pk,
@@ -96,10 +164,32 @@ func (g *generator) Generate(ctx context.Context, req *cgpb.GenerateRequest) (*c
 	if err := cert.SignCert(rand.Reader, g.sshSigner); err != nil {
 		return nil, err
 	}
+	rsp.SshCert = string(ssh.MarshalAuthorizedKey(&cert))
 
-	return &cgpb.GenerateResponse{
-		SshCert: string(ssh.MarshalAuthorizedKey(&cert)),
-	}, nil
+	for _, kc := range g.kubernetesClusters {
+		caCert := &ssl.CACert{
+			Cert: kc.parsedClientCA,
+			Key:  kc.parsedClientCAKey,
+		}
+		subject := pkix.Name{
+			Organization: []string{"system:masters"},
+			CommonName:   "system:admin",
+		}
+		cert, key, err := ssl.GenerateCert(subject, caCert, *kubernetesCertDuration)
+		if err != nil {
+			return nil, err
+		}
+		rsp.KubernetesCredentials = append(rsp.KubernetesCredentials, &cgpb.KubernetesClusterCredentials{
+			Name:          kc.Name,
+			Server:        kc.Server,
+			ServerCa:      kc.ServerCA,
+			ClientCa:      kc.ClientCA,
+			ClientCert:    cert,
+			ClientCertKey: key,
+		})
+	}
+
+	return rsp, nil
 }
 
 func newGenerator(ctx context.Context) (*generator, error) {
@@ -115,9 +205,20 @@ func newGenerator(ctx context.Context) (*generator, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	var kcs []*parsedKubernetesCluster
+	for _, kc := range *kubernetesClusters {
+		pkc, err := parseKubernetesClusterConfig(&kc)
+		if err != nil {
+			return nil, err
+		}
+		kcs = append(kcs, pkc)
+	}
+
 	g := &generator{
-		verifier:  provider.Verifier(&oidc.Config{ClientID: *tokenClientID}),
-		sshSigner: s,
+		verifier:           provider.Verifier(&oidc.Config{ClientID: *tokenClientID}),
+		sshSigner:          s,
+		kubernetesClusters: kcs,
 	}
 	return g, nil
 }
