@@ -94,7 +94,7 @@ message CustomResource {
   string name = 1;
 
   // Requested resource amount.
-  float64 value = 2;
+  float value = 2;
 }
 
 message TaskSize {
