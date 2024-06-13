@@ -1,14 +1,13 @@
 diff --git a/BUILD b/BUILD
-index 3b3abec..5f304be 100644
+index 59efe64..672f82d 100644
 --- a/BUILD
 +++ b/BUILD
-@@ -1,6 +1,5 @@
- load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+@@ -1,5 +1,4 @@
  load("@bazel_gazelle//:def.bzl", "gazelle")
 -load("@build_bazel_rules_nodejs//:index.bzl", "pkg_npm")
+ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
  
  # gazelle:prefix github.com/bazelbuild/bazelisk
- gazelle(name = "gazelle")
 @@ -151,23 +150,3 @@ go_binary(
      pure = "on",
      visibility = ["//visibility:public"],

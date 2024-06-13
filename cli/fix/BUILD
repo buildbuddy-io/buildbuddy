@@ -24,16 +24,16 @@ go_library(
     name = "gazelle",
     # keep
     srcs = [
-        # Taken from @bazel_gazelle//cmd/gazelle/BUILD.bazel gazelle_lib
-        "langs.go",
         "@bazel_gazelle//cmd/gazelle:diff.go",
-        "@bazel_gazelle//cmd/gazelle:fix.go",
         "@bazel_gazelle//cmd/gazelle:fix-update.go",
+        "@bazel_gazelle//cmd/gazelle:fix.go",
         "@bazel_gazelle//cmd/gazelle:gazelle.go",
         "@bazel_gazelle//cmd/gazelle:metaresolver.go",
         "@bazel_gazelle//cmd/gazelle:print.go",
         "@bazel_gazelle//cmd/gazelle:profiler.go",
         "@bazel_gazelle//cmd/gazelle:update-repos.go",
+        # Taken from @bazel_gazelle//cmd/gazelle/BUILD.bazel gazelle_lib
+        "langs.go",
     ],
     importpath = "github.com/bazelbuild/bazel-gazelle/cmd/gazelle",
     tags = ["manual"],
@@ -54,6 +54,7 @@ go_library(
         "@bazel_gazelle//resolve",
         "@bazel_gazelle//rule",
         "@bazel_gazelle//walk",
+        "@com_github_bazelbuild_buildtools//build",
         "@com_github_pmezard_go_difflib//difflib",
     ],
 )

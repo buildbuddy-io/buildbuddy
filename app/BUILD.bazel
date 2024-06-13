@@ -1,7 +1,7 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild")
 load("//rules/sha:index.bzl", "sha")
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//rules/typescript:index.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 

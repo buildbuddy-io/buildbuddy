@@ -1,7 +1,7 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild", "esbuild_config")
 load("//rules/sha:index.bzl", "sha")
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//rules/typescript:index.bzl", "ts_library")
 
 # gazelle:default_visibility //enterprise:__subpackages__
 package(default_visibility = ["//enterprise:__subpackages__"])

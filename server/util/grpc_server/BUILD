@@ -19,7 +19,7 @@ go_library(
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_metric//noop",
         "@io_opentelemetry_go_otel_trace//:trace",
-        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//encoding/gzip",
         "@org_golang_google_grpc//keepalive",
         "@org_golang_google_grpc//reflection",

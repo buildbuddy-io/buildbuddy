@@ -1,5 +1,5 @@
-load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_push")
+load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 
 # We use this internally so create an alias here to
 # ensure our changes don't break the internal build.

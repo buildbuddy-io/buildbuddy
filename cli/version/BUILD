@@ -1,5 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("//rules/flags:index.bzl", "write_flag_to_file")
 
 string_flag(
