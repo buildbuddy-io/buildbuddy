@@ -80,7 +80,7 @@ func (tp *testingProposer) SyncRead(ctx context.Context, _ []byte, batch *rfpb.B
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 
-func TestAcquireAndRelease(t *testing.T) {
+func TestAcquire(t *testing.T) {
 	proposer := newTestingProposer(t)
 	ctx := context.Background()
 	liveness := nodeliveness.New(ctx, "replicaID-1", proposer)
@@ -92,14 +92,6 @@ func TestAcquireAndRelease(t *testing.T) {
 	// Liveness record should be valid.
 	valid := liveness.Valid()
 	require.True(t, valid)
-
-	// Should be able to release a liveness record.
-	err = liveness.Release()
-	require.NoError(t, err)
-
-	// Liveness record should not be valid.
-	valid = liveness.Valid()
-	require.False(t, valid)
 }
 
 func TestKeepalive(t *testing.T) {
@@ -142,10 +134,6 @@ func TestEpochChangeOnLease(t *testing.T) {
 	nl, err := liveness.BlockingGetCurrentNodeLiveness(ctx)
 	require.NoError(t, err)
 	require.Equal(t, int64(0), nl.GetEpoch())
-
-	// Release the liveness record.
-	err = liveness.Release()
-	require.NoError(t, err)
 
 	// Re-acquire it, using a new nodeliveness object, but
 	// the same stored data.

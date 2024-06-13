@@ -488,7 +488,7 @@ func (s *Store) Stop(ctx context.Context) error {
 	if s.egCancel != nil {
 		s.egCancel()
 		s.leaseKeeper.Stop()
-		s.liveness.Release()
+		s.liveness.Stop()
 		s.eg.Wait()
 	}
 	s.updateTagsWorker.Stop()

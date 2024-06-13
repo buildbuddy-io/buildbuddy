@@ -37,12 +37,13 @@ type Liveness struct {
 
 	mu                    sync.RWMutex
 	lastLivenessRecord    *rfpb.NodeLivenessRecord
-	stopped               bool
 	ctx                   context.Context
 	cancelFn              context.CancelFunc
 	timeUntilLeaseRenewal time.Duration
 
 	livenessListeners []chan<- *rfpb.NodeLivenessRecord
+
+	keepAliveOnce sync.Once
 }
 
 func New(ctx context.Context, nodehostID string, sender sender.ISender) *Liveness {
@@ -57,7 +58,6 @@ func New(ctx context.Context, nodehostID string, sender sender.ISender) *Livenes
 		gracePeriod:           defaultGracePeriod,
 		mu:                    sync.RWMutex{},
 		lastLivenessRecord:    &rfpb.NodeLivenessRecord{},
-		stopped:               true,
 		timeUntilLeaseRenewal: 0 * time.Second,
 		livenessListeners:     make([]chan<- *rfpb.NodeLivenessRecord, 0),
 	}
@@ -83,25 +83,8 @@ func (h *Liveness) Lease(ctx context.Context) error {
 	return err
 }
 
-func (h *Liveness) Release() error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	// close the background lease-renewal thread.
-	if !h.stopped {
-		h.stopped = true
-		h.cancelFn()
-	}
-
-	// clear existing lease if it's valid.
-	valid := h.verifyLease(h.lastLivenessRecord) == nil
-	if !valid {
-		return nil
-	}
-
-	if h.verifyLease(h.lastLivenessRecord) == nil {
-		return h.clearLease()
-	}
+func (h *Liveness) Stop() error {
+	h.cancelFn()
 	return nil
 }
 
@@ -209,10 +192,9 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (*rf
 
 	// We just renewed the lease. If there isn't already a background
 	// thread running to keep it renewed, start one now.
-	if h.stopped {
-		h.stopped = false
+	h.keepAliveOnce.Do(func() {
 		go h.keepLeaseAlive()
-	}
+	})
 	return h.lastLivenessRecord, nil
 }
 
