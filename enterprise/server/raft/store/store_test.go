@@ -892,7 +892,6 @@ func TestUpReplicate(t *testing.T) {
 			len(s2.GetRange(2).GetReplicas()) == 3 {
 			break
 		}
-
 	}
 	r2 := getReplica(t, s3, 2)
 	waitForReplicaToCatchUp(t, ctx, r2, desiredAppliedIndex)
@@ -906,5 +905,67 @@ func TestUpReplicate(t *testing.T) {
 			require.Failf(t, "unexpected range descriptor", "Range 2 on s3 has %d replicas, expected 3", l)
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func TestDownReplicate(t *testing.T) {
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	// start shards for s1, s2, s3
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, stores...)
+
+	s4 := sf.NewStore(t)
+
+	// Added a replica for range 2, so the number of replicas for range 2 exceeds the cache.raft.min_replicas_per_range
+	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	rd := s.GetRange(2)
+	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+		Range: rd,
+		Node: &rfpb.NodeDescriptor{
+			Nhid:        s4.NHID(),
+			RaftAddress: s4.RaftAddress,
+			GrpcAddress: s4.GRPCAddress,
+		},
+	})
+	require.NoError(t, err)
+
+	replicas := getMembership(t, s, ctx, 2)
+	require.Equal(t, 4, len(replicas))
+
+	stores = append(stores, s4)
+
+	s = getStoreWithRangeLease(t, ctx, stores, 2)
+	rd = s.GetRange(2)
+	require.Equal(t, 4, len(rd.GetReplicas()))
+
+	// Advance the clock to trigger scan replicas
+	clock.Advance(61 * time.Second)
+	i := 0
+	for {
+		i++
+		clock.Advance(3 * time.Second)
+		time.Sleep(100 * time.Millisecond)
+
+		s = getStoreWithRangeLease(t, ctx, stores, 2)
+		replicas := getMembership(t, s, ctx, 2)
+		if len(replicas) > 3 {
+			continue
+		}
+		rd = s.GetRange(2)
+		if len(rd.GetReplicas()) == 3 {
+			break
+		}
 	}
 }
