@@ -294,22 +294,3 @@ platform(
         "container-image": "docker://gcr.io/flame-public/iain-test:latest",
     },
 )
-
-# Target these platforms with --platforms for a static build linked against musl libc.
-platform(
-    name = "linux_x86_64_musl",
-    constraint_values = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-        "//toolchains:musl_on",
-    ],
-)
-
-platform(
-    name = "linux_arm64_musl",
-    constraint_values = [
-        "@platforms//cpu:arm64",
-        "@platforms//os:linux",
-        "//toolchains:musl_on",
-    ],
-)
