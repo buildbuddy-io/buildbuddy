@@ -3,15 +3,14 @@ import rpcService from "../../../app/service/rpc_service";
 import errorService from "../../../app/errors/error_service";
 import { search } from "../../../proto/search_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
-import { File } from "lucide-react";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import TextInput from "../../../app/components/input/input";
 import FilledButton from "../../../app/components/button/button";
 import router from "../../../app/router/router";
+import ResultComponent from "./result";
 import { Bird, Search } from "lucide-react";
 
 interface State {
-  lastQuery: string;
   loading: boolean;
   response?: search.SearchResponse;
 }
@@ -24,7 +23,6 @@ interface Props {
 export default class CodeSearchComponent extends React.Component<Props, State> {
   query: string = "";
   state: State = {
-    lastQuery: "",
     loading: false,
   };
 
@@ -35,7 +33,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     }
     const query = this.query;
 
-    this.setState({ loading: true, response: undefined, lastQuery: query });
+    this.setState({ loading: true, response: undefined });
     rpcService.service
       .search(new search.SearchRequest({ query: new search.Query({ term: query }) }))
       .then((response) => {
@@ -52,39 +50,6 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
   componentDidMount() {
     this.query = this.props.search.get("q") ?? "";
     this.search();
-  }
-
-  renderLine(line: string) {
-    const splitOnQuery = line.split(this.state.lastQuery);
-    let out: JSX.Element[] = [];
-    for (let i = 0; i < splitOnQuery.length; i++) {
-      out.push(<span>{splitOnQuery[i]}</span>);
-      if (i < splitOnQuery.length - 1) {
-        out.push(<span className="highlight">{this.state.lastQuery}</span>);
-      }
-    }
-
-    return <pre className="code-line">{out}</pre>;
-  }
-
-  renderSnippet(snippet: search.Snippet) {
-    const lines = snippet.lines.split("\n");
-    return <div className="snippet">{lines.map((line) => this.renderLine(line))}</div>;
-  }
-
-  renderResult(result: search.Result) {
-    return (
-      <div className="result">
-        <div className="result-title-bar">
-          <File size={16}></File>
-          <div className="repo-name">[{result.repo}]</div>
-          <div className="filename">{result.filename}</div>
-        </div>
-        {result.snippets.map((snippet) => {
-          return this.renderSnippet(snippet);
-        })}
-      </div>
-    );
   }
 
   renderTheRestOfTheOwl() {
@@ -132,7 +97,16 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
         </div>
       );
     }
-    return <div>{this.state.response.results.map((result) => this.renderResult(result))}</div>;
+
+    const parsedQuery = this.state.response.parsedQuery?.parsedQuery ?? "";
+    const highlight = new RegExp(parsedQuery, "igmd");
+    return (
+      <div>
+        {this.state.response.results.map((result) => (
+          <ResultComponent result={result} highlight={highlight}></ResultComponent>
+        ))}
+      </div>
+    );
   }
 
   render() {
