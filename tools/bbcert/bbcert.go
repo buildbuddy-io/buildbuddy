@@ -22,9 +22,12 @@ var (
 
 const (
 	sshDir = ".ssh"
-	// For now, assume user is using an RSA key.
+
 	defaultRSAPublicKeyFile   = "id_rsa.pub"
 	defaultRSACertificateFile = "id_rsa-cert.pub"
+
+	defaultEDDSAPublicKeyFile   = "id_ed25519.pub"
+	defaultEDDSACertificateFile = "id_ed25519-cert.pub"
 )
 
 func kubectlConfigSet(ctx context.Context, key, value string) error {
@@ -82,12 +85,26 @@ func main() {
 		log.Fatalf("Could not determine home directory: %s", err)
 	}
 
-	publicKey := path.Join(homeDir, sshDir, defaultRSAPublicKeyFile)
-	log.Infof("Using public key %q.", publicKey)
+	var certificateFile string
+	var pub []byte
+	for _, kf := range []string{defaultRSAPublicKeyFile, defaultEDDSAPublicKeyFile} {
+		publicKey := path.Join(homeDir, sshDir, kf)
+		log.Infof("Trying public key %q.", publicKey)
 
-	pub, err := os.ReadFile(publicKey)
-	if err != nil {
-		log.Fatalf("Could not read public %q key: %s", publicKey, err)
+		pub, err = os.ReadFile(publicKey)
+		if err != nil {
+			log.Infof("Could not read public %q key: %s", publicKey, err)
+			continue
+		}
+		if kf == defaultRSAPublicKeyFile {
+			certificateFile = defaultRSACertificateFile
+		} else {
+			certificateFile = defaultEDDSACertificateFile
+		}
+	}
+
+	if pub == nil {
+		log.Fatalf("Could not find existing ssh key.")
 	}
 
 	ctx := context.Background()
@@ -115,7 +132,7 @@ func main() {
 		log.Fatalf("Could not generate certificate: %s", err)
 	}
 
-	certFile := path.Join(homeDir, sshDir, defaultRSACertificateFile)
+	certFile := path.Join(homeDir, sshDir, certificateFile)
 	if err := os.WriteFile(certFile, []byte(resp.GetSshCert()), 0644); err != nil {
 		log.Fatalf("Could not write certificate to %q: %s", certFile, err)
 	}
