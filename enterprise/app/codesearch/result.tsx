@@ -1,4 +1,5 @@
 import React from "react";
+import { search } from "../../../proto/search_ts_proto";
 import { File } from "lucide-react";
 
 interface SnippetProps {
@@ -13,15 +14,17 @@ class SnippetComponent extends React.Component<SnippetProps> {
     let start = 0;
     while (start < line.length) {
       if (regionsToHighlight.length) {
-        let region = regionsToHighlight.shift();
+        let region = regionsToHighlight.shift()!;
+        let regionStart = region.index!;
+        let regionEnd = regionStart + region[0]!.length;
 
         // Append anything leading up to this highlighted region.
-        if (region.indices[0][0] != start) {
-          out.push(<span>{line.slice(start, region.indices[0][0])}</span>);
+        if (regionStart != start) {
+          out.push(<span>{line.slice(start, regionStart)}</span>);
         }
         // Append this highlighted region.
-        out.push(<span className="highlight">{line.slice(region.indices[0][0], region.indices[0][1])}</span>);
-        start = region.indices[0][1];
+        out.push(<span className="highlight">{line.slice(regionStart, regionEnd)}</span>);
+        start = regionEnd;
       } else {
         // Append anything left outside of highlighted regions.
         out.push(<span>{line.slice(start, line.length)}</span>);

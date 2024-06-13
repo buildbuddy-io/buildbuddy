@@ -27,6 +27,7 @@ ts_library(
     name = "result",
     srcs = ["result.tsx"],
     deps = [
+        "//proto:search_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
