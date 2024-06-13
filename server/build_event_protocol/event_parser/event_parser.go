@@ -339,6 +339,9 @@ func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(command
 	if branch, ok := envVarMap["CI_COMMIT_BRANCH"]; ok && branch != "" {
 		sep.setBranchName(branch, priority)
 	}
+	if branch, ok := envVarMap["CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"]; ok && branch != "" {
+		sep.setBranchName(branch, priority)
+	}
 	if sha, ok := envVarMap["CI_COMMIT_SHA"]; ok && sha != "" {
 		sep.setCommitSha(sha, priority)
 	}

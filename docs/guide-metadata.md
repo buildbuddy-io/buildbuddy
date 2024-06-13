@@ -62,7 +62,7 @@ Then you'll need to add a `workspace_status.sh` file to the root of your workspa
 
 ### Environment variables
 
-BuildBuddy will automatically pull your git branch from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Jenkins, Gitlab CI, Bitrise, or BuildKite. The environment variables currently supported are `GITHUB_REF`, `GITHUB_HEAD_REF`, `CIRCLE_BRANCH`, `BUILDKITE_BRANCH`, `BITRISE_GIT_BRANCH`, `TRAVIS_BRANCH`, `GIT_BRANCH`, and `CI_COMMIT_BRANCH`. Note that `GITHUB_REF` will be ignored when it refers to a tag, or overridden by `GITHUB_HEAD_REF` for pull requests.
+BuildBuddy will automatically pull your git branch from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Jenkins, Gitlab CI, Bitrise, or BuildKite. The environment variables currently supported are `GITHUB_REF`, `GITHUB_HEAD_REF`, `CIRCLE_BRANCH`, `BUILDKITE_BRANCH`, `BITRISE_GIT_BRANCH`, `TRAVIS_BRANCH`, `GIT_BRANCH`, `CI_COMMIT_BRANCH`, and `CI_MERGE_REQUEST_SOURCE_BRANCH_NAME`. Note that `GITHUB_REF` will be ignored when it refers to a tag, or overridden by `GITHUB_HEAD_REF` for pull requests.
 
 ## Commit SHA
 
@@ -240,7 +240,7 @@ You can filter by these tags on build history pages and the trends page. Note th
 
 ## Environment variable redacting
 
-By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR`, `GITLAB_USER_NAME`, `BUILDKITE_BUILD_CREATOR`, `CIRCLE_USERNAME`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID`, `BUILDKITE_BUILD_URL`, `BUILDKITE_JOB_ID`, `CIRCLE_REPOSITORY_URL`, `GITHUB_REPOSITORY`, `BUILDKITE_REPO`, `TRAVIS_REPO_SLUG`, `GIT_REPOSITORY_URL`, `GIT_URL`, `CI_REPOSITORY_URL`, `REPO_URL`, `CIRCLE_SHA1`, `GITHUB_SHA`, `BUILDKITE_COMMIT`, `TRAVIS_COMMIT`, `BITRISE_GIT_COMMIT`, `GIT_COMMIT`, `CI_COMMIT_SHA`, `COMMIT_SHA`, `CI`, `CI_RUNNER`, `CIRCLE_BRANCH`, `GITHUB_HEAD_REF`, `BUILDKITE_BRANCH`, `BITRISE_GIT_BRANCH`, `TRAVIS_BRANCH`, `GIT_BRANCH`, `CI_COMMIT_BRANCH`, `GITHUB_REF`, which are displayed in the BuildBuddy UI.
+By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR`, `GITLAB_USER_NAME`, `BUILDKITE_BUILD_CREATOR`, `CIRCLE_USERNAME`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID`, `BUILDKITE_BUILD_URL`, `BUILDKITE_JOB_ID`, `CIRCLE_REPOSITORY_URL`, `GITHUB_REPOSITORY`, `BUILDKITE_REPO`, `TRAVIS_REPO_SLUG`, `GIT_REPOSITORY_URL`, `GIT_URL`, `CI_REPOSITORY_URL`, `REPO_URL`, `CIRCLE_SHA1`, `GITHUB_SHA`, `BUILDKITE_COMMIT`, `TRAVIS_COMMIT`, `BITRISE_GIT_COMMIT`, `GIT_COMMIT`, `CI_COMMIT_SHA`, `COMMIT_SHA`, `CI`, `CI_RUNNER`, `CIRCLE_BRANCH`, `GITHUB_HEAD_REF`, `BUILDKITE_BRANCH`, `BITRISE_GIT_BRANCH`, `CI_MERGE_REQUEST_SOURCE_BRANCH_NAME`, `TRAVIS_BRANCH`, `GIT_BRANCH`, `CI_COMMIT_BRANCH`, `GITHUB_REF`, which are displayed in the BuildBuddy UI.
 
 Redacted environment variables are displayed in the BuildBuddy UI as `<REDACTED>`.
 
