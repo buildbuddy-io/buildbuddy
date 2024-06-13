@@ -58,7 +58,7 @@ func SplitAndTrimAndDedupeTags(tags string, validate bool) ([]*invocation.Invoca
 		trimmed := strings.TrimSpace(t)
 		if len(trimmed) > 0 && !tagSet[trimmed] {
 			tagSet[trimmed] = true
-			if validate && totalLength+len(trimmed) > 160 {
+			if validate && totalLength+len(trimmed) > 255 {
 				return nil, status.InvalidArgumentError("Tag list is too long.")
 			}
 			totalLength += len(trimmed) + 1
