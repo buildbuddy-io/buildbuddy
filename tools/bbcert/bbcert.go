@@ -96,7 +96,7 @@ func main() {
 			log.Infof("Could not read public %q key: %s", publicKey, err)
 			continue
 		}
-		if kf == defaultEDDSAPublicKeyFile {
+		if kf == defaultRSAPublicKeyFile {
 			certificateFile = defaultRSACertificateFile
 		} else {
 			certificateFile = defaultEDDSACertificateFile
