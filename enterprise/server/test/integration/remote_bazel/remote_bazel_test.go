@@ -338,8 +338,19 @@ func TestCancel(t *testing.T) {
 		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
 	})
 	require.NoError(t, err)
-	require.Greater(t, len(searchRsp.GetInvocation()), 0)
-	invocationID := searchRsp.Invocation[0].InvocationId
+	require.GreaterOrEqual(t, len(searchRsp.GetInvocation()), 1)
+
+	// Find outer invocation because the inner invocation will report a successful
+	// status after the build has completed, and will not wait for the infinite
+	// script to run
+	var inv *inpb.Invocation
+	for _, i := range searchRsp.GetInvocation() {
+		if i.GetRole() == "HOSTED_BAZEL" {
+			inv = i
+		}
+	}
+	require.NotNil(t, inv)
+	invocationID := inv.InvocationId
 
 	waitForInvocationStatus(t, ctx, bbClient, reqCtx, invocationID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
 }
