@@ -2286,31 +2286,19 @@ func runCredentialHelper() error {
 	}
 }
 
-// Attempts to free up disk space if necessary.
+// Attempts to free up disk space.
 func reclaimDiskSpace(ctx context.Context) error {
-	if runtime.GOOS != "linux" {
-		// Only do this on Linux VMs for now.
-		return nil
-	}
-	usage, err := diskUsageFraction()
-	if err != nil {
-		return fmt.Errorf("get disk usage: %w", err)
-	}
-	if usage < highDiskUsageThreshold {
-		return nil
-	}
-
 	// We should be in the git repo root at this point - run git gc.
-	log.Infof("Running git gc...")
-	if _, err := git(ctx, os.Stderr, "gc"); err != nil {
-		log.Warningf("git gc failed: %s", err)
+	log.Infof("Running git maintenance...")
+	if err := runGitMaintenance(ctx); err != nil {
+		log.Warningf("git maintenance failed: %s", err)
 	}
 
-	// TODO: bazel clean?
+	// TODO: attempt to clean up old bazel cache objects?
 
 	// If we still have high disk usage after cleaning, print some debug info so
 	// that we can see where the disk usage is coming from.
-	usage, err = diskUsageFraction()
+	usage, err := diskUsageFraction()
 	if err != nil {
 		return fmt.Errorf("get disk usage: %s", err)
 	}
@@ -2321,6 +2309,16 @@ func reclaimDiskSpace(ctx context.Context) error {
 	duArgs := []string{"--human-readable", "--max-depth=1", ".", filepath.Join("..", outputBaseDirName)}
 	if err = runCommand(ctx, "du", duArgs, nil /*=env*/, "" /*=dir*/, os.Stderr); err != nil {
 		return fmt.Errorf("du: %w", err)
+	}
+
+	return nil
+}
+
+func runGitMaintenance(ctx context.Context) error {
+	for _, task := range []string{"loose-objects", "incremental-repack", "pack-refs"} {
+		if _, err := git(ctx, os.Stderr, "maintenance", "run", "--task="+task); err != nil {
+			return fmt.Errorf("%s: %w", task, err)
+		}
 	}
 	return nil
 }
