@@ -77,8 +77,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
-      - test //... --config=linux-workflows --config=race --remote_download_outputs=toplevel --test_tag_filters=+webdriver
+      - test //... --config=linux-workflows --config=race --test_tag_filters=+webdriver
   # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
   - name: Docker tests
     container_image: ubuntu-20.04
