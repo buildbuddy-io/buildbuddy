@@ -1456,7 +1456,7 @@ func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, 
 	defer f.mu.Unlock()
 	var out []interfaces.RankedExecutionNode
 	for _, n := range nodes {
-		if _, ok := f.executorIDs[n.GetExecutorID()]; ok {
+		if _, ok := f.executorIDs[n.GetExecutorId()]; ok {
 			out = append(out, fakeRankedNode{node: n})
 		}
 	}

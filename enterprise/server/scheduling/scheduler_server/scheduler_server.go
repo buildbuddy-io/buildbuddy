@@ -478,14 +478,8 @@ func (h *executorHandle) startTaskReservationStreamer() {
 }
 
 type executionNode struct {
-	// Unique ID generated when the executor process starts.
-	executorID string
+	*scpb.ExecutionNode
 
-	// ID of the host that the executor is running on, which persists across
-	// restarts.
-	executorHostID        string
-	assignableMemoryBytes int64
-	assignableMilliCpu    int64
 	// Optional host:port of the scheduler to which the executor is connected. Only set for executors connecting using
 	// the "task streaming" API.
 	schedulerHostPort string
@@ -499,23 +493,15 @@ type rankedExecutionNode struct {
 }
 
 func (en *executionNode) CanFit(size *scpb.TaskSize) bool {
-	return int64(float64(en.assignableMemoryBytes)*tasksize.MaxResourceCapacityRatio) >= size.GetEstimatedMemoryBytes() &&
-		int64(float64(en.assignableMilliCpu)*tasksize.MaxResourceCapacityRatio) >= size.GetEstimatedMilliCpu()
+	return int64(float64(en.GetAssignableMemoryBytes())*tasksize.MaxResourceCapacityRatio) >= size.GetEstimatedMemoryBytes() &&
+		int64(float64(en.GetAssignableMilliCpu())*tasksize.MaxResourceCapacityRatio) >= size.GetEstimatedMilliCpu()
 }
 
 func (en *executionNode) String() string {
 	if en.handle != nil {
-		return fmt.Sprintf("connected executor(%s)", en.executorID)
+		return fmt.Sprintf("connected executor(%s)", en.GetExecutorId())
 	}
-	return fmt.Sprintf("executor(%s) @ scheduler(%s)", en.executorID, en.schedulerHostPort)
-}
-
-func (en *executionNode) GetExecutorID() string {
-	return en.executorID
-}
-
-func (en *executionNode) GetExecutorHostID() string {
-	return en.executorHostID
+	return fmt.Sprintf("executor(%s) @ scheduler(%s)", en.GetExecutorId(), en.schedulerHostPort)
 }
 
 func nodesThatFit(nodes []*executionNode, taskSize *scpb.TaskSize) []*executionNode {
@@ -547,7 +533,7 @@ func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) [
 		return nodes
 	}
 	for _, n := range nodes {
-		if n.executorID == id {
+		if n.GetExecutorId() == id {
 			return []*executionNode{n}
 		}
 	}
@@ -619,11 +605,8 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 		}
 
 		executors = append(executors, &executionNode{
-			executorID:            id,
-			executorHostID:        node.GetRegistration().GetExecutorHostId(),
-			schedulerHostPort:     node.GetSchedulerHostPort(),
-			assignableMemoryBytes: node.GetRegistration().GetAssignableMemoryBytes(),
-			assignableMilliCpu:    node.GetRegistration().GetAssignableMilliCpu(),
+			ExecutionNode:     node.GetRegistration(),
+			schedulerHostPort: node.GetSchedulerHostPort(),
 		})
 	}
 
@@ -682,19 +665,17 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 	return fitCount, nil
 }
 
-func (np *nodePool) AddConnectedExecutor(id string, mem int64, cpu int64, handle *executorHandle) bool {
+func (np *nodePool) AddConnectedExecutor(node *scpb.ExecutionNode, handle *executorHandle) bool {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for _, e := range np.connectedExecutors {
-		if e.executorID == id {
+		if e.GetExecutorId() == node.GetExecutorId() {
 			return false
 		}
 	}
 	np.connectedExecutors = append(np.connectedExecutors, &executionNode{
-		executorID:            id,
-		handle:                handle,
-		assignableMemoryBytes: mem,
-		assignableMilliCpu:    cpu,
+		ExecutionNode: node,
+		handle:        handle,
 	})
 	return true
 }
@@ -703,7 +684,7 @@ func (np *nodePool) RemoveConnectedExecutor(id string) bool {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for i, e := range np.connectedExecutors {
-		if e.executorID == id {
+		if e.GetExecutorId() == id {
 			nodes := make([]*executionNode, 0, len(np.connectedExecutors)-1)
 			nodes = append(nodes, np.connectedExecutors[:i]...)
 			nodes = append(nodes, np.connectedExecutors[i+1:]...)
@@ -721,7 +702,7 @@ func (np *nodePool) FindConnectedExecutorByID(executorID string) *executionNode 
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for _, node := range np.connectedExecutors {
-		if node.GetExecutorID() == executorID {
+		if node.GetExecutorId() == executorID {
 			return node
 		}
 	}
@@ -1086,7 +1067,7 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 	}
 
 	pool := s.getOrCreatePool(poolKey)
-	newExecutor := pool.AddConnectedExecutor(node.GetExecutorId(), node.GetAssignableMemoryBytes(), node.GetAssignableMilliCpu(), handle)
+	newExecutor := pool.AddConnectedExecutor(node, handle)
 	if !newExecutor {
 		return nil
 	}
@@ -1770,7 +1751,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 		// Set the executor ID in case the node is owned by another scheduler, so
 		// that the scheduler can prefer this node for the probe.
-		enqueueRequest.ExecutorId = rankedNode.GetExecutionNode().GetExecutorID()
+		enqueueRequest.ExecutorId = rankedNode.GetExecutionNode().GetExecutorId()
 		enqueueStart := time.Now()
 		if delayable && scheduledOnPreferredNode && !rankedNode.IsPreferred() && nonPreferredDelay > 0*time.Second {
 			enqueueRequest.Delay = durationpb.New(nonPreferredDelay)
@@ -1831,7 +1812,7 @@ func (s *SchedulerServer) enqueue(ctx context.Context, node *executionNode, requ
 
 func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) (bool, error) {
 	if node.handle == nil {
-		log.CtxErrorf(ctx, "nil handle for a local executor %q", node.GetExecutorID())
+		log.CtxErrorf(ctx, "nil handle for a local executor %q", node.GetExecutorId())
 		return false, nil
 	}
 	_, err := node.handle.EnqueueTaskReservation(ctx, request)
@@ -1843,7 +1824,7 @@ func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, reques
 
 func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *executionNode, request *scpb.EnqueueTaskReservationRequest) (bool, error) {
 	if node.schedulerHostPort == "" {
-		log.CtxErrorf(ctx, "node %q has no scheduler host:port set", node.GetExecutorID())
+		log.CtxErrorf(ctx, "node %q has no scheduler host:port set", node.GetExecutorId())
 		return false, nil
 	}
 

@@ -56,7 +56,7 @@ func (f *fakeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remot
 	for i, node := range nodes {
 		preferred := false
 		for _, preferredNodeID := range f.preferredExecutors {
-			if node.GetExecutorID() == preferredNodeID {
+			if node.GetExecutorId() == preferredNodeID {
 				preferred = true
 				break
 			}
@@ -72,7 +72,7 @@ func (f *fakeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remot
 		} else if !rankedNodes[i].IsPreferred() && rankedNodes[j].IsPreferred() {
 			return false
 		}
-		return nodes[i].GetExecutorID() < nodes[j].GetExecutorID()
+		return nodes[i].GetExecutorId() < nodes[j].GetExecutorId()
 	})
 	return rankedNodes
 }
