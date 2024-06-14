@@ -41,7 +41,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
 	"github.com/docker/go-units"
-	"github.com/elastic/gosigar"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
@@ -2355,9 +2354,12 @@ func runGitMaintenance(ctx context.Context) error {
 }
 
 func diskUsageFraction() (float64, error) {
-	fsu := gosigar.FileSystemUsage{}
-	if err := fsu.Get("."); err != nil {
+	df, err := disk.GetDirUsage(".")
+	if err != nil {
 		return 0, err
 	}
-	return fsu.UsePercent() / 100.0, nil
+	if df.TotalBytes == 0 {
+		return 0, nil
+	}
+	return float64(df.TotalBytes-df.AvailBytes) / float64(df.TotalBytes), nil
 }
