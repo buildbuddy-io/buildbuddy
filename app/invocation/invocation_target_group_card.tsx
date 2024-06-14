@@ -25,6 +25,7 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import format from "../format/format";
 import DigestComponent from "../components/digest/digest";
 import FlakyTargetChipComponent from "../target/flaky_target_chip";
+import capabilities from "../capabilities/capabilities";
 
 export interface TargetGroupCardProps {
   invocationId: string;
@@ -211,7 +212,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
             ) : (
               <Copy className="copy-icon" onClick={() => this.onCopyClicked()} />
             )}{" "}
-            {Boolean(this.props.repo && renderFlakyChip) && (
+            {Boolean(this.props.repo && renderFlakyChip && capabilities.config.targetFlakesUiEnabled) && (
               <div className="invocation-flaky-chip-alignment-hack">
                 <FlakyTargetChipComponent labels={targetLabels} repo={this.props.repo}></FlakyTargetChipComponent>
               </div>

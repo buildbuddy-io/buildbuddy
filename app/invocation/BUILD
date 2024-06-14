@@ -723,6 +723,7 @@ ts_library(
     name = "invocation_target_group_card",
     srcs = ["invocation_target_group_card.tsx"],
     deps = [
+        "//app/capabilities",
         "//app/components/digest",
         "//app/components/link",
         "//app/components/spinner",

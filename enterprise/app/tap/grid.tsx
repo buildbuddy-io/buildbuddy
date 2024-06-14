@@ -5,7 +5,6 @@ import moment from "moment";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
 import { api } from "../../../proto/api/v1/common_ts_proto";
-import { invocation } from "../../../proto/invocation_ts_proto";
 import { target } from "../../../proto/target_ts_proto";
 import { Subscription } from "rxjs";
 import router from "../../../app/router/router";
@@ -13,14 +12,12 @@ import { google as google_duration } from "../../../proto/duration_ts_proto";
 import format from "../../../app/format/format";
 import { clamp } from "../../../app/util/math";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
-import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
 import {
   Activity,
   AlarmClock,
   AlertTriangle,
   Check,
-  ChevronRight,
   ChevronsRight,
   Clock,
   Hammer,
@@ -34,7 +31,6 @@ import {
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import errorService from "../../../app/errors/error_service";
-import { normalizeRepoURL } from "../../../app/util/git";
 import {
   COLOR_MODE_PARAM,
   ColorMode,
@@ -62,8 +58,6 @@ interface State extends CommitGrouping {
   maxDuration: number;
 }
 
-type Tab = "grid" | "flakes";
-
 interface CommitGrouping {
   commits: string[] | null;
   commitToMaxInvocationCreatedAtUsec: Map<string, number> | null;
@@ -88,7 +82,6 @@ const Status = api.v1.Status;
 
 const MIN_OPACITY = 0.1;
 const DAYS_OF_DATA_TO_FETCH = 7;
-const LAST_SELECTED_REPO_LOCALSTORAGE_KEY = "tests__last_selected_repo";
 
 export default class TestGridComponent extends React.Component<Props, State> {
   state: State = {

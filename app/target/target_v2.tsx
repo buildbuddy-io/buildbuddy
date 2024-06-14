@@ -273,13 +273,13 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                   <span>Target history</span>
                 </OutlinedLinkButton>
               )}
-              {
-                /* XXX FLAG */ this.props.repo && isPotentialFailureOrFlakeStatus(this.props.status) && (
+              {capabilities.config.targetFlakesUiEnabled &&
+                this.props.repo &&
+                isPotentialFailureOrFlakeStatus(this.props.status) && (
                   <FlakyTargetChipComponent
                     labels={[this.props.label]}
                     repo={this.props.repo}></FlakyTargetChipComponent>
-                )
-              }
+                )}
             </div>
             <div className="details">
               {Boolean(target?.status) && (
