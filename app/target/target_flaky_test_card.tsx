@@ -1,12 +1,12 @@
 import React from "react";
 import format from "../format/format";
-import { AlertCircle, XCircle, PlayCircle, CheckCircle, HelpCircle } from "lucide-react";
+import { AlertCircle, XCircle, HelpCircle } from "lucide-react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { durationToMillisWithFallback } from "../util/proto";
-import TerminalComponent from "../terminal/terminal";
 import moment from "moment";
 import router from "../router/router";
 import Link from "../components/link/link";
+import TargetTestSuiteComponent from "./target_test_suite";
 
 interface Props {
   invocationId: string;
@@ -83,41 +83,7 @@ export default class TargetFlakyTestCardComponent extends React.Component<Props>
                 </span>
               </div>
             </Link>
-            <div className="test-document">
-              <div className="test-suite">
-                <div className="test-cases">
-                  {testCases.map((testCase) => (
-                    <div className="test-case-container">
-                      <div className="test-case">
-                        <div className="test-case-name">
-                          {testCase.getAttribute("classname") && (
-                            <span className="test-class">{testCase.getAttribute("classname")}.</span>
-                          )}
-                          {testCase.getAttribute("name")}
-                        </div>
-                        <div className="test-case-time">{testCase.getAttribute("time")} s</div>
-                      </div>
-                      {Array.from(testCase.children).map((child) => (
-                        <div className="test-case-info">
-                          <div className="test-case-message">
-                            {child.getAttribute("message")} {child.getAttribute("type")}
-                          </div>
-                          {!!child.textContent?.trim() && (
-                            <TerminalComponent
-                              value={child.textContent
-                                .replaceAll(`�[`, `\u001b[`)
-                                .replaceAll(`#x1b[`, `\u001b[`)
-                                .replaceAll(`#x1B[`, `\u001b[`)}
-                              lightTheme={false}
-                            />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <TargetTestSuiteComponent testCases={testCases} dark={true}></TargetTestSuiteComponent>
           </div>
         </div>
       )

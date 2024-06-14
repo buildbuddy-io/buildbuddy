@@ -88,7 +88,7 @@ ts_library(
     srcs = ["target_test_cases_card.tsx"],
     deps = [
         "//app/format",
-        "//app/terminal",
+        "//app/target:target_test_suite",
         "//app/util:proto",
         "//proto:build_event_stream_ts_proto",
         "@npm//@types/react",
@@ -133,7 +133,7 @@ ts_library(
         "//app/components/link",
         "//app/format",
         "//app/router",
-        "//app/terminal",
+        "//app/target:target_test_suite",
         "//app/util:proto",
         "//proto:build_event_stream_ts_proto",
         "@npm//@types/moment",
@@ -155,6 +155,16 @@ ts_library(
         "//proto:build_event_stream_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "target_test_suite",
+    srcs = ["target_test_suite.tsx"],
+    deps = [
+        "//app/terminal",
+        "@npm//@types/react",
         "@npm//react",
     ],
 )
