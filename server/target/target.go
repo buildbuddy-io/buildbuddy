@@ -805,6 +805,10 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 	}
 
 	db.ScanEach(rq, func(ctx context.Context, row *qRow) error {
+		if row.FlakyRuns + row.LikelyFlakyRuns == 0 {
+			return nil
+		}
+
 		out := &trpb.DailyTargetStats{
 			Date: row.Date,
 			Data: &trpb.TargetStatsData{
@@ -878,6 +882,9 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 
 	rsp := &trpb.GetTargetStatsResponse{}
 	db.ScanEach(rq, func(ctx context.Context, row *qRow) error {
+		if row.FlakyRuns + row.LikelyFlakyRuns == 0 {
+			return nil
+		}
 		out := &trpb.AggregateTargetStats{
 			Label: row.Label,
 			Data: &trpb.TargetStatsData{
