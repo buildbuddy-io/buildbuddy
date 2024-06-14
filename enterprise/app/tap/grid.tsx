@@ -457,7 +457,6 @@ export default class TestGridComponent extends React.Component<Props, State> {
       .filter((targetHistory) => (filter ? targetHistory.target?.label.includes(filter) : true))
       .sort(this.sort.bind(this));
 
-    // XXX
     return (
       <>
         <div className="container">

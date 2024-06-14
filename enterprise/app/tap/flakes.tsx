@@ -316,9 +316,9 @@ export default class FlakesComponent extends React.Component<Props, State> {
 
             <div className="card">
               <div className="content">
-                <div className="flake-list-table-header">
+                <div className="flake-table-header">
                   <FilterInput onChange={(e) => this.handleStatsFilterChange(e.target.value)}></FilterInput>
-                  <div className="flake-list-table-sort-controls">
+                  <div className="flake-table-sort-controls">
                     <span className="invocation-sort-title">Sort by</span>
                     <Select onChange={(e) => this.handleTableSortChange(e.target.value)} value={this.state.tableSort}>
                       <Option value="Flaky %">Flaky %</Option>
@@ -327,16 +327,16 @@ export default class FlakesComponent extends React.Component<Props, State> {
                     </Select>
                   </div>
                 </div>
-                <div className="list-table">
+                <div className="flake-table">
                   {filteredTableData.map((s, index) => {
                     return (
-                      <Link key={index} className="list-table-row" href={`/tests/?target=${s.label}#flakes`}>
-                        <div className="list-table-row-image">
+                      <Link key={index} className="flake-table-row" href={`/tests/?target=${s.label}#flakes`}>
+                        <div className="flake-table-row-image">
                           <Target className="icon"></Target>
                         </div>
-                        <div className="list-table-row-content">
-                          <div className="list-table-row-header">{s.label}</div>
-                          <div className="list-table-row-stats">
+                        <div className="flake-table-row-content">
+                          <div className="flake-table-row-header">{s.label}</div>
+                          <div className="flake-table-row-stats">
                             <div className="flake-stat">
                               <span className="flake-stat-value">{this.renderFlakePercent(s.data)}</span> flaky
                             </div>

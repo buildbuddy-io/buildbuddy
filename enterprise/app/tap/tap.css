@@ -495,38 +495,38 @@ SKIPPED = 13;
   margin: 16px 0;
 }
 
-.tap .list-table {
+.tap .flake-table {
   margin-top: 16px;
 }
 
-.tap .list-table-row {
+.tap .flake-table-row {
   display: flex;
   border-top: 1px solid #eee;
   padding: 16px 0;
 }
 
-.tap .list-table-row:last-child {
+.tap .flake-table-row:last-child {
   border-bottom: 1px solid #eee;
 }
 
-.tap .list-table-row:hover {
+.tap .flake-table-row:hover {
   background: #fafafa;
 }
 
-.tap .list-table-row-image {
+.tap .flake-table-row-image {
   margin-left: 4px;
   margin-right: 16px;
 }
 
-.tap .list-table-row-header {
+.tap .flake-table-row-header {
   font-weight: 600;
 }
 
-.tap .list-table-row-content {
+.tap .flake-table-row-content {
   flex-grow: 1;
 }
 
-.tap .list-table-row-stats {
+.tap .flake-table-row-stats {
   display: flex;
   justify-content: space-between;
 }
@@ -541,13 +541,13 @@ SKIPPED = 13;
   font-size: 20px;
 }
 
-.tap .flake-list-table-header {
+.tap .flake-table-header {
   display: flex;
   justify-content: space-between;
   grid-gap: 8px;
 }
 
-.tap .flake-list-table-sort-controls {
+.tap .flake-table-sort-controls {
   display: flex;
   align-items: center;
   min-width: 300px;
