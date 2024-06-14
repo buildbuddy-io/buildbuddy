@@ -43,7 +43,9 @@
   cursor: pointer;
 }
 
-.trend-chart .title {
+.trend-chart-title {
+  font-weight: 600;	
+  font-size: 20px;
   margin-bottom: 16px;
 }
 
