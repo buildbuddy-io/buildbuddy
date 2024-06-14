@@ -1,4 +1,4 @@
-name: "release-cli"
+name: "Release CLI"
 
 on:
   workflow_dispatch:
