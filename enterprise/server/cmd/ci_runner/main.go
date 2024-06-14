@@ -115,7 +115,7 @@ const (
 
 	// progressFlushInterval specifies how often we should flush
 	// each Bazel command's output while it is running.
-	progressFlushInterval = 1 * time.Second
+	progressFlushInterval = 200 * time.Millisecond
 	// progressFlushThresholdBytes specifies how full the log buffer
 	// should be before we force a flush, regardless of the flush interval.
 	progressFlushThresholdBytes = 1_000
