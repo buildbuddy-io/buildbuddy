@@ -752,7 +752,7 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ?"
 	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo}
-	if (req.GetRepo() != "") {
+	if req.GetRepo() != "" {
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
 	}
@@ -792,15 +792,15 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
 	log.Printf(qStr)
-	log.Printf("%+v", qArgs);
+	log.Printf("%+v", qArgs)
 
 	rsp := &trpb.GetDailyTargetStatsResponse{}
 
 	type qRow struct {
-		Date string
-		FlakyRuns int64
-		TotalRuns int64
-		FailedRuns int64
+		Date            string
+		FlakyRuns       int64
+		TotalRuns       int64
+		FailedRuns      int64
 		LikelyFlakyRuns int64
 	}
 
@@ -808,9 +808,9 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 		out := &trpb.DailyTargetStats{
 			Date: row.Date,
 			Data: &trpb.TargetStatsData{
-				FlakyRuns: row.FlakyRuns,
-				TotalRuns: row.TotalRuns,
-				FailedRuns: row.FailedRuns,
+				FlakyRuns:       row.FlakyRuns,
+				TotalRuns:       row.TotalRuns,
+				FailedRuns:      row.FailedRuns,
 				LikelyFlakyRuns: row.LikelyFlakyRuns,
 			},
 		}
@@ -832,7 +832,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ?"
 	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo}
-	if (req.GetRepo() != "") {
+	if req.GetRepo() != "" {
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
 	}
@@ -869,10 +869,10 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
 	type qRow struct {
-		Label string
-		FlakyRuns int64
-		TotalRuns int64
-		FailedRuns int64
+		Label           string
+		FlakyRuns       int64
+		TotalRuns       int64
+		FailedRuns      int64
 		LikelyFlakyRuns int64
 	}
 
@@ -881,9 +881,9 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 		out := &trpb.AggregateTargetStats{
 			Label: row.Label,
 			Data: &trpb.TargetStatsData{
-				FlakyRuns: row.FlakyRuns,
-				TotalRuns: row.TotalRuns,
-				FailedRuns: row.FailedRuns,
+				FlakyRuns:       row.FlakyRuns,
+				TotalRuns:       row.TotalRuns,
+				FailedRuns:      row.FailedRuns,
 				LikelyFlakyRuns: row.LikelyFlakyRuns,
 			},
 		}
@@ -912,12 +912,12 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ? AND label = ?"
 	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo, req.GetLabel()}
-	if (req.GetRepo() != "") {
+	if req.GetRepo() != "" {
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
 	}
 	qArgs = append(qArgs, qArgs...)
-	qArgs = append(qArgs, pg.GetLimit() + 1, pg.GetOffset())
+	qArgs = append(qArgs, pg.GetLimit()+1, pg.GetOffset())
 
 	qStr := fmt.Sprintf(`SELECT status, invocation_start_time_usec, invocation_uuid
 	FROM (
@@ -971,11 +971,11 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 				for _, f := range tr.GetTestActionOutput() {
 					if f.GetName() == "test.xml" && strings.HasPrefix(f.GetUri(), "bytestream://") {
 						rsp.Samples = append(rsp.Samples, &trpb.FlakeSample{
-							InvocationId:   invocationID,
+							InvocationId:            invocationID,
 							InvocationStartTimeUsec: row.InvocationStartTimeUsec,
-							Status:         convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
-							Event:          event.GetBuildEvent(),
-							TestXmlFileUri: f.GetUri(),
+							Status:                  convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
+							Event:                   event.GetBuildEvent(),
+							TestXmlFileUri:          f.GetUri(),
 						})
 					}
 				}

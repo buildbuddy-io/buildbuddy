@@ -75,7 +75,6 @@ ts_library(
     ],
 )
 
-
 ts_library(
     name = "grid",
     srcs = ["grid.tsx"],
@@ -112,8 +111,6 @@ ts_library(
     ],
 )
 
-
-
 ts_library(
     name = "grid_common",
     srcs = ["grid_common.ts"],
@@ -147,7 +144,6 @@ ts_library(
         "@npm//tslib",
     ],
 )
-
 
 ts_library(
     name = "grid_sort_controls",
@@ -189,7 +185,6 @@ ts_library(
     srcs = ["flakes.tsx"],
     deps = [
         ":tap_empty_state",
-        "//app/target:target_flaky_test_card",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
@@ -200,6 +195,7 @@ ts_library(
         "//app/format",
         "//app/router",
         "//app/service:rpc_service",
+        "//app/target:target_flaky_test_card",
         "//app/util:git",
         "//app/util:math",
         "//proto:duration_ts_proto",

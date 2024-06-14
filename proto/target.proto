@@ -250,7 +250,7 @@ message GetDailyTargetStatsRequest {
 
   // If specified, a list of targets for which we should fetch flake data.
   // Daily stats will be aggregated over this set of targets--if no targets are
-  // specified, total stats for all 
+  // specified, total stats for all
   repeated string labels = 2;
 
   string repo = 3;
