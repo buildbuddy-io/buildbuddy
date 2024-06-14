@@ -43,9 +43,7 @@
   cursor: pointer;
 }
 
-.trend-chart-title {
-  font-weight: 600;
-  font-size: 20px;
+.trend-chart .title {
   margin-bottom: 16px;
 }
 
@@ -69,6 +67,10 @@
 
 .trends-clickable-bar.red:hover {
   fill: #e57373;
+}
+
+.trends-clickable-bar.orange:hover {
+  fill: #ff8f00;
 }
 
 .trends-clickable-bar.grey:hover {

@@ -1,6 +1,7 @@
 package lru_test
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -13,6 +14,8 @@ type eviction struct {
 }
 
 func TestAdd(t *testing.T) {
+	require.True(t, rand.Float64() > 0.3, "flakeh")
+	
 	evictions := []eviction{}
 
 	l, err := lru.NewLRU[int](&lru.Config[int]{

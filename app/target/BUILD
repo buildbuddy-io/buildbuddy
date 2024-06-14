@@ -28,6 +28,22 @@ ts_library(
 )
 
 ts_library(
+    name = "flaky_target_chip",
+    srcs = ["flaky_target_chip.tsx"],
+    deps = [
+        "//app/docs:setup_code",
+        "//app/format",
+        "//app/service:rpc_service",
+        "//app/terminal",
+        "//app/util:proto",
+        "//proto:build_event_stream_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
     name = "action_card",
     srcs = ["action_card.tsx"],
     deps = [
@@ -112,6 +128,22 @@ ts_library(
 )
 
 ts_library(
+    name = "target_flaky_test_card",
+    srcs = ["target_flaky_test_card.tsx"],
+    deps = [
+        "//app/docs:setup_code",
+        "//app/format",
+        "//app/service:rpc_service",
+        "//app/terminal",
+        "//app/util:proto",
+        "//proto:build_event_stream_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
     name = "target_test_coverage_card",
     srcs = ["target_test_coverage_card.tsx"],
     deps = [
@@ -130,6 +162,7 @@ ts_library(
     name = "target_v2",
     srcs = ["target_v2.tsx"],
     deps = [
+        ":flaky_target_chip",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
