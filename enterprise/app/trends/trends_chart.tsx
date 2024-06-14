@@ -198,7 +198,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""} ${
           this.props.standaloneChart ? "standalone" : ""
         }`}>
-        <div className="title">{this.props.title}</div>
+        <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
             data={this.props.data}
