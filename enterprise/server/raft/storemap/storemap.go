@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
+	"github.com/jonboulle/clockwork"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -43,14 +44,16 @@ type StoreMap struct {
 	storeDetails map[string]*StoreDetail
 
 	startTime time.Time
+	clock     clockwork.Clock
 }
 
-func New(gossipManager interfaces.GossipService) *StoreMap {
+func New(gossipManager interfaces.GossipService, clock clockwork.Clock) *StoreMap {
 	sm := &StoreMap{
 		mu:            &sync.RWMutex{},
 		startTime:     time.Now(),
 		storeDetails:  make(map[string]*StoreDetail),
 		gossipManager: gossipManager,
+		clock:         clock,
 	}
 	gossipManager.AddListener(sm)
 	return sm
@@ -68,7 +71,7 @@ func (sm *StoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *ReplicasByS
 	res := &ReplicasByStatus{}
 	for _, repl := range repls {
 		detail := sm.getDetail(repl.GetNhid())
-		status := detail.status()
+		status := detail.status(sm.clock)
 		switch status {
 		case storeStatusAvailable:
 			res.LiveReplicas = append(res.LiveReplicas, repl)
@@ -93,8 +96,8 @@ func (sm *StoreMap) getDetail(nhid string) *StoreDetail {
 
 }
 
-func (sd *StoreDetail) status() storeStatus {
-	if !sd.lastUnavailableAt.IsZero() && time.Since(sd.lastUnavailableAt) > *deadStoreTimeout {
+func (sd *StoreDetail) status(clock clockwork.Clock) storeStatus {
+	if !sd.lastUnavailableAt.IsZero() && clock.Since(sd.lastUnavailableAt) > *deadStoreTimeout {
 		return storeStatusDead
 	}
 
@@ -121,7 +124,7 @@ func (sm *StoreMap) updateStoreDetail(nhid string, usage *rfpb.StoreUsage, nodeS
 	if usage != nil {
 		detail.usage = usage
 	}
-	now := time.Now()
+	now := sm.clock.Now()
 	if nodeStatus != serf.StatusAlive {
 		detail.lastUnavailableAt = now
 	} else {
@@ -198,7 +201,7 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 
 	alive := make([]*rfpb.StoreUsage, 0, len(sm.storeDetails))
 	for _, sd := range sm.storeDetails {
-		status := sd.status()
+		status := sd.status(sm.clock)
 		if status == storeStatusAvailable {
 			alive = append(alive, sd.usage)
 		}
@@ -216,7 +219,7 @@ func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 		if !ok {
 			continue
 		}
-		status := sd.status()
+		status := sd.status(sm.clock)
 		if status == storeStatusAvailable || status == storeStatusSuspect {
 			alive = append(alive, sd.usage)
 		}
