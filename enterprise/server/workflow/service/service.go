@@ -52,6 +52,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
+	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1071,10 +1072,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_SHA256)
-	if err != nil {
-		return nil, err
-	}
+
 	envVars := []*repb.Command_EnvironmentVariable{
 		{Name: "CI", Value: "true"},
 		{Name: "GIT_COMMIT", Value: wd.SHA},
@@ -1162,14 +1160,37 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}
 	}
 
+	// NOTE: By default, the executor is responsible for ensuring the
+	// buildbuddy_ci_runner binary exists at the workspace root when it sees
+	// the `workflow-id` platform property.
+	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	if (os == "" || os == platform.LinuxOperatingSystemName) && (workflowAction.Arch == "" || workflowAction.Arch == "amd64") {
+		// Because the apps are built for linux/amd64, in these cases we can have the apps
+		// upload the ci_runner binary to the cache to ensure the executors are using
+		// the most up-to-date version of the binary
+		runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, ws.env.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, ci_runner_bundle.CiRunnerBytes)
+		if err != nil {
+			return nil, status.WrapError(err, "upload runner bin")
+		}
+		runnerName := filepath.Base(ci_runner_bundle.RunnerName)
+		dir := &repb.Directory{
+			Files: []*repb.FileNode{{
+				Name:         runnerName,
+				Digest:       runnerBinDigest,
+				IsExecutable: true,
+			}},
+		}
+		inputRootDigest, err = cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, dir)
+		if err != nil {
+			return nil, status.WrapError(err, "upload input root")
+		}
+	}
+
 	args := []string{
-		// NOTE: The executor is responsible for making sure this
-		// buildbuddy_ci_runner binary exists at the workspace root. It does so
-		// whenever it sees the `workflow-id` platform property.
-		//
-		// Also be cautious when adding new flags. See
-		// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
-		"./buildbuddy_ci_runner",
+		"./" + ci_runner_bundle.RunnerName,
 		"--invocation_id=" + invocationID,
 		"--action_name=" + workflowAction.Name,
 		"--bes_backend=" + events_api_url.String(),
