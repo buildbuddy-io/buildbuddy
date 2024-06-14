@@ -39,15 +39,6 @@ func localAddr(t *testing.T) string {
 	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
 }
 
-func newGossipManager(t testing.TB, nodeAddr string, seeds []string) *gossip.GossipManager {
-	node, err := gossip.New("name-"+nodeAddr, nodeAddr, seeds)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		node.Shutdown()
-	})
-	return node
-}
-
 type StoreFactory struct {
 	rootDir     string
 	fileDir     string
@@ -85,10 +76,12 @@ func (sf *StoreFactory) Registry() registry.NodeRegistry {
 
 func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	nodeAddr := localAddr(t)
-	gm := newGossipManager(t, nodeAddr, sf.gossipAddrs)
+	gm, err := gossip.New("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
+	require.NoError(t, err)
 	sf.gossipAddrs = append(sf.gossipAddrs, nodeAddr)
 
 	ts := &TestingStore{
+		gm:          gm,
 		RaftAddress: localAddr(t),
 		GRPCAddress: localAddr(t),
 		RootDir:     filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
@@ -139,10 +132,7 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	ts.Store = store
 
 	t.Cleanup(func() {
-		ctx := context.Background()
-		ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
-		defer cancelFn()
-		store.Stop(ctx)
+		ts.Stop()
 	})
 	return ts
 }
@@ -160,9 +150,11 @@ type TestingStore struct {
 
 	db pebble.IPebbleDB
 
+	gm          *gossip.GossipManager
 	RootDir     string
 	RaftAddress string
 	GRPCAddress string
+	closed      bool
 }
 
 func (ts *TestingStore) DB() pebble.IPebbleDB {
@@ -172,6 +164,19 @@ func (ts *TestingStore) DB() pebble.IPebbleDB {
 func (ts *TestingStore) NewReplica(shardID, replicaID uint64) *replica.Replica {
 	sm := ts.Store.ReplicaFactoryFn(shardID, replicaID)
 	return sm.(*replica.Replica)
+}
+
+func (ts *TestingStore) Stop() {
+	if ts.closed {
+		return
+	}
+	ctx := context.Background()
+	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	defer cancelFn()
+	ts.Store.Stop(ctx)
+	ts.gm.Leave()
+	ts.gm.Shutdown()
+	ts.closed = true
 }
 
 func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...*TestingStore) {

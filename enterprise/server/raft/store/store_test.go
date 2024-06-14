@@ -437,6 +437,15 @@ func waitForReplicaToCatchUp(t testing.TB, ctx context.Context, r *replica.Repli
 	}
 }
 
+func includeReplicaWithNHID(rd *rfpb.RangeDescriptor, nhid string) bool {
+	for _, r := range rd.GetReplicas() {
+		if r.GetNhid() == nhid {
+			return true
+		}
+	}
+	return false
+}
+
 func getReplica(t testing.TB, s *testutil.TestingStore, rangeID uint64) *replica.Replica {
 	for {
 		res, err := s.GetReplica(rangeID)
@@ -952,9 +961,7 @@ func TestDownReplicate(t *testing.T) {
 
 	// Advance the clock to trigger scan replicas
 	clock.Advance(61 * time.Second)
-	i := 0
 	for {
-		i++
 		clock.Advance(3 * time.Second)
 		time.Sleep(100 * time.Millisecond)
 
@@ -968,4 +975,74 @@ func TestDownReplicate(t *testing.T) {
 			break
 		}
 	}
+}
+
+func TestReplaceDeadReplica(t *testing.T) {
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	// start shards for s1, s2, s3
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, stores...)
+
+	{ // Verify that there are 2 replicas for range 2, and also write 10 records
+		s := getStoreWithRangeLease(t, ctx, stores, 2)
+		writeNRecords(ctx, t, s, 10)
+		replicas := getMembership(t, s, ctx, 2)
+		require.Equal(t, 3, len(replicas))
+		rd := s.GetRange(2)
+		require.Equal(t, 3, len(rd.GetReplicas()))
+	}
+
+	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	r, err := s.GetReplica(2)
+	require.NoError(t, err)
+	desiredAppliedIndex, err := r.LastAppliedIndex()
+	require.NoError(t, err)
+
+	s4 := sf.NewStore(t)
+	// Stop store 3
+	s3.Stop()
+
+	nhid3 := s3.NodeHost().ID()
+	nhid4 := s4.NodeHost().ID()
+
+	// Advance the clock pass the cache.raft.dead_store_timeout so s3 is considered dead.
+	clock.Advance(5*time.Minute + 1*time.Second)
+	for {
+		// advance the clock to trigger scan replicas
+		clock.Advance(61 * time.Second)
+		// wait some time to allow let driver queue execute
+		time.Sleep(100 * time.Millisecond)
+		list, err := s4.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		if len(list.GetReplicas()) < 2 {
+			// s4 should have two ranges
+			continue
+		}
+
+		if !includeReplicaWithNHID(s1.GetRange(1), nhid3) &&
+			!includeReplicaWithNHID(s1.GetRange(2), nhid3) &&
+			!includeReplicaWithNHID(s2.GetRange(1), nhid3) &&
+			!includeReplicaWithNHID(s2.GetRange(2), nhid3) {
+			// nhid4 should be added to range 1 and range2, and nhid3 removed
+			require.True(t, includeReplicaWithNHID(s1.GetRange(1), nhid4))
+			require.True(t, includeReplicaWithNHID(s1.GetRange(2), nhid4))
+			require.True(t, includeReplicaWithNHID(s2.GetRange(1), nhid4))
+			require.True(t, includeReplicaWithNHID(s2.GetRange(2), nhid4))
+			break
+		}
+	}
+	r2 := getReplica(t, s4, 2)
+	waitForReplicaToCatchUp(t, ctx, r2, desiredAppliedIndex)
 }
