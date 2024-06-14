@@ -60,7 +60,8 @@ platform(
     parents = [get_parent_from_constraints(HOST_CONSTRAINTS)],
 )
 
-# Target these platforms with --platforms for a static build linked against musl libc.
+# Target this platforms with --platforms for a static build linked against musl libc.
+# Only meant to be used as a target platform.
 platform(
     name = "linux_x86_64_musl",
     constraint_values = [
@@ -70,6 +71,8 @@ platform(
     ],
 )
 
+# Target this platforms with --platforms for a static build linked against musl libc.
+# Only meant to be used as a target platform.
 platform(
     name = "linux_arm64_musl",
     constraint_values = [
