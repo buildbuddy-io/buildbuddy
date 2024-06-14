@@ -219,9 +219,10 @@ type Queue struct {
 	mu      sync.Mutex //protects started and pq
 	started bool
 	clock   clockwork.Clock
+	log     log.Logger
 }
 
-func NewQueue(store IStore, gossipManager interfaces.GossipService, clock clockwork.Clock) *Queue {
+func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, clock clockwork.Clock) *Queue {
 	storeMap := storemap.New(gossipManager, clock)
 	return &Queue{
 		storeMap: storeMap,
@@ -229,6 +230,7 @@ func NewQueue(store IStore, gossipManager interfaces.GossipService, clock clockw
 		store:    store,
 		maxSize:  100,
 		clock:    clock,
+		log:      nhlog,
 	}
 }
 
@@ -237,14 +239,14 @@ func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64)
 
 	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		// The store doesn't have lease for this range. do not queue.
-		log.Debugf("should not queue because we don't have lease")
+		rq.log.Debugf("should not queue because we don't have lease")
 		return false, 0
 	}
 
 	action, priority := rq.computeAction(rd.GetReplicas())
 	log.Debugf("shouldQueue for replica:%d returns action:%s, with priority %.2f", repl.ShardID(), action, priority)
 	if action == DriverNoop {
-		log.Debugf("should not queue because no-op")
+		rq.log.Debugf("should not queue because no-op")
 		return false, 0
 	} else if action != DriverConsiderRebalance {
 		return true, priority
@@ -306,7 +308,7 @@ func (rq *Queue) MaybeAdd(ctx context.Context, replica IReplica) {
 		}
 		// update item.priority and item.requeue
 		rq.update(item, priority)
-		log.Infof("updated priority for replica rangeID=%d", item.rangeID)
+		rq.log.Infof("updated priority for replica rangeID=%d", item.rangeID)
 		return
 	}
 
@@ -318,7 +320,7 @@ func (rq *Queue) MaybeAdd(ctx context.Context, replica IReplica) {
 		insertTime: rq.clock.Now(),
 	}
 	rq.push(item)
-	log.Infof("queued replica rangeID=%d", item.rangeID)
+	rq.log.Infof("queued replica rangeID=%d", item.rangeID)
 
 	// If the priroityQueue if full, let's remove the item with the lowest priority.
 	if pqLen := rq.Len(); pqLen > rq.maxSize {
@@ -357,7 +359,7 @@ func (rq *Queue) Start(ctx context.Context) {
 		rq.mu.Unlock()
 		repl, err := rq.store.GetReplica(item.rangeID)
 		if err != nil || repl.ReplicaID() != item.replicaID {
-			log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
+			rq.log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
 			rq.pqItemMap.Delete(item.rangeID)
 			continue
 		}
@@ -365,9 +367,9 @@ func (rq *Queue) Start(ctx context.Context) {
 		requeue, err := rq.processReplica(ctx, repl)
 		if err != nil {
 			// TODO: check if err can be retried.
-			log.Errorf("failed to process replica: %s", err)
+			rq.log.Errorf("failed to process replica: %s", err)
 		} else {
-			log.Debugf("successfully processed replica: %d", repl.ShardID())
+			rq.log.Debugf("successfully processed replica: %d", repl.ShardID())
 		}
 		rq.mu.Lock()
 		item.requeue = requeue
@@ -406,14 +408,14 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor) *rfpb.NodeDescr
 	var candidates []*candidate
 	for _, su := range storesWithStats.Usages {
 		if storeHasReplica(su.GetNode(), rd.GetReplicas()) {
-			log.Debugf("skip node %+v because the replica is already on the node", su.GetNode())
+			rq.log.Debugf("skip node %+v because the replica is already on the node", su.GetNode())
 			continue
 		}
 		if isDiskFull(su) {
-			log.Debugf("skip node %+v because the disk is full", su)
+			rq.log.Debugf("skip node %+v because the disk is full", su)
 			continue
 		}
-		log.Debugf("add node %+v to candidate list", su.GetNode())
+		rq.log.Debugf("add node %+v to candidate list", su.GetNode())
 		candidates = append(candidates, &candidate{
 			usage:                 su,
 			replicaCount:          su.GetReplicaCount(),
@@ -439,7 +441,7 @@ type change struct {
 func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
 	target := rq.findNodeForAllocation(rd)
 	if target == nil {
-		log.Debugf("cannot find targets for range descriptor:%+v", rd)
+		rq.log.Debugf("cannot find targets for range descriptor:%+v", rd)
 		return nil
 	}
 
@@ -459,7 +461,7 @@ func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *
 	}
 	change := rq.addReplica(rd)
 	if change == nil {
-		log.Debug("replaceDeadReplica cannot find node for allocation")
+		rq.log.Debug("replaceDeadReplica cannot find node for allocation")
 		return nil
 	}
 
@@ -471,9 +473,9 @@ func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *
 	return change
 }
 
-func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, brandNewReplicaID *uint64) []*rfpb.ReplicaDescriptor {
+func (rq *Queue) findRemovableReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, brandNewReplicaID *uint64) []*rfpb.ReplicaDescriptor {
 	replicaStateMap :=
-		rq.store.GetReplicaStates(context.TODO(), rd)
+		rq.store.GetReplicaStates(ctx, rd)
 
 	numUpToDateReplicas := 0
 	replicasBehind := make([]*rfpb.ReplicaDescriptor, 0)
@@ -495,22 +497,22 @@ func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, brandNewReplica
 	quorum := computeQuorum(len(rd.GetReplicas()) - 1)
 	if numUpToDateReplicas < quorum {
 		// The number of up-to-date replicas is less than quorum. Don't remove
-		log.Debugf("there are %d up-to-date replicas and quorum is %d, don't remove", numUpToDateReplicas, quorum)
+		rq.log.Debugf("there are %d up-to-date replicas and quorum is %d, don't remove", numUpToDateReplicas, quorum)
 		return nil
 	}
 
 	if numUpToDateReplicas > quorum {
 		// Any replica can be removed.
-		log.Debugf("there are %d up-to-date replicas and quorum is %d, any replicas can be removed", numUpToDateReplicas, quorum)
+		rq.log.Debugf("there are %d up-to-date replicas and quorum is %d, any replicas can be removed", numUpToDateReplicas, quorum)
 		return rd.GetReplicas()
 	}
 
 	// The number of up-to-date-replicas equals to the quorum. We only want to delete replicas that are behind.
-	log.Debugf("there are %d up-to-date replicas and quorum is %d, only remove behind replicas", numUpToDateReplicas, quorum)
+	rq.log.Debugf("there are %d up-to-date replicas and quorum is %d, only remove behind replicas", numUpToDateReplicas, quorum)
 	return replicasBehind
 }
 
-func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, localRepl IReplica) *rfpb.ReplicaDescriptor {
+func (rq *Queue) findReplicaForRemoval(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *rfpb.ReplicaDescriptor {
 	lastReplIDAdded := rd.LastAddedReplicaId
 	if lastReplIDAdded != nil && rd.LastReplicaAddedAtUsec != nil {
 		if rq.clock.Since(time.UnixMicro(rd.GetLastReplicaAddedAtUsec())) > *newReplicaGracePeriod {
@@ -518,7 +520,7 @@ func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, localRepl IRepl
 		}
 	}
 
-	removableReplicas := rq.findRemovableReplicas(rd, lastReplIDAdded)
+	removableReplicas := rq.findRemovableReplicas(ctx, rd, lastReplIDAdded)
 
 	if len(removableReplicas) == 0 {
 		// there is nothing to remove
@@ -568,8 +570,8 @@ func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, localRepl IRepl
 	return nil
 }
 
-func (rq *Queue) removeReplica(rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
-	removingReplica := rq.findReplicaForRemoval(rd, localRepl)
+func (rq *Queue) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
+	removingReplica := rq.findReplicaForRemoval(ctx, rd, localRepl)
 	if removingReplica == nil {
 		return nil
 	}
@@ -587,10 +589,10 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	if change.addOp != nil {
 		rsp, err := rq.store.AddReplica(ctx, change.addOp)
 		if err != nil {
-			log.Errorf("AddReplica %+v err: %s", change.addOp, err)
+			rq.log.Errorf("AddReplica %+v err: %s", change.addOp, err)
 			return err
 		}
-		log.Infof("AddReplicaRequest finished: %+v", change.addOp)
+		rq.log.Infof("AddReplicaRequest finished: %+v", change.addOp)
 		rd = rsp.GetRange()
 	}
 	if change.removeOp != nil {
@@ -599,10 +601,10 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 		}
 		_, err := rq.store.RemoveReplica(ctx, change.removeOp)
 		if err != nil {
-			log.Errorf("RemoveReplica %+v err: %s", change.removeOp, err)
+			rq.log.Errorf("RemoveReplica %+v err: %s", change.removeOp, err)
 			return err
 		}
-		log.Infof("RemoveReplicaRequest finished: %+v", change.removeOp)
+		rq.log.Infof("RemoveReplicaRequest finished: %+v", change.removeOp)
 	}
 	return nil
 
@@ -612,10 +614,10 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 	rd := repl.RangeDescriptor()
 	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		// the store doesn't have the lease of this range.
-		log.Debugf("store doesn't have lease for shard_id: %d, replica_id:%d, do not process", repl.ReplicaID(), repl.ShardID())
+		rq.log.Debugf("store doesn't have lease for shard_id: %d, replica_id:%d, do not process", repl.ReplicaID(), repl.ShardID())
 		return false, nil
 	}
-	log.Debugf("start to process shard_id: %d, replica_id:%d", repl.ReplicaID(), repl.ShardID())
+	rq.log.Debugf("start to process shard_id: %d, replica_id:%d", repl.ReplicaID(), repl.ShardID())
 	action, _ := rq.computeAction(rd.GetReplicas())
 
 	replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
@@ -624,31 +626,30 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 	switch action {
 	case DriverNoop:
 	case DriverAddReplica:
-		log.Debugf("add replica: %d", repl.ShardID())
+		rq.log.Debugf("add replica: %d", repl.ShardID())
 		change = rq.addReplica(rd)
 	case DriverReplaceDeadReplica:
-		log.Debugf("replace dead replica: %d", repl.ShardID())
+		rq.log.Debugf("replace dead replica: %d", repl.ShardID())
 		change = rq.replaceDeadReplica(rd, replicasByStatus)
 	case DriverRemoveReplica:
-		log.Debugf("remove replica: %d", repl.ShardID())
-		change = rq.removeReplica(rd, repl)
-		// TODO
+		rq.log.Debugf("remove replica: %d", repl.ShardID())
+		change = rq.removeReplica(ctx, rd, repl)
 	case DriverRemoveDeadReplica:
-		log.Debugf("remove dead replica: %d", repl.ShardID())
+		rq.log.Debugf("remove dead replica: %d", repl.ShardID())
 		// TODO
 	case DriverConsiderRebalance:
-		log.Debugf("remove consider rebalance: %d", repl.ShardID())
+		rq.log.Debugf("remove consider rebalance: %d", repl.ShardID())
 		// TODO
 	}
 
 	if change == nil {
-		log.Debugf("nothing to do for replica: %d", repl.ShardID())
+		rq.log.Debugf("nothing to do for replica: %d", repl.ShardID())
 		return false, nil
 	}
 
 	err := rq.applyChange(ctx, change)
 	if err != nil {
-		log.Warningf("Error apply change: %s", err)
+		rq.log.Warningf("Error apply change: %s", err)
 	}
 
 	if action == DriverNoop || action == DriverConsiderRebalance {
