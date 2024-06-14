@@ -92,6 +92,7 @@ var (
 		"GetSuggestion",
 		"SearchExecution",
 		"GetTargetStats",
+		"GetDailyTargetStats",
 		"GetTargetFlakeSamples",
 		// Workflow configuration and history (read-only).
 		"GetWorkflows",
