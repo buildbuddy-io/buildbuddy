@@ -791,8 +791,6 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 	ON lf.date=stats.date ORDER BY date ASC`, dateSelectorString, innerWhereClause, dateSelectorString, innerWhereClause)
 
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
-	log.Printf(qStr)
-	log.Printf("%+v", qArgs)
 
 	rsp := &trpb.GetDailyTargetStatsResponse{}
 
@@ -805,7 +803,7 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 	}
 
 	db.ScanEach(rq, func(ctx context.Context, row *qRow) error {
-		if row.FlakyRuns + row.LikelyFlakyRuns == 0 {
+		if row.FlakyRuns+row.LikelyFlakyRuns == 0 {
 			return nil
 		}
 
@@ -882,7 +880,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 
 	rsp := &trpb.GetTargetStatsResponse{}
 	db.ScanEach(rq, func(ctx context.Context, row *qRow) error {
-		if row.FlakyRuns + row.LikelyFlakyRuns == 0 {
+		if row.FlakyRuns+row.LikelyFlakyRuns == 0 {
 			return nil
 		}
 		out := &trpb.AggregateTargetStats{
@@ -959,7 +957,6 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 	db.ScanEach(rq, func(ctx context.Context, row *queryOut) error {
 		// We fetch limit+1 rows just to see if there's going to be another page of results.
 		count++
-		log.Printf("count %d", count)
 		if count > pg.GetLimit() {
 			return nil
 		}
