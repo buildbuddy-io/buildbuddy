@@ -1160,15 +1160,15 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}
 	}
 
-	// NOTE: For non-Linux workflows, the executor is responsible for ensuring the
+	// NOTE: By default, the executor is responsible for ensuring the
 	// buildbuddy_ci_runner binary exists at the workspace root when it sees
 	// the `workflow-id` platform property.
 	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
-	if os == "" || os == platform.LinuxOperatingSystemName {
-		// On Linux, because we can build the binary with the apps with the right architecture,
+	if (os == "" || os == platform.LinuxOperatingSystemName) && (workflowAction.Arch == "" || workflowAction.Arch == "amd64") {
+		// Because the apps are built for linux/amd64, in these cases we can have the apps
 		// upload the ci_runner binary to the cache to ensure the executors are using
 		// the most up-to-date version of the binary
 		runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, ws.env.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, ci_runner_bundle.CiRunnerBytes)
