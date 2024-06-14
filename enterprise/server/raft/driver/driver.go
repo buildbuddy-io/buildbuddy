@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/jonboulle/clockwork"
 )
 
 var (
@@ -217,15 +218,17 @@ type Queue struct {
 
 	mu      sync.Mutex //protects started and pq
 	started bool
+	clock   clockwork.Clock
 }
 
-func NewQueue(store IStore, gossipManager interfaces.GossipService) *Queue {
-	storeMap := storemap.New(gossipManager)
+func NewQueue(store IStore, gossipManager interfaces.GossipService, clock clockwork.Clock) *Queue {
+	storeMap := storemap.New(gossipManager, clock)
 	return &Queue{
 		storeMap: storeMap,
 		pq:       &priorityQueue{},
 		store:    store,
 		maxSize:  100,
+		clock:    clock,
 	}
 }
 
@@ -312,7 +315,7 @@ func (rq *Queue) MaybeAdd(ctx context.Context, replica IReplica) {
 		shardID:    replica.ShardID(),
 		replicaID:  replica.ReplicaID(),
 		priority:   priority,
-		insertTime: time.Now(),
+		insertTime: rq.clock.Now(),
 	}
 	rq.push(item)
 	log.Infof("queued replica rangeID=%d", item.rangeID)
@@ -337,13 +340,13 @@ func (rq *Queue) remove(item *pqItem) {
 }
 
 func (rq *Queue) Start(ctx context.Context) {
-	queueDelay := time.NewTicker(queueWaitDuration)
+	queueDelay := rq.clock.NewTicker(queueWaitDuration)
 	defer queueDelay.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-queueDelay.C:
+		case <-queueDelay.Chan():
 		}
 		if rq.Len() == 0 {
 			continue
@@ -510,7 +513,7 @@ func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, brandNewReplica
 func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, localRepl IReplica) *rfpb.ReplicaDescriptor {
 	lastReplIDAdded := rd.LastAddedReplicaId
 	if lastReplIDAdded != nil && rd.LastReplicaAddedAtUsec != nil {
-		if time.Since(time.UnixMicro(rd.GetLastReplicaAddedAtUsec())) > *newReplicaGracePeriod {
+		if rq.clock.Since(time.UnixMicro(rd.GetLastReplicaAddedAtUsec())) > *newReplicaGracePeriod {
 			lastReplIDAdded = nil
 		}
 	}
@@ -584,7 +587,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	if change.addOp != nil {
 		rsp, err := rq.store.AddReplica(ctx, change.addOp)
 		if err != nil {
-			log.Errorf("AddReplica err: %s", err)
+			log.Errorf("AddReplica %+v err: %s", change.addOp, err)
 			return err
 		}
 		log.Infof("AddReplicaRequest finished: %+v", change.addOp)
@@ -596,7 +599,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 		}
 		_, err := rq.store.RemoveReplica(ctx, change.removeOp)
 		if err != nil {
-			log.Errorf("RemoveReplica err: %s", err)
+			log.Errorf("RemoveReplica %+v err: %s", change.removeOp, err)
 			return err
 		}
 		log.Infof("RemoveReplicaRequest finished: %+v", change.removeOp)

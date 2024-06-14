@@ -228,7 +228,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
 
 	if *enableDriver {
-		s.driverQueue = driver.NewQueue(s, gossipManager)
+		s.driverQueue = driver.NewQueue(s, gossipManager, clock)
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s)
 

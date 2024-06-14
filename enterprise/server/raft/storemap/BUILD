@@ -13,6 +13,7 @@ go_library(
         "//server/util/proto",
         "//server/util/status",
         "@com_github_hashicorp_serf//serf",
+        "@com_github_jonboulle_clockwork//:clockwork",
     ],
 )
 
