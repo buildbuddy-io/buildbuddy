@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react";
 import React from "react";
 
 interface Props {
+  title: string;
   message: string;
   showV2Instructions: boolean;
 }
@@ -11,7 +12,7 @@ export default class TapEmptyStateComponent extends React.Component<Props> {
     return (
       <div className="container narrow">
         <div className="empty-state history">
-          <h2>No CI tests found in the last week!</h2>
+          <h2>{this.props.title}</h2>
           {this.props.showV2Instructions ? (
             <p>
               {this.props.message}

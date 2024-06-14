@@ -435,6 +435,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
     if (!this.state.targetHistory.length) {
       return (
         <TapEmptyStateComponent
+          title="No CI tests found in the last week!"
           message="To see a CI test grid, make sure your CI tests are configured as follows:"
           showV2Instructions={this.isV2}></TapEmptyStateComponent>
       );

@@ -268,6 +268,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
     if (isEmpty) {
       return (
         <TapEmptyStateComponent
+          title="No flakes found in the last week!"
           message="Wow! Either you have no flaky CI tests, or no CI test data all. To see CI test data, make sure your CI tests are configured as follows:"
           showV2Instructions={true}></TapEmptyStateComponent>
       );
