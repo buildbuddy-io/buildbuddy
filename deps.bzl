@@ -6820,11 +6820,11 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_firecracker_microvm_firecracker",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
-            'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
+            'filegroup(name = "firecracker", srcs = ["firecracker-v1.7.0-20240614-406a20b92a743a17cc30dec5c01d6063378e67a8"])',
+            'filegroup(name = "jailer", srcs = ["jailer-v1.7.0-20240614-406a20b92a743a17cc30dec5c01d6063378e67a8"])',
         ]).format(release = "v1.7.0-x86_64"),
-        sha256 = "55bd3e6d599fdd108e36e52f9aee2319f06c18a90f2fa49b64e93fdf06f5ff53",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.7.0/firecracker-v1.7.0-x86_64.tgz"],
+        sha256 = "86232bc568073e35b5317ff1e063652c12bc28ab040dfc38512ff229448e54bd",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.7.0-20240614-406a20b92a743a17cc30dec5c01d6063378e67a8.tgz"],
     )
     http_archive(
         name = "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
