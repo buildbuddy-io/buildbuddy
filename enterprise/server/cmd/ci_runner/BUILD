@@ -40,6 +40,7 @@ go_library(
         "//server/util/status",
         "@com_github_creack_pty//:pty",
         "@com_github_docker_go_units//:go-units",
+        "@com_github_elastic_gosigar//:gosigar",
         "@com_github_google_shlex//:shlex",
         "@com_github_google_uuid//:uuid",
         "@com_github_logrusorgru_aurora//:aurora",
