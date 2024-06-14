@@ -73,6 +73,10 @@ const (
 	// so that it can be cleaned up when the workspace is cleaned up.
 	outputBaseDirName = "output-base"
 
+	// Fraction of disk space that must be in use before we attempt to reclaim
+	// disk space.
+	highDiskUsageThreshold = 0.9
+
 	// Name of the dir where artifacts can be written.
 	// The CI runner provisions subdirectories under this directory, one per
 	// bazel command, e.g. artifacts/command-0/, artifacts/command-1/, etc.
@@ -441,15 +445,9 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	return nil
 }
 
-func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
-	if r.cancelBackgroundFlush != nil {
-		r.cancelBackgroundFlush()
-		r.cancelBackgroundFlush = nil
-	}
-	r.FlushProgress()
+func (r *buildEventReporter) PublishFinishedEvent(exitCode int, exitCodeName string) {
 	now := time.Now()
-
-	r.Publish(&bespb.BuildEvent{
+	_ = r.Publish(&bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
 		Children: []*bespb.BuildEventId{
 			{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
@@ -462,10 +460,19 @@ func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 			FinishTime: timestamppb.New(now),
 		}},
 	})
+}
+
+func (r *buildEventReporter) Stop() error {
+	if r.cancelBackgroundFlush != nil {
+		r.cancelBackgroundFlush()
+		r.cancelBackgroundFlush = nil
+	}
+	r.FlushProgress()
+
 	elapsedTimeSeconds := float64(time.Since(r.startTime)) / float64(time.Second)
 	// NB: This is the last message -- if more are added afterwards, be sure to
 	// update the `LastMessage` flag
-	r.Publish(&bespb.BuildEvent{
+	_ = r.Publish(&bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
 		Payload: &bespb.BuildEvent_BuildToolLogs{BuildToolLogs: &bespb.BuildToolLogs{
 			Log: []*bespb.File{
@@ -705,10 +712,17 @@ func run() error {
 	}
 	result, err := ws.RunAction(ctx, buildEventReporter)
 	if err != nil {
-		_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
+		buildEventReporter.PublishFinishedEvent(noExitCode, failedExitCodeName)
+		_ = buildEventReporter.Stop()
 		return err
 	}
-	if err := buildEventReporter.Stop(result.exitCode, result.exitCodeName); err != nil {
+	buildEventReporter.PublishFinishedEvent(result.exitCode, result.exitCodeName)
+	// After the invocation is complete, attempt to reclaim disk space if
+	// we're low on disk.
+	if err := reclaimDiskSpace(ctx, buildEventReporter); err != nil {
+		log.Warningf("Failed to reclaim disk space: %s", err)
+	}
+	if err := buildEventReporter.Stop(); err != nil {
 		return err
 	}
 	if result.exitCode != 0 {
@@ -2300,4 +2314,52 @@ func runCredentialHelper() error {
 		// Do nothing
 		return nil
 	}
+}
+
+// Attempts to free up disk space.
+func reclaimDiskSpace(ctx context.Context, log *buildEventReporter) error {
+	// We should be in the git repo root at this point - run git gc.
+	log.Printf("Running git maintenance...")
+	if err := runGitMaintenance(ctx); err != nil {
+		log.Printf("WARNING: git maintenance failed: %s", err)
+	}
+
+	// TODO: attempt to clean up old bazel cache objects?
+
+	// If we still have high disk usage after cleaning, print some debug info so
+	// that we can see where the disk usage is coming from.
+	usage, err := diskUsageFraction()
+	if err != nil {
+		return fmt.Errorf("get disk usage: %s", err)
+	}
+	if usage < highDiskUsageThreshold {
+		return nil
+	}
+	// Just print a few dirs for now so this doesn't take excessively long.
+	duArgs := []string{"--human-readable", "--max-depth=1", ".", filepath.Join("..", outputBaseDirName)}
+	if err = runCommand(ctx, "du", duArgs, nil /*=env*/, "" /*=dir*/, os.Stderr); err != nil {
+		return fmt.Errorf("du: %w", err)
+	}
+
+	return nil
+}
+
+func runGitMaintenance(ctx context.Context) error {
+	for _, task := range []string{"loose-objects", "incremental-repack", "pack-refs"} {
+		if _, err := git(ctx, os.Stderr, "maintenance", "run", "--task="+task); err != nil {
+			return fmt.Errorf("%s: %w", task, err)
+		}
+	}
+	return nil
+}
+
+func diskUsageFraction() (float64, error) {
+	df, err := disk.GetDirUsage(".")
+	if err != nil {
+		return 0, err
+	}
+	if df.TotalBytes == 0 {
+		return 0, nil
+	}
+	return float64(df.TotalBytes-df.AvailBytes) / float64(df.TotalBytes), nil
 }
