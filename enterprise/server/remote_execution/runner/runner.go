@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -172,9 +173,6 @@ type taskRunner struct {
 	// key controls which tasks can execute on this runner.
 	key *rnpb.RunnerKey
 
-	// PlatformProperties holds the parsed platform properties for the last task
-	// executed by this runner.
-	PlatformProperties *platform.Properties
 	// debugID is a short debug ID used to identify this runner.
 	// It is not necessarily globally unique.
 	debugID string
@@ -190,7 +188,7 @@ type taskRunner struct {
 	VFSServer *vfs_server.Server
 
 	// task is the current task assigned to the runner.
-	task *repb.ExecutionTask
+	task *container.Task
 	// taskNumber starts at 1 and is incremented each time the runner is
 	// assigned a new task. Note: this is not necessarily the same as the number
 	// of tasks that have actually been executed.
@@ -238,15 +236,11 @@ func (r *taskRunner) String() string {
 		truncate(r.key.InstanceName, 8, "..."), truncate(ph, 8, ""))
 }
 
-func (r *taskRunner) pullCredentials() (oci.Credentials, error) {
-	return oci.CredentialsFromProperties(r.PlatformProperties)
-}
-
 func (r *taskRunner) PrepareForTask(ctx context.Context) error {
-	r.Workspace.SetTask(ctx, r.task)
+	r.Workspace.SetTask(ctx, r.task.Proto.GetExecutionTask())
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
-	if r.PlatformProperties.RecycleRunner {
+	if r.task.Props.RecycleRunner {
 		if err := r.Workspace.Clean(); err != nil {
 			log.CtxErrorf(ctx, "Failed to clean workspace: %s", err)
 			return err
@@ -258,15 +252,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
-	creds, err := r.pullCredentials()
-	if err != nil {
-		return err
-	}
-	err = container.PullImageIfNecessary(
-		ctx, r.env,
-		r.Container, creds, r.PlatformProperties.ContainerImage,
-	)
-	if err != nil {
+	if err := container.PullImageIfNecessary(ctx, r.env, r.Container, r.task); err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
 	}
 
@@ -275,20 +261,20 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 
 func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
 	rootInstanceDigest := digest.NewResourceName(
-		r.task.GetAction().GetInputRootDigest(),
-		r.task.GetExecuteRequest().GetInstanceName(),
-		rspb.CacheType_CAS, r.task.GetExecuteRequest().GetDigestFunction())
+		r.task.Action().GetInputRootDigest(),
+		r.task.ExecuteRequest().GetInstanceName(),
+		rspb.CacheType_CAS, r.task.ExecuteRequest().GetDigestFunction())
 	inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
 		return err
 	}
 
 	layout := &container.FileSystemLayout{
-		RemoteInstanceName: r.task.GetExecuteRequest().GetInstanceName(),
-		DigestFunction:     r.task.GetExecuteRequest().GetDigestFunction(),
+		RemoteInstanceName: r.task.ExecuteRequest().GetInstanceName(),
+		DigestFunction:     r.task.ExecuteRequest().GetDigestFunction(),
 		Inputs:             inputTree,
-		OutputDirs:         r.task.GetCommand().GetOutputDirectories(),
-		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
+		OutputDirs:         r.task.Command().GetOutputDirectories(),
+		OutputFiles:        r.task.Command().GetOutputFiles(),
 	}
 
 	if err := r.prepareVFS(ctx, layout); err != nil {
@@ -306,12 +292,12 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 	if err != nil {
 		return err
 	}
-	if r.PlatformProperties.WorkflowID != "" {
+	if r.task.Props.WorkflowID != "" {
 		if err := r.Workspace.AddCIRunner(ctx); err != nil {
 			return err
 		}
 	}
-	if args := r.task.GetCommand().GetArguments(); len(args) > 0 && args[0] == "./buildbuddy_github_actions_runner" {
+	if args := r.task.Command().GetArguments(); len(args) > 0 && args[0] == "./buildbuddy_github_actions_runner" {
 		if err := r.Workspace.AddActionsRunner(ctx); err != nil {
 			return err
 		}
@@ -324,22 +310,11 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 
 // Run runs the task that is currently bound to the command runner.
 func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
-	wsPath := r.Workspace.Path()
-	if r.VFS != nil {
-		wsPath = r.VFS.GetMountDir()
-	}
-
-	command := r.task.GetCommand()
-
-	if !r.PlatformProperties.RecycleRunner {
+	if !r.task.Props.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		creds, err := r.pullCredentials()
-		if err != nil {
-			return commandutil.ErrorResult(err)
-		}
-		return r.Container.Run(ctx, command, wsPath, creds)
+		return r.Container.Run(ctx, r.task)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
@@ -353,18 +328,10 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	r.p.mu.RUnlock()
 	switch s {
 	case initial:
-		creds, err := r.pullCredentials()
-		if err != nil {
+		if err := container.PullImageIfNecessary(ctx, r.env, r.Container, r.task); err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		err = container.PullImageIfNecessary(
-			ctx, r.env,
-			r.Container, creds, r.PlatformProperties.ContainerImage,
-		)
-		if err != nil {
-			return commandutil.ErrorResult(err)
-		}
-		if err := r.Container.Create(ctx, wsPath); err != nil {
+		if err := r.Container.Create(ctx, r.task); err != nil {
 			return commandutil.ErrorResult(err)
 		}
 		r.p.mu.Lock()
@@ -377,11 +344,12 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", r.state))
 	}
 
+	command := r.task.Command()
 	if r.supportsPersistentWorkers(ctx, command) {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	execResult := r.Container.Exec(ctx, command, &interfaces.Stdio{})
+	execResult := r.Container.Exec(ctx, r.task, &interfaces.Stdio{})
 
 	if r.hasMaxResourceUtilization(ctx, execResult.UsageStats) {
 		r.doNotReuse = true
@@ -391,7 +359,7 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 }
 
 func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
-	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult)
+	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command(), executeResponse, cmdResult)
 	if err != nil {
 		return err
 	}
@@ -402,7 +370,7 @@ func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, e
 }
 
 func (r *taskRunner) GetIsolationType() string {
-	return r.PlatformProperties.WorkloadIsolationType
+	return r.task.Props.WorkloadIsolationType
 }
 
 // shutdown runs any manual cleanup required to clean up processes before
@@ -411,7 +379,7 @@ func (r *taskRunner) GetIsolationType() string {
 // automatically via `Container.Remove`.
 func (r *taskRunner) shutdown(ctx context.Context) error {
 	r.p.mu.RLock()
-	props := r.PlatformProperties
+	props := r.task.Props
 	r.p.mu.RUnlock()
 
 	if props.WorkloadIsolationType != string(platform.BareContainerType) {
@@ -483,11 +451,10 @@ func (r *taskRunner) RemoveInBackground() {
 // CI task.
 func (r *taskRunner) isCIRunner() bool {
 	r.p.mu.RLock()
-	task := r.task
-	props := r.PlatformProperties
+	args := r.task.Command().GetArguments()
+	props := r.task.Props
 	r.p.mu.RUnlock()
 
-	args := task.GetCommand().GetArguments()
 	return props.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
 }
 
@@ -496,7 +463,7 @@ func (r *taskRunner) cleanupCIRunner(ctx context.Context) error {
 	// --shutdown_and_exit argument. We use this approach because we want to
 	// preserve the configuration from the last run command, which may include the
 	// configured Bazel path.
-	cleanupCmd := r.task.GetCommand().CloneVT()
+	cleanupCmd := r.task.Command().CloneVT()
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
 	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=statsListener*/, &interfaces.Stdio{})
@@ -749,11 +716,6 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 			Platform:  plat,
 		},
 	}
-	platProps, err := platform.ParseProperties(task)
-	if err != nil {
-		return err
-	}
-	platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), platProps, task.GetCommand())
 	st := &repb.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
@@ -762,7 +724,6 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		},
 		ExecutionTask: task,
 	}
-
 	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{})
 	if err != nil {
 		return err
@@ -778,14 +739,10 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		return err
 	}
 
-	creds, err := oci.CredentialsFromProperties(platProps)
-	if err != nil {
-		return err
-	}
 	// Note: intentionally bypassing PullImageIfNecessary here to avoid caching
 	// the auth result, since it makes it tricker to debug per-action
 	// misconfiguration.
-	if err := c.PullImage(ctx, creds); err != nil {
+	if err := c.PullImage(ctx, t); err != nil {
 		return err
 	}
 	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, cfg.Image, time.Since(start))
@@ -858,18 +815,6 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 	return out
 }
 
-func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties, error) {
-	props, err := platform.ParseProperties(task)
-	if err != nil {
-		return nil, err
-	}
-	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
-		return nil, err
-	}
-	return props, nil
-}
-
 // Get returns a runner bound to the the given task. The caller must call
 // TryRecycle on the returned runner when done using it.
 //
@@ -879,12 +824,12 @@ func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties
 //
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
-func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runner, error) {
-	task := st.ExecutionTask
-	props, err := p.effectivePlatform(task)
+func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask, pub *operation.Publisher) (interfaces.Runner, error) {
+	t, err := makeTask(p.env, st, pub, "" /*=workDir*/)
 	if err != nil {
 		return nil, err
 	}
+
 	user, err := auth.UserFromTrustedJWT(ctx)
 	if err != nil && !authutil.IsAnonymousUserError(err) {
 		return nil, err
@@ -893,20 +838,21 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if user != nil {
 		groupID = user.GetGroupID()
 	}
-	if !*container.DebugEnableAnonymousRecycling && (props.RecycleRunner && err != nil) {
+	if !*container.DebugEnableAnonymousRecycling && (t.Props.RecycleRunner && err != nil) {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
 	}
-	if props.RecycleRunner && props.EnableVFS {
+	if t.Props.RecycleRunner && t.Props.EnableVFS {
 		return nil, status.InvalidArgumentError("VFS is not yet supported for recycled runners")
 	}
 
 	key := &rnpb.RunnerKey{
-		GroupId:             groupID,
-		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
-		Platform:            task.GetCommand().GetPlatform(),
-		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
+		GroupId:      groupID,
+		InstanceName: t.Proto.GetExecutionTask().GetExecuteRequest().GetInstanceName(),
+		// TODO: platform here should include header overrides
+		Platform:            t.Command().GetPlatform(),
+		PersistentWorkerKey: effectivePersistentWorkerKey(t.Props, t.Command().GetArguments()),
 	}
 
 	// If snapshot sharing is enabled, a firecracker VM can be cloned from the
@@ -917,16 +863,18 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	// (Ex. If runner A was created for branch `feature_one` and an incoming
 	// workload is for branch `feature_two`, we should create a new runner intended
 	// for `feature_two`, rather than reuse the runner for branch `feature_one`, which would be more stale
-	snapshotEnabledRunner := platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType &&
+	snapshotEnabledRunner := platform.ContainerType(t.Props.WorkloadIsolationType) == platform.FirecrackerContainerType &&
 		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
-	if props.RecycleRunner && !snapshotEnabledRunner {
-		r := p.takeWithRetry(ctx, key)
+	if t.Props.RecycleRunner && !snapshotEnabledRunner {
+		r := p.takeWithRetry(ctx, key, t)
 		if r != nil {
 			p.mu.Lock()
-			r.task = task
+			// Reuse the workdir from the previously assigned task.
+			t.WorkDir = r.task.WorkDir
+			r.task = t
 			r.taskNumber += 1
-			r.PlatformProperties = props
 			p.mu.Unlock()
+
 			log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
 				metrics.RecycleRunnerRequestStatusLabel: metrics.HitStatusLabel,
@@ -943,7 +891,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		}).Inc()
 	}
 
-	r, err := p.newRunner(ctx, key, props, st)
+	r, err := p.newRunner(ctx, t, key)
 	if err != nil {
 		return nil, err
 	}
@@ -953,36 +901,36 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 
 // newRunner creates a runner either for the given task (if set) or restores the
 // runner from the given state.ContainerState.
-func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platform.Properties, st *repb.ScheduledTask) (*taskRunner, error) {
-	useOverlayfs, err := isOverlayfsEnabledForAction(ctx, props)
+func (p *pool) newRunner(ctx context.Context, task *container.Task, key *rnpb.RunnerKey) (*taskRunner, error) {
+	useOverlayfs, err := isOverlayfsEnabledForAction(ctx, task.Props)
 	if err != nil {
 		return nil, err
 	}
 	wsOpts := &workspace.Opts{
-		Preserve:        props.PreserveWorkspace,
-		CleanInputs:     props.CleanWorkspaceInputs,
-		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
+		Preserve:        task.Props.PreserveWorkspace,
+		CleanInputs:     task.Props.CleanWorkspaceInputs,
+		NonrootWritable: task.Props.NonrootWorkspace || task.Props.DockerUser != "",
 		UseOverlayfs:    useOverlayfs,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := p.newContainer(ctx, props, st, ws.Path())
+	ctr, err := p.newContainer(ctx, task)
 	if err != nil {
 		return nil, err
 	}
 	debugID, _ := random.RandomString(8)
 	r := &taskRunner{
-		env:                p.env,
-		p:                  p,
-		key:                key,
-		debugID:            debugID,
-		taskNumber:         1,
-		task:               st.GetExecutionTask(),
-		PlatformProperties: props,
-		Container:          ctr,
-		Workspace:          ws,
+		env:       p.env,
+		p:         p,
+		key:       key,
+		task:      task,
+		Container: ctr,
+		Workspace: ws,
+
+		debugID:    debugID,
+		taskNumber: 1,
 	}
 	if err := r.startVFS(); err != nil {
 		return nil, err
@@ -998,12 +946,12 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 	r.removeCallback = func() {
 		p.pendingRemovals.Done()
 	}
-	log.CtxInfof(ctx, "Created new %s runner %s for task", props.WorkloadIsolationType, r)
+	log.CtxInfof(ctx, "Created new %s runner %s for task", task.Props.WorkloadIsolationType, r)
 	return r, nil
 }
 
-func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, workingDir string) (*container.TracedCommandContainer, error) {
-	args := &container.Init{Props: props, Task: task, WorkDir: workingDir}
+func (p *pool) newContainer(ctx context.Context, task *container.Task) (*container.TracedCommandContainer, error) {
+	args := &container.Init{Props: task.Props, Task: task.Proto, WorkDir: task.WorkDir}
 
 	// Overriding in tests.
 	if p.overrideProvider != nil {
@@ -1014,7 +962,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		return container.NewTracedCommandContainer(c), nil
 	}
 
-	isolationType := platform.ContainerType(props.WorkloadIsolationType)
+	isolationType := platform.ContainerType(task.Props.WorkloadIsolationType)
 	containerProvider, ok := p.containerProviders[isolationType]
 	if !ok {
 		return nil, status.UnimplementedErrorf("no container provider registered for %q isolation", isolationType)
@@ -1071,7 +1019,7 @@ func (p *pool) String() string {
 // unpause fails, it retries up to 5 times. For any given attempt, if there
 // are no runners available to unpause, this will return nil. If an unpause
 // operation fails on a given attempt, the runner is removed from the pool.
-func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
+func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey, task *container.Task) *taskRunner {
 	for i := 1; i <= maxUnpauseAttempts; i++ {
 		r := p.take(ctx, key)
 		if r == nil {
@@ -1080,7 +1028,7 @@ func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *taskRunn
 		}
 
 		// Found a match; unpause it.
-		if err := r.Container.Unpause(ctx); err != nil {
+		if err := r.Container.Unpause(ctx, task); err != nil {
 			log.CtxWarningf(ctx, "Unpause attempt for runner %s failed: %s", r, err)
 			// If we fail to unpause, subsequent unpause attempts are also
 			// likely to fail, so remove the container from the pool and also
@@ -1365,6 +1313,29 @@ func platformHash(p *repb.Platform) (string, error) {
 	return fmt.Sprintf("%x", sha256.Sum256(b)), nil
 }
 
+func makeTask(env environment.Env, st *repb.ScheduledTask, pub *operation.Publisher, workDir string) (*container.Task, error) {
+	// ApplyOverrides mutates the task - clone the task proto first.
+	st = st.CloneVT()
+	props, err := platform.ParseProperties(st.GetExecutionTask())
+	if err != nil {
+		return nil, status.WrapError(err, "parse exec properties")
+	}
+	if err := platform.ApplyOverrides(env, platform.GetExecutorProperties(), props, st.GetExecutionTask().GetCommand()); err != nil {
+		return nil, err
+	}
+	creds, err := oci.CredentialsFromProperties(props)
+	if err != nil {
+		return nil, status.WrapError(err, "parse OCI credentials")
+	}
+	return &container.Task{
+		WorkDir:        workDir,
+		Proto:          st,
+		Props:          props,
+		OCICredentials: creds,
+		Publisher:      pub,
+	}, nil
+}
+
 type labeledError struct {
 	// Error is the wrapped error.
 	Error error
@@ -1410,11 +1381,11 @@ func SplitArgsIntoWorkerArgsAndFlagFiles(args []string) ([]string, []string) {
 }
 
 func (r *taskRunner) supportsPersistentWorkers(ctx context.Context, command *repb.Command) bool {
-	if r.PlatformProperties.PersistentWorkerKey != "" {
+	if r.task.Props.PersistentWorkerKey != "" {
 		return true
 	}
 
-	if !r.PlatformProperties.PersistentWorker {
+	if !r.task.Props.PersistentWorker {
 		return false
 	}
 

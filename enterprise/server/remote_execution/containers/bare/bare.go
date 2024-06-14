@@ -9,7 +9,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -53,20 +52,19 @@ func (c *bareCommandContainer) IsolationType() string {
 	return "bare"
 }
 
-func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
-	return c.exec(ctx, command, workDir, nil /*=stdio*/)
+func (c *bareCommandContainer) Run(ctx context.Context, task *container.Task) *interfaces.CommandResult {
+	return c.exec(ctx, task, nil /*=stdio*/)
 }
 
-func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error {
-	c.WorkDir = workDir
+func (c *bareCommandContainer) Create(ctx context.Context, task *container.Task) error {
 	return nil
 }
 
-func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	return c.exec(ctx, cmd, c.WorkDir, stdio)
+func (c *bareCommandContainer) Exec(ctx context.Context, task *container.Task, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	return c.exec(ctx, task, stdio)
 }
 
-func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (result *interfaces.CommandResult) {
+func (c *bareCommandContainer) exec(ctx context.Context, task *container.Task, stdio *interfaces.Stdio) (result *interfaces.CommandResult) {
 	var statsListener procstats.Listener
 	if c.opts.EnableStats {
 		defer container.Metrics.Unregister(c)
@@ -76,7 +74,7 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 	}
 
 	if *enableLogFiles {
-		stdoutPath := workDir + ".stdout"
+		stdoutPath := task.WorkDir + ".stdout"
 		stdoutFile, err := os.Create(stdoutPath)
 		if err != nil {
 			return commandutil.ErrorResult(status.UnavailableErrorf("create stdout log file: %s", err))
@@ -84,7 +82,7 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 		defer stdoutFile.Close()
 		defer os.Remove(stdoutPath)
 
-		stderrPath := workDir + ".stderr"
+		stderrPath := task.WorkDir + ".stderr"
 		stderrFile, err := os.Create(stderrPath)
 		if err != nil {
 			return commandutil.ErrorResult(status.UnavailableErrorf("create stderr log file: %s", err))
@@ -113,17 +111,19 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 		stdio.Stderr = io.MultiWriter(stdio.Stderr, stderrFile)
 	}
 
-	return commandutil.Run(ctx, cmd, workDir, statsListener, stdio)
+	return commandutil.Run(ctx, task.Command(), task.WorkDir, statsListener, stdio)
 }
 
-func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }
-func (c *bareCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+func (c *bareCommandContainer) IsImageCached(ctx context.Context, task *container.Task) (bool, error) {
+	return false, nil
+}
+func (c *bareCommandContainer) PullImage(ctx context.Context, task *container.Task) error {
 	return nil
 }
-func (c *bareCommandContainer) Start(ctx context.Context) error   { return nil }
-func (c *bareCommandContainer) Remove(ctx context.Context) error  { return nil }
-func (c *bareCommandContainer) Pause(ctx context.Context) error   { return nil }
-func (c *bareCommandContainer) Unpause(ctx context.Context) error { return nil }
+func (c *bareCommandContainer) Start(ctx context.Context, task *container.Task) error   { return nil }
+func (c *bareCommandContainer) Remove(ctx context.Context) error                        { return nil }
+func (c *bareCommandContainer) Pause(ctx context.Context) error                         { return nil }
+func (c *bareCommandContainer) Unpause(ctx context.Context, task *container.Task) error { return nil }
 
 func (c *bareCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, nil

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -960,7 +961,7 @@ type RunnerPool interface {
 	//
 	// The returned runner is ready to execute tasks, and the caller is
 	// responsible for walking the runner through the task lifecycle.
-	Get(ctx context.Context, task *repb.ScheduledTask) (Runner, error)
+	Get(ctx context.Context, task *repb.ScheduledTask, publisher *operation.Publisher) (Runner, error)
 
 	// TryRecycle attempts to add the runner to the pool for use by subsequent
 	// tasks.

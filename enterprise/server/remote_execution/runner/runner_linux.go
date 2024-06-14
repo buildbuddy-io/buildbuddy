@@ -57,9 +57,9 @@ func (p *pool) registerContainerProviders(providers map[platform.ContainerType]c
 func (r *taskRunner) startVFS() error {
 	var fs *vfs.VFS
 	var vfsServer *vfs_server.Server
-	enableVFS := r.PlatformProperties.EnableVFS
+	enableVFS := r.task.Props.EnableVFS
 	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
-	if enableVFS && platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != platform.FirecrackerContainerType {
+	if enableVFS && platform.ContainerType(r.task.Props.WorkloadIsolationType) != platform.FirecrackerContainerType {
 		vfsDir := r.Workspace.Path() + "_vfs"
 		if err := os.Mkdir(vfsDir, 0755); err != nil {
 			return status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
@@ -89,11 +89,13 @@ func (r *taskRunner) startVFS() error {
 
 	r.VFS = fs
 	r.VFSServer = vfsServer
+	r.task.WorkDir = r.VFS.GetMountDir()
+
 	return nil
 }
 
 func (r *taskRunner) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
-	if r.PlatformProperties.EnableVFS {
+	if r.task.Props.EnableVFS {
 		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
 		// pass the layout information to the implementation.
 		if fc, ok := r.Container.Delegate.(container.VM); ok {
@@ -111,7 +113,7 @@ func (r *taskRunner) prepareVFS(ctx context.Context, layout *container.FileSyste
 		}
 	}
 	if r.VFS != nil {
-		if err := r.VFS.PrepareForTask(ctx, r.task.GetExecutionId()); err != nil {
+		if err := r.VFS.PrepareForTask(ctx, r.task.Proto.GetExecutionTask().GetExecutionId()); err != nil {
 			return err
 		}
 	}

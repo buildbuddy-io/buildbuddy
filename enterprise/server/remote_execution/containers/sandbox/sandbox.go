@@ -316,25 +316,27 @@ func (c *sandbox) IsolationType() string {
 	return "sandbox"
 }
 
-func (c *sandbox) Run(ctx context.Context, command *repb.Command, workDir string, _ oci.Credentials) *interfaces.CommandResult {
+func (c *sandbox) Run(ctx context.Context, task *container.Task) *interfaces.CommandResult {
 	return c.runCmdInSandbox(ctx, command, workDir, &interfaces.Stdio{})
 }
 
-func (c *sandbox) Create(ctx context.Context, workDir string) error {
+func (c *sandbox) Create(ctx context.Context, task *container.Task) error {
 	c.WorkDir = workDir
 	return nil
 }
 
-func (c *sandbox) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+func (c *sandbox) Exec(ctx context.Context, task *container.Task, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	return c.runCmdInSandbox(ctx, cmd, c.WorkDir, stdio)
 }
 
-func (c *sandbox) IsImageCached(ctx context.Context) (bool, error)            { return false, nil }
-func (c *sandbox) PullImage(ctx context.Context, creds oci.Credentials) error { return nil }
-func (c *sandbox) Start(ctx context.Context) error                            { return nil }
-func (c *sandbox) Remove(ctx context.Context) error                           { return nil }
-func (c *sandbox) Pause(ctx context.Context) error                            { return nil }
-func (c *sandbox) Unpause(ctx context.Context) error                          { return nil }
+func (c *sandbox) IsImageCached(ctx context.Context, task *container.Task) (bool, error) {
+	return false, nil
+}
+func (c *sandbox) PullImage(ctx context.Context, task *container.Task) error { return nil }
+func (c *sandbox) Start(ctx context.Context) error                           { return nil }
+func (c *sandbox) Remove(ctx context.Context) error                          { return nil }
+func (c *sandbox) Pause(ctx context.Context) error                           { return nil }
+func (c *sandbox) Unpause(ctx context.Context, task *container.Task) error   { return nil }
 func (c *sandbox) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, nil
 }
