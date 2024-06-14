@@ -730,6 +730,7 @@ ts_library(
         "//app/format",
         "//app/invocation:target_util",
         "//app/service:rpc_service",
+        "//app/target:flaky_target_chip",
         "//app/util:clipboard",
         "//proto:build_event_stream_ts_proto",
         "//proto:target_ts_proto",
