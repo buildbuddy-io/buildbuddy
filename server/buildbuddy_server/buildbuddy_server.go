@@ -1178,12 +1178,23 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 	initialFetch <- struct{}{}
 
 	// If redis is available, listen for log updates.
-	logsUpdated := make(<-chan string)
+	logsUpdated := make(chan struct{}, 1)
 	pubsub := s.env.GetPubSub()
 	if pubsub != nil {
 		subscriber := pubsub.Subscribe(ctx, eventlog.GetEventLogPubSubChannel(req.GetInvocationId()))
 		defer subscriber.Close()
-		logsUpdated = subscriber.Chan()
+		go func() {
+			for range subscriber.Chan() {
+				select {
+				case logsUpdated <- struct{}{}:
+				default:
+					// If the channel buffer is full, just drop the update. On
+					// each channel update, we fetch all of the newly available
+					// logs since we last fetched, so we only need to buffer a
+					// single update.
+				}
+			}
+		}()
 	}
 
 	// Clone the request since we'll be mutating it each time we fetch a new log
