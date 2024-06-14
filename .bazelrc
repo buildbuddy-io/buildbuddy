@@ -155,18 +155,9 @@ common:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 common:auto-release -c opt
 common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/pgo:prod.pprof
 
-# Static build configuration. MacOS is currently unsupported.
-# On multi-user machines, specify HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX in your
-# repo_env in user.bazelrc to avoid permissions errors.
-common:static --repo_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
-# Workaround for Bazel 7.
-# See https://github.com/uber/hermetic_cc_toolchain/releases/tag/v3.0.1 for more details
-common:static --sandbox_add_mount_pair=/tmp
-common:static --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl
-# arm64 is not yet tested, so we leave this toolchain commented out for now.
-# common:static --extra_toolchains=@zig_sdk//toolchain:linux_arm64_musl
-common:static --@io_bazel_rules_go//go/config:static=true
-common:static --copt=-fPIC
+# Build fully static binaries linked against musl on Linux or macOS.
+common:static --platforms=//platforms:linux_x86_64_musl
+common:static-arm64 --platforms=//platforms:linux_arm64_musl
 
 # By default, build logs get sent to the production server
 common --bes_results_url=https://app.buildbuddy.io/invocation/

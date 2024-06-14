@@ -77,7 +77,15 @@ genrule(
         "//enterprise/server/vmexec:vmexec.go",
     ],
     outs = ["guest_api_hash.sha256"],
-    cmd_bash = """sha256sum $(SRCS) | sha256sum | awk '{printf "%s", $$1}' > $@""",
+    cmd_bash = """
+    if type sha256sum &>/dev/null; then
+      # Linux
+      sha256sum $(SRCS) | sha256sum | awk '{printf "%s", $$1}' > $@
+    else
+      # macOS
+      shasum -a 256 $(SRCS) | shasum -a 256 | awk '{printf "%s", $$1}' > $@
+    fi
+    """,
     target_compatible_with = [
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",

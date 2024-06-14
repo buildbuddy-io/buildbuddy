@@ -3,6 +3,7 @@ module(name = "buildbuddy")
 bazel_dep(name = "bazel_skylib", version = "1.5.0")
 bazel_dep(name = "platforms", version = "0.0.8")
 bazel_dep(name = "rules_proto", version = "6.0.0")
+bazel_dep(name = "toolchains_musl", version = "0.1.15")
 
 # Needed for com_google_protobuf
 bazel_dep(name = "rules_python", version = "0.31.0")
@@ -304,3 +305,8 @@ node.toolchain(
 use_repo(node, "nodejs_toolchains")
 
 register_toolchains("@nodejs_toolchains//:all")
+
+toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
+toolchains_musl.config(
+    extra_target_compatible_with = ["//toolchains:musl_on"],
+)
