@@ -9,7 +9,7 @@ import { runner } from "../../../proto/runner_ts_proto";
 import { git } from "../../../proto/git_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import { ArrowLeft, ArrowUpCircle, ChevronRight, Download, Key, Send, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowUpCircle, ChevronRight, Download, Key, Pencil, Send, XCircle } from "lucide-react";
 import Spinner from "../../../app/components/spinner/spinner";
 import { OutlinedButton, FilledButton } from "../../../app/components/button/button";
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
@@ -1192,6 +1192,12 @@ export default class CodeComponent extends React.Component<Props, State> {
     event.stopPropagation();
   }
 
+  handleEditClicked() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("pq");
+    window.location.href = url.href;
+  }
+
   updateState(newState: Partial<State>, callback?: VoidFunction) {
     this.setState(newState as State, () => {
       this.saveState();
@@ -1269,7 +1275,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                     {this.currentRepo()}
                   </a>
                 </div>
-                {this.getBranch() && this.state.commitSHA != this.getBranch() && (
+                {this.getBranch() && !this.getQuery() && this.getRef() != this.getBranch() && (
                   <>
                     <ChevronRight />
                     <a
@@ -1280,20 +1286,20 @@ export default class CodeComponent extends React.Component<Props, State> {
                     </a>
                   </>
                 )}
-                {this.state.commitSHA && (
+                {this.getRef() && (
                   <>
                     <ChevronRight />
                     <a
                       target="_blank"
-                      title={this.state.commitSHA}
-                      href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${
-                        this.state.commitSHA
-                      }`}>
-                      {this.state.commitSHA?.slice(0, 7)}
+                      title={this.getRef()}
+                      href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${this.getRef()}`}>
+                      {this.getRef()?.slice(0, 7)}
                     </a>{" "}
-                    <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
-                      <ArrowUpCircle className="code-update-commit" />
-                    </span>{" "}
+                    {!this.getQuery() && (
+                      <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
+                        <ArrowUpCircle className="code-update-commit" />
+                      </span>
+                    )}{" "}
                   </>
                 )}
                 {this.currentPath() && (
@@ -1331,6 +1337,13 @@ export default class CodeComponent extends React.Component<Props, State> {
                   }
                 }}>
                 <Download /> Download File
+              </OutlinedButton>
+            </div>
+          )}
+          {Boolean(this.getQuery()) && (
+            <div className="code-menu-actions">
+              <OutlinedButton className="request-review-button" onClick={this.handleEditClicked.bind(this)}>
+                <Pencil className="icon green" /> Edit
               </OutlinedButton>
             </div>
           )}
@@ -1404,7 +1417,7 @@ export default class CodeComponent extends React.Component<Props, State> {
             </div>
           )}
           <div className="code-container">
-            {!this.isSingleFile() && (
+            {!this.isSingleFile() && !this.getQuery() && (
               <div className="code-viewer-tabs">
                 {[...this.state.tabs.keys()].reverse().map((t) => (
                   <div
