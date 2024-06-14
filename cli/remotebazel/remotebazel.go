@@ -62,16 +62,16 @@ const (
 )
 
 var (
-	remoteFlagset = flag.NewFlagSet("remote", flag.ContinueOnError)
+	RemoteFlagset = flag.NewFlagSet("remote", flag.ContinueOnError)
 
-	execOs         = remoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
-	execArch       = remoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
-	containerImage = remoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
-	envInput       = bbflag.New(remoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
-	remoteRunner   = remoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
-	timeout        = remoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
-	execPropsFlag  = bbflag.New(remoteFlagset, "runner_exec_properties", []string{}, "Exec properties that will apply to the *ci runner execution*. Key-value pairs should be separated by '=' (Ex. --runner_exec_properties=NAME=VALUE). Can be specified more than once. NOTE: If you want to apply an exec property to the bazel command that's run on the runner, just pass at the end of the command (Ex. bb remote build //... --remote_default_exec_properties=OSFamily=linux).")
-	runRemotely    = remoteFlagset.Bool("run_remotely", true, "For `run` commands, whether the target should be run remotely. If false, the target will be built remotely, and then fetched and run locally.")
+	execOs         = RemoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
+	execArch       = RemoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
+	containerImage = RemoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
+	envInput       = bbflag.New(RemoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
+	remoteRunner   = RemoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
+	timeout        = RemoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
+	execPropsFlag  = bbflag.New(RemoteFlagset, "runner_exec_properties", []string{}, "Exec properties that will apply to the *ci runner execution*. Key-value pairs should be separated by '=' (Ex. --runner_exec_properties=NAME=VALUE). Can be specified more than once. NOTE: If you want to apply an exec property to the bazel command that's run on the runner, just pass at the end of the command (Ex. bb remote build //... --remote_default_exec_properties=OSFamily=linux).")
+	runRemotely    = RemoteFlagset.Bool("run_remotely", true, "For `run` commands, whether the target should be run remotely. If false, the target will be built remotely, and then fetched and run locally.")
 
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
@@ -496,7 +496,7 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 			MinLines:     100,
 		})
 		if err != nil {
-			return status.UnknownErrorf("error streaming logs: %s", err)
+			return err
 		}
 
 		chunks = append(chunks, l)
@@ -537,7 +537,7 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 			MinLines:     100,
 		})
 		if err != nil {
-			return status.UnknownErrorf("error streaming logs: %s", err)
+			return err
 		}
 
 		if l.GetLive() {
@@ -684,13 +684,17 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	healthChecker := healthcheck.NewHealthChecker("remote-bazel-client")
 	env := real_environment.NewRealEnv(healthChecker)
 
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
+
+	// Handle interrupts to cancel the remote run.
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	conn, err := grpc_client.DialSimple(opts.Server)
 	if err != nil {
 		return 0, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
 	}
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
-
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
 	reqOS := runtime.GOOS
 	if *execOs != "" {
@@ -781,28 +785,35 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	log.Debugf("Invocation ID: %s", iid)
 
 	// If the remote bazel process is canceled or killed, cancel the remote run
-	sigChan := make(chan os.Signal, 1)
+	isInvocationRunning := true
 	go func() {
-		<-sigChan
-		_, err = bbClient.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+		<-ctx.Done()
+
+		if !isInvocationRunning {
+			return
+		}
+
+		// Use a non-cancelled context to ensure the remote executions are
+		// canceled
+		_, err = bbClient.CancelExecutions(context.WithoutCancel(ctx), &inpb.CancelExecutionsRequest{
 			InvocationId: iid,
 		})
 		if err != nil {
 			log.Warnf("Failed to cancel remote run: %s", err)
 		}
 	}()
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
 	if interactive {
 		if err := streamLogs(ctx, bbClient, iid); err != nil {
-			return 0, err
+			return 0, status.WrapError(err, "streaming logs")
 		}
 	} else {
 		if err := printLogs(ctx, bbClient, iid); err != nil {
-			return 0, err
+			return 0, status.WrapError(err, "streaming logs")
 		}
 	}
+	isInvocationRunning = false
 
 	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
 	if err != nil {
@@ -834,6 +845,9 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	if exitCode == -1 {
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
 		return 0, fmt.Errorf("could not determine remote Bazel exit code")
 	}
 
@@ -930,12 +944,16 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		}
 	}
 
-	return Run(ctx, RunOpts{
+	exitCode, err := Run(ctx, RunOpts{
 		Server:            runner,
 		APIKey:            apiKey,
 		Args:              arg.JoinExecutableArgs(bazelArgs, execArgs),
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
+	if err != nil && strings.Contains(err.Error(), "context canceled") {
+		return exitCode, nil
+	}
+	return exitCode, err
 }
 
 func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string, err error) {
@@ -966,7 +984,7 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 }
 
 // parseRemoteCliFlags parses flags that affect configuration of remote bazel.
-// These flags are defined in `remoteFlagset`.
+// These flags are defined in `RemoteFlagset`.
 //
 // These flags are expected to be set between the `remote` command and the bazel
 // command. Ex. bb remote <--remote_cli_flag> build //...
@@ -979,9 +997,9 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 // Return the list of original args with all remote cli flags removed.
 func parseRemoteCliFlags(args []string) ([]string, error) {
 	// Discard flag parse error logging because it's very verbose if you parse
-	// a flag not in remoteFlagset, but we might expect that if bazel startup flags
+	// a flag not in RemoteFlagset, but we might expect that if bazel startup flags
 	// are set
-	remoteFlagset.SetOutput(io.Discard)
+	RemoteFlagset.SetOutput(io.Discard)
 
 	// Stop parsing flags when we reach the bazel command
 	_, bazelCmdIdx := parser.GetBazelCommandAndIndex(args)
@@ -991,11 +1009,11 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 	unparsedArgs := args[:bazelCmdIdx]
 
 	for len(unparsedArgs) > 0 {
-		err := remoteFlagset.Parse(unparsedArgs)
+		err := RemoteFlagset.Parse(unparsedArgs)
 		if err == nil {
 			// flagset.Args() contains the list of any unparsed arguments
 			// Keep parsing them in a loop until we process all the args
-			unparsedArgs = remoteFlagset.Args()
+			unparsedArgs = RemoteFlagset.Args()
 		} else {
 			// Parsing undefined flags could happen if there are bazel startup flags set
 			// Remove them from the list of unparsed arguments and keep parsing
@@ -1018,7 +1036,7 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 
 	// Remove all cli flags from the arg list
 	argsRemoteFlagsRemoved := args[:bazelCmdIdx]
-	remoteFlagset.VisitAll(func(f *flag.Flag) {
+	RemoteFlagset.VisitAll(func(f *flag.Flag) {
 		// Certain flags with slice values can be passed multiple times.
 		// Remove all instances.
 		flagVal := "start"

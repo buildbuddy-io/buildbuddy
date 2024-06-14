@@ -422,6 +422,11 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 	for {
 		select {
 		case <-ctx.Done():
+			log.Infof("Attempting to cancel invocation %s because the context for the remote runner has ended with %s", invocationID, ctx.Err())
+			// If the context is canceled, ensure the remote run is canceled
+			if err := env.GetRemoteExecutionService().Cancel(context.WithoutCancel(ctx), invocationID); err != nil {
+				return status.InternalErrorf("context canceled with %s but failed to cancel invocation %s: %s", ctx.Err(), invocationID, err)
+			}
 			return ctx.Err()
 		case err := <-errCh:
 			return err
