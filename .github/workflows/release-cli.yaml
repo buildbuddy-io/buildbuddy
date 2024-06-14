@@ -138,8 +138,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-20.04
-          - os: macos-13 # MacOS amd64 (Intel)
-          - os: macos-13-xlarge # MacOS arm64 (M1)
+          - os: ubuntu-22.04-16cpu-arm64-arm-limited # linux arm64
+          - os: macos-13 # macOS amd64
+          - os: macos-13-xlarge # macOS arm64
     runs-on: ${{ matrix.os }}
     needs: [push-tag, create-release]
     steps:
