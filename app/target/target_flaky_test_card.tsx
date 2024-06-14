@@ -15,7 +15,6 @@ interface Props {
   buildEvent: build_event_stream.BuildEvent;
   testSuite: Element;
   status: string;
-  dark?: boolean;
 }
 
 export default class TargetFlakyTestCardComponent extends React.Component<Props> {
@@ -109,7 +108,7 @@ export default class TargetFlakyTestCardComponent extends React.Component<Props>
                                 .replaceAll(`�[`, `\u001b[`)
                                 .replaceAll(`#x1b[`, `\u001b[`)
                                 .replaceAll(`#x1B[`, `\u001b[`)}
-                              lightTheme={!this.props.dark}
+                              lightTheme={false}
                             />
                           )}
                         </div>
