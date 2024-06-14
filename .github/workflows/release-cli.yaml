@@ -168,7 +168,11 @@ jobs:
           else
             OS=linux
           fi
-          ARCH=$(uname -m)  # note: bazel naming convention is "x86_64", not "amd64"
+          ARCH=$(uname -m)
+          # bazelisk uses "x86_64" / "arm64" convention
+          if [[ "$ARCH" == "aarch64" ]]; then
+            ARCH=arm64
+          fi
           VERSION=${{ needs.push-tag.outputs.version }}
 
           cd "${GITHUB_WORKSPACE}/buildbuddy"
