@@ -1,0 +1,30 @@
+From 9a8d5d888fa0ac581a869ec06627b89da0716abe Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Mon, 11 Dec 2023 15:19:26 -0500
+Subject: [PATCH] patch
+
+
+diff --git a/go/tools/builders/stdlib.go b/go/tools/builders/stdlib.go
+index 8398b19..fe5cb82 100755
+--- a/go/tools/builders/stdlib.go
++++ b/go/tools/builders/stdlib.go
+@@ -113,6 +113,7 @@ You may need to use the flags --cpu=x64_windows --compiler=mingw-gcc.`)
+ 	}
+ 	os.Setenv("CGO_LDFLAGS_ALLOW", b.String())
+ 	os.Setenv("GODEBUG", "installgoroot=all")
++	os.Setenv("GOMAXPROCS", "1")
+ 
+ 	// Build the commands needed to build the std library in the right mode
+ 	// NOTE: the go command stamps compiled .a files with build ids, which are
+@@ -120,7 +121,7 @@ You may need to use the flags --cpu=x64_windows --compiler=mingw-gcc.`)
+ 	// creating reproducible builds because the build ids are hashed from
+ 	// CGO_CFLAGS, which frequently contains absolute paths. As a workaround,
+ 	// we strip the build ids, since they won't be used after this.
+-	installArgs := goenv.goCmd("install", "-toolexec", abs(os.Args[0])+" filterbuildid")
++	installArgs := goenv.goCmd("install", "-x", "-toolexec", abs(os.Args[0])+" filterbuildid")
+ 	if len(build.Default.BuildTags) > 0 {
+ 		installArgs = append(installArgs, "-tags", strings.Join(build.Default.BuildTags, ","))
+ 	}
+-- 
+2.39.2
+

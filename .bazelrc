@@ -155,6 +155,11 @@ common:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 common:auto-release -c opt
 common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/pgo:prod.pprof
 
+build:cosmo --extra_toolchains=//toolchains:cosmo_toolchain
+build:cosmo --@io_bazel_rules_go//go/config:static=true
+build:cosmo --dynamic_mode=off
+build:cosmo --linkopt="-static"
+
 # Static build configuration. MacOS is currently unsupported.
 # On multi-user machines, specify HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX in your
 # repo_env in user.bazelrc to avoid permissions errors.
