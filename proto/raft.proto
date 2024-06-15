@@ -552,6 +552,10 @@ message StartShardRequest {
 
   // Don't mark self as ready until this index has been applied.
   uint64 last_applied_index = 6;
+
+  // If true, we will start this shard as a non-voter; otherwise, we will start
+  // it as a voter.
+  bool is_non_voting = 7;
 }
 
 message StartShardResponse {
