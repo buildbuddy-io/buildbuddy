@@ -128,12 +128,12 @@ func printOutputFile(ctx context.Context, from bspb.ByteStreamClient, d *repb.Di
 	return nil
 }
 
-func getClients(target string) (bspb.ByteStreamClient, repb.ExecutionClient, repb.ContentAddressableStorageClient) {
+func getClients(target string) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient, repb.ActionCacheClient) {
 	conn, err := grpc_client.DialSimple(target)
 	if err != nil {
 		log.Fatalf("Error dialing executor: %s", err.Error())
 	}
-	return bspb.NewByteStreamClient(conn), repb.NewExecutionClient(conn), repb.NewContentAddressableStorageClient(conn)
+	return bspb.NewByteStreamClient(conn), repb.NewContentAddressableStorageClient(conn), repb.NewActionCacheClient(conn)
 }
 
 func inCopyMode() bool {
@@ -181,9 +181,9 @@ func main() {
 	}
 
 	log.Infof("Connecting to source %q", *sourceExecutor)
-	sourceBSClient, _, sourceCASClient := getClients(*sourceExecutor)
+	sourceBSClient, sourceCASClient, sourceACClient := getClients(*sourceExecutor)
 	log.Infof("Connecting to target %q", *targetExecutor)
-	destBSClient, execClient, destCASClient := getClients(*targetExecutor)
+	destBSClient, destCASClient, destACClient := getClients(*targetExecutor)
 
 	// For backwards compatibility, attempt to fixup old style digest
 	// strings that don't start with a '/blobs/' prefix.
@@ -202,83 +202,96 @@ func main() {
 	if err := cachetools.GetBlobAsProto(srcCtx, sourceBSClient, actionInstanceDigest, action); err != nil {
 		log.Fatalf("Error fetching action: %s", err.Error())
 	}
-	// If remote_executor and target_executor are not the same, copy the files.
-	if inCopyMode() {
-		fmb := NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), destCASClient, FindMissingBatcherOpts{})
-		eg, targetCtx := errgroup.WithContext(targetCtx)
-		eg.Go(func() error {
-			if err := copyFile(srcCtx, targetCtx, fmb, destBSClient, sourceBSClient, actionInstanceDigest.GetDigest(), actionInstanceDigest.GetDigestFunction()); err != nil {
-				return status.WrapError(err, "copy action")
-			}
-			return nil
-		})
-		eg.Go(func() error {
-			if err := copyFile(srcCtx, targetCtx, fmb, destBSClient, sourceBSClient, action.GetCommandDigest(), actionInstanceDigest.GetDigestFunction()); err != nil {
-				return status.WrapError(err, "copy command")
-			}
-			return nil
-		})
-		eg.Go(func() error {
-			treeRN := digest.NewResourceName(action.GetInputRootDigest(), *sourceRemoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction())
-			tree, err := cachetools.GetTreeFromRootDirectoryDigest(srcCtx, sourceCASClient, treeRN)
-			if err != nil {
-				return status.WrapError(err, "GetTree")
-			}
-			if err := copyTree(rootCtx, fmb, destBSClient, sourceBSClient, tree, actionInstanceDigest.GetDigestFunction()); err != nil {
-				return status.WrapError(err, "copy tree")
-			}
-			return nil
-		})
-		if err := eg.Wait(); err != nil {
-			log.Fatalf("Failed to copy files: %s", err)
-		}
-		log.Infof("Finished copying files.")
+
+	actionResult, err := sourceACClient.GetActionResult(srcCtx, &repb.GetActionResultRequest{
+		InstanceName:   *sourceRemoteInstanceName,
+		ActionDigest:   actionInstanceDigest.GetDigest(),
+		DigestFunction: actionInstanceDigest.GetDigestFunction(),
+	})
+	if err != nil {
+		log.Fatalf("failed getting Action Result: %v", err)
 	}
 
-	// If we're overriding the command, do that now.
-	if *overrideCommand != "" {
-		// Download the command and update arguments.
-		sourceCRN := digest.NewResourceName(action.GetCommandDigest(), *sourceRemoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction())
-		cmd := &repb.Command{}
-		if err := cachetools.GetBlobAsProto(srcCtx, sourceBSClient, sourceCRN, cmd); err != nil {
-			log.Fatalf("Failed to get command: %s", err)
+	fmb := NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), destCASClient, FindMissingBatcherOpts{})
+	eg, targetCtx := errgroup.WithContext(targetCtx)
+	cpFile := func(fileDigest *repb.Digest) error {
+		if err := copyFile(srcCtx, targetCtx, fmb, destBSClient, sourceBSClient, fileDigest, actionInstanceDigest.GetDigestFunction()); err != nil {
+			return status.WrapError(err, "copy action")
 		}
-		cmd.Arguments = []string{"sh", "-c", *overrideCommand}
-
-		// Upload the new command and action.
-		cd, err := cachetools.UploadProto(targetCtx, destBSClient, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), cmd)
+		return nil
+	}
+	cpTree := func(treeDigest *repb.Digest) error {
+		treeRN := digest.NewResourceName(treeDigest, *sourceRemoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction())
+		tree, err := cachetools.GetTreeFromRootDirectoryDigest(srcCtx, sourceCASClient, treeRN)
 		if err != nil {
-			log.Fatalf("Failed to upload new command: %s", err)
+			return status.WrapError(err, "GetTree")
 		}
-		action = action.CloneVT()
-		action.CommandDigest = cd
-		ad, err := cachetools.UploadProto(targetCtx, destBSClient, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), action)
-		if err != nil {
-			log.Fatalf("Failed to upload new action: %s", err)
+		if err := copyTree(rootCtx, fmb, destBSClient, sourceBSClient, tree, actionInstanceDigest.GetDigestFunction()); err != nil {
+			return status.WrapError(err, "copy tree")
 		}
-
-		actionInstanceDigest = digest.NewResourceName(ad, *targetRemoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction())
+		return nil
 	}
 
-	if str, err := actionInstanceDigest.DownloadString(); err == nil {
-		log.Infof("Action resource name: %s", str)
-	}
-	execReq := &repb.ExecuteRequest{
-		InstanceName:    *targetRemoteInstanceName,
-		SkipCacheLookup: true,
-		ActionDigest:    actionInstanceDigest.GetDigest(),
-		DigestFunction:  actionInstanceDigest.GetDigestFunction(),
-	}
-	eg := &errgroup.Group{}
-	eg.SetLimit(*jobs)
-	for i := 1; i <= *n; i++ {
-		i := i
+	eg.Go(func() error {
+		if err := cpFile(actionInstanceDigest.GetDigest()); err != nil {
+			return status.WrapError(err, "copy action")
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		if err := cpFile(action.GetCommandDigest()); err != nil {
+			return status.WrapError(err, "copy command")
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		if err := cpTree(action.GetInputRootDigest()); err != nil {
+			return status.WrapError(err, "copy input tree")
+		}
+		return nil
+	})
+	for _, file := range actionResult.GetOutputFiles() {
+		f := file
 		eg.Go(func() error {
-			execute(targetCtx, execClient, destBSClient, i, actionInstanceDigest, execReq)
+			if err := cpFile(f.GetDigest()); err != nil {
+				return status.WrapError(err, "copy output files")
+			}
 			return nil
 		})
 	}
-	eg.Wait()
+	for _, dir := range actionResult.GetOutputDirectories() {
+		d := dir
+		eg.Go(func() error {
+			if err := cpTree(d.GetTreeDigest()); err != nil {
+				return status.WrapError(err, "copy output dir")
+			}
+			return nil
+		})
+	}
+	eg.Go(func() error {
+		if err := cpFile(actionResult.GetStdoutDigest()); err != nil {
+			return status.WrapError(err, "copy stdout")
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		if err := cpFile(actionResult.GetStderrDigest()); err != nil {
+			return status.WrapError(err, "copy stderr")
+		}
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		log.Fatalf("failed to copy files: %v", err)
+	}
+	if _, err := destACClient.UpdateActionResult(targetCtx, &repb.UpdateActionResultRequest{
+		InstanceName:   actionInstanceDigest.GetInstanceName(),
+		ActionDigest:   actionInstanceDigest.GetDigest(),
+		DigestFunction: actionInstanceDigest.GetDigestFunction(),
+		ActionResult:   actionResult,
+	}); err != nil {
+		log.Fatalf("failed to copy Action Result: %v", err)
+	}
 }
 
 func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, rn *digest.ResourceName, req *repb.ExecuteRequest) {
