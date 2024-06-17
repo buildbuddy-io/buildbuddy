@@ -331,8 +331,8 @@ func (br *BatchResponse) DeleteSessionsResponse(n int) (*rfpb.DeleteSessionsResp
 }
 
 type txnStatement struct {
-	replicaDescriptor *rfpb.ReplicaDescriptor
-	rawBatch          *BatchBuilder
+	rangeDescriptor *rfpb.RangeDescriptor
+	rawBatch        *BatchBuilder
 }
 
 type TxnBuilder struct {
@@ -345,10 +345,10 @@ func NewTxn() *TxnBuilder {
 	}
 }
 
-func (tb *TxnBuilder) AddStatement(replica *rfpb.ReplicaDescriptor, batch *BatchBuilder) *TxnBuilder {
+func (tb *TxnBuilder) AddStatement(rd *rfpb.RangeDescriptor, batch *BatchBuilder) *TxnBuilder {
 	tb.statements = append(tb.statements, txnStatement{
-		replicaDescriptor: replica,
-		rawBatch:          batch,
+		rangeDescriptor: rd,
+		rawBatch:        batch,
 	})
 	return tb
 }
@@ -369,7 +369,7 @@ func (tb *TxnBuilder) ToProto() (*rfpb.TxnRequest, error) {
 			return nil, err
 		}
 		req.Statements = append(req.Statements, &rfpb.TxnRequest_Statement{
-			Replica:  statement.replicaDescriptor,
+			Range:    statement.rangeDescriptor,
 			RawBatch: batchProto,
 		})
 	}
