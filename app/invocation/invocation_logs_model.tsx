@@ -97,6 +97,9 @@ export default class InvocationLogsModel {
     ).subscribe({
       next: (response) => {
         this.handleResponse(response);
+        if (response.nextChunkId === "") {
+          return;
+        }
         // Unchanged next chunk ID means the invocation is still in progress and
         // we should continue polling that chunk.
         if (response.nextChunkId === chunkId) {
