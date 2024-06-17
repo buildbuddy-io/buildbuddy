@@ -511,3 +511,15 @@ register_toolchains(
     "//toolchains:sh_toolchain",
     "//toolchains:ubuntu_cc_toolchain",
 )
+
+http_archive(
+    name = "com_github_buildbuddy_io_kythe",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:kythe.patch",
+    ],
+    sha256 = "73d467453e005b4dc62cd93b83b5cc9583310baf3f9ce0815ca88ca9389f9f52",
+    urls = [
+        "https://github.com/buildbuddy-io/kythe/archive/refs/tags/v0.0.69.tar.gz",
+    ],
+)
