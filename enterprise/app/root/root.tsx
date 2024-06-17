@@ -364,7 +364,12 @@ export default class EnterpriseRootComponent extends React.Component {
                   {orgAccessDenied && this.state.user && <OrgAccessDeniedComponent user={this.state.user} />}
                   {tests && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
-                      <TapComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
+                      <TapComponent
+                        user={this.state.user}
+                        search={this.state.search}
+                        tab={this.state.tab}
+                        dark={this.state.preferences?.lightTerminalEnabled ?? true}
+                      />
                     </Suspense>
                   )}
                   {trends && this.state.user && (

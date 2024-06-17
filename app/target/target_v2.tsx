@@ -8,7 +8,6 @@ import router from "../router/router";
 import format from "../format/format";
 import { User } from "../auth/auth_service";
 import { Hash, Target, Box, SkipForward, CheckCircle, XCircle, HelpCircle, Clock, Copy, History } from "lucide-react";
-import { invocation } from "../../proto/invocation_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
@@ -17,11 +16,11 @@ import { OutlinedLinkButton } from "../components/button/link_button";
 import { target } from "../../proto/target_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import rpc_service from "../service/rpc_service";
-import error_service from "../errors/error_service";
 import { renderTestSize } from "../invocation/target_util";
 import capabilities from "../capabilities/capabilities";
 import CacheRequestsCardComponent from "../invocation/cache_requests_card";
 import InvocationModel from "../invocation/invocation_model";
+import FlakyTargetChipComponent from "./flaky_target_chip";
 
 const Status = api_common.v1.Status;
 
@@ -274,6 +273,13 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                   <span>Target history</span>
                 </OutlinedLinkButton>
               )}
+              {capabilities.config.targetFlakesUiEnabled &&
+                this.props.repo &&
+                isPotentialFailureOrFlakeStatus(this.props.status) && (
+                  <FlakyTargetChipComponent
+                    labels={[this.props.label]}
+                    repo={this.props.repo}></FlakyTargetChipComponent>
+                )}
             </div>
             <div className="details">
               {Boolean(target?.status) && (
@@ -378,5 +384,18 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
         </div>
       </div>
     );
+  }
+}
+
+function isPotentialFailureOrFlakeStatus(s: api_common.v1.Status): boolean {
+  switch (s) {
+    case Status.BUILDING:
+    case Status.BUILT:
+    case Status.TESTING:
+    case Status.PASSED:
+    case Status.SKIPPED:
+      return false;
+    default:
+      return true;
   }
 }
