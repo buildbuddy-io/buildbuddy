@@ -688,9 +688,6 @@ func ParseDatasource(ctx context.Context, datasource string, advancedConfig *Adv
 }
 
 // sqlLogger implements GORM's logger.Interface using zerolog.
-//
-// TODO: maybe implement the optional ParamsFilter interface so that we only log
-// parameterized queries.
 type sqlLogger struct {
 	SlowThreshold time.Duration
 	LogLevel      logger.LogLevel
@@ -737,6 +734,12 @@ func (l *sqlLogger) LogMode(level logger.LogLevel) logger.Interface {
 	clone := *l
 	clone.LogLevel = level
 	return &clone
+}
+
+// ParamsFilter implements gorm's ParamsFilter interface, ensuring that queries
+// are logged without parameter values showing up in the logs.
+func (l *sqlLogger) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
+	return sql, nil
 }
 
 func setDBOptions(driver string, gdb *gorm.DB) error {
