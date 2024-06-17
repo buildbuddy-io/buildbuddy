@@ -2345,10 +2345,9 @@ func reclaimDiskSpace(ctx context.Context, log *buildEventReporter) error {
 }
 
 func runGitMaintenance(ctx context.Context) error {
-	for _, task := range []string{"loose-objects", "incremental-repack", "pack-refs"} {
-		if _, err := git(ctx, os.Stderr, "maintenance", "run", "--task="+task); err != nil {
-			return fmt.Errorf("%s: %w", task, err)
-		}
+	// TODO: switch to git maintenance once it's more widely available.
+	if _, err := git(ctx, os.Stderr, "gc", "--auto"); err != nil {
+		return fmt.Errorf("git gc: %w", err)
 	}
 	return nil
 }
