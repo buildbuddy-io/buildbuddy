@@ -20,7 +20,28 @@ const (
 	message3     = "msg3"
 )
 
-func TestPubSub(t *testing.T) {
+func TestLossyPubSub(t *testing.T) {
+	pubSub := NewPubSub(testredis.Start(t).Client())
+
+	ctx := context.Background()
+	subscriber := pubSub.Subscribe(ctx, "test")
+	ch := subscriber.Chan()
+
+	err := pubSub.Publish(ctx, "test", "hello")
+	require.NoError(t, err)
+
+	msg := <-ch
+	require.Equal(t, "hello", msg)
+
+	err = subscriber.Close()
+	require.NoError(t, err)
+
+	// Channel should be closed
+	_, ok := <-ch
+	require.False(t, ok)
+}
+
+func TestStreamPubSub(t *testing.T) {
 	redisHandle := testredis.Start(t)
 	pubSub := NewStreamPubSub(redis.NewClient(redisutil.TargetToOptions(redisHandle.Target)))
 
