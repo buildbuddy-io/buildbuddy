@@ -1,4 +1,4 @@
-FROM marketplace.gcr.io/google/ubuntu2004@sha256:a4b4d6c240695a053ab3c437592ec339f608067f307d0e76c9063a6e5c3dc10f
+FROM marketplace.gcr.io/google/ubuntu2004@sha256:9e3ead2510253310bd5b44d254ab810c8f37b19a35716379220fa72b38e8c818
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -61,24 +61,28 @@ RUN BUCKET="https://storage.googleapis.com/clang-builds-stable" && \
 RUN curl -fsSL https://go.dev/dl/go1.19.4.linux-amd64.tar.gz | tar --directory /usr/local -xzf -
 
 # Docker
+#
+# Note: gnupg is only needed to install Docker, so we uninstall it at the end of
+# this step and also run `apt-get autoremove` to get rid of the unnecessary
+# packages it came with.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
+      gnupg \
+      lsb-release \
       && \
-    install -m 0755 -d /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
-    chmod a+r /etc/apt/keyrings/docker.asc && \
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-    tee /etc/apt/sources.list.d/docker.list > /dev/null
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo >/etc/apt/sources.list.d/docker.list "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && \
     apt-get update && \
     apt-get install -y \
       docker-ce \
       docker-ce-cli \
       containerd.io \
       && \
+    apt-get remove -y gnupg && \
+    apt-get autoremove -y && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Alias `python` to `python2` to be compatible with the Ubuntu 16.04 RBE image.
