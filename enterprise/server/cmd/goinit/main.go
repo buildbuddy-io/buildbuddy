@@ -59,6 +59,7 @@ var (
 	setDefaultRoute  = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
 	initDockerd      = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
 	enableDockerdTCP = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
+	cgroupV2Only     = flag.Bool("cgroup_v2_only", false, "If true, mount cgroup2 directly to /sys/fs/cgroup instead a hybrid v1+v2 setup.")
 
 	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
 	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
@@ -351,36 +352,41 @@ func main() {
 
 	die(mkdirp("/root", syscall.S_IRWXU))
 
-	die(mount("tmpfs", "/sys/fs/cgroup", "tmpfs", syscall.MS_NOSUID|syscall.MS_NOEXEC|syscall.MS_NODEV, "mode=755"))
-	die(mkdirp("/sys/fs/cgroup/unified", 0555))
-	die(mount("cgroup2", "/sys/fs/cgroup/unified", "cgroup2", cgroupMountFlags, "nsdelegate"))
+	if *cgroupV2Only {
+		die(mkdirp("/sys/fs/cgroup", 0555))
+		die(mount("cgroup2", "/sys/fs/cgroup", "cgroup2", cgroupMountFlags, "nsdelegate"))
+	} else {
+		die(mount("tmpfs", "/sys/fs/cgroup", "tmpfs", syscall.MS_NOSUID|syscall.MS_NOEXEC|syscall.MS_NODEV, "mode=755"))
+		die(mkdirp("/sys/fs/cgroup/unified", 0555))
+		die(mount("cgroup2", "/sys/fs/cgroup/unified", "cgroup2", cgroupMountFlags, "nsdelegate"))
 
-	die(mkdirp("/sys/fs/cgroup/net_cls,net_prio", 0555))
-	die(mount("cgroup", "/sys/fs/cgroup/net_cls,net_prio", "cgroup", cgroupMountFlags, "net_cls,net_prio"))
+		die(mkdirp("/sys/fs/cgroup/net_cls,net_prio", 0555))
+		die(mount("cgroup", "/sys/fs/cgroup/net_cls,net_prio", "cgroup", cgroupMountFlags, "net_cls,net_prio"))
 
-	die(mkdirp("/sys/fs/cgroup/hugetlb", 0555))
-	die(mount("cgroup", "/sys/fs/cgroup/hugetlb", "cgroup", cgroupMountFlags, "hugetlb"))
+		die(mkdirp("/sys/fs/cgroup/hugetlb", 0555))
+		die(mount("cgroup", "/sys/fs/cgroup/hugetlb", "cgroup", cgroupMountFlags, "hugetlb"))
 
-	die(mkdirp("/sys/fs/cgroup/pids", 0555))
-	die(mount("cgroup", "/sys/fs/cgroup/pids", "cgroup", cgroupMountFlags, "pids"))
+		die(mkdirp("/sys/fs/cgroup/pids", 0555))
+		die(mount("cgroup", "/sys/fs/cgroup/pids", "cgroup", cgroupMountFlags, "pids"))
 
-	die(mkdirp("/sys/fs/cgroup/freezer", 0555))
-	die(mount("cgroup", "/sys/fs/cgroup/freezer", "cgroup", cgroupMountFlags, "freezer"))
+		die(mkdirp("/sys/fs/cgroup/freezer", 0555))
+		die(mount("cgroup", "/sys/fs/cgroup/freezer", "cgroup", cgroupMountFlags, "freezer"))
 
-	die(mkdirp("/sys/fs/cgroup/devices", 0555))
-	die(mount("cgroup", "/sys/fs/cgroup/devices", "cgroup", cgroupMountFlags, "devices"))
+		die(mkdirp("/sys/fs/cgroup/devices", 0555))
+		die(mount("cgroup", "/sys/fs/cgroup/devices", "cgroup", cgroupMountFlags, "devices"))
 
-	die(mkdirp("/sys/fs/cgroup/blkio", 0555))
-	die(mount("cgroup", "/sys/fs/cgroup/blkio", "cgroup", cgroupMountFlags, "blkio"))
+		die(mkdirp("/sys/fs/cgroup/blkio", 0555))
+		die(mount("cgroup", "/sys/fs/cgroup/blkio", "cgroup", cgroupMountFlags, "blkio"))
 
-	die(mkdirp("/sys/fs/cgroup/memory", 0555))
-	die(mount("cgroup", "/sys/fs/cgroup/memory", "cgroup", cgroupMountFlags, "memory"))
+		die(mkdirp("/sys/fs/cgroup/memory", 0555))
+		die(mount("cgroup", "/sys/fs/cgroup/memory", "cgroup", cgroupMountFlags, "memory"))
 
-	die(mkdirp("/sys/fs/cgroup/perf_event", 0555))
-	die(mount("cgroup", "/sys/fs/cgroup/perf_event", "cgroup", cgroupMountFlags, "perf_event"))
+		die(mkdirp("/sys/fs/cgroup/perf_event", 0555))
+		die(mount("cgroup", "/sys/fs/cgroup/perf_event", "cgroup", cgroupMountFlags, "perf_event"))
 
-	die(mkdirp("/sys/fs/cgroup/cpuset", 0555))
-	die(mount("cgroup", "/sys/fs/cgroup/cpuset", "cgroup", cgroupMountFlags, "cpuset"))
+		die(mkdirp("/sys/fs/cgroup/cpuset", 0555))
+		die(mount("cgroup", "/sys/fs/cgroup/cpuset", "cgroup", cgroupMountFlags, "cpuset"))
+	}
 
 	if err := rlimit.SetOpenFileDescriptorLimit(16384); err != nil {
 		log.Errorf("Unable to increase file open descriptor limit: %s", err)
