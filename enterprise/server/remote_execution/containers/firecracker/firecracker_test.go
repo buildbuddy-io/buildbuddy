@@ -136,8 +136,8 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "662d84be177d232e856f0942584563bb79194d95fbaa7760756194ec107bbb4c"
-		expectedVersion = "10"
+		expectedHash    = "2b869dd271a3bbcf19b13f383b3864de9eb836f16bf8f01aa388d863dda16f53"
+		expectedVersion = "11"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -1336,6 +1336,7 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 		t.Skip()
 	}
 
+	flags.Set(t, "executor.firecracker_guest_cgroup_v2_only", true)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -1393,6 +1394,7 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 		t.Skip()
 	}
 
+	flags.Set(t, "executor.firecracker_guest_cgroup_v2_only", true)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -1443,6 +1445,7 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 		t.Skip()
 	}
 
+	flags.Set(t, "executor.firecracker_guest_cgroup_v2_only", true)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
