@@ -65,6 +65,10 @@ func authenticate(apiKey string) error {
 
 	_, err = client.GetUser(ctx, &uspb.GetUserRequest{})
 	if err != nil {
+		if status.IsNotFoundError(err) && strings.Contains(err.Error(), "user not found") {
+			// Org-level key is used.
+			return nil
+		}
 		return err
 	}
 	return nil
