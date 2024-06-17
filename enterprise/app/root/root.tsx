@@ -368,7 +368,7 @@ export default class EnterpriseRootComponent extends React.Component {
                         user={this.state.user}
                         search={this.state.search}
                         tab={this.state.tab}
-                        dark={this.state.preferences?.lightTerminalEnabled ?? true}
+                        dark={!this.state.preferences?.lightTerminalEnabled}
                       />
                     </Suspense>
                   )}
