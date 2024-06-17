@@ -19,6 +19,7 @@ import TargetFlakyTestCardComponent from "../../../app/target/target_flaky_test_
 interface Props {
   search: URLSearchParams;
   repo: string;
+  dark: boolean;
 }
 
 interface TestXmlOrError {
@@ -381,7 +382,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
                         testSuite={testSuite}
                         buildEvent={s.event!}
                         status={status}
-                        dark={true}></TargetFlakyTestCardComponent>
+                        dark={this.props.dark}></TargetFlakyTestCardComponent>
                     );
                   });
               }

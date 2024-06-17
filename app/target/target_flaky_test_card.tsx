@@ -15,6 +15,7 @@ interface Props {
   buildEvent: build_event_stream.BuildEvent;
   testSuite: Element;
   status: string;
+  dark: boolean;
 }
 
 export default class TargetFlakyTestCardComponent extends React.Component<Props> {
@@ -83,7 +84,7 @@ export default class TargetFlakyTestCardComponent extends React.Component<Props>
                 </span>
               </div>
             </Link>
-            <TargetTestSuiteComponent testCases={testCases} dark={true}></TargetTestSuiteComponent>
+            <TargetTestSuiteComponent testCases={testCases} dark={this.props.dark}></TargetTestSuiteComponent>
           </div>
         </div>
       )
