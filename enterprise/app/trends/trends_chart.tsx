@@ -63,6 +63,7 @@ interface TrendsChartTooltipProps extends TooltipProps<any, any> {
 export enum ChartColor {
   GREEN = "#8BC34A",
   RED = "#F44336",
+  ORANGE = "#FF6F00",
   BLUE = "#03A9F4",
   GREY = "#AAAAAA",
 }
@@ -75,6 +76,8 @@ function chartColorToCssClass(c: ChartColor): string {
       return "grey";
     case ChartColor.RED:
       return "red";
+    case ChartColor.ORANGE:
+      return "orange";
     case ChartColor.GREEN:
       return "green";
   }

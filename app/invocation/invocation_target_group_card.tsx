@@ -24,9 +24,12 @@ import Spinner from "../components/spinner/spinner";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import format from "../format/format";
 import DigestComponent from "../components/digest/digest";
+import FlakyTargetChipComponent from "../target/flaky_target_chip";
+import capabilities from "../capabilities/capabilities";
 
 export interface TargetGroupCardProps {
   invocationId: string;
+  repo: string;
   group: target.TargetGroup;
   filter: string;
 }
@@ -136,6 +139,9 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
     let icon: React.ReactNode = null;
     let presentVerb = "";
     let pastVerb = "";
+
+    const targetLabels = targets.map((t) => t.metadata?.label ?? "").filter((s) => s.length > 0);
+    let renderFlakyChip = false;
     switch (this.props.group.status) {
       case 0:
         // Showing the target listing only.
@@ -149,6 +155,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
         icon = <XCircle className="icon red" />;
         presentVerb = `failing ${targets.length === 1 ? "test" : "tests"}`;
         pastVerb = `${targets.length === 1 ? "test" : "tests"} failed`;
+        renderFlakyChip = true;
         break;
       case Status.FAILED_TO_BUILD:
         className = "card-failure";
@@ -161,12 +168,14 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
         icon = <Clock className="icon" />;
         presentVerb = `timed out ${targets.length == 1 ? "test" : "tests"}`;
         pastVerb = `${targets.length == 1 ? "test" : "tests"} timed out`;
+        renderFlakyChip = true;
         break;
       case Status.FLAKY:
         className = "card-flaky";
         icon = <HelpCircle className="icon orange" />;
         presentVerb = `flaky ${targets.length == 1 ? "test" : "tests"}`;
         pastVerb = `flaky ${targets.length == 1 ? "test" : "tests"}`;
+        renderFlakyChip = true;
         break;
       case Status.PASSED:
         className = "card-success";
@@ -202,6 +211,11 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
               <Check className="copy-icon green" onClick={() => this.onCopyClicked()} />
             ) : (
               <Copy className="copy-icon" onClick={() => this.onCopyClicked()} />
+            )}{" "}
+            {Boolean(this.props.repo && renderFlakyChip && capabilities.config.targetFlakesUiEnabled) && (
+              <div className="invocation-flaky-chip-alignment-hack">
+                <FlakyTargetChipComponent labels={targetLabels} repo={this.props.repo}></FlakyTargetChipComponent>
+              </div>
             )}
           </div>
           <div className="details">

@@ -28,6 +28,21 @@ ts_library(
 )
 
 ts_library(
+    name = "flaky_target_chip",
+    srcs = ["flaky_target_chip.tsx"],
+    deps = [
+        "//app/components/button:link_button",
+        "//app/router",
+        "//app/service:rpc_service",
+        "//proto:target_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
     name = "action_card",
     srcs = ["action_card.tsx"],
     deps = [
@@ -73,7 +88,7 @@ ts_library(
     srcs = ["target_test_cases_card.tsx"],
     deps = [
         "//app/format",
-        "//app/terminal",
+        "//app/target:target_test_suite",
         "//app/util:proto",
         "//proto:build_event_stream_ts_proto",
         "@npm//@types/react",
@@ -112,6 +127,24 @@ ts_library(
 )
 
 ts_library(
+    name = "target_flaky_test_card",
+    srcs = ["target_flaky_test_card.tsx"],
+    deps = [
+        "//app/components/link",
+        "//app/format",
+        "//app/router",
+        "//app/target:target_test_suite",
+        "//app/util:proto",
+        "//proto:build_event_stream_ts_proto",
+        "@npm//@types/moment",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//moment",
+        "@npm//react",
+    ],
+)
+
+ts_library(
     name = "target_test_coverage_card",
     srcs = ["target_test_coverage_card.tsx"],
     deps = [
@@ -127,6 +160,16 @@ ts_library(
 )
 
 ts_library(
+    name = "target_test_suite",
+    srcs = ["target_test_suite.tsx"],
+    deps = [
+        "//app/terminal",
+        "@npm//@types/react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
     name = "target_v2",
     srcs = ["target_v2.tsx"],
     deps = [
@@ -134,7 +177,6 @@ ts_library(
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button:link_button",
-        "//app/errors:error_service",
         "//app/format",
         "//app/invocation:cache_requests_card",
         "//app/invocation:invocation_model",
@@ -142,6 +184,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//app/target:action_card",
+        "//app/target:flaky_target_chip",
         "//app/target:target_artifacts_card",
         "//app/target:target_test_coverage_card",
         "//app/target:target_test_document_card",
@@ -149,7 +192,6 @@ ts_library(
         "//app/util:clipboard",
         "//app/util:proto",
         "//proto:build_event_stream_ts_proto",
-        "//proto:invocation_ts_proto",
         "//proto:target_ts_proto",
         "//proto/api/v1:common_ts_proto",
         "@npm//@types/react",

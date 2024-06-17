@@ -723,6 +723,7 @@ ts_library(
     name = "invocation_target_group_card",
     srcs = ["invocation_target_group_card.tsx"],
     deps = [
+        "//app/capabilities",
         "//app/components/digest",
         "//app/components/link",
         "//app/components/spinner",
@@ -730,6 +731,7 @@ ts_library(
         "//app/format",
         "//app/invocation:target_util",
         "//app/service:rpc_service",
+        "//app/target:flaky_target_chip",
         "//app/util:clipboard",
         "//proto:build_event_stream_ts_proto",
         "//proto:target_ts_proto",
