@@ -10,11 +10,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -286,6 +290,27 @@ func TestParse_Duration(t *testing.T) {
 	}
 }
 
+func TestParse_CustomResources_Valid(t *testing.T) {
+	props := []*repb.Platform_Property{
+		{Name: "resources:foo", Value: "3.14"},
+	}
+	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
+	p, err := ParseProperties(task)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff([]*scpb.CustomResource{{
+		Name: "foo", Value: 3.14,
+	}}, p.CustomResources, protocmp.Transform()))
+}
+
+func TestParse_CustomResources_Invalid(t *testing.T) {
+	props := []*repb.Platform_Property{
+		{Name: "resources:foo", Value: "blah"},
+	}
+	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
+	_, err := ParseProperties(task)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %s", gstatus.Code(err))
+}
+
 func TestParse_ApplyOverrides(t *testing.T) {
 	for _, testCase := range []struct {
 		platformProps       []*repb.Platform_Property
@@ -533,7 +558,7 @@ func TestEnvOverridesError(t *testing.T) {
 			}}
 			props, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 			require.Error(t, err)
-			require.True(t, status.IsFailedPreconditionError(err))
+			require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %s", gstatus.Code(err))
 			require.Nil(t, props)
 		})
 	}

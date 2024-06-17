@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform",
     deps = [
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/util/flag",
@@ -26,11 +27,15 @@ go_test(
     embed = [":platform"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//server/testutil/testenv",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

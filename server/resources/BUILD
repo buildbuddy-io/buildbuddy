@@ -8,6 +8,8 @@ go_library(
         "//enterprise:__subpackages__",
     ],
     deps = [
+        "//proto:scheduler_go_proto",
+        "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
