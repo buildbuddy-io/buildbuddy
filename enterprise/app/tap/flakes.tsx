@@ -30,12 +30,15 @@ interface TestXmlOrError {
 type TableSort = "Flaky %" | "Flakes + Likely flakes" | "Flakes";
 const TableSortValues: TableSort[] = ["Flaky %", "Flakes + Likely flakes", "Flakes"];
 
+const TABLE_TRUNCATION_LENGTH = 25;
+
 interface State {
   pendingChartRequest?: CancelablePromise<target.GetDailyTargetStatsResponse>;
   chartData?: target.GetDailyTargetStatsResponse;
   pendingTableRequest?: CancelablePromise<target.GetTargetStatsResponse>;
   tableData?: target.GetTargetStatsResponse;
   tableSort: TableSort;
+  showAllTableEntries: boolean;
   pendingFlakeSamplesRequest?: CancelablePromise<target.GetTargetFlakeSamplesResponse>;
   flakeSamples?: target.GetTargetFlakeSamplesResponse;
   flakeTestXmlDocs: Map<string, TestXmlOrError>;
@@ -46,6 +49,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
   state: State = {
     flakeTestXmlDocs: new Map(),
     tableSort: "Flaky %",
+    showAllTableEntries: false,
   };
 
   componentDidMount(): void {
@@ -178,6 +182,10 @@ export default class FlakesComponent extends React.Component<Props, State> {
     this.setState({ tableSort });
   }
 
+  toggleShowAllTableEntries() {
+    this.setState({ showAllTableEntries: !this.state.showAllTableEntries });
+  }
+
   renderFlakePercent(stats: target.TargetStatsData | null | undefined): string {
     if (!stats) {
       return "0%";
@@ -246,12 +254,17 @@ export default class FlakesComponent extends React.Component<Props, State> {
       };
     }
 
-    let filteredTableData = tableData;
+    let filteredTableData = [...tableData];
     const tableFilters = (this.props.search.get("targetFilter") ?? "").split(" ").filter((f) => f.length > 0);
     if (tableFilters.length > 0) {
       filteredTableData = filteredTableData.filter((v) => tableFilters.find((f) => v.label.includes(f)));
     }
     filteredTableData.sort(sortFn);
+
+    let tableIsPaginated = filteredTableData.length > TABLE_TRUNCATION_LENGTH;
+    if (!this.state.showAllTableEntries && tableIsPaginated) {
+      filteredTableData.length = TABLE_TRUNCATION_LENGTH; // Javascript is so cool
+    }
 
     let dates: number[] = [];
     let currentDay = moment().startOf("day");
@@ -354,6 +367,11 @@ export default class FlakesComponent extends React.Component<Props, State> {
                     );
                   })}
                 </div>
+                {tableIsPaginated && (
+                  <button className="load-more" onClick={() => this.toggleShowAllTableEntries()}>
+                    {this.state.showAllTableEntries ? "Show less" : "Show all"}
+                  </button>
+                )}
               </div>
             </div>
           </div>
