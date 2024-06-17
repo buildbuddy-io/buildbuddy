@@ -16,6 +16,7 @@ interface Props {
   user: User;
   tab: string;
   search: URLSearchParams;
+  dark: boolean;
 }
 
 interface State {
@@ -100,7 +101,7 @@ export default class TapComponent extends React.Component<Props, State> {
     let tabContent;
     const repo = this.selectedRepo();
     if (tab === "flakes") {
-      tabContent = <FlakesComponent repo={repo} search={this.props.search}></FlakesComponent>;
+      tabContent = <FlakesComponent repo={repo} search={this.props.search} dark={}></FlakesComponent>;
     } else {
       tabContent = (
         <TestGridComponent repo={repo} search={this.props.search} user={this.props.user}></TestGridComponent>
