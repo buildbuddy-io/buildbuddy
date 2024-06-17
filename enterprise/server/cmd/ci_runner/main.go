@@ -2346,12 +2346,13 @@ func reclaimDiskSpace(ctx context.Context, log *buildEventReporter) error {
 }
 
 func runGitMaintenance(ctx context.Context) error {
-	for _, task := range []string{"loose-objects", "incremental-repack", "pack-refs"} {
-		if _, err := git(ctx, os.Stderr, "maintenance", "run", "--task="+task); err != nil {
-			return fmt.Errorf("%s: %w", task, err)
-		}
-	}
 	return nil
+	//for _, task := range []string{"loose-objects", "incremental-repack", "pack-refs"} {
+	//	if _, err := git(ctx, os.Stderr, "maintenance", "run", "--task="+task); err != nil {
+	//		return fmt.Errorf("%s: %w", task, err)
+	//	}
+	//}
+	//return nil
 }
 
 func diskUsageFraction() (float64, error) {
