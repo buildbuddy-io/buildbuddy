@@ -269,9 +269,9 @@ message PostCommitHook {
 message TxnRequest {
   optional bytes transaction_id = 1;
   message Statement {
-	reserved 1;
+    reserved 1;
     BatchCmdRequest raw_batch = 2;
-	RangeDescriptor range = 3;
+    RangeDescriptor range = 3;
   }
   repeated Statement statements = 2;
 }
