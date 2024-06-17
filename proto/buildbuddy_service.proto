@@ -125,6 +125,8 @@ service BuildBuddyService {
       returns (target.GetTargetHistoryResponse);
   rpc GetTargetStats(target.GetTargetStatsRequest)
       returns (target.GetTargetStatsResponse);
+  rpc GetDailyTargetStats(target.GetDailyTargetStatsRequest)
+      returns (target.GetDailyTargetStatsResponse);
   rpc GetTargetFlakeSamples(target.GetTargetFlakeSamplesRequest)
       returns (target.GetTargetFlakeSamplesResponse);
 

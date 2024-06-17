@@ -741,6 +741,88 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 	return fetchTargetsFromPrimaryDB(ctx, env, q, repo)
 }
 
+func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.GetDailyTargetStatsRequest) (*trpb.GetDailyTargetStatsResponse, error) {
+	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !isReadFromOLAPDBEnabled(env) {
+		return nil, status.UnimplementedError("Target stats requires an OLAP DB.")
+	}
+	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
+	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ?"
+	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo}
+	if req.GetRepo() != "" {
+		innerWhereClause = innerWhereClause + " AND repo_url = ?"
+		qArgs = append(qArgs, req.GetRepo())
+	}
+	if len(req.GetLabels()) > 0 {
+		innerWhereClause = innerWhereClause + " AND label IN ?"
+		qArgs = append(qArgs, req.GetLabels())
+	}
+
+	qArgs = append(qArgs, qArgs...)
+
+	dateSelectorString := env.GetOLAPDBHandle().DateFromUsecTimestamp("invocation_start_time_usec", req.GetRequestContext().GetTimezoneOffsetMinutes())
+
+	qStr := fmt.Sprintf(`SELECT stats.date AS date, total_runs, successful_runs, flaky_runs,
+	    failed_runs, likely_flaky_runs, flaky_runs + likely_flaky_runs as total_flakes
+	FROM (SELECT
+		%s AS date,
+		count(*) AS total_runs,
+		countIf(status = 1) AS successful_runs,
+		countIf(status = 2) AS flaky_runs,
+		countIf(status > 2) AS failed_runs
+		FROM "TestTargetStatuses" WHERE (%s) GROUP BY date) stats
+	LEFT JOIN (SELECT date, count(*) AS likely_flaky_runs
+		FROM (
+			SELECT
+			    %s AS date,
+				first_value(status) OVER win AS first_status,
+				status,
+				last_value(status) OVER win AS last_status
+			FROM "TestTargetStatuses"
+			WHERE (%s)
+			WINDOW win AS (
+				PARTITION BY label
+				ORDER BY invocation_start_time_usec ASC
+				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
+		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status IN (3, 4) GROUP BY date) lf
+	ON lf.date=stats.date ORDER BY date ASC`, dateSelectorString, innerWhereClause, dateSelectorString, innerWhereClause)
+
+	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
+
+	rsp := &trpb.GetDailyTargetStatsResponse{}
+
+	type qRow struct {
+		Date            string
+		FlakyRuns       int64
+		TotalRuns       int64
+		FailedRuns      int64
+		LikelyFlakyRuns int64
+	}
+
+	db.ScanEach(rq, func(ctx context.Context, row *qRow) error {
+		if row.FlakyRuns+row.LikelyFlakyRuns == 0 {
+			return nil
+		}
+
+		out := &trpb.DailyTargetStats{
+			Date: row.Date,
+			Data: &trpb.TargetStatsData{
+				FlakyRuns:       row.FlakyRuns,
+				TotalRuns:       row.TotalRuns,
+				FailedRuns:      row.FailedRuns,
+				LikelyFlakyRuns: row.LikelyFlakyRuns,
+			},
+		}
+		rsp.Stats = append(rsp.Stats, out)
+		return nil
+	})
+
+	return rsp, nil
+}
+
 func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTargetStatsRequest) (*trpb.GetTargetStatsResponse, error) {
 	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -752,21 +834,16 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ?"
 	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo}
+	if req.GetRepo() != "" {
+		innerWhereClause = innerWhereClause + " AND repo_url = ?"
+		qArgs = append(qArgs, req.GetRepo())
+	}
 	if len(req.GetLabels()) > 0 {
 		innerWhereClause = innerWhereClause + " AND label IN ?"
 		qArgs = append(qArgs, req.GetLabels())
 	}
 
 	qArgs = append(qArgs, qArgs...)
-
-	pg, err := paging.DecodeOffsetLimit(req.GetPageToken())
-	if err != nil {
-		return nil, err
-	}
-	pg.Offset = max(pg.Offset, int64(0))
-	pg.Limit = min(max(pg.Limit, int64(50)), int64(200))
-
-	qArgs = append(qArgs, pg.GetLimit()+1, pg.GetOffset())
 	qStr := fmt.Sprintf(`SELECT stats.label AS label, total_runs, successful_runs, flaky_runs,
 	    failed_runs, likely_flaky_runs, flaky_runs + likely_flaky_runs as total_flakes
 	FROM (
@@ -776,7 +853,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 		countIf(status = 2) AS flaky_runs,
 		countIf(status > 2) AS failed_runs
 		FROM "TestTargetStatuses" WHERE (%s) GROUP BY label) stats
-	INNER JOIN (SELECT label, count(*) AS likely_flaky_runs
+	LEFT JOIN (SELECT label, count(*) AS likely_flaky_runs
 		FROM (
 			SELECT
 				label,
@@ -789,27 +866,35 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 				PARTITION BY label
 				ORDER BY invocation_start_time_usec ASC
 				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
-		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status > 2 GROUP BY label) lf
-	ON lf.label=stats.label ORDER BY total_flakes DESC LIMIT ? OFFSET ?`, innerWhereClause, innerWhereClause)
+		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status IN (3, 4) GROUP BY label) lf
+	ON lf.label=stats.label ORDER BY total_flakes DESC LIMIT 500`, innerWhereClause, innerWhereClause)
 
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
+	type qRow struct {
+		Label           string
+		FlakyRuns       int64
+		TotalRuns       int64
+		FailedRuns      int64
+		LikelyFlakyRuns int64
+	}
 
-	count := int64(0)
 	rsp := &trpb.GetTargetStatsResponse{}
-	db.ScanEach(rq, func(ctx context.Context, row *trpb.TargetStats) error {
-		// We fetch limit+1 rows just to see if there's going to be another page of results.
-		count++
-		if count > pg.GetLimit() {
+	db.ScanEach(rq, func(ctx context.Context, row *qRow) error {
+		if row.FlakyRuns+row.LikelyFlakyRuns == 0 {
 			return nil
 		}
-		rsp.Stats = append(rsp.Stats, row)
+		out := &trpb.AggregateTargetStats{
+			Label: row.Label,
+			Data: &trpb.TargetStatsData{
+				FlakyRuns:       row.FlakyRuns,
+				TotalRuns:       row.TotalRuns,
+				FailedRuns:      row.FailedRuns,
+				LikelyFlakyRuns: row.LikelyFlakyRuns,
+			},
+		}
+		rsp.Stats = append(rsp.Stats, out)
 		return nil
 	})
-	if count > pg.GetLimit() {
-		if rsp.NextPageToken, err = paging.EncodeOffsetLimit(&pgpb.OffsetLimit{Offset: pg.GetOffset() + pg.GetLimit(), Limit: pg.GetLimit()}); err != nil {
-			return nil, err
-		}
-	}
 	return rsp, nil
 }
 
@@ -832,8 +917,12 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ? AND label = ?"
 	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo, req.GetLabel()}
+	if req.GetRepo() != "" {
+		innerWhereClause = innerWhereClause + " AND repo_url = ?"
+		qArgs = append(qArgs, req.GetRepo())
+	}
 	qArgs = append(qArgs, qArgs...)
-	qArgs = append(qArgs, pg.GetLimit(), pg.GetOffset())
+	qArgs = append(qArgs, pg.GetLimit()+1, pg.GetOffset())
 
 	qStr := fmt.Sprintf(`SELECT status, invocation_start_time_usec, invocation_uuid
 	FROM (
@@ -886,9 +975,11 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 				for _, f := range tr.GetTestActionOutput() {
 					if f.GetName() == "test.xml" && strings.HasPrefix(f.GetUri(), "bytestream://") {
 						rsp.Samples = append(rsp.Samples, &trpb.FlakeSample{
-							InvocationId:   invocationID,
-							Status:         convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
-							TestXmlFileUri: f.GetUri(),
+							InvocationId:            invocationID,
+							InvocationStartTimeUsec: row.InvocationStartTimeUsec,
+							Status:                  convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
+							Event:                   event.GetBuildEvent(),
+							TestXmlFileUri:          f.GetUri(),
 						})
 					}
 				}

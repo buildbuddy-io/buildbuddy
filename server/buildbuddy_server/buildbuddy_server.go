@@ -1158,6 +1158,10 @@ func (s *BuildBuddyServer) GetTargetStats(ctx context.Context, req *trpb.GetTarg
 	return target.GetTargetStats(ctx, s.env, req)
 }
 
+func (s *BuildBuddyServer) GetDailyTargetStats(ctx context.Context, req *trpb.GetDailyTargetStatsRequest) (*trpb.GetDailyTargetStatsResponse, error) {
+	return target.GetDailyTargetStats(ctx, s.env, req)
+}
+
 func (s *BuildBuddyServer) GetTargetFlakeSamples(ctx context.Context, req *trpb.GetTargetFlakeSamplesRequest) (*trpb.GetTargetFlakeSamplesResponse, error) {
 	return target.GetTargetFlakeSamples(ctx, s.env, req)
 }

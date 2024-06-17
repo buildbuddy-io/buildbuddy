@@ -224,14 +224,11 @@ message GetTargetStatsRequest {
   // flakiest tests in the last 30 days.
   repeated string labels = 2;
 
-  // If many/all labels are requested, there may be multiple pages of results.
-  string page_token = 3;
+  // If specified, stats will be restricted to invocations in this repo.
+  string repo = 3;
 }
 
-message TargetStats {
-  // The target label that these stats are for.
-  string label = 1;
-
+message TargetStatsData {
   // The total number of runs of this target. This number will equal
   // successful_runs + flaky_runs + failed_runs.
   int64 total_runs = 2;
@@ -249,17 +246,51 @@ message TargetStats {
   int64 failed_runs = 6;
 }
 
+message AggregateTargetStats {
+  // The target label that these stats are for.
+  string label = 1;
+
+  TargetStatsData data = 2;
+}
+
 message GetTargetStatsResponse {
   context.ResponseContext response_context = 1;
   // Per-target stats on observed flakes.  Currently, flakes are computed based
   // on CI runs on master--it's difficult to assert "sequentialness" of non-CI
   // runs, and moreover, individual users can cause random weird-looking
   // failures locally all the time.
-  repeated TargetStats stats = 2;
+  repeated AggregateTargetStats stats = 2;
+}
 
-  // If the user didn't specify a set of targets to fetch, there may be multiple
-  // pages of results.
-  string next_page_token = 3;
+message GetDailyTargetStatsRequest {
+  context.RequestContext request_context = 1;
+
+  // If specified, a list of targets for which we should fetch flake data.
+  // Daily stats will be aggregated over this set of targets--if no targets are
+  // specified, total stats for all
+  repeated string labels = 2;
+
+  // If specified, stats will be restricted to invocations in this repo.
+  string repo = 3;
+
+  // If many/all labels are requested, there may be multiple pages of results.
+  string page_token = 4;
+}
+
+message DailyTargetStats {
+  // YYYY-MM-DD
+  string date = 1;
+
+  TargetStatsData data = 2;
+}
+
+message GetDailyTargetStatsResponse {
+  context.ResponseContext response_context = 1;
+  // Per-target stats on observed flakes.  Currently, flakes are computed based
+  // on CI runs on master--it's difficult to assert "sequentialness" of non-CI
+  // runs, and moreover, individual users can cause random weird-looking
+  // failures locally all the time.
+  repeated DailyTargetStats stats = 2;
 }
 
 // Fetches examples of flaky runs for a single target in the last seven days.
@@ -269,8 +300,11 @@ message GetTargetFlakeSamplesRequest {
   // The target label for which we'd like to see flaky runs.
   string label = 2;
 
+  // If specified, all flaky invocations must match this repo.
+  string repo = 3;
+
   // A token for fetching another page of flaky runs.
-  string page_token = 3;
+  string page_token = 4;
 }
 
 message FlakeSample {
@@ -286,6 +320,13 @@ message FlakeSample {
 
   // The invocation ID that the flake was in, so that we can link to it.
   string invocation_id = 3;
+
+  // The start time of the invocation (just as a hint for the user).
+  int64 invocation_start_time_usec = 4;
+
+  // The build event (a TestResult) corresponding to the failure that generated
+  // the flake.
+  build_event_stream.BuildEvent event = 5;
 }
 
 message GetTargetFlakeSamplesResponse {
