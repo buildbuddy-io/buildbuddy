@@ -63,6 +63,7 @@ func (s *Subscriber) Chan() <-chan string {
 	internalChannel := s.ps.Channel()
 	externalChannel := make(chan string)
 	go func() {
+		defer close(externalChannel)
 		for m := range internalChannel {
 			select {
 			case externalChannel <- m.Payload:
