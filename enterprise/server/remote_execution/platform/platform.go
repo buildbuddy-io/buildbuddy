@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	units "github.com/docker/go-units"
 )
 
@@ -120,6 +121,9 @@ const (
 	EstimatedCPUPropertyName    = "EstimatedCPU"
 	EstimatedMemoryPropertyName = "EstimatedMemory"
 
+	// Property name prefix indicating a custom resource assignment.
+	customResourcePrefix = "resources:"
+
 	BareContainerType        ContainerType = "none"
 	PodmanContainerType      ContainerType = "podman"
 	DockerContainerType      ContainerType = "docker"
@@ -143,6 +147,7 @@ type Properties struct {
 	EstimatedMilliCPU         int64
 	EstimatedMemoryBytes      int64
 	EstimatedFreeDiskBytes    int64
+	CustomResources           []*scpb.CustomResource
 	ContainerImage            string
 	ContainerRegistryUsername string
 	ContainerRegistryPassword string
@@ -264,7 +269,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	for _, prop := range stringListProp(m, EnvOverridesBase64PropertyName) {
 		b, err := base64.StdEncoding.DecodeString(prop)
 		if err != nil {
-			return nil, status.FailedPreconditionErrorf("Failed to decode base64 encoded env override: %s", err)
+			return nil, status.InvalidArgumentErrorf("decode env override as base64: %s", err)
 		}
 		envOverrides = append(envOverrides, string(b))
 	}
@@ -278,6 +283,22 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		return nil, err
 	}
 
+	// Parse custom resources
+	var customResources []*scpb.CustomResource
+	for k, v := range m {
+		if strings.HasPrefix(k, customResourcePrefix) {
+			name := strings.TrimPrefix(k, customResourcePrefix)
+			value, err := strconv.ParseFloat(v, 32)
+			if err != nil {
+				return nil, status.InvalidArgumentErrorf("parse execution property %q: value is not a valid float32", k)
+			}
+			customResources = append(customResources, &scpb.CustomResource{
+				Name:  name,
+				Value: float32(value),
+			})
+		}
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
@@ -286,6 +307,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
 		EstimatedFreeDiskBytes:    iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
+		CustomResources:           customResources,
 		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),

@@ -1,7 +1,6 @@
 package resources
 
 import (
-	"flag"
 	"os"
 	"regexp"
 	"runtime"
@@ -9,13 +8,17 @@ import (
 	"sync"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
+
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 var (
+	customResources = flag.Slice("executor.custom_resources", []CustomResource{}, "Optional allocatable custom resources. This works similarly to bazel's local_extra_resources flag. Request these resources in exec_properties using the 'resources:<name>': '<value>' syntax.")
 	memoryBytes     = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
 	mmapMemoryBytes = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if snapshot sharing is disabled.")
 	milliCPU        = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var.")
@@ -133,6 +136,23 @@ func GetAllocatedMmapRAMBytes() int64 {
 
 func GetAllocatedCPUMillis() int64 {
 	return allocatedCPUMillis
+}
+
+// Struct version of scpb.CustomResource (for YAML configuration).
+type CustomResource struct {
+	Name  string  `yaml:"name" json:"name"`
+	Value float64 `yaml:"value" json:"value"`
+}
+
+func GetAllocatedCustomResources() []*scpb.CustomResource {
+	out := make([]*scpb.CustomResource, 0, len(*customResources))
+	for _, r := range *customResources {
+		out = append(out, &scpb.CustomResource{
+			Name:  r.Name,
+			Value: float32(r.Value),
+		})
+	}
+	return out
 }
 
 func GetNodeName() string {
