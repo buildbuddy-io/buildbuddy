@@ -1113,9 +1113,14 @@ func (c *ControlledCommand) WaitDisconnected() {
 
 type ExecuteControlledOpts struct {
 	InvocationID string
+
 	// AllowReconnect indicates whether the command should auto-reconnect
 	// using WaitExecution if the Execute request gets interrupted.
 	AllowReconnect bool
+
+	// Properties specifies a list of platform properties to include in the
+	// command in addition to the defaults (OS/Arch etc.)
+	Properties []*repb.Platform_Property
 }
 
 // ExecuteControlledCommand anonymously executes a special test command binary
@@ -1125,6 +1130,8 @@ type ExecuteControlledOpts struct {
 func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts) *ControlledCommand {
 	ctx := context.Background()
 	args := []string{"./" + testCommandBinaryName, "--name", name, "--controller", fmt.Sprintf("localhost:%d", r.testCommandController.port)}
+	command := minimalCommand(args...)
+	command.Platform.Properties = append(command.Platform.Properties, opts.Properties...)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.testEnv)
 	if err != nil {
@@ -1136,7 +1143,7 @@ func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts)
 
 	inputRootDigest := r.setupRootDirectoryWithTestCommandBinary(ctx)
 
-	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, minimalCommand(args...), 0 /*=timeout*/)
+	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, command, 0 /*=timeout*/)
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("Could not prepare command %q", name), err.Error())
 	}
