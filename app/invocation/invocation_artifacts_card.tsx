@@ -84,7 +84,12 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
 
       const group = this.state.searchResponse?.targetGroups[0] ?? artifactListingGroup;
       return (
-        <TargetGroupCard invocationId={this.props.model.getInvocationId()} group={group} filter={this.props.filter} />
+        <TargetGroupCard
+          invocationId={this.props.model.getInvocationId()}
+          repo={this.props.model.getRepo()}
+          group={group}
+          filter={this.props.filter}
+        />
       );
     }
 

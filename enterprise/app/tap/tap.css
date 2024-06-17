@@ -23,16 +23,18 @@
 }
 
 .tap .tap-top-bar {
-  padding: 32px 0;
+  padding: 32px 0 0;
   border-bottom: 1px solid #eee;
   flex-shrink: 0;
-  position: sticky;
   top: 0;
+}
+
+.tap .tap-top-bar.stick {
+  position: sticky;
 }
 
 .tap.v2 .tap-top-bar {
   border-bottom: none;
-  padding-bottom: 8px;
 }
 
 .tap .inner-top-bar-underlay {
@@ -71,10 +73,19 @@
   display: flex;
   gap: 16px;
   align-items: center;
+  padding-bottom: 32px;
+}
+
+.tap.v2 .target-controls {
+  padding-bottom: 8px;
 }
 
 .tap .repo-picker {
   max-width: 300px;
+}
+
+.tap .tap-header-group {
+  margin-bottom: 16px;
 }
 
 .tap .tap-header {
@@ -83,13 +94,16 @@
   gap: 16px;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
 }
 
 .tap-title {
   font-size: 32px;
   font-weight: 700;
   flex-shrink: 0;
+}
+
+.tap .tabs {
+  margin-top: 8px;
 }
 
 .tap .inner-top-bar {
@@ -466,4 +480,75 @@ SKIPPED = 13;
   display: flex;
   align-items: center;
   margin-left: 8px;
+}
+
+.tap .chart-card {
+  margin-top: 0;
+  display: block;
+}
+
+.tap .flakes-chart-header {
+  margin: 0 0 16px;
+}
+
+.tap .flakes-list-header {
+  margin: 16px 0;
+}
+
+.tap .flake-table {
+  margin-top: 16px;
+}
+
+.tap .flake-table-row {
+  display: flex;
+  border-top: 1px solid #eee;
+  padding: 16px 0;
+}
+
+.tap .flake-table-row:last-child {
+  border-bottom: 1px solid #eee;
+}
+
+.tap .flake-table-row:hover {
+  background: #fafafa;
+}
+
+.tap .flake-table-row-image {
+  margin-left: 4px;
+  margin-right: 16px;
+}
+
+.tap .flake-table-row-header {
+  font-weight: 600;
+}
+
+.tap .flake-table-row-content {
+  flex-grow: 1;
+}
+
+.tap .flake-table-row-stats {
+  display: flex;
+  justify-content: space-between;
+}
+
+.tap .flake-stat {
+  width: 160px;
+  margin: 8px 0;
+  font-size: 16px;
+}
+
+.tap .flake-stat-value {
+  font-size: 20px;
+}
+
+.tap .flake-table-header {
+  display: flex;
+  justify-content: space-between;
+  grid-gap: 8px;
+}
+
+.tap .flake-table-sort-controls {
+  display: flex;
+  align-items: center;
+  min-width: 300px;
 }

@@ -164,6 +164,12 @@
   color: #757575;
 }
 
+.invocation-flaky-chip-alignment-hack {
+  display: inline-block;
+  vertical-align: top;
+  margin-top: -10px;
+}
+
 .invocation-action-card .icon.file-icon,
 .invocation-action-card .icon.folder-icon,
 .invocation-action-card .icon.file-question-icon {

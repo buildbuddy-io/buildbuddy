@@ -73,7 +73,12 @@ export default class TargetsComponent extends React.Component<Props, State> {
 
   private renderTargetGroup(group: target.TargetGroup) {
     return (
-      <TargetGroupCard invocationId={this.props.model.getInvocationId()} group={group} filter={this.props.filter} />
+      <TargetGroupCard
+        invocationId={this.props.model.getInvocationId()}
+        repo={this.props.model.getRepo()}
+        group={group}
+        filter={this.props.filter}
+      />
     );
   }
 
