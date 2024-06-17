@@ -49,15 +49,16 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 	return &scpb.ExecutionNode{
 		Host: hostname,
 		// TODO: stop setting port once the scheduler no longer requires it.
-		Port:                  1,
-		AssignableMemoryBytes: resources.GetAllocatedRAMBytes(),
-		AssignableMilliCpu:    resources.GetAllocatedCPUMillis(),
-		Os:                    resources.GetOS(),
-		Arch:                  resources.GetArch(),
-		Pool:                  strings.ToLower(pool),
-		Version:               version.AppVersion(),
-		ExecutorId:            executorID,
-		ExecutorHostId:        executorHostID,
+		Port:                      1,
+		AssignableMemoryBytes:     resources.GetAllocatedRAMBytes(),
+		AssignableMilliCpu:        resources.GetAllocatedCPUMillis(),
+		AssignableCustomResources: resources.GetAllocatedCustomResources(),
+		Os:                        resources.GetOS(),
+		Arch:                      resources.GetArch(),
+		Pool:                      strings.ToLower(pool),
+		Version:                   version.AppVersion(),
+		ExecutorId:                executorID,
+		ExecutorHostId:            executorHostID,
 	}, nil
 }
 
