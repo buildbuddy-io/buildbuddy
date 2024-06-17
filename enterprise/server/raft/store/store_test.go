@@ -995,7 +995,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
-	{ // Verify that there are 2 replicas for range 2, and also write 10 records
+	{ // Verify that there are 3 replicas for range 2, and also write 10 records
 		s := getStoreWithRangeLease(t, ctx, stores, 2)
 		writeNRecords(ctx, t, s, 10)
 		replicas := getMembership(t, s, ctx, 2)
@@ -1045,4 +1045,55 @@ func TestReplaceDeadReplica(t *testing.T) {
 	}
 	r2 := getReplica(t, s4, 2)
 	waitForReplicaToCatchUp(t, ctx, r2, desiredAppliedIndex)
+}
+
+func TestRemoveDeadReplica(t *testing.T) {
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	s4 := sf.NewStore(t)
+	ctx := context.Background()
+
+	// start shards for s1, s2, s3, s4
+	stores := []*testutil.TestingStore{s1, s2, s3, s4}
+	sf.StartShard(t, ctx, stores...)
+
+	{ // Verify that there are 4 replicas for range 2
+		s := getStoreWithRangeLease(t, ctx, stores, 2)
+		replicas := getMembership(t, s, ctx, 2)
+		require.Equal(t, 4, len(replicas))
+		rd := s.GetRange(2)
+		require.Equal(t, 4, len(rd.GetReplicas()))
+	}
+
+	// Stop store 4
+	s4.Stop()
+
+	nhid4 := s4.NodeHost().ID()
+
+	// Advance the clock pass the cache.raft.dead_store_timeout so s4 is considered dead.
+	clock.Advance(5*time.Minute + 1*time.Second)
+	for {
+		// advance the clock to trigger scan replicas
+		clock.Advance(61 * time.Second)
+		// wait some time to allow let driver queue execute
+		time.Sleep(100 * time.Millisecond)
+
+		if !includeReplicaWithNHID(s1.GetRange(1), nhid4) &&
+			!includeReplicaWithNHID(s1.GetRange(2), nhid4) &&
+			!includeReplicaWithNHID(s2.GetRange(1), nhid4) &&
+			!includeReplicaWithNHID(s2.GetRange(2), nhid4) &&
+			!includeReplicaWithNHID(s3.GetRange(1), nhid4) &&
+			!includeReplicaWithNHID(s3.GetRange(2), nhid4) {
+			break
+		}
+	}
 }

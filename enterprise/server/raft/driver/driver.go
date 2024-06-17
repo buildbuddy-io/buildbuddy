@@ -378,8 +378,8 @@ func (rq *Queue) Start(ctx context.Context) {
 	}
 }
 
-// findReplacingReplica finds a dead replica to be removed.
-func findReplacingReplica(replicas []*rfpb.ReplicaDescriptor, replicaByStatus *storemap.ReplicasByStatus) *rfpb.ReplicaDescriptor {
+// findDeadReplica finds a dead replica to be removed.
+func findDeadReplica(replicas []*rfpb.ReplicaDescriptor, replicaByStatus *storemap.ReplicasByStatus) *rfpb.ReplicaDescriptor {
 	if len(replicaByStatus.DeadReplicas) == 0 {
 		// nothing to be removed
 		return nil
@@ -454,8 +454,8 @@ func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
 }
 
 func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *storemap.ReplicasByStatus) *change {
-	replacing := findReplacingReplica(rd.GetReplicas(), replicasByStatus)
-	if replacing == nil {
+	dead := findDeadReplica(rd.GetReplicas(), replicasByStatus)
+	if dead == nil {
 		// nothing to remove
 		return nil
 	}
@@ -467,10 +467,24 @@ func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *
 
 	change.removeOp = &rfpb.RemoveReplicaRequest{
 		Range:     rd,
-		ReplicaId: replacing.GetReplicaId(),
+		ReplicaId: dead.GetReplicaId(),
 	}
 
 	return change
+}
+
+func (rq *Queue) removeDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *storemap.ReplicasByStatus) *change {
+	dead := findDeadReplica(rd.GetReplicas(), replicasByStatus)
+	if dead == nil {
+		// nothing to remove
+		return nil
+	}
+	return &change{
+		removeOp: &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: dead.GetReplicaId(),
+		},
+	}
 }
 
 func (rq *Queue) findRemovableReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, brandNewReplicaID *uint64) []*rfpb.ReplicaDescriptor {
@@ -636,7 +650,7 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 		change = rq.removeReplica(ctx, rd, repl)
 	case DriverRemoveDeadReplica:
 		rq.log.Debugf("remove dead replica: %d", repl.ShardID())
-		// TODO
+		change = rq.removeDeadReplica(rd, replicasByStatus)
 	case DriverConsiderRebalance:
 		rq.log.Debugf("remove consider rebalance: %d", repl.ShardID())
 		// TODO
