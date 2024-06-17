@@ -245,6 +245,11 @@ common:webdriver-debug --test_output=streamed
 #   $ open cover/index.html
 common --combined_report=lcov
 
+# Disable BES progress event buffering.
+# When buffering progress events, the relative ordering between stdout and
+# stderr can be lost, resulting in the terminal output appearing garbled.
+common --bes_outerr_buffer_size=0
+
 # Use BLAKE3 digest function.
 startup --digest_function=BLAKE3
 # Bazel doesn't track the contents of source directories by default, which can result
