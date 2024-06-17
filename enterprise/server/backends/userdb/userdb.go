@@ -58,6 +58,12 @@ var (
 	}
 )
 
+type userGroupJoin struct {
+	tables.User
+	*tables.UserGroup
+	*tables.Group
+}
+
 func singleUserGroup(u *tables.User) (*tables.Group, error) {
 	name := "My Organization"
 	if u.Email != "" {
@@ -838,19 +844,51 @@ func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*t
 	return user, err
 }
 
+func usersFromUserGroupJoin(ugj []*userGroupJoin) ([]*tables.User, error) {
+	users := make([]*tables.User, 0)
+	usersMap := make(map[string]*tables.User, 0)
+	for _, v := range ugj {
+		user, ok := usersMap[v.User.UserID]
+		if !ok {
+			user = &tables.User{}
+			*user = v.User
+			usersMap[user.UserID] = user
+			users = append(users, user)
+		}
+		if v.UserGroup == nil {
+			// no user groups matched this user ID
+			continue
+		}
+		if v.Group == nil {
+			// no group matched the user group (this shouldn't really happen)
+			return nil, status.InternalErrorf("No group entry matching groupID %s, which is present in UserGroups table.", v.UserGroup.GroupGroupID)
+		}
+		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role})
+	}
+	return users, nil
+}
+
 func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User, error) {
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// TODO(zoey): switch this to JOIN
 	rq := d.h.NewQuery(ctx, "userdb_get_user_by_email").Raw(`
-		SELECT * 
+		SELECT u.*, ug.*, g.*
 		FROM "Users" u 
-		JOIN "UserGroups" ug on u.user_id = ug.user_user_id
+			LEFT JOIN "UserGroups" AS ug
+				ON u.user_id = ug.user_user_id
+			LEFT JOIN "Groups" AS g
+				ON ug.group_group_id = g.group_id
 		WHERE u.email = ? AND ug.group_group_id = ?
-	`, email, u.GetGroupID())
-	users, err := db.ScanAll(rq, &tables.User{})
+		AND (ug.membership_status = ? OR ug.user_user_id IS NULL)
+		ORDER BY u.user_id, g.group_id ASC
+	`, email, u.GetGroupID(), int32(grpb.GroupMembershipStatus_MEMBER))
+	ugj, err := db.ScanAll(rq, &userGroupJoin{})
+	if err != nil {
+		return nil, err
+	}
+	users, err := usersFromUserGroupJoin(ugj)
 	if err != nil {
 		return nil, err
 	}
@@ -858,11 +896,7 @@ func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User
 	case 0:
 		return nil, status.NotFoundErrorf("no users found with email %q", email)
 	case 1:
-		user := users[0]
-		if err := fillUserGroups(ctx, d.h, user); err != nil {
-			return nil, err
-		}
-		return user, nil
+		return users[0], nil
 	default:
 		return nil, status.FailedPreconditionErrorf("multiple users found for email %q", email)
 	}
@@ -884,42 +918,33 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	return user, err
 }
 
-func fillUserGroups(ctx context.Context, h interfaces.DB, user *tables.User) error {
-	rq := h.NewQuery(ctx, "userdb_get_user_groups").Raw(`
-			SELECT g.*, ug.role
-			FROM "Groups" as g
-			JOIN "UserGroups" as ug
-			ON g.group_id = ug.group_group_id
-			WHERE ug.user_user_id = ? AND ug.membership_status = ?
+func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (*tables.User, error) {
+	rq := tx.NewQuery(ctx, "userdb_get_user").Raw(`
+		SELECT u.*, ug.*, g.*
+		FROM "Users" u 
+			LEFT JOIN "UserGroups" AS ug
+				ON u.user_id = ug.user_user_id
+			LEFT JOIN "Groups" AS g
+				ON ug.group_group_id = g.group_id
+		WHERE u.user_id = ?
+		AND (ug.membership_status = ? OR ug.user_user_id IS NULL)
+		ORDER BY u.user_id, g.group_id ASC
 		`,
-		user.UserID,
+		userID,
 		int32(grpb.GroupMembershipStatus_MEMBER),
 	)
-	gs, err := db.ScanAll(rq, &tables.GroupRole{})
+	ugj, err := db.ScanAll(rq, &userGroupJoin{})
 	if err != nil {
-		return err
-	}
-	user.Groups = gs
-	return nil
-}
-
-func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (*tables.User, error) {
-	// TODO(zoey): switch this to JOIN
-	user := &tables.User{}
-	err := tx.NewQuery(ctx, "userdb_get_user").Raw(
-		`SELECT * FROM "Users" WHERE user_id = ?`,
-		userID,
-	).Take(user)
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return nil, status.NotFoundError("user not found")
-		}
 		return nil, err
 	}
-	if err := fillUserGroups(ctx, tx, user); err != nil {
+	users, err := usersFromUserGroupJoin(ugj)
+	if err != nil {
 		return nil, err
 	}
-	return user, nil
+	if len(users) == 0 {
+		return nil, status.NotFoundError("user not found")
+	}
+	return users[0], nil
 }
 
 func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) {
