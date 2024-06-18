@@ -678,7 +678,10 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		// Cache snapshot manifest for this specific snapshot ID
 		if opts.VMMetadata.GetSnapshotId() != "" {
 			snapshotID := opts.VMMetadata.SnapshotId
-			snapshotSpecificKey := &fcpb.SnapshotKey{SnapshotId: snapshotID}
+			snapshotSpecificKey := &fcpb.SnapshotKey{
+				InstanceName: key.InstanceName,
+				SnapshotId:   snapshotID,
+			}
 			snapshotSpecificManifestKey, err := RemoteManifestKey(snapshotSpecificKey)
 			if err != nil {
 				log.Warningf("Failed to generate snapshot specific remote manifest key for snapshot ID %s: %s", snapshotID, err)
@@ -712,7 +715,10 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	// Cache snapshot manifest for this specific snapshot ID
 	if opts.VMMetadata.GetSnapshotId() != "" {
 		snapshotID := opts.VMMetadata.GetSnapshotId()
-		snapshotSpecificKey := &fcpb.SnapshotKey{SnapshotId: snapshotID}
+		snapshotSpecificKey := &fcpb.SnapshotKey{
+			InstanceName: key.InstanceName,
+			SnapshotId:   snapshotID,
+		}
 
 		snapshotSpecificManifestKey, err := LocalManifestKey(gid, snapshotSpecificKey)
 		if err != nil {
