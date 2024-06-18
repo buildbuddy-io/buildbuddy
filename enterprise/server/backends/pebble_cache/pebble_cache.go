@@ -484,7 +484,7 @@ func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 		L0CompactionThreshold:    2,
 		MaxConcurrentCompactions: func() int { return 18 },
 		MemTableSize:             64 << 20, // 64 MB
-		EventListener: pebble.EventListener{
+		EventListener: &pebble.EventListener{
 			WriteStallBegin: el.WriteStallBegin,
 			WriteStallEnd:   el.WriteStallEnd,
 			DiskSlow:        el.DiskSlow,
@@ -864,10 +864,13 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 	}
 	defer db.Close()
 
-	iter := db.NewIter(&pebble.IterOptions{
+	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.MinByte,
 		UpperBound: keys.MaxByte,
 	})
+	if err != nil {
+		return err
+	}
 	defer iter.Close()
 
 	minVersion := p.maxDatabaseVersion()
@@ -1033,10 +1036,13 @@ func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) e
 	srcKeyPrefix := []byte(partitionDirectoryPrefix + srcPartitionID)
 	dstKeyPrefix := []byte(partitionDirectoryPrefix + dstPartitionID)
 	start, end := keys.Range(srcKeyPrefix)
-	iter := db.NewIter(&pebble.IterOptions{
+	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,
 	})
+	if err != nil {
+		return err
+	}
 	defer iter.Close()
 
 	blobDir := p.blobDir()
@@ -1100,10 +1106,13 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 	defer db.Close()
 
 	const sep = "/"
-	iter := db.NewIter(&pebble.IterOptions{
+	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.MinByte,
 		UpperBound: keys.MaxByte,
 	})
+	if err != nil {
+		return err
+	}
 	defer iter.Close()
 
 	orphanCount := 0
@@ -1222,10 +1231,14 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 	}
 	lowerBound, upperBound := keys.Range(keyPrefix)
 
-	iter := db.NewIter(&pebble.IterOptions{
+	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: lowerBound,
 		UpperBound: upperBound,
 	})
+	if err != nil {
+		log.Errorf("Error creating pebble iter: %s", err)
+		return
+	}
 	// We update the iter variable later on, so we need to wrap the Close call
 	// in a func to operate on the correct iterator instance.
 	defer func() {
@@ -1258,10 +1271,13 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 		if totalCount != 0 && totalCount%1_000_000 == 0 {
 			k := make([]byte, len(iter.Key()))
 			copy(k, iter.Key())
-			newIter := db.NewIter(&pebble.IterOptions{
+			newIter, err := db.NewIter(&pebble.IterOptions{
 				LowerBound: k,
 				UpperBound: upperBound,
 			})
+			if err != nil {
+				break
+			}
 			iter.Close()
 			if !newIter.First() {
 				break
@@ -2521,10 +2537,13 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	}
 	defer db.Close()
 	start, end := keyRange([]byte(e.partitionKeyPrefix() + "/"))
-	iter := db.NewIter(&pebble.IterOptions{
+	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,
 	})
+	if err != nil {
+		return err
+	}
 	// We update the iter variable later on, so we need to wrap the Close call
 	// in a func to operate on the correct iterator instance.
 	defer func() {
@@ -2567,10 +2586,13 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		if shouldCreateNewIter {
 			shouldCreateNewIter = false
 			totalCount = 0
-			newIter := db.NewIter(&pebble.IterOptions{
+			newIter, err := db.NewIter(&pebble.IterOptions{
 				LowerBound: start,
 				UpperBound: end,
 			})
+			if err != nil {
+				return err
+			}
 			iter.Close()
 			iter = newIter
 		}
@@ -2680,10 +2702,13 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		return 0, 0, 0, err
 	}
 	defer db.Close()
-	iter := db.NewIter(&pebble.IterOptions{
+	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,
 	})
+	if err != nil {
+		return 0, 0, 0, err
+	}
 	defer iter.Close()
 	iter.SeekLT(start)
 

@@ -2010,10 +2010,11 @@ func TestDeleteOrphans(t *testing.T) {
 	require.NoError(t, err)
 	deletedDigests := make(map[string]*digestAndType, 0)
 
-	iter := db.NewIter(&pebble.IterOptions{
+	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.MinByte,
 		UpperBound: keys.MaxByte,
 	})
+	require.NoError(t, err)
 	iter.SeekLT(keys.MinByte)
 
 	for iter.Next() {

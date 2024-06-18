@@ -102,7 +102,7 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: nrf,
 		},
-		AddressByNodeHostID: false,
+		DefaultNodeRegistryEnabled: false,
 		RaftEventListener:   raftListener,
 		SystemEventListener: raftListener,
 	}

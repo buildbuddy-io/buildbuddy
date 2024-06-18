@@ -541,7 +541,7 @@ func (s *Store) dropLeadershipForShutdown() {
 		// Pick the first node in the map that isn't us. Map ordering is
 		// random; which is a good thing, it means we're randomly picking
 		// another node in the cluster and requesting they take the lead.
-		for replicaID := range clusterInfo.Nodes {
+		for replicaID := range clusterInfo.Replicas {
 			if replicaID == clusterInfo.ReplicaID {
 				continue
 			}
