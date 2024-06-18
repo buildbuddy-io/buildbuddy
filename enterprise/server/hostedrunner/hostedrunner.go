@@ -61,8 +61,12 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 	if req.GetGitRepo().GetRepoUrl() == "" {
 		return status.InvalidArgumentError("A repo url is required.")
 	}
-	if req.GetBazelCommand() == "" {
-		return status.InvalidArgumentError("A bazel command is required.")
+	if len(req.GetBazelCommands()) < 1 {
+		if req.GetBazelCommand() != "" {
+			req.BazelCommands = []string{req.GetBazelCommand()}
+		} else {
+			return status.InvalidArgumentError("A bazel command is required.")
+		}
 	}
 	if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
 		return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
@@ -128,12 +132,14 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--target_repo_url=" + repoURL.String(),
 		"--pushed_repo_url=" + repoURL.String(),
 		"--pushed_branch=" + req.GetRepoState().GetBranch(),
-		"--bazel_sub_command=" + req.GetBazelCommand(),
 		"--invocation_id=" + invocationID,
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
 	}
-	if !req.GetRunRemotely() && strings.HasPrefix(req.GetBazelCommand(), "run ") {
+	for _, c := range req.GetBazelCommands() {
+		args = append(args, "--bazel_sub_command="+c)
+	}
+	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
 	}
 	if req.GetInstanceName() != "" {

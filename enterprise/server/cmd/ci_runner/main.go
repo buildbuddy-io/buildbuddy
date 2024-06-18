@@ -157,7 +157,7 @@ var (
 	serializedAction   = flag.String("serialized_action", "", "If set, run this b64+yaml encoded action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
-	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
+	bazelSubCommands   = flag.Slice("bazel_sub_command", []string{}, "If set, run these bazel commands in order and ignore all triggering and configured actions.")
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 	timeout            = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
 
@@ -381,14 +381,16 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 
 	optionsDescription := strings.Join(options, " ")
 	cmd := ""
-	patterns := []string{}
 	if !r.isWorkflow {
-		parsedArgs, err := parseBazelArgs(*bazelSubCommand)
-		if err != nil {
-			return err
+		cmd = "remote run"
+		// Only set the command on the outer invocation if only one command was run
+		if len(*bazelSubCommands) == 1 {
+			parsedArgs, err := parseBazelArgs((*bazelSubCommands)[0])
+			if err != nil {
+				return err
+			}
+			cmd = fmt.Sprintf("remote %s", parsedArgs.cmd)
 		}
-		cmd = parsedArgs.cmd
-		patterns = parsedArgs.patterns
 	}
 	startedEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
@@ -407,25 +409,37 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 			Command:            cmd,
 		}},
 	}
+	var patternEvents []*bespb.BuildEvent
 	if r.isWorkflow {
 		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}})
 		r.Printf("Streaming workflow logs to: %s", invocationURL(*invocationID))
 	} else {
-		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}})
+		for _, c := range *bazelSubCommands {
+			parsedArgs, err := parseBazelArgs(c)
+			if err != nil {
+				return err
+			}
+			patterns := parsedArgs.patterns
+			startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}})
+
+			patternEvent := &bespb.BuildEvent{
+				Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}},
+				Payload: &bespb.BuildEvent_Expanded{Expanded: &bespb.PatternExpanded{}},
+			}
+			patternEvents = append(patternEvents, patternEvent)
+		}
 		r.Printf("Streaming remote runner logs to: %s", invocationURL(*invocationID))
 	}
 	if err := r.bep.Publish(startedEvent); err != nil {
 		return err
 	}
-	if !r.isWorkflow {
-		patternEvent := &bespb.BuildEvent{
-			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}},
-			Payload: &bespb.BuildEvent_Expanded{Expanded: &bespb.PatternExpanded{}},
-		}
-		if err := r.bep.Publish(patternEvent); err != nil {
+
+	for _, p := range patternEvents {
+		if err := r.bep.Publish(p); err != nil {
 			return err
 		}
 	}
+
 	structuredCommandLineEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bespb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original"}}},
 		Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: getStructuredCommandLine()},
@@ -1030,7 +1044,8 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Instead of actually running the target, have Bazel write out a run script using the --script_path flag and
 		// extract run options (i.e. args, runfile information) from the generated run script.
 		runScript := ""
-		if *recordRunMetadata {
+		isRunCmd := args[0] == "run"
+		if isRunCmd && *recordRunMetadata {
 			tmpDir, err := os.MkdirTemp("", "bazel-run-script-*")
 			if err != nil {
 				return err
@@ -1196,7 +1211,7 @@ func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
 // This should only be used for WorkflowConfiguredEvents--it explicitly labels
 // actions with no name so that they can be identified later on.
 func getActionNameForWorkflowConfiguredEvent() string {
-	if *bazelSubCommand != "" {
+	if len(*bazelSubCommands) > 0 {
 		return "run"
 	}
 	if *actionName != "" {
@@ -1217,12 +1232,10 @@ func getActionToRun() (*config.Action, error) {
 		}
 		return a, nil
 	}
-	if *bazelSubCommand != "" {
+	if len(*bazelSubCommands) > 0 {
 		return &config.Action{
-			Name: "run",
-			BazelCommands: []string{
-				*bazelSubCommand,
-			},
+			Name:          "run",
+			BazelCommands: *bazelSubCommands,
 		}, nil
 	}
 	if *actionName != "" {

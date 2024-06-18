@@ -141,14 +141,20 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 			startTime := timeutil.GetTimeWithFallback(p.Started.StartTime, p.Started.StartTimeMillis)
 			sep.startTime = &startTime
 			sep.setCommand(p.Started.Command, priority)
+			numChildPatterns := 0
 			for _, child := range event.Children {
 				// Here we are then. Knee-deep.
 				switch c := child.Id.(type) {
 				case *build_event_stream.BuildEventId_Pattern:
 					{
 						sep.setPattern(c.Pattern.Pattern, priority)
+						numChildPatterns++
 					}
 				}
+			}
+			// Only set the pattern on the invocation if there was only one
+			if numChildPatterns > 1 {
+				sep.setPattern([]string{}, priority)
 			}
 		}
 	case *build_event_stream.BuildEvent_UnstructuredCommandLine:

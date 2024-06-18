@@ -761,7 +761,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			CommitSha: repoConfig.CommitSHA,
 			Branch:    repoConfig.Ref,
 		},
-		BazelCommand:   strings.Join(bazelArgs, " "),
+		BazelCommands:  []string{strings.Join(bazelArgs, " ")},
 		Os:             reqOS,
 		Arch:           reqArch,
 		ContainerImage: *containerImage,
