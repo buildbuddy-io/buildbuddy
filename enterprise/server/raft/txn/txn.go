@@ -16,6 +16,7 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
 
 const (
@@ -51,6 +52,29 @@ func (tc *Coordinator) sender() *sender.Sender {
 	return tc.store.Sender()
 }
 
+func makeHeader(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
+	return &rfpb.Header{
+		Replica: rd.GetReplicas()[replicaIdx],
+	}
+}
+
+func (tc *Coordinator) syncPropose(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest) (*rfpb.SyncProposeResponse, error) {
+	var syncRsp *rfpb.SyncProposeResponse
+	runFn := func(c rfspb.ApiClient, h *rfpb.Header) error {
+		r, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+			Header: h,
+			Batch:  batchCmd,
+		})
+		if err != nil {
+			return err
+		}
+		syncRsp = r
+		return nil
+	}
+	_, err := tc.sender().TryReplicas(ctx, rd, runFn, makeHeader)
+	return syncRsp, err
+}
+
 func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
 	txnProto, err := txn.ToProto()
 	if err != nil {
@@ -68,36 +92,27 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 		return err
 	}
 
-	// Check that each statement addresses a different shard. If two statements
-	// address a single shard, they should be combined, otherwise finalization
+	// Check that each statement addresses a different range. If two statements
+	// address a single range, they should be combined, otherwise finalization
 	// will fail when attempted twice.
-	shardStatementMap := make(map[uint64]int)
+	rangeStatementMap := make(map[uint64]int)
 	for i, statement := range txnProto.GetStatements() {
-		shardID := statement.GetReplica().GetShardId()
-		existing, ok := shardStatementMap[shardID]
+		rangeID := statement.GetRange().GetRangeId()
+		existing, ok := rangeStatementMap[rangeID]
 		if ok {
-			return status.FailedPreconditionErrorf("Statements %d and %d both address shard %d. Only one batch per shard is allowed", i, existing, shardID)
+			return status.FailedPreconditionErrorf("Statements %d and %d both address range %d. Only one batch per range is allowed", i, existing, rangeID)
 		}
-		shardStatementMap[shardID] = i
+		rangeStatementMap[rangeID] = i
 	}
 
 	var prepareError error
-	prepared := make([]*rfpb.ReplicaDescriptor, 0)
+	prepared := make([]*rfpb.RangeDescriptor, 0)
 	for i, statement := range txnProto.GetStatements() {
 		batch := statement.GetRawBatch()
 		batch.TransactionId = txnID
 
 		// Prepare each statement.
-		c, err := tc.apiClient.GetForReplica(ctx, statement.GetReplica())
-		if err != nil {
-			return err
-		}
-		syncRsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-			Header: &rfpb.Header{
-				Replica: statement.GetReplica(),
-			},
-			Batch: batch,
-		})
+		syncRsp, err := tc.syncPropose(ctx, statement.GetRange(), batch)
 		if err != nil {
 			log.Errorf("Error preparing txn statement %d: %s", i, err)
 			prepareError = err
@@ -109,7 +124,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 			prepareError = err
 			break
 		}
-		prepared = append(prepared, statement.GetReplica())
+		prepared = append(prepared, statement.GetRange())
 	}
 
 	// Determine whether to ROLLBACK or COMMIT based on whether or not all
@@ -126,14 +141,14 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 		return err
 	}
 
-	for _, replica := range prepared {
+	for _, rd := range prepared {
 		// Finalize each statement.
-		if err := tc.FinalizeTxn(ctx, txnID, operation, replica); err != nil {
+		if err := tc.finalizeTxn(ctx, txnID, operation, rd); err != nil {
 			return err
 		}
 	}
 
-	if err := tc.DeleteTxnRecord(ctx, txnID); err != nil {
+	if err := tc.deleteTxnRecord(ctx, txnID); err != nil {
 		return err
 	}
 	if prepareError != nil {
@@ -142,7 +157,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	return nil
 }
 
-func (tc *Coordinator) DeleteTxnRecord(ctx context.Context, txnID []byte) error {
+func (tc *Coordinator) deleteTxnRecord(ctx context.Context, txnID []byte) error {
 	key := keys.MakeKey(constants.TxnRecordPrefix, txnID)
 	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
 		Key: key,
@@ -179,7 +194,7 @@ func (tc *Coordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRe
 	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
 }
 
-func (tc *Coordinator) FinalizeTxn(ctx context.Context, txnID []byte, op rfpb.FinalizeOperation, replica *rfpb.ReplicaDescriptor) error {
+func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.FinalizeOperation, rd *rfpb.RangeDescriptor) error {
 	batch := rbuilder.NewBatchBuilder().SetTransactionID(txnID)
 	batch.SetFinalizeOperation(op)
 
@@ -189,16 +204,7 @@ func (tc *Coordinator) FinalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 	}
 
 	// Prepare each statement.
-	c, err := tc.apiClient.GetForReplica(ctx, replica)
-	if err != nil {
-		return err
-	}
-	syncRsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-		Header: &rfpb.Header{
-			Replica: replica,
-		},
-		Batch: batchProto,
-	})
+	syncRsp, err := tc.syncPropose(ctx, rd, batchProto)
 	if err != nil {
 		return err
 	}
@@ -291,7 +297,7 @@ func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 	if txnRecord.GetTxnState() == rfpb.TxnRecord_PENDING {
 		// The transaction is not fully prepared. Let's rollback all the statements.
 		for _, statement := range txnRecord.GetTxnRequest().GetStatements() {
-			err := tc.FinalizeTxn(ctx, txnID, rfpb.FinalizeOperation_ROLLBACK, statement.GetReplica())
+			err := tc.finalizeTxn(ctx, txnID, rfpb.FinalizeOperation_ROLLBACK, statement.GetRange())
 			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is not prepared, we will get NotFound Error when we rollback and this is fine.
 				return err
@@ -304,13 +310,13 @@ func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 			return status.InvalidArgumentError("unexpected txnRecord.op")
 		}
 
-		for _, replica := range txnRecord.GetPrepared() {
-			err := tc.FinalizeTxn(ctx, txnID, txnRecord.GetOp(), replica)
+		for _, rd := range txnRecord.GetPrepared() {
+			err := tc.finalizeTxn(ctx, txnID, txnRecord.GetOp(), rd)
 			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is already finalized, we will get NotFound Error when we finalize and this is fine.
 				return err
 			}
 		}
 	}
-	return tc.DeleteTxnRecord(ctx, txnID)
+	return tc.deleteTxnRecord(ctx, txnID)
 }

@@ -20,7 +20,7 @@ import (
 )
 
 func prepareTransaction(t *testing.T, ts *testutil.TestingStore, txnID []byte, statement *rfpb.TxnRequest_Statement) {
-	repl1, err := ts.Store.GetReplica(statement.GetReplica().GetShardId())
+	repl1, err := ts.Store.GetReplica(statement.GetRange().GetRangeId())
 	require.NoError(t, err)
 	wb := ts.DB().NewBatch()
 	_, err = repl1.PrepareTransaction(wb, txnID, statement.GetRawBatch())
@@ -56,10 +56,8 @@ func TestRollbackPendingTxn(t *testing.T) {
 			Value: []byte("zoo"),
 		},
 	})
-	txnProto, err := rbuilder.NewTxn().AddStatement(&rfpb.ReplicaDescriptor{
-		ShardId:   2,
-		ReplicaId: 2,
-	}, batch).ToProto()
+	rd := store.GetRange(2)
+	txnProto, err := rbuilder.NewTxn().AddStatement(rd, batch).ToProto()
 	require.NoError(t, err)
 	prepareTransaction(t, store, txnProto.GetTransactionId(), txnProto.GetStatements()[0])
 
@@ -160,10 +158,8 @@ func TestCommitPreparedTxn(t *testing.T) {
 			Value: []byte("zoo"),
 		},
 	})
-	txnProto, err := rbuilder.NewTxn().AddStatement(&rfpb.ReplicaDescriptor{
-		ShardId:   2,
-		ReplicaId: 2,
-	}, batch).ToProto()
+	rd := store.GetRange(2)
+	txnProto, err := rbuilder.NewTxn().AddStatement(rd, batch).ToProto()
 	require.NoError(t, err)
 	prepareTransaction(t, store, txnProto.GetTransactionId(), txnProto.GetStatements()[0])
 
@@ -173,8 +169,8 @@ func TestCommitPreparedTxn(t *testing.T) {
 		TxnState:      rfpb.TxnRecord_PREPARED,
 		Op:            rfpb.FinalizeOperation_COMMIT,
 		CreatedAtUsec: clock.Now().UnixMicro(),
-		Prepared: []*rfpb.ReplicaDescriptor{
-			txnProto.GetStatements()[0].GetReplica(),
+		Prepared: []*rfpb.RangeDescriptor{
+			txnProto.GetStatements()[0].GetRange(),
 		},
 	}
 	tc := txn.NewCoordinator(store, store.APIClient(), clock)
@@ -306,13 +302,9 @@ func TestRunTxn(t *testing.T) {
 			Value: []byte("bbb"),
 		},
 	})
-	txnBuilder := rbuilder.NewTxn().AddStatement(&rfpb.ReplicaDescriptor{
-		ShardId:   2,
-		ReplicaId: 4,
-	}, batch).AddStatement(&rfpb.ReplicaDescriptor{
-		ShardId:   1,
-		ReplicaId: 1,
-	}, metaBatch)
+	rd1 := s1.GetRange(1)
+	rd2 := s1.GetRange(2)
+	txnBuilder := rbuilder.NewTxn().AddStatement(rd2, batch).AddStatement(rd1, metaBatch)
 	clock := clockwork.NewFakeClock()
 	tc := txn.NewCoordinator(s1, s1.APIClient(), clock)
 	err := tc.RunTxn(ctx, txnBuilder)

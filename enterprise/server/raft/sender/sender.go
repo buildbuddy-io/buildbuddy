@@ -144,19 +144,26 @@ func (s *Sender) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 }
 
 type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
+type makeHeaderFunc func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, mode rfpb.Header_ConsistencyMode) (int, error) {
+	return s.TryReplicas(ctx, rd, fn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
+		return makeHeader(rd, replicaIdx, mode)
+	})
+}
+
+func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, makeHeaderFn makeHeaderFunc) (int, error) {
 	for i, replica := range rd.GetReplicas() {
 		client, err := s.apiClient.GetForReplica(ctx, replica)
 		if err != nil {
 			if status.IsUnavailableError(err) {
-				log.Debugf("tryReplicas: replica %+v is unavailable: %s", replica, err)
+				log.Debugf("TryReplicas: replica %+v is unavailable: %s", replica, err)
 				// try a different replica if the current replica is not available.
 				continue
 			}
 			return 0, err
 		}
-		header := makeHeader(rd, i, mode)
+		header := makeHeaderFn(rd, i)
 		err = fn(client, header)
 		if err == nil {
 			return i, nil
