@@ -1633,6 +1633,9 @@ func (ws *workspace) setup(ctx context.Context) error {
 		if err := os.Chdir(repoDirName); err != nil {
 			return status.WrapError(err, "cd")
 		}
+		if err := ws.cleanup(ctx); err != nil {
+			return err
+		}
 		err := ws.sync(ctx)
 		if err == nil {
 			return nil
@@ -1686,6 +1689,27 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 	_ = f.Close()
 	if _, err := git(ctx, ws.log, "apply", "--verbose", patchFileName); err != nil {
 		return err
+	}
+	return nil
+}
+
+var gitTroubles = []string{
+	"index.lock",
+	"shallow.lock",
+	"HEAD.lock",
+	"hooks/post-checkout",
+	"config.lock",
+}
+
+func (ws *workspace) cleanup(ctx context.Context) error {
+	for _, f := range gitTroubles {
+		if err := os.Remove(filepath.Join(".git", f)); err != nil {
+			if strings.Contains(err.Error(), "no such file or directory") {
+				// It's good that the file does not exist
+				continue
+			}
+			return fmt.Errorf("failed to cleanup %s: %v", f, err)
+		}
 	}
 	return nil
 }
