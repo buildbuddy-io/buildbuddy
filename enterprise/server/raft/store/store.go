@@ -1707,7 +1707,6 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 
 	// Propose the config change (this adds the node as a non-voter to the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		log.Info("called add non voting")
 		return s.nodeHost.SyncRequestAddNonVoting(ctx, shardID, newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
