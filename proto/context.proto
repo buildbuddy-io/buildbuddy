@@ -38,6 +38,10 @@ message RequestContext {
   // The timezone from the user's browser (if supported). If empty, we will fall
   // back to timezone_offset_mintues. If that is unset, we default to UTC.
   string timezone = 5;
+
+  // The hash of the current BuildBuddy build running on the client.  This
+  // should only be set for requests originating from the BuildBuddy web UI.
+  string app_bundle_hash = 6;
 }
 
 message ResponseContext {
