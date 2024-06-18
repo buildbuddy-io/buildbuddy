@@ -132,19 +132,16 @@ func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest,
 	if *writeCompressed {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
-	retrier := retry.DefaultWithContext(ctx)
-	var err error
-	for retrier.Next() {
-		_, err = cachetools.UploadFromReader(ctx, client, resourceName, bytes.NewReader(buf))
+	return retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (*repb.Digest, error) {
+		_, err := cachetools.UploadFromReader(ctx, client, resourceName, bytes.NewReader(buf))
 		incrementPromErrorMetric(err)
 		if err == nil {
 			return d, nil
 		} else if status.IsUnavailableError(err) {
-			continue
+			return nil, err
 		}
-		return nil, err
-	}
-	return nil, err
+		return nil, retry.NonRetryableError(err)
+	})
 }
 
 func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, d *repb.Digest) error {
@@ -152,9 +149,8 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.
 	if *readCompressed {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
-	retrier := retry.DefaultWithContext(ctx)
-	var err error
-	for retrier.Next() {
+	return retry.DoVoid(ctx, retry.DefaultOptions(), func(ctx context.Context) error {
+		var err error
 		if *readBatch {
 			_, err = batchReadSingleBlob(ctx, casClient, resourceName)
 		} else {
@@ -164,11 +160,10 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.
 		if err == nil {
 			return nil
 		} else if status.IsUnavailableError(err) {
-			continue
+			return err
 		}
-		return err
-	}
-	return err
+		return retry.NonRetryableError(err)
+	})
 }
 
 func batchReadSingleBlob(ctx context.Context, casClient repb.ContentAddressableStorageClient, rn *digest.ResourceName) ([]byte, error) {

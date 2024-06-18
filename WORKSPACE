@@ -362,17 +362,17 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:3172df37ef8caa768ce74ebbc7f0e2b6a2641d3b35d18659d36f3815e30fe620",
+    digest = "sha256:388145607c79313a1e49b783a7ee71e4ef3df31d87c45adb46bfb9b257b643d1",
     registry = "gcr.io",
-    repository = "distroless/cc-debian11",
+    repository = "distroless/cc-debian12",
 )
 
 # Base image that can be used to build images that are capable of running the Bazel binary.
 container_pull(
     name = "bazel_image_base",
-    digest = "sha256:ab0c5fbe16bc01c03eb081a5724ba618110cbd24940ab123a8dbee0382a4c175",
+    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
     registry = "gcr.io",
-    repository = "distroless/java11-debian11",
+    repository = "distroless/java17-debian12",
 )
 
 dockerfile_image(
@@ -488,24 +488,6 @@ http_file(
     sha256 = "51b107da46717aed974d97464b63f7357b220fe8737969db1492d1cae74b3947",
     url = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
 )
-
-HERMETIC_CC_TOOLCHAIN_VERSION = "v3.0.1"
-
-http_archive(
-    name = "hermetic_cc_toolchain",
-    sha256 = "3bc6ec127622fdceb4129cb06b6f7ab098c4d539124dde96a6318e7c32a53f7a",
-    urls = [
-        "https://mirror.bazel.build/github.com/uber/hermetic_cc_toolchain/releases/download/{0}/hermetic_cc_toolchain-{0}.tar.gz".format(HERMETIC_CC_TOOLCHAIN_VERSION),
-        "https://github.com/uber/hermetic_cc_toolchain/releases/download/{0}/hermetic_cc_toolchain-{0}.tar.gz".format(HERMETIC_CC_TOOLCHAIN_VERSION),
-    ],
-)
-
-load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
-
-# Plain zig_toolchains() will pick reasonable defaults. See
-# toolchain/defs.bzl:toolchains on how to change the Zig SDK version and
-# download URL.
-zig_toolchains()
 
 register_toolchains(
     "//toolchains:sh_toolchain",

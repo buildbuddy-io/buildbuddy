@@ -76,6 +76,7 @@ class RpcService {
   requestContext = new context.RequestContext({
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    appBundleHash: capabilities.config.appBundleHash,
   });
 
   constructor() {
