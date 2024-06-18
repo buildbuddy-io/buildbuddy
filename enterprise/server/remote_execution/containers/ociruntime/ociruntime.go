@@ -11,11 +11,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
 	_ "embed"
+	mrand "math/rand/v2"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -25,9 +27,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -40,7 +44,11 @@ const (
 	ociVersion = "1.1.0-rc.3" // matches podman
 
 	// Execution root directory path relative to the container rootfs directory.
-	execrootPath = "buildbuddy-execroot"
+	execrootPath = "/buildbuddy-execroot"
+
+	// Fake image ref indicating that busybox should be manually provisioned.
+	// TODO: get rid of this
+	TestBusyboxImageRef = "test.buildbuddy.io/busybox"
 )
 
 //go:embed seccomp.json
@@ -79,8 +87,20 @@ var (
 
 type provider struct {
 	// Root directory where all container runtime information will be located.
-	// Each directory corresponds to a created container instance.
+	// Each subdirectory corresponds to a created container instance.
 	containersRoot string
+
+	// Root directory where all image layer contents will be located.
+	// This directory is structured like the following:
+	//
+	// - {layersRoot}/
+	//   - {hashingAlgorithm}/
+	//     - {hash}/
+	//       - /bin/ # layer contents
+	//       - /usr/
+	//       - ...
+	layersRoot string
+
 	// Configured runtime path.
 	runtime string
 }
@@ -100,14 +120,19 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 		return nil, status.FailedPreconditionError("could not find a usable container runtime in PATH")
 	}
 
-	// TODO: make this configurable via flag
-	containersRoot := filepath.Join(buildRoot, "executor", "oci-run")
+	// TODO: make these root dirs configurable via flag
+	containersRoot := filepath.Join(buildRoot, "executor", "oci", "run")
 	if err := os.MkdirAll(containersRoot, 0755); err != nil {
+		return nil, err
+	}
+	layersRoot := filepath.Join(buildRoot, "executor", "oci", "layers")
+	if err := os.MkdirAll(layersRoot, 0755); err != nil {
 		return nil, err
 	}
 	return &provider{
 		runtime:        rt,
 		containersRoot: containersRoot,
+		layersRoot:     layersRoot,
 	}, nil
 }
 
@@ -115,15 +140,22 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 	return &ociContainer{
 		runtime:        p.runtime,
 		containersRoot: p.containersRoot,
+		layersRoot:     p.layersRoot,
+		imageRef:       args.Props.ContainerImage,
 	}, nil
 }
 
 type ociContainer struct {
 	runtime        string
 	containersRoot string
+	layersRoot     string
 
 	cid     string
 	workDir string
+
+	imageRef         string
+	layerDigests     []ctr.Hash
+	overlayfsMounted bool
 }
 
 // Returns the OCI bundle directory for the container.
@@ -134,6 +166,12 @@ func (c *ociContainer) bundlePath() string {
 // Returns the standard rootfs path expected by crun.
 func (c *ociContainer) rootfsPath() string {
 	return filepath.Join(c.bundlePath(), "rootfs")
+}
+
+// Returns the root path where overlay workdir and upperdir for this container
+// are stored.
+func (c *ociContainer) overlayTmpPath() string {
+	return c.workDir + ".overlay"
 }
 
 // Returns the standard config.json path expected by crun.
@@ -159,7 +197,7 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 		return fmt.Errorf("write hosts file: %w", err)
 	}
 
-	// Create rootfs - just busybox for now
+	// Create rootfs
 	if err := c.createRootfs(ctx); err != nil {
 		return fmt.Errorf("create rootfs: %w", err)
 	}
@@ -176,8 +214,6 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	if err := os.WriteFile(c.configPath(), b, 0644); err != nil {
 		return err
 	}
-	os.Stderr.Write(b)
-	os.Stderr.WriteString("\n")
 
 	return nil
 }
@@ -191,7 +227,20 @@ func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
 }
 
 func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
-	return nil // TODO: implement
+	layers, err := pull(ctx, c.layersRoot, c.imageRef, creds)
+	if err != nil {
+		return status.WrapError(err, "pull OCI image")
+	}
+	var layerDigests []ctr.Hash
+	for _, layer := range layers {
+		d, err := layer.Digest()
+		if err != nil {
+			return status.UnavailableErrorf("get layer digest: %s", err)
+		}
+		layerDigests = append(layerDigests, d)
+	}
+	c.layerDigests = layerDigests
+	return nil
 }
 
 func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
@@ -246,6 +295,7 @@ func (c *ociContainer) Unpause(ctx context.Context) error {
 	return nil // TODO: implement
 }
 
+//nolint:nilness
 func (c *ociContainer) Remove(ctx context.Context) error {
 	if c.cid == "" {
 		// We haven't created anything yet
@@ -254,12 +304,18 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 	var firstErr error
 
-	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil {
-		firstErr = status.UnavailableErrorf("failed to delete container: %s", err)
+	if err := c.invokeRuntimeSimple(ctx, "delete", "--force", c.cid); err != nil && firstErr == nil {
+		firstErr = status.UnavailableErrorf("delete container: %s", err)
+	}
+
+	if c.overlayfsMounted {
+		if err := syscall.Unmount(c.rootfsPath(), syscall.MNT_FORCE); err != nil && firstErr == nil {
+			firstErr = status.UnavailableErrorf("unmount overlayfs: %s", err)
+		}
 	}
 
 	if err := os.RemoveAll(c.bundlePath()); err != nil && firstErr == nil {
-		firstErr = status.UnavailableErrorf("failed to remove bundle: %s", err)
+		firstErr = status.UnavailableErrorf("remove bundle: %s", err)
 	}
 
 	return firstErr
@@ -275,11 +331,45 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 		return fmt.Errorf("create rootfs dir: %w", err)
 	}
 
-	// TODO: use container image
-	if err := installBusybox(c.rootfsPath()); err != nil {
-		return fmt.Errorf("install busybox: %w", err)
+	// For testing only, support a fake image ref that means "install busybox
+	// manually".
+	// TODO: improve testing setup and get rid of this
+	if c.imageRef == TestBusyboxImageRef {
+		return installBusybox(c.rootfsPath())
 	}
 
+	if c.imageRef == "" {
+		// No image specified (sandbox-only).
+		return nil
+	}
+
+	// Create an overlayfs with the pulled image layers.
+	var lowerDirs []string
+	for _, d := range c.layerDigests {
+		lowerDirs = append(lowerDirs, layerPath(c.layersRoot, d))
+	}
+	// Create workdir and upperdir.
+	workdir := filepath.Join(c.overlayTmpPath(), "work")
+	if err := os.MkdirAll(workdir, 0755); err != nil {
+		return fmt.Errorf("create overlay workdir: %w", err)
+	}
+	upperdir := filepath.Join(c.overlayTmpPath(), "upper")
+	if err := os.MkdirAll(upperdir, 0755); err != nil {
+		return fmt.Errorf("create overlay upperdir: %w", err)
+	}
+
+	// TODO: do this mount inside a namespace so that it gets removed even if
+	// the executor crashes (also needed for rootless support)
+
+	// - userxattr is needed for compatibility with older kernels
+	// - volatile disables fsync, as a performance optimization
+	options := fmt.Sprintf(
+		"lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile",
+		strings.Join(lowerDirs, ":"), upperdir, workdir)
+	if err := syscall.Mount("none", c.rootfsPath(), "overlay", 0, options); err != nil {
+		return fmt.Errorf("mount overlayfs: %w", err)
+	}
+	c.overlayfsMounted = true
 	return nil
 }
 
@@ -344,10 +434,8 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			ApparmorProfile: "",
 		},
 		Root: &specs.Root{
-			// TODO: container image FS
-			Path: c.rootfsPath(),
-			// TODO: not readonly
-			Readonly: true,
+			Path:     c.rootfsPath(),
+			Readonly: false,
 		},
 		Hostname: c.hostname(),
 		Mounts: []specs.Mount{
@@ -532,7 +620,10 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		// "strace", "-o", "/tmp/strace.log",
 		c.runtime,
 		"--log-format=json",
-		"--cgroup-manager=cgroupfs",
+	}
+	runtimeName := filepath.Base(c.runtime)
+	if runtimeName == "crun" {
+		globalArgs = append(globalArgs, "--cgroup-manager=cgroupfs")
 	}
 	if *runtimeRoot != "" {
 		globalArgs = append(globalArgs, "--root="+*runtimeRoot)
@@ -636,4 +727,86 @@ func newCID() (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%x", b), nil
+}
+
+// layerPath returns the path where the extracted image layer with the given
+// hash is stored on disk.
+func layerPath(layersDir string, hash ctr.Hash) string {
+	return filepath.Join(layersDir, hash.Algorithm, hash.Hex)
+}
+
+// pull downloads and extracts image layers to a directory.
+// Each layer is extracted to a subdirectory given by {algorithm}/{hash}, e.g.
+// "sha256/abc123".
+func pull(ctx context.Context, layersDir, imageName string, creds oci.Credentials) ([]ctr.Layer, error) {
+	img, err := oci.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
+	if err != nil {
+		return nil, status.WrapError(err, "resolve image")
+	}
+	layers, err := img.Layers()
+	if err != nil {
+		return nil, status.UnavailableErrorf("get image layers: %s", err)
+	}
+
+	// Download and extract layers concurrently.
+	// TODO: dedupe layer pulls
+	var eg errgroup.Group
+	eg.SetLimit(min(8, runtime.NumCPU()))
+	for _, layer := range layers {
+		layer := layer
+		eg.Go(func() error {
+			d, err := layer.Digest()
+			if err != nil {
+				return status.UnavailableErrorf("get layer digest: %s", err)
+			}
+
+			destDir := layerPath(layersDir, d)
+
+			// If the destination directory already exists then we can skip
+			// the download.
+			if _, err := os.Stat(destDir); err != nil {
+				if !os.IsNotExist(err) {
+					return status.UnavailableErrorf("stat layer directory: %s", err)
+				}
+			} else {
+				return nil
+			}
+
+			rc, err := layer.Compressed()
+			if err != nil {
+				return status.UnavailableErrorf("get layer reader: %s", err)
+			}
+			defer rc.Close()
+
+			tempUnpackDir := destDir + tmpSuffix()
+			if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
+				return status.UnavailableErrorf("create layer unpack dir: %s", err)
+			}
+			defer os.RemoveAll(tempUnpackDir)
+
+			// TODO: avoid tar command.
+			cmd := exec.CommandContext(ctx, "tar", "--no-same-owner", "--extract", "--gzip", "--directory", tempUnpackDir)
+			var stderr bytes.Buffer
+			cmd.Stdin = rc
+			cmd.Stderr = &stderr
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			if err := cmd.Run(); err != nil {
+				return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
+			}
+
+			if err := os.Rename(tempUnpackDir, destDir); err != nil {
+				return status.UnavailableErrorf("rename temp layer dir: %s", err)
+			}
+
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return layers, nil
+}
+
+func tmpSuffix() string {
+	return fmt.Sprintf(".%d.tmp", mrand.Int64N(1e18))
 }
