@@ -11,11 +11,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
 	_ "embed"
+	mrand "math/rand/v2"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -25,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -224,7 +227,7 @@ func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
 }
 
 func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
-	layers, err := oci.Pull(ctx, c.layersRoot, c.imageRef, creds)
+	layers, err := pull(ctx, c.layersRoot, c.imageRef, creds)
 	if err != nil {
 		return status.WrapError(err, "pull OCI image")
 	}
@@ -343,7 +346,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	// Create an overlayfs with the pulled image layers.
 	var lowerDirs []string
 	for _, d := range c.layerDigests {
-		lowerDirs = append(lowerDirs, oci.LayerPath(c.layersRoot, d))
+		lowerDirs = append(lowerDirs, layerPath(c.layersRoot, d))
 	}
 	// Create workdir and upperdir.
 	workdir := filepath.Join(c.overlayTmpPath(), "work")
@@ -724,4 +727,86 @@ func newCID() (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%x", b), nil
+}
+
+// layerPath returns the path where the extracted image layer with the given
+// hash is stored on disk.
+func layerPath(layersDir string, hash ctr.Hash) string {
+	return filepath.Join(layersDir, hash.Algorithm, hash.Hex)
+}
+
+// pull downloads and extracts image layers to a directory.
+// Each layer is extracted to a subdirectory given by {algorithm}/{hash}, e.g.
+// "sha256/abc123".
+func pull(ctx context.Context, layersDir, imageName string, creds oci.Credentials) ([]ctr.Layer, error) {
+	img, err := oci.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
+	if err != nil {
+		return nil, status.WrapError(err, "resolve image")
+	}
+	layers, err := img.Layers()
+	if err != nil {
+		return nil, status.UnavailableErrorf("get image layers: %s", err)
+	}
+
+	// Download and extract layers concurrently.
+	// TODO: dedupe layer pulls
+	var eg errgroup.Group
+	eg.SetLimit(min(8, runtime.NumCPU()))
+	for _, layer := range layers {
+		layer := layer
+		eg.Go(func() error {
+			d, err := layer.Digest()
+			if err != nil {
+				return status.UnavailableErrorf("get layer digest: %s", err)
+			}
+
+			destDir := layerPath(layersDir, d)
+
+			// If the destination directory already exists then we can skip
+			// the download.
+			if _, err := os.Stat(destDir); err != nil {
+				if !os.IsNotExist(err) {
+					return status.UnavailableErrorf("stat layer directory: %s", err)
+				}
+			} else {
+				return nil
+			}
+
+			rc, err := layer.Compressed()
+			if err != nil {
+				return status.UnavailableErrorf("get layer reader: %s", err)
+			}
+			defer rc.Close()
+
+			tempUnpackDir := destDir + tmpSuffix()
+			if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
+				return status.UnavailableErrorf("create layer unpack dir: %s", err)
+			}
+			defer os.RemoveAll(tempUnpackDir)
+
+			// TODO: avoid tar command.
+			cmd := exec.CommandContext(ctx, "tar", "--no-same-owner", "--extract", "--gzip", "--directory", tempUnpackDir)
+			var stderr bytes.Buffer
+			cmd.Stdin = rc
+			cmd.Stderr = &stderr
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			if err := cmd.Run(); err != nil {
+				return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
+			}
+
+			if err := os.Rename(tempUnpackDir, destDir); err != nil {
+				return status.UnavailableErrorf("rename temp layer dir: %s", err)
+			}
+
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return layers, nil
+}
+
+func tmpSuffix() string {
+	return fmt.Sprintf(".%d.tmp", mrand.Int64N(1e18))
 }

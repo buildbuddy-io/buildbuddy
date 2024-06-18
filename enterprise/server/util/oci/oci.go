@@ -1,16 +1,10 @@
 package oci
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"math/rand/v2"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"runtime"
-	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -24,7 +18,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"golang.org/x/sync/errgroup"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
@@ -193,86 +186,4 @@ func RuntimePlatform() *rgpb.Platform {
 		Arch: runtime.GOARCH,
 		Os:   runtime.GOOS,
 	}
-}
-
-// LayerPath returns where the extracted image layer with the given hash is
-// stored on disk.
-func LayerPath(layersDir string, hash v1.Hash) string {
-	return filepath.Join(layersDir, hash.Algorithm, hash.Hex)
-}
-
-// Pull downloads and extracts image layers to a directory.
-// Each layer is extracted to a subdirectory given by {algorithm}/{hash}, e.g.
-// "sha256/abc123".
-func Pull(ctx context.Context, layersDir, imageName string, creds Credentials) ([]v1.Layer, error) {
-	img, err := Resolve(ctx, imageName, RuntimePlatform(), creds)
-	if err != nil {
-		return nil, status.WrapError(err, "resolve image")
-	}
-	layers, err := img.Layers()
-	if err != nil {
-		return nil, status.UnavailableErrorf("get image layers: %s", err)
-	}
-
-	// Download and extract layers concurrently.
-	// TODO: dedupe layer pulls
-	var eg errgroup.Group
-	eg.SetLimit(min(8, runtime.NumCPU()))
-	for _, layer := range layers {
-		layer := layer
-		eg.Go(func() error {
-			d, err := layer.Digest()
-			if err != nil {
-				return status.UnavailableErrorf("get layer digest: %s", err)
-			}
-
-			destDir := LayerPath(layersDir, d)
-
-			// If the destination directory already exists then we can skip
-			// the download.
-			if _, err := os.Stat(destDir); err != nil {
-				if !os.IsNotExist(err) {
-					return status.UnavailableErrorf("stat layer directory: %s", err)
-				}
-			} else {
-				return nil
-			}
-
-			rc, err := layer.Compressed()
-			if err != nil {
-				return status.UnavailableErrorf("get layer reader: %s", err)
-			}
-			defer rc.Close()
-
-			tempUnpackDir := destDir + tmpSuffix()
-			if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
-				return status.UnavailableErrorf("create layer unpack dir: %s", err)
-			}
-			defer os.RemoveAll(tempUnpackDir)
-
-			// TODO: avoid tar command.
-			cmd := exec.CommandContext(ctx, "tar", "--no-same-owner", "--extract", "--gzip", "--directory", tempUnpackDir)
-			var stderr bytes.Buffer
-			cmd.Stdin = rc
-			cmd.Stderr = &stderr
-			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-			if err := cmd.Run(); err != nil {
-				return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
-			}
-
-			if err := os.Rename(tempUnpackDir, destDir); err != nil {
-				return status.UnavailableErrorf("rename temp layer dir: %s", err)
-			}
-
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-	return layers, nil
-}
-
-func tmpSuffix() string {
-	return fmt.Sprintf(".%d.tmp", rand.Int64N(1e18))
 }
