@@ -942,7 +942,7 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 				PARTITION BY label
 				ORDER BY invocation_start_time_usec ASC
 				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
-		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status > 2))
+		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status IN (3, 4)))
 	ORDER BY invocation_start_time_usec DESC LIMIT ? OFFSET ?`, innerWhereClause, innerWhereClause)
 
 	type queryOut struct {
