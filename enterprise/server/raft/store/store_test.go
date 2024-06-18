@@ -1031,15 +1031,15 @@ func TestReplaceDeadReplica(t *testing.T) {
 			continue
 		}
 
+		// nhid4 should be added to range 1 and range2, and nhid3 removed
 		if !includeReplicaWithNHID(s1.GetRange(1), nhid3) &&
 			!includeReplicaWithNHID(s1.GetRange(2), nhid3) &&
 			!includeReplicaWithNHID(s2.GetRange(1), nhid3) &&
-			!includeReplicaWithNHID(s2.GetRange(2), nhid3) {
-			// nhid4 should be added to range 1 and range2, and nhid3 removed
-			require.True(t, includeReplicaWithNHID(s1.GetRange(1), nhid4))
-			require.True(t, includeReplicaWithNHID(s1.GetRange(2), nhid4))
-			require.True(t, includeReplicaWithNHID(s2.GetRange(1), nhid4))
-			require.True(t, includeReplicaWithNHID(s2.GetRange(2), nhid4))
+			!includeReplicaWithNHID(s2.GetRange(2), nhid3) &&
+			includeReplicaWithNHID(s1.GetRange(1), nhid4) &&
+			includeReplicaWithNHID(s1.GetRange(2), nhid4) &&
+			includeReplicaWithNHID(s2.GetRange(1), nhid4) &&
+			includeReplicaWithNHID(s2.GetRange(2), nhid4) {
 			break
 		}
 	}
