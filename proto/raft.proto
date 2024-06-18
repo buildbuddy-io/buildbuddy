@@ -269,8 +269,9 @@ message PostCommitHook {
 message TxnRequest {
   optional bytes transaction_id = 1;
   message Statement {
-    ReplicaDescriptor replica = 1;
+    reserved 1;
     BatchCmdRequest raw_batch = 2;
+    RangeDescriptor range = 3;
   }
   repeated Statement statements = 2;
 }
@@ -293,7 +294,8 @@ message TxnRecord {
   TxnState txn_state = 2;
   // When is this record first created
   int64 created_at_usec = 3;
-  repeated ReplicaDescriptor prepared = 4;
+  reserved 4;
+  repeated RangeDescriptor prepared = 6;
   FinalizeOperation op = 5;
 }
 
