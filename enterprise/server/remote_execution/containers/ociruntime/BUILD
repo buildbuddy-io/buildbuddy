@@ -24,7 +24,9 @@ go_library(
         "//server/util/disk",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_opencontainers_runtime_spec//specs-go",
+        "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
     ],
 )
@@ -33,7 +35,13 @@ go_test(
     name = "ociruntime_test",
     srcs = ["ociruntime_test.go"],
     data = [":crun"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.EstimatedComputeUnits": "2",
+    },
     tags = [
+        # TODO: remove manual tag once cgroup_v2_only flag is rolled out
+        # to executors. crun doesn't support cgroup v1+v2 "hybrid" mode.
         "manual",
         "no-sandbox",
     ],
@@ -44,6 +52,8 @@ go_test(
     deps = [
         ":ociruntime",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",

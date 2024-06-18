@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -11,7 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/match"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -175,5 +176,14 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 		return img, nil
 	default:
 		return nil, status.UnknownErrorf("descriptor has unknown media type %q", remoteDesc.MediaType)
+	}
+}
+
+// RuntimePlatform returns the platform on which the program is being executed,
+// as reported by the go runtime.
+func RuntimePlatform() *rgpb.Platform {
+	return &rgpb.Platform{
+		Arch: runtime.GOARCH,
+		Os:   runtime.GOOS,
 	}
 }
