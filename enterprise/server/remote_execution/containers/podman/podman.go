@@ -785,7 +785,10 @@ func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podm
 
 	// If the disk is under heavy load, podman may fail with "database is
 	// locked". Detect these and return a retryable error.
-	if result.ExitCode == podmanCommandNotRunnableExitCode && databaseLockedRegexp.Match(result.Stderr) {
+	if (result.ExitCode == podmanCommandNotRunnableExitCode ||
+		result.ExitCode == podmanInternalExitCode ||
+		result.ExitCode == podmanCommandNotFoundExitCode) &&
+		databaseLockedRegexp.Match(result.Stderr) {
 		result.ExitCode = commandutil.NoExitCode
 		result.Error = status.UnavailableErrorf("podman failed: %q", strings.TrimSpace(string(result.Stderr)))
 	}
