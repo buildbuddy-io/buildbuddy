@@ -8,7 +8,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/auth_service",
     deps = [
         "//proto:auth_go_proto",
+        "//server/interfaces",
         "//server/real_environment",
+        "//server/util/authutil",
+        "//server/util/status",
     ],
 )
 
@@ -19,6 +22,10 @@ go_test(
     embed = [":auth_service"],
     deps = [
         "//proto:auth_go_proto",
+        "//server/testutil/testauth",
+        "//server/util/authutil",
+        "//server/util/status",
         "@com_github_stretchr_testify//assert",
+        "@org_golang_google_grpc//metadata",
     ],
 )
