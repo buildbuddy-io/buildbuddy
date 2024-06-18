@@ -5185,9 +5185,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             "gazelle:resolve go google.golang.org/grpc @org_golang_google_grpc//:grpc",
         ],
         importpath = "gitlab.com/arm-research/smarter/smarter-device-manager",
-        sha256 = "4926695678627f4f316cf6ec107d0b2847f5051a12cb05862a257703336d83ce",
-        strip_prefix = "smarter-device-manager-v1.20.11",
-        urls = ["https://gitlab.com/arm-research/smarter/smarter-device-manager/-/archive/v1.20.11/smarter-device-manager-v1.20.11.zip"],
+        sha256 = "b2eb7e20373fbe257361fceff264037cac7d259ee075659fe1ec429c122e4d13",
+        strip_prefix = "smarter-device-manager-v1.20.7",
+        urls = ["https://gitlab.com/arm-research/smarter/smarter-device-manager/-/archive/v1.20.7/smarter-device-manager-v1.20.7.zip"],
     )
     go_repository(
         name = "com_google_cloud_go",
