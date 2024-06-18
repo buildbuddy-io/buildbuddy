@@ -354,5 +354,6 @@ func Register(env *real_environment.RealEnv) error {
 	}
 
 	env.SetOLAPDBHandle(dbh)
+	log.Info("Successfully configured OLAP database.")
 	return nil
 }
