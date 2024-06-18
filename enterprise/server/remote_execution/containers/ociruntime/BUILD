@@ -40,9 +40,6 @@ go_test(
         "test.EstimatedComputeUnits": "2",
     },
     tags = [
-        # TODO: remove manual tag once cgroup_v2_only flag is rolled out
-        # to executors. crun doesn't support cgroup v1+v2 "hybrid" mode.
-        "manual",
         "no-sandbox",
     ],
     target_compatible_with = ["@platforms//os:linux"],
