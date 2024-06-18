@@ -3453,7 +3453,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_lni_vfs",
         importpath = "github.com/lni/vfs",
-	replace = "github.com/buildbuddy-io/vfs",
+        replace = "github.com/buildbuddy-io/vfs",
         sum = "h1:1zwwjiNutyvOuJ+Rz5ESn/IWVJfpdcIky2F/wVyDQDg=",
         version = "v0.2.2",
     )

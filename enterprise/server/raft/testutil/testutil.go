@@ -103,8 +103,8 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 			NodeRegistryFactory: nrf,
 		},
 		DefaultNodeRegistryEnabled: false,
-		RaftEventListener:   raftListener,
-		SystemEventListener: raftListener,
+		RaftEventListener:          raftListener,
+		SystemEventListener:        raftListener,
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	require.NoError(t, err, "unexpected error creating NodeHost")
