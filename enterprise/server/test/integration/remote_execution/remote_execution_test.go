@@ -24,7 +24,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -1983,6 +1985,92 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 	// should not be re-executed just because the app goes down).
 	tasksStartedCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount) - initialTasksStartedCount
 	require.Equal(t, float64(len(cmds)), tasksStartedCount, "no tasks should have been retried")
+}
+
+func TestCustomResources(t *testing.T) {
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "foo", Value: 1.0},
+	})
+	rbe := rbetest.NewRBETestEnv(t)
+	const ex1ID = "executor1"
+	const ex2ID = "executor2"
+	taskRouter := newFixedNodeTaskRouter([]string{ex1ID, ex2ID})
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
+		EnvModifier: func(env *real_environment.RealEnv) {
+			env.SetTaskRouter(taskRouter)
+		},
+	})
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: ex1ID})
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: ex2ID})
+
+	// First try scheduling a task that requires 2 "foo" resources. This should
+	// not be assigned to any executor because the executors each only have 1
+	// "foo" resource available.
+	{
+		cmd := rbe.Execute(&repb.Command{
+			Arguments: []string{"pwd"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "OSFamily", Value: runtime.GOOS},
+				{Name: "Arch", Value: runtime.GOARCH},
+				{Name: "resources:foo", Value: "2.0"},
+			}},
+		}, &rbetest.ExecuteOpts{})
+		err := cmd.MustFailToStart()
+		require.Error(t, err, "command should fail to start")
+		require.Regexp(t, "no registered executors .* can fit a task with .* foo=2", err.Error())
+	}
+
+	// Start a task which ties up all "foo" resources on executor1 for the
+	// remainder of the test.
+	taskRouter.UpdateSubset([]string{ex1ID})
+	cmd := rbe.ExecuteControlledCommand("hog-foo", &rbetest.ExecuteControlledOpts{
+		Properties: []*repb.Platform_Property{
+			{Name: "resources:foo", Value: "1.0"},
+		},
+	})
+	cmd.WaitStarted()
+	t.Cleanup(func() {
+		cmd.Exit(0)
+		cmd.Wait()
+	})
+
+	// Run several more tasks, allowing them to run on either ex1 or ex2. Each
+	// task should only use a small amount of "foo" and should all fit within a
+	// single executor. All tasks should run on ex2 since ex1's "foo" resources
+	// are all currently tied up by the command we've started above.
+	taskRouter.UpdateSubset([]string{ex1ID, ex2ID})
+	var cmds []*rbetest.ControlledCommand
+	for i := 0; i < 10; i++ {
+		log.Infof("Starting smaller commands...")
+		cmd := rbe.ExecuteControlledCommand(fmt.Sprintf("cmd-%d", i), &rbetest.ExecuteControlledOpts{
+			Properties: []*repb.Platform_Property{
+				{Name: "resources:foo", Value: "0.1"},
+			},
+		})
+		cmd.WaitStarted()
+		cmds = append(cmds, cmd)
+	}
+	for _, cmd := range cmds {
+		cmd.Exit(0)
+		res := cmd.Wait()
+		md := res.ActionResult.GetExecutionMetadata()
+		assert.Equal(t, ex2ID, md.GetExecutorId())
+	}
+
+	// Now that the queue is drained on ex2, we should be able to schedule
+	// another task.
+	{
+		cmd := rbe.ExecuteControlledCommand("one-more-cmd", &rbetest.ExecuteControlledOpts{
+			Properties: []*repb.Platform_Property{
+				{Name: "resources:foo", Value: "0.1"},
+			},
+		})
+		cmd.WaitStarted()
+		cmd.Exit(0)
+		res := cmd.Wait()
+		md := res.ActionResult.GetExecutionMetadata()
+		assert.Equal(t, ex2ID, md.GetExecutorId())
+	}
 }
 
 func randSleepMillis(min, max int) {
