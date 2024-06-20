@@ -6258,7 +6258,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "io_kythe",
         importpath = "kythe.io",
         patch_args = ["-p1"],
-        patches = ["@{}//buildpatches:kythe.patch".format(workspace_name)],
+        patches = ["@{}//buildpatches:io_kythe.patch".format(workspace_name)],
         replace = "github.com/buildbuddy-io/kythe",
         sum = "h1:3lminP0qtiOsw+3pHEBsKoId8tlVSwf/g4uyIucmRk4=",
         version = "v0.0.70",

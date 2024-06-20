@@ -1,0 +1,208 @@
+diff --git a/kythe/go/services/cli/BUILD b/kythe/go/services/cli/BUILD
+index 17bc7623d..a8536dd9b 100644
+--- a/kythe/go/services/cli/BUILD
++++ b/kythe/go/services/cli/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "cli",
+diff --git a/kythe/go/services/explore/BUILD b/kythe/go/services/explore/BUILD
+index a04f92ee5..4578601c9 100644
+--- a/kythe/go/services/explore/BUILD
++++ b/kythe/go/services/explore/BUILD
+@@ -1,7 +1,7 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+ package(
+-    default_visibility = ["//kythe:default_visibility"],
++    default_visibility = ["//visibility:public"],
+     licenses = ["notice"],
+ )
+ 
+diff --git a/kythe/go/services/filetree/BUILD b/kythe/go/services/filetree/BUILD
+index de08c571f..cc22169a7 100644
+--- a/kythe/go/services/filetree/BUILD
++++ b/kythe/go/services/filetree/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "filetree",
+diff --git a/kythe/go/services/graph/BUILD b/kythe/go/services/graph/BUILD
+index 527102ea4..80b030af2 100644
+--- a/kythe/go/services/graph/BUILD
++++ b/kythe/go/services/graph/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "graph",
+diff --git a/kythe/go/services/graphstore/BUILD b/kythe/go/services/graphstore/BUILD
+index 9e3ecb846..6d2cc1088 100644
+--- a/kythe/go/services/graphstore/BUILD
++++ b/kythe/go/services/graphstore/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "graphstore",
+diff --git a/kythe/go/services/link/BUILD b/kythe/go/services/link/BUILD
+index 8fa2c4842..c4b7017d1 100644
+--- a/kythe/go/services/link/BUILD
++++ b/kythe/go/services/link/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "link",
+diff --git a/kythe/go/services/web/BUILD b/kythe/go/services/web/BUILD
+index aefd111c7..536d6dd82 100644
+--- a/kythe/go/services/web/BUILD
++++ b/kythe/go/services/web/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "web",
+diff --git a/kythe/go/services/xrefs/BUILD b/kythe/go/services/xrefs/BUILD
+index 3ad95120d..873acc05d 100644
+--- a/kythe/go/services/xrefs/BUILD
++++ b/kythe/go/services/xrefs/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "xrefs",
+diff --git a/kythe/go/serving/api/BUILD b/kythe/go/serving/api/BUILD
+index c3ef56ddf..975fb00fc 100644
+--- a/kythe/go/serving/api/BUILD
++++ b/kythe/go/serving/api/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "api",
+diff --git a/kythe/go/serving/explore/BUILD b/kythe/go/serving/explore/BUILD
+index bcdb82c73..a35fdf686 100644
+--- a/kythe/go/serving/explore/BUILD
++++ b/kythe/go/serving/explore/BUILD
+@@ -1,7 +1,7 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+ package(
+-    default_visibility = ["//kythe:default_visibility"],
++    default_visibility = ["//visibility:public"],
+     licenses = ["notice"],
+ )
+ 
+diff --git a/kythe/go/serving/filetree/BUILD b/kythe/go/serving/filetree/BUILD
+index 4e3141c3b..3c527d529 100644
+--- a/kythe/go/serving/filetree/BUILD
++++ b/kythe/go/serving/filetree/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "filetree",
+diff --git a/kythe/go/serving/graph/BUILD b/kythe/go/serving/graph/BUILD
+index 3227129af..78768748f 100644
+--- a/kythe/go/serving/graph/BUILD
++++ b/kythe/go/serving/graph/BUILD
+@@ -1,7 +1,7 @@
+ # gazelle:go_test file
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "graph",
+diff --git a/kythe/go/serving/identifiers/BUILD b/kythe/go/serving/identifiers/BUILD
+index 6286df42a..17c9d9904 100644
+--- a/kythe/go/serving/identifiers/BUILD
++++ b/kythe/go/serving/identifiers/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "identifiers",
+diff --git a/kythe/go/serving/pipeline/BUILD b/kythe/go/serving/pipeline/BUILD
+index dd9256ac6..1cbb67730 100644
+--- a/kythe/go/serving/pipeline/BUILD
++++ b/kythe/go/serving/pipeline/BUILD
+@@ -1,7 +1,7 @@
+ # gazelle:go_test file
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "pipeline",
+diff --git a/kythe/go/serving/tools/BUILD b/kythe/go/serving/tools/BUILD
+index 0fdca657e..8d498f521 100644
+--- a/kythe/go/serving/tools/BUILD
++++ b/kythe/go/serving/tools/BUILD
+@@ -1,4 +1,4 @@
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ filegroup(
+     name = "http_server",
+diff --git a/kythe/go/serving/xrefs/BUILD b/kythe/go/serving/xrefs/BUILD
+index 8dde37862..767a0f526 100644
+--- a/kythe/go/serving/xrefs/BUILD
++++ b/kythe/go/serving/xrefs/BUILD
+@@ -1,7 +1,7 @@
+ # gazelle:go_test file
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "xrefs",
+diff --git a/kythe/proto/BUILD b/kythe/proto/BUILD
+index b76bccaea..63a24da32 100644
+--- a/kythe/proto/BUILD
++++ b/kythe/proto/BUILD
+@@ -5,7 +5,7 @@ load("//:visibility.bzl", "PUBLIC_PROTO_VISIBILITY")
+ load(":genproto.bzl", "update_generated_protos")
+ load(":go.bzl", "go_proto_library")
+ 
+-package(default_visibility = ["//kythe:proto_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ filegroup(
+     name = "public",
