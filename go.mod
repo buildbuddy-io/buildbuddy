@@ -11,6 +11,7 @@ replace (
 	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.1
 	github.com/lni/vfs => github.com/buildbuddy-io/vfs v0.2.3
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
+	kythe.io => github.com/buildbuddy-io/kythe v0.0.70
 )
 
 require (
@@ -157,6 +158,7 @@ require (
 	gorm.io/driver/sqlite v1.5.2
 	gorm.io/gorm v1.25.2
 	honnef.co/go/tools v0.3.1
+	kythe.io v0.0.70
 )
 
 require (
