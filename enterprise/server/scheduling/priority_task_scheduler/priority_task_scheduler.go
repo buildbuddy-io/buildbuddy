@@ -568,7 +568,3 @@ func customResource(value float32) customResourceCount {
 	millionths := int64(value * 1e6)
 	return customResourceCount(millionths)
 }
-
-func (s customResourceCount) String() string {
-	return fmt.Sprintf("%.6f", float32(s)/1e6)
-}
