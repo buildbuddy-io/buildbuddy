@@ -154,7 +154,7 @@ func (sm *Replica) batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) 
 	k := sm.replicaLocalKey(key)
 	batchReader := wb.Reader()
 	for len(batchReader) > 0 {
-		_, ukey, value, _ := batchReader.Next()
+		_, ukey, value, _, _ := batchReader.Next()
 		if bytes.Equal(ukey, k) {
 			return value, true
 		}
@@ -475,7 +475,7 @@ type ReplicaWriter interface {
 func (sm *Replica) checkLocks(wb pebble.Batch, txid []byte) error {
 	batchReader := wb.Reader()
 	for len(batchReader) > 0 {
-		_, ukey, _, _ := batchReader.Next()
+		_, ukey, _, _, _ := batchReader.Next()
 		keyString := string(ukey)
 		lockingTxid, ok := sm.lockedKeys[keyString]
 		if ok && !bytes.Equal(txid, lockingTxid) {
@@ -489,7 +489,7 @@ func (sm *Replica) checkLocks(wb pebble.Batch, txid []byte) error {
 func (sm *Replica) acquireLocks(wb pebble.Batch, txid []byte) {
 	batchReader := wb.Reader()
 	for len(batchReader) > 0 {
-		_, ukey, _, _ := batchReader.Next()
+		_, ukey, _, _, _ := batchReader.Next()
 		keyString := string(ukey)
 		sm.lockedKeys[keyString] = append(make([]byte, 0, len(txid)), txid...)
 	}
@@ -502,7 +502,7 @@ func (sm *Replica) releaseLocks(wb pebble.Batch, txid []byte) {
 	// Unlock all the keys in this batch.
 	batchReader := wb.Reader()
 	for len(batchReader) > 0 {
-		_, ukey, _, _ := batchReader.Next()
+		_, ukey, _, _, _ := batchReader.Next()
 		keyString := string(ukey)
 		lockingTxid, ok := sm.lockedKeys[keyString]
 		if !ok || !bytes.Equal(txid, lockingTxid) {
@@ -597,7 +597,10 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 	// Lookup our request so that post-commit hooks can be applied, then
 	// delete it from the batch, since the txn is being committed.
 	batchReq := &rfpb.BatchCmdRequest{}
-	iter := txn.NewIter(nil /*default iterOptions*/)
+	iter, err := txn.NewIter(nil /*default iterOptions*/)
+	if err != nil {
+		return err
+	}
 	defer iter.Close()
 	if err := pebble.LookupProto(iter, txKey, batchReq); err != nil {
 		return err
@@ -642,7 +645,10 @@ func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
 		LowerBound: constants.LocalPrefix,
 		UpperBound: constants.MetaRangePrefix,
 	}
-	iter := db.NewIter(iterOpts)
+	iter, err := db.NewIter(iterOpts)
+	if err != nil {
+		return err
+	}
 	defer iter.Close()
 
 	prefix := sm.replicaPrefix()
@@ -899,7 +905,10 @@ func (sm *Replica) findSplitPoint() (*rfpb.FindSplitPointResponse, error) {
 	}
 	defer db.Close()
 
-	iter := db.NewIter(iterOpts)
+	iter, err := db.NewIter(iterOpts)
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 
 	totalSize := int64(0)
@@ -987,7 +996,11 @@ func canSplitKeys(startKey, endKey []byte) bool {
 }
 
 func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag string) {
-	iter := r.NewIter(iterOpts)
+	iter, err := r.NewIter(iterOpts)
+	if err != nil {
+		log.Errorf("Error creating pebble iter: %s", err)
+		return
+	}
 	defer iter.Close()
 
 	totalSize := int64(0)
@@ -1015,7 +1028,10 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 		iterOpts.UpperBound = sm.replicaLocalKey(keys.Key(req.GetStart()).Next())
 	}
 
-	iter := db.NewIter(iterOpts)
+	iter, err := db.NewIter(iterOpts)
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 	var t bool
 
@@ -1059,7 +1075,10 @@ func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetRespons
 		return nil, err
 	}
 
-	iter := db.NewIter(nil /*default iterOptions*/)
+	iter, err := db.NewIter(nil /*default iterOptions*/)
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 
 	fileMetadata, err := lookupFileMetadata(iter, req.GetKey())
@@ -1098,7 +1117,10 @@ func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.Delet
 	if _, err := pk.FromBytes(req.GetKey()); err != nil {
 		return nil, err
 	}
-	iter := wb.NewIter(nil /*default iter options*/)
+	iter, err := wb.NewIter(nil /*default iter options*/)
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 
 	fileMetadata, err := lookupFileMetadata(iter, req.GetKey())
@@ -1130,7 +1152,10 @@ func (sm *Replica) find(db ReplicaReader, req *rfpb.FindRequest) (*rfpb.FindResp
 		return nil, err
 	}
 
-	iter := db.NewIter(nil /*default iterOptions*/)
+	iter, err := db.NewIter(nil /*default iterOptions*/)
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 
 	present := iter.SeekGE(req.GetKey()) && bytes.Equal(iter.Key(), req.GetKey())
@@ -1170,7 +1195,10 @@ func (sm *Replica) deleteSessions(wb pebble.Batch, req *rfpb.DeleteSessionsReque
 	iterOpts := &pebble.IterOptions{
 		UpperBound: end,
 	}
-	iter := wb.NewIter(iterOpts)
+	iter, err := wb.NewIter(iterOpts)
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 
 	t := iter.SeekGE(start)
@@ -1466,10 +1494,13 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*ap
 	defer db.Close()
 
 	start, end := keys.Range([]byte(filestore.PartitionDirectoryPrefix + partitionID + "/"))
-	iter := db.NewIter(&pebble.IterOptions{
+	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,
 	})
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 
 	samples := make([]*approxlru.Sample[*LRUSample], 0, n)
@@ -1940,10 +1971,13 @@ func (sm *Replica) saveRangeData(w io.Writer, snap *pebble.Snapshot) error {
 		sm.log.Warningf("No range descriptor set; not snapshotting range data")
 		return nil
 	}
-	iter := snap.NewIter(&pebble.IterOptions{
+	iter, err := snap.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(rd.GetStart()),
 		UpperBound: keys.Key(rd.GetEnd()),
 	})
+	if err != nil {
+		return err
+	}
 	defer iter.Close()
 	for iter.First(); iter.Valid(); iter.Next() {
 		if err := encodeKeyValue(w, iter.Key(), iter.Value()); err != nil {
@@ -1954,10 +1988,13 @@ func (sm *Replica) saveRangeData(w io.Writer, snap *pebble.Snapshot) error {
 }
 
 func (sm *Replica) saveRangeLocalData(w io.Writer, snap *pebble.Snapshot) error {
-	iter := snap.NewIter(&pebble.IterOptions{
+	iter, err := snap.NewIter(&pebble.IterOptions{
 		LowerBound: constants.LocalPrefix,
 		UpperBound: constants.MetaRangePrefix,
 	})
+	if err != nil {
+		return err
+	}
 	defer iter.Close()
 	prefix := sm.replicaPrefix()
 	for iter.First(); iter.Valid(); iter.Next() {
