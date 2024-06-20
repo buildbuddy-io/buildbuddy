@@ -560,7 +560,13 @@ func (q *PriorityTaskScheduler) GetQueuedTaskReservations() []*scpb.EnqueueTaskR
 type customResourceCount int64
 
 func customResource(value float32) customResourceCount {
-	return customResourceCount(value * 1e6)
+	// Represent the value as an integer value up to the 6th decimal place. This
+	// is a deterministic transformation that avoids accumulating errors over
+	// time (because each float value is mapped to the same integer every time,
+	// and integer arithmetic is exact), while also providing reasonably high
+	// precision.
+	millionths := int64(value * 1e6)
+	return customResourceCount(millionths)
 }
 
 func (s customResourceCount) String() string {
