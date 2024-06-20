@@ -446,3 +446,225 @@ func TestFindReplicaForRemoval(t *testing.T) {
 		})
 	}
 }
+
+func TestRebalance(t *testing.T) {
+	localReplicaID := uint64(1)
+	tests := []struct {
+		desc     string
+		usages   []*rfpb.StoreUsage
+		rd       *rfpb.RangeDescriptor
+		expected *rebalanceOp
+	}{
+		{
+			desc: "move-range-to-new-node",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					ReplicaCount:   700,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					ReplicaCount:   600,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					ReplicaCount:   500,
+					TotalBytesUsed: 50,
+					TotalBytesFree: 950,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					ReplicaCount:   200,
+					TotalBytesUsed: 50,
+					TotalBytesFree: 950,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
+					ReplicaCount:   0,
+					TotalBytesUsed: 0,
+					TotalBytesFree: 1000,
+				},
+			},
+			// Even though it's better to move range from nhid-1 to nhid-5. Since
+			// we are running on nhid-1, we will skip nhid-1 to choose the second-
+			// best option.
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-2"},
+				to:   &candidate{nhid: "nhid-5"},
+			},
+		},
+		{
+			desc: "move-range-to-node-far-below-mean",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					ReplicaCount:   400,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				// Replica count is slightly above the mean: 400, but below
+				// overfull threshold: 420.
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					ReplicaCount:   410,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				// Replica count is slightly above the mean: 400, but below
+				// overfull threshold: 420.
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					ReplicaCount:   405,
+					TotalBytesUsed: 50,
+					TotalBytesFree: 950,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					ReplicaCount:   595,
+					TotalBytesUsed: 50,
+					TotalBytesFree: 950,
+				},
+				// Replica count is far below the mean.
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
+					ReplicaCount:   190,
+					TotalBytesUsed: 50,
+					TotalBytesFree: 950,
+				},
+			},
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-2"},
+				to:   &candidate{nhid: "nhid-5"},
+			},
+		},
+		{
+			desc: "move-range-from-full-disk",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					ReplicaCount:   400,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					ReplicaCount:   400,
+					TotalBytesUsed: 800,
+					TotalBytesFree: 200,
+				},
+				// disk usage percent: 95.5%
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					ReplicaCount:   400,
+					TotalBytesUsed: 955,
+					TotalBytesFree: 45,
+				},
+				// disk usage percent: 93% > maxDiskCapacityForRebalance. We should
+				// not choose this node to rebalance to.
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					ReplicaCount:   350,
+					TotalBytesUsed: 930,
+					TotalBytesFree: 70,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
+					ReplicaCount:   650,
+					TotalBytesUsed: 900,
+					TotalBytesFree: 1100,
+				},
+			},
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-3"},
+				to:   &candidate{nhid: "nhid-5"},
+			},
+		},
+		{
+			desc: "no-reblance-when-around-mean",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					ReplicaCount:   400,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					ReplicaCount:   395,
+					TotalBytesUsed: 800,
+					TotalBytesFree: 200,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					ReplicaCount:   410,
+					TotalBytesUsed: 900,
+					TotalBytesFree: 100,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					ReplicaCount:   405,
+					TotalBytesUsed: 900,
+					TotalBytesFree: 100,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
+					ReplicaCount:   390,
+					TotalBytesUsed: 900,
+					TotalBytesFree: 1100,
+				},
+			},
+			expected: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.desc, func(t *testing.T) {
+			storeMap := newTestStoreMap(tc.usages)
+			rq := &Queue{log: log.NamedSubLogger("test"), storeMap: storeMap}
+			storesWithStats := storemap.CreateStoresWithStats(tc.usages)
+			actual := rq.findRebalanceOp(tc.rd, storesWithStats, localReplicaID)
+			if tc.expected != nil {
+				require.NotNil(t, actual)
+				require.Equal(t, tc.expected.from.nhid, actual.from.nhid)
+				require.Equal(t, tc.expected.to.nhid, actual.to.nhid)
+			} else {
+				require.Nil(t, actual)
+			}
+		})
+	}
+}

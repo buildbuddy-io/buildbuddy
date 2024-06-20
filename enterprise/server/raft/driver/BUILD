@@ -13,6 +13,7 @@ go_library(
         "//server/interfaces",
         "//server/util/alert",
         "//server/util/log",
+        "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
     ],
 )
