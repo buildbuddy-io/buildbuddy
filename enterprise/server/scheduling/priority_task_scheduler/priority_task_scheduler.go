@@ -4,7 +4,6 @@ import (
 	"container/list"
 	"context"
 	"flag"
-	"fmt"
 	"sync"
 	"time"
 

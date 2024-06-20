@@ -2067,7 +2067,9 @@ func TestCustomResources(t *testing.T) {
 		})
 		cmd.WaitStarted()
 		cmd.Exit(0)
-		_ = cmd.Wait()
+		res := cmd.Wait()
+		md := res.ActionResult.GetExecutionMetadata()
+		assert.Equal(t, ex2ID, md.GetExecutorId())
 	}
 }
 
