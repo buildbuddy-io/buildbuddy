@@ -332,7 +332,7 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 			Id: testResultId("//server:foo_local_cache_test"),
 			Payload: &build_event_stream.BuildEvent_TestResult{
 				TestResult: &build_event_stream.TestResult{
-					Status: build_event_stream.TestStatus_PASSED,
+					Status:        build_event_stream.TestStatus_PASSED,
 					CachedLocally: true,
 				},
 			},
