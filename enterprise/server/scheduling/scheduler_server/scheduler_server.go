@@ -493,8 +493,27 @@ type rankedExecutionNode struct {
 }
 
 func (en *executionNode) CanFit(size *scpb.TaskSize) bool {
-	return int64(float64(en.GetAssignableMemoryBytes())*tasksize.MaxResourceCapacityRatio) >= size.GetEstimatedMemoryBytes() &&
-		int64(float64(en.GetAssignableMilliCpu())*tasksize.MaxResourceCapacityRatio) >= size.GetEstimatedMilliCpu()
+	if size.GetEstimatedMemoryBytes() > int64(float64(en.GetAssignableMemoryBytes())*tasksize.MaxResourceCapacityRatio) {
+		return false
+	}
+	if size.GetEstimatedMilliCpu() > int64(float64(en.GetAssignableMilliCpu())*tasksize.MaxResourceCapacityRatio) {
+		return false
+	}
+	for _, r := range size.GetCustomResources() {
+		if r.GetValue() > en.GetAssignableCustomResource(r.GetName()) {
+			return false
+		}
+	}
+	return true
+}
+
+func (en *executionNode) GetAssignableCustomResource(name string) float32 {
+	for _, r := range en.GetAssignableCustomResources() {
+		if r.Name == name {
+			return r.Value
+		}
+	}
+	return 0
 }
 
 func (en *executionNode) String() string {
@@ -659,7 +678,7 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 	}
 
 	if fitCount == 0 {
-		return 0, status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q can fit a task with %d milli-cpu and %d bytes of memory.", np.key.pool, np.key.os, np.key.arch, taskSize.GetEstimatedMilliCpu(), taskSize.GetEstimatedMemoryBytes())
+		return 0, errTaskSizeTooLarge(np.key.pool, np.key.os, np.key.arch, taskSize)
 	}
 
 	return fitCount, nil
@@ -1719,11 +1738,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			}
 			candidateNodes := nodesThatFit(allNodes, enqueueRequest.GetTaskSize())
 			if len(candidateNodes) == 0 {
-				return status.UnavailableErrorf(
-					"No registered executors in pool %q with os %q with arch %q can fit a task with %d milli-cpu and %d bytes of memory.",
-					pool, os, arch,
-					enqueueRequest.GetTaskSize().GetEstimatedMilliCpu(),
-					enqueueRequest.GetTaskSize().GetEstimatedMemoryBytes())
+				return errTaskSizeTooLarge(pool, os, arch, enqueueRequest.GetTaskSize())
 			}
 			candidateNodes = filterToDebugExecutorID(candidateNodes, task)
 			if len(candidateNodes) == 0 {
@@ -2049,4 +2064,10 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		Executor:                    executors,
 		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
 	}, nil
+}
+
+func errTaskSizeTooLarge(pool, os, arch string, size *scpb.TaskSize) error {
+	return status.UnavailableErrorf(
+		"no registered executors in pool %q with os %q with arch %q can fit a task with %s",
+		pool, os, arch, tasksize.String(size))
 }

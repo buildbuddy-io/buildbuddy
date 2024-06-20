@@ -182,6 +182,8 @@ type PriorityTaskScheduler struct {
 	ramBytesUsed            int64
 	cpuMillisCapacity       int64
 	cpuMillisUsed           int64
+	customResourcesCapacity map[string]customResourceCount
+	customResourcesUsed     map[string]customResourceCount
 	exclusiveTaskScheduling bool
 }
 
@@ -193,6 +195,12 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 	cpuMillisCapacity := options.CPUMillisCapacityOverride
 	if cpuMillisCapacity == 0 {
 		cpuMillisCapacity = int64(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio)
+	}
+	customResourcesCapacity := map[string]customResourceCount{}
+	customResourcesUsed := map[string]customResourceCount{}
+	for _, r := range resources.GetAllocatedCustomResources() {
+		customResourcesCapacity[r.GetName()] = customResource(r.GetValue())
+		customResourcesUsed[r.GetName()] = 0
 	}
 
 	rootContext, rootCancel := context.WithCancel(context.Background())
@@ -208,6 +216,8 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 		shuttingDown:            false,
 		ramBytesCapacity:        ramBytesCapacity,
 		cpuMillisCapacity:       cpuMillisCapacity,
+		customResourcesCapacity: customResourcesCapacity,
+		customResourcesUsed:     customResourcesUsed,
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
@@ -368,6 +378,11 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 	if size := res.GetTaskSize(); size != nil {
 		q.ramBytesUsed += size.GetEstimatedMemoryBytes()
 		q.cpuMillisUsed += size.GetEstimatedMilliCpu()
+		for _, r := range size.GetCustomResources() {
+			if _, ok := q.customResourcesUsed[r.GetName()]; ok {
+				q.customResourcesUsed[r.GetName()] += customResource(r.GetValue())
+			}
+		}
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.ramBytesUsed))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.cpuMillisUsed))
 		log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
@@ -379,6 +394,11 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 	if size := res.GetTaskSize(); size != nil {
 		q.ramBytesUsed -= size.GetEstimatedMemoryBytes()
 		q.cpuMillisUsed -= size.GetEstimatedMilliCpu()
+		for _, r := range size.GetCustomResources() {
+			if _, ok := q.customResourcesUsed[r.GetName()]; ok {
+				q.customResourcesUsed[r.GetName()] -= customResource(r.GetValue())
+			}
+		}
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.ramBytesUsed))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.cpuMillisUsed))
 		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
@@ -395,26 +415,49 @@ func (q *PriorityTaskScheduler) stats() string {
 		len(q.activeTaskCancelFuncs), q.q.Len())
 }
 
-func (q *PriorityTaskScheduler) canFitAnotherTask(res *scpb.EnqueueTaskReservationRequest) bool {
-	// Only ever run as many sized tasks as we have memory for.
-	knownRAMremaining := q.ramBytesCapacity - q.ramBytesUsed
-	knownCPUremaining := q.cpuMillisCapacity - q.cpuMillisUsed
-	willFit := knownRAMremaining >= res.GetTaskSize().GetEstimatedMemoryBytes() && knownCPUremaining >= res.GetTaskSize().GetEstimatedMilliCpu()
-
-	// If we're running in exclusiveTaskScheduling mode, only ever allow one task to run at
-	// a time. Otherwise fall through to the logic below.
-	if willFit && q.exclusiveTaskScheduling && len(q.activeTaskCancelFuncs) >= 1 {
+func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationRequest) bool {
+	// If we're running in exclusiveTaskScheduling mode, only ever allow one
+	// task to run at a time. Otherwise fall through to the logic below.
+	if q.exclusiveTaskScheduling && len(q.activeTaskCancelFuncs) >= 1 {
 		return false
 	}
 
-	if willFit {
-		if res.GetTaskSize().GetEstimatedMemoryBytes() == 0 {
-			log.CtxWarningf(q.rootContext, "Scheduling another unknown size task. THIS SHOULD NOT HAPPEN! res: %+v", res)
-		} else {
-			log.CtxInfof(q.rootContext, "Scheduling another task of size: %+v", res.GetTaskSize())
+	size := res.GetTaskSize()
+
+	availableRAM := q.ramBytesCapacity - q.ramBytesUsed
+	if size.GetEstimatedMemoryBytes() > availableRAM {
+		return false
+	}
+
+	availableCPU := q.cpuMillisCapacity - q.cpuMillisUsed
+	if size.GetEstimatedMilliCpu() > availableCPU {
+		return false
+	}
+
+	for _, r := range size.GetCustomResources() {
+		used, ok := q.customResourcesUsed[r.GetName()]
+		if !ok {
+			// The scheduler server should never send us tasks that require
+			// resources we haven't set up in the config.
+			alert.UnexpectedEvent("missing_custom_resource", "Task requested custom resource %q which is not configured for this executor", r.GetName())
+			continue
+		}
+		available := q.customResourcesCapacity[r.GetName()] - used
+		if customResource(r.GetValue()) > available {
+			return false
 		}
 	}
-	return willFit
+
+	// The scheduler server should prevent CPU/memory requests that are <= 0.
+	// Alert if we get a task like this.
+	if size.GetEstimatedMemoryBytes() <= 0 {
+		alert.UnexpectedEvent("invalid_task_memory", "Requested memory %d is invalid", size.GetEstimatedMemoryBytes())
+	}
+	if size.GetEstimatedMilliCpu() <= 0 {
+		alert.UnexpectedEvent("invalid_task_cpu", "Requested CPU %d is invalid", size.GetEstimatedMilliCpu())
+	}
+
+	return true
 }
 
 func (q *PriorityTaskScheduler) handleTask() {
@@ -434,7 +477,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 		return
 	}
 	nextTask := q.q.Peek()
-	if nextTask == nil || !q.canFitAnotherTask(nextTask) {
+	if nextTask == nil || !q.canFitTask(nextTask) {
 		return
 	}
 	reservation := q.q.Dequeue()
@@ -445,6 +488,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	ctx := log.EnrichContext(q.rootContext, log.ExecutionIDKey, reservation.GetTaskId())
 	ctx, cancel := context.WithCancel(ctx)
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, reservation.GetTraceMetadata())
+	log.CtxInfof(ctx, "Scheduling task of size %s", tasksize.String(nextTask.GetTaskSize()))
 
 	q.trackTask(reservation, &cancel)
 
@@ -507,4 +551,19 @@ func (q *PriorityTaskScheduler) GetQueuedTaskReservations() []*scpb.EnqueueTaskR
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.q.GetAll()
+}
+
+// customResourceCount represents custom resource values in such a way that
+// floating point rounding errors are not accumulated as values are added and
+// subtracted over time.
+type customResourceCount int64
+
+func customResource(value float32) customResourceCount {
+	// Represent the value as an integer value up to the 6th decimal place. This
+	// is a deterministic transformation that avoids accumulating errors over
+	// time (because each float value is mapped to the same integer every time,
+	// and integer arithmetic is exact), while also providing reasonably high
+	// precision.
+	millionths := int64(value * 1e6)
+	return customResourceCount(millionths)
 }

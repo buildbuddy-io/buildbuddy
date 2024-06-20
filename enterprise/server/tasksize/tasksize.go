@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -393,6 +394,7 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 		EstimatedMemoryBytes:   memEstimate,
 		EstimatedMilliCpu:      cpuEstimate,
 		EstimatedFreeDiskBytes: freeDiskEstimate,
+		CustomResources:        props.CustomResources,
 	})
 }
 
@@ -417,4 +419,15 @@ func applyMinimums(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize
 		clone.EstimatedMemoryBytes = minMemoryBytes
 	}
 	return clone
+}
+
+func String(size *scpb.TaskSize) string {
+	resources := []string{
+		fmt.Sprintf("milli_cpu=%d", size.GetEstimatedMilliCpu()),
+		fmt.Sprintf("memory_bytes=%d", size.GetEstimatedMemoryBytes()),
+	}
+	for _, r := range size.GetCustomResources() {
+		resources = append(resources, fmt.Sprintf("%s=%f", r.GetName(), r.GetValue()))
+	}
+	return strings.Join(resources, ", ")
 }
