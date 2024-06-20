@@ -1,22 +1,44 @@
 diff --git a/expfmt/BUILD.bazel b/expfmt/BUILD.bazel
-index 22dd614..66a6621 100644
+index ae0b0dd..5abd8e3 100644
 --- a/expfmt/BUILD.bazel
 +++ b/expfmt/BUILD.bazel
-@@ -16,7 +16,7 @@ go_library(
+@@ -15,7 +15,7 @@ go_library(
+     deps = [
          "//internal/bitbucket.org/ww/goautoneg",
          "//model",
-         "@com_github_matttproud_golang_protobuf_extensions//pbutil",
 -        "@com_github_prometheus_client_model//go",
 +        "@@//proto:prometheus_client_go_proto",
+         "@org_golang_google_protobuf//encoding/protodelim",
          "@org_golang_google_protobuf//encoding/prototext",
          "@org_golang_google_protobuf//proto",
-     ],
-@@ -43,7 +43,7 @@ go_test(
+@@ -44,7 +44,7 @@ go_test(
+     embed = [":expfmt"],
      deps = [
          "//model",
-         "@com_github_matttproud_golang_protobuf_extensions//pbutil",
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@org_golang_google_protobuf//encoding/protodelim",
+         "@org_golang_google_protobuf//proto",
+         "@org_golang_google_protobuf//types/known/timestamppb",
+diff --git a/model/BUILD.bazel b/model/BUILD.bazel
+index 6f36f8b..6e8007c 100644
+--- a/model/BUILD.bazel
++++ b/model/BUILD.bazel
+@@ -24,7 +24,7 @@ go_library(
+     importpath = "github.com/prometheus/common/model",
+     visibility = ["//visibility:public"],
+     deps = [
 -        "@com_github_prometheus_client_model//go",
 +        "@@//proto:prometheus_client_go_proto",
          "@org_golang_google_protobuf//proto",
-         "@org_golang_google_protobuf//types/known/timestamppb",
      ],
+ )
+@@ -55,7 +55,7 @@ go_test(
+     deps = [
+         "@com_github_google_go_cmp//cmp",
+         "@com_github_google_go_cmp//cmp/cmpopts",
+-        "@com_github_prometheus_client_model//go",
++        "@@//proto:prometheus_client_go_proto",
+         "@org_golang_google_protobuf//proto",
+     ],
+ )
