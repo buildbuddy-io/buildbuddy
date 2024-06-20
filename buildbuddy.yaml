@@ -126,7 +126,6 @@ actions:
           - "*"
     bazel_commands:
       - run //:lfs
-      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
 
 plugins:
   - path: cli/plugins/go-deps
