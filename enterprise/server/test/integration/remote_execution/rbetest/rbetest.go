@@ -288,20 +288,14 @@ func NewRBETestEnv(t *testing.T) *Env {
 
 	t.Cleanup(func() {
 		log.Warningf("Shutting down executors...")
-		var wg sync.WaitGroup
 		for id, e := range rbe.executors {
 			id, e := id, e
 			e.env.GetHealthChecker().Shutdown()
-			wg.Add(1)
-			go func() {
-				log.Infof("Waiting for executor %q to shut down.", id)
-				e.env.GetHealthChecker().WaitForGracefulShutdown()
-				log.Infof("Shut down for executor %q completed.", id)
-				wg.Done()
-			}()
+			log.Infof("Waiting for executor %q to shut down.", id)
+			e.env.GetHealthChecker().WaitForGracefulShutdown()
+			log.Infof("Shut down for executor %q completed.", id)
 		}
 		log.Warningf("Waiting for executor shutdown to finish...")
-		wg.Wait()
 	})
 	t.Cleanup(rbe.ShutdownBuildBuddyServers)
 
