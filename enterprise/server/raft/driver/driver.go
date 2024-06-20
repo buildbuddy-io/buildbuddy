@@ -13,11 +13,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/jonboulle/clockwork"
+
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
 var (
@@ -403,8 +404,7 @@ func storeHasReplica(node *rfpb.NodeDescriptor, existing []*rfpb.ReplicaDescript
 }
 
 // findNodeForAllocation finds a target node for the range to up-replicate.
-func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor) *rfpb.NodeDescriptor {
-	storesWithStats := rq.storeMap.GetStoresWithStats()
+func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats) *rfpb.NodeDescriptor {
 	var candidates []*candidate
 	for _, su := range storesWithStats.Usages {
 		if storeHasReplica(su.GetNode(), rd.GetReplicas()) {
@@ -428,7 +428,7 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor) *rfpb.NodeDescr
 	}
 	slices.SortFunc(candidates, func(a, b *candidate) int {
 		// Best targets are up front.
-		return -int(compare(a, b))
+		return -compareByScoreAndID(a, b)
 	})
 	return candidates[0].usage.GetNode()
 }
@@ -439,7 +439,8 @@ type change struct {
 }
 
 func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
-	target := rq.findNodeForAllocation(rd)
+	storesWithStats := rq.storeMap.GetStoresWithStats()
+	target := rq.findNodeForAllocation(rd, storesWithStats)
 	if target == nil {
 		rq.log.Debugf("cannot find targets for range descriptor:%+v", rd)
 		return nil
@@ -563,10 +564,7 @@ func (rq *Queue) findReplicaForRemoval(ctx context.Context, rd *rfpb.RangeDescri
 		return nil
 	}
 
-	slices.SortFunc(candidates, func(a, b *candidate) int {
-		// The worst targets are at the front
-		return int(compare(a, b))
-	})
+	slices.SortFunc(candidates, compareByScoreAndID)
 
 	for _, c := range candidates {
 		for _, repl := range rd.GetReplicas() {
@@ -725,7 +723,9 @@ type candidate struct {
 //   - a positive number if a is a better fit than b;
 //   - 0 if a and b is equivalent
 //   - a negative number if a is a worse fit than b.
-func compare(a *candidate, b *candidate) float64 {
+//
+// The result reflects how much better or worse candidate a is.
+func compareByScore(a *candidate, b *candidate) int {
 	if a.fullDisk != b.fullDisk {
 		if a.fullDisk {
 			return 20
@@ -734,21 +734,31 @@ func compare(a *candidate, b *candidate) float64 {
 			return -20
 		}
 	}
+
+	// [10, 12] or [-12, -10]
 	if a.replicaCountMeanLevel != b.replicaCountMeanLevel {
-		score := 10 + math.Abs(float64(a.replicaCountMeanLevel-b.replicaCountMeanLevel))
+		score := int(10 + math.Abs(float64(a.replicaCountMeanLevel-b.replicaCountMeanLevel)))
 		if a.replicaCountMeanLevel > b.replicaCountMeanLevel {
 			return score
 		}
-		return -10
+		return -score
 	}
 
+	// (-10, 10)
 	diff := math.Abs(float64(a.replicaCount - b.replicaCount))
 	if a.replicaCount < b.replicaCount {
-		return diff / float64(b.replicaCount)
+		return int(diff / float64(b.replicaCount) * 10)
 	} else if a.replicaCount > b.replicaCount {
-		return diff / float64(a.replicaCount)
+		return -int(diff / float64(a.replicaCount) * 10)
 	}
-	return float64(cmp.Compare(a.usage.GetNode().GetNhid(), b.usage.GetNode().GetNhid()))
+	return 0
+}
+
+func compareByScoreAndID(a *candidate, b *candidate) int {
+	if res := compareByScore(a, b); res != 0 {
+		return res
+	}
+	return cmp.Compare(a.usage.GetNode().GetNhid(), b.usage.GetNode().GetNhid())
 }
 
 func replicaCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.StoreUsage) meanLevel {
