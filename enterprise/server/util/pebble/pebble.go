@@ -93,7 +93,7 @@ type Reader interface {
 	// NewIter returns an iterator that is unpositioned (Iterator.Valid() will
 	// return false). The iterator can be positioned via a call to SeekGE,
 	// SeekLT, First or Last.
-	NewIter(o *pebble.IterOptions) Iterator
+	NewIter(o *pebble.IterOptions) (Iterator, error)
 }
 
 type Writer interface {
@@ -261,9 +261,12 @@ func (ib *instrumentedBatch) Len() int {
 	return ib.batch.Len()
 }
 
-func (ib *instrumentedBatch) NewIter(o *pebble.IterOptions) Iterator {
-	iter := ib.batch.NewIter(o)
-	return &instrumentedIter{ib.db, iter}
+func (ib *instrumentedBatch) NewIter(o *pebble.IterOptions) (Iterator, error) {
+	iter, err := ib.batch.NewIter(o)
+	if err != nil {
+		return nil, err
+	}
+	return &instrumentedIter{ib.db, iter}, nil
 }
 
 func (ib *instrumentedBatch) Apply(batch Batch, opts *pebble.WriteOptions) error {
@@ -385,9 +388,12 @@ func (idb *instrumentedDB) Apply(batch Batch, opts *pebble.WriteOptions) error {
 	return idb.db.Apply(batch.(*instrumentedBatch).batch, opts)
 }
 
-func (idb *instrumentedDB) NewIter(o *pebble.IterOptions) Iterator {
-	iter := idb.db.NewIter(o)
-	return &instrumentedIter{idb, iter}
+func (idb *instrumentedDB) NewIter(o *pebble.IterOptions) (Iterator, error) {
+	iter, err := idb.db.NewIter(o)
+	if err != nil {
+		return nil, err
+	}
+	return &instrumentedIter{idb, iter}, nil
 }
 
 func (idb *instrumentedDB) NewBatch() Batch {

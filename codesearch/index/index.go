@@ -264,10 +264,13 @@ func NewReader(db pebble.Reader, namespace string) *Reader {
 }
 
 func (r *Reader) DumpPosting() {
-	iter := r.db.NewIter(&pebble.IterOptions{
+	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},
 		UpperBound: []byte{math.MaxUint8},
 	})
+	if err != nil {
+		return
+	}
 	defer iter.Close()
 	postingList := posting.NewList()
 	k := key{}
@@ -294,10 +297,13 @@ func (r *Reader) deletedDocPrefix(docID uint64) []byte {
 }
 
 func (r *Reader) allDocIDs() (posting.FieldMap, error) {
-	iter := r.db.NewIter(&pebble.IterOptions{
+	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: r.storedFieldKey(0, types.DocIDField),
 		UpperBound: []byte(fmt.Sprintf("%s:doc:\xff", r.namespace)),
 	})
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 	resultSet := posting.NewList()
 	k := key{}
@@ -317,10 +323,13 @@ func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 
 func (r *Reader) GetStoredDocument(docID uint64, fieldNames ...string) (types.Document, error) {
 	docIDStart := r.storedFieldKey(docID, "")
-	iter := r.db.NewIter(&pebble.IterOptions{
+	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: docIDStart,
 		UpperBound: r.storedFieldKey(docID, "\xff"),
 	})
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 
 	shouldCopyField := func(fieldName string) bool {
@@ -368,10 +377,13 @@ func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field stri
 		minKey = []byte(fmt.Sprintf("%s:gra:%s:%s", r.namespace, ngram, field))
 	}
 	maxKey := append(minKey, byte('\xff'))
-	iter := r.db.NewIter(&pebble.IterOptions{
+	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: minKey,
 		UpperBound: maxKey,
 	})
+	if err != nil {
+		return nil, err
+	}
 	defer iter.Close()
 
 	resultSet := posting.NewFieldMap()
@@ -491,10 +503,13 @@ func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
 	if docids.GetCardinality() == 0 {
 		return nil
 	}
-	iter := r.db.NewIter(&pebble.IterOptions{
+	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: r.deletedDocPrefix(0),
 		UpperBound: []byte(fmt.Sprintf("%s:del:\xff", r.namespace)),
 	})
+	if err != nil {
+		return err
+	}
 	defer iter.Close()
 
 	arr := docids.ToArray()

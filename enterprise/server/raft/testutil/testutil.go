@@ -102,9 +102,9 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: nrf,
 		},
-		AddressByNodeHostID: false,
-		RaftEventListener:   raftListener,
-		SystemEventListener: raftListener,
+		DefaultNodeRegistryEnabled: false,
+		RaftEventListener:          raftListener,
+		SystemEventListener:        raftListener,
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	require.NoError(t, err, "unexpected error creating NodeHost")
