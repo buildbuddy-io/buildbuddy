@@ -438,8 +438,8 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 	for _, r := range size.GetCustomResources() {
 		used, ok := q.customResourcesUsed[r.GetName()]
 		if !ok {
-			// The scheduler should never send us tasks that require resources
-			// we haven't set up in the config.
+			// The scheduler server should never send us tasks that require
+			// resources we haven't set up in the config.
 			alert.UnexpectedEvent("missing_custom_resource", "Task requested custom resource %q which is not configured for this executor", r.GetName())
 			continue
 		}
@@ -449,7 +449,7 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 		}
 	}
 
-	// The scheduler should prevent CPU/memory requests that are <= 0.
+	// The scheduler server should prevent CPU/memory requests that are <= 0.
 	// Alert if we get a task like this.
 	if size.GetEstimatedMemoryBytes() <= 0 {
 		alert.UnexpectedEvent("invalid_task_memory", "Requested memory %d is invalid", size.GetEstimatedMemoryBytes())
