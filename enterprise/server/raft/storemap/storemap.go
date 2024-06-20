@@ -181,7 +181,7 @@ type StoresWithStats struct {
 	TotalBytesUsed Stat
 }
 
-func createStoresWithStats(usages []*rfpb.StoreUsage) *StoresWithStats {
+func CreateStoresWithStats(usages []*rfpb.StoreUsage) *StoresWithStats {
 	res := &StoresWithStats{}
 	for _, usage := range usages {
 		res.Usages = append(res.Usages, usage.CloneVT())
@@ -206,7 +206,7 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 			alive = append(alive, sd.usage)
 		}
 	}
-	return createStoresWithStats(alive)
+	return CreateStoresWithStats(alive)
 }
 
 func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
@@ -224,5 +224,5 @@ func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 			alive = append(alive, sd.usage)
 		}
 	}
-	return createStoresWithStats(alive)
+	return CreateStoresWithStats(alive)
 }

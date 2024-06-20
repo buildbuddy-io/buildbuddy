@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "driver",
@@ -18,3 +18,16 @@ go_library(
 )
 
 package(default_visibility = ["//enterprise:__subpackages__"])
+
+go_test(
+    name = "driver_test",
+    srcs = ["driver_test.go"],
+    embed = [":driver"],
+    deps = [
+        "//enterprise/server/raft/storemap",
+        "//proto:raft_go_proto",
+        "//server/util/log",
+        "//server/util/proto",
+        "@com_github_stretchr_testify//require",
+    ],
+)
