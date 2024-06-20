@@ -115,6 +115,18 @@ actions:
           - "*"
     bazel_commands:
       - test //... --host_platform=//:many_layered_image --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
+  - name: LFS test
+    container_image: ubuntu-20.04
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    bazel_commands:
+      - run //:lfs
+      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
 
 plugins:
   - path: cli/plugins/go-deps
