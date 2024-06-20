@@ -34,7 +34,9 @@ function paths_to_format() {
   if [[ "$(git rev-parse --abbrev-ref HEAD)" == master ]]; then
     DIFF_BASE='HEAD~1'
   else
-    DIFF_BASE=$(git merge-base HEAD master)
+    # If on a feature branch, use GIT_BASE_BRANCH env var set by BB workflows,
+    # or fall back to master (which should usually work when running locally).
+    DIFF_BASE=$(git merge-base HEAD "origin/${GIT_BASE_BRANCH:-master}")
   fi
   git diff --name-only --diff-filter=AMRCT "$DIFF_BASE" -- "${GIT_FILE_PATTERNS[@]}"
 }
