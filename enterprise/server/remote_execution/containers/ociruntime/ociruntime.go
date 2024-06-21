@@ -793,7 +793,10 @@ type ImageStore struct {
 }
 
 func NewImageStore(layersDir string) *ImageStore {
-	return &ImageStore{layersDir: layersDir}
+	return &ImageStore{
+		layersDir:    layersDir,
+		cachedLayers: map[string][]ctr.Layer{},
+	}
 }
 
 // Pull downloads and extracts image layers to a directory, skipping layers
