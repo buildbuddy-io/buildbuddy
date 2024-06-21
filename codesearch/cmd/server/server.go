@@ -3,7 +3,6 @@ package main
 import (
 	"net"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -15,16 +14,22 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
+	kythe_server "github.com/buildbuddy-io/buildbuddy/codesearch/kythe/server"
+	cs_server "github.com/buildbuddy-io/buildbuddy/codesearch/server"
 	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
+	ksspb "github.com/buildbuddy-io/buildbuddy/proto/kythe_service"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
 var (
 	serverType = flag.String("server_type", "codesearch-server", "The server type to match on health checks")
 
-	listen     = flag.String("codesearch.listen", ":2633", "Address to listen on")
-	indexDir   = flag.String("codesearch.index_dir", "", "Directory to store index in")
-	scratchDir = flag.String("codesearch.scratch_dir", "", "Directory to store temp files in")
+	listen       = flag.String("codesearch.listen", ":2633", "Address to listen on")
+	csIndexDir   = flag.String("codesearch.index_dir", "", "Directory to store index in")
+	csScratchDir = flag.String("codesearch.scratch_dir", "", "Directory to store temp files in")
+
+	kytheIndexDir   = flag.String("codesearch.kythe.index_dir", "", "Directory to store index in")
+	kytheScratchDir = flag.String("codesearch.kythe.scratch_dir", "", "Directory to store temp files in")
 )
 
 func main() {
@@ -43,7 +48,7 @@ func main() {
 	env := real_environment.NewRealEnv(healthChecker)
 	env.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousEnabled*/, ""))
 
-	css, err := server.New(*indexDir, *scratchDir)
+	css, err := cs_server.New(*csIndexDir, *csScratchDir)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -56,6 +61,18 @@ func main() {
 	grpc_prometheus.EnableHandlingTimeHistogram()
 
 	csspb.RegisterCodesearchServiceServer(server, css)
+
+	// Register kythe, if it's enabled.
+	if *kytheIndexDir != "" {
+		kss, err := kythe_server.New(*kytheIndexDir)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		ksspb.RegisterXRefServiceServer(server, kss.XrefsService())
+		ksspb.RegisterGraphServiceServer(server, kss.GraphService())
+		ksspb.RegisterFileTreeServiceServer(server, kss.FiletreeService())
+		ksspb.RegisterIdentifierServiceServer(server, kss.IdentifierService())
+	}
 
 	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(server))
 	go func() {
