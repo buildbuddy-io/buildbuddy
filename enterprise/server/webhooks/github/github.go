@@ -200,18 +200,6 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 		return nil, err
 	}
 
-	// Sometimes the mergeCommitSHA will not be set on the webhook data
-	// if the background job computing it has not completed yet. In this
-	// case, leave it empty.
-	mergeCommitSHAValue, err := fieldgetter.ExtractValues(
-		event,
-		"PullRequest.MergeCommitSHA",
-	)
-	mergeCommitSHA := ""
-	if err == nil {
-		mergeCommitSHA = mergeCommitSHAValue["PullRequest.MergeCommitSHA"]
-	}
-
 	isTargetRepoPublic := v["PullRequest.Base.Repo.Private"] == "false"
 	return &interfaces.WebhookData{
 		EventName:               webhook_data.EventName.PullRequest,
@@ -222,7 +210,6 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 		TargetRepoDefaultBranch: v["PullRequest.Base.Repo.DefaultBranch"],
 		IsTargetRepoPublic:      isTargetRepoPublic,
 		TargetBranch:            v["PullRequest.Base.Ref"],
-		MergeCommitSHA:          mergeCommitSHA,
 		PullRequestAuthor:       v["PullRequest.User.Login"],
 	}, nil
 }

@@ -79,7 +79,6 @@ func TestParseRequest_ValidPullRequestReviewEvent_Success(t *testing.T) {
 		PullRequestNumber:       1,
 		PullRequestAuthor:       "test2",
 		PullRequestApprover:     "test",
-		MergeCommitSHA:          "70897fde472746bcbb7641e05de39d9d3b97b4d9",
 	}, data)
 }
 
