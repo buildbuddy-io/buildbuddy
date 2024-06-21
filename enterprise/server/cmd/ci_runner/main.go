@@ -390,7 +390,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		if err != nil {
 			return err
 		}
-		cmd = parsedArgs.cmd
+		cmd = fmt.Sprintf("remote %s", parsedArgs.cmd)
 		patterns = parsedArgs.patterns
 	}
 	startedEvent := &bespb.BuildEvent{
