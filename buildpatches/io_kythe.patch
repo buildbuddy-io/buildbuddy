@@ -215,6 +215,172 @@ index 8dde37862..767a0f526 100644
  
  go_library(
      name = "xrefs",
+diff --git a/kythe/go/storage/entryset/BUILD b/kythe/go/storage/entryset/BUILD
+index 315f044de..0b7264cd2 100644
+--- a/kythe/go/storage/entryset/BUILD
++++ b/kythe/go/storage/entryset/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "entryset",
+diff --git a/kythe/go/storage/gsutil/BUILD b/kythe/go/storage/gsutil/BUILD
+index 60551629b..5d2ec6541 100644
+--- a/kythe/go/storage/gsutil/BUILD
++++ b/kythe/go/storage/gsutil/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "gsutil",
+diff --git a/kythe/go/storage/inmemory/BUILD b/kythe/go/storage/inmemory/BUILD
+index 3e19ff66c..9bd292f50 100644
+--- a/kythe/go/storage/inmemory/BUILD
++++ b/kythe/go/storage/inmemory/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "inmemory",
+diff --git a/kythe/go/storage/keyvalue/BUILD b/kythe/go/storage/keyvalue/BUILD
+index 7717e6de1..84d82587c 100644
+--- a/kythe/go/storage/keyvalue/BUILD
++++ b/kythe/go/storage/keyvalue/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "keyvalue",
+diff --git a/kythe/go/storage/kvutil/BUILD b/kythe/go/storage/kvutil/BUILD
+index 6a813fb0a..29227dab7 100644
+--- a/kythe/go/storage/kvutil/BUILD
++++ b/kythe/go/storage/kvutil/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "kvutil",
+diff --git a/kythe/go/storage/leveldb/BUILD b/kythe/go/storage/leveldb/BUILD
+index b96088fb4..85c576f11 100644
+--- a/kythe/go/storage/leveldb/BUILD
++++ b/kythe/go/storage/leveldb/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "leveldb",
+diff --git a/kythe/go/storage/pebble/BUILD b/kythe/go/storage/pebble/BUILD
+index 299ae3a53..5717f2d6c 100644
+--- a/kythe/go/storage/pebble/BUILD
++++ b/kythe/go/storage/pebble/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "pebble",
+diff --git a/kythe/go/storage/stream/BUILD b/kythe/go/storage/stream/BUILD
+index fd7bcea9c..1506f6e0c 100644
+--- a/kythe/go/storage/stream/BUILD
++++ b/kythe/go/storage/stream/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "stream",
+diff --git a/kythe/go/storage/table/BUILD b/kythe/go/storage/table/BUILD
+index 4b3ecd2fd..1c42406a2 100644
+--- a/kythe/go/storage/table/BUILD
++++ b/kythe/go/storage/table/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "table",
+diff --git a/kythe/go/storage/tools/BUILD b/kythe/go/storage/tools/BUILD
+index db7250a1e..afa648bb7 100644
+--- a/kythe/go/storage/tools/BUILD
++++ b/kythe/go/storage/tools/BUILD
+@@ -1,4 +1,4 @@
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ filegroup(
+     name = "write_entries",
+diff --git a/kythe/go/storage/tools/directory_indexer/BUILD b/kythe/go/storage/tools/directory_indexer/BUILD
+index 882156aa3..04ac231fe 100644
+--- a/kythe/go/storage/tools/directory_indexer/BUILD
++++ b/kythe/go/storage/tools/directory_indexer/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_binary")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_binary(
+     name = "directory_indexer",
+diff --git a/kythe/go/storage/tools/read_entries/BUILD b/kythe/go/storage/tools/read_entries/BUILD
+index 857198193..6053b9497 100644
+--- a/kythe/go/storage/tools/read_entries/BUILD
++++ b/kythe/go/storage/tools/read_entries/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_binary")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_binary(
+     name = "read_entries",
+diff --git a/kythe/go/storage/tools/triples/BUILD b/kythe/go/storage/tools/triples/BUILD
+index 17858ad65..7d885b8dc 100644
+--- a/kythe/go/storage/tools/triples/BUILD
++++ b/kythe/go/storage/tools/triples/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_binary")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_binary(
+     name = "triples",
+diff --git a/kythe/go/storage/tools/write_entries/BUILD b/kythe/go/storage/tools/write_entries/BUILD
+index 6d64d8925..c6409f7ad 100644
+--- a/kythe/go/storage/tools/write_entries/BUILD
++++ b/kythe/go/storage/tools/write_entries/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_binary")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_binary(
+     name = "write_entries",
 diff --git a/kythe/go/util/schema/BUILD b/kythe/go/util/schema/BUILD
 index e2c81cb36..9629ae56f 100644
 --- a/kythe/go/util/schema/BUILD
@@ -241,12 +407,13 @@ index e2c81cb36..9629ae56f 100644
      name = "schema_test",
      size = "small",
 diff --git a/kythe/proto/BUILD b/kythe/proto/BUILD
-index b76bccaea..351dc854a 100644
+index b76bccaea..240fa41e5 100644
 --- a/kythe/proto/BUILD
 +++ b/kythe/proto/BUILD
-@@ -2,10 +2,9 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+@@ -1,11 +1,9 @@
+ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
  load("@rules_proto//proto:defs.bzl", "proto_library")
- load("@rules_java//java:defs.bzl", "java_proto_library")
+-load("@rules_java//java:defs.bzl", "java_proto_library")
  load("//:visibility.bzl", "PUBLIC_PROTO_VISIBILITY")
 -load(":genproto.bzl", "update_generated_protos")
  load(":go.bzl", "go_proto_library")
@@ -256,10 +423,329 @@ index b76bccaea..351dc854a 100644
  
  filegroup(
      name = "public",
-@@ -749,11 +748,6 @@ java_proto_library(
+@@ -47,12 +45,6 @@ go_proto_library(
+     deps = [":storage_go_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "schema_java_proto",
+-    visibility = [PUBLIC_PROTO_VISIBILITY],
+-    deps = [":schema_proto"],
+-)
+-
+ cc_proto_library(
+     name = "schema_cc_proto",
+     visibility = [PUBLIC_PROTO_VISIBILITY],
+@@ -79,18 +71,12 @@ go_proto_library(
+     proto = ":common_proto",
+ )
+ 
+-java_proto_library(
+-    name = "common_java_proto",
+-    visibility = [PUBLIC_PROTO_VISIBILITY],
+-    deps = [":common_proto"],
+-)
+-
+ # Public Kythe GraphStore analyzer output format
+ proto_library(
+     name = "storage_proto",
+     srcs = ["storage.proto"],
+     visibility = [
+-        "//kythe:proto_visibility",
++        "//visibility:public",
+     ],
+ )
+ 
+@@ -106,18 +92,12 @@ go_proto_library(
+     proto = ":storage_proto",
+ )
+ 
+-java_proto_library(
+-    name = "storage_java_proto",
+-    visibility = [PUBLIC_PROTO_VISIBILITY],
+-    deps = [":storage_proto"],
+-)
+-
+ # Public Kythe GraphStore service API
+ proto_library(
+     name = "storage_service_proto",
+     srcs = ["storage_service.proto"],
+     visibility = [
+-        "//kythe:proto_visibility",
++        "//visibility:public",
+     ],
+     deps = [":storage_proto"],
+ )
+@@ -136,17 +116,12 @@ go_proto_library(
+     deps = [":storage_go_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "storage_service_java_proto",
+-    deps = [":storage_service_proto"],
+-)
+-
+ # Public Kythe analyzer
+ proto_library(
+     name = "analysis_proto",
+     srcs = ["analysis.proto"],
+     visibility = [
+-        "//kythe:proto_visibility",
++        "//visibility:public",
+     ],
+     deps = [
+         ":storage_proto",
+@@ -171,18 +146,12 @@ go_proto_library(
+     ],
+ )
+ 
+-java_proto_library(
+-    name = "analysis_java_proto",
+-    visibility = [PUBLIC_PROTO_VISIBILITY],
+-    deps = [":analysis_proto"],
+-)
+-
+ # Public Kythe file data service APIs
+ proto_library(
+     name = "analysis_service_proto",
+     srcs = ["analysis_service.proto"],
+     visibility = [
+-        "//kythe:proto_visibility",
++        "//visibility:public",
+     ],
+     deps = [":analysis_proto"],
+ )
+@@ -200,11 +169,6 @@ go_proto_library(
+     deps = [":analysis_go_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "analysis_service_java_proto",
+-    deps = [":analysis_service_proto"],
+-)
+-
+ # Public Kythe status service API
+ proto_library(
+     name = "status_service_proto",
+@@ -225,11 +189,6 @@ go_proto_library(
+     deps = [":common_go_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "status_service_java_proto",
+-    deps = [":status_service_proto"],
+-)
+-
+ # Context-dependent version information, for claiming.
+ proto_library(
+     name = "filecontext_proto",
+@@ -247,11 +206,6 @@ go_proto_library(
+     proto = ":filecontext_proto",
+ )
+ 
+-java_proto_library(
+-    name = "filecontext_java_proto",
+-    deps = [":filecontext_proto"],
+-)
+-
+ # Build tool details for compilation units
+ proto_library(
+     name = "buildinfo_proto",
+@@ -270,11 +224,6 @@ go_proto_library(
+     proto = ":buildinfo_proto",
+ )
+ 
+-java_proto_library(
+-    name = "buildinfo_java_proto",
+-    deps = [":buildinfo_proto"],
+-)
+-
+ # C++-specific protocol buffer definitions
+ proto_library(
+     name = "cxx_proto",
+@@ -292,11 +241,6 @@ go_proto_library(
+     proto = ":cxx_proto",
+ )
+ 
+-java_proto_library(
+-    name = "cxx_java_proto",
+-    deps = [":cxx_proto"],
+-)
+-
+ # Go-specific protocol buffer definitions
+ proto_library(
+     name = "go_proto",
+@@ -314,11 +258,6 @@ go_proto_library(
+     proto = ":go_proto",
+ )
+ 
+-java_proto_library(
+-    name = "go_java_proto",
+-    deps = [":go_proto"],
+-)
+-
+ # Java-specific protocol buffer definitions
+ proto_library(
+     name = "java_proto",
+@@ -338,11 +277,6 @@ go_proto_library(
+     deps = [":storage_go_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "java_java_proto",
+-    deps = [":java_proto"],
+-)
+-
+ # Kythe claiming message definitions
+ proto_library(
+     name = "claim_proto",
+@@ -362,11 +296,6 @@ go_proto_library(
+     deps = [":storage_go_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "claim_java_proto",
+-    deps = [":claim_proto"],
+-)
+-
+ # Public Kythe filetree service API
+ proto_library(
+     name = "filetree_proto",
+@@ -385,27 +314,12 @@ go_proto_library(
+     proto = ":filetree_proto",
+ )
+ 
+-java_proto_library(
+-    name = "filetree_java_proto",
+-    deps = [":filetree_proto"],
+-)
+-
+ # Public Kythe xref service API
+ proto_library(
+     name = "xref_proto",
+     srcs = ["xref.proto"],
+     visibility = [
+-        # TODO(schroederc): prune once MarkedSource has migrated to common.proto
+-        "//kythe/cxx/common:__pkg__",
+-        "//kythe/cxx/doc:__pkg__",
+-        "//kythe/go/languageserver:__subpackages__",
+-        "//kythe/go/platform/tools:__subpackages__",
+-        "//kythe/go/services:__subpackages__",
+-        "//kythe/go/serving:__subpackages__",
+-        "//kythe/go/test:__subpackages__",
+-        "//kythe/go/util/markedsource:__pkg__",
+-        "//kythe/java/com/google/devtools/kythe/doc:__subpackages__",
+-        "//kythe/javatests/com/google/devtools/kythe/doc:__subpackages__",
++        "//visibility:public",
+     ],
+     deps = [":common_proto"],
+ )
+@@ -424,11 +338,6 @@ go_proto_library(
+     deps = [":common_go_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "xref_java_proto",
+-    deps = [":xref_proto"],
+-)
+-
+ proto_library(
+     name = "identifier_proto",
+     srcs = ["identifier.proto"],
+@@ -446,11 +355,6 @@ go_proto_library(
+     proto = ":identifier_proto",
+ )
+ 
+-java_proto_library(
+-    name = "identifier_java_proto",
+-    deps = [":identifier_proto"],
+-)
+-
+ # Public Kythe graph service API
+ proto_library(
+     name = "graph_proto",
+@@ -471,11 +375,6 @@ cc_proto_library(
+     deps = [":graph_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "graph_java_proto",
+-    deps = [":graph_proto"],
+-)
+-
+ # Public Kythe graph exploration API
+ proto_library(
+     name = "explore_proto",
+@@ -504,11 +403,6 @@ cc_proto_library(
+     deps = [":explore_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "explore_java_proto",
+-    deps = [":explore_proto"],
+-)
+-
+ # Protocol buffer definitions used to encode serving data
+ # WARNING: These should not be exposed to clients.
+ proto_library(
+@@ -535,12 +429,6 @@ go_proto_library(
+     deps = [":common_go_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "serving_java_proto",
+-    visibility = ["//visibility:public"],
+-    deps = [":serving_proto"],
+-)
+-
+ proto_library(
+     name = "xref_serving_proto",
+     srcs = ["xref_serving.proto"],
+@@ -604,11 +492,6 @@ go_proto_library(
+     deps = [":common_go_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "link_java_proto",
+-    deps = [":link_proto"],
+-)
+-
+ # Protocol buffer definitions internal only to the Kythe libraries and tools.
+ # WARNING: These should not be exposed to clients.
+ proto_library(
+@@ -629,11 +512,6 @@ go_proto_library(
+     deps = [":serving_go_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "internal_java_proto",
+-    deps = [":internal_proto"],
+-)
+-
+ # Protocol buffer definitions used to record indexer outputs for storage.
+ # WARNING: These should not be exposed to clients.
+ proto_library(
+@@ -652,11 +530,6 @@ go_proto_library(
+     proto = ":entryset_proto",
+ )
+ 
+-java_proto_library(
+-    name = "entryset_java_proto",
+-    deps = [":entryset_proto"],
+-)
+-
+ proto_library(
+     name = "extraction_config_proto",
+     srcs = ["extraction_config.proto"],
+@@ -744,16 +617,6 @@ cc_proto_library(
      deps = [":metadata_proto"],
  )
  
+-java_proto_library(
+-    name = "metadata_java_proto",
+-    deps = [":metadata_proto"],
+-)
+-
 -bzl_library(
 -    name = "genproto_bzl",
 -    srcs = ["genproto.bzl"],
@@ -268,7 +754,22 @@ index b76bccaea..351dc854a 100644
  bzl_library(
      name = "go_bzl",
      srcs = ["go.bzl"],
-@@ -850,13 +844,3 @@ go_proto_library(
+@@ -817,14 +680,6 @@ go_proto_library(
+     visibility = [PUBLIC_PROTO_VISIBILITY],
+ )
+ 
+-java_proto_library(
+-    name = "generated_message_info_java_proto",
+-    visibility = [PUBLIC_PROTO_VISIBILITY],
+-    deps = [
+-        ":generated_message_info_proto",
+-    ],
+-)
+-
+ cc_proto_library(
+     name = "generated_message_info_cc_proto",
+     visibility = [PUBLIC_PROTO_VISIBILITY],
+@@ -850,13 +705,3 @@ go_proto_library(
      proto = ":vnames_config_proto",
      deps = [":storage_go_proto"],
  )

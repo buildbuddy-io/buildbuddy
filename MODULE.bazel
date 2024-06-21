@@ -121,7 +121,6 @@ go_deps.module_override(
     patch_strip = 1,
     patches = [
         "@@//buildpatches:io_kythe.patch",
-        "@@//buildpatches:io_kythe__rm_rules_java.patch",
     ],
     path = "kythe.io",
 )
