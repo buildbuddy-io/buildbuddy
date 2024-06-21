@@ -184,6 +184,9 @@ var (
 	debug             = flag.Bool("debug", false, "Print additional debug information in the action logs.")
 	installKythe      = flag.Bool("install_kythe", false, "If true, install kythe in the workspace root and set the KYTHE_DIR env var to the installed location")
 
+	ptyRows = flag.Int("pty_rows", 20, "Terminal height, in rows")
+	ptyCols = flag.Int("pty_cols", 114, "Terminal width, in columns")
+
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
@@ -2151,7 +2154,8 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	f, err := pty.Start(cmd)
+	size := &pty.Winsize{Rows: uint16(*ptyRows), Cols: uint16(*ptyCols)}
+	f, err := pty.StartWithSize(cmd, size)
 	if err != nil {
 		return err
 	}
