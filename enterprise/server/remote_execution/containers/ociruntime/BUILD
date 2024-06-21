@@ -22,11 +22,13 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/disk",
+        "//server/util/hash",
         "//server/util/log",
         "//server/util/status",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_opencontainers_runtime_spec//specs-go",
         "@org_golang_x_sync//errgroup",
+        "@org_golang_x_sync//singleflight",
         "@org_golang_x_sys//unix",
     ],
 )

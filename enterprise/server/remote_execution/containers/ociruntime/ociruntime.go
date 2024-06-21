@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -25,9 +26,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -103,6 +106,8 @@ type provider struct {
 	//       - ...
 	layersRoot string
 
+	imageStore *ImageStore
+
 	// Configured runtime path.
 	runtime string
 }
@@ -131,11 +136,13 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 	if err := os.MkdirAll(layersRoot, 0755); err != nil {
 		return nil, err
 	}
+	imageStore := NewImageStore(layersRoot)
 	return &provider{
 		env:            env,
 		runtime:        rt,
 		containersRoot: containersRoot,
 		layersRoot:     layersRoot,
+		imageStore:     imageStore,
 	}, nil
 }
 
@@ -145,6 +152,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		runtime:        p.runtime,
 		containersRoot: p.containersRoot,
 		layersRoot:     p.layersRoot,
+		imageStore:     p.imageStore,
 		imageRef:       args.Props.ContainerImage,
 	}, nil
 }
@@ -155,6 +163,7 @@ type ociContainer struct {
 	runtime        string
 	containersRoot string
 	layersRoot     string
+	imageStore     *ImageStore
 
 	cid     string
 	workDir string
@@ -232,14 +241,15 @@ func (c *ociContainer) IsolationType() string {
 }
 
 func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
-	return false, nil // TODO: implement
+	_, ok := c.imageStore.CachedLayers(c.imageRef)
+	return ok, nil
 }
 
 func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	if c.imageRef == TestBusyboxImageRef {
 		return nil
 	}
-	layers, err := pull(ctx, c.layersRoot, c.imageRef, creds)
+	layers, err := c.imageStore.Pull(ctx, c.imageRef, creds)
 	if err != nil {
 		return status.WrapError(err, "pull OCI image")
 	}
@@ -773,9 +783,66 @@ func layerPath(layersDir string, hash ctr.Hash) string {
 	return filepath.Join(layersDir, hash.Algorithm, hash.Hex)
 }
 
-// pull downloads and extracts image layers to a directory.
+// ImageStore handles image layer storage for OCI containers.
+type ImageStore struct {
+	layersDir string
+	pullGroup singleflight.Group
+
+	mu           sync.RWMutex
+	cachedLayers map[string][]ctr.Layer
+}
+
+func NewImageStore(layersDir string) *ImageStore {
+	return &ImageStore{layersDir: layersDir}
+}
+
+// Pull downloads and extracts image layers to a directory, skipping layers
+// that have already been downloaded, and deduping concurrent downloads for the
+// same layer.
+// Pull always re-authenticates the credentials with the image registry.
 // Each layer is extracted to a subdirectory given by {algorithm}/{hash}, e.g.
 // "sha256/abc123".
+func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Credentials) ([]ctr.Layer, error) {
+	key := hash.Strings(imageName, creds.Username, creds.Password)
+	ch := s.pullGroup.DoChan(key, func() (any, error) {
+		// Use a background ctx to prevent ctx cancellation from one pull
+		// operation affecting all members of this singleflight group.
+		// TODO: use something like github.com/janos/singleflight to ensure we
+		// cancel the download if all group member contexts are cancelled.
+		ctx := context.WithoutCancel(ctx)
+		layers, err := pull(ctx, s.layersDir, imageName, creds)
+		if err != nil {
+			return nil, err
+		}
+
+		s.mu.Lock()
+		s.cachedLayers[imageName] = layers
+		s.mu.Unlock()
+
+		return layers, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		return res.Val.([]ctr.Layer), nil
+	}
+}
+
+// CachedLayers returns references to the cached image layers if the image
+// has been pulled. The second return value indicates whether the image has
+// been pulled - if false, the returned slice of layers will be nil.
+func (s *ImageStore) CachedLayers(imageName string) (layers []ctr.Layer, ok bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	layers, ok = s.cachedLayers[imageName]
+	return layers, ok
+}
+
 func pull(ctx context.Context, layersDir, imageName string, creds oci.Credentials) ([]ctr.Layer, error) {
 	img, err := oci.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
 	if err != nil {
@@ -787,7 +854,6 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 	}
 
 	// Download and extract layers concurrently.
-	// TODO: dedupe layer pulls
 	var eg errgroup.Group
 	eg.SetLimit(min(8, runtime.NumCPU()))
 	for _, layer := range layers {
