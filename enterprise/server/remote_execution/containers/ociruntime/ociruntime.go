@@ -169,7 +169,6 @@ type ociContainer struct {
 	workDir string
 
 	imageRef         string
-	layerDigests     []ctr.Hash
 	overlayfsMounted bool
 }
 
@@ -249,19 +248,9 @@ func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) err
 	if c.imageRef == TestBusyboxImageRef {
 		return nil
 	}
-	layers, err := c.imageStore.Pull(ctx, c.imageRef, creds)
-	if err != nil {
+	if _, err := c.imageStore.Pull(ctx, c.imageRef, creds); err != nil {
 		return status.WrapError(err, "pull OCI image")
 	}
-	var layerDigests []ctr.Hash
-	for _, layer := range layers {
-		d, err := layer.Digest()
-		if err != nil {
-			return status.UnavailableErrorf("get layer digest: %s", err)
-		}
-		layerDigests = append(layerDigests, d)
-	}
-	c.layerDigests = layerDigests
 	return nil
 }
 
@@ -382,8 +371,27 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 
 	// Create an overlayfs with the pulled image layers.
 	var lowerDirs []string
-	for _, d := range c.layerDigests {
-		lowerDirs = append(lowerDirs, layerPath(c.layersRoot, d))
+	layers, ok := c.imageStore.CachedLayers(c.imageRef)
+	if !ok {
+		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
+	}
+	for _, layer := range layers {
+		d, err := layer.Digest()
+		if err != nil {
+			return fmt.Errorf("get layer digest: %w", err)
+		}
+		path := layerPath(c.layersRoot, d)
+		// Skip empty dirs - these can cause conflicts since they will always
+		// have the same digest, and also just add more overhead.
+		// TODO: precompute this
+		children, err := os.ReadDir(path)
+		if err != nil {
+			return fmt.Errorf("read layer dir: %w", err)
+		}
+		if len(children) == 0 {
+			continue
+		}
+		lowerDirs = append(lowerDirs, path)
 	}
 	// Create workdir and upperdir.
 	workdir := filepath.Join(c.overlayTmpPath(), "work")
@@ -403,6 +411,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	options := fmt.Sprintf(
 		"lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile",
 		strings.Join(lowerDirs, ":"), upperdir, workdir)
+	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q", c.rootfsPath(), options)
 	if err := syscall.Mount("none", c.rootfsPath(), "overlay", 0, options); err != nil {
 		return fmt.Errorf("mount overlayfs: %w", err)
 	}
