@@ -530,6 +530,7 @@ type TargetStatus struct {
 	InvocationUUID []byte `gorm:"primaryKey;autoIncrement:false;size:16;index:target_status_invocation_uuid_idx"`
 	TargetType     int32
 	TestSize       int32
+	Cached         bool `gorm:"not null;default:0"`
 	Status         int32
 	StartTimeUsec  int64
 	DurationUsec   int64
