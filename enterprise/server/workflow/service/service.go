@@ -1177,6 +1177,12 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}
 	}
 
+	yamlBytes, err := yaml.Marshal(workflowAction)
+	if err != nil {
+		return nil, err
+	}
+	serializedAction := base64.StdEncoding.EncodeToString(yamlBytes)
+
 	args := []string{
 		"./" + ci_runner_bundle.RunnerName,
 		"--invocation_id=" + invocationID,
@@ -1198,18 +1204,13 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--bazel_command=" + ws.ciRunnerBazelCommand(),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		"--timeout=" + timeout.String(),
+		"--serialized_action=" + serializedAction,
 	}
 
 	// HACK: Kythe requires some special args, so if the name of this action
 	// indicates it's a Kythe action, add those args.
 	if workflowAction.Name == config.KytheActionName {
-		yamlBytes, err := yaml.Marshal(workflowAction)
-		if err != nil {
-			return nil, err
-		}
-		serializedAction := base64.StdEncoding.EncodeToString(yamlBytes)
 		args = append(args, "--bazel_startup_flags=--bazelrc=$KYTHE_DIR/extractors.bazelrc")
-		args = append(args, "--serialized_action="+serializedAction)
 		args = append(args, "--install_kythe=true")
 	}
 
