@@ -680,60 +680,6 @@ func TestCIRunner_Merge_FetchesCompleteGitHistory(t *testing.T) {
 	checkRunnerResult(t, result)
 }
 
-func TestCIRunner_Merge_MergeCommitSHA(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t)
-	repoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
-
-	// Create a feature branch
-	testshell.Run(t, repoPath, `
-		git checkout -B feature
-	`)
-	modifiedWorkflowConfig := `
-actions:
-  - name: "Print args"
-    triggers:
-      pull_request: { branches: [ master ] }
-      push: { branches: [ master ] }
-    bazel_commands:
-      - run //:print_args -- "Switcheroo!"
-`
-	_ = testgit.CommitFiles(t, repoPath, map[string]string{"buildbuddy.yaml": modifiedWorkflowConfig})
-
-	// Create another branch to generate the merge commit sha
-	testshell.Run(t, repoPath, `
-		git checkout -B merge_branch
-		git merge master
-	`)
-	mergeCommitSHA := strings.TrimSpace(testshell.Run(t, repoPath, `git rev-parse HEAD`))
-
-	baselineRunnerFlags := []string{
-		"--workflow_id=test-workflow",
-		"--action_name=Print args",
-		"--trigger_event=pull_request",
-		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=feature",
-		"--merge_commit_sha=" + mergeCommitSHA,
-		"--target_repo_url=file://" + repoPath,
-		"--target_branch=master",
-		// Disable clean checkout fallback for this test since we expect to sync
-		// without errors.
-		"--fallback_to_clean_checkout=false",
-	}
-	// Start the app so the runner can use it as the BES backend.
-	app := buildbuddy.Run(t)
-	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
-
-	result := invokeRunner(t, baselineRunnerFlags, []string{}, wsPath)
-	checkRunnerResult(t, result)
-
-	// Runner should not fetch the target branch or merge the branches manually
-	// because the merge commit sha was set
-	runnerInvocation := singleInvocation(t, app, result)
-	assert.NotContains(t, runnerInvocation.ConsoleBuffer, "git merge")
-	// Output should contain modified print statement from feature branch
-	assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
-}
-
 func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 

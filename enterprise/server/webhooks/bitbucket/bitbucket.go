@@ -58,7 +58,6 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 			TargetBranch:  branch,
 			SHA:           v["Push.Changes.0.New.Target.Hash"],
 		}, nil
-		// TODO(Maggie): Is it possible to get the merge commit?
 	case "pullrequest:created", "pullrequest:updated":
 		payload := &PullRequestEventPayload{}
 		if err := unmarshalBody(r, payload); err != nil {
