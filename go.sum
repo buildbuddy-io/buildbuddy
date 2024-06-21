@@ -866,6 +866,8 @@ github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2 h1:yu6OEmUHMQqiMQ3BOLlhYUe6O34nb4
 github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2/go.mod h1:PGFBIloiASFbiKnkCd/hmHXxngxYDYtisyurJ/zyDNM=
 github.com/buildbuddy-io/firecracker-go-sdk v0.0.0-20230721-1d5c50b h1:Wx6fPNZOs0SJ9NpTsLbJsItORvEM9D94k/vr8ZwIBEg=
 github.com/buildbuddy-io/firecracker-go-sdk v0.0.0-20230721-1d5c50b/go.mod h1:pcsIXRGgbFGr9QtUdlQCP/z6tuB7EMw6zXgFkcu7Q0c=
+github.com/buildbuddy-io/kythe v0.0.70 h1:3lminP0qtiOsw+3pHEBsKoId8tlVSwf/g4uyIucmRk4=
+github.com/buildbuddy-io/kythe v0.0.70/go.mod h1:B841wxhIxy3xKwSgja69/VG87060EVNB5VxEu1JwcQk=
 github.com/buildbuddy-io/soci-snapshotter v0.0.8 h1:skoAXrwJCa9YsOP/+ojXX2Wge/syyFRcP+imYwEGxWg=
 github.com/buildbuddy-io/soci-snapshotter v0.0.8/go.mod h1:25BojoSLodZQgb0Wh4Mv5Eo4HUL4ZpZuBDgOVn0BuA0=
 github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6 h1:LcKnQdAYrT3LOZt0mTgw6uiEi7QVkH75cCxPj+AbkLA=
@@ -3063,8 +3065,9 @@ golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1/go.mod h1:I/5z698sn9Ka8T
 golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 golang.org/x/xerrors v0.0.0-20220517211312-f3a8303e98df/go.mod h1:K8+ghG5WaK9qNqU5K3HdILfMLy1f3aNYFI/wnl100a8=
 golang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f/go.mod h1:K8+ghG5WaK9qNqU5K3HdILfMLy1f3aNYFI/wnl100a8=
-golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 h1:H2TDz8ibqkAF6YGhCdN3jS9O0/s90v0rJh3X/OLHEUk=
 golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2/go.mod h1:K8+ghG5WaK9qNqU5K3HdILfMLy1f3aNYFI/wnl100a8=
+golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 h1:+cNy6SZtPcJQH3LJVLOSmiC7MMxXNOb3PU/VUEz+EhU=
+golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028/go.mod h1:NDW/Ps6MPRej6fsCIbMTohpP40sJ/P/vI1MoTEGwX90=
 gonum.org/v1/gonum v0.0.0-20180816165407-929014505bf4/go.mod h1:Y+Yx5eoAFn32cQvJDxZx5Dpnq+c3wtXuadVZAcxbbBo=
 gonum.org/v1/gonum v0.8.2/go.mod h1:oe/vMfY3deqTw+1EZJhuvEW2iwGF1bW9wwu7XCu0+v0=
 gonum.org/v1/gonum v0.9.3/go.mod h1:TZumC3NeyVQskjXqmyWt4S3bINhy7B4eYwW69EbyX+0=

@@ -26,6 +26,8 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 	xxhash "github.com/cespare/xxhash/v2"
+
+	_ "kythe.io/kythe/proto/common_go_proto"
 )
 
 // TODO(tylerw): this should come from a flag?
