@@ -77,6 +77,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
+      - clean
       - test //... --config=linux-workflows --config=race --test_tag_filters=+webdriver
   # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
   - name: Docker tests
