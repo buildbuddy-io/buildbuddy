@@ -86,6 +86,8 @@ var (
 )
 
 type provider struct {
+	env environment.Env
+
 	// Root directory where all container runtime information will be located.
 	// Each subdirectory corresponds to a created container instance.
 	containersRoot string
@@ -130,6 +132,7 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 		return nil, err
 	}
 	return &provider{
+		env:            env,
 		runtime:        rt,
 		containersRoot: containersRoot,
 		layersRoot:     layersRoot,
@@ -138,6 +141,7 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	return &ociContainer{
+		env:            p.env,
 		runtime:        p.runtime,
 		containersRoot: p.containersRoot,
 		layersRoot:     p.layersRoot,
@@ -146,6 +150,8 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 }
 
 type ociContainer struct {
+	env environment.Env
+
 	runtime        string
 	containersRoot string
 	layersRoot     string
@@ -183,6 +189,9 @@ func (c *ociContainer) hostname() string {
 	return c.cid
 }
 
+// createBundle creates the OCI bundle directory, which includes the OCI spec
+// file (config.json), the rootfs directory, and other supplementary data files
+// (e.g. the 'hosts' file which will be mounted to /etc/hosts).
 func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) error {
 	if err := os.MkdirAll(c.bundlePath(), 0755); err != nil {
 		return fmt.Errorf("mkdir -p %s: %w", c.bundlePath(), err)
@@ -227,6 +236,9 @@ func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
 }
 
 func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+	if c.imageRef == TestBusyboxImageRef {
+		return nil
+	}
 	layers, err := pull(ctx, c.layersRoot, c.imageRef, creds)
 	if err != nil {
 		return status.WrapError(err, "pull OCI image")
@@ -244,7 +256,22 @@ func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) err
 }
 
 func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
-	return commandutil.ErrorResult(status.UnimplementedError("not implemented"))
+	c.workDir = workDir
+	cid, err := newCID()
+	if err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("generate cid: %s", err))
+	}
+	c.cid = cid
+
+	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.imageRef); err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("pull image: %s", err))
+	}
+
+	if err := c.createBundle(ctx, cmd); err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
+	}
+
+	return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
 }
 
 func (c *ociContainer) Create(ctx context.Context, workDir string) error {
@@ -408,6 +435,12 @@ func installBusybox(path string) error {
 }
 
 func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
+	// TODO: respect environment variables inside the container (ENV directives)
+	env := append([]string{
+		// TODO: make sure this PATH matches podman's behavior
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	}, commandutil.EnvStringList(cmd)...)
+
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
@@ -420,8 +453,7 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			},
 			Args: cmd.GetArguments(),
 			Cwd:  execrootPath,
-			// TODO: use cmd.EnvironmentVariables
-			Env: []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
+			Env:  env,
 			// TODO: rlimits
 			Rlimits: []specs.POSIXRlimit{},
 			// TODO: audit these
@@ -457,12 +489,18 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 				Source:      "sysfs",
 				Options:     []string{"nosuid", "noexec", "nodev", "ro"},
 			},
-			{
-				Destination: "/dev/pts",
-				Type:        "devpts",
-				Source:      "devpts",
-				Options:     []string{"nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620", "gid=5"},
-			},
+			// TODO: enable devpts
+			// {
+			// 	Destination: "/dev/pts",
+			// 	Type:        "devpts",
+			// 	Source:      "devpts",
+			// 	Options: []string{
+			// 		"nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620",
+			// 		// TODO: gid=5 doesn't work in some circumstances.
+			// 		// See https://github.com/containers/podman/blob/b8d95a5893572b37c8257407e964ad06ba87ade6/pkg/specgen/generate/oci_linux.go#L141-L173
+			// 		"gid=5",
+			// 	},
+			// },
 			{
 				Destination: "/dev/mqueue",
 				Type:        "mqueue",
@@ -630,7 +668,7 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	}
 
 	runtimeArgs := append(globalArgs, args...)
-	runtimeArgs = append(runtimeArgs, command.Arguments...)
+	runtimeArgs = append(runtimeArgs, command.GetArguments()...)
 
 	// working dir for crun itself doesn't really matter - just default to cwd.
 	wd, err := os.Getwd()
