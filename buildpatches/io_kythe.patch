@@ -215,6 +215,172 @@ index 8dde37862..767a0f526 100644
  
  go_library(
      name = "xrefs",
+diff --git a/kythe/go/storage/entryset/BUILD b/kythe/go/storage/entryset/BUILD
+index 315f044de..0b7264cd2 100644
+--- a/kythe/go/storage/entryset/BUILD
++++ b/kythe/go/storage/entryset/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "entryset",
+diff --git a/kythe/go/storage/gsutil/BUILD b/kythe/go/storage/gsutil/BUILD
+index 60551629b..5d2ec6541 100644
+--- a/kythe/go/storage/gsutil/BUILD
++++ b/kythe/go/storage/gsutil/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "gsutil",
+diff --git a/kythe/go/storage/inmemory/BUILD b/kythe/go/storage/inmemory/BUILD
+index 3e19ff66c..9bd292f50 100644
+--- a/kythe/go/storage/inmemory/BUILD
++++ b/kythe/go/storage/inmemory/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "inmemory",
+diff --git a/kythe/go/storage/keyvalue/BUILD b/kythe/go/storage/keyvalue/BUILD
+index 7717e6de1..84d82587c 100644
+--- a/kythe/go/storage/keyvalue/BUILD
++++ b/kythe/go/storage/keyvalue/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "keyvalue",
+diff --git a/kythe/go/storage/kvutil/BUILD b/kythe/go/storage/kvutil/BUILD
+index 6a813fb0a..29227dab7 100644
+--- a/kythe/go/storage/kvutil/BUILD
++++ b/kythe/go/storage/kvutil/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "kvutil",
+diff --git a/kythe/go/storage/leveldb/BUILD b/kythe/go/storage/leveldb/BUILD
+index b96088fb4..85c576f11 100644
+--- a/kythe/go/storage/leveldb/BUILD
++++ b/kythe/go/storage/leveldb/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "leveldb",
+diff --git a/kythe/go/storage/pebble/BUILD b/kythe/go/storage/pebble/BUILD
+index 299ae3a53..5717f2d6c 100644
+--- a/kythe/go/storage/pebble/BUILD
++++ b/kythe/go/storage/pebble/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "pebble",
+diff --git a/kythe/go/storage/stream/BUILD b/kythe/go/storage/stream/BUILD
+index fd7bcea9c..1506f6e0c 100644
+--- a/kythe/go/storage/stream/BUILD
++++ b/kythe/go/storage/stream/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "stream",
+diff --git a/kythe/go/storage/table/BUILD b/kythe/go/storage/table/BUILD
+index 4b3ecd2fd..1c42406a2 100644
+--- a/kythe/go/storage/table/BUILD
++++ b/kythe/go/storage/table/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_library")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_library(
+     name = "table",
+diff --git a/kythe/go/storage/tools/BUILD b/kythe/go/storage/tools/BUILD
+index db7250a1e..afa648bb7 100644
+--- a/kythe/go/storage/tools/BUILD
++++ b/kythe/go/storage/tools/BUILD
+@@ -1,4 +1,4 @@
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ filegroup(
+     name = "write_entries",
+diff --git a/kythe/go/storage/tools/directory_indexer/BUILD b/kythe/go/storage/tools/directory_indexer/BUILD
+index 882156aa3..04ac231fe 100644
+--- a/kythe/go/storage/tools/directory_indexer/BUILD
++++ b/kythe/go/storage/tools/directory_indexer/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_binary")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_binary(
+     name = "directory_indexer",
+diff --git a/kythe/go/storage/tools/read_entries/BUILD b/kythe/go/storage/tools/read_entries/BUILD
+index 857198193..6053b9497 100644
+--- a/kythe/go/storage/tools/read_entries/BUILD
++++ b/kythe/go/storage/tools/read_entries/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_binary")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_binary(
+     name = "read_entries",
+diff --git a/kythe/go/storage/tools/triples/BUILD b/kythe/go/storage/tools/triples/BUILD
+index 17858ad65..7d885b8dc 100644
+--- a/kythe/go/storage/tools/triples/BUILD
++++ b/kythe/go/storage/tools/triples/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_binary")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_binary(
+     name = "triples",
+diff --git a/kythe/go/storage/tools/write_entries/BUILD b/kythe/go/storage/tools/write_entries/BUILD
+index 6d64d8925..c6409f7ad 100644
+--- a/kythe/go/storage/tools/write_entries/BUILD
++++ b/kythe/go/storage/tools/write_entries/BUILD
+@@ -1,6 +1,6 @@
+ load("//tools:build_rules/shims.bzl", "go_binary")
+ 
+-package(default_visibility = ["//kythe:default_visibility"])
++package(default_visibility = ["//visibility:public"])
+ 
+ go_binary(
+     name = "write_entries",
 diff --git a/kythe/go/util/schema/BUILD b/kythe/go/util/schema/BUILD
 index e2c81cb36..9629ae56f 100644
 --- a/kythe/go/util/schema/BUILD
