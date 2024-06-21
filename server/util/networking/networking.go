@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -564,20 +565,29 @@ func findRoute(destination string) (route, error) {
 	return route{}, status.FailedPreconditionErrorf("Unable to determine device with prefix: %s", destination)
 }
 
-// EnableMasquerading turns on ipmasq for the device with --device_prefix. This is required
-// for networking to work on vms.
-func EnableMasquerading(ctx context.Context) error {
-	route, err := findRoute(*routePrefix)
+// EnableNAT enables NAT for traffic leaving the machine. This allows traffic
+// from VMs to bet NATed to the host IP before leaving the host.
+func EnableNAT(ctx context.Context) error {
+	rt, err := findRoute(*routePrefix)
 	if err != nil {
 		return err
 	}
-	device := route.device
+
+	rule := []string{"POSTROUTING", "-t", "nat", "-o", rt.device}
+	// If the route has a source IP, explicitly use it as the source NAT IP,
+	// otherwise let the kernel pick one from the interface.
+	if rt.src != nil {
+		rule = append(rule, "-j", "SNAT", "--to", rt.src.String())
+	} else {
+		rule = append(rule, "-j", "MASQUERADE")
+	}
+
 	// Skip appending the rule if it's already in the table.
-	err = runCommand(ctx, "iptables", "--wait", "-t", "nat", "--check", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
+	err = runCommand(ctx, slices.Concat([]string{"iptables", "--wait", "-C"}, rule)...)
 	if err == nil {
 		return nil
 	}
-	return runCommand(ctx, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
+	return runCommand(ctx, slices.Concat([]string{"iptables", "--wait", "-A"}, rule)...)
 }
 
 // AddRoutingTableEntryIfNotPresent adds [tableID, tableName] name pair to /etc/iproute2/rt_tables if

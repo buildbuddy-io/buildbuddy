@@ -1686,7 +1686,7 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 
 	// Setup masquerading on the host if it isn't already.
 	masqueradingOnce.Do(func() {
-		masqueradingErr = networking.EnableMasquerading(ctx)
+		masqueradingErr = networking.EnableNAT(ctx)
 	})
 	if masqueradingErr != nil {
 		return masqueradingErr
