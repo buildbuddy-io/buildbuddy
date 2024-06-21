@@ -548,7 +548,7 @@ func findRoute(destination string) (route, error) {
 	}
 
 	for _, r := range rs {
-		if r.Dst == targetDst {
+		if targetDst.String() == r.Dst.String() {
 			l, err := netlink.LinkByIndex(r.LinkIndex)
 			if err != nil {
 				return route{}, status.UnknownErrorf("could not lookup interface for route: %s", err)
