@@ -1,3 +1,25 @@
+diff --git a/WORKSPACE b/WORKSPACE
+index 009de188b..fe3622e26 100644
+--- a/WORKSPACE
++++ b/WORKSPACE
+@@ -87,17 +87,6 @@ ruby_bundle(
+     gemfile_lock = "//kythe/web/site:Gemfile.lock",
+ )
+ 
+-http_archive(
+-    name = "aspect_bazel_lib",
+-    sha256 = "d488d8ecca98a4042442a4ae5f1ab0b614f896c0ebf6e3eafff363bcc51c6e62",
+-    strip_prefix = "bazel-lib-1.33.0",
+-    url = "https://github.com/aspect-build/bazel-lib/releases/download/v1.33.0/bazel-lib-v1.33.0.tar.gz",
+-)
+-
+-load("@aspect_bazel_lib//lib:repositories.bzl", "aspect_bazel_lib_dependencies")
+-
+-aspect_bazel_lib_dependencies()
+-
+ # clang-tidy aspect wrapper
+ load(
+     "@bazel_tools//tools/build_defs/repo:git.bzl",
 diff --git a/kythe/go/services/cli/BUILD b/kythe/go/services/cli/BUILD
 index 17bc7623d..a8536dd9b 100644
 --- a/kythe/go/services/cli/BUILD
@@ -193,12 +215,40 @@ index 8dde37862..767a0f526 100644
  
  go_library(
      name = "xrefs",
+diff --git a/kythe/go/util/schema/BUILD b/kythe/go/util/schema/BUILD
+index e2c81cb36..9629ae56f 100644
+--- a/kythe/go/util/schema/BUILD
++++ b/kythe/go/util/schema/BUILD
+@@ -1,7 +1,6 @@
+ # The checked-in generated files confuse gazelle.
+ # gazelle:ignore
+ load("//tools:build_rules/shims.bzl", "go_library", "go_test")
+-load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_file")
+ 
+ package(default_visibility = ["//kythe:default_visibility"])
+ 
+@@ -30,12 +29,6 @@ genrule(
+     visibility = ["//visibility:private"],
+ )
+ 
+-write_source_file(
+-    name = "schema_index_sync",
+-    in_file = ":schema_index",
+-    out_file = "indexdata.go",
+-)
+-
+ go_test(
+     name = "schema_test",
+     size = "small",
 diff --git a/kythe/proto/BUILD b/kythe/proto/BUILD
-index b76bccaea..63a24da32 100644
+index b76bccaea..351dc854a 100644
 --- a/kythe/proto/BUILD
 +++ b/kythe/proto/BUILD
-@@ -5,7 +5,7 @@ load("//:visibility.bzl", "PUBLIC_PROTO_VISIBILITY")
- load(":genproto.bzl", "update_generated_protos")
+@@ -2,10 +2,9 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+ load("@rules_proto//proto:defs.bzl", "proto_library")
+ load("@rules_java//java:defs.bzl", "java_proto_library")
+ load("//:visibility.bzl", "PUBLIC_PROTO_VISIBILITY")
+-load(":genproto.bzl", "update_generated_protos")
  load(":go.bzl", "go_proto_library")
  
 -package(default_visibility = ["//kythe:proto_visibility"])
@@ -206,3 +256,124 @@ index b76bccaea..63a24da32 100644
  
  filegroup(
      name = "public",
+@@ -749,11 +748,6 @@ java_proto_library(
+     deps = [":metadata_proto"],
+ )
+ 
+-bzl_library(
+-    name = "genproto_bzl",
+-    srcs = ["genproto.bzl"],
+-)
+-
+ bzl_library(
+     name = "go_bzl",
+     srcs = ["go.bzl"],
+@@ -850,13 +844,3 @@ go_proto_library(
+     proto = ":vnames_config_proto",
+     deps = [":storage_go_proto"],
+ )
+-
+-# Uses native.existing_rules() to find rules to update; must come last.
+-update_generated_protos(
+-    name = "update",
+-    additional_update_targets = [
+-        # Ensure this updates the protos which live elsewhere.
+-        "//kythe/go/util/riegeli:riegeli_test_go_proto_sync",
+-        "//third_party/bazel:update",
+-    ],
+-)
+diff --git a/kythe/proto/genproto.bzl b/kythe/proto/genproto.bzl
+index ec30a5186..e69de29bb 100644
+--- a/kythe/proto/genproto.bzl
++++ b/kythe/proto/genproto.bzl
+@@ -1,11 +0,0 @@
+-load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
+-
+-def update_generated_protos(name, additional_update_targets = []):
+-    write_source_files(
+-        name = name,
+-        additional_update_targets = additional_update_targets + [
+-            key
+-            for key, value in native.existing_rules().items()
+-            if value["kind"] == "_write_source_file"
+-        ],
+-    )
+diff --git a/third_party/bazel/BUILD b/third_party/bazel/BUILD
+index bbf24aae3..fb5b7fbd2 100644
+--- a/third_party/bazel/BUILD
++++ b/third_party/bazel/BUILD
+@@ -5,10 +5,8 @@
+ load("@rules_proto//proto:defs.bzl", "proto_library")
+ load("@rules_java//java:defs.bzl", "java_proto_library")
+ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+-load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_file")
+ load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+ load("//kythe/proto:go.bzl", "go_proto_library")
+-load("//kythe/proto:genproto.bzl", "update_generated_protos")
+ 
+ package(default_visibility = ["//visibility:public"])
+ 
+@@ -36,14 +34,6 @@ copy_to_directory(
+     visibility = ["//visibility:private"],
+ )
+ 
+-write_source_file(
+-    name = "proto_srcs_sync",
+-    in_file = ":proto_srcs",
+-    out_file = "src",
+-    tags = ["local"],  # Fails spuriously remotely.
+-    visibility = ["//visibility:private"],
+-)
+-
+ alias(
+     name = "extra_actions_base_proto",
+     actual = "//third_party/bazel/src/main/protobuf:extra_actions_base_proto",
+@@ -170,5 +160,3 @@ sh_binary(
+     name = "get_sdkroot",
+     srcs = ["get_sdkroot.sh"],
+ )
+-
+-update_generated_protos(name = "update")
+diff --git a/tools/cpp/BUILD b/tools/cpp/BUILD
+index 4578c25c9..802d9a914 100644
+--- a/tools/cpp/BUILD
++++ b/tools/cpp/BUILD
+@@ -1,5 +1,4 @@
+ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+-load("@aspect_bazel_lib//lib:expand_template.bzl", "expand_template_rule")
+ 
+ package(default_visibility = ["//visibility:public"])
+ 
+@@ -16,32 +15,3 @@ bzl_library(
+     name = "toolchain_utils",
+     srcs = ["toolchain_utils.bzl"],
+ )
+-
+-filegroup(
+-    name = "clang_tidy_deps",
+-    srcs = [
+-        "@llvm-project//clang:builtin_headers_gen",
+-        "@llvm-project//clang-tools-extra/clang-tidy",
+-    ],
+-)
+-
+-expand_template_rule(
+-    name = "clang_tidy_gen",
+-    out = "run_clang_tidy.sh",
+-    data = [
+-        "@llvm-project//clang:builtin_headers_gen",
+-        "@llvm-project//clang-tools-extra/clang-tidy",
+-    ],
+-    is_executable = True,
+-    substitutions = {
+-        "@RESOURCES@": "$(execpaths @llvm-project//clang:builtin_headers_gen)",
+-        "@CLANG_TIDY@": "$(execpath @llvm-project//clang-tools-extra/clang-tidy)",
+-    },
+-    template = "run_clang_tidy.sh.in",
+-)
+-
+-sh_binary(
+-    name = "clang_tidy",
+-    srcs = ["run_clang_tidy.sh"],
+-    data = [":clang_tidy_deps"],
+-)

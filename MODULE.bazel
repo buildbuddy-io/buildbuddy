@@ -117,6 +117,11 @@ go_deps.module_override(
     patches = ["@@//buildpatches:org_golang_google_grpc_remove_drain_panic.patch"],
     path = "google.golang.org/grpc",
 )
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["@@//buildpatches:io_kythe.patch"],
+    path = "kythe.io",
+)
 
 # Go repos with custom directives
 go_deps.gazelle_override(
@@ -170,7 +175,6 @@ use_repo(
     "com_github_bduffany_godemon",
     "com_github_bojand_ghz",
     "com_github_bradfitz_gomemcache",
-    "com_github_buildbuddy_io_kythe",
     "com_github_buildbuddy_io_tensorflow_proto",
     "com_github_buildkite_terminal_to_html_v3",
     "com_github_cavaliergopher_cpio",
@@ -267,6 +271,7 @@ use_repo(
     "io_gorm_driver_postgres",
     "io_gorm_driver_sqlite",
     "io_gorm_gorm",
+    "io_kythe",
     "io_opentelemetry_go_contrib_detectors_gcp",
     "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
     "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",
