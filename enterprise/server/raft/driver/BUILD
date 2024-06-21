@@ -24,10 +24,12 @@ go_test(
     srcs = ["driver_test.go"],
     embed = [":driver"],
     deps = [
+        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/storemap",
         "//proto:raft_go_proto",
         "//server/util/log",
         "//server/util/proto",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
 )
