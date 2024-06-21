@@ -11,6 +11,7 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
+        "@com_github_vishvananda_netlink//:netlink",
         "@org_golang_x_sys//unix",
     ],
 )
