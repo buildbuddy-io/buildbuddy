@@ -27,8 +27,17 @@ go_library(
 
 go_test(
     name = "target_tracker_test",
-    size = "small",
     srcs = ["target_tracker_test.go"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        # We don't want different different db tests to be assigned to the samed
+        # recycled runner, because we can't fit all db docker images with the
+        # default disk limit.
+        "test.runner-recycling-key": "clickhouse",
+    },
+    tags = ["docker"],
     deps = [
         ":target_tracker",
         "//proto:build_event_stream_go_proto",

@@ -57,6 +57,7 @@ type target struct {
 	state          targetState
 	id             int64
 	overallStatus  build_event_stream.TestStatus
+	cached         bool
 	targetType     cmpb.TargetType
 	testSize       build_event_stream.TestSize
 	buildSuccess   bool
@@ -97,6 +98,7 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 		}
 		t.state = targetStateCompleted
 	case *build_event_stream.BuildEvent_TestResult:
+		t.cached = p.TestResult.GetCachedLocally() || p.TestResult.GetExecutionInfo().GetCachedRemotely()
 		t.state = targetStateResult
 	case *build_event_stream.BuildEvent_TestSummary:
 		ts := p.TestSummary
@@ -266,6 +268,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 			TargetType:     int32(target.targetType),
 			TestSize:       int32(target.testSize),
 			Status:         int32(target.overallStatus),
+			Cached:         target.cached,
 			StartTimeUsec:  target.firstStartTime.UnixMicro(),
 			DurationUsec:   target.totalDuration.Microseconds(),
 		})
@@ -336,6 +339,7 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 			TargetType:     int32(target.targetType),
 			TestSize:       int32(target.testSize),
 			Status:         int32(target.overallStatus),
+			Cached:         target.cached,
 			StartTimeUsec:  testStartTimeUsec,
 			DurationUsec:   target.totalDuration.Microseconds(),
 			BranchName:     t.buildEventAccumulator.Invocation().GetBranchName(),
@@ -557,18 +561,19 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 		valueArgs := []interface{}{}
 		for _, t := range chunk {
 			nowUsec := time.Now().UnixMicro()
-			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 			valueArgs = append(valueArgs, t.TargetID)
 			valueArgs = append(valueArgs, t.InvocationUUID)
 			valueArgs = append(valueArgs, t.TargetType)
 			valueArgs = append(valueArgs, t.TestSize)
 			valueArgs = append(valueArgs, t.Status)
+			valueArgs = append(valueArgs, t.Cached)
 			valueArgs = append(valueArgs, t.StartTimeUsec)
 			valueArgs = append(valueArgs, t.DurationUsec)
 			valueArgs = append(valueArgs, nowUsec)
 			valueArgs = append(valueArgs, nowUsec)
 		}
-		stmt := fmt.Sprintf(`INSERT INTO "TargetStatuses" (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
+		stmt := fmt.Sprintf(`INSERT INTO "TargetStatuses" (target_id, invocation_uuid, target_type, test_size, status, cached, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
 		err := env.GetDBHandle().NewQuery(ctx, "target_tracker_insert_target_statuses").Raw(stmt, valueArgs...).Exec().Error
 		if err != nil {
 			return err
