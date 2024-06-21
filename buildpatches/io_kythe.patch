@@ -407,7 +407,7 @@ index e2c81cb36..9629ae56f 100644
      name = "schema_test",
      size = "small",
 diff --git a/kythe/proto/BUILD b/kythe/proto/BUILD
-index b76bccaea..240fa41e5 100644
+index b76bccaea..7cd5b6290 100644
 --- a/kythe/proto/BUILD
 +++ b/kythe/proto/BUILD
 @@ -1,11 +1,9 @@
@@ -476,7 +476,15 @@ index b76bccaea..240fa41e5 100644
      ],
      deps = [":storage_proto"],
  )
-@@ -136,17 +116,12 @@ go_proto_library(
+@@ -129,24 +109,19 @@ cc_proto_library(
+ 
+ go_proto_library(
+     name = "storage_service_go_proto",
+-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
++    compilers = ["@io_bazel_rules_go//proto:go_proto", "@io_bazel_rules_go//proto:go_grpc_v2"],
+     importpath = "kythe.io/kythe/proto/storage_service_go_proto",
+     proto = ":storage_service_proto",
+     visibility = [PUBLIC_PROTO_VISIBILITY],
      deps = [":storage_go_proto"],
  )
  
@@ -515,7 +523,14 @@ index b76bccaea..240fa41e5 100644
      ],
      deps = [":analysis_proto"],
  )
-@@ -200,11 +169,6 @@ go_proto_library(
+@@ -194,17 +163,12 @@ cc_proto_library(
+ 
+ go_proto_library(
+     name = "analysis_service_go_proto",
+-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
++    compilers = ["@io_bazel_rules_go//proto:go_proto", "@io_bazel_rules_go//proto:go_grpc_v2"],
+     importpath = "kythe.io/kythe/proto/analysis_service_go_proto",
+     proto = ":analysis_service_proto",
      deps = [":analysis_go_proto"],
  )
  
@@ -611,7 +626,13 @@ index b76bccaea..240fa41e5 100644
  # Public Kythe filetree service API
  proto_library(
      name = "filetree_proto",
-@@ -385,27 +314,12 @@ go_proto_library(
+@@ -380,32 +309,17 @@ cc_proto_library(
+ 
+ go_proto_library(
+     name = "filetree_go_proto",
+-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
++    compilers = ["@io_bazel_rules_go//proto:go_proto", "@io_bazel_rules_go//proto:go_grpc_v2"],
+     importpath = "kythe.io/kythe/proto/filetree_go_proto",
      proto = ":filetree_proto",
  )
  
@@ -640,7 +661,14 @@ index b76bccaea..240fa41e5 100644
      ],
      deps = [":common_proto"],
  )
-@@ -424,11 +338,6 @@ go_proto_library(
+@@ -418,17 +332,12 @@ cc_proto_library(
+ 
+ go_proto_library(
+     name = "xref_go_proto",
+-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
++    compilers = ["@io_bazel_rules_go//proto:go_proto", "@io_bazel_rules_go//proto:go_grpc_v2"],
+     importpath = "kythe.io/kythe/proto/xref_go_proto",
+     proto = ":xref_proto",
      deps = [":common_go_proto"],
  )
  
@@ -652,7 +680,13 @@ index b76bccaea..240fa41e5 100644
  proto_library(
      name = "identifier_proto",
      srcs = ["identifier.proto"],
-@@ -446,11 +355,6 @@ go_proto_library(
+@@ -441,16 +350,11 @@ cc_proto_library(
+ 
+ go_proto_library(
+     name = "identifier_go_proto",
+-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
++    compilers = ["@io_bazel_rules_go//proto:go_proto", "@io_bazel_rules_go//proto:go_grpc_v2"],
+     importpath = "kythe.io/kythe/proto/identifier_go_proto",
      proto = ":identifier_proto",
  )
  
@@ -664,6 +698,15 @@ index b76bccaea..240fa41e5 100644
  # Public Kythe graph service API
  proto_library(
      name = "graph_proto",
+@@ -460,7 +364,7 @@ proto_library(
+ 
+ go_proto_library(
+     name = "graph_go_proto",
+-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
++    compilers = ["@io_bazel_rules_go//proto:go_proto", "@io_bazel_rules_go//proto:go_grpc_v2"],
+     importpath = "kythe.io/kythe/proto/graph_go_proto",
+     proto = ":graph_proto",
+     deps = [":common_go_proto"],
 @@ -471,11 +375,6 @@ cc_proto_library(
      deps = [":graph_proto"],
  )
@@ -676,6 +719,15 @@ index b76bccaea..240fa41e5 100644
  # Public Kythe graph exploration API
  proto_library(
      name = "explore_proto",
+@@ -489,7 +388,7 @@ proto_library(
+ 
+ go_proto_library(
+     name = "explore_go_proto",
+-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
++    compilers = ["@io_bazel_rules_go//proto:go_proto", "@io_bazel_rules_go//proto:go_grpc_v2"],
+     importpath = "kythe.io/kythe/proto/explore_go_proto",
+     proto = ":explore_proto",
+     deps = [
 @@ -504,11 +403,6 @@ cc_proto_library(
      deps = [":explore_proto"],
  )
@@ -701,7 +753,14 @@ index b76bccaea..240fa41e5 100644
  proto_library(
      name = "xref_serving_proto",
      srcs = ["xref_serving.proto"],
-@@ -604,11 +492,6 @@ go_proto_library(
+@@ -598,17 +486,12 @@ cc_proto_library(
+ 
+ go_proto_library(
+     name = "link_go_proto",
+-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
++    compilers = ["@io_bazel_rules_go//proto:go_proto", "@io_bazel_rules_go//proto:go_grpc_v2"],
+     importpath = "kythe.io/kythe/proto/link_go_proto",
+     proto = ":link_proto",
      deps = [":common_go_proto"],
  )
  

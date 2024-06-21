@@ -8,8 +8,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/cmd/server",
     visibility = ["//visibility:private"],
     deps = [
+        "//codesearch/kythe/server",
         "//codesearch/server",
         "//proto:codesearch_service_go_proto",
+        "//proto:kythe_service_go_proto",
         "//server/config",
         "//server/nullauth",
         "//server/real_environment",
