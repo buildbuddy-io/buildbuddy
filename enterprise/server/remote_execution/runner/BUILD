@@ -56,6 +56,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/containers/bare",
             "//enterprise/server/remote_execution/containers/docker",
+            "//enterprise/server/remote_execution/containers/ociruntime",
             "//enterprise/server/remote_execution/containers/podman",
             "//proto:vfs_go_proto",
             "@org_golang_google_grpc//:grpc",
