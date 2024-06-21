@@ -16,9 +16,10 @@ message GetWorkspaceResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
-  // The requested workspace. 
+  // The requested workspace.
   // To read workspace file contents, use the `GetWorkspaceFile` endpoint.
-  // To read workspace directory contents, use the `GetWorkspaceDirectoryRequest` endpoint.
+  // To read workspace directory contents, use the
+  // `GetWorkspaceDirectoryRequest` endpoint.
   Workspace workspace = 2;
 }
 
@@ -89,7 +90,7 @@ message Workspace {
   // Information about the git repo this workspace is attached to.
   Repo repo = 2;
 
-  // Any changed file nodes that are not stored in git. 
+  // Any changed file nodes that are not stored in git.
   repeated Node changes = 3;
 }
 
@@ -114,11 +115,12 @@ message Node {
   // The type of node this is, i.e. either a file or a directory.
   NodeType node_type = 3;
 
-  // The type of change that was made to this file, i.e. added / deleted / modified / unmodified.
+  // The type of change that was made to this file, i.e. added / deleted /
+  // modified / unmodified.
   ChangeType change_type = 4;
 
-  // The new contents of the file (if any). Only populated for `SaveWorkspace` requests.
-  // For read requests, use the `GetWorkspaceFile` endpoint.
+  // The new contents of the file (if any). Only populated for `SaveWorkspace`
+  // requests. For read requests, use the `GetWorkspaceFile` endpoint.
   bytes content = 5;
 }
 
