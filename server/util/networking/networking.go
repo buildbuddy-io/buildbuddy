@@ -17,11 +17,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
 
 var (
-	routePrefix                   = flag.String("executor.route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+	routePrefix                   = flag.String("executor.route_prefix", defaultRoute, "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
 	blackholePrivateRanges        = flag.Bool("executor.blackhole_private_ranges", false, "If true, no traffic will be allowed to RFC1918 ranges.")
 	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
 
@@ -30,6 +31,7 @@ var (
 )
 
 const (
+	defaultRoute         = "default"
 	routingTableFilename = "/etc/iproute2/rt_tables"
 	// The routingTableID for the new routing table we add.
 	routingTableID = 1
@@ -364,7 +366,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 		}
 	}()
 
-	r, err := findRoute(ctx, *routePrefix)
+	r, err := findRoute(*routePrefix)
 	device := r.device
 	if err != nil {
 		return nil, err
@@ -480,7 +482,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 
 // DefaultIP returns the IPv4 address for the primary network.
 func DefaultIP(ctx context.Context) (net.IP, error) {
-	r, err := findRoute(ctx, "default")
+	r, err := findRoute(defaultRoute)
 	if err != nil {
 		return nil, err
 	}
@@ -523,33 +525,49 @@ func interfaceFromDevice(ctx context.Context, device string) (*net.Interface, er
 
 type route struct {
 	device  string
-	gateway string
+	gateway net.IP
+	// Source IP for the route. May be nil.
+	src net.IP
 }
 
-// findRoute find's the route with the prefix.
-// Equivalent to "ip route | grep <prefix> | awk '{print $5}'"
-func findRoute(ctx context.Context, prefix string) (route, error) {
-	out, err := sudoCommand(ctx, "ip", "route")
+// findRoute finds the highest priority route with the given destination.
+// Destination may be defaultRoute to find a default route.
+func findRoute(destination string) (route, error) {
+	// Get all routes.
+	rs, err := netlink.RouteList(nil, 0)
 	if err != nil {
-		return route{}, err
+		return route{}, status.UnknownErrorf("could not get ip routes: %s", err)
 	}
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.HasPrefix(line, prefix) {
-			if parts := strings.Split(line, " "); len(parts) > 5 {
-				return route{
-					device:  parts[4],
-					gateway: parts[2],
-				}, nil
-			}
+
+	var targetDst *net.IPNet
+	if destination != defaultRoute {
+		_, targetDst, err = net.ParseCIDR(destination)
+		if err != nil {
+			return route{}, status.InvalidArgumentErrorf("could not parse destination: %s", err)
 		}
 	}
-	return route{}, status.FailedPreconditionErrorf("Unable to determine device with prefix: %s", prefix)
+
+	for _, r := range rs {
+		if targetDst.String() == r.Dst.String() {
+			l, err := netlink.LinkByIndex(r.LinkIndex)
+			if err != nil {
+				return route{}, status.UnknownErrorf("could not lookup interface for route: %s", err)
+			}
+			return route{
+				device:  l.Attrs().Name,
+				gateway: r.Gw,
+				src:     r.Src,
+			}, nil
+		}
+	}
+
+	return route{}, status.FailedPreconditionErrorf("Unable to determine device with prefix: %s", destination)
 }
 
 // EnableMasquerading turns on ipmasq for the device with --device_prefix. This is required
 // for networking to work on vms.
 func EnableMasquerading(ctx context.Context) error {
-	route, err := findRoute(ctx, *routePrefix)
+	route, err := findRoute(*routePrefix)
 	if err != nil {
 		return err
 	}
@@ -648,7 +666,7 @@ func configurePolicyBasedRoutingForSecondaryNetwork(ctx context.Context) error {
 		return nil
 	}
 
-	route, err := findRoute(ctx, *routePrefix)
+	route, err := findRoute(*routePrefix)
 	if err != nil {
 		return err
 	}
@@ -668,11 +686,11 @@ func configurePolicyBasedRoutingForSecondaryNetwork(ctx context.Context) error {
 	}
 
 	// Adds routes to routing table.
-	ipRouteArgs := []string{route.gateway, "dev", route.device, "scope", "link", "src", ipStr}
+	ipRouteArgs := []string{route.gateway.String(), "dev", route.device, "scope", "link", "src", ipStr}
 	if err := AddRouteIfNotPresent(ctx, ipRouteArgs); err != nil {
 		return err
 	}
-	ipRouteArgs = []string{"default", "via", route.gateway, "dev", route.device}
+	ipRouteArgs = []string{"default", "via", route.gateway.String(), "dev", route.device}
 	if err := AddRouteIfNotPresent(ctx, ipRouteArgs); err != nil {
 		return err
 	}
