@@ -29,6 +29,20 @@ import (
 var crunRlocationpath string
 
 func init() {
+	// Set up cgroup v2-only on Firecracker.
+	// TODO: remove once guest cgroup v2-only mode is enabled by default.
+	b, err := exec.Command("sh", "-ex", "-c", `
+		[ -e  /sys/fs/cgroup/unified ] || exit 0
+		umount -f /sys/fs/cgroup/unified
+		rmdir /sys/fs/cgroup/unified
+		mount | grep /sys/fs/cgroup/ | awk '{print $3}' | xargs umount -f
+		umount -f /sys/fs/cgroup
+		mount cgroup2 /sys/fs/cgroup -t cgroup2 -o "nsdelegate"
+	`).CombinedOutput()
+	if err != nil {
+		log.Fatalf("Failed to set up cgroup2: %s: %q", err, strings.TrimSpace(string(b)))
+	}
+
 	runtimePath, err := runfiles.Rlocation(crunRlocationpath)
 	if err != nil {
 		log.Fatalf("Failed to locate crun in runfiles: %s", err)
@@ -56,6 +70,86 @@ func realBusyboxImage(t *testing.T) string {
 		t.Skipf("using a real container image with overlayfs requires mount permissions")
 	}
 	return "mirror.gcr.io/library/busybox"
+}
+
+func TestRun(t *testing.T) {
+	image := manuallyProvisionedBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			echo "$GREETING world!"
+		`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, "Hello world!\n", string(res.Stdout))
+	assert.Empty(t, "", string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+}
+
+func TestRunWithImage(t *testing.T) {
+	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			echo "$GREETING world!"
+		`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, "Hello world!\n", string(res.Stdout))
+	assert.Empty(t, "", string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
 }
 
 func TestCreateExecRemove(t *testing.T) {
