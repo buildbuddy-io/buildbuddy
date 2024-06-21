@@ -256,6 +256,7 @@ type TestTargetStatus struct {
 	TargetType    int32
 	TestSize      int32
 	Status        int32
+	Cached        bool
 	StartTimeUsec int64
 	DurationUsec  int64
 
