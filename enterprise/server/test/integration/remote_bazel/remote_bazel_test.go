@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -228,7 +227,7 @@ func TestWithPrivateRepo(t *testing.T) {
 
 func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
 	env := rbetest.NewRBETestEnv(t)
-	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
+	bbServer := env.AddBuildBuddyServerWithOptions(t, &rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(e *testenv.TestEnv) {
 			e.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 			e.SetGitProviders([]interfaces.GitProvider{testgit.NewFakeProvider()})
@@ -246,22 +245,11 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, 
 			e.SetKeyValStore(keyValStore)
 		},
 	})
-	grpcAddress := fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort())
-	u, err := url.Parse(grpcAddress)
-	require.NoError(t, err)
-	flags.Set(t, "app.events_api_url", *u)
-	flags.Set(t, "app.cache_api_url", *u)
 
 	executors := env.AddExecutors(t, 1)
 	require.Equal(t, 1, len(executors))
 	flags.Set(t, "executor.enable_bare_runner", true)
 
-	t.Cleanup(func() {
-		for _, e := range executors {
-			env.RemoveExecutor(e)
-		}
-		env.ShutdownBuildBuddyServers()
-	})
 	return env, bbServer, executors[0]
 }
 

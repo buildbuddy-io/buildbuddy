@@ -100,7 +100,7 @@ func TestSimpleAction_TerminateWithSIGABRT(t *testing.T) {
 
 func TestPersistentUnavailableError_Retried(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServer(t)
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.UnavailableError(errMsg))
 	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
@@ -124,7 +124,7 @@ func TestPersistentUnavailableError_Retried(t *testing.T) {
 
 func TestTransientUnavailableError_Retried(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServer(t)
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.UnavailableError(errMsg))
 	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
@@ -148,7 +148,7 @@ func TestTransientUnavailableError_Retried(t *testing.T) {
 
 func TestTransientInternalError_Retried(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServer(t)
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.InternalError(errMsg))
 	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
@@ -172,7 +172,7 @@ func TestTransientInternalError_Retried(t *testing.T) {
 
 func TestTransientAbortedError_Retried(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServer(t)
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.AbortedError(errMsg))
 	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
@@ -196,7 +196,7 @@ func TestTransientAbortedError_Retried(t *testing.T) {
 
 func TestDeadlineExceededError_NotRetried(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServer(t)
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.DeadlineExceededError(errMsg))
 	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
@@ -219,7 +219,7 @@ func TestDeadlineExceededError_NotRetried(t *testing.T) {
 
 func TestUnauthenticatedError_RetriedOnce(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServer(t)
 	const errMsg = "error injected by test"
 	errResult := commandutil.ErrorResult(status.UnauthenticatedError(errMsg))
 	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
@@ -245,7 +245,7 @@ func TestUnauthenticatedError_RetriedOnce(t *testing.T) {
 
 func TestTransientExecutorShutdown_Retried(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServer(t)
 	// TODO(bduffany): Simplify executor shutdown logic across runner types and
 	// remove reliance on ErrSIGKILL here
 	errResult := commandutil.ErrorResult(commandutil.ErrSIGKILL)
@@ -276,7 +276,7 @@ func TestTransientExecutorShutdown_Retried(t *testing.T) {
 // executor that is about to be shutdown every time it is retried.
 func TestPersistentExecutorShutdown_Retried(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServer(t)
 	// TODO(bduffany): Simplify executor shutdown logic across runner types and
 	// remove reliance on ErrSIGKILL here
 	errResult := commandutil.ErrorResult(commandutil.ErrSIGKILL)
@@ -304,7 +304,7 @@ func TestPersistentExecutorShutdown_Retried(t *testing.T) {
 
 func TestTransientCacheNotFoundError_Retried(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServer(t)
 	errResult := commandutil.ErrorResult(status.NotFoundError("not found"))
 	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		RunInterceptor: rbetest.ReturnForFirstAttempt(errResult),
@@ -365,7 +365,7 @@ func TestActionWithRunnerRecycling_InvalidArgument(t *testing.T) {
 
 func setup(t *testing.T) *rbetest.Env {
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServer(t)
 	env.AddExecutor(t)
 	// observe initial count so that we can get the diff at the end of the test
 	_ = tasksStarted(t)

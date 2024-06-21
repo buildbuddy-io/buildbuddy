@@ -34,7 +34,7 @@ func TestDockerWithOverlayfs_InputFilesAreImmutable(t *testing.T) {
 	})
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer()
+	rbe.AddBuildBuddyServer(t)
 	rbe.AddExecutor(t)
 
 	platform := &repb.Platform{
