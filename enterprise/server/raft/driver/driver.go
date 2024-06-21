@@ -210,7 +210,7 @@ func (pq *priorityQueue) Pop() interface{} {
 // across the stores.
 type Queue struct {
 	pq       *priorityQueue
-	storeMap *storemap.StoreMap
+	storeMap storemap.IStoreMap
 	store    IStore
 
 	pqItemMap sync.Map // shardID -> *pqItem
@@ -488,10 +488,7 @@ func (rq *Queue) removeDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *s
 	}
 }
 
-func (rq *Queue) findRemovableReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, brandNewReplicaID *uint64) []*rfpb.ReplicaDescriptor {
-	replicaStateMap :=
-		rq.store.GetReplicaStates(ctx, rd)
-
+func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, replicaStateMap map[uint64]constants.ReplicaState, brandNewReplicaID *uint64) []*rfpb.ReplicaDescriptor {
 	numUpToDateReplicas := 0
 	replicasBehind := make([]*rfpb.ReplicaDescriptor, 0)
 	for _, r := range rd.GetReplicas() {
@@ -503,7 +500,7 @@ func (rq *Queue) findRemovableReplicas(ctx context.Context, rd *rfpb.RangeDescri
 			numUpToDateReplicas++
 		} else if rs == constants.ReplicaStateBehind {
 			// Don't consider brand new replica ID as falling behind
-			if brandNewReplicaID != nil && r.GetReplicaId() != *brandNewReplicaID {
+			if brandNewReplicaID == nil || r.GetReplicaId() != *brandNewReplicaID {
 				replicasBehind = append(replicasBehind, r)
 			}
 		}
@@ -527,7 +524,7 @@ func (rq *Queue) findRemovableReplicas(ctx context.Context, rd *rfpb.RangeDescri
 	return replicasBehind
 }
 
-func (rq *Queue) findReplicaForRemoval(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *rfpb.ReplicaDescriptor {
+func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap map[uint64]constants.ReplicaState, localReplicaID uint64) *rfpb.ReplicaDescriptor {
 	lastReplIDAdded := rd.LastAddedReplicaId
 	if lastReplIDAdded != nil && rd.LastReplicaAddedAtUsec != nil {
 		if rq.clock.Since(time.UnixMicro(rd.GetLastReplicaAddedAtUsec())) > *newReplicaGracePeriod {
@@ -535,7 +532,7 @@ func (rq *Queue) findReplicaForRemoval(ctx context.Context, rd *rfpb.RangeDescri
 		}
 	}
 
-	removableReplicas := rq.findRemovableReplicas(ctx, rd, lastReplIDAdded)
+	removableReplicas := rq.findRemovableReplicas(rd, replicaStateMap, lastReplIDAdded)
 
 	if len(removableReplicas) == 0 {
 		// there is nothing to remove
@@ -569,7 +566,7 @@ func (rq *Queue) findReplicaForRemoval(ctx context.Context, rd *rfpb.RangeDescri
 	for _, c := range candidates {
 		for _, repl := range rd.GetReplicas() {
 			if repl.GetNhid() == c.usage.GetNode().GetNhid() {
-				if repl.GetReplicaId() != localRepl.ReplicaID() {
+				if repl.GetReplicaId() != localReplicaID {
 					return repl
 				}
 				// For simplicity, we don't want to select the local replica
@@ -583,7 +580,9 @@ func (rq *Queue) findReplicaForRemoval(ctx context.Context, rd *rfpb.RangeDescri
 }
 
 func (rq *Queue) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
-	removingReplica := rq.findReplicaForRemoval(ctx, rd, localRepl)
+	replicaStateMap := rq.store.GetReplicaStates(ctx, rd)
+	localReplicaID := localRepl.ReplicaID()
+	removingReplica := rq.findReplicaForRemoval(rd, replicaStateMap, localReplicaID)
 	if removingReplica == nil {
 		return nil
 	}
@@ -728,10 +727,10 @@ type candidate struct {
 func compareByScore(a *candidate, b *candidate) int {
 	if a.fullDisk != b.fullDisk {
 		if a.fullDisk {
-			return 20
+			return -20
 		}
 		if b.fullDisk {
-			return -20
+			return +20
 		}
 	}
 
@@ -747,9 +746,9 @@ func compareByScore(a *candidate, b *candidate) int {
 	// (-10, 10)
 	diff := math.Abs(float64(a.replicaCount - b.replicaCount))
 	if a.replicaCount < b.replicaCount {
-		return int(diff / float64(b.replicaCount) * 10)
+		return int(math.Ceil(diff / float64(b.replicaCount) * 10))
 	} else if a.replicaCount > b.replicaCount {
-		return -int(diff / float64(a.replicaCount) * 10)
+		return -int(math.Ceil(diff / float64(a.replicaCount) * 10))
 	}
 	return 0
 }

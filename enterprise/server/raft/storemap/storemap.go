@@ -31,6 +31,12 @@ const (
 	storeStatusSuspect
 )
 
+type IStoreMap interface {
+	GetStoresWithStats() *StoresWithStats
+	GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats
+	DivideByStatus(repls []*rfpb.ReplicaDescriptor) *ReplicasByStatus
+}
+
 type StoreDetail struct {
 	usage             *rfpb.StoreUsage
 	lastUnavailableAt time.Time
@@ -47,7 +53,7 @@ type StoreMap struct {
 	clock     clockwork.Clock
 }
 
-func New(gossipManager interfaces.GossipService, clock clockwork.Clock) *StoreMap {
+func New(gossipManager interfaces.GossipService, clock clockwork.Clock) IStoreMap {
 	sm := &StoreMap{
 		mu:            &sync.RWMutex{},
 		startTime:     time.Now(),
@@ -209,6 +215,7 @@ func (sm *StoreMap) GetStoresWithStats() *StoresWithStats {
 	return CreateStoresWithStats(alive)
 }
 
+// Returns stores with stats that are not dead (include both alive and suspect).
 func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
