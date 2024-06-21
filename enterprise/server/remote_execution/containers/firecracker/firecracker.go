@@ -207,8 +207,8 @@ const (
 )
 
 var (
-	masqueradingOnce sync.Once
-	masqueradingErr  error
+	configureNATOnce sync.Once
+	natErr           error
 
 	vmIdx   int
 	vmIdxMu sync.Mutex
@@ -1684,12 +1684,12 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// Setup masquerading on the host if it isn't already.
-	masqueradingOnce.Do(func() {
-		masqueradingErr = networking.EnableNAT(ctx)
+	// Setup NAT on the host if it isn't already.
+	configureNATOnce.Do(func() {
+		natErr = networking.EnableNAT(ctx)
 	})
-	if masqueradingErr != nil {
-		return masqueradingErr
+	if natErr != nil {
+		return natErr
 	}
 
 	if err := networking.CreateNetNamespace(ctx, c.id); err != nil {
