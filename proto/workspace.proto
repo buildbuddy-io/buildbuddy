@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package workspace;
+
+message GetWorkspaceRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The name of the workspace to fetch.
+  string name = 2;
+}
+
+message GetWorkspaceResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // The requested workspace.
+  // To read workspace file contents, use the `GetWorkspaceFile` endpoint.
+  // To read workspace directory contents, use the
+  // `GetWorkspaceDirectoryRequest` endpoint.
+  Workspace workspace = 2;
+}
+
+message SaveWorkspaceRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The workspace to save.
+  Workspace workspace = 2;
+}
+
+message SaveWorkspaceResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // The name of the workspace that was saved.
+  string workspace = 2;
+}
+
+message GetWorkspaceDirectoryRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The name of the workspace from which to fetch this directory.
+  string workspace = 2;
+
+  // Information about the git repo from which to fetch this directory.
+  Repo repo = 3;
+
+  // The details about which directory to fetch.
+  Node directory = 4;
+}
+
+message GetWorkspaceDirectoryResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // The directory that was requested.
+  Node directory = 3;
+
+  // The first level of child nodes (files and directories) contained in this
+  // directory.
+  repeated Node child_nodes = 2;
+}
+
+message GetWorkspaceFileRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The name of the workspace from which to fetch the file.
+  string workspace = 2;
+
+  // Information about the git repo from which to fetch this file.
+  Repo repo = 3;
+
+  // The file node being requested.
+  Node file = 4;
+}
+
+message GetWorkspaceFileResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // The contents of the file node being requested.
+  bytes content = 5;
+}
+
+message Workspace {
+  // The name of this workspace.
+  string name = 1;
+
+  // Information about the git repo this workspace is attached to.
+  Repo repo = 2;
+
+  // Any changed file nodes that are not stored in git.
+  repeated Node changes = 3;
+}
+
+message Repo {
+  // The URL of the git repo attached to a workspace.
+  string repo_url = 1;
+
+  // The commit sha at which the workspace is currently sync'd.
+  string commit_sha = 2;
+
+  // The branch that the workspace is attached to.
+  string branch = 3;
+}
+
+message Node {
+  // The file path of the node.
+  string path = 1;
+
+  // A hash of the file contents.
+  string sha = 2;
+
+  // The type of node this is, i.e. either a file or a directory.
+  NodeType node_type = 3;
+
+  // The type of change that was made to this file, i.e. added / deleted /
+  // modified / unmodified.
+  ChangeType change_type = 4;
+
+  // The new contents of the file (if any). Only populated for `SaveWorkspace`
+  // requests. For read requests, use the `GetWorkspaceFile` endpoint.
+  bytes content = 5;
+}
+
+// The type of node.
+enum NodeType {
+  UNKNOWN_NODE_TYPE = 0;
+  FILE = 1;
+  DIRECTORY = 2;
+}
+
+// The type of change applied to this file.
+enum ChangeType {
+  UNCHANGED = 0;
+  ADDED = 1;
+  DELETED = 2;
+  MODIFIED = 3;
+}
