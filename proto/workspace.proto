@@ -34,6 +34,9 @@ message SaveWorkspaceRequest {
 message SaveWorkspaceResponse {
   // The response context.
   context.ResponseContext response_context = 1;
+
+  // The name of the workspace that was saved.
+  string workspace = 2;
 }
 
 message GetWorkspaceDirectoryRequest {
@@ -57,7 +60,8 @@ message GetWorkspaceDirectoryResponse {
   // The directory that was requested.
   Node directory = 3;
 
-  // The child nodes (files and directories) contained in this directory.
+  // The first level of child nodes (files and directories) contained in this
+  // directory.
   repeated Node child_nodes = 2;
 }
 
