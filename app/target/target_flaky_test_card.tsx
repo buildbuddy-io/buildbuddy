@@ -1,6 +1,6 @@
 import React from "react";
 import format from "../format/format";
-import { AlertCircle, XCircle, HelpCircle } from "lucide-react";
+import { AlertCircle, XCircle } from "lucide-react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { durationToMillisWithFallback } from "../util/proto";
 import moment from "moment";
