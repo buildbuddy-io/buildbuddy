@@ -223,6 +223,17 @@ func (*githubGitProvider) GetFileContents(ctx context.Context, accessToken, repo
 	opts := &gh.RepositoryContentGetOptions{Ref: ref}
 	fileContent, _, rsp, err := client.Repositories.GetContents(ctx, owner, repo, filePath, opts)
 	if rsp != nil && rsp.StatusCode == http.StatusNotFound {
+		// GitHub's API response is identical in the case where the repo doesn't
+		// exist, as well as the case where the file isn't found. So if we get a
+		// 404, make another request to confirm whether the repo exists, so that
+		// we can abort the workflow if it doesn't, rather than using the
+		// default config.
+		_, rsp, err := client.Repositories.Get(ctx, owner, repo)
+		if rsp != nil && rsp.StatusCode == http.StatusNotFound {
+			return nil, status.FailedPreconditionErrorf("repository %q not found or inaccessible to this installation", repoURL)
+		} else if err != nil {
+			return nil, status.UnavailableErrorf("get repository %q: %s", repoURL, err)
+		}
 		return nil, status.NotFoundErrorf("%s: not found in %s", filePath, repoURL)
 	}
 	if err != nil {

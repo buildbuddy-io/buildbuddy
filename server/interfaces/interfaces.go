@@ -706,8 +706,10 @@ type GitProvider interface {
 	// UnregisterWebhook unregisters the webhook with the given ID from the repo.
 	UnregisterWebhook(ctx context.Context, accessToken, repoURL, webhookID string) error
 
-	// GetFileContents fetches a single file's contents from the repo. It returns
-	// status.NotFoundError if the file does not exist.
+	// GetFileContents fetches a single file's contents from the repo. It should
+	// return status.NotFoundError if the file does not exist. It should NOT
+	// return status.NotFoundError in any other case, particularly if the repo
+	// doesn't exist or is inaccessible.
 	GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error)
 
 	// IsTrusted returns whether the given user is a trusted collaborator on the
