@@ -750,7 +750,7 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 		return nil, status.UnimplementedError("Target stats requires an OLAP DB.")
 	}
 	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
-	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ?"
+	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ? AND (status BETWEEEN 1 AND 4) AND cached = 0"
 	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo}
 	if req.GetRepo() != "" {
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
@@ -832,7 +832,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 		return nil, status.UnimplementedError("Target stats requires an OLAP DB.")
 	}
 	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
-	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ?"
+	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ? AND (status BETWEEEN 1 AND 4) AND cached = 0"
 	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo}
 	if req.GetRepo() != "" {
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
@@ -914,7 +914,7 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 	pg.Offset = max(pg.Offset, int64(0))
 	pg.Limit = 5
 
-	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ? AND label = ?"
+	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ? AND label = ? AND (status BETWEEEN 1 AND 4) AND cached = 0"
 	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo, req.GetLabel()}
 	if req.GetRepo() != "" {
