@@ -59,7 +59,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
   componentDidUpdate(prevProps: Props) {
     const currentTarget = this.props.search.get("target") ?? "";
     const prevTarget = prevProps.search.get("target") ?? "";
-    if (currentTarget !== prevTarget) {
+    if (currentTarget !== prevTarget || this.props.repo !== prevProps.repo) {
       this.fetch();
     }
   }
