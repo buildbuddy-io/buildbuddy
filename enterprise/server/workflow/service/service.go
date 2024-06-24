@@ -1207,11 +1207,18 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--serialized_action=" + serializedAction,
 	}
 
+	// Recycle workflow runners by default.
+	enableRunnerRecycling := true
+
 	// HACK: Kythe requires some special args, so if the name of this action
 	// indicates it's a Kythe action, add those args.
 	if workflowAction.Name == config.KytheActionName {
 		args = append(args, "--bazel_startup_flags=--bazelrc=$KYTHE_DIR/extractors.bazelrc")
 		args = append(args, "--install_kythe=true")
+
+		// Kythe workflows can become very large, so disable runner-
+		// recycling to avoid filling the cache with crap.
+		enableRunnerRecycling = false
 	}
 
 	for _, filter := range workflowAction.GetGitFetchFilters() {
@@ -1236,13 +1243,8 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: platform.DockerUserPropertyName, Value: workflowUser},
 				{Name: "workload-isolation-type", Value: isolationType},
 				{Name: "container-image", Value: containerImage},
-				// Reuse the container/VM for the CI runner across executions if
-				// possible, and also keep the git repo around so it doesn't need to be
-				// re-cloned each time.
-				{Name: "recycle-runner", Value: "true"},
-				{Name: "runner-recycling-max-wait", Value: (*workflowsRunnerMaxWait).String()},
-				{Name: "preserve-workspace", Value: "true"},
 				{Name: "use-self-hosted-executors", Value: useSelfHostedExecutors},
+
 				// Pass the workflow ID to the executor so that it can try to assign
 				// this task to a runner which has previously executed the workflow.
 				{Name: "workflow-id", Value: wf.WorkflowID},
@@ -1254,6 +1256,18 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			},
 		},
 	}
+
+	if enableRunnerRecycling {
+		// Reuse the container/VM for the CI runner across executions if
+		// possible, and also keep the git repo around so it doesn't need to be
+		// re-cloned each time.
+		cmd.Platform.Properties = append(cmd.Platform.Properties, []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "runner-recycling-max-wait", Value: (*workflowsRunnerMaxWait).String()},
+			{Name: "preserve-workspace", Value: "true"},
+		}...)
+	}
+
 	if isSharedFirecrackerWorkflow {
 		// For firecracker workflows, init dockerd in case local actions or
 		// setup scripts want to use it.
