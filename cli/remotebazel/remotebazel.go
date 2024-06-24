@@ -33,7 +33,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
@@ -681,8 +680,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 }
 
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
-	healthChecker := healthcheck.NewHealthChecker("remote-bazel-client")
-	env := real_environment.NewRealEnv(healthChecker)
+	env := real_environment.NewBatchEnv()
 
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 

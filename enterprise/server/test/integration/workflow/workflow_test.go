@@ -98,7 +98,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	env := rbetest.NewRBETestEnv(t)
 	var workflowService interfaces.WorkflowService
 
-	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
+	env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(e *testenv.TestEnv) {
 			e.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 			e.SetGitProviders([]interfaces.GitProvider{gp})
@@ -121,11 +121,6 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	// Use a pre-built bazel instead of invoking bazelisk, which significantly
 	// slows down the test.
 	flags.Set(t, "remote_execution.workflows_ci_runner_bazel_command", testbazel.BinaryPath(t))
-	// Set events_api_url to point to the test BB app server (this gets
-	// propagated to the CI runner so it knows where to publish build events).
-	u, err := url.Parse(fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort()))
-	require.NoError(t, err)
-	flags.Set(t, "app.events_api_url", *u)
 
 	// Uncomment this line to print output from the ci_runner to the terminal for debugging purposes
 	// Otherwise, output from ci_runner/main.go and the bazel commands that are configured to run via the

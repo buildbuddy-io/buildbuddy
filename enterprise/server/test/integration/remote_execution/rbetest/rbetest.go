@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"net/url"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -285,6 +286,11 @@ func NewRBETestEnv(t *testing.T) *Env {
 	rbe.testCommandController = newTestCommandController(t, testEnv)
 	rbe.rbeClient = rbeclient.New(rbe)
 	rbe.appProxyConn = rbe.AppProxy.Dial()
+
+	u, err := url.Parse(rbe.GetBuildBuddyServerTarget())
+	require.NoError(t, err)
+	flags.Set(t, "app.events_api_url", *u)
+	flags.Set(t, "app.cache_api_url", *u)
 
 	t.Cleanup(func() {
 		log.Warningf("Shutting down executors...")

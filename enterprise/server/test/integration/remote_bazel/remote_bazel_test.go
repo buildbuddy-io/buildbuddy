@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -187,7 +186,7 @@ func TestWithPrivateRepo(t *testing.T) {
 		// to setup than a firecracker runner
 		"--runner_exec_properties=workload-isolation-type=none",
 		"--runner_exec_properties=container-image=",
-		"build",
+		"run",
 		":hello_world",
 		"--noenable_bzlmod",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
@@ -206,10 +205,16 @@ func TestWithPrivateRepo(t *testing.T) {
 		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
 	})
 	require.NoError(t, err)
-	// We expect 1 invocation for the ci_runner, and 1 invocation for the :hello_world
-	// build. Either should contain the log line we're looking for
+
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
-	invocationID := searchRsp.Invocation[0].InvocationId
+	// Find outer invocation because it will contain run output
+	var inv *inpb.Invocation
+	for _, i := range searchRsp.GetInvocation() {
+		if i.GetRole() == "HOSTED_BAZEL" {
+			inv = i
+		}
+	}
+	invocationID := inv.InvocationId
 
 	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 		InvocationId: invocationID,
@@ -217,6 +222,7 @@ func TestWithPrivateRepo(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
+	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
 }
 
 func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
@@ -239,15 +245,11 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, 
 			e.SetKeyValStore(keyValStore)
 		},
 	})
-	grpcAddress := fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort())
-	u, err := url.Parse(grpcAddress)
-	require.NoError(t, err)
-	flags.Set(t, "app.events_api_url", *u)
-	flags.Set(t, "app.cache_api_url", *u)
 
 	executors := env.AddExecutors(t, 1)
 	require.Equal(t, 1, len(executors))
 	flags.Set(t, "executor.enable_bare_runner", true)
+
 	return env, bbServer, executors[0]
 }
 
