@@ -318,6 +318,10 @@ func main() {
 	}
 
 	eg.Go(func() error {
+		if *readQPS <= 0 {
+			return nil
+		}
+
 		ticker := time.NewTicker(time.Second / time.Duration(*readQPS))
 		defer ticker.Stop()
 		for {
