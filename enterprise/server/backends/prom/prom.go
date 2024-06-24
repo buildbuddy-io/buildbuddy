@@ -239,7 +239,7 @@ func (c *bbMetricsCollector) Collect(out chan<- prometheus.Metric) {
 func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.MetricFamily, error) {
 	cachedMetrics, err := q.getCachedMetrics(ctx, groupID)
 	if err != nil {
-		log.Warningf("failed to get cached metrics: %s", err)
+		log.Warningf("failed to get cached metrics (groupID=%s): %s", groupID, err)
 		// Failed to get metrics from Redis. Let's try query prometheus.
 	}
 	if cachedMetrics != nil {
@@ -248,16 +248,16 @@ func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.
 
 	vectorMap, err := q.fetchMetrics(ctx, groupID)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to fetch metrics from prometheus: %s", err)
+		return nil, status.InternalErrorf("failed to fetch metrics (groupID: %s) from prometheus: %s", groupID, err)
 	}
 	metricFamilies, err := queryResultsToMetrics(vectorMap)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to prase metrics fetched from prometheus: %s", err)
+		return nil, status.InternalErrorf("failed to prase metrics fetched from prometheus (groupID: %s): %s", groupID, err)
 	}
 
 	err = q.setMetrics(ctx, groupID, metricFamilies)
 	if err != nil {
-		log.Warningf("failed to set metrics to redis: %s", err)
+		log.Warningf("failed to set metrics to redis (groupID: %s): %s", groupID, err)
 	}
 	return metricFamilies.GetMetricFamilies(), nil
 }
