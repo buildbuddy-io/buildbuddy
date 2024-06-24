@@ -1243,6 +1243,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: platform.DockerUserPropertyName, Value: workflowUser},
 				{Name: "workload-isolation-type", Value: isolationType},
 				{Name: "container-image", Value: containerImage},
+				{Name: "use-self-hosted-executors", Value: useSelfHostedExecutors},
 
 				// Pass the workflow ID to the executor so that it can try to assign
 				// this task to a runner which has previously executed the workflow.
@@ -1264,7 +1265,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			{Name: "recycle-runner", Value: "true"},
 			{Name: "runner-recycling-max-wait", Value: (*workflowsRunnerMaxWait).String()},
 			{Name: "preserve-workspace", Value: "true"},
-			{Name: "use-self-hosted-executors", Value: useSelfHostedExecutors},
 		}...)
 	}
 
