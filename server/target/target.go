@@ -782,7 +782,7 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 				status,
 				last_value(status) OVER win AS last_status
 			FROM "TestTargetStatuses"
-			WHERE (%s AND (status BETWEEEN 1 AND 4))
+			WHERE (%s AND (status BETWEEN 1 AND 4))
 			WINDOW win AS (
 				PARTITION BY label
 				ORDER BY invocation_start_time_usec ASC
@@ -861,7 +861,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 				status,
 				last_value(status) OVER win AS last_status
 			FROM "TestTargetStatuses"
-			WHERE (%s AND (status BETWEEEN 1 AND 4))
+			WHERE (%s AND (status BETWEEN 1 AND 4))
 			WINDOW win AS (
 				PARTITION BY label
 				ORDER BY invocation_start_time_usec ASC
@@ -937,7 +937,7 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 				status,
 				last_value(status) OVER win AS last_status
 			FROM "TestTargetStatuses"
-			WHERE (%s AND (status BETWEEEN 1 AND 4))
+			WHERE (%s AND (status BETWEEN 1 AND 4))
 			WINDOW win AS (
 				PARTITION BY label
 				ORDER BY invocation_start_time_usec ASC
