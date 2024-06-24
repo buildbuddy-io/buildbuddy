@@ -38,18 +38,23 @@ jobs:
           sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" WORKSPACE
 
       - name: Commit
+        env:
+          AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
+          AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_URL: ${{ github.event.head_commit.url }}
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-internal
-          git config --local user.email '${{ github.event.head_commit.author.email }}'
-          git config --local user.name '${{ github.event.head_commit.author.name }}'
+          git config --local user.email "$AUTHOR_EMAIL"
+          git config --local user.name "$AUTHOR_NAME"
           git add WORKSPACE
           git add deps.bzl
           git add .bazelversion
           cat <<EOF > message.txt
-          🔄 ${{ github.event.head_commit.message }}
+          🔄 $COMMIT_MESSAGE
           Update buildbuddy-io/buildbuddy commit SHA
 
-          🔗 ${{ github.event.head_commit.url }}
+          🔗 $COMMIT_URL
           EOF
           git commit -F message.txt -a
 
