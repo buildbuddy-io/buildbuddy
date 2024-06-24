@@ -27,7 +27,8 @@ var (
 	defaultXcodeVersion        = flag.String("executor.default_xcode_version", "", "Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used.")
 	defaultIsolationType       = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, podman, firecracker, or none (bare).")
 	enableBareRunner           = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
-	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
+	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman containers.")
+	enableOCI                  = flag.Bool("executor.enable_oci", false, "Enables running execution commands using an OCI runtime directly.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
 	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
@@ -128,6 +129,7 @@ const (
 	PodmanContainerType      ContainerType = "podman"
 	DockerContainerType      ContainerType = "docker"
 	FirecrackerContainerType ContainerType = "firecracker"
+	OCIContainerType         ContainerType = "oci"
 	SandboxContainerType     ContainerType = "sandbox"
 
 	// The app will mint a signed client identity token to workflows.
@@ -384,6 +386,15 @@ func GetExecutorProperties() *ExecutorProperties {
 
 	// NB: order matters! this list will be used in order to determine the which
 	// isolation method to use if none was set.
+
+	if *enableOCI {
+		if runtime.GOOS == "darwin" {
+			log.Warningf("OCI runtime was enabled, but is unsupported on darwin. Ignoring.")
+		} else {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, OCIContainerType)
+		}
+	}
+
 	if *dockerSocket != "" {
 		if runtime.GOOS == "darwin" {
 			log.Warning("Docker was enabled, but is unsupported on darwin. Ignoring.")

@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -49,6 +50,14 @@ func (p *pool) registerContainerProviders(providers map[platform.ContainerType]c
 
 	if executor.SupportsIsolation(platform.BareContainerType) {
 		providers[platform.BareContainerType] = &bare.Provider{}
+	}
+
+	if executor.SupportsIsolation(platform.OCIContainerType) {
+		p, err := ociruntime.NewProvider(p.env, p.buildRoot)
+		if err != nil {
+			return status.FailedPreconditionErrorf("Failed to initialize OCI container provider: %s", err)
+		}
+		providers[platform.OCIContainerType] = p
 	}
 
 	return nil
