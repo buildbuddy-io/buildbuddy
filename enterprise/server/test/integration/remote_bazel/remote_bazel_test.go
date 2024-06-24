@@ -227,7 +227,7 @@ func TestWithPrivateRepo(t *testing.T) {
 
 func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
 	env := rbetest.NewRBETestEnv(t)
-	bbServer := env.AddBuildBuddyServerWithOptions(t, &rbetest.BuildBuddyServerOptions{
+	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(e *testenv.TestEnv) {
 			e.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 			e.SetGitProviders([]interfaces.GitProvider{testgit.NewFakeProvider()})

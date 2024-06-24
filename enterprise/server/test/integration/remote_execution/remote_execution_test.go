@@ -58,7 +58,7 @@ const (
 func TestSimpleCommandWithNonZeroExitCode(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", "echo hello && echo bye >&2 && exit 5")
@@ -78,7 +78,7 @@ func TestSimpleCommandWithNonZeroExitCode(t *testing.T) {
 func TestActionResultCacheWithSuccessfulAction(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	platform := &repb.Platform{
@@ -105,7 +105,7 @@ func TestActionResultCacheWithSuccessfulAction(t *testing.T) {
 func TestActionResultCacheWithFailedAction(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	platform := &repb.Platform{
@@ -143,7 +143,7 @@ func TestActionResultCacheWithFailedAction(t *testing.T) {
 func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", "echo hello && echo bye >&2")
@@ -157,7 +157,7 @@ func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 	invocationID := "testabc123"
@@ -202,7 +202,7 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 
 func TestSimpleCommand_Abort_ReturnsExecutionError(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
@@ -224,7 +224,7 @@ func TestSimpleCommand_Abort_ReturnsExecutionError(t *testing.T) {
 
 func TestWorkflowCommand_InternalError_RetriedByScheduler(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	errResult := commandutil.ErrorResult(status.InternalError("test error message"))
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		RunInterceptor: rbetest.AlwaysReturn(errResult),
@@ -244,7 +244,7 @@ func TestWorkflowCommand_InternalError_RetriedByScheduler(t *testing.T) {
 
 func TestWorkflowCommand_ExecutorShutdown_RetriedByScheduler(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	errResult := commandutil.ErrorResult(commandutil.ErrSIGKILL)
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		RunInterceptor: rbetest.AlwaysReturn(errResult),
@@ -263,7 +263,7 @@ func TestWorkflowCommand_ExecutorShutdown_RetriedByScheduler(t *testing.T) {
 
 func TestTimeoutAlwaysReturnsDeadlineExceeded(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		RunInterceptor: func(ctx context.Context, original rbetest.RunFunc) *interfaces.CommandResult {
 			// Wait for the action timeout to pass
@@ -301,7 +301,7 @@ func TestTimeoutAlwaysReturnsDeadlineExceeded(t *testing.T) {
 func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServerWithOptions(t, &rbetest.BuildBuddyServerOptions{
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		SchedulerServerOptions: scheduler_server.Options{
 			RequireExecutorAuthorization: true,
 		},
@@ -318,7 +318,7 @@ func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
 func TestSimpleCommand_RunnerReuse_CanReadPreviouslyWrittenFileButNotOutputDirs(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	platform := &repb.Platform{
@@ -360,7 +360,7 @@ func TestSimpleCommand_RunnerReuse_CanReadPreviouslyWrittenFileButNotOutputDirs(
 func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	tmpDir := testfs.MakeTempDir(t)
@@ -410,7 +410,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	tmpDir := testfs.MakeTempDir(t)
@@ -459,7 +459,7 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServers(t, 3)
+	rbe.AddBuildBuddyServers(3)
 	rbe.AddExecutors(t, 10)
 
 	platform := &repb.Platform{
@@ -497,7 +497,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServers(t, 3)
+	rbe.AddBuildBuddyServers(3)
 	for i := 0; i < 5; i++ {
 		rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "foo"})
 	}
@@ -542,7 +542,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 func TestSimpleCommandWithMultipleExecutors(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutors(t, 5)
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", "echo hello && echo bye >&2")
@@ -556,7 +556,7 @@ func TestSimpleCommandWithMultipleExecutors(t *testing.T) {
 func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "FOO"})
 
 	platform := &repb.Platform{
@@ -583,7 +583,7 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 
 func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "bar"})
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
@@ -614,7 +614,7 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "foo"})
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
@@ -648,7 +648,7 @@ func TestSimpleCommandWithOSArchPool_CaseInsensitive(t *testing.T) {
 	}
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "foo"})
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
@@ -675,7 +675,7 @@ func TestSimpleCommand_DefaultWorkspacePermissions(t *testing.T) {
 	}
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	inputRoot := testfs.MakeTempDir(t)
@@ -718,7 +718,7 @@ func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
 	}
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	platform := &repb.Platform{
@@ -759,7 +759,7 @@ func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
 func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.Command
@@ -779,7 +779,7 @@ func TestRedisAvailabilityMonitoring(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	flags.Set(t, "remote_execution.enable_redis_availability_monitoring", true)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.Command
@@ -803,7 +803,7 @@ func TestBasicActionIO(t *testing.T) {
 	})
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	platform := &repb.Platform{
@@ -892,7 +892,7 @@ func TestComplexActionIO(t *testing.T) {
 	}
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
@@ -987,7 +987,7 @@ func TestOutputDirectoriesAndFiles(t *testing.T) {
 	}
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
@@ -1053,7 +1053,7 @@ func TestOutputPaths(t *testing.T) {
 	}
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
@@ -1116,7 +1116,7 @@ func TestOutputPathsDirectoriesAndFiles(t *testing.T) {
 	}
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
@@ -1196,7 +1196,7 @@ func TestComplexActionIOWithCompression(t *testing.T) {
 	}
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
@@ -1281,7 +1281,7 @@ func TestSaturateTaskQueue(t *testing.T) {
 	flags.Set(t, "executor.millicpu", int64(cpu)+1)
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	// Schedule 10 tasks concurrently which each consume 1 BCU, so that only up
@@ -1315,7 +1315,7 @@ func TestSaturateTaskQueue(t *testing.T) {
 func TestUnregisterExecutor(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 
 	// Start with two executors.
 	// AddExecutors will block until both are registered.
@@ -1330,8 +1330,8 @@ func TestMultipleSchedulersAndExecutors(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
 	// Start with 2 BuildBuddy servers.
-	rbe.AddBuildBuddyServer(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.Command
@@ -1350,7 +1350,7 @@ func TestMultipleSchedulersAndExecutors(t *testing.T) {
 func TestWorkSchedulingOnNewExecutor(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServers(t, 5)
+	rbe.AddBuildBuddyServers(5)
 	rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: "busyExecutor1"})
 	rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: "busyExecutor2"})
 
@@ -1398,7 +1398,7 @@ func TestWaitExecution(t *testing.T) {
 
 	// Start multiple servers so that executions are spread out across different servers.
 	for i := 0; i < 5; i++ {
-		rbe.AddBuildBuddyServer(t)
+		rbe.AddBuildBuddyServer()
 	}
 	rbe.AddExecutors(t, 5)
 
@@ -1489,7 +1489,7 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 	// Set up the task router to send all reservations to "busy" executors. These executors will queue up tasks but not
 	// try to execute any of them.
 	taskRouter := newFixedNodeTaskRouter(busyExecutorIDs)
-	rbe.AddBuildBuddyServerWithOptions(t, &rbetest.BuildBuddyServerOptions{EnvModifier: func(env *testenv.TestEnv) {
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{EnvModifier: func(env *testenv.TestEnv) {
 		env.SetTaskRouter(taskRouter)
 	}})
 
@@ -1530,7 +1530,7 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 
 func TestCommandWithMissingInputRootDigest(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
@@ -1632,7 +1632,7 @@ func TestRedisRestart(t *testing.T) {
 func TestInvocationCancellation(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	bbServer := rbe.AddBuildBuddyServer(t)
+	bbServer := rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
@@ -1699,7 +1699,7 @@ func WaitForPendingExecution(rdb redis.UniversalClient, opID string) error {
 func TestActionMerging(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	platform := &repb.Platform{
@@ -1733,7 +1733,7 @@ func TestActionMerging(t *testing.T) {
 func TestActionMerging_LongTask(t *testing.T) {
 	flags.Set(t, "remote_execution.lease_duration", 100*time.Millisecond)
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServerWithOptions(t, &rbetest.BuildBuddyServerOptions{
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		SchedulerServerOptions: scheduler_server.Options{
 			ActionMergingLeaseTTLOverride: 250 * time.Millisecond,
 		},
@@ -1765,7 +1765,7 @@ func TestActionMerging_LongTask(t *testing.T) {
 
 func TestActionMerging_ClaimingAppDies(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-	app := rbe.AddBuildBuddyServerWithOptions(t, &rbetest.BuildBuddyServerOptions{
+	app := rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		SchedulerServerOptions: scheduler_server.Options{
 			ActionMergingLeaseTTLOverride: time.Millisecond,
 		},
@@ -1789,7 +1789,7 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 
 	// Start a new app, kill `app`, potentially orphaning `cmd1`, and then run
 	// the command again, verifying it's not merged.
-	rbe.AddBuildBuddyServer(t)
+	rbe.AddBuildBuddyServer()
 	rbe.RemoveBuildBuddyServer(app)
 
 	// Sleep long enough for the action-merging data to timeout of Redis.
@@ -1811,8 +1811,8 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 
 	rbe := rbetest.NewRBETestEnv(t)
 
-	app1 := rbe.AddBuildBuddyServer(t)
-	app2 := rbe.AddBuildBuddyServer(t)
+	app1 := rbe.AddBuildBuddyServer()
+	app2 := rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
 	// Set up a custom proxy director that makes sure we choose app1 for the
@@ -1902,8 +1902,8 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 
 	rbe := rbetest.NewRBETestEnv(t)
 
-	app1 := rbe.AddBuildBuddyServer(t)
-	app2 := rbe.AddBuildBuddyServer(t)
+	app1 := rbe.AddBuildBuddyServer()
+	app2 := rbe.AddBuildBuddyServer()
 
 	// Set up a custom proxy director that makes sure we choose app1 for the
 	// initial LeaseTask request, so that we can test stopping app1 while
@@ -1995,7 +1995,7 @@ func TestCustomResources(t *testing.T) {
 	const ex1ID = "executor1"
 	const ex2ID = "executor2"
 	taskRouter := newFixedNodeTaskRouter([]string{ex1ID, ex2ID})
-	rbe.AddBuildBuddyServerWithOptions(t, &rbetest.BuildBuddyServerOptions{
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(env *real_environment.RealEnv) {
 			env.SetTaskRouter(taskRouter)
 		},

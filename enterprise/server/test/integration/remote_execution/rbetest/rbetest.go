@@ -110,7 +110,6 @@ type Env struct {
 	rootDataDir                   string
 	buildBuddyServers             map[*BuildBuddyServer]struct{}
 	shutdownBuildBuddyServersOnce sync.Once
-	shutdownExecutorsOnce         sync.Once
 	executors                     map[string]*Executor
 	testCommandController         *testCommandController
 	// Used to generate executor names when not specified.
@@ -287,6 +286,30 @@ func NewRBETestEnv(t *testing.T) *Env {
 	rbe.testCommandController = newTestCommandController(t, testEnv)
 	rbe.rbeClient = rbeclient.New(rbe)
 	rbe.appProxyConn = rbe.AppProxy.Dial()
+
+	u, err := url.Parse(rbe.GetBuildBuddyServerTarget())
+	require.NoError(t, err)
+	flags.Set(t, "app.events_api_url", *u)
+	flags.Set(t, "app.cache_api_url", *u)
+
+	t.Cleanup(func() {
+		log.Warningf("Shutting down executors...")
+		var wg sync.WaitGroup
+		for id, e := range rbe.executors {
+			id, e := id, e
+			e.env.GetHealthChecker().Shutdown()
+			wg.Add(1)
+			go func() {
+				log.Infof("Waiting for executor %q to shut down.", id)
+				e.env.GetHealthChecker().WaitForGracefulShutdown()
+				log.Infof("Shut down for executor %q completed.", id)
+				wg.Done()
+			}()
+		}
+		log.Warningf("Waiting for executor shutdown to finish...")
+		wg.Wait()
+	})
+	t.Cleanup(rbe.ShutdownBuildBuddyServers)
 
 	return rbe
 }
@@ -660,17 +683,17 @@ func (e *Executor) ShutdownTaskScheduler() {
 	e.taskScheduler.Shutdown(ctx)
 }
 
-func (r *Env) AddBuildBuddyServer(t *testing.T) *BuildBuddyServer {
-	return r.AddBuildBuddyServerWithOptions(t, &BuildBuddyServerOptions{})
+func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
+	return r.AddBuildBuddyServerWithOptions(&BuildBuddyServerOptions{})
 }
 
-func (r *Env) AddBuildBuddyServers(t *testing.T, n int) {
+func (r *Env) AddBuildBuddyServers(n int) {
 	for i := 0; i < n; i++ {
-		r.AddBuildBuddyServer(t)
+		r.AddBuildBuddyServer()
 	}
 }
 
-func (r *Env) AddBuildBuddyServerWithOptions(t *testing.T, opts *BuildBuddyServerOptions) *BuildBuddyServer {
+func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *BuildBuddyServer {
 	envOpts := &enterprise_testenv.Options{RedisTarget: r.redisTarget}
 	env := &buildBuddyServerEnv{TestEnv: enterprise_testenv.GetCustomTestEnv(r.t, envOpts), rbeEnv: r}
 	// We're using an in-memory SQLite database so we need to make sure all servers share the same handle.
@@ -682,18 +705,6 @@ func (r *Env) AddBuildBuddyServerWithOptions(t *testing.T, opts *BuildBuddyServe
 	server := newBuildBuddyServer(r.t, env, opts)
 	r.buildBuddyServers[server] = struct{}{}
 	r.updateAppProxy()
-
-	grpcAddress := fmt.Sprintf("grpc://localhost:%d", server.GRPCPort())
-	u, err := url.Parse(grpcAddress)
-	require.NoError(t, err)
-
-	// Note: flags.Set registers a t.Cleanup function to clean up flags. Make sure
-	// that happens after the servers shut down and are no longer using the flags
-	flags.Set(t, "app.events_api_url", *u)
-	flags.Set(t, "app.cache_api_url", *u)
-
-	t.Cleanup(r.ShutdownBuildBuddyServers)
-
 	return server
 }
 
@@ -847,35 +858,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 		taskScheduler:      taskScheduler,
 	}
 	r.executors[executor.id] = executor
-
-	t.Cleanup(func() {
-		r.ShutdownBuildBuddyServers()
-		r.ShutdownExecutors()
-	})
-
 	return executor
-}
-
-func (r *Env) ShutdownExecutors() {
-	r.shutdownExecutorsOnce.Do(r.shutdownExecutors)
-}
-
-func (r *Env) shutdownExecutors() {
-	log.Warningf("Shutting down executors...")
-	var wg sync.WaitGroup
-	for id, e := range r.executors {
-		id, e := id, e
-		e.env.GetHealthChecker().Shutdown()
-		wg.Add(1)
-		go func() {
-			log.Infof("Waiting for executor %q to shut down.", id)
-			e.env.GetHealthChecker().WaitForGracefulShutdown()
-			log.Infof("Shut down for executor %q completed.", id)
-			wg.Done()
-		}()
-	}
-	log.Warningf("Waiting for executor shutdown to finish...")
-	wg.Wait()
 }
 
 func (r *Env) RemoveExecutor(executor *Executor) {

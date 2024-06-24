@@ -98,7 +98,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	env := rbetest.NewRBETestEnv(t)
 	var workflowService interfaces.WorkflowService
 
-	env.AddBuildBuddyServerWithOptions(t, &rbetest.BuildBuddyServerOptions{
+	env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(e *testenv.TestEnv) {
 			e.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 			e.SetGitProviders([]interfaces.GitProvider{gp})
