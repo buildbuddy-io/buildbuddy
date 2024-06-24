@@ -220,6 +220,11 @@ func TestPullCreateExecRemove(t *testing.T) {
 	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 
+	// Ensure cached
+	cached, err := c.IsImageCached(ctx)
+	require.NoError(t, err)
+	assert.True(t, cached, "IsImageCached")
+
 	// Create
 	require.NoError(t, err)
 	err = c.Create(ctx, wd)
