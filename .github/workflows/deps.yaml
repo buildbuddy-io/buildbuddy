@@ -38,7 +38,7 @@ jobs:
           sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" WORKSPACE
 
       - name: Commit
-        env: 
+        env:
           AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
           AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
