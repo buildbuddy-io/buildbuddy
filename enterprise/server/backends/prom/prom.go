@@ -257,7 +257,7 @@ func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.
 
 	err = q.setMetrics(ctx, groupID, metricFamilies)
 	if err != nil {
-		log.Warningf("failed to set metrics to redis (groupID: %s): %s", err)
+		log.Warningf("failed to set metrics to redis (groupID: %s): %s", groupID, err)
 	}
 	return metricFamilies.GetMetricFamilies(), nil
 }
