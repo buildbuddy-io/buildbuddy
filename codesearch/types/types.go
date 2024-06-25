@@ -62,6 +62,7 @@ type IndexReader interface {
 }
 
 type Scorer interface {
+	Skip() bool
 	Score(doc Document) float64
 }
 
