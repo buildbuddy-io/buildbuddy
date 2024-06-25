@@ -6,6 +6,9 @@ services:
       - ${PWD}/victoria-metrics/scrape.yml:/etc/victoria-metrics/scrape.yml
     command:
       - "--promscrape.config=/etc/victoria-metrics/scrape.yml"
+      # Don't log scrape errors as often, since not all the scrape targets are
+      # expected to be running during local development (e.g. executor)
+      - "--promscrape.suppressScrapeErrorsDelay=1m"
     ports:
       - "8428:8428"
     extra_hosts:
