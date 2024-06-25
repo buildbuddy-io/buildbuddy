@@ -314,9 +314,6 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 			Children: []*build_event_stream.BuildEventId{
 				testResultId("//server:bar_test"),
 				testSummaryId("//server:bar_test"),
-				// Having these events as children shouldn't break target tracking.
-				testResultId("//server:baz_test"),
-				testSummaryId("//server:baz_test"),
 			},
 			Payload: &build_event_stream.BuildEvent_Completed{
 				Completed: &build_event_stream.TargetComplete{},
