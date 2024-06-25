@@ -2559,6 +2559,24 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheZombieTableCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_zombie_table_count",
+		Help:      "The number of zombie tables",
+	}, []string{
+		CacheNameLabel,
+	})
+
+	PebbleCacheZombieTableSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_zombie_table_size_bytes",
+		Help:      "The size of zombie tables in bytes",
+	}, []string{
+		CacheNameLabel,
+	})
+
 	// Temporary metric to verify AC sampling behavior.
 	PebbleCacheGroupIDSampleCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
