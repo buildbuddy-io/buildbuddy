@@ -414,7 +414,6 @@ export default class FlakesComponent extends React.Component<Props, State> {
                             target={singleTarget}
                             testSuite={testSuite}
                             buildEvent={s.event!}
-                            status={status}
                             dark={this.props.dark}></TargetFlakyTestCardComponent>
                         );
                       });
