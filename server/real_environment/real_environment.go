@@ -42,6 +42,7 @@ type RealEnv struct {
 	healthChecker                    interfaces.HealthChecker
 	serverContext                    context.Context
 	workflowService                  interfaces.WorkflowService
+	workspaceService                 interfaces.WorkspaceService
 	runnerService                    interfaces.RunnerService
 	gitProviders                     interfaces.GitProviders
 	gitHubApp                        interfaces.GitHubApp
@@ -398,6 +399,12 @@ func (r *RealEnv) GetWorkflowService() interfaces.WorkflowService {
 }
 func (r *RealEnv) SetWorkflowService(wf interfaces.WorkflowService) {
 	r.workflowService = wf
+}
+func (r *RealEnv) GetWorkspaceService() interfaces.WorkspaceService {
+	return r.workspaceService
+}
+func (r *RealEnv) SetWorkspaceService(ws interfaces.WorkspaceService) {
+	r.workspaceService = ws
 }
 func (r *RealEnv) GetSnapshotService() interfaces.SnapshotService {
 	return r.snapshotService

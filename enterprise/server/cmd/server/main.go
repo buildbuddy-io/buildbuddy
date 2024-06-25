@@ -56,6 +56,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
@@ -289,6 +290,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := registry.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := workspace.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

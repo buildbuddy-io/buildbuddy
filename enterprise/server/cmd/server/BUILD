@@ -70,6 +70,7 @@ go_library(
         "//enterprise/server/webhooks/bitbucket",
         "//enterprise/server/webhooks/github",
         "//enterprise/server/workflow/service",
+        "//enterprise/server/workspace",
         "//server/config",
         "//server/interfaces",
         "//server/janitor",
