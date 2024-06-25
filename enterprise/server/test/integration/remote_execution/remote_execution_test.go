@@ -1696,7 +1696,7 @@ func WaitForPendingExecution(rdb redis.UniversalClient, opID string) error {
 	return status.NotFoundError("No forward key for pending execution")
 }
 
-func TestActionMerging(t *testing.T) {
+func TestActionMerging_Success(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServer()
@@ -1800,6 +1800,81 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
 	op2 := cmd2.WaitAccepted()
 	require.NotEqual(t, op1, op2, "unexpected action merge: dead app shouldn't block future actions")
+}
+
+func TestActionMerging_FirstRunStuck(t *testing.T) {
+	flags.Set(t, "remote_execution.action_merging_hedge_count", 1)
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	// This script takes ~10min the first time it's run, but <1s subsequently.
+	fname := fmt.Sprintf("/tmp/%s", uuid.New().String())
+	flakyScript := fmt.Sprintf(`FILE="%s"
+if [ -f $FILE ]; then
+    echo "FAST"
+else
+    echo "SLOW" > $FILE
+	sleep 600
+fi`, fname)
+	flakyCmd := &repb.Command{
+		Arguments: []string{"sh", "-c", flakyScript},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "OSFamily", Value: runtime.GOOS},
+				{Name: "Arch", Value: runtime.GOARCH},
+			},
+		},
+	}
+
+	// This script can be used to check the status of the remote worker to see
+	// if the /tmp/uuid file exists, meaning flakyCmd will be fast.
+	existsScript := fmt.Sprintf(`FILE="%s"
+if [ -f $FILE ]; then
+    echo "found"
+fi`, fname)
+	existsCmd := &repb.Command{
+		Arguments: []string{"sh", "-c", existsScript},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "OSFamily", Value: runtime.GOOS},
+				{Name: "Arch", Value: runtime.GOARCH},
+			},
+		},
+	}
+
+	// Run the command the first time, this will take about a minute.
+	cmd1 := rbe.Execute(flakyCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
+	op1 := cmd1.WaitAccepted()
+	WaitForPendingExecution(rbe.GetRedisClient(), op1)
+
+	// Wait for the /tmp/uuid file to exist before re-submitting flakyCmd.
+	found := false
+	for i := 0; i < 10; i++ {
+		probeCmd := rbe.Execute(existsCmd, &rbetest.ExecuteOpts{CheckCache: false, InvocationID: fmt.Sprintf("existence-probe-%d", i)})
+		probeOp := probeCmd.Wait()
+		if strings.Trim(probeOp.Stdout, "\n") == "found" {
+			found = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	require.True(t, found, "Expected remote execution system to begin cmd1")
+
+	// The next action will merge against the slow op1 above, but also run a
+	// hedged action which should finish quickly.
+	cmd2 := rbe.Execute(flakyCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
+	op2 := cmd2.WaitAccepted()
+	require.Equal(t, op1, op2, "expected actions to be merged")
+
+	// Let the hedged execution finish.
+	time.Sleep(100 * time.Millisecond)
+
+	// The action result should be cached, even though op1 is still running.
+	cmd3 := rbe.Execute(flakyCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation3"})
+	op3 := cmd3.WaitAccepted()
+	require.NotEqual(t, op1, op3, "expected action to be hedged")
+	require.Equal(t, "FAST", strings.Trim(cmd3.Wait().Stdout, "\n"))
 }
 
 func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
