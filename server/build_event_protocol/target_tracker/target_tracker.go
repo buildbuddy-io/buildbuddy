@@ -165,7 +165,7 @@ func (t *TargetTracker) handleEvent(event *build_event_stream.BuildEvent) {
 		return
 	}
 	target, ok := t.targets[label]
-	if (!ok) {
+	if !ok {
 		return
 	}
 	target.updateFromEvent(event)
