@@ -59,6 +59,14 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, fieldDocidMatches map[stri
 	numDocs := len(allDocIDs)
 	docIDs := slices.Compact(allDocIDs)
 
+	defer func() {
+		c.log.Infof("Scoring %d docs took %s", numDocs, time.Since(start))
+	}()
+
+	if scorer.Skip() {
+		return docIDs, nil
+	}
+
 	scoreMap := make(map[uint64]float64, numDocs)
 	var mu sync.Mutex
 
@@ -102,7 +110,6 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, fieldDocidMatches map[stri
 		docIDs = docIDs[:numResults]
 	}
 
-	c.log.Infof("Scoring %d docs took %s", numDocs, time.Since(start))
 	return docIDs, nil
 }
 
