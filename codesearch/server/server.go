@@ -216,13 +216,27 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		if len(regions) == 0 {
 			continue
 		}
+
+		// Dedupe the regions (by matched line number) so that we don't
+		// display the same line multiple times.
+		dedupedRegions := make([]types.HighlightedRegion, 0, len(regions))
+
+		lastLine := -1
+		for _, region := range regions {
+			if region.Line() == lastLine {
+				continue
+			}
+			dedupedRegions = append(dedupedRegions, region)
+			lastLine = region.Line()
+		}
+
 		result := &srpb.Result{
 			Repo:       string(doc.Field(repoField).Contents()),
 			Filename:   string(doc.Field(filenameField).Contents()),
-			MatchCount: int32(len(regions)),
+			MatchCount: int32(len(dedupedRegions)),
 			Sha:        string(doc.Field(shaField).Contents()),
 		}
-		for _, region := range regions {
+		for _, region := range dedupedRegions {
 			result.Snippets = append(result.Snippets, &srpb.Snippet{
 				Lines: region.CustomSnippet(1, 1),
 			})

@@ -128,6 +128,10 @@ func makeLine(line []byte, lineNumber int) string {
 	return fmt.Sprintf("%d: %s\n", lineNumber, line)
 }
 
+func (rm regionMatch) Line() int {
+	return rm.region.lineNumber
+}
+
 func (rm regionMatch) CustomSnippet(linesBefore, linesAfter int) string {
 	lineNumber := rm.region.lineNumber
 	snippetText := ""

@@ -130,7 +130,7 @@ func makeDoc(name string) (types.Document, error) {
 
 	// Skip long files.
 	if len(buf) > maxFileLen {
-		return nil, fmt.Errorf("%s: too long, ignoring\n", name)
+		return nil, fmt.Errorf("%s: too long, ignoring", name)
 	}
 
 	// Compute a hash of the file.
@@ -234,8 +234,21 @@ func handleSearch(args []string) {
 		if len(regions) == 0 {
 			continue
 		}
-		fmt.Printf("%q [%d matches]\n", doc.Field("filename").Contents(), len(regions))
+
+		dedupedRegions := make([]types.HighlightedRegion, 0, len(regions))
+		lastLine := -1
+		lastField := ""
 		for _, region := range regions {
+			if region.Line() == lastLine && region.FieldName() == lastField {
+				continue
+			}
+			dedupedRegions = append(dedupedRegions, region)
+			lastLine = region.Line()
+			lastField = region.FieldName()
+		}
+
+		fmt.Printf("%q [%d matches]\n", doc.Field("filename").Contents(), len(dedupedRegions))
+		for _, region := range dedupedRegions {
 			scanner := bufio.NewScanner(strings.NewReader(region.String()))
 			for scanner.Scan() {
 				fmt.Print("  " + scanner.Text() + "\n")
