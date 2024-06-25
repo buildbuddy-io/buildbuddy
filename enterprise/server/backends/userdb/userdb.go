@@ -806,15 +806,7 @@ func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
 }
 
 func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, error) {
-	var user *tables.User
-	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		u, err := d.getUser(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		user = u
-		return err
-	})
+	user, err := d.getUser(ctx, d.h, id)
 	if err != nil {
 		return nil, err
 	}
@@ -832,16 +824,7 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 }
 
 func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error) {
-	var user *tables.User
-	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		u, err := d.getUser(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		user = u
-		return err
-	})
-	return user, err
+	return d.getUser(ctx, d.h, id)
 }
 
 func usersFromUserGroupJoin(ugj []*userGroupJoin) ([]*tables.User, error) {
@@ -910,16 +893,11 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	if u.IsImpersonating() {
 		return d.GetImpersonatedUser(ctx)
 	}
-	var user *tables.User
-	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		user, err = d.getUser(ctx, tx, u.GetUserID())
-		return err
-	})
-	return user, err
+	return d.getUser(ctx, d.h, u.GetUserID())
 }
 
-func (d *UserDB) getUser(ctx context.Context, tx interfaces.DB, userID string) (*tables.User, error) {
-	rq := tx.NewQuery(ctx, "userdb_get_user").Raw(`
+func (d *UserDB) getUser(ctx context.Context, h interfaces.DB, userID string) (*tables.User, error) {
+	rq := h.NewQuery(ctx, "userdb_get_user").Raw(`
 		SELECT u.*, ug.*, g.*
 		FROM "Users" u 
 			LEFT JOIN "UserGroups" AS ug
