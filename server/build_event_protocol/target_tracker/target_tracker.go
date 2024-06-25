@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/encoding/prototext"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 )
@@ -113,9 +112,18 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 	}
 }
 
-func protoID(beid *build_event_stream.BuildEventId) string {
-	out, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(beid)
-	return string(out)
+func getLabelFromEventId(beid *build_event_stream.BuildEventId) string {
+	switch beid.Id.(type) {
+	case *build_event_stream.BuildEventId_TargetConfigured:
+		return beid.GetTargetConfigured().GetLabel()
+	case *build_event_stream.BuildEventId_TargetCompleted:
+		return beid.GetTargetCompleted().GetLabel()
+	case *build_event_stream.BuildEventId_TestResult:
+		return beid.GetTestResult().GetLabel()
+	case *build_event_stream.BuildEventId_TestSummary:
+		return beid.GetTestSummary().GetLabel()
+	}
+	return ""
 }
 
 func targetTypeFromRuleType(ruleType string) cmpb.TargetType {
@@ -140,7 +148,6 @@ type TargetTracker struct {
 	env                   environment.Env
 	buildEventAccumulator accumulator.Accumulator
 	targets               map[string]*target
-	openClosures          map[string]targetClosure
 	errGroup              *errgroup.Group
 }
 
@@ -149,21 +156,19 @@ func NewTargetTracker(env environment.Env, buildEventAccumulator accumulator.Acc
 		env:                   env,
 		buildEventAccumulator: buildEventAccumulator,
 		targets:               make(map[string]*target, 0),
-		openClosures:          make(map[string]targetClosure, 0),
 	}
 }
 
 func (t *TargetTracker) handleEvent(event *build_event_stream.BuildEvent) {
-	id := protoID(event.GetId())
-	openClosure, ok := t.openClosures[id]
+	label := getLabelFromEventId(event.GetId())
+	if label == "" {
+		return
+	}
+	target, ok := t.targets[label]
 	if !ok {
 		return
 	}
-	delete(t.openClosures, id)
-	openClosure(event)
-	for _, child := range event.GetChildren() {
-		t.openClosures[protoID(child)] = openClosure
-	}
+	target.updateFromEvent(event)
 }
 
 func isTest(t *target) bool {
@@ -368,7 +373,7 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 	case *build_event_stream.BuildEvent_Configured:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		t.handleWorkspaceStatusEvent(ctx, event)
+		t.handleWorkspaceStatusEvent(ctx)
 	case *build_event_stream.BuildEvent_Completed:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestResult:
@@ -380,8 +385,7 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 	}
 
 	if event.GetLastMessage() {
-		// Handle last message
-		t.handleLastEvent(ctx, event)
+		t.handleLastEvent(ctx)
 	}
 }
 
@@ -393,11 +397,10 @@ func (t *TargetTracker) handleExpandedEvent(event *build_event_stream.BuildEvent
 		label := child.GetTargetConfigured().GetLabel()
 		childTarget := newTarget(label)
 		t.targets[label] = childTarget
-		t.openClosures[protoID(child)] = childTarget.updateFromEvent
 	}
 }
 
-func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context) {
 	ctx = log.EnrichContext(ctx, log.InvocationIDKey, t.invocationID())
 	if !t.testTargetsInAtLeastState(targetStateConfigured) {
 		// This should not happen, but it seems it can happen with certain targets.
@@ -428,7 +431,7 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 	t.errGroup.Go(func() error { return t.writeTestTargets(gctx, permissions) })
 }
 
-func (t *TargetTracker) handleLastEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+func (t *TargetTracker) handleLastEvent(ctx context.Context) {
 	ctx = log.EnrichContext(ctx, log.InvocationIDKey, t.invocationID())
 	if !isTestCommand(t.buildEventAccumulator.Invocation().GetCommand()) {
 		log.Debugf("Not tracking targets statuses for %q because it's not a test", t.invocationID())

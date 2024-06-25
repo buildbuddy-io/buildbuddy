@@ -470,6 +470,159 @@ func runTrackTargetsForEventsTest(t *testing.T) {
 	}
 }
 
+func TestTargetTracking_BuildGraphIsADag(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(ta)
+	flags.Set(t, "app.enable_target_tracking", true)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "USER1")
+	require.NoError(t, err)
+
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+
+	accumulator := newFakeAccumulator(t, testUUID.String())
+	tracker := target_tracker.NewTargetTracker(te, accumulator)
+
+	events := []*build_event_stream.BuildEvent{
+		&build_event_stream.BuildEvent{
+			Children: []*build_event_stream.BuildEventId{
+				targetConfiguredId("//server:baz_test"),
+				targetConfiguredId("//server:bar_test"),
+			},
+			Payload: &build_event_stream.BuildEvent_Expanded{},
+		},
+		// Configured Events
+		&build_event_stream.BuildEvent{
+			Id: targetConfiguredId("//server:baz_test"),
+			Children: []*build_event_stream.BuildEventId{
+				targetCompletedId("//server:baz_test"),
+			},
+			Payload: &build_event_stream.BuildEvent_Configured{
+				Configured: &build_event_stream.TargetConfigured{
+					TargetKind: "go_test rule",
+					TestSize:   build_event_stream.TestSize_SMALL,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
+			Id: targetConfiguredId("//server:bar_test"),
+			Children: []*build_event_stream.BuildEventId{
+				targetCompletedId("//server:bar_test"),
+			},
+			Payload: &build_event_stream.BuildEvent_Configured{
+				Configured: &build_event_stream.TargetConfigured{
+					TargetKind: "go_test rule",
+					TestSize:   build_event_stream.TestSize_SMALL,
+				},
+			},
+		},
+		// WorkspaceStatus Event
+		&build_event_stream.BuildEvent{
+			Payload: &build_event_stream.BuildEvent_WorkspaceStatus{},
+		},
+		// Completed Events
+		&build_event_stream.BuildEvent{
+			Id: targetCompletedId("//server:baz_test"),
+			Children: []*build_event_stream.BuildEventId{
+				testResultId("//server:baz_test"),
+				testSummaryId("//server:baz_test"),
+			},
+			Payload: &build_event_stream.BuildEvent_Completed{
+				Completed: &build_event_stream.TargetComplete{
+					Success: true,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
+			Id: targetCompletedId("//server:bar_test"),
+			Children: []*build_event_stream.BuildEventId{
+				testResultId("//server:bar_test"),
+				testSummaryId("//server:bar_test"),
+				// Having these events as children shouldn't break target tracking.
+				testResultId("//server:baz_test"),
+				testSummaryId("//server:baz_test"),
+			},
+			Payload: &build_event_stream.BuildEvent_Completed{
+				Completed: &build_event_stream.TargetComplete{},
+			},
+		},
+		&build_event_stream.BuildEvent{
+			Id: testResultId("//server:bar_test"),
+			Payload: &build_event_stream.BuildEvent_TestResult{
+				TestResult: &build_event_stream.TestResult{
+					Status: build_event_stream.TestStatus_PASSED,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
+			Id: testResultId("//server:baz_test"),
+			Payload: &build_event_stream.BuildEvent_TestResult{
+				TestResult: &build_event_stream.TestResult{
+					Status: build_event_stream.TestStatus_FAILED,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
+			Id: testSummaryId("//server:bar_test"),
+			Payload: &build_event_stream.BuildEvent_TestSummary{
+				TestSummary: &build_event_stream.TestSummary{
+					OverallStatus: build_event_stream.TestStatus_PASSED,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
+			Id: testSummaryId("//server:baz_test"),
+			Payload: &build_event_stream.BuildEvent_TestSummary{
+				TestSummary: &build_event_stream.TestSummary{
+					OverallStatus: build_event_stream.TestStatus_FAILED,
+				},
+			},
+		},
+		// Last Event
+		&build_event_stream.BuildEvent{
+			LastMessage: true,
+		},
+	}
+
+	for _, e := range events {
+		tracker.TrackTargetsForEvent(ctx, e)
+	}
+
+	expected := []Row{
+		{
+			Role:       "CI",
+			GroupID:    "GROUP1",
+			CommitSHA:  "abcdef",
+			Command:    "test",
+			RuleType:   "go_test rule",
+			Label:      "//server:baz_test",
+			RepoURL:    "bb/foo",
+			TestSize:   int32(cmpb.TestSize_SMALL),
+			Status:     int32(build_event_stream.TestStatus_FAILED),
+			TargetType: int32(cmpb.TargetType_TEST),
+		},
+		{
+			Role:       "CI",
+			GroupID:    "GROUP1",
+			CommitSHA:  "abcdef",
+			Command:    "test",
+			RuleType:   "go_test rule",
+			Label:      "//server:bar_test",
+			RepoURL:    "bb/foo",
+			TestSize:   int32(cmpb.TestSize_SMALL),
+			Status:     int32(build_event_stream.TestStatus_PASSED),
+			TargetType: int32(cmpb.TargetType_TEST),
+		},
+	}
+	if tracker.WriteToOLAPDBEnabled() {
+		assertTestTargetStatusesMatchOLAPDB(t, te, expected)
+	} else {
+		assertTestTargetStatusesMatchPrimaryDB(t, ctx, te, testUUID, expected)
+	}
+}
+
 func TestTrackTargetsForEventsAborted(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	user := &testauth.TestUser{
