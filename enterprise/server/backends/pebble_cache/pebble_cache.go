@@ -3112,6 +3112,10 @@ func (p *PebbleCache) updatePebbleMetrics() error {
 	metrics.PebbleCacheWriteStallCount.With(nameLabel).Set(float64(count))
 	metrics.PebbleCacheWriteStallDurationUsec.With(nameLabel).Observe(float64(dur.Microseconds()))
 
+	// Zombie table metrics
+	metrics.PebbleCacheZombieTableCount.With(nameLabel).Set(float64(m.Table.ZombieCount))
+	metrics.PebbleCacheZombieTableSizeBytes.With(nameLabel).Set(float64(m.Table.ZombieSize))
+
 	p.oldMetrics = *m
 
 	return nil
