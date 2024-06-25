@@ -74,9 +74,19 @@ func TestFetchBlob(t *testing.T) {
 			digestFunc: repb.DigestFunction_UNKNOWN,
 		},
 		{
+			name:       "sha1_content",
+			content:    "sha1",
+			digestFunc: repb.DigestFunction_SHA1,
+		},
+		{
 			name:       "sha256_content",
 			content:    "sha256",
 			digestFunc: repb.DigestFunction_SHA256,
+		},
+		{
+			name:       "sha512_content",
+			content:    "sha512",
+			digestFunc: repb.DigestFunction_SHA512,
 		},
 		{
 			name:       "blake3_content",
@@ -121,14 +131,12 @@ func TestFetchBlob(t *testing.T) {
 
 // Precompute content to be used in the following tests
 const (
-	content     = "content"
-	contentSize = int64(7)
-
-	contentSHA256 = "ed7002b439e9ac845f22357d822bac1444730fbdb6016d3ec9432297b9ec9f73"
-	contentBLAKE3 = "3fba5250be9ac259c56e7250c526bc83bacb4be825f2799d3d59e5b4878dd74e"
+	content = "content"
 
 	// see checksumQualifierFromContent for logic on recreating these values
+	sha1CRI   = "sha1-BA8G/XdAkkeNRQd09bowxdp4rMg="
 	sha256CRI = "sha256-7XACtDnprIRfIjV9giusFERzD722AW0+yUMil7nsn3M="
+	sha512CRI = "sha512-stHShbUZnIX5iNA2ScN+RP093gHl1pxQ/vkGUZYvSBEOk0C2DUmkecTAtT9fB9aQaG3YfSSBk3pRLouF7nxhfw=="
 	blake3CRI = "blake3-P7pSUL6awlnFbnJQxSa8g7rLS+gl8nmdPVnltIeN104="
 )
 
@@ -140,37 +148,37 @@ const (
 func TestFetchBlobWithCache(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
-		contentHash  string
 		checksumFunc repb.DigestFunction_Value
-		checksumCRI  string
 		storageFunc  repb.DigestFunction_Value
 	}{
 		{
 			name:         "checksum_SHA256__storage_SHA256",
-			contentHash:  contentSHA256,
 			checksumFunc: repb.DigestFunction_SHA256,
-			checksumCRI:  sha256CRI,
 			storageFunc:  repb.DigestFunction_SHA256,
 		},
 		{
 			name:         "checksum_BLAKE3__storage_BLAKE3",
-			contentHash:  contentBLAKE3,
 			checksumFunc: repb.DigestFunction_BLAKE3,
-			checksumCRI:  blake3CRI,
 			storageFunc:  repb.DigestFunction_BLAKE3,
 		},
 		{
 			name:         "checksum_SHA256__storage_BLAKE3",
-			contentHash:  contentSHA256,
 			checksumFunc: repb.DigestFunction_SHA256,
-			checksumCRI:  sha256CRI,
 			storageFunc:  repb.DigestFunction_BLAKE3,
 		},
 		{
 			name:         "checksum_BLAKE3__storage_SHA256",
-			contentHash:  contentBLAKE3,
 			checksumFunc: repb.DigestFunction_BLAKE3,
-			checksumCRI:  blake3CRI,
+			storageFunc:  repb.DigestFunction_SHA256,
+		},
+		{
+			name:         "checksum_SHA1__storage_SHA256",
+			checksumFunc: repb.DigestFunction_SHA1,
+			storageFunc:  repb.DigestFunction_SHA256,
+		},
+		{
+			name:         "checksum_SHA512__storage_SHA256",
+			checksumFunc: repb.DigestFunction_SHA512,
 			storageFunc:  repb.DigestFunction_SHA256,
 		},
 	} {
@@ -184,10 +192,9 @@ func TestFetchBlobWithCache(t *testing.T) {
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 			require.NoError(t, err)
 
-			err = te.GetCache().Set(ctx, digest.NewResourceName(&repb.Digest{
-				Hash:      tc.contentHash,
-				SizeBytes: contentSize,
-			}, "", resource.CacheType_CAS, tc.checksumFunc).ToProto(), []byte("content"))
+			contentDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.checksumFunc)
+			require.NoError(t, err)
+			err = te.GetCache().Set(ctx, digest.NewResourceName(contentDigest, "", resource.CacheType_CAS, tc.checksumFunc).ToProto(), []byte(content))
 			require.NoError(t, err)
 
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -200,7 +207,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 				Qualifiers: []*rapb.Qualifier{
 					{
 						Name:  fetch_server.ChecksumQualifier,
-						Value: tc.checksumCRI,
+						Value: checksumQualifierFromContent(t, contentDigest.GetHash(), tc.checksumFunc),
 					},
 				},
 				DigestFunction: tc.storageFunc,
@@ -215,67 +222,77 @@ func TestFetchBlobWithCache(t *testing.T) {
 			}, "", resource.CacheType_CAS, tc.storageFunc).ToProto())
 			require.NoError(t, err)
 			require.True(t, exist)
+
+			exist, err = te.GetCache().Contains(ctx, digest.NewResourceName(&repb.Digest{
+				Hash:      contentDigest.GetHash(),
+				SizeBytes: resp.GetBlobDigest().GetSizeBytes(),
+			}, "", resource.CacheType_CAS, tc.checksumFunc).ToProto())
+			require.NoError(t, err)
+			require.True(t, exist)
 		})
 	}
 }
 
 func TestFetchBlobMismatch(t *testing.T) {
-	content := "content"
 	for _, tc := range []struct {
 		name                string
 		checksumQualifier   string
 		requestedDigestFunc repb.DigestFunction_Value
 		expectedDigestFunc  repb.DigestFunction_Value
-		expectedHash        string
 	}{
+		{
+			name:                "default_digest_func__sri_sha1",
+			checksumQualifier:   sha1CRI,
+			requestedDigestFunc: repb.DigestFunction_UNKNOWN,
+			expectedDigestFunc:  repb.DigestFunction_SHA256,
+		},
 		{
 			name:                "default_digest_func__sri_sha256",
 			checksumQualifier:   sha256CRI,
 			requestedDigestFunc: repb.DigestFunction_UNKNOWN,
 			expectedDigestFunc:  repb.DigestFunction_SHA256,
-			expectedHash:        contentSHA256,
+		},
+		{
+			name:                "default_digest_func__sri_sha512",
+			checksumQualifier:   sha512CRI,
+			requestedDigestFunc: repb.DigestFunction_UNKNOWN,
+			expectedDigestFunc:  repb.DigestFunction_SHA256,
 		},
 		{
 			name:                "default_digest_func__sri_blake3",
 			checksumQualifier:   blake3CRI,
 			requestedDigestFunc: repb.DigestFunction_UNKNOWN,
 			expectedDigestFunc:  repb.DigestFunction_SHA256,
-			expectedHash:        contentSHA256,
 		},
 		{
 			name:                "default_digest_func__no_sri",
 			checksumQualifier:   "",
 			requestedDigestFunc: repb.DigestFunction_UNKNOWN,
 			expectedDigestFunc:  repb.DigestFunction_SHA256,
-			expectedHash:        contentSHA256,
 		},
 		{
 			name:                "sha256_digest_func__sri_blake3",
 			checksumQualifier:   blake3CRI,
 			requestedDigestFunc: repb.DigestFunction_SHA256,
 			expectedDigestFunc:  repb.DigestFunction_SHA256,
-			expectedHash:        contentSHA256,
 		},
 		{
 			name:                "sha256_digest_func__no_sri",
 			checksumQualifier:   "",
 			requestedDigestFunc: repb.DigestFunction_SHA256,
 			expectedDigestFunc:  repb.DigestFunction_SHA256,
-			expectedHash:        contentSHA256,
 		},
 		{
 			name:                "blake3_digest_func__sri_sha256",
 			checksumQualifier:   sha256CRI,
 			requestedDigestFunc: repb.DigestFunction_BLAKE3,
 			expectedDigestFunc:  repb.DigestFunction_BLAKE3,
-			expectedHash:        contentBLAKE3,
 		},
 		{
 			name:                "blake3_digest_func__no_sri",
 			checksumQualifier:   "",
 			requestedDigestFunc: repb.DigestFunction_BLAKE3,
 			expectedDigestFunc:  repb.DigestFunction_BLAKE3,
-			expectedHash:        contentBLAKE3,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -309,7 +326,9 @@ func TestFetchBlobMismatch(t *testing.T) {
 			assert.Equal(t, int32(0), resp.GetStatus().Code)
 			assert.Equal(t, "", resp.GetStatus().Message)
 			assert.Contains(t, resp.GetUri(), ts.URL)
-			assert.Equal(t, tc.expectedHash, resp.GetBlobDigest().GetHash())
+			contentDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.expectedDigestFunc)
+			require.NoError(t, err)
+			assert.Equal(t, contentDigest.GetHash(), resp.GetBlobDigest().GetHash())
 		})
 	}
 }
