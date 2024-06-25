@@ -294,9 +294,6 @@ export default class FlakesComponent extends React.Component<Props, State> {
       );
     }
 
-    console.log("hey");
-    console.log(this.state.flakeSamples);
-
     return (
       <div>
         <div className="container">
