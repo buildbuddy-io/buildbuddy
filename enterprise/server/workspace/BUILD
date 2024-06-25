@@ -7,13 +7,9 @@ go_library(
     srcs = ["workspace_service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workspace",
     deps = [
-        "//proto:github_go_proto",
         "//proto:workspace_go_proto",
         "//server/environment",
         "//server/real_environment",
-        "//server/util/git",
-        "//server/util/log",
-        "//server/util/proto",
         "//server/util/status",
     ],
 )
