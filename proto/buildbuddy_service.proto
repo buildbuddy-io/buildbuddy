@@ -16,6 +16,7 @@ import "proto/stats.proto";
 import "proto/target.proto";
 import "proto/user.proto";
 import "proto/workflow.proto";
+import "proto/workspace.proto";
 import "proto/scheduler.proto";
 import "proto/usage.proto";
 import "proto/gcp.proto";
@@ -147,6 +148,16 @@ service BuildBuddyService {
   rpc InvalidateAllSnapshotsForRepo(
       workflow.InvalidateAllSnapshotsForRepoRequest)
       returns (workflow.InvalidateAllSnapshotsForRepoResponse);
+
+  // Workspace API
+  rpc GetWorkspace(workspace.GetWorkspaceRequest)
+      returns (workspace.GetWorkspaceResponse);
+  rpc SaveWorkspace(workspace.SaveWorkspaceRequest)
+      returns (workspace.SaveWorkspaceResponse);
+  rpc GetWorkspaceDirectory(workspace.GetWorkspaceDirectoryRequest)
+      returns (workspace.GetWorkspaceDirectoryResponse);
+  rpc GetWorkspaceFile(workspace.GetWorkspaceFileRequest)
+      returns (workspace.GetWorkspaceFileResponse);
 
   // GitHub account API
   // Note: GitHub account linking is accomplished via HTTP redirect flow

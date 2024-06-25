@@ -120,6 +120,11 @@ var (
 		"Run",
 		// Codesearch
 		"Search",
+		// Workspace management
+		"GetWorkspace",
+		"SaveWorkspace",
+		"GetWorkspaceDirectory",
+		"GetWorkspaceFile",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.

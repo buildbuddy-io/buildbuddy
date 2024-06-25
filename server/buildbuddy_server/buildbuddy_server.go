@@ -71,6 +71,7 @@ import (
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -1278,6 +1279,34 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 func (s *BuildBuddyServer) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		return wfs.GetRepos(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetWorkspace(ctx context.Context, req *wspb.GetWorkspaceRequest) (*wspb.GetWorkspaceResponse, error) {
+	if wss := s.env.GetWorkspaceService(); wss != nil {
+		return wss.GetWorkspace(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) SaveWorkspace(ctx context.Context, req *wspb.SaveWorkspaceRequest) (*wspb.SaveWorkspaceResponse, error) {
+	if wss := s.env.GetWorkspaceService(); wss != nil {
+		return wss.SaveWorkspace(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetWorkspaceDirectory(ctx context.Context, req *wspb.GetWorkspaceDirectoryRequest) (*wspb.GetWorkspaceDirectoryResponse, error) {
+	if wss := s.env.GetWorkspaceService(); wss != nil {
+		return wss.GetWorkspaceDirectory(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetWorkspaceFile(ctx context.Context, req *wspb.GetWorkspaceFileRequest) (*wspb.GetWorkspaceFileResponse, error) {
+	if wss := s.env.GetWorkspaceService(); wss != nil {
+		return wss.GetWorkspaceFile(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

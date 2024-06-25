@@ -49,6 +49,7 @@ import (
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
 
@@ -609,6 +610,13 @@ type WorkflowService interface {
 	// InvalidateAllSnapshotsForRepo invalidates all snapshots for a repo. Any future workflow
 	// runs will be executed on a clean runner.
 	InvalidateAllSnapshotsForRepo(ctx context.Context, repoURL string) error
+}
+
+type WorkspaceService interface {
+	GetWorkspace(ctx context.Context, req *wspb.GetWorkspaceRequest) (*wspb.GetWorkspaceResponse, error)
+	SaveWorkspace(ctx context.Context, req *wspb.SaveWorkspaceRequest) (*wspb.SaveWorkspaceResponse, error)
+	GetWorkspaceDirectory(ctx context.Context, req *wspb.GetWorkspaceDirectoryRequest) (*wspb.GetWorkspaceDirectoryResponse, error)
+	GetWorkspaceFile(ctx context.Context, req *wspb.GetWorkspaceFileRequest) (*wspb.GetWorkspaceFileResponse, error)
 }
 
 type SnapshotService interface {
