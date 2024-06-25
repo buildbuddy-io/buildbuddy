@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	enabled = flag.Bool("workspace.enabled", false, "If true, enable workspaces.")
+	enabled      = flag.Bool("workspace.enabled", false, "If true, enable workspaces.")
 	useBlobstore = flag.Bool("workspace.use_blobstore", true, "If true, use blobstore to store workspaces. Otherwise the cache will be used")
 )
 
@@ -50,7 +50,7 @@ func (s *workspaceService) GetWorkspace(ctx context.Context, req *wspb.GetWorksp
 	if err != nil {
 		return nil, err
 	}
-	
+
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -95,7 +95,7 @@ func (s *workspaceService) SaveWorkspace(ctx context.Context, req *wspb.SaveWork
 	if err != nil {
 		return nil, err
 	}
-	
+
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -109,9 +109,9 @@ func (s *workspaceService) SaveWorkspace(ctx context.Context, req *wspb.SaveWork
 	for _, change := range ws.GetChanges() {
 		if change.Content != nil {
 			blobPath := workspaceFilePath(u.GetGroupID(), req.GetWorkspace(), change.GetPath())
-			
+
 			h := sha1.New()
-			h.Write(change.Content)	
+			h.Write(change.Content)
 			change.Sha = hex.EncodeToString(h.Sum(nil))
 
 			if *useBlobstore {
@@ -120,7 +120,7 @@ func (s *workspaceService) SaveWorkspace(ctx context.Context, req *wspb.SaveWork
 				_, err = s.env.GetBlobstore().WriteBlob(ctx, blobPath, change.Content)
 				if err != nil {
 					return nil, err
-				}						
+				}
 			} else {
 				if err := s.env.GetCache().Set(ctx, resourceNameForNode(req.GetWorkspace().GetName(), change), change.Content); err != nil {
 					return nil, err
@@ -139,13 +139,13 @@ func (s *workspaceService) SaveWorkspace(ctx context.Context, req *wspb.SaveWork
 	if *useBlobstore {
 		if _, err := s.env.GetBlobstore().WriteBlob(ctx, workspaceMetadataPath(u.GetGroupID(), ws.GetName()), protoBytes); err != nil {
 			return nil, err
-		}	
+		}
 	} else {
 		if s.env.GetCache().Set(ctx, resourceNameForWorkspace(ws.GetName()), protoBytes) != nil {
 			return nil, err
-		}	
+		}
 	}
-	return &wspb.SaveWorkspaceResponse{ Workspace: req.GetWorkspace().GetName() }, nil
+	return &wspb.SaveWorkspaceResponse{Workspace: req.GetWorkspace().GetName()}, nil
 }
 
 func (s *workspaceService) GetWorkspaceFile(ctx context.Context, req *wspb.GetWorkspaceFileRequest) (*wspb.GetWorkspaceFileResponse, error) {
@@ -153,7 +153,7 @@ func (s *workspaceService) GetWorkspaceFile(ctx context.Context, req *wspb.GetWo
 	if err != nil {
 		return nil, err
 	}
-	
+
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -172,7 +172,7 @@ func (s *workspaceService) GetWorkspaceFile(ctx context.Context, req *wspb.GetWo
 		}
 	}
 
-	// TODO(siggisim): Fire off background request to upload github repo to cache (under SHA1) on page load, and check 
+	// TODO(siggisim): Fire off background request to upload github repo to cache (under SHA1) on page load, and check
 	// there first for faster performance.
 
 	if req.GetFile().GetSha() != "" {
@@ -193,7 +193,7 @@ func (s *workspaceService) getFile(ctx context.Context, groupID string, workspac
 			Content: content,
 		}, nil
 	}
-	
+
 	content, err := s.env.GetCache().Get(ctx, resourceNameForNode(workspace.GetName(), file))
 	if err != nil {
 		return nil, err
@@ -208,7 +208,7 @@ func (s *workspaceService) GetWorkspaceDirectory(ctx context.Context, req *wspb.
 	if err != nil {
 		return nil, err
 	}
-	
+
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -238,8 +238,8 @@ func (s *workspaceService) GetWorkspaceDirectory(ctx context.Context, req *wspb.
 	directory.Sha = sha
 
 	res := &wspb.GetWorkspaceDirectoryResponse{
-		Directory: directory,
-		ChildNodes:    nodes,
+		Directory:  directory,
+		ChildNodes: nodes,
 	}
 
 	ws, err := s.getWorkspace(ctx, u.GetGroupID(), req.GetWorkspace())
@@ -274,7 +274,7 @@ func (s *workspaceService) addNodesFromWorkspace(nodes []*wspb.Node, ws *wspb.Wo
 
 		if len(requestedPathParts) != len(pathParts)-1 {
 			nodes = append(nodes, &wspb.Node{
-				Path: pathParts[len(requestedPathParts)],
+				Path:     pathParts[len(requestedPathParts)],
 				NodeType: wspb.NodeType_DIRECTORY,
 			})
 			continue
@@ -327,8 +327,8 @@ func (s *workspaceService) nodesFromGitHub(ctx context.Context, githubRepo, ref 
 			nodeType = wspb.NodeType_DIRECTORY
 		}
 		nodes = append(nodes, &wspb.Node{
-			Path: node.Path,
-			Sha:  node.Sha,
+			Path:     node.Path,
+			Sha:      node.Sha,
 			NodeType: nodeType,
 		})
 	}
