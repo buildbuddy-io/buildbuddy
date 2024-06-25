@@ -59,7 +59,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
   componentDidUpdate(prevProps: Props) {
     const currentTarget = this.props.search.get("target") ?? "";
     const prevTarget = prevProps.search.get("target") ?? "";
-    if (currentTarget !== prevTarget) {
+    if (currentTarget !== prevTarget || this.props.repo !== prevProps.repo) {
       this.fetch();
     }
   }
@@ -209,8 +209,21 @@ export default class FlakesComponent extends React.Component<Props, State> {
   }
 
   render() {
+    const singleTarget = this.props.search.get("target");
+
+    const dailyFlakesHeader = (
+      <h3 className="flakes-chart-header">{`Daily flakes ${
+        singleTarget ? `for ${singleTarget} ` : ""
+      }(last 7 days)`}</h3>
+    );
+
     if (this.state.pendingChartRequest || this.state.pendingTableRequest) {
-      return <div className="loading"></div>;
+      return (
+        <div className="container">
+          {dailyFlakesHeader}
+          <div className="loading"></div>
+        </div>
+      );
     }
     if (this.state.error) {
       return (
@@ -219,9 +232,6 @@ export default class FlakesComponent extends React.Component<Props, State> {
         </div>
       );
     }
-
-    const singleTarget = this.props.search.get("target");
-    console.log(singleTarget);
 
     let tableData = singleTarget ? [] : this.state.tableData?.stats ?? [];
     let sortFn: (a: target.AggregateTargetStats, b: target.AggregateTargetStats) => number;
@@ -287,9 +297,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
     return (
       <div>
         <div className="container">
-          <h3 className="flakes-chart-header">{`Daily flakes ${
-            singleTarget ? `for ${singleTarget} ` : ""
-          }(last 7 days)`}</h3>
+          {dailyFlakesHeader}
           <div className="card chart-card">
             <TrendsChartComponent
               title=""
@@ -376,36 +384,44 @@ export default class FlakesComponent extends React.Component<Props, State> {
             </div>
           </div>
         )}
-        {singleTarget && this.state.tableData && <div></div>}
-        {singleTarget && this.state.tableData && this.state.flakeSamples && (
+        {singleTarget && this.state.tableData && (
           <div className="container">
             <h3 className="flakes-list-header">Sample flakes for {singleTarget}</h3>
-            {this.state.flakeSamples.samples.map((s) => {
-              const status = s.status === api_common.v1.Status.FLAKY ? "flaky" : "failure";
-              const testXmlDoc = this.state.flakeTestXmlDocs.get(s.testXmlFileUri);
-              if (!testXmlDoc) {
-                return <div className="loading"></div>;
-              } else if (testXmlDoc.errorMessage) {
-                return <div>{testXmlDoc.errorMessage}</div>;
-              } else if (testXmlDoc.testXmlDocument) {
-                return Array.from(testXmlDoc.testXmlDocument.getElementsByTagName("testsuite"))
-                  .filter((testSuite) => testSuite.getElementsByTagName("testcase").length > 0)
-                  .sort((a, b) => +(b.getAttribute("failures") || 0) - +(a.getAttribute("failures") || 0))
-                  .map((testSuite) => {
-                    return (
-                      <TargetFlakyTestCardComponent
-                        invocationId={s.invocationId}
-                        invocationStartTimeUsec={+s.invocationStartTimeUsec}
-                        target={singleTarget}
-                        testSuite={testSuite}
-                        buildEvent={s.event!}
-                        status={status}
-                        dark={this.props.dark}></TargetFlakyTestCardComponent>
-                    );
-                  });
-              }
-            })}
-            {this.state.flakeSamples.nextPageToken && (
+            {Boolean(this.state.pendingFlakeSamplesRequest) && <div className="loading"></div>}
+            {!this.state.pendingFlakeSamplesRequest &&
+              (!(this.state.flakeSamples?.samples.length ?? 0) ? (
+                <div>
+                  No samples found--if it looks like there have been flakes in the last seven days, their logs may have
+                  expired from the remote cache.
+                </div>
+              ) : (
+                this.state.flakeSamples?.samples.map((s) => {
+                  const status = s.status === api_common.v1.Status.FLAKY ? "flaky" : "failure";
+                  const testXmlDoc = this.state.flakeTestXmlDocs.get(s.testXmlFileUri);
+                  if (!testXmlDoc) {
+                    return <div className="loading"></div>;
+                  } else if (testXmlDoc.errorMessage) {
+                    return <div>{testXmlDoc.errorMessage}</div>;
+                  } else if (testXmlDoc.testXmlDocument) {
+                    return Array.from(testXmlDoc.testXmlDocument.getElementsByTagName("testsuite"))
+                      .filter((testSuite) => testSuite.getElementsByTagName("testcase").length > 0)
+                      .sort((a, b) => +(b.getAttribute("failures") || 0) - +(a.getAttribute("failures") || 0))
+                      .map((testSuite) => {
+                        return (
+                          <TargetFlakyTestCardComponent
+                            invocationId={s.invocationId}
+                            invocationStartTimeUsec={+s.invocationStartTimeUsec}
+                            target={singleTarget}
+                            testSuite={testSuite}
+                            buildEvent={s.event!}
+                            status={status}
+                            dark={this.props.dark}></TargetFlakyTestCardComponent>
+                        );
+                      });
+                  }
+                })
+              ))}
+            {this.state.flakeSamples?.nextPageToken && (
               <button className="load-more" onClick={() => this.loadMoreSamples()}>
                 Load more samples
               </button>
