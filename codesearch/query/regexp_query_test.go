@@ -24,12 +24,12 @@ func TestCaseInsensitive(t *testing.T) {
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	assert.Contains(t, squery, "(:eq * foo)")
+	assert.Contains(t, squery, `(:eq * "foo")`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
 	assert.Contains(t, fieldMatchers["content"].String(), "foo")
-	assert.Contains(t, fieldMatchers["content"].String(), "(?i)")
+	assert.Contains(t, fieldMatchers["content"].String(), "(?mi)")
 }
 
 func TestLangAtom(t *testing.T) {
