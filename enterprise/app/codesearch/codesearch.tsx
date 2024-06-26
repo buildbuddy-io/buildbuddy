@@ -98,8 +98,8 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       );
     }
 
-    const parsedQuery = this.state.response.parsedQuery?.parsedQuery ?? "";
-    const highlight = new RegExp(parsedQuery, "igmd");
+    let parsedQuery = this.state.response.parsedQuery?.parsedQuery ?? "";
+    const highlight = new RegExp(parsedQuery.replace(/\(\?[imsU]+\)/g, ""), "igmd");
     return (
       <div>
         {this.state.response.results.map((result) => (
