@@ -242,6 +242,9 @@ func handleSearch(args []string) {
 			if region.Line() == lastLine && region.FieldName() == lastField {
 				continue
 			}
+			if region.FieldName() != "content" {
+				continue
+			}
 			dedupedRegions = append(dedupedRegions, region)
 			lastLine = region.Line()
 			lastField = region.FieldName()
