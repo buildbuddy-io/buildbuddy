@@ -814,10 +814,10 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 	rd := repl.RangeDescriptor()
 	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		// the store doesn't have the lease of this range.
-		rq.log.Debugf("store doesn't have lease for shard_id: %d, replica_id:%d, do not process", repl.ReplicaID(), repl.ShardID())
+		rq.log.Debugf("store doesn't have lease for shard_id: %d, replica_id:%d, do not process", repl.ShardID(), repl.ReplicaID())
 		return false, nil
 	}
-	rq.log.Debugf("start to process shard_id: %d, replica_id:%d", repl.ReplicaID(), repl.ShardID())
+	rq.log.Debugf("start to process shard_id: %d, replica_id:%d", repl.ShardID(), repl.ReplicaID())
 	action, _ := rq.computeAction(rd.GetReplicas())
 
 	replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
