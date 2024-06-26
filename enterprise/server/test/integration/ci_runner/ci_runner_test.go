@@ -326,10 +326,6 @@ func singleInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation 
 
 func TestCIRunner_RunsBashCommands(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
-	bazelPath, err := runfiles.Rlocation(testbazel.BazelBinaryPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	workspaceContentsWithBashCommands := map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
@@ -343,7 +339,7 @@ actions:
       - run: |
           for i in {1..2}; do
             echo "Loop $i: ";
-            ` + bazelPath + ` version;
+            bazel version;
           done
 `,
 	}

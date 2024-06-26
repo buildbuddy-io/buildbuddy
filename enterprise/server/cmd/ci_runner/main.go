@@ -677,15 +677,19 @@ func run() error {
 		}
 		*bazelCommand = bazeliskPath
 
-		if _, err := runBashCommand(ctx, fmt.Sprintf("sudo ln -s %s /usr/local/bin/bazel", *bazelCommand), nil, "", io.Discard); err != nil {
-			if !strings.Contains(err.Error(), "File exists") {
-				return status.InternalErrorf("could not create a symlink for bazel: %s", err.Error())
-			}
+	}
+
+	// Symlink bazel to `bazelCommand` so that it can be easily invoked
+	if err := os.Symlink(*bazelCommand, filepath.Join(rootDir, bazelBinaryName)); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "file exists") {
+			return status.WrapError(err, "could not symlink bazel to bazelisk")
 		}
-		if _, err := runBashCommand(ctx, fmt.Sprintf("sudo ln -s %s /usr/local/bin/bazelisk", *bazelCommand), nil, "", io.Discard); err != nil {
-			if !strings.Contains(err.Error(), "File exists") {
-				return status.InternalErrorf("could not create a symlink for bazel: %s", err.Error())
-			}
+	}
+	// Update PATH to include the root dir
+	prevPath := os.Getenv("PATH")
+	if !strings.Contains(prevPath, rootDir) {
+		if err := os.Setenv("PATH", rootDir+":"+os.Getenv("PATH")); err != nil {
+			return status.WrapError(err, "failed to include root dir in PATH")
 		}
 	}
 
@@ -1006,7 +1010,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 	// TODO(Maggie): Emit BES events for each bazel command
 	for i, step := range action.Steps {
-		// TODO(Maggie): Provision one sub-dir per bazel command
 		if err := provisionArtifactsDir(ws, i); err != nil {
 			return err
 		}
@@ -2035,36 +2038,36 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	return nil
 }
 
-type commandErr struct {
+type commandError struct {
 	Err    error
 	Output string
 }
 
-func (e *commandErr) Error() string {
+func (e *commandError) Error() string {
 	return fmt.Sprintf("%s: %q", e.Err.Error(), e.Output)
 }
 
 func isRemoteAlreadyExists(err error) bool {
-	gitErr, ok := err.(*commandErr)
+	gitErr, ok := err.(*commandError)
 	return ok && strings.Contains(gitErr.Output, "already exists")
 }
 func isBranchNotFound(err error) bool {
-	gitErr, ok := err.(*commandErr)
+	gitErr, ok := err.(*commandError)
 	return ok && strings.Contains(gitErr.Output, "not found")
 }
 func isAlreadyUpToDate(err error) bool {
-	gitErr, ok := err.(*commandErr)
+	gitErr, ok := err.(*commandError)
 	return ok && strings.Contains(gitErr.Output, "up to date")
 }
 
-func git(ctx context.Context, out io.Writer, args ...string) (string, *commandErr) {
+func git(ctx context.Context, out io.Writer, args ...string) (string, *commandError) {
 	var buf bytes.Buffer
 	w := io.MultiWriter(out, &buf)
 	if err := printCommandLine(out, "git", args...); err != nil {
-		return "", &commandErr{err, ""}
+		return "", &commandError{err, ""}
 	}
 	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, w); err != nil {
-		return "", &commandErr{err, buf.String()}
+		return "", &commandError{err, buf.String()}
 	}
 	output := buf.String()
 	return strings.TrimSpace(output), nil
@@ -2206,16 +2209,16 @@ func gitRemoteName(repoURL string) string {
 	return forkGitRemoteName
 }
 
-func runBashCommand(ctx context.Context, cmd string, env map[string]string, dir string, outputSink io.Writer) (string, *commandErr) {
+func runBashCommand(ctx context.Context, cmd string, env map[string]string, dir string, outputSink io.Writer) (string, *commandError) {
 	if err := printCommandLine(outputSink, cmd); err != nil {
-		return "", &commandErr{err, ""}
+		return "", &commandError{err, ""}
 	}
 
 	var buf bytes.Buffer
 	w := io.MultiWriter(outputSink, &buf)
 
-	if err := runCommand(ctx, "bash", []string{"-c", cmd}, env, dir, w); err != nil {
-		return "", &commandErr{err, buf.String()}
+	if err := runCommand(ctx, "bash", []string{"-eo", "pipefail", "-c", cmd}, env, dir, w); err != nil {
+		return "", &commandError{err, buf.String()}
 	}
 	output := buf.String()
 	return strings.TrimSpace(output), nil
@@ -2267,7 +2270,7 @@ func getExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
-	if commandError, ok := err.(*commandErr); ok {
+	if commandError, ok := err.(*commandError); ok {
 		if commandError == nil {
 			return 0
 		}
