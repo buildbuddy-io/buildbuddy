@@ -34,6 +34,21 @@ func TestCaseInsensitive(t *testing.T) {
 	assert.Contains(t, fieldMatchers["content"].String(), "(?mi)")
 }
 
+func TestCaseNo(t *testing.T) {
+	q, err := NewReQuery("foo case:no", 1)
+	require.NoError(t, err)
+
+	squery := string(q.SQuery())
+	assert.Contains(t, squery, `(:eq * "foo")`)
+	assert.Contains(t, squery, `(:eq * "FOO")`)
+	assert.Contains(t, squery, `(:eq * "fOo")`)
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Contains(t, fieldMatchers, "content")
+	assert.Contains(t, fieldMatchers["content"].String(), "foo")
+	assert.Contains(t, fieldMatchers["content"].String(), "(?mi)")
+}
+
 func TestLangAtom(t *testing.T) {
 	q, err := NewReQuery("lang:java foo", 1)
 	require.NoError(t, err)
