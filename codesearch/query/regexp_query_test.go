@@ -25,6 +25,8 @@ func TestCaseInsensitive(t *testing.T) {
 
 	squery := string(q.SQuery())
 	assert.Contains(t, squery, `(:eq * "foo")`)
+	assert.Contains(t, squery, `(:eq * "FOO")`)
+	assert.Contains(t, squery, `(:eq * "fOo")`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
