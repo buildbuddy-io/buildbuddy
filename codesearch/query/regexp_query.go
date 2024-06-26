@@ -209,20 +209,22 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 	requiredSClauses := make([]string, 0)
 
 	// Regex options that will be applied to the main query only.
-	regexOpts := []string{
-		"(?m)", // always use multiline mode.
-	}
+	regexFlags := "m" // always use multiline mode.
 
 	// Regexp matches (for highlighting) by fieldname.
 	fieldMatchers := make(map[string]*regexp.Regexp)
 
 	// Match `case:yes` or `case:y` and enable case-sensitive searches.
-	caseMatcher := regexp.MustCompile(`case:(yes|y)`)
-	if caseMatcher.MatchString(q) {
+	caseMatcher := regexp.MustCompile(`case:(yes|y|no|n)`)
+	caseMatch := caseMatcher.FindStringSubmatch(q)
+	if len(caseMatch) == 2 {
 		q = caseMatcher.ReplaceAllString(q, "")
+		if strings.HasPrefix(caseMatch[1], "n") {
+			regexFlags += "i"
+		}
 	} else {
 		// otherwise default to case-insensitive
-		regexOpts = append(regexOpts, "(?i)")
+		regexFlags += "i"
 	}
 
 	// match `file:test.js`, `f:test.js`, and `path:test.js`
@@ -264,8 +266,9 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 
 	q = strings.TrimSpace(q)
 	if len(q) > 0 {
+		q = "(?" + regexFlags + ")" + q
 		// Only build a content matcher if there is non-empty query content.
-		re, err := regexp.Compile(strings.Join(regexOpts, "") + q)
+		re, err := regexp.Compile(q)
 		if err != nil {
 			return nil, err
 		}

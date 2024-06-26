@@ -6,7 +6,6 @@ package query
 
 import (
 	"fmt"
-	"log"
 	"regexp/syntax"
 	"sort"
 	"strconv"
@@ -299,7 +298,6 @@ func (q *Query) andTrigrams(t stringSet) *Query {
 }
 
 func (q *Query) String() string {
-	log.Printf("q: %#v", q)
 	if q == nil {
 		return "?"
 	}
@@ -335,12 +333,7 @@ func (q *Query) String() string {
 		}
 		s += strconv.Quote(t)
 	}
-	for _, sq := range q.Sub {
-		log.Printf("subQ: %#v", sq)
-	}
-
 	if len(q.Sub) > 0 {
-
 		if len(q.Trigram) > 0 {
 			s += sjoin
 		}
