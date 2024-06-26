@@ -59,9 +59,24 @@ func TestParseResourceName(t *testing.T) {
 			wantParsed:   newZstdResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "my_instance_name"),
 		},
 		{ // download, resource with digest only
+			resourceName: "/blobs/040f06fd774092478d450774f5ba30c5da78acc8/1234",
+			matcher:      downloadRegex,
+			wantParsed:   newCASResourceName(&repb.Digest{Hash: "040f06fd774092478d450774f5ba30c5da78acc8", SizeBytes: 1234}, "", repb.DigestFunction_SHA1),
+		},
+		{ // download, resource with digest only
 			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			matcher:      downloadRegex,
 			wantParsed:   newCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "", repb.DigestFunction_SHA256),
+		},
+		{ // download, resource with digest only
+			resourceName: "/blobs/5406ebea1618e9b73a7290c5d716f0b47b4f1fbc5d8c5e78c9010a3e01c18d8594aa942e3536f7e01574245d34647523/1234",
+			matcher:      downloadRegex,
+			wantParsed:   newCASResourceName(&repb.Digest{Hash: "5406ebea1618e9b73a7290c5d716f0b47b4f1fbc5d8c5e78c9010a3e01c18d8594aa942e3536f7e01574245d34647523", SizeBytes: 1234}, "", repb.DigestFunction_SHA384),
+		},
+		{ // download, resource with digest only
+			resourceName: "/blobs/b2d1d285b5199c85f988d03649c37e44fd3dde01e5d69c50fef90651962f48110e9340b60d49a479c4c0b53f5f07d690686dd87d2481937a512e8b85ee7c617f/1234",
+			matcher:      downloadRegex,
+			wantParsed:   newCASResourceName(&repb.Digest{Hash: "b2d1d285b5199c85f988d03649c37e44fd3dde01e5d69c50fef90651962f48110e9340b60d49a479c4c0b53f5f07d690686dd87d2481937a512e8b85ee7c617f", SizeBytes: 1234}, "", repb.DigestFunction_SHA512),
 		},
 		{ // upload, UUID and instance name
 			resourceName: "instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
