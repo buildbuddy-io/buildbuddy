@@ -25,4 +25,9 @@ jobs:
         #   - Enable windows symlink helps reduce disk usage.
         #     Without this, files will be fully copied instead.
         run: |
-          bazelisk --output_user_root=D:/0 --windows_enable_symlinks build --config=untrusted-ci-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
+          $authArgs = @()
+          $apiKey = '${{ secrets.BUILDBUDDY_ORG_API_KEY }}'
+          if ($apiKey) {
+            $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey")
+          }
+          bazelisk --output_user_root=D:/0 --windows_enable_symlinks build --config=untrusted-ci-windows @authArgs //enterprise/server/cmd/executor:executor
