@@ -221,21 +221,15 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 }
 
 func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerConfig) []grpc.ServerOption {
-	chainedUnaryInterceptors := []grpc.UnaryServerInterceptor{otelgrpc.UnaryServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())), propagateRequestMetadataIDsToSpanUnaryServerInterceptor()}
-	if len(config.ExtraChainedUnaryInterceptors) > 0 {
-		chainedUnaryInterceptors = append(chainedUnaryInterceptors, config.ExtraChainedUnaryInterceptors...)
-	}
-
-	chainedStreamInterceptors := []grpc.StreamServerInterceptor{otelgrpc.StreamServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())), propagateRequestMetadataIDsToSpanStreamServerInterceptor()}
-	if len(config.ExtraChainedStreamInterceptors) > 0 {
-		chainedStreamInterceptors = append(chainedStreamInterceptors, config.ExtraChainedStreamInterceptors...)
-	}
-
 	return []grpc.ServerOption{
-		interceptors.GetUnaryInterceptor(env),
-		interceptors.GetStreamInterceptor(env),
-		grpc.ChainUnaryInterceptor(chainedUnaryInterceptors...),
-		grpc.ChainStreamInterceptor(chainedStreamInterceptors...),
+		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
+		interceptors.GetStreamInterceptor(env, config.ExtraChainedStreamInterceptors...),
+		grpc.ChainUnaryInterceptor(
+			otelgrpc.UnaryServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())),
+			propagateRequestMetadataIDsToSpanUnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(
+			otelgrpc.StreamServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())),
+			propagateRequestMetadataIDsToSpanStreamServerInterceptor()),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.RecvBufferPool(grpc.NewSharedBufferPool()),
