@@ -56,6 +56,14 @@ func init() {
 			sizeBytes:  sha256.Size,
 		},
 		{
+			digestType: repb.DigestFunction_SHA384,
+			sizeBytes:  sha512.Size384,
+		},
+		{
+			digestType: repb.DigestFunction_SHA512,
+			sizeBytes:  sha512.Size,
+		},
+		{
 			digestType: repb.DigestFunction_SHA1,
 			sizeBytes:  sha1.Size,
 		},
@@ -311,6 +319,10 @@ func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) 
 		return sha1.New(), nil
 	case repb.DigestFunction_SHA256:
 		return sha256.New(), nil
+	case repb.DigestFunction_SHA384:
+		return sha512.New384(), nil
+	case repb.DigestFunction_SHA512:
+		return sha512.New(), nil
 	case repb.DigestFunction_BLAKE3:
 		return blake3.New(), nil
 	case repb.DigestFunction_UNKNOWN:
