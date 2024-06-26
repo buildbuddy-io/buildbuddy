@@ -10,6 +10,7 @@ go_library(
         "//server/environment",
         "//server/metrics",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/claims",
         "//server/util/clientip",
