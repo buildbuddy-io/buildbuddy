@@ -1097,3 +1097,89 @@ func TestRemoveDeadReplica(t *testing.T) {
 		}
 	}
 }
+
+func TestRebalance(t *testing.T) {
+	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+
+	startingRanges := []*rfpb.RangeDescriptor{
+		&rfpb.RangeDescriptor{
+			Start:      keys.MinByte,
+			End:        keys.Key{constants.UnsplittableMaxByte},
+			Generation: 1,
+		},
+		&rfpb.RangeDescriptor{
+			Start:      keys.Key{constants.UnsplittableMaxByte},
+			End:        keys.Key("a"),
+			Generation: 1,
+		},
+		&rfpb.RangeDescriptor{
+			Start:      keys.Key("a"),
+			End:        keys.Key("b"),
+			Generation: 1,
+		},
+		&rfpb.RangeDescriptor{
+			Start:      keys.Key("b"),
+			End:        keys.Key("c"),
+			Generation: 1,
+		},
+		&rfpb.RangeDescriptor{
+			Start:      keys.Key("c"),
+			End:        keys.Key("d"),
+			Generation: 1,
+		},
+		&rfpb.RangeDescriptor{
+			Start:      keys.Key("d"),
+			End:        keys.MaxByte,
+			Generation: 1,
+		},
+	}
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	s4 := sf.NewStore(t)
+	ctx := context.Background()
+
+	// start shards for s1, s2, s3, s4
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShardWithRanges(t, ctx, startingRanges, stores...)
+
+	{ // Verify that there are 3 replicas for range 2
+		s := getStoreWithRangeLease(t, ctx, stores, 2)
+		replicas := getMembership(t, s, ctx, 2)
+		require.Equal(t, 3, len(replicas))
+		rd := s.GetRange(2)
+		require.Equal(t, 3, len(rd.GetReplicas()))
+	}
+
+	for {
+		// advance the clock to trigger scan replicas
+		clock.Advance(61 * time.Second)
+		// wait some time to allow let driver queue execute
+		time.Sleep(100 * time.Millisecond)
+		l1, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		l2, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		l3, err := s3.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		l4, err := s4.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+
+		// store 4 should have at least one replica
+		if len(l4.GetReplicas()) == 0 {
+			continue
+		}
+
+		size := len(startingRanges)
+		if len(l1.GetReplicas()) < size || len(l2.GetReplicas()) < size || len(l3.GetReplicas()) < size {
+			break
+		}
+	}
+}

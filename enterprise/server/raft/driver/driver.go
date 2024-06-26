@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -28,8 +29,12 @@ var (
 
 const (
 	// If a node's disk is fuller than this (by percentage), it is not
-	// eligible to receive ranges moved from other nodes.
+	// eligible to be used for a rebalance or allocation target and we will
+	// actively try to move replicas from this node.
 	maximumDiskCapacity = .95
+	// If a node's disk is fuller than this (by percentage), it is not
+	// eligible to be used as a rebalance target.
+	maxDiskCapacityForRebalance = .925
 )
 
 type DriverAction int
@@ -253,8 +258,10 @@ func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64)
 		return true, priority
 	}
 
-	// TODO: For DriverConsiderRebalance check if there are rebalance targets.
-	return false, 0
+	// For DriverConsiderRebalance check if there are rebalance opportunities.
+	storesWithStats := rq.storeMap.GetStoresWithStats()
+	op := rq.findRebalanceOp(rd, storesWithStats, repl.ReplicaID())
+	return op != nil, 0
 }
 
 func (rq *Queue) push(item *pqItem) {
@@ -417,6 +424,7 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 		}
 		rq.log.Debugf("add node %+v to candidate list", su.GetNode())
 		candidates = append(candidates, &candidate{
+			nhid:                  su.GetNode().GetNhid(),
 			usage:                 su,
 			replicaCount:          su.GetReplicaCount(),
 			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
@@ -486,6 +494,187 @@ func (rq *Queue) removeDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *s
 			ReplicaId: dead.GetReplicaId(),
 		},
 	}
+}
+
+type rebalanceChoice struct {
+	existing   *candidate
+	candidates []*candidate
+}
+
+type rebalanceOp struct {
+	from *candidate
+	to   *candidate
+}
+
+func compareOp(op1 *rebalanceOp, op2 *rebalanceOp) int {
+	c1 := compareByScore(op1.to, op1.from)
+	c2 := compareByScore(op2.to, op2.from)
+	if c1 != c2 {
+		return cmp.Compare(c1, c2)
+	}
+	return compareByScore(op1.to, op2.to)
+}
+
+func canConvergeByRebalance(choice *rebalanceChoice, allStores *storemap.StoresWithStats) bool {
+	if len(choice.candidates) == 0 {
+		return false
+	}
+	overfullThreshold := int64(math.Ceil(aboveMeanReplicaCountThreshold(allStores.ReplicaCount.Mean)))
+	// The existing store is too far above the mean.
+	if choice.existing.usage.ReplicaCount > overfullThreshold {
+		return true
+	}
+
+	// The existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
+	if float64(choice.existing.usage.ReplicaCount) > allStores.ReplicaCount.Mean {
+		underfullThreshold := int64(math.Floor(belowMeanReplicaCountThreshold(allStores.ReplicaCount.Mean)))
+		for _, c := range choice.candidates {
+			if c.usage.ReplicaCount < underfullThreshold {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func findReplicaWithNHID(rd *rfpb.RangeDescriptor, nhid string) (uint64, error) {
+	for _, replica := range rd.GetReplicas() {
+		if replica.GetNhid() == nhid {
+			return replica.GetReplicaId(), nil
+		}
+	}
+	return 0, status.InternalErrorf("cannot find replica with NHID: %s", nhid)
+}
+
+func (rq *Queue) rebalance(rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
+	storesWithStats := rq.storeMap.GetStoresWithStats()
+	op := rq.findRebalanceOp(rd, storesWithStats, localRepl.ReplicaID())
+	if op == nil {
+		return nil
+	}
+
+	replicaID, err := findReplicaWithNHID(rd, op.from.usage.GetNode().GetNhid())
+	if err != nil {
+		rq.log.Errorf("failed to rebalance: %s", err)
+		return nil
+	}
+
+	return &change{
+		addOp: &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node:  op.to.usage.GetNode(),
+		},
+		removeOp: &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: replicaID,
+		},
+	}
+}
+
+func (rq *Queue) findRebalanceOp(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localReplicaID uint64) *rebalanceOp {
+	allStores := make(map[string]*candidate)
+
+	existingStores := make(map[string]*candidate)
+	needRebalance := false
+	for _, su := range storesWithStats.Usages {
+		nhid := su.GetNode().GetNhid()
+		store := &candidate{
+			nhid:     nhid,
+			usage:    su,
+			fullDisk: isDiskFull(su),
+		}
+		allStores[nhid] = store
+	}
+
+	nhids := make([]string, 0, len(rd.GetReplicas()))
+	localNHID := ""
+	for _, repl := range rd.GetReplicas() {
+		if repl.GetReplicaId() == localReplicaID {
+			localNHID = repl.GetNhid()
+		}
+		store, ok := allStores[repl.GetNhid()]
+		if !ok {
+			// The store might not be available rn.
+			continue
+		}
+		if store.fullDisk {
+			// We want to move the replica away from the store with full disk.
+			needRebalance = true
+		}
+		existingStores[repl.GetNhid()] = store
+		nhids = append(nhids, repl.GetNhid())
+	}
+
+	// Find valid targeting stores for rebalancing.
+	var choices []*rebalanceChoice
+	for _, existingNHID := range nhids {
+		if existingNHID == localNHID {
+			// This is to prevent us from removing the replica on this node. We
+			// can only support this after we have the ability to transfer the
+			// leadership away.
+			continue
+		}
+		existing := existingStores[existingNHID]
+		var targetCandidates []*candidate
+		for nhid, store := range allStores {
+			if _, ok := existingStores[nhid]; ok {
+				// The store already contains the range.
+				continue
+			}
+			if store.fullDisk {
+				continue
+			}
+			targetCandidates = append(targetCandidates, store)
+		}
+		if len(targetCandidates) == 0 {
+			continue
+		}
+
+		choices = append(choices, &rebalanceChoice{
+			existing:   existing,
+			candidates: targetCandidates,
+		})
+	}
+
+	if !needRebalance {
+		for _, choice := range choices {
+			if canConvergeByRebalance(choice, storesWithStats) {
+				needRebalance = true
+			}
+		}
+	}
+
+	if !needRebalance {
+		return nil
+	}
+
+	// Populating scores.
+	potentialOps := make([]*rebalanceOp, 0, len(choices))
+	for _, rebalanceChoice := range choices {
+		existing := rebalanceChoice.existing
+		existing.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, existing.usage)
+		existing.replicaCount = existing.usage.ReplicaCount
+
+		cl := rebalanceChoice.candidates
+		for _, c := range cl {
+			c.fullDisk = isDiskFullForRebalance(c.usage)
+			c.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, c.usage)
+			c.replicaCount = c.usage.ReplicaCount
+		}
+		best := slices.MaxFunc(cl, compareByScoreAndID)
+		if compareByScore(best, existing) >= 0 {
+			potentialOps = append(potentialOps, &rebalanceOp{
+				from: existing,
+				to:   best,
+			})
+		}
+	}
+
+	if len(potentialOps) == 0 {
+		return nil
+	}
+	// Find the best rebalance move.
+	return slices.MaxFunc(potentialOps, compareOp)
 }
 
 func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, replicaStateMap map[uint64]constants.ReplicaState, brandNewReplicaID *uint64) []*rfpb.ReplicaDescriptor {
@@ -649,8 +838,8 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 		rq.log.Debugf("remove dead replica: %d", repl.ShardID())
 		change = rq.removeDeadReplica(rd, replicasByStatus)
 	case DriverConsiderRebalance:
-		rq.log.Debugf("remove consider rebalance: %d", repl.ShardID())
-		// TODO
+		rq.log.Debugf("consider rebalance: %d", repl.ShardID())
+		change = rq.rebalance(rd, repl)
 	}
 
 	if change == nil {
@@ -690,9 +879,17 @@ func (rq *Queue) postProcess(ctx context.Context, repl IReplica) {
 }
 
 func isDiskFull(su *rfpb.StoreUsage) bool {
+	return isDiskCapacityReached(su, maximumDiskCapacity)
+}
+
+func isDiskFullForRebalance(su *rfpb.StoreUsage) bool {
+	return isDiskCapacityReached(su, maxDiskCapacityForRebalance)
+}
+
+func isDiskCapacityReached(su *rfpb.StoreUsage, capacity float64) bool {
 	bytesFree := su.GetTotalBytesFree()
 	bytesUsed := su.GetTotalBytesUsed()
-	return float64(bytesFree+bytesUsed)*maximumDiskCapacity <= float64(bytesUsed)
+	return float64(bytesFree+bytesUsed)*capacity <= float64(bytesUsed)
 }
 
 func aboveMeanReplicaCountThreshold(mean float64) float64 {
@@ -700,7 +897,7 @@ func aboveMeanReplicaCountThreshold(mean float64) float64 {
 }
 
 func belowMeanReplicaCountThreshold(mean float64) float64 {
-	return mean + math.Max(mean*replicaCountMeanRatioThreshold, minReplicaCountThreshold)
+	return mean - math.Max(mean*replicaCountMeanRatioThreshold, minReplicaCountThreshold)
 }
 
 type meanLevel int
@@ -712,6 +909,7 @@ const (
 )
 
 type candidate struct {
+	nhid                  string
 	usage                 *rfpb.StoreUsage
 	fullDisk              bool
 	replicaCountMeanLevel meanLevel
@@ -730,7 +928,7 @@ func compareByScore(a *candidate, b *candidate) int {
 			return -20
 		}
 		if b.fullDisk {
-			return +20
+			return 20
 		}
 	}
 
@@ -757,7 +955,7 @@ func compareByScoreAndID(a *candidate, b *candidate) int {
 	if res := compareByScore(a, b); res != 0 {
 		return res
 	}
-	return cmp.Compare(a.usage.GetNode().GetNhid(), b.usage.GetNode().GetNhid())
+	return cmp.Compare(a.nhid, b.nhid)
 }
 
 func replicaCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.StoreUsage) meanLevel {
