@@ -178,7 +178,7 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 	// HACK: if there are no matching regions, add a fake one that matches
 	// the first line of the file. This way filter-only queries will be able
 	// to display a highlighted region.
-	if len(results) == 0 {
+	if len(results) == 0 && h.fieldMatchers[contentField] == nil {
 		field := doc.Field(contentField)
 		results = append(results, types.HighlightedRegion(regionMatch{
 			field: field,

@@ -55,15 +55,17 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, fieldDocidMatches map[stri
 		allDocIDs = append(allDocIDs, docIDs...)
 	}
 	slices.Sort(allDocIDs)
-
-	numDocs := len(allDocIDs)
 	docIDs := slices.Compact(allDocIDs)
+	numDocs := len(docIDs)
 
 	defer func() {
 		c.log.Infof("Scoring %d docs took %s", numDocs, time.Since(start))
 	}()
 
 	if scorer.Skip() {
+		if len(docIDs) > numResults {
+			docIDs = docIDs[:numResults]
+		}
 		return docIDs, nil
 	}
 
