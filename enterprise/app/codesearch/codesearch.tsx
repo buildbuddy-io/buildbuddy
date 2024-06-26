@@ -99,7 +99,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     }
 
     let parsedQuery = this.state.response.parsedQuery?.parsedQuery ?? "";
-    const highlight = new RegExp(parsedQuery.replace(/\(\?[a-z]+\)/g, ""), "igmd");
+    const highlight = new RegExp(parsedQuery.replace(/\(\?[imsU]+\)/g, ""), "igmd");
     return (
       <div>
         {this.state.response.results.map((result) => (
