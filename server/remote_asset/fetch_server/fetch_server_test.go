@@ -192,9 +192,9 @@ func TestFetchBlobWithCache(t *testing.T) {
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 			require.NoError(t, err)
 
-			contentDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.checksumFunc)
+			checksumDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.checksumFunc)
 			require.NoError(t, err)
-			err = te.GetCache().Set(ctx, digest.NewResourceName(contentDigest, "", resource.CacheType_CAS, tc.checksumFunc).ToProto(), []byte(content))
+			err = te.GetCache().Set(ctx, digest.NewResourceName(checksumDigest, "", resource.CacheType_CAS, tc.checksumFunc).ToProto(), []byte(content))
 			require.NoError(t, err)
 
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +207,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 				Qualifiers: []*rapb.Qualifier{
 					{
 						Name:  fetch_server.ChecksumQualifier,
-						Value: checksumQualifierFromContent(t, contentDigest.GetHash(), tc.checksumFunc),
+						Value: checksumQualifierFromContent(t, checksumDigest.GetHash(), tc.checksumFunc),
 					},
 				},
 				DigestFunction: tc.storageFunc,
@@ -224,7 +224,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 			require.True(t, exist)
 
 			exist, err = te.GetCache().Contains(ctx, digest.NewResourceName(&repb.Digest{
-				Hash:      contentDigest.GetHash(),
+				Hash:      checksumDigest.GetHash(),
 				SizeBytes: resp.GetBlobDigest().GetSizeBytes(),
 			}, "", resource.CacheType_CAS, tc.checksumFunc).ToProto())
 			require.NoError(t, err)
@@ -326,9 +326,9 @@ func TestFetchBlobMismatch(t *testing.T) {
 			assert.Equal(t, int32(0), resp.GetStatus().Code)
 			assert.Equal(t, "", resp.GetStatus().Message)
 			assert.Contains(t, resp.GetUri(), ts.URL)
-			contentDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.expectedDigestFunc)
+			expectedDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.expectedDigestFunc)
 			require.NoError(t, err)
-			assert.Equal(t, contentDigest.GetHash(), resp.GetBlobDigest().GetHash())
+			assert.Equal(t, expectedDigest.GetHash(), resp.GetBlobDigest().GetHash())
 		})
 	}
 }
