@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime/pprof"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
@@ -275,7 +276,29 @@ func handleSquery(args []string) {
 		log.Fatal(err.Error())
 	}
 
-	for field, pl := range fieldMapPostings {
-		fmt.Printf("%s => %d\n", field, len(pl))
+	allDocIDs := make([]uint64, 0)
+	for _, docIDs := range fieldMapPostings {
+		allDocIDs = append(allDocIDs, docIDs...)
+	}
+	slices.Sort(allDocIDs)
+	docIDs := slices.Compact(allDocIDs)
+	numDocs := len(docIDs)
+
+	docFields := make(map[uint64][]string, numDocs)
+	for fieldName, docs := range fieldMapPostings {
+		if len(fieldName) == 0 {
+			continue
+		}
+		for _, docid := range docs {
+			docFields[docid] = append(docFields[docid], fieldName)
+		}
+	}
+	for _, docID := range docIDs {
+		doc, err := ir.GetStoredDocument(docID)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		filename := doc.Field("filename").Contents()
+		fmt.Printf("%d (%q) matched fields: %s\n", docID, filename, strings.Join(docFields[docID], ", "))
 	}
 }
