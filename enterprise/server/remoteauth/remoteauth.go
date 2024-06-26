@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
@@ -20,24 +21,29 @@ import (
 )
 
 const (
+	// Remote authentication results are cached locally in an LRU keyed by
+	// the auth headers. The LRU is limited to this many entries. If the cache
+	// grows beyond this size, old entries will be evicted. Increasing the size
+	// of the jwt cache will result in fewer evictions (if the cache fills up)
+	// at the cost of more memory use.
 	jwtCacheSize = 10_000
 )
 
 var (
-	authHeaders = []string{authutil.APIKeyHeader}
+	authHeaders = []string{authutil.APIKeyHeader, authutil.ContextTokenStringKey}
 
-	remoteAuthTarget = flag.String("auth.remote_auth_target", "grpcs://remote.buildbuddy.dev", "The gRPC target of the remote authentication API.")
+	remoteAuthTarget = flag.String("auth.remote_auth_target", "", "The gRPC target of the remote authentication API.")
 )
 
 func NewRemoteAuthenticator() (*RemoteAuthenticator, error) {
-	conn, err := grpc_client.DialSimpleWithoutPooling(*remoteAuthTarget)
+	conn, err := grpc_client.DialSimple(*remoteAuthTarget)
 	if err != nil {
 		return nil, err
 	}
 	return newRemoteAuthenticator(conn)
 }
 
-func newRemoteAuthenticator(conn *grpc.ClientConn) (*RemoteAuthenticator, error) {
+func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
 	config := &lru.Config[string]{
 		MaxSize: jwtCacheSize,
 		SizeFn:  func(v string) int64 { return 1 },
@@ -93,21 +99,17 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 }
 
 func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	key, err := hashAuthHeaders(ctx)
-	if err != nil {
-		jwt, err := a.authenticate(ctx)
-		if err != nil {
-			return ctx
-		}
-		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+	key := hashAuthHeaders(ctx)
+	if key == "" {
+		return ctx
 	}
-
 	jwt, found := a.cache.Get(key)
 	if found {
 		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 	}
-	jwt, err = a.authenticate(ctx)
+	jwt, err := a.authenticate(ctx)
 	if err != nil {
+		log.Debugf("Error remotely authenticating: %s", err)
 		return ctx
 	}
 	a.cache.Add(key, jwt)
@@ -116,8 +118,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 
 func (a *RemoteAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
 	ctx = a.AuthenticatedGRPCContext(ctx)
-	_, ok := ctx.Value(authutil.ContextTokenStringKey).(string)
-	if !ok {
+	if _, ok := ctx.Value(authutil.ContextTokenStringKey).(string); !ok {
 		return nil, status.UnauthenticatedError("unauthenticated!")
 	}
 	return claims.ClaimsFromContext(ctx)
@@ -166,7 +167,7 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 	return *resp.Jwt, nil
 }
 
-func hashAuthHeaders(ctx context.Context) (string, error) {
+func hashAuthHeaders(ctx context.Context) string {
 	input := []string{}
 	for _, key := range authHeaders {
 		values := metadata.ValueFromIncomingContext(ctx, key)
@@ -176,7 +177,7 @@ func hashAuthHeaders(ctx context.Context) (string, error) {
 		}
 	}
 	if len(input) == 0 {
-		return "", status.InvalidArgumentError("no auth headers")
+		return ""
 	}
-	return hash.Strings(input...), nil
+	return hash.Strings(input...)
 }

@@ -13,6 +13,7 @@ go_library(
         "//server/util/claims",
         "//server/util/grpc_client",
         "//server/util/hash",
+        "//server/util/log",
         "//server/util/lru",
         "//server/util/status",
         "@org_golang_google_grpc//:go_default_library",
@@ -31,7 +32,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/status",
-        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
     ],
 )
