@@ -29,7 +29,7 @@ var (
 
 const (
 	// If a node's disk is fuller than this (by percentage), it is not
-	// eligible to be used a rebalance or allocation target and we will
+	// eligible to be used for a rebalance or allocation target and we will
 	// actively try to move replicas from this node.
 	maximumDiskCapacity = .95
 	// If a node's disk is fuller than this (by percentage), it is not
