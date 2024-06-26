@@ -86,6 +86,7 @@ const (
 	podmanInternalExitCode           = 125
 	podmanCommandNotRunnableExitCode = 126
 	podmanCommandNotFoundExitCode    = 127
+	podmanCommandOutOfRangeExitCode  = 255
 
 	// podmanExecSIGKILLExitCode is the exit code returned by `podman exec` when the exec
 	// process is killed due to the parent container being removed.
@@ -787,7 +788,8 @@ func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podm
 	// locked". Detect these and return a retryable error.
 	if (result.ExitCode == podmanCommandNotRunnableExitCode ||
 		result.ExitCode == podmanInternalExitCode ||
-		result.ExitCode == podmanCommandNotFoundExitCode) &&
+		result.ExitCode == podmanCommandNotFoundExitCode ||
+		result.ExitCode == podmanCommandOutOfRangeExitCode) &&
 		databaseLockedRegexp.Match(result.Stderr) {
 		result.ExitCode = commandutil.NoExitCode
 		result.Error = status.UnavailableErrorf("podman failed: %q", strings.TrimSpace(string(result.Stderr)))
