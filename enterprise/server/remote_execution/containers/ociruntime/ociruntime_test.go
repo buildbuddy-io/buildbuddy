@@ -2,13 +2,18 @@ package ociruntime_test
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -257,6 +262,111 @@ func TestPullCreateExecRemove(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.True(t, testfs.Exists(t, "", filepath.Join(wd+".overlay", "upper", "bin", "foo.txt")))
+}
+
+func TestCreateExecPauseUnpause(t *testing.T) {
+	if runtime.GOARCH == "arm64" {
+		// TODO: fix test on arm64. It fails due to some issue with cgroups on
+		// the GH Actions runners.
+		t.Skipf("test is skipped on arm64")
+	}
+
+	image := manuallyProvisionedBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	// Create
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Exec: start a bg process that increments a counter file every 10ms.
+	const updateInterval = 10 * time.Millisecond
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		printf 0 > count.txt
+		(
+			count=0
+			while true; do
+				count=$((count+1))
+				printf '%d' "$count" > count.txt
+				sleep ` + fmt.Sprintf("%f", updateInterval.Seconds()) + `
+			done
+		) &
+	`}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+
+	assert.Empty(t, string(res.Stderr))
+	assert.Empty(t, string(res.Stdout))
+	require.Equal(t, 0, res.ExitCode)
+
+	readCounterFile := func() int {
+		for {
+			b, err := os.ReadFile(filepath.Join(wd, "count.txt"))
+			require.NoError(t, err)
+			s := string(b)
+			if s == "" {
+				// File is being written concurrently; retry
+				continue
+			}
+			c, err := strconv.Atoi(s)
+			require.NoError(t, err)
+			return c
+		}
+	}
+
+	waitUntilCounterIncremented := func() {
+		var lastCount *int
+		for {
+			count := readCounterFile()
+			if lastCount != nil && count > *lastCount {
+				return
+			}
+			lastCount = &count
+			time.Sleep(updateInterval)
+		}
+	}
+
+	// Counter should be getting continually updated since we started a
+	// background process in the container and we haven't paused yet.
+	waitUntilCounterIncremented()
+
+	// Pause
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+
+	// Counter should not be getting updated anymore since we're paused.
+	d1 := readCounterFile()
+	require.NotEmpty(t, d1)
+	time.Sleep(updateInterval * 10)
+	d2 := readCounterFile()
+	require.Equal(t, d1, d2, "expected date file not to be updated")
+
+	// Unpause
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+
+	// Counter should be getting continually updated again since we're unpaused.
+	waitUntilCounterIncremented()
 }
 
 func TestCreateFailureHasStderr(t *testing.T) {

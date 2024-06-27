@@ -314,11 +314,11 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 }
 
 func (c *ociContainer) Pause(ctx context.Context) error {
-	return nil // TODO: implement
+	return c.invokeRuntimeSimple(ctx, "pause", c.cid)
 }
 
 func (c *ociContainer) Unpause(ctx context.Context) error {
-	return nil // TODO: implement
+	return c.invokeRuntimeSimple(ctx, "resume", c.cid)
 }
 
 //nolint:nilness
