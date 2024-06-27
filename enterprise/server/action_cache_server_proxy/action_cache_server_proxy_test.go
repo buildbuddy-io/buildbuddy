@@ -2,85 +2,111 @@ package action_cache_server_proxy
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-func runRemoteActionCacheServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) repb.ActionCacheClient {
-	remoteActionCacheServer, err := action_cache_server.NewActionCacheServer(env)
+func runACServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) repb.ActionCacheClient {
+	acServer, err := action_cache_server.NewActionCacheServer(env)
 	require.NoError(t, err)
-	grpcServver, runFunc := testenv.RegisterLocalGRPCServer(env)
-	repb.RegisterActionCacheServer(grpcServver, remoteActionCacheServer)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	repb.RegisterActionCacheServer(grpcServer, acServer)
 	go runFunc()
-	conn, err := testenv.LocalGRPCConn(ctx, env,
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)))
+	conn, err := testenv.LocalGRPCConn(ctx, env)
 	require.NoError(t, err)
 	return repb.NewActionCacheClient(conn)
 }
 
-func runActionCacheServerProxy(ctx context.Context, remoteEnv *testenv.TestEnv, localEnv *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
-	acClient := runRemoteActionCacheServer(ctx, remoteEnv, t)
-	localEnv.SetActionCacheClient(acClient)
-	actionCacheServer, err := NewActionCacheServerProxy(localEnv)
+func runACProxy(ctx context.Context, client repb.ActionCacheClient, env *testenv.TestEnv, t *testing.T) repb.ActionCacheClient {
+	env.SetActionCacheClient(client)
+	proxyServer, err := NewActionCacheServerProxy(env)
 	require.NoError(t, err)
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(localEnv)
-	repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	repb.RegisterActionCacheServer(grpcServer, proxyServer)
 	go runFunc()
+	conn, err := testenv.LocalGRPCConn(ctx, env)
+	require.NoError(t, err)
+	return repb.NewActionCacheClient(conn)
+}
 
-	clientConn, err := testenv.LocalGRPCConn(ctx, localEnv, grpc.WithDefaultCallOptions())
-	if err != nil {
-		t.Error(err)
+func update(ctx context.Context, client repb.ActionCacheClient, digest *repb.Digest, code int32, t *testing.T) {
+	req := repb.UpdateActionResultRequest{
+		ActionDigest:   digest,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult:   &repb.ActionResult{ExitCode: code},
 	}
+	_, err := client.UpdateActionResult(ctx, &req)
+	require.NoError(t, err)
+}
 
-	return clientConn
+func get(ctx context.Context, client repb.ActionCacheClient, digest *repb.Digest, t *testing.T) *repb.ActionResult {
+	req := &repb.GetActionResultRequest{
+		ActionDigest:   digest,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	resp, err := client.GetActionResult(ctx, req)
+	require.NoError(t, err)
+	return resp
 }
 
 func TestActionCacheProxy(t *testing.T) {
 	ctx := context.Background()
-	remoteEnv := testenv.GetTestEnv(t)
-	localEnv := testenv.GetTestEnv(t)
-	clientConn := runActionCacheServerProxy(ctx, remoteEnv, localEnv, t)
-	acClient := repb.NewActionCacheClient(clientConn)
+	ac := runACServer(ctx, testenv.GetTestEnv(t), t)
+	proxy := runACProxy(ctx, ac, testenv.GetTestEnv(t), t)
 
-	digest := repb.Digest{
-		Hash:      "0000000000000000000000000000000000000000000000000000000000000000",
+	digestA := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
 		SizeBytes: 1024,
 	}
-	readReq := &repb.GetActionResultRequest{
-		ActionDigest:   &digest,
+	digestB := &repb.Digest{
+		Hash:      strings.Repeat("b", 64),
+		SizeBytes: 1024,
+	}
+
+	// DigestA shouldn't be present initially.
+	readReqA := &repb.GetActionResultRequest{
+		ActionDigest:   digestA,
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	_, err := acClient.GetActionResult(ctx, readReq)
+	_, err := proxy.GetActionResult(ctx, readReqA)
 	require.True(t, status.IsNotFoundError(err))
 
-	writeReq := repb.UpdateActionResultRequest{
-		ActionDigest:   &digest,
+	// Write it through the proxy and confirm it's readable from the proxy and
+	// backing cache.
+	update(ctx, proxy, digestA, 1, t)
+	require.Equal(t, int32(1), get(ctx, ac, digestA, t).GetExitCode())
+	require.Equal(t, int32(1), get(ctx, proxy, digestA, t).GetExitCode())
+
+	// Change the action result, write it, and confirm the new result is
+	// readable from the proxy and backing cache.
+	update(ctx, proxy, digestA, 2, t)
+	require.Equal(t, int32(2), get(ctx, ac, digestA, t).GetExitCode())
+	require.Equal(t, int32(2), get(ctx, proxy, digestA, t).GetExitCode())
+
+	// DigestB shouldn't be present initially.
+	readReqB := &repb.GetActionResultRequest{
+		ActionDigest:   digestB,
 		DigestFunction: repb.DigestFunction_SHA256,
-		ActionResult:   &repb.ActionResult{ExitCode: 1},
 	}
-	_, err = acClient.UpdateActionResult(ctx, &writeReq)
-	require.NoError(t, err)
+	_, err = proxy.GetActionResult(ctx, readReqB)
+	require.True(t, status.IsNotFoundError(err))
 
-	readResp, err := acClient.GetActionResult(ctx, readReq)
-	require.NoError(t, err)
-	require.Equal(t, int32(1), readResp.GetExitCode())
+	// Write it to the backing cache and confirm it's readable from the proxy
+	// and backing cache.
+	update(ctx, ac, digestB, 999, t)
+	require.Equal(t, int32(999), get(ctx, ac, digestB, t).GetExitCode())
+	require.Equal(t, int32(999), get(ctx, proxy, digestB, t).GetExitCode())
 
-	writeReq = repb.UpdateActionResultRequest{
-		ActionDigest:   &digest,
-		DigestFunction: repb.DigestFunction_SHA256,
-		ActionResult:   &repb.ActionResult{ExitCode: 2},
-	}
-	_, err = acClient.UpdateActionResult(ctx, &writeReq)
-	require.NoError(t, err)
-
-	readResp, err = acClient.GetActionResult(ctx, readReq)
-	require.NoError(t, err)
-	require.Equal(t, int32(2), readResp.GetExitCode())
+	// Change the action result, write it, and confirm the new result is
+	// readable from the proxy and backing cache.
+	update(ctx, ac, digestB, 998, t)
+	require.Equal(t, int32(998), get(ctx, ac, digestB, t).GetExitCode())
+	require.Equal(t, int32(998), get(ctx, proxy, digestB, t).GetExitCode())
 }

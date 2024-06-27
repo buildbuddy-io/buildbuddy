@@ -27,6 +27,5 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//:go_default_library",
     ],
 )
