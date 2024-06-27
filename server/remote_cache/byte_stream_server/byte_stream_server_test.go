@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -54,34 +55,6 @@ func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T
 	}
 
 	return clientConn
-}
-
-func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer, offset int64) error {
-	downloadString, err := r.DownloadString()
-	if err != nil {
-		return err
-	}
-	req := &bspb.ReadRequest{
-		ResourceName: downloadString,
-		ReadOffset:   offset,
-		ReadLimit:    r.GetDigest().GetSizeBytes(),
-	}
-	stream, err := bsClient.Read(ctx, req)
-	if err != nil {
-		return err
-	}
-
-	for {
-		rsp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		out.Write(rsp.Data)
-	}
-	return nil
 }
 
 func TestRPCRead(t *testing.T) {
@@ -168,7 +141,7 @@ func TestRPCRead(t *testing.T) {
 
 		// Now read it back with the bytestream API.
 		var buf bytes.Buffer
-		gotErr := readBlob(ctx, bsClient, tc.resourceName, &buf, tc.offset)
+		gotErr := byte_stream.ReadBlob(ctx, bsClient, tc.resourceName, &buf, tc.offset)
 		if gstatus.Code(gotErr) != gstatus.Code(tc.wantError) {
 			t.Errorf("got %v; want %v", gotErr, tc.wantError)
 			//			continue
@@ -269,7 +242,7 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 
 	// Read
 	var buf bytes.Buffer
-	err = readBlob(ctx, bsClient, instanceNameDigest, &buf, 0)
+	err = byte_stream.ReadBlob(ctx, bsClient, instanceNameDigest, &buf, 0)
 	require.NoError(t, err)
 	require.Equal(t, blob, buf.String())
 }
@@ -311,7 +284,7 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 			require.NoError(t, err)
 			uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
 
-			mustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, true)
+			byte_stream.MustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, true)
 
 			sc := hit_tracker.ScoreCard(ctx, te, rmd.ToolInvocationId)
 			require.Len(t, sc.Results, 1)
@@ -381,7 +354,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 
 		// Upload the compressed blob.
 		uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
-		mustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, true)
+		byte_stream.MustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, true)
 
 		// Read back the compressed blob we just uploaded, but reference the
 		// decompressed resource name. Server should decompress it for us.
@@ -403,7 +376,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 
 		// Now try uploading a duplicate. The duplicate upload should not fail,
 		// and we should still be able to read the blob.
-		mustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, false)
+		byte_stream.MustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, false)
 
 		downloadBuf = []byte{}
 		downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
@@ -438,7 +411,7 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 
 		// Upload uncompressed via bytestream.
 		uploadResourceName := fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
-		mustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, blob, true)
+		byte_stream.MustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, blob, true)
 
 		// Read back the blob we just uploaded, but reference the compressed resource
 		// name. Server should serve it back compressed since there is no overhead
@@ -513,7 +486,7 @@ func Test_CacheHandlesCompression(t *testing.T) {
 		run := func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			ctx := context.Background()
-			ctx = withBazelVersion(t, ctx, tc.bazelVersion)
+			ctx = byte_stream.WithBazelVersion(t, ctx, tc.bazelVersion)
 
 			// Enable compression
 			flags.Set(t, "cache.zstd_transcoding_enabled", true)
@@ -525,7 +498,7 @@ func Test_CacheHandlesCompression(t *testing.T) {
 			bsClient := bspb.NewByteStreamClient(clientConn)
 
 			// Upload the blob
-			mustUploadChunked(t, ctx, bsClient, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, true)
+			byte_stream.MustUploadChunked(t, ctx, bsClient, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, true)
 
 			// Read back the blob we just uploaded
 			downloadBuf := []byte{}
@@ -552,7 +525,7 @@ func Test_CacheHandlesCompression(t *testing.T) {
 
 			// Now try uploading a duplicate. The duplicate upload should not fail,
 			// and we should still be able to read the blob.
-			mustUploadChunked(t, ctx, bsClient, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, false)
+			byte_stream.MustUploadChunked(t, ctx, bsClient, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, false)
 
 			downloadBuf = []byte{}
 			downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
@@ -586,84 +559,6 @@ func Test_CacheHandlesCompression(t *testing.T) {
 		tc.bazelVersion = "5.1.0"
 		t.Run(tc.name+", bazel "+tc.bazelVersion, run)
 	}
-}
-
-func withBazelVersion(t *testing.T, ctx context.Context, version string) context.Context {
-	rmd := &repb.RequestMetadata{
-		ToolDetails: &repb.ToolDetails{
-			ToolName:    "bazel",
-			ToolVersion: version,
-		},
-	}
-	ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
-	require.NoError(t, err)
-	return ctx
-}
-
-func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, bazelVersion string, uploadResourceName string, blob []byte, isFirstAttempt bool) {
-	ctx = withBazelVersion(t, ctx, bazelVersion)
-
-	uploadStream, err := bsClient.Write(ctx)
-	require.NoError(t, err)
-
-	remaining := blob
-	for len(remaining) > 0 {
-		chunkSize := 1_000_000
-		if chunkSize > len(remaining) {
-			chunkSize = len(remaining)
-		}
-		err = uploadStream.Send(&bspb.WriteRequest{
-			ResourceName: uploadResourceName,
-			WriteOffset:  int64(len(blob) - len(remaining)),
-			Data:         remaining[:chunkSize],
-			FinishWrite:  chunkSize == len(remaining),
-		})
-		if err != io.EOF {
-			require.NoError(t, err)
-		}
-		remaining = remaining[chunkSize:]
-		if err == io.EOF {
-			// Server sent back a WriteResponse, which we will receive in the
-			// following CloseAndRecv call. Note that this response may have been sent
-			// in response to a WriteRequest sent in a previous loop iteration, since
-			// the gRPC client does not wait for the server to process each request
-			// before sending subsequent requests.
-			break
-		}
-	}
-	res, err := uploadStream.CloseAndRecv()
-	require.NoError(t, err)
-
-	rn, err := digest.ParseUploadResourceName(uploadResourceName)
-	require.NoError(t, err)
-	isCompressed := rn.GetCompressor() != repb.Compressor_IDENTITY
-
-	// If this is a duplicate write, we expect the upload to be short-circuited.
-	shouldShortCircuit := !isFirstAttempt
-
-	// Note: Bazel pre-5.1.0 doesn't support short-circuiting compressed writes.
-	// Instead, the server should allow the client to upload the full stream,
-	// but just discard the uploaded stream.
-	// See https://github.com/bazelbuild/bazel/issues/14654
-	bazel5_1_0 := bazel_request.MustParseVersion("5.1.0")
-	if v := bazel_request.MustParseVersion(bazelVersion); isCompressed && !v.IsAtLeast(bazel5_1_0) {
-		shouldShortCircuit = false
-	}
-
-	if shouldShortCircuit {
-		// When short-circuiting, we expect committed size to be -1 for
-		// compressed blobs, since the committed size can vary depending on
-		// things like compression level.
-		if isCompressed {
-			require.Equal(t, int64(-1), res.CommittedSize)
-		} else {
-			require.Equal(t, rn.GetDigest().GetSizeBytes(), res.CommittedSize)
-		}
-		return
-	}
-
-	require.Equal(t, int64(len(blob)), res.CommittedSize)
-	require.Len(t, remaining, 0, "not all bytes were uploaded")
 }
 
 func zstdDecompress(t *testing.T, b []byte) []byte {
