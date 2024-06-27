@@ -860,19 +860,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// because that error is instead surfaced in the caller func when calling
 	// `buildEventPublisher.Wait()`
 
-	// Publish WorkspaceStatus eagerly if the git repo state is specified
-	// in advance. This allows the UI to load a little sooner. Otherwise,
-	// wait until we've initialized the repo.
-	publishedWorkspaceStatus := false
-	if *commitSHA == "" {
-		ar.reporter.Printf("WARNING: 'commit_sha' field is missing from ExecuteWorkflow request. Set a commit SHA to ensure there are no race conditions if the remote branch is updated.")
-	} else {
-		if err := ar.reporter.Publish(ar.workspaceStatusEvent()); err != nil {
-			return nil
-		}
-		publishedWorkspaceStatus = true
-	}
-
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{},
 	}
@@ -897,6 +884,20 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	}
 	if err := ar.reporter.Publish(buildMetadataEvent); err != nil {
 		return nil
+	}
+
+	// Publish WorkspaceStatus eagerly if the git repo state is specified
+	// in advance. This allows the UI to load a little sooner. Otherwise,
+	// wait until we've initialized the repo.
+	// Note that this has to happen after the BuildMetadata event is published.
+	publishedWorkspaceStatus := false
+	if *commitSHA == "" {
+		ar.reporter.Printf("WARNING: 'commit_sha' field is missing from ExecuteWorkflow request. Set a commit SHA to ensure there are no race conditions if the remote branch is updated.")
+	} else {
+		if err := ar.reporter.Publish(ar.workspaceStatusEvent()); err != nil {
+			return nil
+		}
+		publishedWorkspaceStatus = true
 	}
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
