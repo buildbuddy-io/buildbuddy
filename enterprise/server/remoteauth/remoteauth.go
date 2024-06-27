@@ -106,7 +106,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 
 	key := getAPIKey(ctx)
 	if key == "" {
-		return ctx
+		return authutil.AuthContextWithError(ctx, status.PermissionDeniedError("Missing API key"))
 	}
 	jwt, found := a.cache.Get(key)
 	if found {
@@ -115,7 +115,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	jwt, err := a.authenticate(ctx)
 	if err != nil {
 		log.Debugf("Error remotely authenticating: %s", err)
-		return ctx
+		return authutil.AuthContextWithError(ctx, err)
 	}
 	a.cache.Add(key, jwt)
 	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
