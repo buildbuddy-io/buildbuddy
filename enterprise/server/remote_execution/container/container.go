@@ -39,6 +39,9 @@ const (
 	// TODO: fix circular dependency with commandutil and reference that const
 	// instead.
 	noExitCode = -2
+
+	// How often to poll container stats.
+	statsPollInterval = 50 * time.Millisecond
 )
 
 var (
@@ -182,6 +185,118 @@ func (m *ContainerMetrics) Observe(c CommandContainer, s *repb.UsageStats) {
 // otherwise a memory leak will occur.
 func (m *ContainerMetrics) Unregister(c CommandContainer) {
 	m.Observe(c, nil)
+}
+
+// UsageStats holds usage stats for a container.
+// It is useful for keeping track of usage relative to when the container
+// last executed a task.
+//
+// TODO: see whether its feasible to execute each task in its own cgroup
+// so that we can avoid this bookkeeping and get stats without polling.
+type UsageStats struct {
+	// last is the last stats update we observed.
+	last *repb.UsageStats
+	// taskStats is the usage stats relative to when Reset() was last called
+	// (i.e. for the current task).
+	taskStats *repb.UsageStats
+	// peakMemoryUsageBytes is the max memory usage from the last task
+	// execution. This is reset between tasks so that we can determine a task's
+	// peak memory usage when using a recycled runner.
+	peakMemoryUsageBytes int64
+	// baselineCPUNanos is the CPU usage from when a task last finished
+	// executing. This is needed so that we can determine a task's CPU usage
+	// when using a recycled runner.
+	baselineCPUNanos int64
+}
+
+// Reset resets resource usage counters in preparation for a new task, so that
+// the new task's resource usage can be accounted for. It should be called
+// at the beginning of Exec() in the container lifecycle.
+func (s *UsageStats) Reset() {
+	if s.last == nil {
+		s.baselineCPUNanos = 0
+	} else {
+		s.baselineCPUNanos = s.last.CpuNanos
+	}
+	s.last = nil
+	s.peakMemoryUsageBytes = 0
+}
+
+// TaskStats returns the usage stats for an executed task.
+func (s *UsageStats) TaskStats() *repb.UsageStats {
+	return s.taskStats
+}
+
+// Update updates the usage for the current task, given a reading from the
+// lifetime stats (e.g. cgroup created when the task container was initially
+// created).
+func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
+	taskStats := lifetimeStats.CloneVT()
+	taskStats.CpuNanos = taskStats.CpuNanos - s.baselineCPUNanos
+	if lifetimeStats.MemoryBytes > s.peakMemoryUsageBytes {
+		s.peakMemoryUsageBytes = lifetimeStats.MemoryBytes
+	}
+	taskStats.PeakMemoryBytes = s.peakMemoryUsageBytes
+	s.taskStats = taskStats
+	s.last = lifetimeStats
+}
+
+// TrackStats starts a goroutine to monitor the container's resource usage. It
+// polls c.Stats() to get the cumulative usage since the start of the current
+// task.
+//
+// The returned func stops tracking resource usage. It must be called, or else a
+// goroutine leak may occur. Monitoring can safely be stopped more than once.
+//
+// The returned channel should be received from at most once, *after* calling
+// the returned stop function. The received value can be nil if stats were not
+// successfully sampled at least once.
+func TrackStats(ctx context.Context, c CommandContainer) (stop func(), res <-chan *repb.UsageStats) {
+	ctx, cancel := context.WithCancel(ctx)
+	result := make(chan *repb.UsageStats, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer Metrics.Unregister(c)
+		var last *repb.UsageStats
+		var lastErr error
+
+		start := time.Now()
+		defer func() {
+			// Only log an error if the task ran long enough that we could
+			// reasonably expect to sample stats at least once while it was
+			// executing. Note that we can't sample stats until podman creates
+			// the container, which can take a few hundred ms or possibly longer
+			// if the executor is heavily loaded.
+			dur := time.Since(start)
+			if last == nil && dur > 1*time.Second && lastErr != nil {
+				log.Warningf("Failed to read container stats: %s", lastErr)
+			}
+		}()
+
+		t := time.NewTicker(statsPollInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				result <- last
+				return
+			case <-t.C:
+				stats, err := c.Stats(ctx)
+				if err != nil {
+					lastErr = err
+					continue
+				}
+				Metrics.Observe(c, stats)
+				last = stats
+			}
+		}
+	}()
+	stop = func() {
+		cancel()
+		<-done
+	}
+	return stop, result
 }
 
 type FileSystemLayout struct {

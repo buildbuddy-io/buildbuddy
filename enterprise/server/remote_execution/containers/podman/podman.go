@@ -98,9 +98,6 @@ const (
 
 	// --cidfile to be written by podman before we give up.
 	pollCIDTimeout = 15 * time.Second
-	// statsPollInterval controls how often we will poll the cgroupfs to determine
-	// a container's resource usage.
-	statsPollInterval = 50 * time.Millisecond
 
 	// How long to cache the result of `podman image exists` when it returns
 	// true. A short duration is used to help recover from rare scenarios in
@@ -268,7 +265,7 @@ type podmanCommandContainer struct {
 	// name is the container name.
 	name string
 
-	stats containerStats
+	stats container.UsageStats
 
 	// cid contains the container ID read from the cidfile.
 	cid atomic.Value
@@ -403,26 +400,21 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
-	stopMonitoring, statsCh := c.monitor(ctx)
-	defer stopMonitoring()
-
 	podmanRunArgs := c.getPodmanRunArgs(workDir)
 	for _, envVar := range command.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
-	result = c.runPodman(ctx, "run", &interfaces.Stdio{}, podmanRunArgs...)
+	result = c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
+		return c.runPodman(ctx, "run", &interfaces.Stdio{}, podmanRunArgs...)
+	})
 
 	if result.ExitCode == podmanCommandNotRunnableExitCode {
 		log.CtxInfof(ctx, "podman failed to run command")
 	} else if result.ExitCode == podmanCommandNotFoundExitCode {
 		log.CtxInfof(ctx, "podman failed to find command")
 	}
-
-	// Stop monitoring so that we can get stats.
-	stopMonitoring()
-	result.UsageStats = <-statsCh
 
 	if err := c.maybeCleanupCorruptedImages(ctx, result); err != nil {
 		log.Warningf("Failed to remove corrupted image: %s", err)
@@ -433,6 +425,17 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		}
 	}
 	return result
+}
+
+// Wraps a function call with container.TrackStats, ensuring that prometheus
+// metrics are updated while the function is executing, and that the UsageStats
+// field is populated after execution.
+func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, fn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
+	stop, statsCh := container.TrackStats(ctx, c)
+	res := fn(ctx)
+	stop()
+	res.UsageStats = <-statsCh
+	return res
 }
 
 func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
@@ -474,8 +477,6 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	// any resource usage between the initial "Create" call and now, but that's
 	// probably fine for our needs right now.
 	c.stats.Reset()
-	stopMonitoring, statsCh := c.monitor(ctx)
-	defer stopMonitoring()
 	podmanRunArgs := make([]string, 0, 2*len(cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
 	for _, envVar := range cmd.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
@@ -486,15 +487,15 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	}
 	podmanRunArgs = append(podmanRunArgs, c.name)
 	podmanRunArgs = append(podmanRunArgs, cmd.Arguments...)
+	res := c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
+		return c.runPodman(ctx, "exec", stdio, podmanRunArgs...)
+	})
 	// Podman doesn't provide a way to find out whether an exec process was
 	// killed. Instead, `podman exec` returns 137 (= 128 + SIGKILL(9)). However,
 	// this exit code is also valid as a regular exit code returned by a command
 	// during a normal execution, so we are overly cautious here and only
 	// interpret this code specially when the container was removed and we are
 	// expecting a SIGKILL as a result.
-	res := c.runPodman(ctx, "exec", stdio, podmanRunArgs...)
-	stopMonitoring()
-	res.UsageStats = <-statsCh
 	c.mu.Lock()
 	removed := c.removed
 	c.mu.Unlock()
@@ -570,58 +571,6 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds oci.Creden
 // this logic depends on the workspace parent directory already existing.
 func (c *podmanCommandContainer) cidFilePath() string {
 	return c.workDir + ".cid"
-}
-
-// monitor starts a goroutine to monitor the container's resource usage. The
-// returned func stops monitoring. It must be called, or else a goroutine leak
-// may occur. Monitoring can safely be stopped more than once. The returned
-// channel should be received from at most once, *after* calling the returned
-// stop function. The received value can be nil if stats were not successfully
-// sampled at least once.
-func (c *podmanCommandContainer) monitor(ctx context.Context) (context.CancelFunc, chan *repb.UsageStats) {
-	ctx, cancel := context.WithCancel(ctx)
-	result := make(chan *repb.UsageStats, 1)
-	go func() {
-		defer close(result)
-		if !c.options.EnableStats {
-			return
-		}
-		defer container.Metrics.Unregister(c)
-		var last *repb.UsageStats
-		var lastErr error
-
-		start := time.Now()
-		defer func() {
-			// Only log an error if the task ran long enough that we could
-			// reasonably expect to sample stats at least once while it was
-			// executing. Note that we can't sample stats until podman creates
-			// the container, which can take a few hundred ms or possibly longer
-			// if the executor is heavily loaded.
-			dur := time.Since(start)
-			if last == nil && dur > 1*time.Second && lastErr != nil {
-				log.Warningf("Failed to read container stats: %s", lastErr)
-			}
-		}()
-
-		timer := time.NewTicker(statsPollInterval)
-		defer timer.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				result <- last
-				return
-			case <-timer.C:
-				stats, err := c.Stats(ctx)
-				if err != nil {
-					lastErr = err
-					continue
-				}
-				container.Metrics.Observe(c, stats)
-				last = stats
-			}
-		}
-	}()
-	return cancel, result
 }
 
 func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
@@ -745,22 +694,12 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 		return nil, err
 	}
 
-	current, err := c.cgroupPaths.Stats(ctx, cid)
+	lifetimeStats, err := c.cgroupPaths.Stats(ctx, cid)
 	if err != nil {
 		return nil, err
 	}
-
-	c.stats.mu.Lock()
-	defer c.stats.mu.Unlock()
-
-	stats := current.CloneVT()
-	stats.CpuNanos = stats.CpuNanos - c.stats.baselineCPUNanos
-	if current.MemoryBytes > c.stats.peakMemoryUsageBytes {
-		c.stats.peakMemoryUsageBytes = current.MemoryBytes
-	}
-	stats.PeakMemoryBytes = c.stats.peakMemoryUsageBytes
-	c.stats.last = current
-	return stats, nil
+	c.stats.Update(lifetimeStats)
+	return c.stats.TaskStats(), nil
 }
 
 func (c *podmanCommandContainer) runPodman(ctx context.Context, subCommand string, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {
@@ -902,35 +841,6 @@ func ConfigureIsolation(ctx context.Context) error {
 		return nil
 	}
 	return nil
-}
-
-type containerStats struct {
-	mu sync.Mutex
-	// last is the last recorded stats.
-	last *repb.UsageStats
-	// peakMemoryUsageBytes is the max memory usage from the last task execution.
-	// This is reset between tasks so that we can determine a task's peak memory
-	// usage when using a recycled runner.
-	peakMemoryUsageBytes int64
-	// baselineCPUNanos is the CPU usage from when a task last finished executing.
-	// This is needed so that we can determine a task's CPU usage when using a
-	// recycled runner.
-	baselineCPUNanos int64
-}
-
-// Reset resets resource usage counters in preparation for a new task, so that
-// the new task's resource usage can be accounted for. It should be called
-// at the beginning of Exec() in the container lifecycle.
-func (s *containerStats) Reset() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.last == nil {
-		s.baselineCPUNanos = 0
-	} else {
-		s.baselineCPUNanos = s.last.CpuNanos
-	}
-	s.last = nil
-	s.peakMemoryUsageBytes = 0
 }
 
 type imageExistsCache struct {
