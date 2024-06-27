@@ -21,6 +21,7 @@ func runACServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) repb.A
 	go runFunc()
 	conn, err := testenv.LocalGRPCConn(ctx, env)
 	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
 	return repb.NewActionCacheClient(conn)
 }
 
@@ -33,6 +34,7 @@ func runACProxy(ctx context.Context, client repb.ActionCacheClient, env *testenv
 	go runFunc()
 	conn, err := testenv.LocalGRPCConn(ctx, env)
 	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
 	return repb.NewActionCacheClient(conn)
 }
 
