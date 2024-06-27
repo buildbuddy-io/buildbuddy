@@ -63,10 +63,8 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 }
 
 type localWriteStream struct {
-	ctx         context.Context
-	initialized bool
-	offset      int64
-	channel     chan *bspb.WriteRequest
+	ctx     context.Context
+	channel chan *bspb.WriteRequest
 }
 
 func (s localWriteStream) Context() context.Context {
@@ -87,13 +85,14 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 	}
 
 	var localStream *localWriteStream = nil
+	localStreamInitialized := false
+	localStreamOffset := int64(0)
 	if req.ReadOffset == 0 {
 		localStream = &localWriteStream{
-			ctx:         stream.Context(),
-			channel:     make(chan *bspb.WriteRequest, localWriteChannelSize),
-			initialized: false,
-			offset:      req.ReadOffset,
+			ctx:     stream.Context(),
+			channel: make(chan *bspb.WriteRequest, localWriteChannelSize),
 		}
+		localStreamOffset = req.ReadOffset
 		go func() {
 			if err := s.local.WriteDirect(localStream); err != nil {
 				log.Warningf("Error writing to local cache: %s", err)
@@ -105,7 +104,7 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 		rsp, err := remoteStream.Recv()
 		if err == io.EOF {
 			if localStream != nil {
-				localStream.channel <- &bspb.WriteRequest{WriteOffset: localStream.offset, FinishWrite: true}
+				localStream.channel <- &bspb.WriteRequest{WriteOffset: localStreamOffset, FinishWrite: true}
 			}
 			break
 		}
@@ -113,15 +112,15 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 			return err
 		}
 		if localStream != nil {
-			localReq := &bspb.WriteRequest{WriteOffset: localStream.offset, Data: rsp.Data}
-			if !localStream.initialized {
+			localReq := &bspb.WriteRequest{WriteOffset: localStreamOffset, Data: rsp.Data}
+			if !localStreamInitialized {
 				// Resources that are read have a different format than those
 				// being written. Re-write the resource name with a fake
 				// execution ID so it passes the write regex.
 				localReq.ResourceName = "/uploads/00000000-0000-0000-0000-000000000000" + req.ResourceName
-				localStream.initialized = true
+				localStreamInitialized = true
 			}
-			localStream.offset += int64(len(rsp.Data))
+			localStreamOffset += int64(len(rsp.Data))
 			localStream.channel <- localReq
 		}
 		if err = stream.Send(rsp); err != nil {
