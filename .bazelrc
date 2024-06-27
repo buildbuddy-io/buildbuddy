@@ -13,6 +13,21 @@ common:local --remote_upload_local_results
 common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
 common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
 
+
+# Build with --config=bare to send build logs to the bare cluster
+common:bare --bes_results_url=https://app.metal.buildbuddy.dev/invocation/
+common:bare --bes_backend=grpcs://cloud.metal.buildbuddy.dev
+common:bare --remote_cache=grpcs://cloud.metal.buildbuddy.dev
+common:bare --remote_upload_local_results
+common:bare --experimental_remote_cache_compression
+common:bare --platforms=//platforms:linux_x86_64
+common:bare --extra_execution_platforms=//platforms:linux_x86_64
+common:bare --remote_executor=grpcs://cloud.metal.buildbuddy.dev
+common:bare --remote_timeout=600
+common:bare --remote_download_minimal
+common:bare --jobs=100
+common:bare --verbose_failures
+
 # Build with --config=cache-dev to send build logs to the dev server with cache
 common:cache-dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
 common:cache-dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
