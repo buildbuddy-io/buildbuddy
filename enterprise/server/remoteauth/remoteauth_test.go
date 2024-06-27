@@ -126,18 +126,18 @@ func TestAuthenticatedGRPCContext(t *testing.T) {
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bar"))
 	require.Equal(t, "twj", ctx.Value(authutil.ContextTokenStringKey))
 
-	// Don't cache results between JWTs / API Keys
+	// JWTs should be passed through
 	fakeAuth.Reset().setNextJwt(t, "jjwwtt")
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, "bar"))
-	require.Equal(t, "jjwwtt", ctx.Value(authutil.ContextTokenStringKey))
+	require.Equal(t, "bar", ctx.Value(authutil.ContextTokenStringKey))
 
 	// Some other JWT
 	fakeAuth.Reset().setNextJwt(t, "ttwwjj")
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, "baz"))
-	require.Equal(t, "ttwwjj", ctx.Value(authutil.ContextTokenStringKey))
+	require.Equal(t, "baz", ctx.Value(authutil.ContextTokenStringKey))
 
 	// Error case with JWT
 	fakeAuth.Reset().setNextErr(t, status.InternalError("error"))
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, "qux"))
-	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
+	require.Equal(t, "qux", ctx.Value(authutil.ContextTokenStringKey))
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -30,7 +29,7 @@ const (
 )
 
 var (
-	authHeaders = []string{authutil.APIKeyHeader, authutil.ContextTokenStringKey}
+	authHeaders = []string{authutil.APIKeyHeader}
 
 	remoteAuthTarget = flag.String("auth.remote_auth_target", "", "The gRPC target of the remote authentication API.")
 )
@@ -99,7 +98,11 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 }
 
 func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	key := hashAuthHeaders(ctx)
+	if jwt := getJWT(ctx); jwt != "" {
+		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+	}
+
+	key := getAPIKey(ctx)
 	if key == "" {
 		return ctx
 	}
@@ -167,17 +170,18 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 	return *resp.Jwt, nil
 }
 
-func hashAuthHeaders(ctx context.Context) string {
-	input := []string{}
-	for _, key := range authHeaders {
-		values := metadata.ValueFromIncomingContext(ctx, key)
-		if len(values) > 0 {
-			input = append(input, key)
-			input = append(input, values...)
-		}
+func getAPIKey(ctx context.Context) string {
+	return getLastMetadataValue(ctx, authutil.APIKeyHeader)
+}
+
+func getJWT(ctx context.Context) string {
+	return getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
+}
+
+func getLastMetadataValue(ctx context.Context, key string) string {
+	values := metadata.ValueFromIncomingContext(ctx, key)
+	if len(values) > 0 {
+		return values[len(values)-1]
 	}
-	if len(input) == 0 {
-		return ""
-	}
-	return hash.Strings(input...)
+	return ""
 }

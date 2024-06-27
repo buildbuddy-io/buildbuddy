@@ -12,7 +12,6 @@ go_library(
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/grpc_client",
-        "//server/util/hash",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/status",
