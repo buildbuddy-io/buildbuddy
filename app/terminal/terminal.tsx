@@ -1,8 +1,7 @@
-import { WrapText, Download, ArrowUp, ArrowDown, X } from "lucide-react";
+import { WrapText, Download, ArrowUp, ArrowDown, X, Expand, Shrink } from "lucide-react";
 import React from "react";
 import { FixedSizeList } from "react-window";
 import memoizeOne from "memoize-one";
-import errorService from "../errors/error_service";
 import Spinner from "../components/spinner/spinner";
 import TextInput from "../components/input/input";
 import { mod } from "../util/math";
@@ -76,6 +75,8 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
 
   private isMouseInside = false;
   private windowKeyDownListener?: (this: Window, ev: KeyboardEvent) => any;
+  private fullScreenListener?: (this: Window) => any;
+  private resizeListener?: (this: Window) => any;
 
   private scroller = new Scroller(() => {
     const list = this.list;
@@ -97,11 +98,19 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   componentDidMount() {
     this.initialScrollToEnd();
     window.addEventListener("keydown", (this.windowKeyDownListener = this.onWindowKeyDown.bind(this)));
+    window.addEventListener("fullscreenchange", (this.fullScreenListener = () => this.forceUpdate.bind(this)));
+    window.addEventListener("resize", (this.resizeListener = this.updateLineLengthLimit.bind(this)));
   }
 
   componentWillUnmount() {
     if (this.windowKeyDownListener) {
       window.removeEventListener("keydown", this.windowKeyDownListener);
+    }
+    if (this.fullScreenListener) {
+      window.removeEventListener("fullscreenchange", this.fullScreenListener);
+    }
+    if (this.resizeListener) {
+      window.removeEventListener("resize", this.resizeListener);
     }
   }
 
@@ -208,7 +217,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     if (!this.listEl) return;
     this.setState({
       lineLengthLimit: this.getWrapPreference()
-        ? Math.floor(this.listEl.clientWidth / CHARACTER_WIDTH_PX)
+        ? Math.floor(Math.max(this.listEl.clientWidth, 10) / CHARACTER_WIDTH_PX)
         : Number.MAX_SAFE_INTEGER,
     });
   }
@@ -334,7 +343,10 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     return (
       <div
         debug-id={this.props.debugId}
-        style={{ flexDirection: this.props.bottomControls ? "column-reverse" : "column" }}
+        style={{
+          flexDirection: this.props.bottomControls ? "column-reverse" : "column",
+          padding: window.document.fullscreenElement ? "8px" : "",
+        }}
         className={`terminal ${this.props.lightTheme ? "light-terminal" : ""}`}
         onMouseEnter={this.onMouseEnter.bind(this)}
         onMouseLeave={this.onMouseLeave.bind(this)}>
@@ -389,6 +401,22 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
               className={`terminal-action ${this.getWrapPreference() ? "active" : ""}`}>
               <WrapText className={`icon ${iconClass}`} />
             </button>
+            {window.document.fullscreenEnabled && !window.document.fullscreenElement && (
+              <button
+                title="Full Screen"
+                onClick={(e) => this.terminalRef.current?.parentElement?.requestFullscreen()}
+                className="terminal-action active">
+                <Expand className={`icon ${iconClass}`} />
+              </button>
+            )}
+            {window.document.fullscreenEnabled && window.document.fullscreenElement && (
+              <button
+                title="Exit Full Screen"
+                onClick={(e) => window.document.exitFullscreen()}
+                className="terminal-action active">
+                <Shrink className={`icon ${iconClass}`} />
+              </button>
+            )}
             <button
               title="Download"
               onClick={this.onDownloadClick.bind(this)}
@@ -405,7 +433,11 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
         <div
           className="terminal-text"
           ref={this.terminalRef}
-          style={{ height: `${content.rows.length ? Math.min(ROW_HEIGHT_PX * content.rows.length + 8, 400) : 400}px` }}>
+          style={{
+            height: window.document.fullscreenElement
+              ? `100%`
+              : `${content.rows.length ? Math.min(ROW_HEIGHT_PX * content.rows.length + 8, 400) : 400}px`,
+          }}>
           {this.props.loading ? (
             <div className={`loading ${this.props.lightTheme ? "" : "loading-dark-terminal"}`} />
           ) : (
