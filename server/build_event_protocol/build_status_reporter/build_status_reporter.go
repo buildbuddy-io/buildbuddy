@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -80,6 +81,7 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *b
 	switch event.Payload.(type) {
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
 		githubPayload = r.githubPayloadFromWorkspaceStatusEvent(event)
+		log.Warningf("Maggie (%v) processed workspace status %v at %s", event.GetWorkspaceStatus().Item, githubPayload, time.Now().String())
 
 	case *build_event_stream.BuildEvent_Configured:
 		if r.shouldReportStatusPerTest {
@@ -97,6 +99,7 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *b
 	}
 
 	if githubPayload != nil {
+		log.Warningf("Maggie flushing payload")
 		r.payloads = append(r.payloads, githubPayload)
 		r.flushPayloadsIfWorkspaceLoaded(ctx)
 	}
@@ -136,7 +139,9 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 			log.CtxWarningf(ctx, "Failed to report GitHub status: %s", err)
 			break
 		}
+		// Maggie - Does the invocation have a different commit sha?
 		commitSHA := r.buildEventAccumulator.Invocation().GetCommitSha()
+		log.Warningf("Maggie reporting status to commit sha %s: %v", commitSHA, payload)
 		if ownerRepo != "" && commitSHA != "" {
 			err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, payload)
 			if err != nil {

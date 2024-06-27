@@ -120,6 +120,7 @@ func (p *Publisher) run(ctx context.Context) error {
 	defer cancel()
 
 	for obe := range events {
+		log.Warningf("About to send obe %v", obe)
 		req := &pepb.PublishBuildToolEventStreamRequest{OrderedBuildEvent: obe}
 		if err := stream.Send(req); err != nil {
 			return status.UnavailableErrorf("send failed: %s", err)
@@ -143,6 +144,7 @@ func (p *Publisher) Publish(bazelEvent *bespb.BuildEvent) error {
 		EventTime: timestamppb.Now(),
 		Event:     &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEventAny},
 	}
+	log.Warningf("Adding event %v to publisher channel", be)
 	p.events.Add(be)
 	return nil
 }

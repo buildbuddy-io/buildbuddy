@@ -851,8 +851,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		ar.reporter.Printf("WARNING: 'commit_sha' field is missing from ExecuteWorkflow request. Set a commit SHA to ensure there are no race conditions if the remote branch is updated.")
 	} else {
 		if err := ar.reporter.Publish(ar.workspaceStatusEvent()); err != nil {
+			log.Warningf("Maggie (%s): Publish workspace status failed with %s", *commitSHA, err)
 			return nil
 		}
+		log.Warningf("Maggie (%s) published workspace status %v at %s", *commitSHA, ar.workspaceStatusEvent(), time.Now().String())
 		publishedWorkspaceStatus = true
 	}
 
