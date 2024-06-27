@@ -15,6 +15,7 @@ ts_library(
         "//app/errors:error_service",
         "//app/router",
         "//app/service:rpc_service",
+        "//app/shortcuts",
         "//enterprise/app/codesearch:result",
         "//proto:search_ts_proto",
         "@npm//@types/react",

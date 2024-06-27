@@ -7,6 +7,7 @@ import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import TextInput from "../../../app/components/input/input";
 import FilledButton from "../../../app/components/button/button";
 import router from "../../../app/router/router";
+import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 import ResultComponent from "./result";
 import { Bird, Search } from "lucide-react";
 
@@ -22,6 +23,7 @@ interface Props {
 
 export default class CodeSearchComponent extends React.Component<Props, State> {
   query: string = "";
+  keyboardShortcutHandle: string = "";
   state: State = {
     loading: false,
   };
@@ -49,7 +51,14 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
 
   componentDidMount() {
     this.query = this.props.search.get("q") ?? "";
+    this.keyboardShortcutHandle = shortcuts.register(KeyCombo.slash, () => {
+      this.focusSearchBox();
+    });
     this.search();
+  }
+
+  componentWillUnmount() {
+    shortcuts.deregister(this.keyboardShortcutHandle);
   }
 
   renderTheRestOfTheOwl() {
@@ -107,6 +116,10 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
         ))}
       </div>
     );
+  }
+
+  focusSearchBox() {
+    (document.querySelector(".searchbox") as HTMLElement | undefined)?.focus();
   }
 
   render() {

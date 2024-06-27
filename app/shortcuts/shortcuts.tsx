@@ -29,6 +29,7 @@ export class KeyCombo {
   public static y = new KeyCombo(false, "KeyY");
   public static z = new KeyCombo(false, "KeyZ");
   public static shift_c = new KeyCombo(true, "KeyC");
+  public static slash = new KeyCombo(false, "Slash");
   public static question = new KeyCombo(true, "Slash");
   public static esc = new KeyCombo(false, "Escape");
   public static enter = new KeyCombo(false, "Enter");
@@ -136,7 +137,7 @@ export class Shortcuts {
   public registerSequence(keyCombo: KeyCombo[], action: () => void): string {
     if (!this.shortcuts) {
       this.shortcuts = new Map<string, Shortcut>();
-      document.addEventListener("keydown", (event: KeyboardEvent) => {
+      let listener = (event: KeyboardEvent) => {
         if (!this.preferences?.keyboardShortcutsEnabled) {
           // TODO(iain): instead of reset-alling on keypress, do it on
           // preference change. Note that this will require breaking the
@@ -154,9 +155,19 @@ export class Shortcuts {
           return;
         }
         for (let shortcut of this.shortcuts?.values() || []) {
-          shortcut.matchKeyboardEvent(event);
+          // Match single-key shortcuts on keyup to prevent navigate-to-input
+          // shortcuts entering the shortcut key into the input. Match combo
+          // shortcuts to keydown to support press-and-hold shortcuts.
+          if (
+            (event.type == "keyup" && shortcut.keyCombo.length == 1) ||
+            (event.type == "keydown" && shortcut.keyCombo.length > 1)
+          ) {
+            shortcut.matchKeyboardEvent(event);
+          }
         }
-      });
+      };
+      document.addEventListener("keydown", listener);
+      document.addEventListener("keyup", listener);
     }
 
     let handle = uuid();
