@@ -222,13 +222,6 @@ func TestFetchBlobWithCache(t *testing.T) {
 			}, "", resource.CacheType_CAS, tc.storageFunc).ToProto())
 			require.NoError(t, err)
 			require.True(t, exist)
-
-			exist, err = te.GetCache().Contains(ctx, digest.NewResourceName(&repb.Digest{
-				Hash:      checksumDigest.GetHash(),
-				SizeBytes: resp.GetBlobDigest().GetSizeBytes(),
-			}, "", resource.CacheType_CAS, tc.checksumFunc).ToProto())
-			require.NoError(t, err)
-			require.True(t, exist)
 		})
 	}
 }

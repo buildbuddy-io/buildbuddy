@@ -315,10 +315,6 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 		if expectedChecksum != "" && checksumDigestRN.GetDigest().GetHash() != expectedChecksum {
 			return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, checksumDigestRN.GetDigest().Hash, expectedChecksum)
 		}
-		// mirror the blob to cache using checksumFunc so next FetchBlob request would get a cache hit
-		if _, err = cachetools.UploadFile(ctx, bsClient, remoteInstanceName, checksumFunc, tmpFilePath); err != nil {
-			return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
-		}
 	}
 	blobDigest, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, storageFunc, tmpFilePath)
 	if err != nil {
