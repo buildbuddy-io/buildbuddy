@@ -45,7 +45,12 @@ type Action struct {
 	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
 	Env               map[string]string `yaml:"env"`
 	BazelCommands     []string          `yaml:"bazel_commands"`
+	Steps             []Step            `yaml:"steps"`
 	Timeout           *time.Duration    `yaml:"timeout"`
+}
+
+type Step struct {
+	Run string `yaml:"run"`
 }
 
 func (a *Action) GetTriggers() *Triggers {

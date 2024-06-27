@@ -324,6 +324,50 @@ func singleInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation 
 	return invResp.Invocation[0]
 }
 
+func TestCIRunner_RunsBashCommands(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	workspaceContentsWithBashCommands := map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Show bazel version"
+    triggers:
+      push: { branches: [ master ] }
+      pull_request: { branches: [ master ] }
+    steps:
+      - run: |
+          for i in {1..2}; do
+            echo "Loop $i: ";
+            bazel version;
+          done
+`,
+	}
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBashCommands)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Show bazel version",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+
+	runnerInvocation := singleInvocation(t, app, result)
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Loop 1:")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Loop 2:")
+}
+
 func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)

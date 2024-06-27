@@ -676,6 +676,23 @@ func run() error {
 			return status.WrapError(err, "failed to extract bazelisk")
 		}
 		*bazelCommand = bazeliskPath
+
+	}
+
+	// Symlink bazel to `bazelCommand` so that it can be easily invoked
+	bazelPath := filepath.Join(rootDir, bazelBinaryName)
+	if err := os.RemoveAll(bazelPath); err != nil {
+		return status.WrapError(err, "remove existing bazel binary")
+	}
+	if err := os.Symlink(*bazelCommand, bazelPath); err != nil {
+		return status.WrapError(err, "symlink bazel to bazelisk")
+	}
+	// Update PATH to include the root dir
+	prevPath := os.Getenv("PATH")
+	if !strings.Contains(prevPath, rootDir) {
+		if err := os.Setenv("PATH", rootDir+":"+os.Getenv("PATH")); err != nil {
+			return status.WrapError(err, "failed to include root dir in PATH")
+		}
 	}
 
 	if *shutdownAndExit {
@@ -993,6 +1010,69 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}
 
+	// TODO(Maggie): Emit BES events for each bazel command
+	for i, step := range action.Steps {
+		if err := provisionArtifactsDir(ws, i); err != nil {
+			return err
+		}
+
+		_, runErr := runBashCommand(ctx, step.Run, nil, action.BazelWorkspaceDir, ar.reporter)
+		exitCode := getExitCode(runErr)
+
+		// Flush progress after every command.
+		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
+		if err := ar.reporter.FlushProgress(); err != nil {
+			break
+		}
+
+		if exitCode != noExitCode {
+			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
+		}
+
+		// If this is a workflow, kill-signal the current process on certain
+		// exit codes (rather than exiting) so that the workflow action is
+		// retried. Note that we do this immediately after the Bazel command is
+		// completed so that the outer workflow invocation gets disconnected
+		// rather than finishing with an error.
+		if *workflowID != "" && exitCode == bazelLocalEnvironmentalErrorExitCode {
+			p, err := os.FindProcess(os.Getpid())
+			if err != nil {
+				return err
+			}
+			if err := p.Kill(); err != nil {
+				return err
+			}
+		}
+
+		// If we get an OOM or a Bazel internal error, copy debug outputs to the
+		// artifacts directory so they get uploaded as workflow artifacts.
+		artifactsDir := artifactsPathForCommand(ws, i)
+		namedSetID := filepath.Base(artifactsDir)
+		if exitCode == bazelOOMErrorExitCode || exitCode == bazelInternalErrorExitCode {
+			jvmOutPath := filepath.Join(ar.rootDir, outputBaseDirName, "server/jvm.out")
+			if err := os.Link(jvmOutPath, filepath.Join(artifactsDir, "jvm.out")); err != nil {
+				ar.reporter.Printf("%sfailed to preserve jvm.out: %s%s\n", ansiGray, err, ansiReset)
+			}
+		}
+		if exitCode == bazelOOMErrorExitCode {
+			// TODO(Maggie): Use invocation ID of failed bazel command
+			heapDumpPath := filepath.Join(ar.rootDir, outputBaseDirName, fmt.Sprintf("%d.heapdump.hprof", i))
+			if err := os.Link(heapDumpPath, filepath.Join(artifactsDir, "heapdump.hprof")); err != nil {
+				ar.reporter.Printf("%sfailed to preserve heapdump.hprof: %s%s\n", ansiGray, err, ansiReset)
+			}
+		}
+
+		// Kick off background uploads for the action that just completed
+		if uploader != nil {
+			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
+		}
+
+		if exitCode != 0 {
+			return runErr
+		}
+	}
+
+	// TODO(Maggie): Consolidate action.BazelCommands with action.Steps
 	for i, bazelCmd := range action.BazelCommands {
 		cmdStartTime := time.Now()
 
@@ -1960,36 +2040,36 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	return nil
 }
 
-type gitError struct {
+type commandError struct {
 	Err    error
 	Output string
 }
 
-func (e *gitError) Error() string {
+func (e *commandError) Error() string {
 	return fmt.Sprintf("%s: %q", e.Err.Error(), e.Output)
 }
 
 func isRemoteAlreadyExists(err error) bool {
-	gitErr, ok := err.(*gitError)
+	gitErr, ok := err.(*commandError)
 	return ok && strings.Contains(gitErr.Output, "already exists")
 }
 func isBranchNotFound(err error) bool {
-	gitErr, ok := err.(*gitError)
+	gitErr, ok := err.(*commandError)
 	return ok && strings.Contains(gitErr.Output, "not found")
 }
 func isAlreadyUpToDate(err error) bool {
-	gitErr, ok := err.(*gitError)
+	gitErr, ok := err.(*commandError)
 	return ok && strings.Contains(gitErr.Output, "up to date")
 }
 
-func git(ctx context.Context, out io.Writer, args ...string) (string, *gitError) {
+func git(ctx context.Context, out io.Writer, args ...string) (string, *commandError) {
 	var buf bytes.Buffer
 	w := io.MultiWriter(out, &buf)
 	if err := printCommandLine(out, "git", args...); err != nil {
-		return "", &gitError{err, ""}
+		return "", &commandError{err, ""}
 	}
 	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, w); err != nil {
-		return "", &gitError{err, buf.String()}
+		return "", &commandError{err, buf.String()}
 	}
 	output := buf.String()
 	return strings.TrimSpace(output), nil
@@ -2131,6 +2211,21 @@ func gitRemoteName(repoURL string) string {
 	return forkGitRemoteName
 }
 
+func runBashCommand(ctx context.Context, cmd string, env map[string]string, dir string, outputSink io.Writer) (string, *commandError) {
+	if err := printCommandLine(outputSink, cmd); err != nil {
+		return "", &commandError{err, ""}
+	}
+
+	var buf bytes.Buffer
+	w := io.MultiWriter(outputSink, &buf)
+
+	if err := runCommand(ctx, "bash", []string{"-eo", "pipefail", "-c", cmd}, env, dir, w); err != nil {
+		return "", &commandError{err, buf.String()}
+	}
+	output := buf.String()
+	return strings.TrimSpace(output), nil
+}
+
 func runCommand(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer) error {
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Env = os.Environ()
@@ -2157,6 +2252,11 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	if ctxErr := ctx.Err(); ctxErr == context.DeadlineExceeded {
 		_, _ = outputSink.Write([]byte(fmt.Sprintf("Remote run exceeded timeout (%s). Aborting...", timeout.String())))
 	}
+
+	if err != nil {
+		_, _ = outputSink.Write([]byte(aurora.Sprintf(aurora.Red("Command failed: %s\n"), err)))
+	}
+
 	return err
 }
 
@@ -2171,6 +2271,12 @@ func expandEnv(args []string) []string {
 func getExitCode(err error) int {
 	if err == nil {
 		return 0
+	}
+	if commandError, ok := err.(*commandError); ok {
+		if commandError == nil {
+			return 0
+		}
+		err = commandError.Err
 	}
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		return exitErr.ExitCode()
