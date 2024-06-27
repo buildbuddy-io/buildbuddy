@@ -558,6 +558,7 @@ func TestGetTree(t *testing.T) {
 }
 
 func TestGetTreeCaching(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
 	instanceName := ""
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
