@@ -13,7 +13,8 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-func runACServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) repb.ActionCacheClient {
+func runACServer(ctx context.Context, t *testing.T) repb.ActionCacheClient {
+	env := testenv.GetTestEnv(t)
 	acServer, err := action_cache_server.NewActionCacheServer(env)
 	require.NoError(t, err)
 	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
@@ -25,7 +26,8 @@ func runACServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) repb.A
 	return repb.NewActionCacheClient(conn)
 }
 
-func runACProxy(ctx context.Context, client repb.ActionCacheClient, env *testenv.TestEnv, t *testing.T) repb.ActionCacheClient {
+func runACProxy(ctx context.Context, client repb.ActionCacheClient, t *testing.T) repb.ActionCacheClient {
+	env := testenv.GetTestEnv(t)
 	env.SetActionCacheClient(client)
 	proxyServer, err := NewActionCacheServerProxy(env)
 	require.NoError(t, err)
@@ -60,8 +62,8 @@ func get(ctx context.Context, client repb.ActionCacheClient, digest *repb.Digest
 
 func TestActionCacheProxy(t *testing.T) {
 	ctx := context.Background()
-	ac := runACServer(ctx, testenv.GetTestEnv(t), t)
-	proxy := runACProxy(ctx, ac, testenv.GetTestEnv(t), t)
+	ac := runACServer(ctx, t)
+	proxy := runACProxy(ctx, ac, t)
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
