@@ -11,6 +11,7 @@ import (
 	"path"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -18,8 +19,8 @@ import (
 	spb "github.com/buildbuddy-io/buildbuddy/proto/spawn"
 )
 
-func printSpawnExec(s *spb.SpawnExec) error {
-	b, err := protojson.MarshalOptions{Multiline: true}.Marshal(s)
+func printProtoMsg[M proto.Message](m M) error {
+	b, err := protojson.MarshalOptions{Multiline: true}.Marshal(m)
 	if err != nil {
 		return fmt.Errorf("failed to marshal remote gRPC log entry: %s", err)
 	}
@@ -38,7 +39,7 @@ func printSpawnExec(s *spb.SpawnExec) error {
 	return nil
 }
 
-func PrintCompactExecLog(path string, sort bool) error {
+func PrintCompactExecLog(path string, raw bool, sort bool) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -49,8 +50,26 @@ func PrintCompactExecLog(path string, sort bool) error {
 		return err
 	}
 	defer r.Close()
-	slr := NewSpawnLogReconstructor(r)
+	reader := bufio.NewReader(r)
 
+	if raw {
+		entry := &spb.ExecLogEntry{}
+		for {
+			err := protodelim.UnmarshalFrom(reader, entry)
+			if err == io.EOF {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("failed to read execution log entry: %s", err)
+			}
+
+			if err := printProtoMsg(entry); err != nil {
+				return err
+			}
+		}
+	}
+
+	slr := NewSpawnLogReconstructor(reader)
 	var spawns []*spb.SpawnExec
 	for {
 		s, err := slr.GetSpawnExec()
@@ -65,13 +84,13 @@ func PrintCompactExecLog(path string, sort bool) error {
 			continue
 		}
 
-		if err := printSpawnExec(s); err != nil {
+		if err := printProtoMsg(s); err != nil {
 			return err
 		}
 	}
 
 	if sort {
-		return StableSortExec(spawns, printSpawnExec)
+		return StableSortExec(spawns, printProtoMsg)
 	}
 	return nil
 }
@@ -226,7 +245,7 @@ func (ismm spawnSetMultiMap) remove(key *spb.SpawnExec, val *spb.SpawnExec) {
 // SpawnLogReconstructor reconstructs "compact execution log" format back to the original format.
 // As of Bazel 7.1, this is the recommended way to consume the new compact format.
 type SpawnLogReconstructor struct {
-	input *bufio.Reader
+	input protodelim.Reader
 
 	hashFunc string
 	files    map[int32]*spb.File
@@ -240,9 +259,9 @@ type reconstructedDir struct {
 	files []*spb.File
 }
 
-func NewSpawnLogReconstructor(input io.Reader) *SpawnLogReconstructor {
+func NewSpawnLogReconstructor(input protodelim.Reader) *SpawnLogReconstructor {
 	return &SpawnLogReconstructor{
-		input:    bufio.NewReader(input),
+		input:    input,
 		hashFunc: "",
 		files:    make(map[int32]*spb.File),
 		dirs:     make(map[int32]*reconstructedDir),
