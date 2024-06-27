@@ -21,10 +21,10 @@ import (
 
 const (
 	// Remote authentication results are cached locally in an LRU keyed by
-	// the auth headers. The LRU is limited to this many entries. If the cache
-	// grows beyond this size, old entries will be evicted. Increasing the size
-	// of the jwt cache will result in fewer evictions (if the cache fills up)
-	// at the cost of more memory use.
+	// API Key. The LRU is limited to this many entries. If the cache grows
+	// beyond this size, old entries will be evicted. Increasing the size of
+	// the jwt cache will result in fewer evictions (if the cache fills up) at
+	// the cost of more memory use.
 	jwtCacheSize = 10_000
 )
 
@@ -98,6 +98,8 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 }
 
 func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
+	// Pass JWTs through as is.
+	// TODO(iain): only use valid JWTs once running beyond GCP.
 	if jwt := getJWT(ctx); jwt != "" {
 		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 	}
