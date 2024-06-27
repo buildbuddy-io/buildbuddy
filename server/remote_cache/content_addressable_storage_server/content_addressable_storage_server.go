@@ -584,8 +584,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		if err != nil {
 			return nil, err
 		}
-		// TODO: change > to >= here and update flag settings to match.
-		if *enableTreeCaching && level > *minTreeCacheLevel {
+		if *enableTreeCaching && level >= *minTreeCacheLevel {
 			// Limit cardinality of level label.
 			levelLabel := fmt.Sprintf("%d", min(level, 12))
 			treeCacheRN := treeCacheResource.ToProto()
@@ -645,8 +644,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 
-		// TODO: change > to >= here and update flag settings to match.
-		if *enableTreeCaching && level > *minTreeCacheLevel && len(allDescendents) > *minTreeCacheDescendents {
+		if *enableTreeCaching && level >= *minTreeCacheLevel && len(allDescendents) >= *minTreeCacheDescendents {
 			cacheTreeNode(treeCacheResource, allDescendents)
 		}
 		return allDescendents, nil
