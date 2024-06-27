@@ -552,6 +552,7 @@ func (rq *Queue) rebalance(rd *rfpb.RangeDescriptor, localRepl IReplica) *change
 	if op == nil {
 		return nil
 	}
+	rq.log.Debugf("found rebalance op for range %d: %s -> %s", rd.GetRangeId(), op.from.nhid, op.to.nhid)
 
 	replicaID, err := findReplicaWithNHID(rd, op.from.usage.GetNode().GetNhid())
 	if err != nil {
