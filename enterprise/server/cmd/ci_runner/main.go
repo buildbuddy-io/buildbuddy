@@ -680,10 +680,12 @@ func run() error {
 	}
 
 	// Symlink bazel to `bazelCommand` so that it can be easily invoked
-	if err := os.Symlink(*bazelCommand, filepath.Join(rootDir, bazelBinaryName)); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "file exists") {
-			return status.WrapError(err, "could not symlink bazel to bazelisk")
-		}
+	bazelPath := filepath.Join(rootDir, bazelBinaryName)
+	if err := os.RemoveAll(bazelPath); err != nil {
+		return status.WrapError(err, "remove existing bazel binary")
+	}
+	if err := os.Symlink(*bazelCommand, bazelPath); err != nil {
+		return status.WrapError(err, "symlink bazel to bazelisk")
 	}
 	// Update PATH to include the root dir
 	prevPath := os.Getenv("PATH")
