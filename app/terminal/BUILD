@@ -10,7 +10,6 @@ ts_library(
     deps = [
         "//app/components/input",
         "//app/components/spinner",
-        "//app/errors:error_service",
         "//app/router",
         "//app/terminal:row",
         "//app/terminal:text",
