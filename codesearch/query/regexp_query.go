@@ -3,7 +3,7 @@ package query
 import (
 	"bufio"
 	"bytes"
-
+	"encoding/csv"
 	"fmt"
 	"regexp"
 	"regexp/syntax"
@@ -200,6 +200,14 @@ type ReQuery struct {
 	fieldMatchers map[string]*regexp.Regexp
 }
 
+func expressionToSquery(expr string, fieldName string) (string, error) {
+	syn, err := syntax.Parse(expr, syntax.Perl)
+	if err != nil {
+		return "", err
+	}
+	return RegexpQuery(syn).SQuery(fieldName), nil
+}
+
 func NewReQuery(q string, numResults int) (*ReQuery, error) {
 	subLog := log.NamedSubLogger("regexp-query")
 	subLog.Infof("raw query: [%s]", q)
@@ -233,11 +241,10 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 
 	if len(fileMatch) == 2 {
 		q = fileMatcher.ReplaceAllString(q, "")
-		syn, err := syntax.Parse(fileMatch[1], syntax.Perl)
+		subQ, err := expressionToSquery(fileMatch[1], filenameField)
 		if err != nil {
 			return nil, err
 		}
-		subQ := RegexpQuery(syn).SQuery(filenameField)
 		requiredSClauses = append(requiredSClauses, subQ)
 		fileMatchRe, err := regexp.Compile(fileMatch[1])
 		if err != nil {
@@ -262,24 +269,36 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 		}
 	}
 
-	squery := ""
-
 	q = strings.TrimSpace(q)
+	sQueries := make([]string, 0)
 	if len(q) > 0 {
-		q = "(?" + regexFlags + ")" + q
-		// Only build a content matcher if there is non-empty query content.
+		flagString := "(?" + regexFlags + ")"
+
+		r := csv.NewReader(strings.NewReader(q))
+		r.Comma = ' '
+		queryTerms, err := r.Read()
+		if err != nil {
+			return nil, err
+		}
+		for _, qTerm := range queryTerms {
+			qTerm = strings.TrimSuffix(strings.TrimPrefix(qTerm, `"`), `"`)
+			subQ, err := expressionToSquery(flagString+qTerm, types.AllFields)
+			if err != nil {
+				return nil, err
+			}
+			sQueries = append(sQueries, subQ)
+		}
+
+		// Build a content matcher that will match any of the query terms.
+		for i, qTerm := range queryTerms {
+			queryTerms[i] = "(" + qTerm + ")"
+		}
+		q = flagString + strings.Join(queryTerms, "|")
 		re, err := regexp.Compile(q)
 		if err != nil {
 			return nil, err
 		}
 		fieldMatchers[contentField] = re
-
-		syn, err := syntax.Parse(q, syntax.Perl)
-		if err != nil {
-			return nil, err
-		}
-		queryObj := RegexpQuery(syn)
-		squery = queryObj.SQuery(types.AllFields)
 
 		// If there is a content matcher, and there is not already a
 		// filename matcher, allow filenames that match the query too.
@@ -288,6 +307,13 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 		}
 	}
 	subLog.Infof("parsed query: [%s]", q)
+
+	squery := ""
+	if len(sQueries) == 1 {
+		squery = sQueries[0]
+	} else if len(sQueries) > 1 {
+		squery = "(:or " + strings.Join(sQueries, " ") + ")"
+	}
 
 	if len(requiredSClauses) > 0 {
 		var clauses string
