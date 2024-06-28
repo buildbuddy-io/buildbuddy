@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"math"
 	"testing"
 	"time"
 
@@ -17,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/cas"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -437,82 +436,6 @@ func zstdDecompress(t *testing.T, b []byte) []byte {
 	return out
 }
 
-func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, instanceName string, depth, branchingFactor int) (*repb.Digest, []string) {
-	numFiles := int(math.Pow(float64(branchingFactor), float64(depth)))
-	fileNames := make([]string, 0, numFiles)
-	var leafNodes []*repb.DirectoryNode
-
-	for d := depth; d > 0; d-- {
-		numNodes := int(math.Pow(float64(branchingFactor), float64(d)))
-		nextLeafNodes := make([]*repb.DirectoryNode, 0, numNodes)
-		for n := 0; n < numNodes; n++ {
-			subdir := &repb.Directory{}
-			if d == depth {
-				rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, bytes.NewReader(buf))
-				require.NoError(t, err)
-				fileName := fmt.Sprintf("leaf-file-%s-%d", rn.GetDigest().GetHash(), n)
-				fileNames = append(fileNames, fileName)
-				subdir.Files = append(subdir.Files, &repb.FileNode{
-					Name:   fileName,
-					Digest: rn.GetDigest(),
-				})
-			} else {
-				start := n * branchingFactor
-				end := branchingFactor + start
-				subdir.Directories = append(subdir.Directories, leafNodes[start:end]...)
-			}
-
-			subdirDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, subdir)
-			require.NoError(t, err)
-			dirName := fmt.Sprintf("node-%s-depth-%d-node-%d", subdirDigest.GetHash(), d, n)
-			fileNames = append(fileNames, dirName)
-			nextLeafNodes = append(nextLeafNodes, &repb.DirectoryNode{
-				Name:   dirName,
-				Digest: subdirDigest,
-			})
-		}
-		leafNodes = nextLeafNodes
-	}
-
-	parentDir := &repb.Directory{
-		Directories: leafNodes,
-	}
-	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, parentDir)
-	require.NoError(t, err)
-	return rootDigest, fileNames
-}
-
-func readTree(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, instanceName string, rootDigest *repb.Digest) []string {
-	// Fetch the tree, and return contents.
-	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
-		InstanceName: instanceName,
-		RootDigest:   rootDigest,
-	})
-	assert.Nil(t, err)
-
-	names := make([]string, 0)
-
-	for {
-		rsp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, dir := range rsp.GetDirectories() {
-			for _, file := range dir.GetFiles() {
-				names = append(names, file.GetName())
-			}
-			for _, subdir := range dir.GetDirectories() {
-				names = append(names, subdir.GetName())
-			}
-		}
-	}
-	return names
-}
-
 func TestGetTree(t *testing.T) {
 	instanceName := ""
 	ctx := context.Background()
@@ -529,7 +452,7 @@ func TestGetTree(t *testing.T) {
 	// Upload a dir containing fileCount files, and return the file
 	// names and directory digest.
 	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
-		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+		return cas.MakeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
 	}
 
 	child1Digest, child1Files := uploadDirWithFiles(2, 1)
@@ -553,7 +476,7 @@ func TestGetTree(t *testing.T) {
 
 	allFiles := append(child1Files, child2Files...)
 	allFiles = append(allFiles, "child1", "child2")
-	treeFiles := readTree(ctx, t, casClient, instanceName, rootDigest)
+	treeFiles := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest)
 	assert.ElementsMatch(t, allFiles, treeFiles)
 }
 
@@ -572,7 +495,7 @@ func TestGetTreeCaching(t *testing.T) {
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
-		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+		return cas.MakeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
 	}
 
 	child1Digest, child1Files := uploadDirWithFiles(10, 2)
@@ -614,7 +537,7 @@ func TestGetTreeCaching(t *testing.T) {
 	uploadedFiles1 = append(uploadedFiles1, "child1", "child2")
 
 	start := time.Now()
-	treeFiles1 := readTree(ctx, t, casClient, instanceName, rootDigest1)
+	treeFiles1 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest1)
 	fetch1Time := time.Since(start)
 
 	assert.ElementsMatch(t, uploadedFiles1, treeFiles1)
@@ -622,7 +545,7 @@ func TestGetTreeCaching(t *testing.T) {
 	uploadedFiles2 := append(child2Files, child3Files...)
 	uploadedFiles2 = append(uploadedFiles2, "child2", "child3")
 	start = time.Now()
-	treeFiles2 := readTree(ctx, t, casClient, instanceName, rootDigest2)
+	treeFiles2 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest2)
 	fetch2Time := time.Since(start)
 
 	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
@@ -658,7 +581,7 @@ func TestGetTreeMissingRoot(t *testing.T) {
 	// Upload a dir containing fileCount files, and return the file
 	// names and directory digest.
 	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
-		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+		return cas.MakeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
 	}
 
 	child1Digest, _ := uploadDirWithFiles(2, 1)
