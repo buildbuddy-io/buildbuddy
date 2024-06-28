@@ -597,18 +597,11 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if blob, err := s.cache.Get(ctx, treeCacheRN); err == nil {
 				treeCache := &capb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
-					if isComplete(treeCache.GetChildren()) {
-						metrics.TreeCacheLookupCount.With(prometheus.Labels{
-							metrics.TreeCacheLookupStatus: "hit",
-							metrics.TreeCacheLookupLevel:  levelLabel,
-						}).Inc()
-						return treeCache.GetChildren(), nil
-					} else {
-						metrics.TreeCacheLookupCount.With(prometheus.Labels{
-							metrics.TreeCacheLookupStatus: "invalid_entry",
-							metrics.TreeCacheLookupLevel:  levelLabel,
-						}).Inc()
-					}
+					metrics.TreeCacheLookupCount.With(prometheus.Labels{
+						metrics.TreeCacheLookupStatus: "hit",
+						metrics.TreeCacheLookupLevel:  levelLabel,
+					}).Inc()
+					return treeCache.GetChildren(), nil
 				}
 			} else if status.IsNotFoundError(err) {
 				metrics.TreeCacheLookupCount.With(prometheus.Labels{
