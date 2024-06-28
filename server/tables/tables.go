@@ -699,7 +699,7 @@ type Usage struct {
 	// [xxxxxxxxxxxxxxxxxxx[xxxxxx)-----------)
 	//                     ^ FinalBefore (before update) = CollectionPeriodStart
 	//                            ^ FinalBefore (after update) = CollectionPeriodEnd
-	FinalBeforeUsec int64 `gorm:"not null;default:0"`
+	FinalBeforeUsec int64 `gorm:"default:0"`
 
 	UsageCounts
 
