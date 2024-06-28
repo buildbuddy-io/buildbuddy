@@ -22,22 +22,24 @@ interface Props {
 }
 
 export default class CodeSearchComponent extends React.Component<Props, State> {
-  query: string = "";
+  inputText: string = "";
   keyboardShortcutHandle: string = "";
   state: State = {
     loading: false,
   };
 
+  getQuery() {
+    return this.props.search.get("q") || "";
+  }
+
   search() {
-    router.setQueryParam("q", this.query);
-    if (!this.query) {
+    if (!this.getQuery()) {
       return;
     }
-    const query = this.query;
 
     this.setState({ loading: true, response: undefined });
     rpcService.service
-      .search(new search.SearchRequest({ query: new search.Query({ term: query }) }))
+      .search(new search.SearchRequest({ query: new search.Query({ term: this.getQuery() }) }))
       .then((response) => {
         this.setState({ response: response });
       })
@@ -45,12 +47,17 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       .finally(() => this.setState({ loading: false }));
   }
 
-  handleQueryChange(event: React.ChangeEvent<HTMLInputElement>) {
-    this.query = event.target.value;
+  componentDidUpdate(prevProps: Props) {
+    if (this.props.search.get("q") != prevProps.search.get("q")) {
+      this.search();
+    }
+  }
+
+  handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    this.inputText = event.target.value;
   }
 
   componentDidMount() {
-    this.query = this.props.search.get("q") ?? "";
     this.keyboardShortcutHandle = shortcuts.register(KeyCombo.slash, () => {
       this.focusSearchBox();
     });
@@ -67,7 +74,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     }
 
     // Show some helpful examples if the query was empty.
-    if (!this.query) {
+    if (!this.getQuery()) {
       return (
         <div className="no-results">
           <div className="circle">
@@ -132,13 +139,13 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
               className="form-bs"
               onSubmit={(e) => {
                 e.preventDefault();
-                this.search();
+                router.updateParams({ q: this.inputText });
               }}>
               <input
                 type="text"
                 className="searchbox"
                 defaultValue={this.props.search.get("q") ?? ""}
-                onChange={this.handleQueryChange.bind(this)}
+                onChange={this.handleInputChange.bind(this)}
               />
               <FilledButton type="submit">SEARCH</FilledButton>
             </form>
