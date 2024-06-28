@@ -77,6 +77,14 @@ func realBusyboxImage(t *testing.T) string {
 	return "mirror.gcr.io/library/busybox"
 }
 
+// Returns a remote reference to the image in //dockerfiles/test_images/ociruntime_test/env_test_image
+func envTestImage(t *testing.T) string {
+	if !hasMountPermissions(t) {
+		t.Skipf("using a real container image with overlayfs requires mount permissions")
+	}
+	return "gcr.io/flame-public/env-test@sha256:e3e64513b41d429a60b0fb420afbecb5b36af11f6d6601ba8177e259d74e1514"
+}
+
 func TestRun(t *testing.T) {
 	image := manuallyProvisionedBusyboxImage(t)
 
@@ -118,7 +126,7 @@ func TestRun(t *testing.T) {
 }
 
 func TestRunWithImage(t *testing.T) {
-	image := realBusyboxImage(t)
+	image := envTestImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -145,6 +153,7 @@ func TestRunWithImage(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `
 			echo "$GREETING world!"
+			env | grep -v 'HOSTNAME' | sort
 		`},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "GREETING", Value: "Hello"},
@@ -152,7 +161,14 @@ func TestRunWithImage(t *testing.T) {
 	}
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
-	assert.Equal(t, "Hello world!\n", string(res.Stdout))
+	assert.Equal(t, `Hello world!
+GREETING=Hello
+HOME=/root
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
+PWD=/buildbuddy-execroot
+SHLVL=1
+TEST_ENV_VAR=foo
+`, string(res.Stdout))
 	assert.Empty(t, "", string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 }
@@ -200,7 +216,7 @@ func TestCreateExecRemove(t *testing.T) {
 }
 
 func TestPullCreateExecRemove(t *testing.T) {
-	image := realBusyboxImage(t)
+	image := envTestImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -243,6 +259,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	cmd := &repb.Command{Arguments: []string{"sh", "-ec", `
 		touch /bin/foo.txt
 		pwd
+		env | grep -v HOSTNAME | sort
 	`}}
 	stdio := interfaces.Stdio{}
 	res := c.Exec(ctx, cmd, &stdio)
@@ -250,7 +267,13 @@ func TestPullCreateExecRemove(t *testing.T) {
 
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, "/buildbuddy-execroot\n", string(res.Stdout))
+	assert.Equal(t, `/buildbuddy-execroot
+HOME=/root
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
+PWD=/buildbuddy-execroot
+SHLVL=1
+TEST_ENV_VAR=foo
+`, string(res.Stdout))
 
 	// Make sure the image layers were unmodified and that foo.txt was written
 	// to the upper dir in the overlayfs.
