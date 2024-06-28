@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"runtime/pprof"
 	"sync"
 	"time"
 
@@ -23,6 +24,8 @@ import (
 var (
 	warnAboutLeaks = flag.Bool("cache.pebble.warn_about_leaks", true, "If set, warn about leaked DB handles")
 )
+
+var pebbleIterProfile = pprof.NewProfile("pebble_open_iter")
 
 var NoSync = pebble.NoSync
 var Sync = pebble.Sync
@@ -187,6 +190,7 @@ type instrumentedIter struct {
 }
 
 func (i *instrumentedIter) Close() error {
+	pebbleIterProfile.Remove(i)
 	return i.iter.Close()
 }
 
@@ -393,7 +397,9 @@ func (idb *instrumentedDB) NewIter(o *pebble.IterOptions) (Iterator, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &instrumentedIter{idb, iter}, nil
+	res := &instrumentedIter{idb, iter}
+	pebbleIterProfile.Add(res, 1)
+	return res, nil
 }
 
 func (idb *instrumentedDB) NewBatch() Batch {
