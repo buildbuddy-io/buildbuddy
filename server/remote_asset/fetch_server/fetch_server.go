@@ -32,8 +32,6 @@ import (
 
 const (
 	ChecksumQualifier = "checksum.sri"
-	sha256Prefix      = "sha256-"
-	blake3Prefix      = "blake3-"
 	maxHTTPTimeout    = 60 * time.Minute
 )
 
@@ -116,12 +114,13 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	for _, qualifier := range req.GetQualifiers() {
 		var prefix string
 		if qualifier.GetName() == ChecksumQualifier {
-			if strings.HasPrefix(qualifier.GetValue(), sha256Prefix) {
-				checksumFunc = repb.DigestFunction_SHA256
-				prefix = sha256Prefix
-			} else if strings.HasPrefix(qualifier.GetValue(), blake3Prefix) {
-				checksumFunc = repb.DigestFunction_BLAKE3
-				prefix = blake3Prefix
+			for _, digestFunc := range digest.SupportedDigestFunctions() {
+				pr := fmt.Sprintf("%s-", strings.ToLower(repb.DigestFunction_Value_name[int32(digestFunc)]))
+				if strings.HasPrefix(qualifier.GetValue(), pr) {
+					checksumFunc = digestFunc
+					prefix = pr
+					break
+				}
 			}
 		}
 		if prefix != "" {
