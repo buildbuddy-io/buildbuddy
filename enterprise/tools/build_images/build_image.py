@@ -103,7 +103,6 @@ def main():
     parser.add_argument(
             "--platform",
             action="append",
-            #nargs="*",
             type=str,
             help="Repeated option. Set this to specify platforms to build the image for.",
             dest="platforms",
