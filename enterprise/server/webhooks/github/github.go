@@ -263,9 +263,9 @@ func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, u
 }
 
 func (g *githubGitProvider) CreateStatus(ctx context.Context, token, repoURL, commitSHA string, payload any) error {
-	s, ok := payload.(*gh_backend.GithubStatusPayload)
+	s, ok := payload.(*gh.RepoStatus)
 	if !ok {
-		return status.InvalidArgumentErrorf("invalid GitHub status payload type %T (expected %T)", payload, &gh_backend.GithubStatusPayload{})
+		return status.InvalidArgumentErrorf("invalid GitHub status payload type %T (expected %T)", payload, &gh.RepoStatus{})
 	}
 	client := gh_backend.NewGithubClient(g.env, token)
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(repoURL)
