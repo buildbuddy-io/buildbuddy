@@ -121,3 +121,16 @@
 .code-search .code-line:hover {
   background: #f5f5f5;
 }
+
+.code-search .more-buttons {
+  background: #f8f8f8;
+}
+
+.code-search .outlined-button {
+  height: 14px;
+  font-size: 14px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
