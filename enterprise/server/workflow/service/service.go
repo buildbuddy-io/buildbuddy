@@ -1159,6 +1159,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		// Because the apps are built for linux/amd64, in these cases we can have the apps
 		// upload the ci_runner binary to the cache to ensure the executors are using
 		// the most up-to-date version of the binary
+		// TODO(Maggie): Need to pass the bash wrapper here too
 		runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, ws.env.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, ci_runner_bundle.CiRunnerBytes)
 		if err != nil {
 			return nil, status.WrapError(err, "upload runner bin")

@@ -200,6 +200,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 
 // AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
 // already exist.
+// TODO(Maggie): Need to write the bash wrapper here too
 func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	destPath := path.Join(ws.Path(), ci_runner_bundle.RunnerName)
 	exists, err := disk.FileExists(ctx, destPath)
