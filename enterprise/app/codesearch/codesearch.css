@@ -121,3 +121,11 @@
 .code-search .code-line:hover {
   background: #f5f5f5;
 }
+
+.code-search .more-buttons {
+  background: #eaeaea;
+}
+
+.code-search .more-buttons .outlined-button {
+  width: 100%;
+}

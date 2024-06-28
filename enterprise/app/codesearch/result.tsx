@@ -1,6 +1,7 @@
 import React from "react";
 import { search } from "../../../proto/search_ts_proto";
 import { File } from "lucide-react";
+import { OutlinedButton } from "../../../app/components/button/button";
 
 interface SnippetProps {
   result: search.Result;
@@ -64,7 +65,15 @@ interface ResultProps {
   result: search.Result;
 }
 
-export default class ResultComponent extends React.Component<ResultProps> {
+interface ResultState {
+  limit: number;
+}
+
+export default class ResultComponent extends React.Component<ResultProps, ResultState> {
+  state: ResultState = {
+    limit: 3,
+  };
+
   getFileOnlyURL() {
     let ownerRepo = this.props.result.repo;
     let filename = this.props.result.filename;
@@ -72,6 +81,11 @@ export default class ResultComponent extends React.Component<ResultProps> {
     let sha = this.props.result.sha;
     return `/code/${ownerRepo}/${filename}?commit=${sha}&pq=${parsedQuery}`;
   }
+
+  handleMoreClicked() {
+    this.setState({ limit: Number.MAX_SAFE_INTEGER });
+  }
+
   render() {
     return (
       <div className="result">
@@ -82,7 +96,7 @@ export default class ResultComponent extends React.Component<ResultProps> {
             <a href={this.getFileOnlyURL()}>{this.props.result.filename}</a>
           </div>
         </div>
-        {this.props.result.snippets.map((snippet) => {
+        {this.props.result.snippets.slice(0, this.state.limit).map((snippet) => {
           return (
             <SnippetComponent
               snippet={snippet}
@@ -90,6 +104,13 @@ export default class ResultComponent extends React.Component<ResultProps> {
               result={this.props.result}></SnippetComponent>
           );
         })}
+        {this.props.result.snippets.length > this.state.limit && (
+          <div className="more-buttons">
+            <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>
+              Show {this.props.result.snippets.length - this.state.limit} more matches
+            </OutlinedButton>
+          </div>
+        )}
       </div>
     );
   }

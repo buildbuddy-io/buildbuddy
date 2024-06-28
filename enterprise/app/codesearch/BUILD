@@ -28,6 +28,7 @@ ts_library(
     name = "result",
     srcs = ["result.tsx"],
     deps = [
+        "//app/components/button",
         "//proto:search_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
