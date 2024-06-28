@@ -326,6 +326,88 @@ func TestFetchBlobMismatch(t *testing.T) {
 	}
 }
 
+func TestSubsequentRequestCacheHit(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		digestFunc        repb.DigestFunction_Value
+		checksumQualifier string
+		expectCacheHit    bool
+	}{
+		{
+			name:              "sha256_digest_func__sri_sha256",
+			digestFunc:        repb.DigestFunction_SHA256,
+			checksumQualifier: sha256CRI,
+			expectCacheHit:    true,
+		},
+		{
+			name:              "blake3_digest_func__sri_sha256",
+			digestFunc:        repb.DigestFunction_BLAKE3,
+			checksumQualifier: sha256CRI,
+			expectCacheHit:    false,
+		},
+		{
+			name:              "sha256_digest_func__sri_sha512",
+			digestFunc:        repb.DigestFunction_SHA256,
+			checksumQualifier: sha512CRI,
+			expectCacheHit:    false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			require.NoError(t, scratchspace.Init())
+			clientConn := runFetchServer(ctx, te, t)
+			fetchClient := rapb.NewFetchClient(clientConn)
+
+			// a cache miss would translate to an incoming request handled by http test server
+			cacheMisses := 0
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				cacheMisses += 1
+				fmt.Fprint(w, content)
+			}))
+			defer ts.Close()
+
+			request := &rapb.FetchBlobRequest{
+				Uris:           []string{ts.URL},
+				DigestFunction: tc.digestFunc,
+			}
+			if tc.checksumQualifier != "" {
+				request.Qualifiers = []*rapb.Qualifier{
+					{
+						Name:  fetch_server.ChecksumQualifier,
+						Value: tc.checksumQualifier,
+					},
+				}
+			}
+
+			{
+				// First fetch request, we expect cache to always miss here
+				resp, err := fetchClient.FetchBlob(ctx, request)
+				assert.NoError(t, err)
+				require.NotNil(t, resp)
+				assert.Equal(t, int32(0), resp.GetStatus().Code)
+				assert.Equal(t, "", resp.GetStatus().Message)
+				assert.Contains(t, resp.GetUri(), ts.URL)
+				require.NoError(t, err)
+				require.Equal(t, 1, cacheMisses)
+			}
+
+			{
+				// Second fetch request _should_ get cache hits, except for known cases
+				// TODO: ensure cache hits for all cases
+				resp, err := fetchClient.FetchBlob(ctx, request)
+				assert.NoError(t, err)
+				require.NotNil(t, resp)
+				if tc.expectCacheHit {
+					require.Equal(t, 1, cacheMisses)
+				} else {
+					require.Equal(t, 2, cacheMisses)
+				}
+			}
+		})
+	}
+}
+
 func TestFetchDirectory(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
