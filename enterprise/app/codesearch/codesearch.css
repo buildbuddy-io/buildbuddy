@@ -122,15 +122,22 @@
   background: #f5f5f5;
 }
 
-.code-search .more-buttons {
+.code-search .more-button {
   background: #f8f8f8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px;
+  cursor: pointer;
+  font-size: 13px;
 }
 
-.code-search .outlined-button {
-  height: 14px;
-  font-size: 14px;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+.code-search .more-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.code-search .more-button:hover {
+  background: #f5f5f5;
 }
