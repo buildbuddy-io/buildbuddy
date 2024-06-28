@@ -123,9 +123,14 @@
 }
 
 .code-search .more-buttons {
-  background: #eaeaea;
+  background: #f8f8f8;
 }
 
-.code-search .more-buttons .outlined-button {
+.code-search .outlined-button {
+  height: 14px;
+  font-size: 14px;
   width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
