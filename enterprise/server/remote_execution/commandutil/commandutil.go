@@ -314,3 +314,21 @@ func EnvStringList(command *repb.Command) []string {
 	}
 	return env
 }
+
+// EnvProto returns the REAPI proto representation of the given env string list
+// (NAME=VALUE pairs). It returns an error if any string in the list does not
+// contain "=".
+func EnvProto(env []string) ([]*repb.Command_EnvironmentVariable, error) {
+	out := make([]*repb.Command_EnvironmentVariable, 0, len(env))
+	for _, pair := range env {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, status.InvalidArgumentErrorf("invalid environment variable %q (expected NAME=VALUE)", pair)
+		}
+		out = append(out, &repb.Command_EnvironmentVariable{
+			Name:  parts[0],
+			Value: parts[1],
+		})
+	}
+	return out, nil
+}
