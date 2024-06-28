@@ -94,6 +94,7 @@ type Env interface {
 	GetBuildBuddyServer() interfaces.BuildBuddyServer
 	GetSSLService() interfaces.SSLService
 	GetBuildEventServer() pepb.PublishBuildEventServer
+	GetGitHubStatusService() interfaces.GitHubStatusService
 	GetCASServer() repb.ContentAddressableStorageServer
 	GetByteStreamServer() bspb.ByteStreamServer
 	GetActionCacheServer() repb.ActionCacheServer
