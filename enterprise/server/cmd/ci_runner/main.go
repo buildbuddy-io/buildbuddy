@@ -688,12 +688,14 @@ func run() error {
 
 	}
 
-	// Symlink bazel to `bazelCommand` so that it can be easily invoked
+	// Symlink bazel to the bazel wrapper script, which adds some common flags to all
+	// Bazel builds
+	wrapperBin := "/workpace/buildbuddy_bazel_wrapper --bazel_bin=" + *bazelCommand
 	bazelPath := filepath.Join(rootDir, bazelBinaryName)
 	if err := os.RemoveAll(bazelPath); err != nil {
 		return status.WrapError(err, "remove existing bazel binary")
 	}
-	if err := os.Symlink(*bazelCommand, bazelPath); err != nil {
+	if err := os.Symlink(wrapperBin, bazelPath); err != nil {
 		return status.WrapError(err, "symlink bazel to bazelisk")
 	}
 	// Update PATH to include the root dir
