@@ -1,6 +1,6 @@
 import React from "react";
 import { search } from "../../../proto/search_ts_proto";
-import { File } from "lucide-react";
+import { ChevronsUpDown, File } from "lucide-react";
 import { OutlinedButton } from "../../../app/components/button/button";
 
 interface SnippetProps {
@@ -87,6 +87,7 @@ export default class ResultComponent extends React.Component<ResultProps, Result
   }
 
   render() {
+    let additionalMatchCount = this.props.result.snippets.length - this.state.limit;
     return (
       <div className="result">
         <div className="result-title-bar">
@@ -105,10 +106,8 @@ export default class ResultComponent extends React.Component<ResultProps, Result
           );
         })}
         {this.props.result.snippets.length > this.state.limit && (
-          <div className="more-buttons">
-            <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>
-              Show {this.props.result.snippets.length - this.state.limit} more matches
-            </OutlinedButton>
+          <div className="more-button" onClick={this.handleMoreClicked.bind(this)}>
+            <ChevronsUpDown /> Show {additionalMatchCount} more match{additionalMatchCount > 1 && "es"}
           </div>
         )}
       </div>
