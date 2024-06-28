@@ -679,6 +679,28 @@ type Usage struct {
 	// the FinalBeforeUsec logic to work independently in each region.
 	Region string `gorm:"not null;index:group_period_region_index_v2,priority:3"`
 
+	// FinalBeforeUsec is the time before which all collection period data in
+	// this usage period is finalized. This is used to guarantee that collection
+	// period data is added to this row in strictly increasing order of
+	// collection period start time.
+	//
+	// Consider the following diagram:
+	//
+	// [xxxxxxxxxxxxxxxxxxx)------------------)
+	// ^ PeriodStart       ^ FinalBefore      ^ PeriodEnd = PeriodStart + 1hr
+	//
+	// Usage data collected during the x-marked region cannot be added to this
+	// usage row any longer, since the usage period is "finalized" in this
+	// region.
+	//
+	// When writing the next collection period's data, the FinalBefore timestamp
+	// is updated as follows:
+	//
+	// [xxxxxxxxxxxxxxxxxxx[xxxxxx)-----------)
+	//                     ^ FinalBefore (before update) = CollectionPeriodStart
+	//                            ^ FinalBefore (after update) = CollectionPeriodEnd
+	FinalBeforeUsec int64 `gorm:"not null;default:0"`
+
 	UsageCounts
 
 	UsageLabels
