@@ -2313,4 +2313,8 @@ message StoredExecution {
   
   int32 status_code = 29;
   int32 exit_code = 30;
+
+  string target_label = 31;
+  string action_mnemonic = 32;
+  string configuration_id = 33;
 }

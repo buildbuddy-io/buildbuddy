@@ -227,6 +227,17 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 	return err
 }
 
+func (s *ExecutionServer) insertRequestMetadataInRedis(ctx context.Context, executionID string, metadata *repb.RequestMetadata) error {
+	collector := s.env.GetExecutionCollector()
+	if collector == nil {
+		return nil
+	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	return collector.AddExecutionRequestMetadata(ctx, executionID, metadata)
+}
+
 func (s *ExecutionServer) insertInvocationLinkInRedis(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {
 	if s.env.GetExecutionCollector() == nil {
 		return nil
@@ -319,31 +330,37 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 }
 
 func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string) error {
-	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
+	collector := s.env.GetExecutionCollector()
+	if collector == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
 	}
 	var executionPrimaryDB tables.Execution
-
 	if err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_lookup_execution").Raw(
 		`SELECT * FROM "Executions" WHERE execution_id = ?`, executionID).Take(&executionPrimaryDB); err != nil {
 		return status.InternalErrorf("failed to look up execution %q: %s", executionID, err)
 	}
-	// Always clean up invocationLinks in Collector because we are not retrying
 	defer func() {
-		err := s.env.GetExecutionCollector().DeleteInvocationLinks(ctx, executionID)
-		if err != nil {
+		// Always clean up invocationLinks in Collector because we are not retrying
+		if err := collector.DeleteInvocationLinks(ctx, executionID); err != nil {
 			log.CtxErrorf(ctx, "failed to clean up invocation links in collector: %s", err)
 		}
 	}()
-	links, err := s.env.GetExecutionCollector().GetInvocationLinks(ctx, executionID)
 
+	// RequestMetadata is not critical and could be empty for requests coming from clients other than Bazel
+	// Retrive and clean up metadata on a best-effort basis.
+	metadata, err := collector.GetExecutionRequestMetadata(ctx, executionID)
+	if err != nil {
+		log.CtxDebugf(ctx, "could not find request metadata for execution %s: %v", executionID, err)
+	}
+	defer collector.DeleteExecutionRequestMetadata(ctx, executionID)
+
+	links, err := collector.GetInvocationLinks(ctx, executionID)
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
-
 	for _, link := range links {
-		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
-		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
+		executionProto := execution.TableExecToProto(&executionPrimaryDB, link, metadata)
+		inv, err := collector.GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {
 			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.GetInvocationId(), err)
 			continue
@@ -351,20 +368,19 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 		if inv == nil {
 			// The invocation hasn't finished yet. Add the execution to ExecutionCollector, and flush it once
 			// the invocation is complete
-			if err := s.env.GetExecutionCollector().AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
+			if err := collector.AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
 				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.GetInvocationId(), err)
 			} else {
 				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
 			}
-		} else {
-			err = s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, []*repb.StoredExecution{executionProto})
-			if err != nil {
-				log.CtxErrorf(ctx, "failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.GetInvocationId(), err)
-			} else {
-				log.CtxInfof(ctx, "successfully write 1 execution for invocation %q", link.GetInvocationId())
-			}
+			continue
 		}
 
+		if err = s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, []*repb.StoredExecution{executionProto}); err != nil {
+			log.CtxErrorf(ctx, "failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.GetInvocationId(), err)
+		} else {
+			log.CtxInfof(ctx, "successfully write 1 execution for invocation %q", link.GetInvocationId())
+		}
 	}
 	return nil
 }
@@ -460,6 +476,12 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 	if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
 		return "", err
+	}
+	metadata := bazel_request.GetRequestMetadata(ctx)
+	if metadata != nil {
+		if err := s.insertRequestMetadataInRedis(ctx, executionID, metadata); err != nil {
+			log.CtxWarningf(ctx, "failed to record invocation %s execution %s request metadata: %v", invocationID, executionID, err)
+		}
 	}
 
 	executionTask := &repb.ExecutionTask{
