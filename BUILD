@@ -158,6 +158,11 @@ nogo(
     ]),
 )
 
+sh_binary(
+    name = "lfs",
+    srcs = ["git-lfs.sh"],
+)
+
 gazelle_binary(
     name = "bb_gazelle_binary",
     languages = DEFAULT_LANGUAGES + ["@bazel_gazelle//language/bazel/visibility:go_default_library"],
