@@ -448,8 +448,8 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 	)
 	ugr, err := db.ScanAll(rq, &struct {
 		tables.User
-		tables.Group
-		tables.UserGroup
+		*tables.Group
+		*tables.UserGroup
 	}{})
 	if err != nil {
 		return nil, err
@@ -458,17 +458,17 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 		return nil, status.NotFoundErrorf("Sub id %s was not found in LookupUserFromSubID.", subID)
 	}
 	user := &ugr[0].User
-	if ugr[0].UserGroup.UserUserID == "" {
+	if ugr[0].UserGroup == nil {
 		// no user groups matched this user ID
 		return user, nil
 	}
 	for _, v := range ugr {
-		if v.Group.GroupID == "" {
+		if v.Group == nil {
 			// no group matched the user group (this shouldn't really happen)
 			log.CtxWarningf(ctx, "In LookupUserFromSubID, the UserGroup row User: %s Group %s did not match a group with that ID.", v.UserGroup.UserUserID, v.UserGroup.GroupGroupID)
 			continue
 		}
-		user.Groups = append(user.Groups, &tables.GroupRole{Group: v.Group, Role: v.UserGroup.Role})
+		user.Groups = append(user.Groups, &tables.GroupRole{Group: *v.Group, Role: v.UserGroup.Role})
 	}
 	return user, nil
 }
