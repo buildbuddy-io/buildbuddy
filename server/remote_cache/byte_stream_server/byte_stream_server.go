@@ -93,7 +93,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
-	if !s.supportsCompressor(r.GetCompressor()) {
+	if !SupportsCompressor(r.GetCompressor()) {
 		return status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
 	}
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
@@ -241,7 +241,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	if !s.supportsCompressor(r.GetCompressor()) {
+	if !SupportsCompressor(r.GetCompressor()) {
 		return nil, status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
 	}
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
@@ -359,7 +359,17 @@ func (w *writeState) Close() error {
 	return w.cacheCloser.Close()
 }
 
+type streamLike interface {
+	Context() context.Context
+	SendAndClose(*bspb.WriteResponse) error
+	Recv() (*bspb.WriteRequest, error)
+}
+
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
+	return s.WriteDirect(stream)
+}
+
+func (s *ByteStreamServer) WriteDirect(stream streamLike) error {
 	ctx := stream.Context()
 
 	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
@@ -436,7 +446,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	return nil
 }
 
-func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value) bool {
+func SupportsCompressor(compression repb.Compressor_Value) bool {
 	return compression == repb.Compressor_IDENTITY ||
 		compression == repb.Compressor_ZSTD && remote_cache_config.ZstdTranscodingEnabled()
 }
@@ -464,7 +474,7 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 	}, nil
 }
 
-func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht *hit_tracker.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
+func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht *hit_tracker.HitTracker, stream streamLike, firstRequest *bspb.WriteRequest) error {
 	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
 	if err != nil {
 		return err
@@ -505,7 +515,7 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht *hit_trac
 
 // recvAll receives the remaining write requests from the client, and returns
 // the total (compressed) size of the uploaded bytes.
-func (s *ByteStreamServer) recvAll(stream bspb.ByteStream_WriteServer) (int64, error) {
+func (s *ByteStreamServer) recvAll(stream streamLike) (int64, error) {
 	size := int64(0)
 	for {
 		req, err := stream.Recv()
