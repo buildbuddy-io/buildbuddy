@@ -91,6 +91,7 @@ func timeoutHTTPClient(ctx context.Context, protoTimeout *durationpb.Duration) *
 			Timeout: timeout,
 		}).Dial,
 		TLSHandshakeTimeout: timeout,
+		Proxy:               http.ProxyFromEnvironment,
 	}
 
 	return &http.Client{
