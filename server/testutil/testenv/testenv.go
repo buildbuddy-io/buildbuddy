@@ -91,7 +91,7 @@ func RegisterLocalGRPCServer(te *real_environment.RealEnv) (*grpc.Server, func()
 		log.Fatal("GRPCServer is already registered")
 	}
 	lis := bufconn.Listen(1024 * 1024)
-	srv, run := gRPCServer(te, lis)
+	srv, run := GRPCServer(te, lis)
 	te.SetLocalBufconnListener(lis)
 	te.SetGRPCServer(srv)
 	return srv, run
@@ -110,7 +110,7 @@ func LocalGRPCConn(ctx context.Context, te *real_environment.RealEnv, opts ...gr
 }
 
 // gRPCServer starts a gRPC server with standard BuildBuddy filters that uses the given listener.
-func gRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
+func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
 	srv := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
 	runFunc := func() {
 		if err := srv.Serve(lis); err != nil {
