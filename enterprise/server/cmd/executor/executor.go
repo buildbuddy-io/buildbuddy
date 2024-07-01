@@ -55,6 +55,7 @@ import (
 
 var (
 	appTarget                 = flag.String("executor.app_target", "grpcs://remote.buildbuddy.io", "The GRPC url of a buildbuddy app server.")
+	cacheTarget               = flag.String("executor.cache_target", "", "The GRPC url of the remote cache to use. If empty, the value from --executor.app_target is used.")
 	disableLocalCache         = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
 	deleteFileCacheOnStartup  = flag.Bool("executor.delete_filecache_on_startup", false, "If true, delete the file cache on startup")
 	deleteBuildRootOnStartup  = flag.Bool("executor.delete_build_root_on_startup", false, "If true, delete the build root on startup")
@@ -156,7 +157,11 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	// Identify ourselves as an executor client in gRPC requests to the app.
 	usageutil.SetClientType("executor")
 
-	InitializeCacheClientsOrDie(*appTarget, realEnv)
+	cache := *cacheTarget
+	if cache == "" {
+		cache = *appTarget
+	}
+	InitializeCacheClientsOrDie(cache, realEnv)
 
 	if !*disableLocalCache {
 		fcDir := filepath.Join(*localCacheDirectory, getExecutorHostID())
