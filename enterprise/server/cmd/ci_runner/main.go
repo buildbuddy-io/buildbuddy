@@ -860,6 +860,28 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// because that error is instead surfaced in the caller func when calling
 	// `buildEventPublisher.Wait()`
 
+	wfc := &bespb.WorkflowConfigured{
+		WorkflowId:         *workflowID,
+		ActionName:         getActionNameForWorkflowConfiguredEvent(),
+		ActionTriggerEvent: *triggerEvent,
+		PushedRepoUrl:      *pushedRepoURL,
+		PushedBranch:       *pushedBranch,
+		CommitSha:          *commitSHA,
+		TargetRepoUrl:      *targetRepoURL,
+		TargetBranch:       *targetBranch,
+		Os:                 runtime.GOOS,
+		Arch:               runtime.GOARCH,
+	}
+	wfcEvent := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
+		Payload: &bespb.BuildEvent_WorkflowConfigured{WorkflowConfigured: wfc},
+	}
+	if ar.isWorkflow {
+		if err := ar.reporter.Publish(wfcEvent); err != nil {
+			return nil
+		}
+	}
+
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{},
 	}
@@ -902,28 +924,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	log.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
-
-	wfc := &bespb.WorkflowConfigured{
-		WorkflowId:         *workflowID,
-		ActionName:         getActionNameForWorkflowConfiguredEvent(),
-		ActionTriggerEvent: *triggerEvent,
-		PushedRepoUrl:      *pushedRepoURL,
-		PushedBranch:       *pushedBranch,
-		CommitSha:          *commitSHA,
-		TargetRepoUrl:      *targetRepoURL,
-		TargetBranch:       *targetBranch,
-		Os:                 runtime.GOOS,
-		Arch:               runtime.GOARCH,
-	}
-	wfcEvent := &bespb.BuildEvent{
-		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
-		Payload: &bespb.BuildEvent_WorkflowConfigured{WorkflowConfigured: wfc},
-	}
-	if ar.isWorkflow {
-		if err := ar.reporter.Publish(wfcEvent); err != nil {
-			return nil
-		}
-	}
 
 	if err := ws.setup(ctx); err != nil {
 		return status.WrapError(err, "failed to set up git repo")
