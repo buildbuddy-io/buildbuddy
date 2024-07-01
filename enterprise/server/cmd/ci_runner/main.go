@@ -66,6 +66,11 @@ const (
 	// This bazelrc takes lower precedence than the workspace .bazelrc.
 	buildbuddyBazelrcPath = "buildbuddy.bazelrc"
 
+	// bashrcPath is the path where we write a bashrc file to be
+	// applied to all bash commands. The path is relative to the runner workspace
+	// root, which notably is not the same as the bazel workspace / git repo root.
+	bashrcPath = ".bashrc"
+
 	// Name of the dir into which the repo is cloned.
 	repoDirName = "repo-root"
 	// Name of the bazel output base dir. This is written under the workspace
@@ -688,22 +693,10 @@ func run() error {
 
 	}
 
-	// Symlink bazel to the bazel wrapper script, which adds some common flags to all
+	// Alias bazel to the bazel wrapper script, which adds some common flags to all
 	// Bazel builds
-	wrapperBin := "/workpace/buildbuddy_bazel_wrapper --bazel_bin=" + *bazelCommand
-	bazelPath := filepath.Join(rootDir, bazelBinaryName)
-	if err := os.RemoveAll(bazelPath); err != nil {
-		return status.WrapError(err, "remove existing bazel binary")
-	}
-	if err := os.Symlink(wrapperBin, bazelPath); err != nil {
-		return status.WrapError(err, "symlink bazel to bazelisk")
-	}
-	// Update PATH to include the root dir
-	prevPath := os.Getenv("PATH")
-	if !strings.Contains(prevPath, rootDir) {
-		if err := os.Setenv("PATH", rootDir+":"+os.Getenv("PATH")); err != nil {
-			return status.WrapError(err, "failed to include root dir in PATH")
-		}
+	if err := ws.writeBashrc(); err != nil {
+		return status.WrapError(err, "write bashrc")
 	}
 
 	if *shutdownAndExit {
@@ -2056,6 +2049,29 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	return nil
 }
 
+// This will overwrite any existing .bashrc in the runner workspace root
+// TODO: Only overwrite if it doesn't exist
+func (ws *workspace) writeBashrc() error {
+	p := filepath.Join(ws.rootDir, ".home/.bashrc")
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0664)
+	if err != nil {
+		return status.InternalErrorf("Failed to open %s for writing: %s", p, err)
+	}
+	defer f.Close()
+
+	lines := []string{
+		`alias bazel='/workspace/buildbuddy_bazel_wrapper --bazel_bin=bazelisk'`,
+	}
+	contents := strings.Join(lines, "\n") + "\n"
+	if _, err := io.WriteString(f, contents); err != nil {
+		return status.InternalErrorf("Failed to append to %s: %s", p, err)
+	}
+	return nil
+}
+
 type commandError struct {
 	Err    error
 	Output string
@@ -2253,7 +2269,7 @@ func runBashCommand(ctx context.Context, cmd string, env map[string]string, dir 
 	var buf bytes.Buffer
 	w := io.MultiWriter(outputSink, &buf)
 
-	if err := runCommand(ctx, "bash", []string{"-eo", "pipefail", "-c", cmd}, env, dir, w); err != nil {
+	if err := runCommand(ctx, "bash", []string{"-eoi", "pipefail", "-c", cmd}, env, dir, w); err != nil {
 		return "", &commandError{err, buf.String()}
 	}
 	output := buf.String()
