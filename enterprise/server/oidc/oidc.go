@@ -302,7 +302,7 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 	}
 
 	claimsFunc := claims.ParseClaims
-	claimsCache, err := claims.NewClaimsCache(ctx)
+	claimsCache, err := claims.NewClaimsCache()
 	if err != nil {
 		return nil, err
 	}

@@ -337,7 +337,11 @@ type ClaimsCache struct {
 	lru interfaces.LRU[*Claims]
 }
 
-func NewClaimsCache(ctx context.Context) (*ClaimsCache, error) {
+// Returns a ClaimsCache if the claims cache is enabled, or nil otherwise, or
+// an error if there's an error constructing the cache.
+//
+// Note: this function can return (nil, nil)!
+func NewClaimsCache() (*ClaimsCache, error) {
 	if *claimsCacheTTL <= 0 {
 		return nil, nil
 	}

@@ -34,15 +34,15 @@ var (
 	remoteAuthTarget = flag.String("auth.remote_auth_target", "", "The gRPC target of the remote authentication API.")
 )
 
-func NewRemoteAuthenticator(ctx context.Context) (*RemoteAuthenticator, error) {
+func NewRemoteAuthenticator() (*RemoteAuthenticator, error) {
 	conn, err := grpc_client.DialSimple(*remoteAuthTarget)
 	if err != nil {
 		return nil, err
 	}
-	return newRemoteAuthenticator(ctx, conn)
+	return newRemoteAuthenticator(conn)
 }
 
-func newRemoteAuthenticator(ctx context.Context, conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
+func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
 	config := &lru.Config[string]{
 		MaxSize: jwtCacheSize,
 		SizeFn:  func(v string) int64 { return 1 },
@@ -51,7 +51,7 @@ func newRemoteAuthenticator(ctx context.Context, conn grpc.ClientConnInterface) 
 	if err != nil {
 		return nil, err
 	}
-	claimsCache, err := claims.NewClaimsCache(ctx)
+	claimsCache, err := claims.NewClaimsCache()
 	if err != nil {
 		return nil, err
 	}
