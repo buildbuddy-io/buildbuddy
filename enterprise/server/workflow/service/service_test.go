@@ -100,13 +100,13 @@ func setupFakeGitProvider(t *testing.T, te *testenv.TestEnv) *testgit.FakeProvid
 	return provider
 }
 
-func runBBServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
+func runBBServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env /*sslService=*/, nil)
 	require.NoError(t, err)
 	bsServer, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
 
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env, t)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 	bspb.RegisterByteStreamServer(grpcServer, bsServer)
 
@@ -239,7 +239,7 @@ func TestCreate_SuccessfullyRegisterWebhook(t *testing.T) {
 	ctx, uid, gid := authenticate(t, ctx, te)
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 
 	req := &wfpb.CreateWorkflowRequest{
@@ -276,7 +276,7 @@ func TestCreate_NoWebhookPermissions(t *testing.T) {
 	provider := setupFakeGitProvider(t, te)
 	provider.RegisterWebhookError = fmt.Errorf("(fake error) You do not have permissions to register webhooks!")
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 
 	req := &wfpb.CreateWorkflowRequest{
@@ -312,7 +312,7 @@ func TestCreate_NonNormalizedRepoURL(t *testing.T) {
 	te.SetRepoDownloader(nil)
 	setupFakeGitProvider(t, te)
 	repoURL := "git@github.com:/foo/bar"
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 
 	req := &wfpb.CreateWorkflowRequest{
@@ -339,7 +339,7 @@ func TestDelete(t *testing.T) {
 	ctx, _, gid := authenticate(t, ctx, te)
 	provider := setupFakeGitProvider(t, te)
 
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 
 	// Create a single workflow row.
@@ -370,7 +370,7 @@ func TestList(t *testing.T) {
 
 	ctx1, uid1, gid1 := authenticate(t, ctx, te)
 
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 
 	// Write 2 workflows for US1
@@ -441,7 +441,7 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
@@ -490,7 +490,7 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
@@ -539,7 +539,7 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
@@ -589,7 +589,7 @@ func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
@@ -627,7 +627,7 @@ func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
@@ -665,7 +665,7 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	req := &wfpb.CreateWorkflowRequest{
 		RequestContext: testauth.RequestContext(uid, gid),
@@ -715,7 +715,7 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 	go http.Serve(lis, te.GetWorkflowService())
 	_ = setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	reqCtx := testauth.RequestContext(uid, gid)
 	req := &wfpb.CreateWorkflowRequest{
