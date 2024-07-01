@@ -38,7 +38,6 @@ func runFetchServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *gr
 	rapb.RegisterFetchServer(grpcServer, fetchServer)
 
 	go runFunc()
-	t.Cleanup(func() { grpcServer.GracefulStop() })
 
 	clientConn, err := testenv.LocalGRPCConn(ctx, env)
 	require.NoError(t, err)

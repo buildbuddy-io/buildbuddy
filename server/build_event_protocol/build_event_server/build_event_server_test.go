@@ -19,9 +19,6 @@ func TestPublishBuildToolEventStream_NoEvents(t *testing.T) {
 	grpcServer, runServer := testenv.RegisterLocalGRPCServer(env, t)
 	pepb.RegisterPublishBuildEventServer(grpcServer, server)
 	go runServer()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-	})
 
 	// Make a PublishBuildToolEventStream RPC but close it without sending
 	// anything.

@@ -106,7 +106,6 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	server, runFunc := testenv.RegisterLocalGRPCServer(env, t)
 	scpb.RegisterSchedulerServer(server, env.GetSchedulerService())
 	go runFunc()
-	t.Cleanup(func() { server.Stop() })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
