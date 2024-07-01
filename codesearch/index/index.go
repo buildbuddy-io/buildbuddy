@@ -451,11 +451,16 @@ func (r *Reader) postingQuery(q *ast.Node, restrict posting.FieldMap) (posting.F
 		}
 		return r.allDocIDs()
 	case QAnd:
-		list := restrict
+		var list posting.FieldMap
 		for _, subQuery := range q.List()[1:] {
-			list, err = r.postingQuery(subQuery, list)
+			l, err := r.postingQuery(subQuery, restrict)
 			if err != nil {
 				return nil, err
+			}
+			if list == nil {
+				list = l
+			} else {
+				list.And(l)
 			}
 		}
 		return list, nil
@@ -491,7 +496,6 @@ func (r *Reader) postingQuery(q *ast.Node, restrict posting.FieldMap) (posting.F
 		if err != nil {
 			return nil, err
 		}
-
 		return pl, nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown query op: %q", op)
