@@ -40,8 +40,8 @@ var (
 	cpuProfile string
 	namespace  string
 
-	reset   = indexCmd.Bool("reset", false, "Delete the index and start fresh")
-	results = searchCmd.Int("results", 100, "Print this many results")
+	reset    = indexCmd.Bool("reset", false, "Delete the index and start fresh")
+	results  = searchCmd.Int("results", 100, "Print this many results")
 	snippets = searchCmd.Int("snippets", 5, "Print this many snippets per result")
 
 	skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*$`)
