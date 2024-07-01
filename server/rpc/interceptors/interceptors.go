@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
@@ -450,26 +451,36 @@ func setClientIdentityStreamClientInterceptor(env environment.Env) grpc.StreamCl
 	return contextReplacingStreamClientInterceptor(getClientIdentityAdder(env))
 }
 
-func propagateAPIKeyFromIncomingToOutgoing(ctx context.Context) context.Context {
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		keys := md.Get("x-buildbuddy-api-key")
-		if len(keys) > 0 {
-			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", keys[len(keys)-1])
+func propagateMetadataFromIncomingToOutgoing(key string) func(context.Context) context.Context {
+	return func(ctx context.Context) context.Context {
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			keys := md.Get(key)
+			if len(keys) > 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, key, keys[len(keys)-1])
+			}
 		}
+		return ctx
 	}
-	return ctx
 }
 
 func PropagateAPIKeyUnaryInterceptor() grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(propagateAPIKeyFromIncomingToOutgoing)
+	return contextReplacingUnaryServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.APIKeyHeader))
 }
 
 func PropagateAPIKeyStreamInterceptor() grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(propagateAPIKeyFromIncomingToOutgoing)
+	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.APIKeyHeader))
 }
 
-func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
-	return grpc.ChainUnaryInterceptor(
+func PropagateJWTUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return contextReplacingUnaryServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.ContextTokenStringKey))
+}
+
+func PropagateJWTStreamInterceptor() grpc.StreamServerInterceptor {
+	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.ContextTokenStringKey))
+}
+
+func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnaryServerInterceptor) grpc.ServerOption {
+	interceptors := []grpc.UnaryServerInterceptor{
 		unaryRecoveryInterceptor(),
 		copyHeadersUnaryServerInterceptor(),
 		ClientIPUnaryServerInterceptor(),
@@ -478,16 +489,23 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 		invocationIDLoggerUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
 		requestContextProtoUnaryServerInterceptor(),
-		authUnaryServerInterceptor(env),
+	}
+	// Install extra, caller-specified interceptors prior to auth interceptors
+	// because the auth interceptors rely on extra interceptors for e.g.
+	// propagating auth headers.
+	if len(extraInterceptors) > 0 {
+		interceptors = append(interceptors, extraInterceptors...)
+	}
+	interceptors = append(interceptors, authUnaryServerInterceptor(env),
 		quotaUnaryServerInterceptor(env),
 		identityUnaryServerInterceptor(env),
 		ipAuthUnaryServerInterceptor(env),
-		roleAuthUnaryServerInterceptor(env),
-	)
+		roleAuthUnaryServerInterceptor(env))
+	return grpc.ChainUnaryInterceptor(interceptors...)
 }
 
-func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
-	return grpc.ChainStreamInterceptor(
+func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamServerInterceptor) grpc.ServerOption {
+	interceptors := []grpc.StreamServerInterceptor{
 		streamRecoveryInterceptor(),
 		copyHeadersStreamServerInterceptor(),
 		clientIPStreamServerInterceptor(),
@@ -495,12 +513,19 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 		requestIDStreamServerInterceptor(),
 		invocationIDLoggerStreamServerInterceptor(),
 		logRequestStreamServerInterceptor(),
-		authStreamServerInterceptor(env),
+	}
+	// Install extra, caller-specified interceptors prior to auth interceptors
+	// because the auth interceptors rely on extra interceptors for e.g.
+	// propagating auth headers.
+	if len(extraInterceptors) > 0 {
+		interceptors = append(interceptors, extraInterceptors...)
+	}
+	interceptors = append(interceptors, authStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),
 		identityStreamServerInterceptor(env),
 		ipAuthStreamServerInterceptor(env),
-		roleAuthStreamServerInterceptor(env),
-	)
+		roleAuthStreamServerInterceptor(env))
+	return grpc.ChainStreamInterceptor(interceptors...)
 }
 
 func GetUnaryClientInterceptor() grpc.DialOption {
