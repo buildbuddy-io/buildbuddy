@@ -47,7 +47,7 @@ func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc
 		t.Error(err)
 	}
 
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env, t)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()

@@ -33,7 +33,7 @@ func runFetchServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *gr
 	fetchServer, err := fetch_server.NewFetchServer(env)
 	require.NoError(t, err)
 
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env, t)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	rapb.RegisterFetchServer(grpcServer, fetchServer)
 
