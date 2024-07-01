@@ -43,12 +43,16 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 	}, nil
 }
 
-// TODO(iain): don't cache these locally
+// Action Cache entries are not content-addressable, so the value pointed to
+// by a given key may change in the backing cache. Thus, always fetch them from
+// the authoritative cache.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	return s.remoteCache.GetActionResult(ctx, req)
 }
 
-// TODO(iain): don't cache these locally
+// Action Cache entries are not content-addressable, so the value pointed to
+// by a given key may change in the backing cache. Thus, don't cache them
+// locally when writing to the authoritative cache.
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	return s.remoteCache.UpdateActionResult(ctx, req)
 }
