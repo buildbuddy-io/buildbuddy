@@ -35,6 +35,7 @@ var (
 	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
 	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, JWT verifications will try both this and the old JWT key.", flag.Secret)
 	signUsingNewJwtKey = flag.Bool("auth.sign_using_new_jwt_key", false, "If true, new JWTs will be signed using the new JWT key.")
+	claimsCacheTTL     = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
 	jwtDuration        = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
 )
 
@@ -336,7 +337,15 @@ type ClaimsCache struct {
 	lru interfaces.LRU[*Claims]
 }
 
-func NewClaimsCache(ctx context.Context, ttl time.Duration) (*ClaimsCache, error) {
+// Returns a ClaimsCache if the claims cache is enabled, or nil otherwise, or
+// an error if there's an error constructing the cache.
+//
+// Note: this function can return (nil, nil)!
+func NewClaimsCache() (*ClaimsCache, error) {
+	if *claimsCacheTTL <= 0 {
+		return nil, nil
+	}
+
 	config := &lru.Config[*Claims]{
 		MaxSize: claimsCacheSize,
 		SizeFn:  func(v *Claims) int64 { return 1 },
@@ -345,7 +354,7 @@ func NewClaimsCache(ctx context.Context, ttl time.Duration) (*ClaimsCache, error
 	if err != nil {
 		return nil, err
 	}
-	return &ClaimsCache{ttl: ttl, lru: lru}, nil
+	return &ClaimsCache{ttl: *claimsCacheTTL, lru: lru}, nil
 }
 
 func (c *ClaimsCache) Get(token string) (*Claims, error) {
