@@ -225,7 +225,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	if err != nil {
 		t.Error(err)
 	}
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)

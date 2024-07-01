@@ -37,7 +37,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
+func runCASServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {
 		t.Error(err)
@@ -47,7 +47,7 @@ func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc
 		t.Error(err)
 	}
 
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
@@ -80,7 +80,7 @@ func TestBatchUpdateBlobs(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	var digests []*repb.Digest
@@ -117,7 +117,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 	require.NoError(t, err)
 	te.SetMetricsCollector(mc)
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
@@ -212,7 +212,7 @@ func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "cache.zstd_transcoding_enabled", false)
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
@@ -242,7 +242,7 @@ func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	req := &repb.BatchUpdateBlobsRequest{}
@@ -317,7 +317,7 @@ func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
 			mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 			require.NoError(t, err)
 			te.SetMetricsCollector(mc)
-			clientConn := runCASServer(ctx, te, t)
+			clientConn := runCASServer(ctx, t, te)
 			casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 			uploadBlob := blob
@@ -403,7 +403,7 @@ func TestMalevolentCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	te.SetCache(&evilCache{c})
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -522,7 +522,7 @@ func TestGetTree(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
@@ -567,7 +567,7 @@ func TestGetTreeCaching(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
@@ -651,7 +651,7 @@ func TestGetTreeMissingRoot(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 

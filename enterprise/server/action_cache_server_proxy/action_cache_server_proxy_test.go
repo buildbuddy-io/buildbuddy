@@ -17,7 +17,7 @@ func runACServer(ctx context.Context, t *testing.T) repb.ActionCacheClient {
 	env := testenv.GetTestEnv(t)
 	acServer, err := action_cache_server.NewActionCacheServer(env)
 	require.NoError(t, err)
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterActionCacheServer(grpcServer, acServer)
 	go runFunc()
 	conn, err := testenv.LocalGRPCConn(ctx, env)
@@ -26,12 +26,12 @@ func runACServer(ctx context.Context, t *testing.T) repb.ActionCacheClient {
 	return repb.NewActionCacheClient(conn)
 }
 
-func runACProxy(ctx context.Context, client repb.ActionCacheClient, t *testing.T) repb.ActionCacheClient {
+func runACProxy(ctx context.Context, t *testing.T, client repb.ActionCacheClient) repb.ActionCacheClient {
 	env := testenv.GetTestEnv(t)
 	env.SetActionCacheClient(client)
 	proxyServer, err := NewActionCacheServerProxy(env)
 	require.NoError(t, err)
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterActionCacheServer(grpcServer, proxyServer)
 	go runFunc()
 	conn, err := testenv.LocalGRPCConn(ctx, env)
@@ -63,7 +63,7 @@ func get(ctx context.Context, client repb.ActionCacheClient, digest *repb.Digest
 func TestActionCacheProxy(t *testing.T) {
 	ctx := context.Background()
 	ac := runACServer(ctx, t)
-	proxy := runACProxy(ctx, ac, t)
+	proxy := runACProxy(ctx, t, ac)
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
