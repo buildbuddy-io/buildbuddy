@@ -104,8 +104,8 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 }
 
 func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	// Pass valid JWTs through as is.
-	jwt, err := getValidJWT(ctx, a.claimsCache)
+	// If a JWT was provided, check if it's valid and use it if so.
+	jwt, err := validateJWT(ctx, a.claimsCache)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -187,7 +187,7 @@ func getAPIKey(ctx context.Context) string {
 
 // Returns a valid JWT from the incoming RPC metadata, or an error an invalid
 // JWT is present, or an empty string and no error if no JWT is provided.
-func getValidJWT(ctx context.Context, claimsCache *claims.ClaimsCache) (string, error) {
+func validateJWT(ctx context.Context, claimsCache *claims.ClaimsCache) (string, error) {
 	jwt := getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
 	if jwt == "" {
 		return "", nil
