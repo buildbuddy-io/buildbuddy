@@ -86,14 +86,26 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, status.WrapError(err, "upload runner bin")
 	}
+	bazelWrapperBinDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, ci_runner_bundle.BazelWrapperBytes)
+	if err != nil {
+		return nil, status.WrapError(err, "upload runner bin")
+	}
 	// Save this to use when constructing the command to run below.
 	runnerName := filepath.Base(ci_runner_bundle.RunnerName)
+	bazelWrapperName := ci_runner_bundle.BazelWrapperName
 	dir := &repb.Directory{
-		Files: []*repb.FileNode{{
-			Name:         runnerName,
-			Digest:       runnerBinDigest,
-			IsExecutable: true,
-		}},
+		Files: []*repb.FileNode{
+			{
+				Name:         runnerName,
+				Digest:       runnerBinDigest,
+				IsExecutable: true,
+			},
+			{
+				Name:         bazelWrapperName,
+				Digest:       bazelWrapperBinDigest,
+				IsExecutable: true,
+			},
+		},
 	}
 	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, dir)
 	if err != nil {
