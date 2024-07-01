@@ -146,7 +146,8 @@ func (rm regionMatch) CustomSnippet(linesBefore, linesAfter int) string {
 
 	for n := firstLine; n <= lastLine; n++ {
 		buf := extractLine(rm.field.Contents(), n)
-		if buf == nil {
+		if len(bytes.TrimSuffix(buf, []byte{'\n'})) == 0 && n < lineNumber {
+			// Skip blank lines before the matched line.
 			continue
 		}
 		snippetText += makeLine(buf, n)
@@ -160,12 +161,10 @@ func (rm regionMatch) String() string {
 
 func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion {
 	results := make([]types.HighlightedRegion, 0)
-	for _, fieldName := range doc.Fields() {
-		field := doc.Field(fieldName)
-		matcher, ok := h.fieldMatchers[fieldName]
-		if !ok {
-			continue
-		}
+
+	field := doc.Field(contentField)
+	matcher, ok := h.fieldMatchers[contentField]
+	if ok {
 		for _, region := range match(matcher, field.Contents()) {
 			region := region
 			results = append(results, types.HighlightedRegion(regionMatch{
