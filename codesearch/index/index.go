@@ -452,7 +452,7 @@ func (r *Reader) postingQuery(q *ast.Node, restrict posting.FieldMap) (posting.F
 		return r.allDocIDs()
 	case QAnd:
 		var list posting.FieldMap
-		for i, subQuery := range q.List()[1:] {
+		for _, subQuery := range q.List()[1:] {
 			l, err := r.postingQuery(subQuery, restrict)
 			if err != nil {
 				return nil, err
