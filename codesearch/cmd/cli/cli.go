@@ -40,8 +40,9 @@ var (
 	cpuProfile string
 	namespace  string
 
-	reset   = indexCmd.Bool("reset", false, "Delete the index and start fresh")
-	results = searchCmd.Int("results", 100, "Print this many results")
+	reset    = indexCmd.Bool("reset", false, "Delete the index and start fresh")
+	results  = searchCmd.Int("results", 100, "Print this many results")
+	snippets = searchCmd.Int("snippets", 5, "Print this many snippets per result")
 
 	skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*$`)
 )
@@ -252,8 +253,11 @@ func handleSearch(args []string) {
 		}
 
 		fmt.Printf("%q [%d matches]\n", doc.Field("filename").Contents(), len(dedupedRegions))
+		if len(dedupedRegions) > *snippets {
+			dedupedRegions = dedupedRegions[:*snippets]
+		}
 		for _, region := range dedupedRegions {
-			scanner := bufio.NewScanner(strings.NewReader(region.String()))
+			scanner := bufio.NewScanner(strings.NewReader(region.CustomSnippet(1, 1)))
 			for scanner.Scan() {
 				fmt.Print("  " + scanner.Text() + "\n")
 			}
