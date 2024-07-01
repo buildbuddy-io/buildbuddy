@@ -65,7 +65,7 @@ func main() {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(healthChecker)
 	env.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
-	authenticator, err := remoteauth.NewRemoteAuthenticator()
+	authenticator, err := remoteauth.NewRemoteAuthenticator(context.Background())
 	if err != nil {
 		log.Fatalf("%v", err)
 	}

@@ -30,6 +30,7 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testenv",
         "//server/util/authutil",
+        "//server/util/claims",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",

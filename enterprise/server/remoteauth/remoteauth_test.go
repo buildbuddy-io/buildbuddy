@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 )
@@ -65,7 +66,7 @@ func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	go runServer()
 	conn, err := testenv.LocalGRPCConn(context.Background(), te)
 	require.NoError(t, err)
-	authenticator, err := newRemoteAuthenticator(conn)
+	authenticator, err := newRemoteAuthenticator(context.Background(), conn)
 	require.NoError(t, err)
 	return authenticator, &fakeAuthService
 }
@@ -88,6 +89,14 @@ func contextWith(t *testing.T, key string, value string) context.Context {
 	return metadata.NewIncomingContext(ctx, outgoingMD)
 }
 
+func validJwt(t *testing.T) string {
+	authctx := claims.AuthContextFromClaims(context.Background(), &claims.Claims{}, nil)
+	jwt, ok := authctx.Value(authutil.ContextTokenStringKey).(string)
+	require.True(t, ok)
+	require.NotEqual(t, "", jwt)
+	return jwt
+}
+
 func TestAuthenticatedGRPCContext(t *testing.T) {
 	authenticator, fakeAuth := setup(t)
 
@@ -104,12 +113,14 @@ func TestAuthenticatedGRPCContext(t *testing.T) {
 	// Error case.
 	fakeAuth.Reset().setNextErr(t, status.InternalError("error"))
 	ctx = authenticator.AuthenticatedGRPCContext(context.Background())
-	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
+	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Error case with API Key.
 	fakeAuth.Reset().setNextErr(t, status.InternalError("error"))
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
-	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
+	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
+	err, _ := authutil.AuthErrorFromContext(ctx)
+	require.True(t, status.IsInternalError(err))
 
 	// Don't cache errors.
 	fakeAuth.Reset().setNextJwt(t, "jwt")
@@ -126,18 +137,16 @@ func TestAuthenticatedGRPCContext(t *testing.T) {
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bar"))
 	require.Equal(t, "twj", ctx.Value(authutil.ContextTokenStringKey))
 
-	// JWTs should be passed through
-	fakeAuth.Reset().setNextJwt(t, "jjwwtt")
-	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, "bar"))
-	require.Equal(t, "bar", ctx.Value(authutil.ContextTokenStringKey))
+	// Valid JWTs should be passed through
+	jwt := validJwt(t)
+	fakeAuth.Reset().setNextJwt(t, "jwt")
+	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, jwt))
+	require.Equal(t, jwt, ctx.Value(authutil.ContextTokenStringKey))
 
-	// Some other JWT
-	fakeAuth.Reset().setNextJwt(t, "ttwwjj")
+	// Invalid JWTs should return an error
+	fakeAuth.Reset().setNextJwt(t, "jwt")
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, "baz"))
-	require.Equal(t, "baz", ctx.Value(authutil.ContextTokenStringKey))
-
-	// Error case with JWT
-	fakeAuth.Reset().setNextErr(t, status.InternalError("error"))
-	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, "qux"))
-	require.Equal(t, "qux", ctx.Value(authutil.ContextTokenStringKey))
+	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
+	err, _ = authutil.AuthErrorFromContext(ctx)
+	require.NotNil(t, err)
 }

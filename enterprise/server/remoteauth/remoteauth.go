@@ -34,15 +34,15 @@ var (
 	remoteAuthTarget = flag.String("auth.remote_auth_target", "", "The gRPC target of the remote authentication API.")
 )
 
-func NewRemoteAuthenticator() (*RemoteAuthenticator, error) {
+func NewRemoteAuthenticator(ctx context.Context) (*RemoteAuthenticator, error) {
 	conn, err := grpc_client.DialSimple(*remoteAuthTarget)
 	if err != nil {
 		return nil, err
 	}
-	return newRemoteAuthenticator(conn)
+	return newRemoteAuthenticator(ctx, conn)
 }
 
-func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
+func newRemoteAuthenticator(ctx context.Context, conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
 	config := &lru.Config[string]{
 		MaxSize: jwtCacheSize,
 		SizeFn:  func(v string) int64 { return 1 },
@@ -51,15 +51,21 @@ func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator
 	if err != nil {
 		return nil, err
 	}
+	claimsCache, err := claims.NewClaimsCache(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &RemoteAuthenticator{
-		authClient: authpb.NewAuthServiceClient(conn),
-		cache:      cache,
+		authClient:  authpb.NewAuthServiceClient(conn),
+		cache:       cache,
+		claimsCache: claimsCache,
 	}, nil
 }
 
 type RemoteAuthenticator struct {
-	authClient authpb.AuthServiceClient
-	cache      interfaces.LRU[string]
+	authClient  authpb.AuthServiceClient
+	cache       interfaces.LRU[string]
+	claimsCache *claims.ClaimsCache
 }
 
 // Admin stuff unsupported in remote authenticator.
@@ -98,9 +104,12 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 }
 
 func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	// Pass JWTs through as is.
-	// TODO(iain): only use valid JWTs once running beyond GCP.
-	if jwt := getJWT(ctx); jwt != "" {
+	// Pass valid JWTs through as is.
+	jwt, err := getValidJWT(ctx, a.claimsCache)
+	if err != nil {
+		return authutil.AuthContextWithError(ctx, err)
+	}
+	if jwt != "" {
 		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 	}
 
@@ -112,7 +121,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	if found {
 		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 	}
-	jwt, err := a.authenticate(ctx)
+	jwt, err = a.authenticate(ctx)
 	if err != nil {
 		log.Debugf("Error remotely authenticating: %s", err)
 		return authutil.AuthContextWithError(ctx, err)
@@ -176,8 +185,18 @@ func getAPIKey(ctx context.Context) string {
 	return getLastMetadataValue(ctx, authutil.APIKeyHeader)
 }
 
-func getJWT(ctx context.Context) string {
-	return getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
+// Returns a valid JWT from the incoming RPC metadata, or an error an invalid
+// JWT is present, or an empty string and no error if no JWT is provided.
+func getValidJWT(ctx context.Context, claimsCache *claims.ClaimsCache) (string, error) {
+	jwt := getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
+	if jwt == "" {
+		return "", nil
+	}
+	_, err := claimsCache.Get(jwt)
+	if err != nil {
+		return "", err
+	}
+	return jwt, nil
 }
 
 func getLastMetadataValue(ctx context.Context, key string) string {
