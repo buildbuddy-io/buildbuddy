@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
@@ -71,7 +72,8 @@ var (
 	sampleBufferSize          = flag.Int("cache.pebble.sample_buffer_size", DefaultSampleBufferSize, "Buffer up to this many samples for eviction sampling")
 	deleteBufferSize          = flag.Int("cache.pebble.delete_buffer_size", DefaultDeleteBufferSize, "Buffer up to this many samples for eviction eviction")
 	numDeleteWorkers          = flag.Int("cache.pebble.num_delete_workers", DefaultNumDeleteWorkers, "Number of deletes in parallel")
-	samplesPerBatch           = flag.Int("cache.pebble.samples_per_batch", DefaultSamplesPerBatch, "How many keys we read forward every time we get a random key.")
+	samplesPerBatch           = flag.Int("cache.pebble.samples_per_batch", DefaultSamplesPerBatch, "How many keys we read forward every time we get a random key.", flag.Deprecated("use --cache.pebble.sampler_iter_refresh_period instead"))
+	samplerIterRefreshPeriod  = flag.Duration("cache.pebble.sampler_iter_refresh_peroid", DefaultSamplerIterRefreshPeriod, "How often we refresh iterator in sampler")
 	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
@@ -96,13 +98,14 @@ var (
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
 	// Their defaults must be vars so we can take their addresses)
-	DefaultAtimeUpdateThreshold = 10 * time.Minute
-	DefaultAtimeBufferSize      = 100000
-	DefaultSampleBufferSize     = 8000
-	DefaultSamplesPerBatch      = 10000
-	DefaultDeleteBufferSize     = 20
-	DefaultNumDeleteWorkers     = 2
-	DefaultMinEvictionAge       = 6 * time.Hour
+	DefaultAtimeUpdateThreshold     = 10 * time.Minute
+	DefaultAtimeBufferSize          = 100000
+	DefaultSampleBufferSize         = 8000
+	DefaultSamplesPerBatch          = 10000
+	DefaultSamplerIterRefreshPeriod = 5 * time.Minute
+	DefaultDeleteBufferSize         = 20
+	DefaultNumDeleteWorkers         = 2
+	DefaultMinEvictionAge           = 6 * time.Hour
 
 	DefaultName         = "pebble_cache"
 	DefaultMaxSizeBytes = cache_config.MaxSizeBytes()
@@ -142,6 +145,8 @@ const (
 	// will sleep for SamplerSleepDuration
 	SamplerSleepThreshold = float64(0.2)
 	SamplerSleepDuration  = 1 * time.Second
+
+	SamplerIterRefreshPeriod = 5 * time.Minute
 )
 
 type sizeUpdateOp int
@@ -166,13 +171,13 @@ type Options struct {
 	MaxInlineFileSizeBytes int64
 	AverageChunkSizeBytes  int
 
-	AtimeUpdateThreshold *time.Duration
-	AtimeBufferSize      *int
-	MinEvictionAge       *time.Duration
-	SampleBufferSize     *int
-	SamplesPerBatch      *int
-	DeleteBufferSize     *int
-	NumDeleteWorkers     *int
+	AtimeUpdateThreshold     *time.Duration
+	AtimeBufferSize          *int
+	MinEvictionAge           *time.Duration
+	SampleBufferSize         *int
+	SamplerIterRefreshPeriod *time.Duration
+	DeleteBufferSize         *int
+	NumDeleteWorkers         *int
 
 	IncludeMetadataSize bool
 
@@ -362,7 +367,7 @@ func Register(env *real_environment.RealEnv) error {
 		SampleBufferSize:            sampleBufferSize,
 		DeleteBufferSize:            deleteBufferSize,
 		NumDeleteWorkers:            numDeleteWorkers,
-		SamplesPerBatch:             samplesPerBatch,
+		SamplerIterRefreshPeriod:    samplerIterRefreshPeriod,
 		MinEvictionAge:              minEvictionAgeFlag,
 		AverageChunkSizeBytes:       *averageChunkSizeBytes,
 		IncludeMetadataSize:         *includeMetadataSize,
@@ -449,8 +454,8 @@ func SetOptionDefaults(opts *Options) {
 	if opts.SampleBufferSize == nil {
 		opts.SampleBufferSize = &DefaultSampleBufferSize
 	}
-	if opts.SamplesPerBatch == nil {
-		opts.SamplesPerBatch = &DefaultSamplesPerBatch
+	if opts.SamplerIterRefreshPeriod == nil {
+		opts.SamplerIterRefreshPeriod = &DefaultSamplerIterRefreshPeriod
 	}
 	if opts.NumDeleteWorkers == nil {
 		opts.NumDeleteWorkers = &DefaultNumDeleteWorkers
@@ -676,7 +681,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(env.GetServerContext(), part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch, *opts.DeleteBufferSize, *opts.NumDeleteWorkers)
+			pe, err := newPartitionEvictor(env.GetServerContext(), part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, clock, pc.accesses, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplerIterRefreshPeriod, *opts.DeleteBufferSize, *opts.NumDeleteWorkers)
 			if err != nil {
 				return err
 			}
@@ -2426,7 +2431,7 @@ type partitionEvictor struct {
 	minEvictionAge   time.Duration
 	activeKeyVersion int64
 
-	samplesPerBatch int
+	samplerIterRefreshPeriod time.Duration
 
 	numDeleteWorkers int
 
@@ -2437,25 +2442,25 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int, deleteBufferSize int, numDeleteWorkers int) (*partitionEvictor, error) {
+func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, accesses chan<- *accessTimeUpdate, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplerIterRefreshPeriod time.Duration, deleteBufferSize int, numDeleteWorkers int) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		ctx:              ctx,
-		mu:               &sync.Mutex{},
-		part:             part,
-		fileStorer:       fileStorer,
-		blobDir:          blobDir,
-		dbGetter:         dbg,
-		locker:           locker,
-		versionGetter:    vg,
-		accesses:         accesses,
-		rng:              rand.New(rand.NewSource(time.Now().UnixNano())),
-		clock:            clock,
-		minEvictionAge:   minEvictionAge,
-		cacheName:        cacheName,
-		samples:          make(chan *approxlru.Sample[*evictionKey], sampleBufferSize),
-		samplesPerBatch:  samplesPerBatch,
-		deletes:          make(chan *approxlru.Sample[*evictionKey], deleteBufferSize),
-		numDeleteWorkers: numDeleteWorkers,
+		ctx:                      ctx,
+		mu:                       &sync.Mutex{},
+		part:                     part,
+		fileStorer:               fileStorer,
+		blobDir:                  blobDir,
+		dbGetter:                 dbg,
+		locker:                   locker,
+		versionGetter:            vg,
+		accesses:                 accesses,
+		rng:                      rand.New(rand.NewSource(time.Now().UnixNano())),
+		clock:                    clock,
+		minEvictionAge:           minEvictionAge,
+		cacheName:                cacheName,
+		samples:                  make(chan *approxlru.Sample[*evictionKey], sampleBufferSize),
+		samplerIterRefreshPeriod: samplerIterRefreshPeriod,
+		deletes:                  make(chan *approxlru.Sample[*evictionKey], deleteBufferSize),
+		numDeleteWorkers:         numDeleteWorkers,
 	}
 	metricLbls := prometheus.Labels{
 		metrics.PartitionID:    part.ID,
@@ -2537,6 +2542,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	}
 	defer db.Close()
 	start, end := keyRange([]byte(e.partitionKeyPrefix() + "/"))
+	iterCreatedAt := time.Now()
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,
@@ -2553,12 +2559,9 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	}()
 
 	totalCount := 0
-	shouldCreateNewIter := true
+	shouldCreateNewIter := false
 	fileMetadata := rfpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
-
-	samplerDelay := time.NewTicker(SamplerSleepDuration)
-	defer samplerDelay.Stop()
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
@@ -2577,17 +2580,24 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(e.part.MaxSizeBytes))
 		e.mu.Unlock()
 		if shouldSleep {
+			samplerDelay := time.NewTimer(SamplerSleepDuration)
 			select {
 			case <-quitChan:
 				return nil
 			case <-samplerDelay.C:
 			}
+			timeutil.StopAndDrainTimer(samplerDelay)
+		}
+
+		if time.Since(iterCreatedAt) > e.samplerIterRefreshPeriod {
+			// Going to refresh the iterator in the next iteration.
+			shouldCreateNewIter = true
 		}
 
 		// Refresh the iterator once a while
 		if shouldCreateNewIter {
 			shouldCreateNewIter = false
-			totalCount = 0
+			iterCreatedAt = time.Now()
 			newIter, err := db.NewIter(&pebble.IterOptions{
 				LowerBound: start,
 				UpperBound: end,
@@ -2601,10 +2611,6 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			iter = newIter
 		}
 		totalCount += 1
-		if totalCount > e.samplesPerBatch {
-			// Going to refresh the iterator in the next iteration.
-			shouldCreateNewIter = true
-		}
 		if !iter.Valid() {
 			// This should happen once every totalCount times or when
 			// we exausted the iter.
@@ -2650,22 +2656,15 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 				SizeBytes: sizeBytes,
 				Timestamp: atime,
 			}
+			timeout := time.NewTimer(SamplerSleepDuration)
 			select {
 			case e.samples <- sample:
 			case <-quitChan:
 				return nil
-			default:
-				// e.samples is full. Let's close the iter first, so that zombie
-				// tables can be cleaned up by pebble.
-				iter.Close()
-				shouldCreateNewIter = true
-				iter = nil
-				select {
-				case e.samples <- sample:
-				case <-quitChan:
-					return nil
-				}
+			case <-timeout.C:
+				// e.samples is full.
 			}
+			timeutil.StopAndDrainTimer(timeout)
 		}
 		if iter != nil {
 			iter.Next()
