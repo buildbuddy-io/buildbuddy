@@ -50,6 +50,7 @@ var (
 	minTreeCacheDescendents   = flag.Int("cache.tree_cache_min_descendents", 3, "The min number of descendents a node must parent in order to be cached")
 	maxTreeCacheSetDuration   = flag.Duration("cache.max_tree_cache_set_duration", time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
 	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", .10, "Write to the tree cache with this probability")
+	cacheAllTreesWithSubdirs  = flag.Bool("cache.cache_trees_with_subdirs", false, "If true, all trees containing even a single subdirectory will be cached.  This flag causes tree_cache_min_level and tree_cache_min_descendents to be ignored.")
 )
 
 type ContentAddressableStorageServer struct {
@@ -590,7 +591,15 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		if err != nil {
 			return nil, err
 		}
-		if *enableTreeCaching && level >= *minTreeCacheLevel {
+
+		var minLevelForCaching int
+		if *cacheAllTreesWithSubdirs {
+			minLevelForCaching = 0
+		} else {
+			minLevelForCaching = *minTreeCacheLevel
+		}
+
+		if *enableTreeCaching && level >= minLevelForCaching {
 			// Limit cardinality of level label.
 			levelLabel := fmt.Sprintf("%d", min(level, 12))
 			treeCacheRN := treeCacheResource.ToProto()
@@ -643,8 +652,17 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 
-		if *enableTreeCaching && level >= *minTreeCacheLevel && len(allDescendents) >= *minTreeCacheDescendents {
-			cacheTreeNode(treeCacheResource, allDescendents)
+		if *enableTreeCaching {
+			var eligibleForCaching bool
+			if *cacheAllTreesWithSubdirs {
+				eligibleForCaching = len(dirWithDigest.GetDirectory().Directories) > 0
+			} else {
+				eligibleForCaching = level >= *minTreeCacheLevel && len(allDescendents) >= *minTreeCacheDescendents
+			}
+
+			if eligibleForCaching {
+				cacheTreeNode(treeCacheResource, allDescendents)
+			}
 		}
 		return allDescendents, nil
 	}
