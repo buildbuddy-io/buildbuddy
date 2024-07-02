@@ -1117,8 +1117,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_coreos_go_oidc",
         importpath = "github.com/coreos/go-oidc",
-        sum = "h1:mh48q/BqXqgjVHpy2ZY7WnWAbenxRjsz9N1i1YxjHAk=",
-        version = "v2.2.1+incompatible",
+        sum = "h1:sdJrfw8akMnCuUlaZU3tE/uYXFgfqom8DBE9so9EBsM=",
+        version = "v2.1.0+incompatible",
+    )
+    go_repository(
+        name = "com_github_coreos_go_oidc_v3",
+        importpath = "github.com/coreos/go-oidc/v3",
+        sum = "h1:tDnXHnLyiTVyT/2zLDGj09pFPkhND8Gl8lnTRhoEaJU=",
+        version = "v3.10.0",
     )
     go_repository(
         name = "com_github_coreos_go_semver",
@@ -1720,6 +1726,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/go-ini/ini",
         sum = "h1:Mujh4R/dH6YL8bxuISne3xX2+qcQ9p0IxKAP6ExWoUo=",
         version = "v1.25.4",
+    )
+    go_repository(
+        name = "com_github_go_jose_go_jose_v4",
+        importpath = "github.com/go-jose/go-jose/v4",
+        sum = "h1:QVEPDE3OluqXBQZDcnNvQrInro2h0e4eqNbnZSWqS6U=",
+        version = "v4.0.1",
     )
     go_repository(
         name = "com_github_go_kit_kit",
@@ -4190,8 +4202,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_pquerna_cachecontrol",
         importpath = "github.com/pquerna/cachecontrol",
-        sum = "h1:vBXSNuE5MYP9IJ5kjsdo8uq+w41jSPgvba2DEnkRx9k=",
-        version = "v0.2.0",
+        sum = "h1:0XM1XL/OFFJjXsYXlG30spTkV/E9+gmd5GD1w2HE8xM=",
+        version = "v0.0.0-20171018203845-0dec1b30a021",
     )
     go_repository(
         name = "com_github_pquerna_ffjson",
@@ -6011,8 +6023,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "in_gopkg_square_go_jose_v2",
         importpath = "gopkg.in/square/go-jose.v2",
-        sum = "h1:NGk74WTnPKBNUhNzQX7PYcTLUjoq7mzKk2OKbvwk2iI=",
-        version = "v2.6.0",
+        sum = "h1:7odma5RETjNHWJnR32wx8t+Io4djHE1PqxCFx3iiZ2w=",
+        version = "v2.5.1",
     )
     go_repository(
         name = "in_gopkg_tomb_v1",

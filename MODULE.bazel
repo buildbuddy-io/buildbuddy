@@ -184,7 +184,7 @@ use_repo(
     "com_github_clickhouse_clickhouse_go_v2",
     "com_github_cockroachdb_pebble",
     "com_github_containerd_containerd",
-    "com_github_coreos_go_oidc",
+    "com_github_coreos_go_oidc_v3",
     "com_github_creack_pty",
     "com_github_crewjam_saml",
     "com_github_docker_distribution",
