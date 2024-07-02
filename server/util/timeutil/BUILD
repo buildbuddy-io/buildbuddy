@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/timeutil",
     visibility = ["//visibility:public"],
     deps = [
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
