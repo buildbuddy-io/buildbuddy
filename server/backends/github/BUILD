@@ -9,6 +9,8 @@ go_library(
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/http/interceptors",
+        "//server/interfaces",
+        "//server/real_environment",
         "//server/tables",
         "//server/util/authutil",
         "//server/util/cookie",
