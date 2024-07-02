@@ -212,6 +212,9 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 	if strings.HasPrefix(psChannel.name, monitoredKeyPrefix) {
 		go func() {
 			defer close(monChan)
+			ticker := time.NewTicker(monitoredChannelExistenceCheckInterval)
+			defer ticker.Stop()
+
 			for {
 				if err := p.checkMonitoredChannelExists(ctx, psChannel); err != nil {
 					// Wrap error with details so the client can differentiate
@@ -221,7 +224,7 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 					return
 				}
 				select {
-				case <-time.After(monitoredChannelExistenceCheckInterval):
+				case <-ticker.C:
 				case <-ctx.Done():
 					return
 				}
