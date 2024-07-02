@@ -233,6 +233,14 @@ type BuildEventHandler interface {
 	OpenChannel(ctx context.Context, iid string) BuildEventChannel
 }
 
+type GitHubStatusService interface {
+	GetStatusClient(accessToken string) GitHubStatusClient
+}
+
+type GitHubStatusClient interface {
+	CreateStatus(ctx context.Context, ownerRepo, commitSHA string, payload *github.RepoStatus) error
+}
+
 // A Blobstore must allow for reading, writing, and deleting blobs.
 type Blobstore interface {
 	BlobExists(ctx context.Context, blobName string) (bool, error)

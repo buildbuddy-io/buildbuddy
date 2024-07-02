@@ -1594,7 +1594,7 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 
 func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName string) error {
 	// TODO: Create a help section in the docs that explains this error status, and link to it
-	status := github.NewGithubStatusPayload(actionName, ws.bbUrl.String(), "Check requires approving review", github.ErrorState)
+	status := github.NewRepoStatus(actionName, ws.bbUrl.String(), "Check requires approving review", github.ErrorState)
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
 	if err != nil {
 		return err
@@ -1609,7 +1609,7 @@ func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Wo
 		return err
 	}
 	invocationURL += "?queued=true"
-	status := github.NewGithubStatusPayload(actionName, invocationURL, "Queued...", github.PendingState)
+	status := github.NewRepoStatus(actionName, invocationURL, "Queued...", github.PendingState)
 	statusReportingURL := getStatusReportingURL(wd)
 	provider, err := ws.providerForRepo(statusReportingURL)
 	if err != nil {
@@ -1637,7 +1637,7 @@ func isFork(wd *interfaces.WebhookData) bool {
 func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData) error {
 	// For now just point to docs. Eventually it'd be nice to link to BB code
 	// and highlight the YAML syntax error.
-	status := github.NewGithubStatusPayload(
+	status := github.NewRepoStatus(
 		"BuildBuddy Workflows",
 		"https://buildbuddy.io/docs/workflows-config",
 		"Invalid buildbuddy.yaml",

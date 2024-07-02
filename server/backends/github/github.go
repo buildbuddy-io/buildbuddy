@@ -16,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
@@ -64,22 +66,20 @@ func AuthEnabled(env environment.Env) bool {
 	return *JwtKey != ""
 }
 
+type statusClientService struct{}
+
+type RepoStatus = github.RepoStatus
+
 // State represents a status value that GitHub's statuses API understands.
 type State string
 
-type GithubStatusPayload struct {
-	State       State  `json:"state"`
-	TargetURL   string `json:"target_url"`
-	Description string `json:"description"`
-	Context     string `json:"context"`
-}
-
-func NewGithubStatusPayload(context, URL, description string, state State) *GithubStatusPayload {
-	return &GithubStatusPayload{
-		Context:     context,
-		TargetURL:   URL,
-		Description: description,
-		State:       state,
+func NewRepoStatus(context, URL, description string, state State) *github.RepoStatus {
+	s := string(state)
+	return &github.RepoStatus{
+		Context:     &context,
+		TargetURL:   &URL,
+		Description: &description,
+		State:       &s,
 	}
 }
 
@@ -129,12 +129,25 @@ type GithubClient struct {
 	tokenErr        error
 }
 
-func Register(env environment.Env) error {
+type githubStatusService struct {
+	env environment.Env
+}
+
+func NewGitHubStatusService(env environment.Env) *githubStatusService {
+	return &githubStatusService{env}
+}
+
+func (s *githubStatusService) GetStatusClient(accessToken string) interfaces.GitHubStatusClient {
+	return NewGithubClient(s.env, accessToken)
+}
+
+func Register(env *real_environment.RealEnv) error {
 	githubClient := NewGithubClient(env, "")
 	env.GetMux().Handle(
 		legacyOAuthAppPath,
 		interceptors.WrapAuthenticatedExternalHandler(env, http.HandlerFunc(githubClient.Link)),
 	)
+	env.SetGitHubStatusService(NewGitHubStatusService(env))
 	return nil
 }
 
@@ -455,7 +468,7 @@ func (c *OAuthHandler) handleInstallation(w http.ResponseWriter, r *http.Request
 	return false, nil
 }
 
-func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commitSHA string, payload *GithubStatusPayload) error {
+func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commitSHA string, payload *github.RepoStatus) error {
 	if ownerRepo == "" {
 		return status.InvalidArgumentErrorf("failed to create GitHub status: ownerRepo argument is empty")
 	}
@@ -492,7 +505,7 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 		}
 		return status.UnknownErrorf("HTTP %s: %q", res.Status, string(b))
 	}
-	log.CtxInfof(ctx, "Successfully posted GitHub status for %q @ commit %q: %q (%s): %q", ownerRepo, commitSHA, payload.Context, payload.State, payload.Description)
+	log.CtxInfof(ctx, "Successfully posted GitHub status for %q @ commit %q: %q (%s): %q", ownerRepo, commitSHA, payload.GetContext(), payload.GetState(), payload.GetDescription())
 	return nil
 }
 
@@ -585,12 +598,12 @@ func (c *GithubClient) fetchToken(ctx context.Context, ownerRepo string) error {
 	return nil
 }
 
-func appendStatusNameSuffix(p *GithubStatusPayload) *GithubStatusPayload {
+func appendStatusNameSuffix(p *github.RepoStatus) *github.RepoStatus {
 	if *statusNameSuffix == "" {
 		return p
 	}
-	name := fmt.Sprintf("%s %s", p.Context, *statusNameSuffix)
-	return NewGithubStatusPayload(name, p.TargetURL, p.Description, p.State)
+	name := fmt.Sprintf("%s %s", p.GetContext(), *statusNameSuffix)
+	return NewRepoStatus(name, p.GetTargetURL(), p.GetDescription(), State(p.GetState()))
 }
 
 func getState(r *http.Request, key string) string {
