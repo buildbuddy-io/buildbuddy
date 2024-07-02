@@ -2671,7 +2671,6 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	defer timeutil.StopAndDrainClockworkTimer(timeout)
 	select {
 	case e.samples <- sample:
-		log.Infof("add %s to sample queue", sample.Key)
 	case <-quitChan:
 		return
 	case <-timeout.Chan():
@@ -2908,7 +2907,6 @@ func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
 }
 
 func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*evictionKey]) error {
-	log.Infof("adding %s to delete queue", sample.Key)
 	e.deletes <- sample
 	return nil
 }
