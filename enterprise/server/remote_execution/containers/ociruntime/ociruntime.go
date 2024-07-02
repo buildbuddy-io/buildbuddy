@@ -20,6 +20,7 @@ import (
 	_ "embed"
 	mrand "math/rand/v2"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -106,7 +107,8 @@ type provider struct {
 	//       - ...
 	layersRoot string
 
-	imageStore *ImageStore
+	imageStore  *ImageStore
+	cgroupPaths *cgroup.Paths
 
 	// Configured runtime path.
 	runtime string
@@ -141,6 +143,7 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 		env:            env,
 		runtime:        rt,
 		containersRoot: containersRoot,
+		cgroupPaths:    &cgroup.Paths{},
 		layersRoot:     layersRoot,
 		imageStore:     imageStore,
 	}, nil
@@ -151,6 +154,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		env:            p.env,
 		runtime:        p.runtime,
 		containersRoot: p.containersRoot,
+		cgroupPaths:    p.cgroupPaths,
 		layersRoot:     p.layersRoot,
 		imageStore:     p.imageStore,
 		imageRef:       args.Props.ContainerImage,
@@ -161,12 +165,14 @@ type ociContainer struct {
 	env environment.Env
 
 	runtime        string
+	cgroupPaths    *cgroup.Paths
 	containersRoot string
 	layersRoot     string
 	imageStore     *ImageStore
 
 	cid     string
 	workDir string
+	stats   container.UsageStats
 
 	imageRef         string
 	overlayfsMounted bool
@@ -270,7 +276,9 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
 	}
 
-	return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
+	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
+		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
+	})
 }
 
 func (c *ociContainer) Create(ctx context.Context, workDir string) error {
@@ -308,9 +316,13 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 }
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	// TODO: Should we specify a non-zero waitDelay so that a process that spawns children won't
-	//  block forever?
-	return c.invokeRuntime(ctx, cmd, stdio, 0, "exec", "--cwd="+execrootPath, c.cid)
+	// Reset CPU usage and peak memory since we're starting a new task.
+	c.stats.Reset()
+	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
+		// TODO: Should we specify a non-zero waitDelay so that a process that
+		// spawns children won't block forever?
+		return c.invokeRuntime(ctx, cmd, stdio, 0, "exec", "--cwd="+execrootPath, c.cid)
+	})
 }
 
 func (c *ociContainer) Pause(ctx context.Context) error {
@@ -348,8 +360,19 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 }
 
 func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	// TODO: read stats from cgroupfs
-	return nil, nil
+	return c.cgroupPaths.Stats(ctx, c.cid)
+}
+
+// Instruments an OCI runtime call with monitor() to ensure that resource usage
+// metrics are updated while the function is being executed, and that the
+// resource usage results are populated in the returned CommandResult.
+func (c *ociContainer) doWithStatsTracking(ctx context.Context, fn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
+	stop, statsCh := container.TrackStats(ctx, c)
+	defer stop()
+	res := fn(ctx)
+	stop()
+	res.UsageStats = <-statsCh
+	return res
 }
 
 func (c *ociContainer) createRootfs(ctx context.Context) error {

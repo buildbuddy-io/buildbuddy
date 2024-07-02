@@ -15,6 +15,7 @@ go_library(
     target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/util/oci",
@@ -41,6 +42,7 @@ go_test(
         "test.workload-isolation-type": "firecracker",
         "test.EstimatedComputeUnits": "2",
     },
+    shard_count = 2,
     tags = [
         "no-sandbox",
     ],

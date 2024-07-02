@@ -117,6 +117,42 @@ func TestRun(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 }
 
+func TestRunUsageStats(t *testing.T) {
+	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run (sleep long enough to collect stats)
+	// TODO: in the Run case, we should be able to use the memory.peak file and
+	// cumulative CPU usage file to reliably return stats even if we don't have
+	// a chance to poll
+	cmd := &repb.Command{Arguments: []string{"sleep", "0.5"}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	assert.Greater(t, res.UsageStats.GetMemoryBytes(), int64(0), "memory")
+	assert.Greater(t, res.UsageStats.GetCpuNanos(), int64(0), "CPU")
+}
+
 func TestRunWithImage(t *testing.T) {
 	image := realBusyboxImage(t)
 
@@ -197,6 +233,49 @@ func TestCreateExecRemove(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, "buildbuddy was here: /buildbuddy-execroot\n", string(res.Stdout))
+}
+
+func TestExecUsageStats(t *testing.T) {
+	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Exec
+	cmd := &repb.Command{Arguments: []string{"sleep", "0.5"}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	assert.Greater(t, res.UsageStats.GetMemoryBytes(), int64(0), "memory")
+	assert.Greater(t, res.UsageStats.GetCpuNanos(), int64(0), "CPU")
+
+	// Stats
+	s, err := c.Stats(ctx)
+	require.NoError(t, err)
+	assert.Greater(t, s.GetMemoryBytes(), int64(0), "memory")
+	assert.Greater(t, s.GetCpuNanos(), int64(0), "CPU")
 }
 
 func TestPullCreateExecRemove(t *testing.T) {
