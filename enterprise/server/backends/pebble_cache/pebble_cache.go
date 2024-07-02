@@ -2560,9 +2560,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	// We update the iter variable later on, so we need to wrap the Close call
 	// in a func to operate on the correct iterator instance.
 	defer func() {
-		if iter != nil {
-			iter.Close()
-		}
+		iter.Close()
 	}()
 
 	totalCount := 0
@@ -2611,9 +2609,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			if err != nil {
 				return err
 			}
-			if iter != nil {
-				iter.Close()
-			}
+			iter.Close()
 			iter = newIter
 		}
 		totalCount += 1
@@ -2645,9 +2641,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 
 		e.maybeAddToSampleChan(iter, fileMetadata, quitChan)
 
-		if iter != nil {
-			iter.Next()
-		}
+		iter.Next()
 		fileMetadata.ResetVT()
 	}
 }
