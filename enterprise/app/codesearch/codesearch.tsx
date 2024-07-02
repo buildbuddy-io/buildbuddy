@@ -14,6 +14,7 @@ import { Bird, Search } from "lucide-react";
 interface State {
   loading: boolean;
   response?: search.SearchResponse;
+  inputText: string;
 }
 
 interface Props {
@@ -22,10 +23,10 @@ interface Props {
 }
 
 export default class CodeSearchComponent extends React.Component<Props, State> {
-  inputText: string = "";
   keyboardShortcutHandle: string = "";
   state: State = {
     loading: false,
+    inputText: this.getQuery(),
   };
 
   getQuery() {
@@ -37,7 +38,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       return;
     }
 
-    this.setState({ loading: true, response: undefined });
+    this.setState({ loading: true, response: undefined, inputText: this.getQuery() });
     rpcService.service
       .search(new search.SearchRequest({ query: new search.Query({ term: this.getQuery() }) }))
       .then((response) => {
@@ -54,7 +55,9 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
   }
 
   handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
-    this.inputText = event.target.value;
+    this.setState({
+      inputText: event.target.value,
+    });
   }
 
   componentDidMount() {
@@ -139,12 +142,12 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
               className="form-bs"
               onSubmit={(e) => {
                 e.preventDefault();
-                router.updateParams({ q: this.inputText });
+                router.updateParams({ q: this.state.inputText });
               }}>
               <input
                 type="text"
                 className="searchbox"
-                defaultValue={this.props.search.get("q") ?? ""}
+                value={this.state.inputText}
                 onChange={this.handleInputChange.bind(this)}
               />
               <FilledButton type="submit">SEARCH</FilledButton>
