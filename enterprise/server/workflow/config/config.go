@@ -9,6 +9,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"gopkg.in/yaml.v2"
+
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 // === IMPORTANT ===
@@ -45,7 +47,7 @@ type Action struct {
 	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
 	Env               map[string]string `yaml:"env"`
 	BazelCommands     []string          `yaml:"bazel_commands"`
-	Steps             []Step            `yaml:"steps"`
+	Steps             []*rnpb.Step      `yaml:"steps"`
 	Timeout           *time.Duration    `yaml:"timeout"`
 }
 

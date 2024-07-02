@@ -339,6 +339,33 @@ func (r *buildEventReporter) Publish(event *bespb.BuildEvent) error {
 	return r.bep.Publish(event)
 }
 
+type parsedBazelArgs struct {
+	cmd      string
+	flags    []string
+	patterns []string
+}
+
+func parseBazelArgs(cmd string) (*parsedBazelArgs, error) {
+	args, err := shlex.Split(cmd)
+	if err != nil {
+		return nil, err
+	}
+	if len(args) < 1 {
+		return nil, status.FailedPreconditionError("missing command")
+	}
+	parsedArgs := &parsedBazelArgs{
+		cmd: args[0],
+	}
+	for _, arg := range args[1:] {
+		if strings.HasPrefix(arg, "--") {
+			parsedArgs.flags = append(parsedArgs.flags, arg)
+		} else {
+			parsedArgs.patterns = append(parsedArgs.patterns, arg)
+		}
+	}
+	return parsedArgs, nil
+}
+
 func (r *buildEventReporter) Start(startTime time.Time) error {
 	if !r.startTime.IsZero() {
 		// Already started.
@@ -357,10 +384,20 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	optionsDescription := strings.Join(options, " ")
 	cmd := ""
 
+	patterns := []string{}
 	if r.isWorkflow {
 		cmd = "workflow run"
 	} else {
 		cmd = "remote run"
+
+		if *bazelSubCommand != "" {
+			parsedArgs, err := parseBazelArgs(*bazelSubCommand)
+			if err != nil {
+				return err
+			}
+			cmd = fmt.Sprintf("remote %s", parsedArgs.cmd)
+			patterns = parsedArgs.patterns
+		}
 	}
 
 	startedEvent := &bespb.BuildEvent{
@@ -384,11 +421,23 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}})
 		r.Printf("Streaming workflow logs to: %s", invocationURL(*invocationID))
 	} else {
+		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}})
 		r.Printf("Streaming remote runner logs to: %s", invocationURL(*invocationID))
 	}
 	if err := r.bep.Publish(startedEvent); err != nil {
 		return err
 	}
+
+	if len(patterns) > 0 {
+		patternEvent := &bespb.BuildEvent{
+			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}},
+			Payload: &bespb.BuildEvent_Expanded{Expanded: &bespb.PatternExpanded{}},
+		}
+		if err := r.bep.Publish(patternEvent); err != nil {
+			return err
+		}
+	}
+
 	structuredCommandLineEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bespb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original"}}},
 		Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: getStructuredCommandLine()},
