@@ -313,9 +313,10 @@ func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 		if err := k.FromBytes(iter.Key()); err != nil {
 			return nil, err
 		}
-		fieldSet[k.field] = struct{}{}
 		if k.keyType == docField && k.field == types.DocIDField {
 			resultSet.Add(BytesToUint64(iter.Value()))
+		} else {
+			fieldSet[k.field] = struct{}{}
 		}
 		continue
 	}
