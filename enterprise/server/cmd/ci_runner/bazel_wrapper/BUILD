@@ -8,13 +8,16 @@ go_library(
     deps = [
         "//server/util/log",
         "@com_github_creack_pty//:pty",
+        "@com_github_google_shlex//:shlex",
     ],
 )
 
 go_binary(
     name = "bazel_wrapper",
     embed = [":bazel_wrapper_lib"],
-    visibility = ["//visibility:public"],
     pure = "on",
     static = "on",
+    visibility = ["//visibility:public"],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

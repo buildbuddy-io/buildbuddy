@@ -198,19 +198,30 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	return txInfo, err
 }
 
-// AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
+// AddCIRunnerBundle adds the BuildBuddy CI runner to the workspace root if it doesn't
 // already exist.
-// TODO(Maggie): Need to write the bash wrapper here too
-func (ws *Workspace) AddCIRunner(ctx context.Context) error {
-	destPath := path.Join(ws.Path(), ci_runner_bundle.RunnerName)
-	exists, err := disk.FileExists(ctx, destPath)
+func (ws *Workspace) AddCIRunnerBundle(ctx context.Context) error {
+	runnerDestPath := path.Join(ws.Path(), ci_runner_bundle.RunnerName)
+	exists, err := disk.FileExists(ctx, runnerDestPath)
 	if err != nil {
 		return err
 	}
 	if exists {
 		return nil
 	}
-	return os.WriteFile(destPath, ci_runner_bundle.CiRunnerBytes, 0o555)
+	if err := os.WriteFile(runnerDestPath, ci_runner_bundle.CiRunnerBytes, 0o555); err != nil {
+		return err
+	}
+
+	wrapperDestPath := path.Join(ws.Path(), ci_runner_bundle.BazelWrapperName)
+	exists, err = disk.FileExists(ctx, wrapperDestPath)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return os.WriteFile(wrapperDestPath, ci_runner_bundle.BazelWrapperBytes, 0o555)
 }
 
 func (ws *Workspace) AddActionsRunner(ctx context.Context) error {

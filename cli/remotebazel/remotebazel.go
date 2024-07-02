@@ -766,7 +766,9 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		Env:            envVars,
 		ExecProperties: platform.Properties,
 		RunRemotely:    *runRemotely,
-		Steps:          []string{"bazel help"},
+		Steps: []*rnpb.Step{
+			{Run: "bazel help"},
+		},
 	}
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 

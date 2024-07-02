@@ -209,6 +209,7 @@ type workspace struct {
 	//     {rootDir}/
 	//         bazelisk             (copy of embedded bazelisk binary)
 	//         buildbuddy.bazelrc   (BuildBuddy-controlled bazelrc that applies to all bazel commands)
+	//         .bashrc              (BuildBuddy-controlled bashrc)
 	//         artifacts/
 	//             command-0/       (artifacts for bazel_commands[0])
 	//             command-1/       (artifacts for bazel_commands[1])
@@ -694,10 +695,17 @@ func run() error {
 	}
 
 	// Alias bazel to the bazel wrapper script, which adds some common flags to all
-	// Bazel builds
+	// Bazel builds.
 	if err := ws.writeBashrc(); err != nil {
 		return status.WrapError(err, "write bashrc")
 	}
+	// Delete bashrc before exiting.
+	wsBashrcPath := filepath.Join(ws.rootDir, ".home/.bashrc")
+	defer func() {
+		if err := os.Remove(wsBashrcPath); err != nil {
+			log.Error(err.Error())
+		}
+	}()
 
 	if *shutdownAndExit {
 		log.Info("--shutdown_and_exit requested; will run bazel shutdown then exit.")
@@ -2050,9 +2058,14 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 }
 
 // This will overwrite any existing .bashrc in the runner workspace root
-// TODO: Only overwrite if it doesn't exist
 func (ws *workspace) writeBashrc() error {
 	p := filepath.Join(ws.rootDir, ".home/.bashrc")
+
+	_, err := os.Stat(p)
+	if err == nil {
+		ws.log.Printf("%s already exists", p)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 		return err
 	}
@@ -2063,7 +2076,11 @@ func (ws *workspace) writeBashrc() error {
 	defer f.Close()
 
 	lines := []string{
-		`alias bazel='/workspace/buildbuddy_bazel_wrapper --bazel_bin=bazelisk'`,
+		`alias bazel='/workspace/buildbuddy_bazel_wrapper --bazel_bin=` + *bazelCommand +
+			` --root_path=` + ws.rootDir +
+			` --bazel_startup_flags=` + *bazelStartupFlags +
+			` --extra_bazel_args=` + *extraBazelArgs +
+			`'`,
 	}
 	contents := strings.Join(lines, "\n") + "\n"
 	if _, err := io.WriteString(f, contents); err != nil {
