@@ -453,11 +453,8 @@ func setClientIdentityStreamClientInterceptor(env environment.Env) grpc.StreamCl
 
 func propagateMetadataFromIncomingToOutgoing(key string) func(context.Context) context.Context {
 	return func(ctx context.Context) context.Context {
-		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			keys := md.Get(key)
-			if len(keys) > 0 {
-				ctx = metadata.AppendToOutgoingContext(ctx, key, keys[len(keys)-1])
-			}
+		if keys := metadata.ValueFromIncomingContext(ctx, key); len(keys) > 0 {
+			ctx = metadata.AppendToOutgoingContext(ctx, key, keys[len(keys)-1])
 		}
 		return ctx
 	}
