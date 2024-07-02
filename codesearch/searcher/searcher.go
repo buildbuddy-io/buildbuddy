@@ -43,7 +43,7 @@ func (c *CodeSearcher) retrieveDocs(candidateDocIDs []uint64) ([]types.Document,
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	c.log.Infof("Fetching docs took %s", time.Since(start))
+	c.log.Infof("Fetching %d docs took %s", len(candidateDocIDs), time.Since(start))
 	return docs, nil
 }
 

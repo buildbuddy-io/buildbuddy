@@ -78,3 +78,29 @@ func TestFileAtom(t *testing.T) {
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.NotContains(t, fieldMatchers, "content")
 }
+
+func TestGroupedTerms(t *testing.T) {
+	q, err := NewReQuery(`"grp trm" case:y`, 1)
+	require.NoError(t, err)
+
+	squery := string(q.SQuery())
+	assert.Contains(t, squery, `(:eq * "grp")`)
+	assert.Contains(t, squery, `(:eq * "trm")`)
+	assert.Contains(t, squery, `(:eq * "p t")`)
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Contains(t, fieldMatchers, "content")
+	assert.Contains(t, fieldMatchers["content"].String(), "(grp trm)")
+}
+
+func TestUngroupedTerms(t *testing.T) {
+	q, err := NewReQuery("grp trm case:y", 1)
+	require.NoError(t, err)
+
+	squery := string(q.SQuery())
+	assert.Contains(t, squery, `(:and (:eq * grp) (:eq * trm))`)
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Contains(t, fieldMatchers, "content")
+	assert.Contains(t, fieldMatchers["content"].String(), "(grp)|(trm)")
+}
