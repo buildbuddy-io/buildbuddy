@@ -97,6 +97,12 @@ func copyAndClose(wc interfaces.CommittedWriteCloser, r io.Reader) error {
 	return wc.Close()
 }
 
+func createListener(t testing.TB) (net.Listener, string) {
+	lis, port := testport.Listen(t)
+	peer := fmt.Sprintf("localhost:%d", port)
+	return lis, peer
+}
+
 func TestReaderMaxOffset(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
@@ -106,8 +112,8 @@ func TestReaderMaxOffset(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -178,8 +184,8 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	writeCounts := make(map[string]int, 0)
 	sc := snitchCache{te.GetCache(), writeCounts}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, &sc, peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, &sc, peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -230,8 +236,8 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 	writeCounts := make(map[string]int, 0)
 	sc := snitchCache{te.GetCache(), writeCounts}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, &sc, peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, &sc, peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -279,8 +285,8 @@ func TestReader(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -336,8 +342,8 @@ func TestReadOffsetLimit(t *testing.T) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	require.NoError(t, err)
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -370,8 +376,8 @@ func TestWriter(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -437,8 +443,8 @@ func TestWriteAlreadyExists(t *testing.T) {
 	writeCounts := make(map[string]int, 0)
 	sc := snitchCache{te.GetCache(), writeCounts}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, &sc, peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, &sc, peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -514,9 +520,9 @@ func TestReadWrite_Compressed(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 		te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
-		c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+		lis, peer := createListener(t)
+		c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 		if err := c.StartListening(); err != nil {
 			t.Fatalf("Error setting up cacheproxy: %s", err)
 		}
@@ -567,8 +573,8 @@ func TestContains(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -639,8 +645,8 @@ func TestOversizeBlobs(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -714,8 +720,8 @@ func TestFindMissing(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	peer := net.JoinHostPort("localhost", fmt.Sprintf("%d", testport.FindFree(t)))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error starting cache proxy: %s", err)
 	}
@@ -786,8 +792,8 @@ func TestGetMulti(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -850,8 +856,8 @@ func TestEmptyRead(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -894,8 +900,8 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("error attaching user prefix: %v", err)
 	}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -929,8 +935,8 @@ func TestMetadata(t *testing.T) {
 		t.Fatalf("error attaching user prefix: %v", err)
 	}
 
-	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	lis, peer := createListener(t)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error setting up cacheproxy: %s", err)
 	}
@@ -1000,8 +1006,8 @@ func BenchmarkWrite(b *testing.B) {
 				ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 				require.NoError(b, err)
 
-				peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
-				c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+				lis, peer := createListener(b)
+				c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 				err = c.StartListening()
 				require.NoError(b, err)
 
@@ -1035,8 +1041,8 @@ func BenchmarkRead(b *testing.B) {
 			b.ReportAllocs()
 			ctx := context.Background()
 			te := getTestEnv(b, emptyUserMap)
-			peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
-			c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+			lis, peer := createListener(b)
+			c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer, lis)
 
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 			require.NoError(b, err)

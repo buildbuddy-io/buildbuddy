@@ -14,12 +14,16 @@ func FindFree(t testing.TB) int {
 	return portLeaser.Lease(t)
 }
 
+func Listen(t testing.TB) (net.Listener, int) {
+	return findAPort(t)
+}
+
 type freePortLeaser struct {
 	leasedPorts map[int]struct{}
 	mu          sync.Mutex
 }
 
-func (p *freePortLeaser) findAPort(t testing.TB) int {
+func findAPort(t testing.TB) (net.Listener, int) {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
 		t.Fatal(err)
@@ -28,8 +32,7 @@ func (p *freePortLeaser) findAPort(t testing.TB) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	return l, l.Addr().(*net.TCPAddr).Port
 }
 
 func (p *freePortLeaser) Lease(t testing.TB) int {
@@ -39,7 +42,8 @@ func (p *freePortLeaser) Lease(t testing.TB) int {
 		p.leasedPorts = make(map[int]struct{}, 0)
 	}
 	for {
-		port := p.findAPort(t)
+		l, port := findAPort(t)
+		l.Close()
 		if _, ok := p.leasedPorts[port]; !ok {
 			p.leasedPorts[port] = struct{}{}
 			return port

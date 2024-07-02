@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"sort"
 	"sync"
 	"time"
@@ -63,6 +64,7 @@ var (
 type CacheConfig struct {
 	PubSub                       interfaces.PubSub
 	ListenAddr                   string
+	Listener                     net.Listener
 	GroupName                    string
 	Nodes                        []string
 	NewNodes                     []string
@@ -208,7 +210,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		lookasideMu:         &sync.Mutex{},
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", config.ListenAddr)),
 		config:              config,
-		cacheProxy:          cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
+		cacheProxy:          cacheproxy.NewCacheProxy(env, c, config.ListenAddr, config.Listener),
 		consistentHash:      chash,
 		extraConsistentHash: extraCHash,
 
