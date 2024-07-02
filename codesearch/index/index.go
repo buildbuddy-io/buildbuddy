@@ -307,17 +307,23 @@ func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 	defer iter.Close()
 	resultSet := posting.NewList()
 	k := key{}
+
+	fieldSet := make(map[string]struct{})
 	for iter.First(); iter.Valid(); iter.Next() {
 		if err := k.FromBytes(iter.Key()); err != nil {
 			return nil, err
 		}
 		if k.keyType == docField && k.field == types.DocIDField {
 			resultSet.Add(BytesToUint64(iter.Value()))
+		} else {
+			fieldSet[k.field] = struct{}{}
 		}
 		continue
 	}
 	fm := posting.NewFieldMap()
-	fm.OrField("", resultSet)
+	for fieldName := range fieldSet {
+		fm.OrField(fieldName, resultSet)
+	}
 	return fm, nil
 }
 
