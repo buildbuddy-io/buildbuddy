@@ -1762,7 +1762,8 @@ func TestLRU(t *testing.T) {
 			rootDir := testfs.MakeTempDir(t)
 			atimeUpdateThreshold := time.Duration(0) // update atime on every access
 			atimeBufferSize := 0                     // blocking channel of atime updates
-			minEvictionAge := time.Duration(0)       // no min eviction age
+			samplesPerBatch := 50
+			minEvictionAge := time.Duration(0) // no min eviction age
 			opts := &pebble_cache.Options{
 				RootDirectory:               rootDir,
 				MaxSizeBytes:                maxSizeBytes,
@@ -1774,6 +1775,7 @@ func TestLRU(t *testing.T) {
 				AverageChunkSizeBytes:       tc.averageChunkSizeBytes,
 				ActiveKeyVersion:            &activeKeyVersion,
 				Clock:                       clock,
+				SamplesPerBatch:             &samplesPerBatch,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)

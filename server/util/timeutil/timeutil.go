@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -68,6 +69,16 @@ func StopAndDrainTimer(t *time.Timer) {
 	if !t.Stop() {
 		select {
 		case <-t.C:
+		default:
+		}
+	}
+}
+
+// TODO: combine StopAndDrainClockworkTimer and StopAndDrainTimer.
+func StopAndDrainClockworkTimer(t clockwork.Timer) {
+	if !t.Stop() {
+		select {
+		case <-t.Chan():
 		default:
 		}
 	}
