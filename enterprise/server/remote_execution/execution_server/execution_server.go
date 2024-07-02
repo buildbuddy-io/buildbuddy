@@ -597,7 +597,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		// Check if there's already an identical action pending execution. If
 		// so, wait on the result of that execution instead of starting a new
 		// one.
-		ee, err := action_merger.FindPendingExecution(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest)
+		ee, started, err := action_merger.FindPendingExecution(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest)
 		if err != nil {
 			log.CtxWarningf(ctx, "could not check for existing execution: %s", err)
 		}
@@ -608,6 +608,11 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
 			metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
+			if started.Before(time.Now()) {
+				metrics.RemoteExecutionMergedTimeSavedUsec.
+					With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).
+					Observe(float64(time.Since(started).Microseconds()))
+			}
 			if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
 				return err
 			}
