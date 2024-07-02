@@ -40,6 +40,7 @@ module.exports = {
       "config-samples",
       "config-app",
       "config-database",
+      "config-olap-database",
       "config-storage",
       "config-cache",
       "config-github",
