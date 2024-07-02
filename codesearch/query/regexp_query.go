@@ -311,7 +311,7 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 	if len(sQueries) == 1 {
 		squery = sQueries[0]
 	} else if len(sQueries) > 1 {
-		squery = "(:or " + strings.Join(sQueries, " ") + ")"
+		squery = "(:and " + strings.Join(sQueries, " ") + ")"
 	}
 
 	if len(requiredSClauses) > 0 {
