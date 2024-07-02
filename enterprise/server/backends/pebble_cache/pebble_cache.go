@@ -2592,7 +2592,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 		}
 
-		if time.Since(iterCreatedAt) > e.samplerIterRefreshPeriod {
+		if totalCount > e.samplesPerBatch || time.Since(iterCreatedAt) > e.samplerIterRefreshPeriod {
 			// Going to refresh the iterator in the next iteration.
 			shouldCreateNewIter = true
 		}
