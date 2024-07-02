@@ -436,7 +436,6 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 
 func (sep *StreamingEventParser) fillInvocationFromWorkflowConfigured(workflowConfigured *build_event_stream.WorkflowConfigured) {
 	priority := workflowConfiguredPriority
-	sep.setCommand("workflow run", priority)
 	sep.setPattern([]string{workflowConfigured.ActionName}, priority)
 }
 

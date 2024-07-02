@@ -339,33 +339,6 @@ func (r *buildEventReporter) Publish(event *bespb.BuildEvent) error {
 	return r.bep.Publish(event)
 }
 
-type parsedBazelArgs struct {
-	cmd      string
-	flags    []string
-	patterns []string
-}
-
-func parseBazelArgs(cmd string) (*parsedBazelArgs, error) {
-	args, err := shlex.Split(cmd)
-	if err != nil {
-		return nil, err
-	}
-	if len(args) < 1 {
-		return nil, status.FailedPreconditionError("missing command")
-	}
-	parsedArgs := &parsedBazelArgs{
-		cmd: args[0],
-	}
-	for _, arg := range args[1:] {
-		if strings.HasPrefix(arg, "--") {
-			parsedArgs.flags = append(parsedArgs.flags, arg)
-		} else {
-			parsedArgs.patterns = append(parsedArgs.patterns, arg)
-		}
-	}
-	return parsedArgs, nil
-}
-
 func (r *buildEventReporter) Start(startTime time.Time) error {
 	if !r.startTime.IsZero() {
 		// Already started.
@@ -383,15 +356,13 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 
 	optionsDescription := strings.Join(options, " ")
 	cmd := ""
-	patterns := []string{}
-	if !r.isWorkflow {
-		parsedArgs, err := parseBazelArgs(*bazelSubCommand)
-		if err != nil {
-			return err
-		}
-		cmd = fmt.Sprintf("remote %s", parsedArgs.cmd)
-		patterns = parsedArgs.patterns
+
+	if r.isWorkflow {
+		cmd = "workflow run"
+	} else {
+		cmd = "remote run"
 	}
+
 	startedEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
 		Children: []*bespb.BuildEventId{
@@ -413,20 +384,10 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}})
 		r.Printf("Streaming workflow logs to: %s", invocationURL(*invocationID))
 	} else {
-		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}})
 		r.Printf("Streaming remote runner logs to: %s", invocationURL(*invocationID))
 	}
 	if err := r.bep.Publish(startedEvent); err != nil {
 		return err
-	}
-	if !r.isWorkflow {
-		patternEvent := &bespb.BuildEvent{
-			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}},
-			Payload: &bespb.BuildEvent_Expanded{Expanded: &bespb.PatternExpanded{}},
-		}
-		if err := r.bep.Publish(patternEvent); err != nil {
-			return err
-		}
 	}
 	structuredCommandLineEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bespb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original"}}},
@@ -860,9 +821,13 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// because that error is instead surfaced in the caller func when calling
 	// `buildEventPublisher.Wait()`
 
+	actionName, err := getActionNameForWorkflowConfiguredEvent()
+	if err != nil {
+		return err
+	}
 	wfc := &bespb.WorkflowConfigured{
 		WorkflowId:         *workflowID,
-		ActionName:         getActionNameForWorkflowConfiguredEvent(),
+		ActionName:         actionName,
 		ActionTriggerEvent: *triggerEvent,
 		PushedRepoUrl:      *pushedRepoURL,
 		PushedBranch:       *pushedBranch,
@@ -1113,7 +1078,8 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Instead of actually running the target, have Bazel write out a run script using the --script_path flag and
 		// extract run options (i.e. args, runfile information) from the generated run script.
 		runScript := ""
-		if *recordRunMetadata {
+		isRunCmd := args[0] == "run"
+		if isRunCmd && *recordRunMetadata {
 			tmpDir, err := os.MkdirTemp("", "bazel-run-script-*")
 			if err != nil {
 				return err
@@ -1278,27 +1244,26 @@ func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
 
 // This should only be used for WorkflowConfiguredEvents--it explicitly labels
 // actions with no name so that they can be identified later on.
-func getActionNameForWorkflowConfiguredEvent() string {
+func getActionNameForWorkflowConfiguredEvent() (string, error) {
+	if *serializedAction != "" {
+		a, err := deserializeAction(*serializedAction)
+		if err != nil {
+			return "", err
+		}
+		return a.Name, nil
+	}
 	if *bazelSubCommand != "" {
-		return "run"
+		return "run", nil
 	}
 	if *actionName != "" {
-		return *actionName
+		return *actionName, nil
 	}
-	return "Unknown action"
+	return "Unknown action", nil
 }
 
 func getActionToRun() (*config.Action, error) {
 	if *serializedAction != "" {
-		actionYaml, err := base64.StdEncoding.DecodeString(*serializedAction)
-		if err != nil {
-			return nil, err
-		}
-		a := &config.Action{}
-		if err := yaml.Unmarshal(actionYaml, a); err != nil {
-			return nil, err
-		}
-		return a, nil
+		return deserializeAction(*serializedAction)
 	}
 	if *bazelSubCommand != "" {
 		return &config.Action{
@@ -1318,6 +1283,18 @@ func getActionToRun() (*config.Action, error) {
 		return findAction(cfg.Actions, *actionName)
 	}
 	return nil, status.InvalidArgumentError("One of --action or --bazel_sub_command must be specified.")
+}
+
+func deserializeAction(actionString string) (*config.Action, error) {
+	actionYaml, err := base64.StdEncoding.DecodeString(actionString)
+	if err != nil {
+		return nil, err
+	}
+	a := &config.Action{}
+	if err := yaml.Unmarshal(actionYaml, a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 type runInfo struct {
