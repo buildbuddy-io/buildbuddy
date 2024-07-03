@@ -2668,10 +2668,11 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 		Timestamp: atime,
 	}
 	timeout := e.clock.NewTimer(SamplerSleepDuration)
-	defer timeutil.StopAndDrainClockworkTimer(timeout)
 	select {
 	case e.samples <- sample:
+		timeutil.StopAndDrainClockworkTimer(timeout)
 	case <-quitChan:
+		timeutil.StopAndDrainClockworkTimer(timeout)
 		return
 	case <-timeout.Chan():
 		// e.samples is full.
