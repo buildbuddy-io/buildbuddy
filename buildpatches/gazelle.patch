@@ -39,3 +39,79 @@ index f5ae5e5..74678b4 100644
      deps = ["@com_github_bazelbuild_buildtools//build"],
  )
  
+diff --git a/language/go/modules.go b/language/go/modules.go
+index 828cb8d..871ae73 100644
+--- a/language/go/modules.go
++++ b/language/go/modules.go
+@@ -17,7 +17,7 @@ package golang
+ 
+ import (
+ 	"bytes"
+-	"fmt"
++	"encoding/json"
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
+@@ -37,8 +37,37 @@ func importReposFromModules(args language.ImportReposArgs) language.ImportReposR
+ 		return language.ImportReposResult{Error: err}
+ 	}
+ 
+-	// Load sums from go.sum. Ideally, they're all there.
++	newPathToModule := make(map[string]*moduleFromList)
++	tmpDir, err := os.MkdirTemp("", "")
++	if err != nil {
++		return language.ImportReposResult{Error: err}
++	}
++	defer os.RemoveAll(tmpDir)
++	goModPath := filepath.Join(filepath.Dir(args.Path), "go.mod")
+ 	goSumPath := filepath.Join(filepath.Dir(args.Path), "go.sum")
++	os.Link(goModPath, filepath.Join(tmpDir, "go.mod"))
++	os.Link(goSumPath, filepath.Join(tmpDir, "go.sum"))
++	downloadData, err := goModDownload(tmpDir, []string{})
++	if err != nil {
++		return language.ImportReposResult{Error: err}
++	}
++	dec := json.NewDecoder(bytes.NewReader(downloadData))
++	for dec.More() {
++		var dl moduleFromDownload
++		if err := dec.Decode(&dl); err != nil {
++			return language.ImportReposResult{Error: err}
++		}
++		path := dl.Path + "@" + dl.Version
++		if mod, ok := pathToModule[path]; ok {
++			if mod.Sum == "" {
++				mod.Sum = dl.Sum
++			}
++			newPathToModule[path] = mod
++		}
++	}
++	pathToModule = newPathToModule
++
++	// Load sums from go.sum. Ideally, they're all there.
+ 	data, _ = os.ReadFile(goSumPath)
+ 	lines := bytes.Split(data, []byte("\n"))
+ 	for _, line := range lines {
+@@ -56,10 +85,5 @@ func importReposFromModules(args language.ImportReposArgs) language.ImportReposR
+ 		}
+ 	}
+ 
+-	pathToModule, err = fillMissingSums(pathToModule)
+-	if err != nil {
+-		return language.ImportReposResult{Error: fmt.Errorf("finding module sums: %v", err)}
+-	}
+-
+ 	return language.ImportReposResult{Gen: toRepositoryRules(pathToModule)}
+ }
+diff --git a/repo/remote.go b/repo/remote.go
+index 1b28058..cd1bc37 100644
+--- a/repo/remote.go
++++ b/repo/remote.go
+@@ -607,7 +607,7 @@ func (rc *RemoteCache) initTmp() {
+ 		if rc.tmpErr != nil {
+ 			return
+ 		}
+-		rc.tmpErr = os.WriteFile(filepath.Join(rc.tmpDir, "go.mod"), []byte("module gazelle_remote_cache\ngo 1.15\n"), 0o666)
++		rc.tmpErr = os.WriteFile(filepath.Join(rc.tmpDir, "go.mod"), []byte("module gazelle_remote_cache\ngo 1.22\n"), 0o666)
+ 	})
+ }
+ 
