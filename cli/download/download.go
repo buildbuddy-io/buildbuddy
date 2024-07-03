@@ -51,21 +51,22 @@ Example of dumping a Command to a file:
 )
 
 type newlineStdoutCloser struct {
-	*os.File
+	io.WriteCloser
 }
 
 func (n *newlineStdoutCloser) Close() error {
-	if isatty.IsTerminal(n.File.Fd()) {
-		n.File.Write([]byte{'\n'})
+	if f, ok := n.WriteCloser.(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+		n.WriteCloser.Write([]byte{'\n'})
 	}
-	return n.File.Close()
+	return n.WriteCloser.Close()
 }
 
 func getOutput() (io.WriteCloser, error) {
 	if *outputFile != "" {
 		return os.OpenFile(*outputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	}
-	return &newlineStdoutCloser{os.Stdout}, nil
+	r := &newlineStdoutCloser{os.Stdout}
+	return r, nil
 }
 
 func printProtoToOutput(msg proto.Message, output io.Writer) error {
