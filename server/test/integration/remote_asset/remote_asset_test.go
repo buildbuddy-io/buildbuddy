@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -79,6 +80,36 @@ func TestRemoteAsset_FallbackToSecondURLAfterUnreachable_FetchesSuccessfully(t *
 	_, res := fetchArchiveWithBazel(t, app.GRPCAddress(), urls, archiveDigest.GetHash())
 
 	require.NoError(t, res.Error)
+}
+
+func TestRemoteAsset_WithProxy(t *testing.T) {
+	// Setup file server
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{"BUILD": ""})
+	testshell.Run(t, ws, "tar czf archive.tar.gz $(find . -type f)")
+	b, err := os.ReadFile(filepath.Join(ws, "archive.tar.gz"))
+	require.NoError(t, err)
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	fileServer := http.FileServer(http.Dir(ws))
+
+	// setup proxy
+	proxyUsed := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyUsed = true
+		fileServer.ServeHTTP(w, r)
+	}))
+	defer ts.Close()
+
+	// Ensure that HTTP_PROXY is set before app starts
+	defer os.Setenv("HTTP_PROXY", os.Getenv("HTTP_PROXY"))
+	err = os.Setenv("HTTP_PROXY", ts.URL)
+	require.NoError(t, err)
+	app := buildbuddy.Run(t)
+
+	_, res := fetchArchiveWithBazel(t, app.GRPCAddress(), []string{"http://some-url.does.not.exist/archive.tar.gz"}, d.GetHash())
+	require.NoError(t, res.Error)
+	require.True(t, proxyUsed)
 }
 
 func serveArchive(t *testing.T, contents map[string]string) (*repb.Digest, *url.URL) {
