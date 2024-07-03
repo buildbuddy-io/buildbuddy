@@ -65,8 +65,7 @@ func getOutput() (io.WriteCloser, error) {
 	if *outputFile != "" {
 		return os.OpenFile(*outputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	}
-	r := &newlineStdoutCloser{os.Stdout}
-	return r, nil
+	return &newlineStdoutCloser{os.Stdout}, nil
 }
 
 func printProtoToOutput(msg proto.Message, output io.Writer) error {
