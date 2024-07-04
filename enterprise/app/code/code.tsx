@@ -39,6 +39,7 @@ import router from "../../../app/router/router";
 import picker_service, { PickerModel } from "../../../app/picker/picker_service";
 import { GithubIcon } from "../../../app/icons/github";
 import { getLangHintFromFilePath } from "../monaco/monaco";
+import SearchBar from "../../../app/components/search_bar/search_bar";
 
 interface Props {
   user: User;
@@ -219,15 +220,19 @@ export default class CodeComponent extends React.Component<Props, State> {
     }
     picker_service.show(picker);
     picker_service.picked.subscribe((path) => {
-      this.navigateToPath(path);
-      if (this.state.fullPathToModelMap.has(path)) {
-        this.setModel(path, this.state.fullPathToModelMap.get(path));
-      } else {
-        this.fetchContentForPath(path).then((response) => {
-          this.navigateToContent(path, response.content);
-        });
-      }
+      this.fetchIfNeededAndNavigate(path);
     });
+  }
+
+  fetchIfNeededAndNavigate(path: string, additionalParams?: string) {
+    this.navigateToPath(path + additionalParams);
+    if (this.state.fullPathToModelMap.has(path)) {
+      this.setModel(path, this.state.fullPathToModelMap.get(path));
+    } else {
+      this.fetchContentForPath(path).then((response) => {
+        this.navigateToContent(path, response.content);
+      });
+    }
   }
 
   parseGithubUrl(githubUrl: string) {
@@ -658,7 +663,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   setModel(fullPath: string, model: monaco.editor.ITextModel | undefined) {
     this.state.tabs.set(fullPath, fullPath);
     this.editor?.setModel(model || null);
-    this.updateState({ tabs: this.state.tabs });
+    this.updateState({ tabs: this.state.tabs }, () => this.focusLineNumberAndHighlightQuery());
   }
 
   navigateToPath(path: string) {
@@ -1254,7 +1259,19 @@ export default class CodeComponent extends React.Component<Props, State> {
               </a>
             )}
             <a href="/">
-              <img alt="BuildBuddy Code" src="/image/b_dark.svg" className="logo" />
+              <svg
+                className="logo"
+                width="68"
+                height="56"
+                viewBox="0 0 68 56"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M62.8577 29.2897C61.8246 27.7485 60.4825 26.5113 58.8722 25.5604C59.7424 24.8245 60.493 23.998 61.1109 23.0756C62.5071 21.0593 63.1404 18.6248 63.1404 15.8992C63.1404 13.4509 62.7265 11.2489 61.7955 9.37839C60.9327 7.5562 59.6745 6.07124 58.0282 4.96992C56.4328 3.85851 54.5665 3.09733 52.4736 2.64934C50.4289 2.21166 48.1997 2 45.7961 2H4H2V4V52V54H4H46.4691C48.7893 54 51.0473 53.7102 53.2377 53.1272C55.5055 52.5357 57.5444 51.6134 59.3289 50.3425C61.2008 49.0417 62.6877 47.3709 63.7758 45.3524L63.7808 45.3431L63.7857 45.3338C64.9054 43.2032 65.4286 40.7655 65.4286 38.084C65.4286 34.7488 64.6031 31.7823 62.8577 29.2897Z"
+                  stroke-width="4"
+                  shape-rendering="geometricPrecision"
+                />
+              </svg>
             </a>
           </div>
           <div className="code-menu-breadcrumbs">
@@ -1267,10 +1284,14 @@ export default class CodeComponent extends React.Component<Props, State> {
               <>
                 <div className="code-menu-breadcrumbs-environment">
                   {/* <a href="#">my-workspace</a> /{" "} TODO: add workspace to breadcrumb */}
-                  <a target="_blank" href={`http://github.com/${this.currentOwner()}`}>
-                    {this.currentOwner()}
-                  </a>{" "}
-                  <ChevronRight />
+                  {!this.getQuery() && (
+                    <>
+                      <a target="_blank" href={`http://github.com/${this.currentOwner()}`}>
+                        {this.currentOwner()}
+                      </a>{" "}
+                      <ChevronRight />
+                    </>
+                  )}
                   <a target="_blank" href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}`}>
                     {this.currentRepo()}
                   </a>
@@ -1286,7 +1307,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                     </a>
                   </>
                 )}
-                {this.getRef() && (
+                {this.getRef() && !this.getQuery() && (
                   <>
                     <ChevronRight />
                     <a
@@ -1313,6 +1334,49 @@ export default class CodeComponent extends React.Component<Props, State> {
               </>
             )}
           </div>
+          {Boolean(this.getQuery()) && (
+            <SearchBar<search.Result>
+              placeholder="Search..."
+              title="Results"
+              fetchResults={async (query) => {
+                return (
+                  await rpcService.service.search(
+                    new search.SearchRequest({ query: new search.Query({ term: query }) })
+                  )
+                ).results;
+              }}
+              onResultPicked={(result: any, query: string) => {
+                this.fetchIfNeededAndNavigate(result.filename, `?pq=${query}&commit=${result.sha}`);
+              }}
+              emptyState={
+                <div className="code-editor-search-bar-empty-state">
+                  <div className="code-editor-search-bar-empty-state-description">Search for files and code.</div>
+                  <div className="code-editor-search-bar-empty-state-examples">Examples</div>
+                  <ul>
+                    <li>
+                      <code>case:yes Hello World</code>
+                    </li>
+                    <li>
+                      <code>lang:css padding-(left|right)</code>
+                    </li>
+                    <li>
+                      <code>lang:go flag.String</code>
+                    </li>
+                    <li>
+                      <code>filepath:package.json</code>
+                    </li>
+                  </ul>
+                </div>
+              }
+              renderResult={(r) => (
+                <div className="code-editor-search-bar-result">
+                  <div>{r.filename}</div>
+                  <pre>{r.snippets.map((s) => s.lines).pop()}</pre>
+                </div>
+              )}
+            />
+          )}
+          {!this.getQuery() && <div className="search-bar-container"></div>}
           <OrgPicker user={this.props.user} floating={true} inline={true} />
           {this.isSingleFile() && (
             <div className="code-menu-actions">
@@ -1531,16 +1595,22 @@ export default class CodeComponent extends React.Component<Props, State> {
               </div>
             )}
           </div>
-          {this.editor && (this.currentPath()?.endsWith("MODULE.bazel") || this.currentPath()?.endsWith("MODULE")) && (
-            <ModuleSidekick editor={this.editor} />
+          {!this.getQuery() && (
+            <>
+              {this.editor &&
+                (this.currentPath()?.endsWith("MODULE.bazel") || this.currentPath()?.endsWith("MODULE")) && (
+                  <ModuleSidekick editor={this.editor} />
+                )}
+              {this.editor &&
+                (this.currentPath()?.endsWith("BUILD.bazel") || this.currentPath()?.endsWith("BUILD")) && (
+                  <BuildFileSidekick editor={this.editor} onBazelCommand={(c) => this.handleBuildClicked(c)} />
+                )}
+              {this.editor && this.currentPath()?.endsWith(".bazelversion") && (
+                <BazelVersionSidekick editor={this.editor} />
+              )}
+              {this.editor && this.currentPath()?.endsWith(".bazelrc") && <BazelrcSidekick editor={this.editor} />}
+            </>
           )}
-          {this.editor && (this.currentPath()?.endsWith("BUILD.bazel") || this.currentPath()?.endsWith("BUILD")) && (
-            <BuildFileSidekick editor={this.editor} onBazelCommand={(c) => this.handleBuildClicked(c)} />
-          )}
-          {this.editor && this.currentPath()?.endsWith(".bazelversion") && (
-            <BazelVersionSidekick editor={this.editor} />
-          )}
-          {this.editor && this.currentPath()?.endsWith(".bazelrc") && <BazelrcSidekick editor={this.editor} />}
         </div>
         {this.state.showContextMenu && (
           <div className="context-menu-container">
