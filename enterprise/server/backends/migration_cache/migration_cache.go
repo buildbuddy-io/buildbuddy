@@ -560,6 +560,7 @@ func (d *doubleReader) Close() error {
 				destBuf, err := io.ReadAll(d.dest)
 				if err != nil {
 					log.Warningf("Migration %v read err: failed to read remaining bytes from dest cache: %s", d.r, err)
+					log.Warningf("Resource name %+v", d.r)
 				}
 				d.bytesReadDest += len(destBuf)
 			}
