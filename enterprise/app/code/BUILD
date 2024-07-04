@@ -17,6 +17,7 @@ ts_library(
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/modal",
+        "//app/components/search_bar",
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/icons:github",

@@ -220,7 +220,7 @@
 }
 
 .org-picker-container.floating .default-photo {
-  border: 2px solid #000;
+  background-color: #f1f3f4;
 }
 
 .org-picker-container.floating .org-picker-expanded-profile {
