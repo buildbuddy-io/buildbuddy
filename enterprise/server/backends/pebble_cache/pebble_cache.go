@@ -3238,6 +3238,10 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		return nil, err
 	}
 
+	if r.GetDigest().Hash == "b443298cbef931299c1cdea1210698ee00fc2144460f31e08399cf30fa1376ad" {
+		log.Warningf("file metadata %+v", fileMetadata)
+	}
+
 	blobDir := p.blobDir()
 	requestedCompression := r.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()
