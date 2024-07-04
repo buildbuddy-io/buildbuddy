@@ -169,14 +169,18 @@ func (w *Writer) AddDocument(doc types.Document) error {
 		}
 		tokenizer := w.tokenizers[field.Type()]
 		tokenizer.Reset(bytes.NewReader(field.Contents()))
+
+		docGrams := make(map[string][]uint64)
 		for {
 			tok, err := tokenizer.Next()
 			if err != nil {
 				break
 			}
-			// TODO(tylerw): maybe shouldn't call this ngram.
-			// What if it's a number?
 			ngram := string(tok.Ngram())
+			docGrams[ngram] = append(docGrams[ngram], tok.Position())
+		}
+
+		for ngram := range docGrams {
 			postingLists[ngram] = append(postingLists[ngram], doc.ID())
 		}
 

@@ -43,6 +43,7 @@ type Document interface {
 type Token interface {
 	Type() FieldType
 	Ngram() []byte
+	Position() uint64
 }
 
 type Tokenizer interface {
