@@ -580,6 +580,7 @@ func (d *doubleReader) Close() error {
 	}
 	if d.shouldVerifyNumBytes() && d.bytesReadDest != d.bytesReadSrc {
 		log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
+		log.Warningf("Resource name %+v", d.r)
 	}
 
 	return srcErr

@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -562,13 +563,13 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 		}
 		if string(fileHeader[0:2]) != encryptedDataHeaderSignature {
 			moreData := make([]byte, 1024)
-			n, err := d.r.Read(moreData)
+			n, err := ioutil.ReadTryFillBuffer(d.r, moreData)
 			if err != nil {
 				return 0, status.InternalErrorf("read failed: %s", err)
 			}
 			dumpData := slices.Concat(fileHeader, moreData[:n])
 			b := base64.StdEncoding.EncodeToString(dumpData)
-			log.Warningf("raw data:\n%s", b)
+			log.Warningf("raw data %d bytes:\n%s", len(dumpData), b)
 			return 0, status.InternalErrorf("invalid file signature %d %d", fileHeader[0], fileHeader[1])
 		}
 		if fileHeader[2] != encryptedDataHeaderVersion {

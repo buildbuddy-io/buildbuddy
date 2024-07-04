@@ -15,6 +15,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/db",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/retry",
         "//server/util/status",
