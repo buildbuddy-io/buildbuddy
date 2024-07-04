@@ -5,10 +5,12 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -559,6 +561,14 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 			return 0, err
 		}
 		if string(fileHeader[0:2]) != encryptedDataHeaderSignature {
+			moreData := make([]byte, 1024)
+			n, err := d.r.Read(moreData)
+			if err != nil {
+				return 0, status.InternalErrorf("read failed: %s", err)
+			}
+			dumpData := slices.Concat(fileHeader, moreData[:n])
+			b := base64.StdEncoding.EncodeToString(dumpData)
+			log.Warningf("raw data:\n%s", b)
 			return 0, status.InternalErrorf("invalid file signature %d %d", fileHeader[0], fileHeader[1])
 		}
 		if fileHeader[2] != encryptedDataHeaderVersion {
