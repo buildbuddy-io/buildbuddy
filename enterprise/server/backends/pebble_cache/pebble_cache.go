@@ -1501,6 +1501,9 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebbl
 		}
 		lastErr = pebble.GetProto(db, keyBytes, fileMetadata)
 		if lastErr == nil {
+			if key.Hash() == "b443298cbef931299c1cdea1210698ee00fc2144460f31e08399cf30fa1376ad" {
+				log.Warningf("found key %q", string(keyBytes))
+			}
 			return version, nil
 		}
 		fileMetadata.ResetVT()
@@ -1522,7 +1525,6 @@ func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) 
 			return false, err
 		}
 		if iter.SeekGE(keyBytes) && bytes.Equal(iter.Key(), keyBytes) {
-			log.Warningf("found key %q", string(keyBytes))
 			return true, nil
 		}
 	}
