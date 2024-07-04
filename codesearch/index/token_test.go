@@ -85,3 +85,22 @@ func TestTrigramTokenizer(t *testing.T) {
 	sort.Strings(newTokens)
 	assert.Equal(t, oldTokens, newTokens)
 }
+
+func TestWhitespaceTokenizer(t *testing.T) {
+	wt := NewWhitespaceTokenizer()
+	wt.Reset(bytes.NewReader([]byte("this is a string")))
+	tokens := make(map[uint64]string, 0)
+	for {
+		tok, err := wt.Next()
+		if err != nil {
+			break
+		}
+		tokens[tok.Position()] = string(tok.Ngram())
+	}
+	assert.Equal(t, map[uint64]string{
+		0:  "this",
+		5:  "is",
+		8:  "a",
+		10: "string",
+	}, tokens)
+}
