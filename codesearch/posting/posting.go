@@ -3,6 +3,8 @@ package posting
 import (
 	"encoding/binary"
 	"slices"
+
+	"golang.org/x/exp/maps"
 )
 
 type List interface {
@@ -172,4 +174,60 @@ func (fm *FieldMap) Map() map[string][]uint64 {
 		m[f] = pl.ToArray()
 	}
 	return m
+}
+
+type uint64PostingSet map[uint64]struct{}
+
+func (ps *uint64PostingSet) Or(l2 List) {
+	ps2, ok := l2.(*uint64PostingSet)
+	if !ok {
+		panic("Mixed posting set types")
+	}
+	maps.Copy(*ps, *ps2)
+}
+
+func (ps *uint64PostingSet) And(l2 List) {
+	ps2, ok := l2.(*uint64PostingSet)
+	if !ok {
+		panic("Mixed posting set types")
+	}
+	for k := range *ps {
+		if _, ok := (*ps2)[k]; !ok {
+			delete(*ps, k)
+		}
+	}
+}
+func (ps *uint64PostingSet) Add(u uint64) {
+	(*ps)[u] = struct{}{}
+}
+func (ps *uint64PostingSet) Remove(u uint64) {
+	delete(*ps, u)
+}
+func (ps *uint64PostingSet) Marshal() ([]byte, error) {
+	buf := make([]byte, 0, len(*ps)*8)
+	for _, u := range (*ps).ToArray() {
+		buf = binary.AppendUvarint(buf, u)
+	}
+	return buf, nil
+}
+func (ps *uint64PostingSet) Unmarshal(buf []byte) (List, error) {
+	m := make(map[uint64]struct{}, 0)
+	for len(buf) > 0 {
+		u, n := binary.Uvarint(buf)
+		m[u] = struct{}{}
+		buf = buf[n:]
+	}
+	*ps = m
+	return ps, nil
+}
+func (ps *uint64PostingSet) GetCardinality() uint64 {
+	return uint64(len(*ps))
+}
+func (ps *uint64PostingSet) ToArray() []uint64 {
+	ids := maps.Keys(*ps)
+	slices.Sort(ids)
+	return ids
+}
+func (ps *uint64PostingSet) Clear() {
+	maps.Clear(*ps)
 }
