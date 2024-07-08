@@ -2568,6 +2568,9 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	fileMetadata := rfpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
+	timer := e.clock.NewTimer(SamplerSleepDuration)
+	defer timeutil.StopAndDrainClockworkTimer(timer)
+
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
 	// and just read forward, yielding digests until we've found enough.
@@ -2639,14 +2642,14 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			continue
 		}
 
-		e.maybeAddToSampleChan(iter, fileMetadata, quitChan)
+		e.maybeAddToSampleChan(iter, fileMetadata, quitChan, timer)
 
 		iter.Next()
 		fileMetadata.ResetVT()
 	}
 }
 
-func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetadata *rfpb.FileMetadata, quitChan chan struct{}) {
+func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetadata *rfpb.FileMetadata, quitChan chan struct{}, timer clockwork.Timer) {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 	age := e.clock.Since(atime)
 	if age < e.minEvictionAge {
@@ -2667,13 +2670,13 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 		SizeBytes: sizeBytes,
 		Timestamp: atime,
 	}
-	timeout := e.clock.NewTimer(SamplerSleepDuration)
-	defer timeutil.StopAndDrainClockworkTimer(timeout)
+	timeutil.StopAndDrainClockworkTimer(timer)
+	timer.Reset(SamplerSleepDuration)
 	select {
 	case e.samples <- sample:
 	case <-quitChan:
 		return
-	case <-timeout.Chan():
+	case <-timer.Chan():
 		// e.samples is full.
 	}
 
