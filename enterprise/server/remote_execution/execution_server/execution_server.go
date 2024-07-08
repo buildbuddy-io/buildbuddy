@@ -292,30 +292,31 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	result := s.env.GetDBHandle().GORM(ctx, "execution_server_update_execution").Where(
-		"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution)
-	dbErr := result.Error
-	if dbErr == nil && result.RowsAffected == 0 {
-		// We want to return an error if the execution simply doesn't exist, but
-		// we want to ignore any attempts to update a cancelled execution.
-		var count int64
-		err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_check_after_noop_update").Raw(`
-				SELECT COUNT(*) FROM "Executions" WHERE execution_id = ?
-			`,
-			executionID).Take(&count)
-		if err != nil {
-			dbErr = err
-		} else if count == 0 {
-			dbErr = status.NotFoundErrorf("Unable to update execution; no execution exists with id %s.", executionID)
-		}
-	}
-
-	if stage == repb.ExecutionStage_COMPLETED {
-		if err := s.recordExecution(ctx, executionID); err != nil {
-			log.CtxErrorf(ctx, "failed to record execution %q: %s", executionID, err)
-		}
-	}
-	return dbErr
+	return nil
+	//result := s.env.GetDBHandle().GORM(ctx, "execution_server_update_execution").Where(
+	//	"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution)
+	//dbErr := result.Error
+	//if dbErr == nil && result.RowsAffected == 0 {
+	//	// We want to return an error if the execution simply doesn't exist, but
+	//	// we want to ignore any attempts to update a cancelled execution.
+	//	var count int64
+	//	err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_check_after_noop_update").Raw(`
+	//			SELECT COUNT(*) FROM "Executions" WHERE execution_id = ?
+	//		`,
+	//		executionID).Take(&count)
+	//	if err != nil {
+	//		dbErr = err
+	//	} else if count == 0 {
+	//		dbErr = status.NotFoundErrorf("Unable to update execution; no execution exists with id %s.", executionID)
+	//	}
+	//}
+	//
+	//if stage == repb.ExecutionStage_COMPLETED {
+	//	if err := s.recordExecution(ctx, executionID); err != nil {
+	//		log.CtxErrorf(ctx, "failed to record execution %q: %s", executionID, err)
+	//	}
+	//}
+	//return dbErr
 }
 
 func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string) error {
@@ -455,12 +456,12 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		rmd.ToolDetails = nil
 	}
 
-	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
-		return "", err
-	}
-	if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
-		return "", err
-	}
+	//if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
+	//	return "", err
+	//}
+	//if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
+	//	return "", err
+	//}
 
 	executionTask := &repb.ExecutionTask{
 		ExecuteRequest:  req,
@@ -608,9 +609,9 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
 			metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
-			if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
-				return err
-			}
+			//if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
+			//	return err
+			//}
 		}
 	}
 
