@@ -25,7 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/coreos/go-oidc"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/crypto/ssh"
 
 	cgpb "github.com/buildbuddy-io/buildbuddy/proto/certgenerator"
