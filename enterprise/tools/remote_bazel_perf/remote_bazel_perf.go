@@ -90,14 +90,13 @@ func runTrial(useBareRunner bool) {
 
 func triggerRemoteRun(runnerTarget string, extraArgs string, runID string) (string, error) {
 	startTime := time.Now()
-	log.Infof("Running: %s", fmt.Sprintf(
-		"bb remote --remote_runner=%s --runner_exec_properties=instance_name=%s %s  --remote_header=x-buildbuddy-api-key=%s %s",
-		runnerTarget, runID, *testCommand, *apiKey, extraArgs))
+	cmd := fmt.Sprintf(
+		"bb remote --remote_runner=%s --runner_exec_properties=instance_name=%s --runner_exec_properties=EstimatedComputeUnits=4 --runner_exec_properties=EstimatedFreeDiskBytes=30000000000 %s --remote_header=x-buildbuddy-api-key=%s %s",
+		runnerTarget, runID, *testCommand, *apiKey, extraArgs)
+	log.Infof("Running: %s", cmd)
 
 	results := ""
-	output, err := runCommand(fmt.Sprintf(
-		"bb remote --remote_runner=%s --runner_exec_properties=instance_name=%s %s --remote_header=x-buildbuddy-api-key=%s %s",
-		runnerTarget, runID, *testCommand, *apiKey, extraArgs))
+	output, err := runCommand(cmd)
 	if err != nil {
 		if output == "" {
 			return "", err
