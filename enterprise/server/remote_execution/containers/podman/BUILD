@@ -86,6 +86,12 @@ genrule(
         rm "$$TMPDIR/etc/containers/registries.conf"
         cp "$$REGISTRIES_CONF" "$$TMPDIR/etc/containers/registries.conf"
 
-        tar --create --gzip --file="$@" --directory="$$TMPDIR" .
+        tar --create --gzip --file="$@" --directory="$$TMPDIR" --mtime='1970-01-01 00:00:00' .
     """,
+    exec_compatible_with = [
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
 )
