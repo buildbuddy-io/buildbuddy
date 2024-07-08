@@ -75,7 +75,7 @@ func runTrial(useBareRunner bool) {
 			log.Fatalf(err.Error())
 		}
 		// Sleep to give the snapshot some time to save
-		time.Sleep(1 * time.Minute)
+		time.Sleep(3 * time.Minute)
 		resultRecycledRunner, err := triggerRemoteRun(runner, f, randomID)
 		if err != nil {
 			log.Fatalf(err.Error())
@@ -91,7 +91,7 @@ func runTrial(useBareRunner bool) {
 func triggerRemoteRun(runnerTarget string, extraArgs string, runID string) (string, error) {
 	startTime := time.Now()
 	cmd := fmt.Sprintf(
-		"bb remote --remote_runner=%s --runner_exec_properties=instance_name=%s --runner_exec_properties=EstimatedComputeUnits=4 --runner_exec_properties=EstimatedFreeDiskBytes=30000000000 %s --remote_header=x-buildbuddy-api-key=%s %s",
+		"bb remote --remote_runner=%s --runner_exec_properties=instance_name=%s --runner_exec_properties=EstimatedComputeUnits=4 --runner_exec_properties=EstimatedFreeDiskBytes=35000000000 %s --remote_header=x-buildbuddy-api-key=%s %s",
 		runnerTarget, runID, *testCommand, *apiKey, extraArgs)
 	log.Infof("Running: %s", cmd)
 
@@ -130,10 +130,38 @@ func triggerRemoteRun(runnerTarget string, extraArgs string, runID string) (stri
 	if err != nil {
 		return "", err
 	}
-	invocationLink := re.FindStringSubmatch(output)[0]
+	invocationLink := re.FindStringSubmatch(output)[1]
+
+	// Capture fetch time
+	pattern = `(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC).*?git fetch`
+	re, err = regexp.Compile(pattern)
+	if err != nil {
+		return "", err
+	}
+	matches := re.FindStringSubmatch(output)
+	fetchStartTime := matches[1]
+
+	pattern = `(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC).*?git clean`
+	re, err = regexp.Compile(pattern)
+	if err != nil {
+		return "", err
+	}
+	matches = re.FindStringSubmatch(output)
+	fetchEndTime := matches[1]
+
+	fetchStartTimeParsed, err := time.Parse("2006-01-02 15:04:05.000 MST", fetchStartTime)
+	if err != nil {
+		return "", status.WrapErrorf(err, "Could not parse timestamp %s", fetchStartTime)
+	}
+	fetchEndTimeParsed, err := time.Parse("2006-01-02 15:04:05.000 MST", fetchEndTime)
+	if err != nil {
+		return "", status.WrapErrorf(err, "Could not parse timestamp %s", fetchEndTime)
+	}
+	fetchDuration := fetchEndTimeParsed.Sub(fetchStartTimeParsed)
 
 	results += fmt.Sprintf("Remote run duration: %s\n", durationStr(remoteRunDuration))
 	results += fmt.Sprintf("Complete run duration (including queuing): %s\n", durationStr(completeRunDuration))
+	results += fmt.Sprintf("Fetch time: %s\n", durationStr(fetchDuration))
 	results += fmt.Sprintf("%s\n", invocationLink)
 	return results, nil
 }
