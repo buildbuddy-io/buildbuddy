@@ -17,7 +17,6 @@ go_library(
         "//enterprise/server/bes_artifacts",
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/clientidentity",
-        "//enterprise/server/webhooks/webhook_data",
         "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",

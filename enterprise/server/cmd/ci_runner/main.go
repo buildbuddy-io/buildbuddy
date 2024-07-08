@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -1863,8 +1862,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 }
 
 func (ws *workspace) shouldMergeBranches(actionTriggers *config.Triggers) bool {
-	return *triggerEvent == webhook_data.EventName.PullRequest &&
-		actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
+	return actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
 		ws.hasMultipleBranches()
 }
 
