@@ -267,7 +267,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 			s.log.Infof("Had info for cluster: %d, node: %d. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, i+1, logSize)
 			r := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
 			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, r); err != nil {
-				return nil, err
+				return nil, status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
 			}
 			s.configuredClusters++
 			s.log.Infof("Recreated cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
@@ -898,10 +898,31 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	return rsp, nil
 }
 
+func (s *Store) syncRequestDeleteReplica(ctx context.Context, shardID, replicaID uint64) error {
+	configChangeID, err := s.getConfigChangeID(ctx, shardID)
+	if err != nil {
+		return status.InternalErrorf("failed to get configChangeID for shard %d: %s", shardID, err)
+	}
+
+	// Propose the config change (this removes the node from the raft cluster).
+	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		err := s.nodeHost.SyncRequestDeleteReplica(ctx, shardID, replicaID, configChangeID)
+		if err == dragonboat.ErrShardClosed {
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return status.InternalErrorf("faile dot request delete replica for c%dn%d: %s", shardID, replicaID, err)
+	}
+	return nil
+}
+
 // RemoveData tries to remove all data associated with the specified node (shard, replica). It waits for the node (shard, replica) to be fully offloaded or the context is cancelled. This method should only be used after the node is deleted from its Raft cluster.
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
 	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		err := s.nodeHost.SyncRemoveData(ctx, req.GetShardId(), req.GetReplicaId())
+		// If the shard is not stopped, we want to retry SyncRemoveData call.
 		if err == dragonboat.ErrShardNotStopped {
 			err = dragonboat.ErrTimeout
 		}
@@ -1083,9 +1104,13 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 	// when this node is dead. When this node restarted, the range descriptor is
 	// behind, but it cannot get updates from other nodes b/c it was removed from the
 	// cluster.
+	if rd.GetStart() == nil {
+		s.log.Debugf("range descriptor for c%dn%d doesn't have start", shardInfo.ShardID, shardInfo.ReplicaID)
+		return false
+	}
 	updatedRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
 	if err != nil {
-		s.log.Errorf("failed to look up range descriptor: %s", err)
+		s.log.Errorf("failed to look up range descriptor for c%dn%d: %s", shardInfo.ShardID, shardInfo.ReplicaID, err)
 		return false
 	}
 	if updatedRD.GetGeneration() >= rd.GetGeneration() {
@@ -1130,17 +1155,17 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 						return
 					}
 					s.log.Debugf("Removing zombie node: %+v...", potentialZombie)
-					if err := s.nodeHost.StopReplica(potentialZombie.ShardID, potentialZombie.ReplicaID); err != nil {
-						s.log.Errorf("Error stopping zombie replica: %s", err)
+					if err := s.syncRequestDeleteReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID); err != nil {
+						s.log.Errorf("Error request delete zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
+						return
+					}
+					if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
+						ShardId:   potentialZombie.ShardID,
+						ReplicaId: potentialZombie.ReplicaID,
+					}); err != nil {
+						s.log.Errorf("Error removing zombie replica data: %s", err)
 					} else {
-						if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
-							ShardId:   potentialZombie.ShardID,
-							ReplicaId: potentialZombie.ReplicaID,
-						}); err != nil {
-							s.log.Errorf("Error removing zombie replica data: %s", err)
-						} else {
-							s.log.Infof("Successfully removed zombie node: %+v", potentialZombie)
-						}
+						s.log.Infof("Successfully removed zombie node: %+v", potentialZombie)
 					}
 				})
 				defer deleteTimer.Stop()
@@ -1796,20 +1821,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, err
 	}
 
-	configChangeID, err := s.getConfigChangeID(ctx, replicaDesc.GetShardId())
-	if err != nil {
-		return nil, err
-	}
-
-	// Propose the config change (this removes the node from the raft cluster).
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		err := s.nodeHost.SyncRequestDeleteReplica(ctx, replicaDesc.GetShardId(), replicaDesc.GetReplicaId(), configChangeID)
-		if err == dragonboat.ErrShardClosed {
-			return nil
-		}
-		return err
-	})
-	if err != nil {
+	if err = s.syncRequestDeleteReplica(ctx, replicaDesc.GetShardId(), replicaDesc.GetReplicaId()); err != nil {
 		return nil, err
 	}
 
