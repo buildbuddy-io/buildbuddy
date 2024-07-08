@@ -111,11 +111,13 @@ container_layer(
         ],
         "//conditions:default": [],
     }),
+    tags = ["manual"],
 )
 
 container_layer(
     name = "podman_static_layer",
     directory = "/",
+    tags = ["manual"],
     tars = ["//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz"],
 )
 
