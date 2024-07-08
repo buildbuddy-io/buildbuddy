@@ -17,10 +17,9 @@ message RunRequest {
   // A minimum of commit_sha or branch must be specified.
   git.RepoState repo_state = 3;
 
-  // The bazel command to run. Required.
-  // Example: "build :server"
-  // Example: "test //..."
-  string bazel_command = 4;
+  // The commands to run, in order. Required.
+  // Example: [{"run": "bazel build :server"}, {"run": "echo \"Hello World\""}]
+  repeated Step steps = 16;
 
   // The remote instance name. Everything happens within this namespace, so
   // changing this key will mean hitting a different cache and remote executor.
@@ -62,6 +61,13 @@ message RunRequest {
 
   // Flags to pass directly to the runner.
   repeated string runner_flags = 15;
+
+  // DEPRECATED: Use `steps` instead.
+  string bazel_command = 4 [deprecated = true];
+}
+
+message Step {
+  string run = 1;
 }
 
 message RunResponse {

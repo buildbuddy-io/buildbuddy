@@ -2,6 +2,7 @@ package hostedrunner
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"path/filepath"
 	"sort"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
@@ -28,6 +30,7 @@ import (
 	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"gopkg.in/yaml.v2"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -61,8 +64,8 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 	if req.GetGitRepo().GetRepoUrl() == "" {
 		return status.InvalidArgumentError("A repo url is required.")
 	}
-	if req.GetBazelCommand() == "" {
-		return status.InvalidArgumentError("A bazel command is required.")
+	if req.GetBazelCommand() == "" && len(req.GetSteps()) == 0 {
+		return status.InvalidArgumentError("A command to run is required.")
 	}
 	if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
 		return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
@@ -117,8 +120,21 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, status.WrapError(err, "normalize git repo")
 	}
 
-	// NOTE: Be cautious when adding new flags. See
-	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
+	// TODO(Maggie) - Remove bazel_sub_command and do this unconditionally
+	// after `steps` interface has full functionality
+	serializedAction := ""
+	if len(req.GetSteps()) > 0 {
+		action := &config.Action{
+			Name:  "remote run",
+			Steps: req.GetSteps(),
+		}
+		actionBytes, err := yaml.Marshal(action)
+		if err != nil {
+			return nil, err
+		}
+		serializedAction = base64.StdEncoding.EncodeToString(actionBytes)
+	}
+
 	args := []string{
 		"./" + runnerName,
 		"--bes_backend=" + events_api_url.String(),
@@ -132,8 +148,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--invocation_id=" + invocationID,
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
+		"--serialized_action=" + serializedAction,
 	}
-	if !req.GetRunRemotely() && strings.HasPrefix(req.GetBazelCommand(), "run ") {
+	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
 	}
 	if req.GetInstanceName() != "" {
