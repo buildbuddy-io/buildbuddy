@@ -335,11 +335,16 @@ func TestPullCreateExecRemove(t *testing.T) {
 	})
 
 	// Exec
-	cmd := &repb.Command{Arguments: []string{"sh", "-ec", `
-		touch /bin/foo.txt
-		pwd
-		env | grep -v HOSTNAME | sort
-	`}}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-ec", `
+			touch /bin/foo.txt
+			pwd
+			env | grep -v HOSTNAME | sort
+		`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
 	stdio := interfaces.Stdio{}
 	res := c.Exec(ctx, cmd, &stdio)
 	require.NoError(t, res.Error)
@@ -347,6 +352,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, `/buildbuddy-execroot
+GREETING=Hello
 HOME=/root
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
 PWD=/buildbuddy-execroot

@@ -88,6 +88,12 @@ var (
 		"CAP_SETUID",
 		"CAP_SYS_CHROOT",
 	}
+
+	// Environment variables applied to all executed commands.
+	// These can be overridden either by the image or the command.
+	baseEnv = []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	}
 )
 
 type provider struct {
@@ -326,10 +332,31 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	// Reset CPU usage and peak memory since we're starting a new task.
 	c.stats.Reset()
+	args := []string{"exec", "--cwd=" + execrootPath}
+	// Respect command env. Note, when setting any --env vars at all, it
+	// completely overrides the env from the bundle, rather than just adding
+	// to it. So we specify the complete env here, including the base env,
+	// image env, and command env.
+	for _, e := range baseEnv {
+		args = append(args, "--env="+e)
+	}
+	image, ok := c.imageStore.CachedImage(c.imageRef)
+	if !ok {
+		return commandutil.ErrorResult(status.UnavailableError("exec called before pulling image"))
+	}
+	cmd, err := withImageConfig(cmd, image)
+	if err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("apply image config: %s", err))
+	}
+	for _, e := range cmd.GetEnvironmentVariables() {
+		args = append(args, fmt.Sprintf("--env=%s=%s", e.GetName(), e.GetValue()))
+	}
+	args = append(args, c.cid)
+
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
 		// TODO: Should we specify a non-zero waitDelay so that a process that
 		// spawns children won't block forever?
-		return c.invokeRuntime(ctx, cmd, stdio, 0, "exec", "--cwd="+execrootPath, c.cid)
+		return c.invokeRuntime(ctx, cmd, stdio, 0, args...)
 	})
 }
 
@@ -481,10 +508,7 @@ func installBusybox(path string) error {
 }
 
 func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
-	env := append([]string{
-		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-	}, commandutil.EnvStringList(cmd)...)
-
+	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
