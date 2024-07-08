@@ -220,11 +220,14 @@ export default class CodeComponent extends React.Component<Props, State> {
     }
     picker_service.show(picker);
     picker_service.picked.subscribe((path) => {
+      if (!path) {
+        return;
+      }
       this.fetchIfNeededAndNavigate(path);
     });
   }
 
-  fetchIfNeededAndNavigate(path: string, additionalParams?: string) {
+  fetchIfNeededAndNavigate(path: string, additionalParams = "") {
     this.navigateToPath(path + additionalParams);
     if (this.state.fullPathToModelMap.has(path)) {
       this.setModel(path, this.state.fullPathToModelMap.get(path));
