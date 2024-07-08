@@ -105,7 +105,7 @@ func main() {
 	}
 
 	if pub == nil {
-		log.Fatalf("Could not find existing ssh key.")
+		log.Warningf("No ssh keys found, not requesting SSH certificate.")
 	}
 
 	ctx := context.Background()
@@ -128,17 +128,21 @@ func main() {
 		Token:        token,
 		SshPublicKey: string(pub),
 	}
+	if pub != nil {
+		req.SshPublicKey = string(pub)
+	}
 	resp, err := client.Generate(ctx, req)
 	if err != nil {
 		log.Fatalf("Could not generate certificate: %s", err)
 	}
 
-	certFile := path.Join(homeDir, sshDir, certificateFile)
-	if err := os.WriteFile(certFile, []byte(resp.GetSshCert()), 0644); err != nil {
-		log.Fatalf("Could not write certificate to %q: %s", certFile, err)
+	if resp.GetSshCert() != "" {
+		certFile := path.Join(homeDir, sshDir, certificateFile)
+		if err := os.WriteFile(certFile, []byte(resp.GetSshCert()), 0644); err != nil {
+			log.Fatalf("Could not write certificate to %q: %s", certFile, err)
+		}
+		log.Infof("Wrote certificate to %q.", certFile)
 	}
-
-	log.Infof("Wrote certificate to %q.", certFile)
 
 	for _, kc := range resp.KubernetesCredentials {
 		log.Infof("Configuring credentials for %q kubernetes cluster.", "bb-"+kc.Name)
