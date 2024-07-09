@@ -1,20 +1,25 @@
 #!/usr/bin/env python
+"""
+Script to build multi-platform docker images.
+"""
 
 import argparse
-import itertools
 import os
 import subprocess
+import sys
+
 from lib.check_buildx_support import check_buildx_support
 
-def main():
+def parse_program_arguments():
+    """Parses the program arguments and returns a namespace representing them."""
     class ArgsNamespace(argparse.Namespace):
         registry: str
         repository: str
-        no_push: bool
-        force_ignore_new_repository_check: bool
+        push: bool
+        do_new_repository_check: bool
         tag: str
         suffix: str
-        force_ignore_prod_checks: bool
+        do_prod_checks: bool
         dockerfile: str
         context_dir: str
         platforms: list[str]
@@ -37,17 +42,17 @@ def main():
             )
     parser.add_argument(
             "--no-push",
-            action="store_true",
-            default=False,
+            action="store_false",
+            default=True,
             help="Set to only build the image and cache it in docker's build cache. To push the built image, run the build command again with '--push'.",
-            dest="no_push",
+            dest="push",
             )
     parser.add_argument(
             "--force-ignore-new-repository-check",
-            action="store_true",
-            default=False,
+            action="store_false",
+            default=True,
             help="Set to ignore warnings about the repository not currently existing in the registry. Set this if you really are looking to push a repository with an entirely new name, not just a new image to an existing repository.",
-            dest="force_ignore_new_repository_check",
+            dest="do_new_repository_check",
             )
     parser.add_argument(
             "--tag",
@@ -82,10 +87,10 @@ def main():
 
     parser.add_argument(
             "--force-ignore-prod-checks",
-            action="store_true",
-            default=False,
+            action="store_false",
+            default=True,
             help="*** THIS OPTION IS DANGEROUS, BE SURE YOU KNOW WHAT YOU'RE DOING *** Set to ignore warnings and checks surrounding prod pushes. Recommended only in unmonitored scripts and in the case that the existing prod image is currently broken.",
-            dest="force_ignore_prod_checks",
+            dest="do_prod_checks",
             )
     parser.add_argument(
             "--dockerfile",
@@ -115,67 +120,85 @@ def main():
             dest="buildx_container_name",
             )
 
-    args = parser.parse_args(namespace=ArgsNamespace)
+    return parser.parse_args(namespace=ArgsNamespace)
 
+def set_up_buildx_container(container_name, stdout=sys.stdout, stderr=sys.stderr):
+    """Sets up a buildx container with the given name."""
+    completed_process = subprocess.run(["docker", "buildx", "inspect", container_name], capture_output=True)
+    if completed_process.returncode == 1:
+        print(f"No buildx container named {container_name}, creating it...", file=stdout)
+        completed_process = subprocess.run(["docker", "buildx", "create", "--name", container_name])
+        if completed_process.returncode == 0:
+            print("Success!", stdout)
+        else:
+            print("Failed to create buildx container.", stderr)
+
+def yes_no_prompt(prompt, default_yes=False):
+    """Prompts the user for a yes or no response. Returns True for "yes" and False for "no"."""
+    try:
+        response = input(f"{prompt} ({'Y/n' if default_yes else 'y/N'}): ")
+    except EOFError:
+        return default_yes
+    if not response:
+        return default_yes
+    if default_yes:
+        return not "no".startswith(response.lower())
+    else:
+        return "yes".startswith(response.lower())
+
+def perform_prod_checks(repository_path: str):
+    """Checks to make sure any push to prod is intentional."""
+    if repository_path.endswith("-prod"):
+        return yes_no_prompt(f"Repository path {repository_path} ends in '-prod', indicating that this is a production image. Are you sure you want to push this image to a production repository?")
+    return True
+
+def perform_new_repository_check(registry: str, repository_path: str):
+    """Checks to make sure any creation of a new repository is intentional."""
+    completed_process = subprocess.run(["docker", "manifest", "inspect", f"{registry}/{repository_path}"], capture_output=True)
+    if completed_process != 0:
+        return yes_no_prompt(f"Repository {repository_path} does not yet exist in {registry}. Are you sure you want to create a new repository?")
+    return True
+
+def repeated_opts(opt: str, params: list[str]):
+    """Returns a list of the form [opt, params[0], opt, params[1], ... ]"""
+    return [arg for param in params for arg in (opt, param)]
+
+def main():
+    args = parse_program_arguments()
     if not check_buildx_support():
         return 1
 
     context_dir = "."
-    if args.context_dir != None:
+    if args.context_dir:
         context_dir = args.context_dir
     elif os.path.dirname(os.path.abspath(args.dockerfile)) != "":
         context_dir = os.path.dirname(os.path.abspath(args.dockerfile))
 
-    repository_path = f"{args.repository}"
-    if args.suffix:
-        repository_path = f"{repository_path}-{args.suffix if args.suffix else ''}"
+    repository_path = f"{args.repository}{'-' + args.suffix if args.suffix else ''}"
 
-    if not args.no_push and not args.force_ignore_prod_checks and str(repository_path).endswith("-prod"):
-        response = input(f"Repository path {repository_path} ends in '-prod', indicating that this is a production image. Are you sure you want to push this image to a production repository? (y/N): ")
-        if response and "yes".startswith(response.lower()):
-            pass
-        else:
+    if args.push:
+        if args.do_prod_checks and not perform_prod_checks(repository_path):
+            print("Exiting...", file=sys.stdout)
             return 0
 
-    if not args.no_push and not args.force_ignore_new_repository_check:
-        completed_process = subprocess.run(["docker", "manifest", "inspect", repository_path], capture_output=True)
-        if completed_process != 0:
-            response = input(f"Repository {repository_path}  does not yet exist in {args.registry}. Are you sure you want to create a new repository? (y/N): ")
-            if response and "yes".startswith(response.lower()):
-                pass
-            else:
-                return 0
+        if args.do_new_repository_check and not perform_new_repository_check(args.registry, repository_path):
+            print("Exiting...", file=sys.stdout)
+            return 0
 
-    completed_process = subprocess.run(["docker", "buildx", "inspect", args.buildx_container_name], capture_output=True)
-    if completed_process.returncode == 1:
-        print(f"No buildx container named {args.buildx_container_name}, creating it...")
-        completed_process = subprocess.run(["docker", "buildx", "create", "--name", args.buildx_container_name])
-        if completed_process.returncode == 0:
-            print("Success!")
-        else:
-            "Failed to create buildx container."
+    set_up_buildx_container(args.buildx_container_name)
 
-    platform_args = zip(itertools.repeat("--platform"), args.platforms)
-    flattened_platform_args = [arg for arg_pair in platform_args for arg in arg_pair]
-    print(args.platforms)
-    print(flattened_platform_args)
-    completed_process = subprocess.run(
-            [
-                "docker", "buildx",
-                "--builder", str(args.buildx_container_name),
-                "build",
-                "-t", f"{args.registry}/{f'{repository_path}:{args.tag}' if args.tag else repository_path}",
-            ] + (
-                ["-f", args.dockerfile] if args.dockerfile else []
-                ) +
-            flattened_platform_args + (
-                [] if args.no_push else ["--push"]
-                ) +
-            [
-                context_dir,
-            ]
+    docker_build_args = (
+            ["docker", "buildx"] +
+            ["--builder", str(args.buildx_container_name)] +
+            ["build"] +
+            ["--tag", f"{args.registry}/{repository_path}{':' + args.tag if args.tag else ''}"] +
+            (["--file", args.dockerfile] if args.dockerfile else []) +
+            repeated_opts("--platform", args.platforms) +
+            (["--push"] if args.push else []) +
+            [context_dir]
             )
-    print(f"Executed {completed_process.args}")
+    completed_process = subprocess.run(docker_build_args)
+    print(f"Executed command:\n{completed_process.args}", file=sys.stdout)
     return completed_process.returncode
 
 main()
