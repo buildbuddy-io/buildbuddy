@@ -232,9 +232,11 @@ func (r *taskRunner) String() string {
 	if err != nil {
 		ph = "<ERR!>"
 	}
+	// Note: we don't log r.state here as this can make log statements calling
+	// this function racy. Beware of this if re-adding r.state below.
 	return fmt.Sprintf(
-		"%s:%s:%d:%s:%s:%s",
-		r.debugID, r.state, r.taskNumber, r.key.GetGroupId(),
+		"%s:%d:%s:%s:%s",
+		r.debugID, r.taskNumber, r.key.GetGroupId(),
 		truncate(r.key.InstanceName, 8, "..."), truncate(ph, 8, ""))
 }
 
@@ -376,7 +378,7 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	case removed:
 		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
 	default:
-		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", r.state))
+		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", s))
 	}
 
 	if r.supportsPersistentWorkers(ctx, command) {
