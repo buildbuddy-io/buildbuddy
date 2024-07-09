@@ -1,12 +1,11 @@
 module github.com/buildbuddy-io/buildbuddy
 
-go 1.21.7
+go 1.22.5
 
 replace (
 	github.com/awslabs/soci-snapshotter => github.com/buildbuddy-io/soci-snapshotter v0.0.8 // keep in sync with buildpatches/com_github_awslabs_soci_snapshotter.patch
 	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.7.0-patched-1
 	github.com/firecracker-microvm/firecracker-go-sdk => github.com/buildbuddy-io/firecracker-go-sdk v0.0.0-20230721-1d5c50b
-	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
 	github.com/jotfs/fastcdc-go v0.2.0 => github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2
 	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.1
 	github.com/lni/vfs => github.com/buildbuddy-io/vfs v0.2.3
