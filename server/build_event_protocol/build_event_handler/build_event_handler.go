@@ -182,7 +182,6 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 
 		hasReceivedEventWithOptions: false,
 		hasReceivedStartedEvent:     false,
-		unprocessedStartingEvents:   make(map[string]struct{}),
 		bufferedEvents:              make([]*inpb.InvocationEvent, 0),
 		logWriter:                   nil,
 		onClose:                     onClose,
@@ -743,7 +742,7 @@ type EventChannel struct {
 
 	startedEvent                     *build_event_stream.BuildEvent_Started
 	bufferedEvents                   []*inpb.InvocationEvent
-	unprocessedStartingEvents        map[string]struct{}
+	wroteBuildMetadata               bool
 	numDroppedEventsBeforeProcessing uint64
 	initialSequenceNumber            int64
 	hasReceivedEventWithOptions      bool
@@ -797,6 +796,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if err != nil {
 		return err
 	}
+
 	e.recordInvocationMetrics(ti)
 	updated, err := e.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
@@ -971,23 +971,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			prometheus.Labels{metrics.BazelVersion: version}).Inc()
 
 		e.hasReceivedStartedEvent = true
-		e.unprocessedStartingEvents[bazelBuildEvent.Id.String()] = struct{}{}
-		for _, child := range bazelBuildEvent.Children {
-			switch child.Id.(type) {
-			case *build_event_stream.BuildEventId_OptionsParsed:
-				e.unprocessedStartingEvents[child.String()] = struct{}{}
-			case *build_event_stream.BuildEventId_WorkspaceStatus:
-				e.unprocessedStartingEvents[child.String()] = struct{}{}
-			case *build_event_stream.BuildEventId_BuildMetadata:
-				e.unprocessedStartingEvents[child.String()] = struct{}{}
-			case *build_event_stream.BuildEventId_StructuredCommandLine:
-				e.unprocessedStartingEvents[child.String()] = struct{}{}
-			case *build_event_stream.BuildEventId_UnstructuredCommandLine:
-				e.unprocessedStartingEvents[child.String()] = struct{}{}
-			case *build_event_stream.BuildEventId_WorkflowConfigured:
-				e.unprocessedStartingEvents[child.String()] = struct{}{}
-			}
-		}
+		e.beValues.SetExpectedMetadataEvents(bazelBuildEvent.GetChildren())
 	}
 	// If this is the first event with options, keep track of the project ID and save any notification keywords.
 	if e.isFirstEventWithOptions(&bazelBuildEvent) {
@@ -1170,18 +1154,15 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 			}
 		}
 	}
-	if len(e.unprocessedStartingEvents) > 0 {
-		if _, ok := e.unprocessedStartingEvents[event.BuildEvent.Id.String()]; ok {
-			delete(e.unprocessedStartingEvents, event.BuildEvent.Id.String())
-			if len(e.unprocessedStartingEvents) == 0 {
-				// When we have processed all starting events, update the invocation in
-				// the DB so that it can be searched by its commit SHA, user name, etc.
-				// even while the invocation is still in progress.
-				if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
-					return err
-				}
-			}
+
+	// When we have processed all invocation-level metadata events, update the
+	// invocation in the DB so that it can be searched by its commit SHA, user
+	// name, etc. even while the invocation is still in progress.
+	if !e.wroteBuildMetadata && e.beValues.MetadataIsLoaded() {
+		if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
+			return err
 		}
+		e.wroteBuildMetadata = true
 	}
 
 	return nil
