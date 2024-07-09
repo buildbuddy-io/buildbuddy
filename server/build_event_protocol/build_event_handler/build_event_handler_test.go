@@ -1364,7 +1364,7 @@ func TestBuildStatusReporting(t *testing.T) {
 			seq := NewBESSequence(t)
 			channel := handler.OpenChannel(ctx, seq.InvocationID)
 
-			// Handle Started event referencing the metadata events as children
+			// Handle Started event referencing the metadata events as children.
 			var metadataEventIDs []*bspb.BuildEventId
 			for _, e := range test.metadataEvents {
 				metadataEventIDs = append(metadataEventIDs, e.GetId())
@@ -1382,11 +1382,13 @@ func TestBuildStatusReporting(t *testing.T) {
 			err := channel.HandleEvent(seq.NextRequest(started))
 			require.NoError(t, err)
 
-			// Should not have published any statuses yet
+			// Should not have reported any statuses yet, since we haven't
+			// handled any metadata events.
 			require.Empty(t, fakeGH.Clients)
 
-			// Publish all but the last metadata event - no statuses should be
-			// published.
+			// Handle *all but the last* metadata event - no statuses should be
+			// reported yet. We should only report a status once *all* of the
+			// metadata events declared in the Started event have been handled.
 			md := test.metadataEvents
 			for len(md) > 1 {
 				event := md[0]
@@ -1396,7 +1398,8 @@ func TestBuildStatusReporting(t *testing.T) {
 				require.Empty(t, fakeGH.Clients)
 			}
 
-			// Publish the last metadata event - should publish a status.
+			// Now handle the last metadata event - should report a status,
+			// since all metadata events have been handled.
 			err = channel.HandleEvent(seq.NextRequest(md[0]))
 			require.NoError(t, err)
 			require.Equal(t, 1, len(fakeGH.Clients))
@@ -1414,7 +1417,7 @@ func TestBuildStatusReporting(t *testing.T) {
 				},
 			}, client.ConsumeStatuses())
 
-			// Publish the Finished event - should publish another status.
+			// Handle the Finished event - should report another status.
 			fin := &bspb.BuildEvent{
 				Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildFinished{}},
 				Payload: &bspb.BuildEvent_Finished{Finished: &bspb.BuildFinished{
@@ -1426,7 +1429,6 @@ func TestBuildStatusReporting(t *testing.T) {
 			}
 			err = channel.HandleEvent(seq.NextRequest(fin))
 			require.NoError(t, err)
-
 			require.Equal(t, []*FakeGitHubStatus{
 				{
 					OwnerRepo: "testowner/testrepo",
@@ -1439,7 +1441,6 @@ func TestBuildStatusReporting(t *testing.T) {
 					},
 				},
 			}, client.ConsumeStatuses())
-
 		})
 	}
 }
