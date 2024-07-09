@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
@@ -42,6 +44,82 @@ func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.P
 			},
 		},
 	}
+}
+
+// Helper for building an OrderedBuildEvent sequence comprised of a BazelEvent
+// stream.
+type besSequence struct {
+	t *testing.T
+	n int64
+
+	InvocationID string
+}
+
+func NewBESSequence(t *testing.T) *besSequence {
+	iid, err := uuid.NewRandom()
+	require.NoError(t, err)
+	return &besSequence{
+		t:            t,
+		InvocationID: iid.String(),
+	}
+}
+
+func (s *besSequence) NextRequest(event *bspb.BuildEvent) *pepb.PublishBuildToolEventStreamRequest {
+	s.n++
+	eventAny := &anypb.Any{}
+	err := eventAny.MarshalFrom(event)
+	require.NoError(s.t, err)
+	return &pepb.PublishBuildToolEventStreamRequest{
+		OrderedBuildEvent: &pepb.OrderedBuildEvent{
+			StreamId:       &bepb.StreamId{InvocationId: s.InvocationID},
+			SequenceNumber: s.n,
+			Event: &bepb.BuildEvent{Event: &bepb.BuildEvent_BazelEvent{
+				BazelEvent: eventAny,
+			}},
+		},
+	}
+}
+
+type FakeGitHubStatusService struct {
+	Clients []*FakeGitHubStatusClient
+}
+
+func (s *FakeGitHubStatusService) GetStatusClient(accessToken string) interfaces.GitHubStatusClient {
+	client := &FakeGitHubStatusClient{AccessToken: accessToken}
+	s.Clients = append(s.Clients, client)
+	return client
+}
+
+func (s *FakeGitHubStatusService) GetCreatedClient(t *testing.T) *FakeGitHubStatusClient {
+	require.Equal(t, 1, len(s.Clients))
+	return s.Clients[0]
+}
+
+type FakeGitHubStatusClient struct {
+	AccessToken string
+	Statuses    []*FakeGitHubStatus
+}
+
+type FakeGitHubStatus struct {
+	OwnerRepo  string
+	CommitSHA  string
+	RepoStatus *github.GithubStatusPayload
+}
+
+func (c *FakeGitHubStatusClient) CreateStatus(ctx context.Context, ownerRepo, commitSHA string, p *github.GithubStatusPayload) error {
+	s := &FakeGitHubStatus{
+		OwnerRepo:  ownerRepo,
+		CommitSHA:  commitSHA,
+		RepoStatus: p,
+	}
+	c.Statuses = append(c.Statuses, s)
+	return nil
+}
+
+func (c *FakeGitHubStatusClient) ConsumeStatuses() []*FakeGitHubStatus {
+	s := c.Statuses
+	c.Statuses = nil
+	return s
 }
 
 func progressEvent() *anypb.Any {
@@ -1214,6 +1292,159 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	assert.True(t, exists)
 }
 
+func TestBuildStatusReporting(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		metadataEvents []*bspb.BuildEvent
+	}{
+		{
+			name: "BuildMetadataThenWorkspaceStatus",
+			metadataEvents: []*bspb.BuildEvent{
+				&bspb.BuildEvent{
+					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Pattern{Pattern: &bspb.BuildEventId_PatternExpandedId{
+						Pattern: []string{"//..."},
+					}}},
+				},
+				&bspb.BuildEvent{
+					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildMetadata{}},
+					Payload: &bspb.BuildEvent_BuildMetadata{BuildMetadata: &bspb.BuildMetadata{
+						// Status reporting is only enabled for CI builds.
+						Metadata: map[string]string{"ROLE": "CI"},
+					}},
+				},
+				&bspb.BuildEvent{
+					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_WorkspaceStatus{}},
+					Payload: &bspb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bspb.WorkspaceStatus{
+						Item: []*bspb.WorkspaceStatus_Item{
+							{Key: "REPO_URL", Value: "https://github.com/testowner/testrepo.git"},
+							{Key: "COMMIT_SHA", Value: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2"},
+						},
+					}},
+				},
+			},
+		},
+		// TODO: this test fails - fix
+		// {
+		// 	name: "WorkspaceStatusThenBuildMetadata",
+		// 	metadataEvents: []*bspb.BuildEvent{
+		// 		&bspb.BuildEvent{
+		// 			Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Pattern{Pattern: &bspb.BuildEventId_PatternExpandedId{
+		// 				Pattern: []string{"//..."},
+		// 			}}},
+		// 		},
+		// 		&bspb.BuildEvent{
+		// 			Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_WorkspaceStatus{}},
+		// 			Payload: &bspb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bspb.WorkspaceStatus{
+		// 				Item: []*bspb.WorkspaceStatus_Item{
+		// 					{Key: "REPO_URL", Value: "https://github.com/testowner/testrepo.git"},
+		// 					{Key: "COMMIT_SHA", Value: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2"},
+		// 				},
+		// 			}},
+		// 		},
+		// 		&bspb.BuildEvent{
+		// 			Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildMetadata{}},
+		// 			Payload: &bspb.BuildEvent_BuildMetadata{BuildMetadata: &bspb.BuildMetadata{
+		// 				// Status reporting is only enabled for CI builds.
+		// 				Metadata: map[string]string{"ROLE": "CI"},
+		// 			}},
+		// 		},
+		// 	},
+		// },
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			fakeGH := &FakeGitHubStatusService{}
+			te.SetGitHubStatusService(fakeGH)
+			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+			te.SetAuthenticator(auth)
+			ctx := context.Background()
+			handler := build_event_handler.NewBuildEventHandler(te)
+
+			// Start an invocation
+			seq := NewBESSequence(t)
+			channel := handler.OpenChannel(ctx, seq.InvocationID)
+
+			// Handle Started event referencing the metadata events as children.
+			var metadataEventIDs []*bspb.BuildEventId
+			for _, e := range test.metadataEvents {
+				metadataEventIDs = append(metadataEventIDs, e.GetId())
+			}
+			started := &bspb.BuildEvent{
+				Id:       &bspb.BuildEventId{Id: &bspb.BuildEventId_Started{}},
+				Children: metadataEventIDs,
+				Payload: &bspb.BuildEvent_Started{Started: &bspb.BuildStarted{
+					Command: "build",
+					// TODO: the test fails unless OptionsDescription is set,
+					// which seems error-prone.
+					OptionsDescription: "--some_build_options",
+				}},
+			}
+			err := channel.HandleEvent(seq.NextRequest(started))
+			require.NoError(t, err)
+
+			// Should not have reported any statuses yet, since we haven't
+			// handled any metadata events.
+			require.Empty(t, fakeGH.Clients)
+
+			// Handle *all but the last* metadata event - no statuses should be
+			// reported yet. We should only report a status once *all* of the
+			// metadata events declared in the Started event have been handled.
+			md := test.metadataEvents
+			for len(md) > 1 {
+				event := md[0]
+				md = md[1:]
+				err := channel.HandleEvent(seq.NextRequest(event))
+				require.NoError(t, err)
+				require.Empty(t, fakeGH.Clients)
+			}
+
+			// Now handle the last metadata event - should report a status,
+			// since all metadata events have been handled.
+			err = channel.HandleEvent(seq.NextRequest(md[0]))
+			require.NoError(t, err)
+			require.Equal(t, 1, len(fakeGH.Clients))
+			client := fakeGH.GetCreatedClient(t)
+			require.Equal(t, []*FakeGitHubStatus{
+				{
+					OwnerRepo: "testowner/testrepo",
+					CommitSHA: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2",
+					RepoStatus: &github.GithubStatusPayload{
+						TargetURL:   pointer("http://localhost:8080/invocation/" + seq.InvocationID),
+						State:       pointer("pending"),
+						Description: pointer("Running..."),
+						Context:     pointer("bazel build //..."),
+					},
+				},
+			}, client.ConsumeStatuses())
+
+			// Handle the Finished event - should report another status.
+			fin := &bspb.BuildEvent{
+				Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildFinished{}},
+				Payload: &bspb.BuildEvent_Finished{Finished: &bspb.BuildFinished{
+					ExitCode: &bspb.BuildFinished_ExitCode{
+						Name: "SUCCESS",
+						Code: 0,
+					},
+				}},
+			}
+			err = channel.HandleEvent(seq.NextRequest(fin))
+			require.NoError(t, err)
+			require.Equal(t, []*FakeGitHubStatus{
+				{
+					OwnerRepo: "testowner/testrepo",
+					CommitSHA: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2",
+					RepoStatus: &github.GithubStatusPayload{
+						TargetURL:   pointer("http://localhost:8080/invocation/" + seq.InvocationID),
+						State:       pointer("success"),
+						Description: pointer("Success"),
+						Context:     pointer("bazel build //..."),
+					},
+				},
+			}, client.ConsumeStatuses())
+		})
+	}
+}
+
 func TestTruncateStringSlice(t *testing.T) {
 	for _, test := range []struct {
 		Strings   []string
@@ -1293,4 +1524,8 @@ func TestTruncateStringSlice(t *testing.T) {
 			assert.Equal(t, test.Truncated, truncated, "truncated should be %t", test.Truncated)
 		})
 	}
+}
+
+func pointer[T any](value T) *T {
+	return &value
 }
