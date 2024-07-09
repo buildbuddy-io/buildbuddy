@@ -211,32 +211,38 @@ func (pq *priorityQueue) Pop() interface{} {
 	return item
 }
 
+func (pq *priorityQueue) update(item *pqItem, priority float64) {
+	item.priority = priority
+	heap.Fix(pq, item.index)
+}
+
 // The Queue is responsible for up-replicate, down-replicate and reblance ranges
 // across the stores.
 type Queue struct {
-	pq       *priorityQueue
 	storeMap storemap.IStoreMap
 	store    IStore
 
-	pqItemMap sync.Map // shardID -> *pqItem
-	maxSize   int
-	stop      chan struct{}
+	maxSize int
+	stop    chan struct{}
 
-	mu      sync.Mutex //protects started and pq
-	started bool
-	clock   clockwork.Clock
-	log     log.Logger
+	mu        sync.Mutex //protects pq, pqItemMap
+	pq        *priorityQueue
+	pqItemMap map[uint64]*pqItem
+
+	clock clockwork.Clock
+	log   log.Logger
 }
 
 func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, clock clockwork.Clock) *Queue {
 	storeMap := storemap.New(gossipManager, clock)
 	return &Queue{
-		storeMap: storeMap,
-		pq:       &priorityQueue{},
-		store:    store,
-		maxSize:  100,
-		clock:    clock,
-		log:      nhlog,
+		storeMap:  storeMap,
+		pq:        &priorityQueue{},
+		pqItemMap: make(map[uint64]*pqItem),
+		store:     store,
+		maxSize:   100,
+		clock:     clock,
+		log:       nhlog,
 	}
 }
 
@@ -264,29 +270,12 @@ func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64)
 	return op != nil, 0
 }
 
-func (rq *Queue) push(item *pqItem) {
-	rq.mu.Lock()
+func (rq *Queue) pushLocked(item *pqItem) {
 	heap.Push(rq.pq, item)
-	rq.mu.Unlock()
-
-	rq.pqItemMap.Store(item.rangeID, item)
-}
-
-func (rq *Queue) update(item *pqItem, priority float64) {
-	rq.mu.Lock()
-	defer rq.mu.Unlock()
-	if item.processing {
-		item.requeue = true
-		return
-	}
-	item.priority = priority
-
-	heap.Fix(rq.pq, item.index)
+	rq.pqItemMap[item.rangeID] = item
 }
 
 func (rq *Queue) getItemWithMinPriority() *pqItem {
-	rq.mu.Lock()
-	defer rq.mu.Unlock()
 	old := *rq.pq
 	n := len(old)
 	return old[n-1]
@@ -302,43 +291,43 @@ func (rq *Queue) Len() int {
 // and there is work needs to be done.
 // When the queue is full, it deletes the least important replica from the queue.
 func (rq *Queue) MaybeAdd(ctx context.Context, replica IReplica) {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
 	shouldQueue, priority := rq.shouldQueue(ctx, replica)
 	if !shouldQueue {
 		return
 	}
 
 	rd := replica.RangeDescriptor()
-	itemIface, ok := rq.pqItemMap.Load(rd.GetRangeId())
+	item, ok := rq.pqItemMap[rd.GetRangeId()]
 	if ok {
-		item, ok := itemIface.(*pqItem)
-		if !ok {
-			alert.UnexpectedEvent("unexpected_pq_item_map_type_error_in_replicate_queue")
+		// The item is processing. Mark to be requeued.
+		if item.processing {
+			item.requeue = true
+			return
 		}
-		// update item.priority and item.requeue
-		rq.update(item, priority)
+		rq.pq.update(item, priority)
 		rq.log.Infof("updated priority for replica rangeID=%d", item.rangeID)
 		return
 	}
 
-	item := &pqItem{
+	item = &pqItem{
 		rangeID:    rd.GetRangeId(),
 		shardID:    replica.ShardID(),
 		replicaID:  replica.ReplicaID(),
 		priority:   priority,
 		insertTime: rq.clock.Now(),
 	}
-	rq.push(item)
+	rq.pushLocked(item)
 	rq.log.Infof("queued replica rangeID=%d", item.rangeID)
 
 	// If the priroityQueue if full, let's remove the item with the lowest priority.
-	if pqLen := rq.Len(); pqLen > rq.maxSize {
-		rq.remove(rq.getItemWithMinPriority())
+	if pqLen := rq.pq.Len(); pqLen > rq.maxSize {
+		rq.removeLocked(rq.getItemWithMinPriority())
 	}
 }
 
-func (rq *Queue) remove(item *pqItem) {
-	rq.mu.Lock()
-	defer rq.mu.Unlock()
+func (rq *Queue) removeLocked(item *pqItem) {
 	if item.processing {
 		item.requeue = false
 		return
@@ -346,7 +335,21 @@ func (rq *Queue) remove(item *pqItem) {
 	if item.index >= 0 {
 		heap.Remove(rq.pq, item.index)
 	}
-	rq.pqItemMap.Delete(item.rangeID)
+	delete(rq.pqItemMap, item.rangeID)
+}
+
+func (rq *Queue) pop() IReplica {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	item := heap.Pop(rq.pq).(*pqItem)
+	item.processing = true
+	repl, err := rq.store.GetReplica(item.rangeID)
+	if err != nil || repl.ReplicaID() != item.replicaID {
+		rq.log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
+		delete(rq.pqItemMap, item.rangeID)
+		return nil
+	}
+	return repl
 }
 
 func (rq *Queue) Start(ctx context.Context) {
@@ -361,14 +364,8 @@ func (rq *Queue) Start(ctx context.Context) {
 		if rq.Len() == 0 {
 			continue
 		}
-		rq.mu.Lock()
-		item := heap.Pop(rq.pq).(*pqItem)
-		item.processing = true
-		rq.mu.Unlock()
-		repl, err := rq.store.GetReplica(item.rangeID)
-		if err != nil || repl.ReplicaID() != item.replicaID {
-			rq.log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
-			rq.pqItemMap.Delete(item.rangeID)
+		repl := rq.pop()
+		if repl == nil {
 			continue
 		}
 
@@ -379,10 +376,7 @@ func (rq *Queue) Start(ctx context.Context) {
 		} else {
 			rq.log.Debugf("successfully processed replica: %d", repl.ShardID())
 		}
-		rq.mu.Lock()
-		item.requeue = requeue
-		rq.mu.Unlock()
-		rq.postProcess(ctx, repl)
+		rq.postProcess(ctx, repl, requeue)
 	}
 }
 
@@ -859,24 +853,21 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 	return true, err
 }
 
-func (rq *Queue) postProcess(ctx context.Context, repl IReplica) {
+func (rq *Queue) postProcess(ctx context.Context, repl IReplica, requeue bool) {
 	rd := repl.RangeDescriptor()
-	itemIface, ok := rq.pqItemMap.Load(rd.GetRangeId())
-	if !ok {
-		alert.UnexpectedEvent("unexpected_pq_item_not_found")
-	}
-	item, ok := itemIface.(*pqItem)
-	if !ok {
-		alert.UnexpectedEvent("unexpected_pq_item_map_type_error_in_replicate_queue")
-	}
 	rq.mu.Lock()
-	requeue := item.requeue
+	item, ok := rq.pqItemMap[rd.GetRangeId()]
+	if !ok {
+		alert.UnexpectedEvent("unexpected_pq_item_not_found", "pqItem not found for range %d", rd.GetRangeId())
+		rq.mu.Unlock()
+		return
+	}
+	requeue = requeue || item.requeue
+	delete(rq.pqItemMap, rd.GetRangeId())
 	rq.mu.Unlock()
-
 	if requeue {
 		rq.MaybeAdd(ctx, repl)
 	}
-	rq.pqItemMap.Delete(rd.GetRangeId())
 }
 
 func isDiskFull(su *rfpb.StoreUsage) bool {
