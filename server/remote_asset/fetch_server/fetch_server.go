@@ -306,8 +306,15 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 	}()
 
 	// If the requested digestFunc is supplied and differ from the checksum sri,
-	// verify the downloaded file with the checksum sri before storing it to
-	// our cache.
+	// verify the downloaded file with the checksum sri before storing it to our cache.
+	//
+	// This will store the downloaded blob in our cache twice:
+	//  - One entry using the checksum digest function for future cache hits.
+	//  - One entry using the storage digest function for client to download.
+	//
+	// TODO(sluongng): We can track download information in a KV store with value
+	// pointing to the CAS entry. That way, we would only need to store the download
+	// blob once.
 	if checksumFunc != storageFunc {
 		checksumDigestRN, err := cachetools.ComputeFileDigest(tmpFilePath, remoteInstanceName, checksumFunc)
 		if err != nil {
@@ -315,6 +322,12 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 		}
 		if expectedChecksum != "" && checksumDigestRN.GetDigest().GetHash() != expectedChecksum {
 			return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, checksumDigestRN.GetDigest().Hash, expectedChecksum)
+		}
+		if _, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, checksumFunc, tmpFilePath); err != nil {
+			// Best effort storing downloaded blob to our cache.
+			// This is Ok to fail because subsequent requests will simply get no cache hits
+			// and download blob again from upstream URL.
+			log.CtxWarningf(ctx, "failed to cache object with checksumFunc: %s", err)
 		}
 	}
 	blobDigest, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, storageFunc, tmpFilePath)
