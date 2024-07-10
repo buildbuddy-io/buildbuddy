@@ -441,7 +441,11 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 			return nil, err
 		}
 		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-			return runCommand(ctx, "ip", "route", "delete", cloneIP)
+			err := runCommand(ctx, "ip", "route", "delete", cloneIP)
+			if err != nil && !strings.Contains(err.Error(), "No such process") {
+				return err
+			}
+			return nil
 		})
 	} else {
 		log.Debugf("ip route %s via %s already exists", cloneIP, cloneEndpointAddr)
