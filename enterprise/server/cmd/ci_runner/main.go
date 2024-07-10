@@ -658,7 +658,7 @@ func run() error {
 	}
 
 	// Write default bazelrc
-	if err := writeBazelrc(buildbuddyBazelrcPath, buildEventReporter.invocationID); err != nil {
+	if err := writeBazelrc(buildbuddyBazelrcPath, buildEventReporter.invocationID, rootDir); err != nil {
 		return status.WrapError(err, "write "+buildbuddyBazelrcPath)
 	}
 	// Delete bazelrc before exiting. Use abs path since we might cd after this
@@ -721,7 +721,7 @@ func run() error {
 		if cfg != nil {
 			wsPath = bazelWorkspacePath(cfg)
 		}
-		args, err := bazelArgs(rootDir, wsPath, "shutdown")
+		args, err := bazelArgsWithCustomBazelrc(rootDir, wsPath, "shutdown")
 		if err != nil {
 			return err
 		}
@@ -1111,7 +1111,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		iid := wfc.GetInvocation()[i].GetInvocationId()
-		args, err := bazelArgs(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
+		args, err := bazelArgsWithCustomBazelrc(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
@@ -1577,8 +1577,9 @@ func printCommandLine(out io.Writer, command string, args ...string) error {
 	return nil
 }
 
-// TODO: Handle shell variable expansion. Probably want to run this with sh -c
-func bazelArgs(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error) {
+// Returns the tokenized bazel command with a startup option to use the custom
+// baelrc written by the ci_runner.
+func bazelArgsWithCustomBazelrc(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error) {
 	tokens, err := shlex.Split(cmd)
 	if err != nil {
 		return nil, err
@@ -1586,12 +1587,7 @@ func bazelArgs(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error)
 	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
 		tokens = tokens[1:]
 	}
-	startupFlags, err := shlex.Split(*bazelStartupFlags)
-	if err != nil {
-		return nil, err
-	}
-	startupFlags = append(startupFlags, "--output_base="+filepath.Join(rootAbsPath, outputBaseDirName))
-	startupFlags = append(startupFlags, "--bazelrc="+filepath.Join(rootAbsPath, buildbuddyBazelrcPath))
+	startupFlags := []string{"--bazelrc=" + filepath.Join(rootAbsPath, buildbuddyBazelrcPath)}
 	// Bazel will treat the user's workspace .bazelrc file with lower precedence
 	// than our --bazelrc, which is undesired. So instead, explicitly add the
 	// workspace rc as a --bazelrc flag after ours, and also set --noworkspace_rc
@@ -1606,13 +1602,6 @@ func bazelArgs(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error)
 	}
 	if exists := (err == nil); exists {
 		startupFlags = append(startupFlags, "--noworkspace_rc", "--bazelrc=.bazelrc")
-	}
-	if *extraBazelArgs != "" {
-		extras, err := shlex.Split(*extraBazelArgs)
-		if err != nil {
-			return nil, err
-		}
-		tokens = appendBazelSubcommandArgs(tokens, extras...)
 	}
 	return append(startupFlags, tokens...), nil
 }
@@ -2131,7 +2120,7 @@ func invocationURL(invocationID string) string {
 	return urlPrefix + invocationID
 }
 
-func writeBazelrc(path, invocationID string) error {
+func writeBazelrc(path, invocationID, rootDir string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -2201,6 +2190,24 @@ func writeBazelrc(path, invocationID string) error {
 	}
 	if *rbeBackend != "" {
 		lines = append(lines, "build:buildbuddy_remote_executor --remote_executor="+*rbeBackend)
+	}
+
+	outputBase := filepath.Join(rootDir, outputBaseDirName)
+	lines = append(lines, "startup --output_base="+outputBase)
+	startupFlags, err := shlex.Split(*bazelStartupFlags)
+	if err != nil {
+		return status.WrapError(err, "failed to split --bazel_startup_flags")
+	}
+	for _, s := range startupFlags {
+		lines = append(lines, "startup "+s)
+	}
+
+	extras, err := shlex.Split(*extraBazelArgs)
+	if err != nil {
+		return status.WrapError(err, "failed to split --extra_bazel_args")
+	}
+	for _, e := range extras {
+		lines = append(lines, "common "+e)
 	}
 
 	contents := strings.Join(lines, "\n") + "\n"
