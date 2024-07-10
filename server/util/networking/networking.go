@@ -435,7 +435,9 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 	exists, err := routeExists(ctx, cloneIP, cloneEndpointAddr)
 	if err != nil {
 		return nil, err
-	} else if !exists {
+	} else if exists {
+		return nil, status.UnavailableErrorf("ip route %s via %s already exists", cloneIP, cloneEndpointAddr)
+	} else {
 		err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
 		if err != nil {
 			return nil, err
@@ -447,8 +449,6 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 			}
 			return nil
 		})
-	} else {
-		log.Debugf("ip route %s via %s already exists", cloneIP, cloneEndpointAddr)
 	}
 
 	if IsSecondaryNetworkEnabled() {
