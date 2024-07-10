@@ -721,7 +721,7 @@ func run() error {
 		if cfg != nil {
 			wsPath = bazelWorkspacePath(cfg)
 		}
-		args, err := useCustomBazelrc(rootDir, wsPath, "shutdown")
+		args, err := bazelArgsWithCustomBazelrc(rootDir, wsPath, "shutdown")
 		if err != nil {
 			return err
 		}
@@ -1111,7 +1111,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		iid := wfc.GetInvocation()[i].GetInvocationId()
-		args, err := useCustomBazelrc(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
+		args, err := bazelArgsWithCustomBazelrc(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
@@ -1579,7 +1579,7 @@ func printCommandLine(out io.Writer, command string, args ...string) error {
 
 // Returns the tokenized bazel command with a startup option to use the custom
 // baelrc written by the ci_runner.
-func useCustomBazelrc(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error) {
+func bazelArgsWithCustomBazelrc(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error) {
 	tokens, err := shlex.Split(cmd)
 	if err != nil {
 		return nil, err
