@@ -170,6 +170,11 @@ func (t *TargetTracker) handleEvent(event *build_event_stream.BuildEvent) {
 	}
 	target, ok := t.targets[id]
 	if !ok {
+		// TODO(jdhollen): bazel doesn't include a separate targetConfigured
+		// event id for each aspect in the expanded event, so it's possible
+		// to receive targetConfigured and targetCompleted events for
+		// previously-unannounced target+aspect pairs.  If we ever want to
+		// track aspects, we'll need to add them to t.targets here.
 		return
 	}
 	target.updateFromEvent(event)
