@@ -50,6 +50,7 @@ const (
 
 type target struct {
 	label          string
+	aspect         string
 	ruleType       string
 	firstStartTime time.Time
 	totalDuration  time.Duration
@@ -67,10 +68,11 @@ func md5Int64(text string) int64 {
 	return int64(binary.BigEndian.Uint64(hash[:8]))
 }
 
-func newTarget(label string) *target {
+func newTarget(label string, aspect string) *target {
 	return &target{
-		label: label,
-		state: targetStateExpanded,
+		label:  label,
+		aspect: aspect,
+		state:  targetStateExpanded,
 	}
 }
 
@@ -112,15 +114,17 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 	}
 }
 
-func getLabelFromEventId(beid *build_event_stream.BuildEventId) string {
+func getTargetIdWithAspectFromEventId(beid *build_event_stream.BuildEventId) string {
 	switch beid.Id.(type) {
 	case *build_event_stream.BuildEventId_TargetConfigured:
-		return beid.GetTargetConfigured().GetLabel()
+		return beid.GetTargetConfigured().GetLabel() + beid.GetTargetConfigured().GetAspect()
 	case *build_event_stream.BuildEventId_TargetCompleted:
-		return beid.GetTargetCompleted().GetLabel()
+		return beid.GetTargetCompleted().GetLabel() + beid.GetTargetCompleted().GetAspect()
 	case *build_event_stream.BuildEventId_TestResult:
+		// Aspects can't fire TestResult events.
 		return beid.GetTestResult().GetLabel()
 	case *build_event_stream.BuildEventId_TestSummary:
+		// Aspects can't fire TestSummary events.
 		return beid.GetTestSummary().GetLabel()
 	}
 	return ""
@@ -160,11 +164,11 @@ func NewTargetTracker(env environment.Env, buildEventAccumulator accumulator.Acc
 }
 
 func (t *TargetTracker) handleEvent(event *build_event_stream.BuildEvent) {
-	label := getLabelFromEventId(event.GetId())
-	if label == "" {
+	id := getTargetIdWithAspectFromEventId(event.GetId())
+	if id == "" {
 		return
 	}
-	target, ok := t.targets[label]
+	target, ok := t.targets[id]
 	if !ok {
 		return
 	}
@@ -172,6 +176,9 @@ func (t *TargetTracker) handleEvent(event *build_event_stream.BuildEvent) {
 }
 
 func isTest(t *target) bool {
+	if t.aspect != "" {
+		return false
+	}
 	if t.testSize != build_event_stream.TestSize_UNKNOWN {
 		return true
 	}
@@ -395,8 +402,13 @@ func (t *TargetTracker) handleExpandedEvent(event *build_event_stream.BuildEvent
 	// and each target will "listen" for followup events on the specified ID.
 	for _, child := range event.GetChildren() {
 		label := child.GetTargetConfigured().GetLabel()
-		childTarget := newTarget(label)
-		t.targets[label] = childTarget
+		aspect := child.GetTargetConfigured().GetAspect()
+		if label == "" {
+			continue
+		}
+		id := getTargetIdWithAspectFromEventId(child)
+		childTarget := newTarget(label, aspect)
+		t.targets[id] = childTarget
 	}
 }
 
