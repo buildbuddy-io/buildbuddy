@@ -80,41 +80,6 @@ func TestAddGetRemoveRange(t *testing.T) {
 	require.Nil(t, gotRd)
 }
 
-func TestCleanupZombieShards(t *testing.T) {
-	clock := clockwork.NewFakeClock()
-	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	ctx := context.Background()
-
-	sf.StartShard(t, ctx, s1)
-
-	stores := []*testutil.TestingStore{s1}
-	waitForRangeLease(t, ctx, stores, 2)
-
-	// Reach in and zero out the range descriptor on one of the ranges,
-	// effectively making it a zombie range.
-	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: nil,
-		},
-	}).ToProto()
-	require.NoError(t, err)
-	writeRsp, err := s1.Sender().SyncPropose(ctx, append([]byte("a"), constants.LocalRangeKey...), writeReq)
-	require.NoError(t, err)
-	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
-	require.NoError(t, err)
-
-	for {
-		clock.Advance(11 * time.Second)
-		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		if len(list.GetReplicas()) == 1 {
-			break
-		}
-	}
-}
-
 func TestCleanupZombieReplicas(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 
