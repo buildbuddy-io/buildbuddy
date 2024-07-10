@@ -1836,6 +1836,7 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 			log.Warningf("Networking cleanup failure. CleanupVethPair for vm id %s failed with: %s", c.id, err)
 			lastErr = err
 		}
+		c.cleanupVethPair = nil
 	}
 	// TODO: move namespace creation into the veth pair networking setup, and
 	// clean it up as part of cleanupVethPair above.
