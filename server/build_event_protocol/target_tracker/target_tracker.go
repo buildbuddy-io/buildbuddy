@@ -222,6 +222,9 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms
 	newTargets := make([]*tables.Target, 0)
 	updatedTargets := make([]*tables.Target, 0)
 	for label, target := range t.targets {
+		if target.aspect != "" {
+			continue
+		}
 		if target.targetType != cmpb.TargetType_TEST {
 			continue
 		}
