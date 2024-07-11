@@ -207,6 +207,10 @@ type UsageStats struct {
 	// executing. This is needed so that we can determine a task's CPU usage
 	// when using a recycled runner.
 	baselineCPUNanos int64
+	// Baseline PSI metrics from when a task last finished executing.
+	// This is needed so that we can determine PSI stall totals when using
+	// a recycled runner.
+	baselineCPUPressure, baselineMemoryPressure, baselineIOPressure *repb.PSI
 }
 
 // Reset resets resource usage counters in preparation for a new task, so that
@@ -214,31 +218,58 @@ type UsageStats struct {
 // at the beginning of Exec() in the container lifecycle.
 func (s *UsageStats) Reset() {
 	if s.last == nil {
-		s.baselineCPUNanos = 0
-	} else {
-		s.baselineCPUNanos = s.last.CpuNanos
+		// No observations yet; nothing to do.
+		return
 	}
-	s.last = nil
+	s.last.MemoryBytes = 0
+	s.baselineCPUNanos = s.last.GetCpuNanos()
+	s.baselineCPUPressure = s.last.GetCpuPressure()
+	s.baselineMemoryPressure = s.last.GetMemoryPressure()
+	s.baselineIOPressure = s.last.GetIoPressure()
 	s.peakMemoryUsageBytes = 0
 }
 
 // TaskStats returns the usage stats for an executed task.
 func (s *UsageStats) TaskStats() *repb.UsageStats {
-	return s.taskStats
+	if s.last == nil {
+		return &repb.UsageStats{}
+	}
+
+	taskStats := s.last.CloneVT()
+
+	taskStats.CpuNanos -= s.baselineCPUNanos
+	taskStats.PeakMemoryBytes = s.peakMemoryUsageBytes
+
+	if taskStats.GetCpuPressure().GetSome().GetTotal() > 0 {
+		taskStats.CpuPressure.Some.Total -= s.baselineCPUPressure.GetSome().GetTotal()
+	}
+	if taskStats.GetCpuPressure().GetFull().GetTotal() > 0 {
+		taskStats.CpuPressure.Full.Total -= s.baselineCPUPressure.GetFull().GetTotal()
+	}
+	if taskStats.GetMemoryPressure().GetSome().GetTotal() > 0 {
+		taskStats.MemoryPressure.Some.Total -= s.baselineMemoryPressure.GetSome().GetTotal()
+	}
+	if taskStats.GetMemoryPressure().GetFull().GetTotal() > 0 {
+		taskStats.MemoryPressure.Full.Total -= s.baselineMemoryPressure.GetFull().GetTotal()
+	}
+	if taskStats.GetIoPressure().GetSome().GetTotal() > 0 {
+		taskStats.IoPressure.Some.Total -= s.baselineIOPressure.GetSome().GetTotal()
+	}
+	if taskStats.GetIoPressure().GetFull().GetTotal() > 0 {
+		taskStats.IoPressure.Full.Total -= s.baselineIOPressure.GetFull().GetTotal()
+	}
+
+	return taskStats
 }
 
 // Update updates the usage for the current task, given a reading from the
 // lifetime stats (e.g. cgroup created when the task container was initially
 // created).
 func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
-	taskStats := lifetimeStats.CloneVT()
-	taskStats.CpuNanos = taskStats.CpuNanos - s.baselineCPUNanos
-	if lifetimeStats.MemoryBytes > s.peakMemoryUsageBytes {
-		s.peakMemoryUsageBytes = lifetimeStats.MemoryBytes
+	s.last = lifetimeStats.CloneVT()
+	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
+		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
 	}
-	taskStats.PeakMemoryBytes = s.peakMemoryUsageBytes
-	s.taskStats = taskStats
-	s.last = lifetimeStats
 }
 
 // TrackStats starts a goroutine to monitor the container's resource usage. It
@@ -270,7 +301,7 @@ func TrackStats(ctx context.Context, c CommandContainer) (stop func(), res <-cha
 			// if the executor is heavily loaded.
 			dur := time.Since(start)
 			if last == nil && dur > 1*time.Second && lastErr != nil {
-				log.Warningf("Failed to read container stats: %s", lastErr)
+				log.CtxWarningf(ctx, "Failed to read container stats: %s", lastErr)
 			}
 		}()
 

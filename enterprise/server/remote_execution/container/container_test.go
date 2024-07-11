@@ -11,9 +11,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -257,5 +259,107 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		isAuthorized := auth.IsAuthorized(immediatelyExpiredToken)
 
 		assert.False(t, isAuthorized, "Expired tokens should not be authorized")
+	}
+}
+
+func TestUsageStats(t *testing.T) {
+	s := &container.UsageStats{}
+	require.Empty(t, cmp.Diff(&repb.UsageStats{}, s.TaskStats(), protocmp.Transform()))
+
+	s.Reset()
+	require.Empty(t, cmp.Diff(&repb.UsageStats{}, s.TaskStats(), protocmp.Transform()))
+
+	// Observe some cgroup usage.
+	s.Update(&repb.UsageStats{
+		CpuNanos:       1e9,
+		MemoryBytes:    50 * 1024 * 1024,
+		CpuPressure:    makePSI(100, 10),
+		MemoryPressure: makePSI(2_000, 200),
+		IoPressure:     makePSI(30_000, 3_000),
+	})
+
+	// Observe the same usage again but with higher memory.
+	s.Update(&repb.UsageStats{
+		CpuNanos:       1e9,
+		MemoryBytes:    55 * 1024 * 1024,
+		CpuPressure:    makePSI(100, 10),
+		MemoryPressure: makePSI(2_000, 200),
+		IoPressure:     makePSI(30_000, 3_000),
+	})
+
+	// Observe the same usage again but with lower memory than the first
+	// observation. Also, accumulate some CPU as well as some pressure stall
+	// time.
+	s.Update(&repb.UsageStats{
+		CpuNanos:       2e9,
+		MemoryBytes:    45 * 1024 * 1024,
+		CpuPressure:    makePSI(150, 10),
+		MemoryPressure: makePSI(2_000, 200),
+		IoPressure:     makePSI(30_000, 3_000),
+	})
+	require.Empty(t, cmp.Diff(&repb.UsageStats{
+		CpuNanos:        2e9,
+		MemoryBytes:     45 * 1024 * 1024,
+		PeakMemoryBytes: 55 * 1024 * 1024,
+		CpuPressure:     makePSI(150, 10),
+		MemoryPressure:  makePSI(2_000, 200),
+		IoPressure:      makePSI(30_000, 3_000),
+	}, s.TaskStats(), protocmp.Transform()))
+
+	// Start a new task, using the same UsageStats instance. The cgroup
+	// accumulated CPU etc. will not be reset, but the metrics that we report
+	// should appear as though they were.
+	s.Reset()
+	require.Empty(t, cmp.Diff(&repb.UsageStats{
+		CpuPressure:    makePSI(0, 0),
+		MemoryPressure: makePSI(0, 0),
+		IoPressure:     makePSI(0, 0),
+	}, s.TaskStats(), protocmp.Transform()))
+
+	// Re-observe the last observation again. The only usage that should be
+	// reported is memory, since all other usage should be relative to the last
+	// observation from the previous task.
+	s.Update(&repb.UsageStats{
+		CpuNanos:       2e9,
+		MemoryBytes:    45 * 1024 * 1024,
+		CpuPressure:    makePSI(150, 10),
+		MemoryPressure: makePSI(2_000, 200),
+		IoPressure:     makePSI(30_000, 3_000),
+	})
+	require.Empty(t, cmp.Diff(&repb.UsageStats{
+		MemoryBytes:     45 * 1024 * 1024,
+		PeakMemoryBytes: 45 * 1024 * 1024,
+		CpuPressure:     makePSI(0, 0),
+		MemoryPressure:  makePSI(0, 0),
+		IoPressure:      makePSI(0, 0),
+	}, s.TaskStats(), protocmp.Transform()))
+
+	// Accumulate some CPU usage as well as some pressure stall time. Task stats
+	// should only reflect the accumulated amount.
+	s.Update(&repb.UsageStats{
+		CpuNanos:       2e9 + 7e9,
+		MemoryBytes:    45 * 1024 * 1024,
+		CpuPressure:    makePSI(150+117, 10+17),
+		MemoryPressure: makePSI(2_000+1_118, 200+118),
+		IoPressure:     makePSI(30_000+11_119, 3_000+1_119),
+	})
+	require.Empty(t, cmp.Diff(&repb.UsageStats{
+		CpuNanos:        7e9,
+		MemoryBytes:     45 * 1024 * 1024,
+		PeakMemoryBytes: 45 * 1024 * 1024,
+		CpuPressure:     makePSI(117, 17),
+		MemoryPressure:  makePSI(1_118, 118),
+		IoPressure:      makePSI(11_119, 1_119),
+	}, s.TaskStats(), protocmp.Transform()))
+}
+
+func makePSI(someTotal, fullTotal int64) *repb.PSI {
+	return &repb.PSI{
+		Some: &repb.PSI_Metrics{
+			Total: someTotal,
+		},
+		Full: &repb.PSI_Metrics{
+			Total: fullTotal,
+		},
 	}
 }
