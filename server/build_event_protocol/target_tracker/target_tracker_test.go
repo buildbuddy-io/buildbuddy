@@ -42,7 +42,7 @@ func targetConfiguredIdWithAspect(label string, aspect string) *build_event_stre
 	return &build_event_stream.BuildEventId{
 		Id: &build_event_stream.BuildEventId_TargetConfigured{
 			TargetConfigured: &build_event_stream.BuildEventId_TargetConfiguredId{
-				Label: label,
+				Label:  label,
 				Aspect: aspect,
 			},
 		},
@@ -57,7 +57,7 @@ func targetCompletedIdWithAspect(label string, aspect string) *build_event_strea
 	return &build_event_stream.BuildEventId{
 		Id: &build_event_stream.BuildEventId_TargetCompleted{
 			TargetCompleted: &build_event_stream.BuildEventId_TargetCompletedId{
-				Label: label,
+				Label:  label,
 				Aspect: aspect,
 			},
 		},
