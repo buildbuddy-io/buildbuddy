@@ -9,10 +9,19 @@ on:
       - "*"
 
 jobs:
-  build:
+  test_linux_arm64_executor:
     runs-on: ubuntu-22.04-16cpu-arm64
     if: "!contains(github.event.head_commit.message, 'ci skip')"
-
+    env:
+      BUILD_FLAGS: |
+        --config=cache
+        --bes_backend=remote.buildbuddy.io
+        --bes_results_url=https://app.buildbuddy.io/invocation/
+        --remote_cache=remote.buildbuddy.io
+        --flaky_test_attempts=3
+        --local_test_jobs=1
+        --build_metadata=ROLE=CI
+        --color=yes
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,22 +43,14 @@ jobs:
 
       - name: Run tests
         run: |
-          BUILD_FLAGS=(
-            --config=cache
-            --bes_backend=remote.buildbuddy.io
-            --bes_results_url=https://app.buildbuddy.io/invocation/
-            --remote_cache=remote.buildbuddy.io
-            --flaky_test_attempts=3
-            --local_test_jobs=1
-            --build_metadata=ROLE=CI
-            --color=yes
-          )
-          bazel test "${BUILD_FLAGS[@]}" --test_tag_filters=-performance,-docker \
+          bazel test $BUILD_FLAGS --test_tag_filters=-performance,-docker \
             //enterprise/server/remote_execution/... \
             //enterprise/server/test/integration/remote_execution/...
 
+      - name: Run docker tests
+        run: |
           # Run a separate bazel invocation to invoke tests with the "docker" tag.
           # TODO: improve platform setup so that we can run this whenever the
           # host has podman available.
-          bazel test "${BUILD_FLAGS[@]}" --test_tag_filters=+docker \
+          bazel test $BUILD_FLAGS --test_tag_filters=+docker \
             //enterprise/server/test/integration/podman:podman_test
