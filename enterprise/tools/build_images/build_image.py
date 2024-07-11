@@ -4,7 +4,10 @@ Script to build multi-platform docker images.
 """
 
 import argparse
+import getpass
+import json
 import os
+import requests
 import subprocess
 import sys
 
@@ -24,6 +27,8 @@ def parse_program_arguments():
         context_dir: str
         platforms: list[str]
         buildx_container_name: str
+        userpass: str
+        do_login: bool
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -119,6 +124,20 @@ def parse_program_arguments():
             help="Name of buildx container to use for building the images. If a buildx container with that name does not yet exist, it will be created.",
             dest="buildx_container_name",
             )
+    parser.add_argument(
+            "--user",
+            default="",
+            type=str,
+            help="User name for the registry; this should be of the form user[:password]. If the password is missing, the script will prompt for the password via stdin. If this option is specified, the script will attempt to `docker login` to the registry unless '--skip-login' is also specified.",
+            dest="userpass",
+            )
+    parser.add_argument(
+            "--skip-login",
+            action="store_false",
+            default=True,
+            help="Skip the `docker login` step. This has no effect if '--user' has not been specified.",
+            dest="do_login",
+            )
 
     return parser.parse_args(namespace=ArgsNamespace)
 
@@ -132,6 +151,16 @@ def set_up_buildx_container(container_name, stdout=sys.stdout, stderr=sys.stderr
             print("Success!", stdout)
         else:
             print("Failed to create buildx container.", stderr)
+
+def resolve_userpass(userpass: str, registry: str):
+    """Returns (user, password), prompting for the password if necessary."""
+    if not userpass:
+        return None
+    user, sep, password = userpass.partition(":")
+    if sep != ":":
+        password = getpass.getpass(f"Password for {user} at {registry}: ")
+    return (user, password)
+
 
 def yes_no_prompt(prompt, default_yes=False):
     """Prompts the user for a yes or no response. Returns True for "yes" and False for "no"."""
@@ -152,12 +181,35 @@ def perform_prod_checks(repository_path: str):
         return yes_no_prompt(f"Repository path {repository_path} ends in '-prod', indicating that this is a production image. Are you sure you want to push this image to a production repository?")
     return True
 
-def perform_new_repository_check(registry: str, repository_path: str):
+def perform_new_repository_check(registry: str, repository: str, userpass: tuple[str, str]|None):
     """Checks to make sure any creation of a new repository is intentional."""
-    completed_process = subprocess.run(["docker", "manifest", "inspect", f"{registry}/{repository_path}"], capture_output=True)
-    if completed_process != 0:
-        return yes_no_prompt(f"Repository {repository_path} does not yet exist in {registry}. Are you sure you want to create a new repository?")
+    resp = requests.get(f"https://{registry}/v2/_catalog", auth=userpass)
+    try:
+        content = json.loads(resp.text)
+    except json.JSONDecodeError:
+        content = None
+    if not isinstance(content, dict) or "repositories" not in content or not isinstance(content["repositories"], list):
+        return yes_no_prompt(f"Attempt to view catalog of {registry} failed; received response: {resp.text}\nCannot confirm that {repository} already exists in {registry}. Would you like to proceed anyway?")
+    if repository not in content["repositories"]:
+        return yes_no_prompt(f"Repository {repository} does not yet exist in {registry}. Are you sure you want to create a new repository?")
     return True
+
+def perform_login(registry: str, userpass: tuple[str, str]):
+    """Executes `docker login`. Returns True for success and False for failure."""
+    completed_process = subprocess.run(
+            (
+                ["docker", "login"] +
+                ["-u", userpass[0], "--password-stdin"] +
+                [f"https://{registry}"]
+                ),
+            capture_output=True,
+            input=userpass[1].encode(sys.getdefaultencoding()),
+            )
+    if completed_process.returncode != 0:
+        print(f"docker login failed with exit code {completed_process.returncode}.\nstdout:\n{completed_process.stdout}\nstderr:\n{completed_process.stderr}", file=sys.stderr)
+        return False
+    return True
+
 
 def repeated_opts(opt: str, params: list[str]):
     """Returns a list of the form [opt, params[0], opt, params[1], ... ]"""
@@ -165,6 +217,9 @@ def repeated_opts(opt: str, params: list[str]):
 
 def main():
     args = parse_program_arguments()
+
+    userpass = resolve_userpass(args.userpass, args.registry)
+
     if not check_buildx_support():
         return 1
 
@@ -174,16 +229,21 @@ def main():
     elif os.path.dirname(os.path.abspath(args.dockerfile)) != "":
         context_dir = os.path.dirname(os.path.abspath(args.dockerfile))
 
-    repository_path = f"{args.repository}{'-' + args.suffix if args.suffix else ''}"
+    repository = f"{args.repository}{'-' + args.suffix if args.suffix else ''}"
 
     if args.push:
-        if args.do_prod_checks and not perform_prod_checks(repository_path):
+        if args.do_prod_checks and not perform_prod_checks(repository):
             print("Exiting...", file=sys.stdout)
             return 0
 
-        if args.do_new_repository_check and not perform_new_repository_check(args.registry, repository_path):
+        if args.do_new_repository_check and not perform_new_repository_check(args.registry, repository, userpass):
             print("Exiting...", file=sys.stdout)
             return 0
+
+        if userpass is not None and args.do_login:
+            if not perform_login(args.registry, userpass):
+                print("Exiting...", file=sys.stdout)
+                return 0
 
     set_up_buildx_container(args.buildx_container_name)
 
@@ -191,7 +251,7 @@ def main():
             ["docker", "buildx"] +
             ["--builder", str(args.buildx_container_name)] +
             ["build"] +
-            ["--tag", f"{args.registry}/{repository_path}{':' + args.tag if args.tag else ''}"] +
+            ["--tag", f"{args.registry}/{repository}{':' + args.tag if args.tag else ''}"] +
             (["--file", args.dockerfile] if args.dockerfile else []) +
             repeated_opts("--platform", args.platforms) +
             (["--push"] if args.push else []) +
