@@ -18,17 +18,17 @@ def parse_program_arguments():
     class ArgsNamespace(argparse.Namespace):
         registry: str
         repository: str
-        push: bool
-        do_new_repository_check: bool
         tag: str
-        suffix: str
-        do_prod_checks: bool
         dockerfile: str
         context_dir: str
-        platforms: list[str]
         buildx_container_name: str
+        platforms: list[str]
         userpass: str
         do_login: bool
+        push: bool
+        do_new_repository_check: bool
+        do_prod_checks: bool
+        suffix: str
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -46,6 +46,55 @@ def parse_program_arguments():
             dest="repository",
             )
     parser.add_argument(
+            "--tag",
+            default="",
+            type=str,
+            help="Tag to use in the target repository for the built image (if any).",
+            dest="tag",
+            )
+    parser.add_argument(
+            "--dockerfile",
+            default="Dockerfile",
+            type=str,
+            help="Path to the dockerfile to use when building the image.",
+            dest="dockerfile",
+            )
+    parser.add_argument(
+            "--context-dir",
+            type=str,
+            help="Path to the context directory to use when building the image. Defaults to the dockerfile directory if not provided.",
+            dest="context_dir",
+            )
+    parser.add_argument(
+            "--buildx-container-name",
+            default="buildbuddy-buildx",
+            type=str,
+            help="Name of buildx container to use for building the images. If a buildx container with that name does not yet exist, it will be created.",
+            dest="buildx_container_name",
+            )
+    parser.add_argument(
+            "--platform",
+            action="append",
+            type=str,
+            help="Repeated option. Set this to specify platforms to build the image for.",
+            metavar="PLATFORM",
+            dest="platforms",
+            )
+    parser.add_argument(
+            "--user",
+            default="",
+            type=str,
+            help="User name for the registry; this should be of the form user[:password]. If the password is missing, the script will prompt for the password via stdin. If this option is specified, the script will attempt to `docker login` to the registry unless '--skip-login' is also specified. gcloud users will want to use '_dcgcloud_token' as the user and the output of `gcloud auth print-access-token` as the password.",
+            dest="userpass",
+            )
+    parser.add_argument(
+            "--skip-login",
+            action="store_false",
+            default=True,
+            help="Skip the `docker login` step. This has no effect if '--user' has not been specified.",
+            dest="do_login",
+            )
+    parser.add_argument(
             "--no-push",
             action="store_false",
             default=True,
@@ -60,11 +109,11 @@ def parse_program_arguments():
             dest="do_new_repository_check",
             )
     parser.add_argument(
-            "--tag",
-            default="",
-            type=str,
-            help="Tag to use in the target repository for the built image (if any).",
-            dest="tag",
+            "--force-ignore-prod-checks",
+            action="store_false",
+            default=True,
+            help="*** THIS OPTION IS DANGEROUS, BE SURE YOU KNOW WHAT YOU'RE DOING *** Set to ignore warnings and checks surrounding prod pushes. Recommended only in unmonitored scripts and in the case that the existing prod image is currently broken.",
+            dest="do_prod_checks",
             )
     suffix_group = parser.add_argument_group("Suffixes", "Suffixes to be attached to the end of the repository name. Only one may be specified; '--dev' is the default.").add_mutually_exclusive_group()
     suffix_group.add_argument(
@@ -88,55 +137,6 @@ def parse_program_arguments():
             const="",
             help="No suffix will be added to the repository name. You will still receive a warning if you are pushing to a repository name that ends in '-prod'.",
             dest="suffix",
-            )
-
-    parser.add_argument(
-            "--force-ignore-prod-checks",
-            action="store_false",
-            default=True,
-            help="*** THIS OPTION IS DANGEROUS, BE SURE YOU KNOW WHAT YOU'RE DOING *** Set to ignore warnings and checks surrounding prod pushes. Recommended only in unmonitored scripts and in the case that the existing prod image is currently broken.",
-            dest="do_prod_checks",
-            )
-    parser.add_argument(
-            "--dockerfile",
-            default="Dockerfile",
-            type=str,
-            help="Path to the dockerfile to use when building the image.",
-            dest="dockerfile",
-            )
-    parser.add_argument(
-            "--context-dir",
-            type=str,
-            help="Path to the context directory to use when building the image. Defaults to the dockerfile directory if not provided.",
-            dest="context_dir",
-            )
-    parser.add_argument(
-            "--platform",
-            action="append",
-            type=str,
-            help="Repeated option. Set this to specify platforms to build the image for.",
-            dest="platforms",
-            )
-    parser.add_argument(
-            "--buildx-container-name",
-            default="buildbuddy-buildx",
-            type=str,
-            help="Name of buildx container to use for building the images. If a buildx container with that name does not yet exist, it will be created.",
-            dest="buildx_container_name",
-            )
-    parser.add_argument(
-            "--user",
-            default="",
-            type=str,
-            help="User name for the registry; this should be of the form user[:password]. If the password is missing, the script will prompt for the password via stdin. If this option is specified, the script will attempt to `docker login` to the registry unless '--skip-login' is also specified. gcloud users will want to use '_dcgcloud_token' as the user and the output of `gcloud auth print-access-token` as the password.'",
-            dest="userpass",
-            )
-    parser.add_argument(
-            "--skip-login",
-            action="store_false",
-            default=True,
-            help="Skip the `docker login` step. This has no effect if '--user' has not been specified.",
-            dest="do_login",
             )
 
     return parser.parse_args(namespace=ArgsNamespace)
