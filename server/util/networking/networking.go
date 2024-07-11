@@ -67,6 +67,7 @@ func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 // runCommand runs the provided command, prepending sudo if the calling user is
 // not already root, and returns any error encountered.
 func runCommand(ctx context.Context, args ...string) error {
+	log.CtxInfof(ctx, "NET COMMAND: ", strings.Join(args, " "))
 	_, err := sudoCommand(ctx, args...)
 	return err
 }
