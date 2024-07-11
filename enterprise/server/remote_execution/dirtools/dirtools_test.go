@@ -1082,7 +1082,7 @@ func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	if err != nil {
 		t.Error(err)
 	}
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()

@@ -29,7 +29,7 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 100_000, false)
 	require.NoError(t, err)
 	env.SetFileCache(fc)
-	_, run := testenv.RegisterLocalGRPCServer(env)
+	_, run := testenv.RegisterLocalGRPCServer(t, env)
 	testcache.Setup(t, env)
 	go run()
 	return env

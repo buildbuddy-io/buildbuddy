@@ -27,18 +27,17 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func runFetchServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
+func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
 	fetchServer, err := fetch_server.NewFetchServer(env)
 	require.NoError(t, err)
 
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	rapb.RegisterFetchServer(grpcServer, fetchServer)
 
 	go runFunc()
-	t.Cleanup(func() { grpcServer.GracefulStop() })
 
 	clientConn, err := testenv.LocalGRPCConn(ctx, env)
 	require.NoError(t, err)
@@ -97,7 +96,7 @@ func TestFetchBlob(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
-			clientConn := runFetchServer(ctx, te, t)
+			clientConn := runFetchServer(ctx, t, te)
 			fetchClient := rapb.NewFetchClient(clientConn)
 
 			contentDigest, err := digest.Compute(bytes.NewReader([]byte(tc.content)), tc.digestFunc)
@@ -186,7 +185,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
 			require.NoError(t, scratchspace.Init())
-			clientConn := runFetchServer(ctx, te, t)
+			clientConn := runFetchServer(ctx, t, te)
 			fetchClient := rapb.NewFetchClient(clientConn)
 
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
@@ -292,7 +291,7 @@ func TestFetchBlobMismatch(t *testing.T) {
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
 			require.NoError(t, scratchspace.Init())
-			clientConn := runFetchServer(ctx, te, t)
+			clientConn := runFetchServer(ctx, t, te)
 			fetchClient := rapb.NewFetchClient(clientConn)
 
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -352,7 +351,7 @@ func TestSubsequentRequestCacheHit(t *testing.T) {
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
 			require.NoError(t, scratchspace.Init())
-			clientConn := runFetchServer(ctx, te, t)
+			clientConn := runFetchServer(ctx, t, te)
 			fetchClient := rapb.NewFetchClient(clientConn)
 
 			// a cache miss would translate to an incoming request handled by http test server
@@ -405,7 +404,7 @@ func TestSubsequentRequestCacheHit(t *testing.T) {
 func TestFetchDirectory(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	clientConn := runFetchServer(ctx, te, t)
+	clientConn := runFetchServer(ctx, t, te)
 	fetchClient := rapb.NewFetchClient(clientConn)
 
 	resp, err := fetchClient.FetchDirectory(ctx, &rapb.FetchDirectoryRequest{})

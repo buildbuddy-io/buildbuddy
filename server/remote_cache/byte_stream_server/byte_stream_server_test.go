@@ -36,13 +36,13 @@ const (
 	defaultBazelVersion = "6.0.0"
 )
 
-func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
+func runByteStreamServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	byteStreamServer, err := NewByteStreamServer(env)
 	if err != nil {
 		t.Error(err)
 	}
 
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 
 	go runFunc()
@@ -87,7 +87,7 @@ func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Res
 func TestRPCRead(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	clientConn := runByteStreamServer(ctx, te, t)
+	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	randStr := func(i int) string {
@@ -183,7 +183,7 @@ func TestRPCRead(t *testing.T) {
 func TestRPCWrite(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	clientConn := runByteStreamServer(ctx, te, t)
+	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// Test that a regular bytestream upload works.
@@ -199,7 +199,7 @@ func TestRPCWriteWithDirectWrite(t *testing.T) {
 	flags.Set(t, "cache.max_direct_write_size_bytes", 1024)
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	clientConn := runByteStreamServer(ctx, te, t)
+	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// This file is small enough that we'll skip the Contains check.
@@ -218,7 +218,7 @@ func TestRPCWriteWithDirectWrite(t *testing.T) {
 func TestRPCMalformedWrite(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	clientConn := runByteStreamServer(ctx, te, t)
+	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// Test that a malformed upload (incorrect digest) is rejected.
@@ -235,7 +235,7 @@ func TestRPCMalformedWrite(t *testing.T) {
 func TestRPCTooLongWrite(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	clientConn := runByteStreamServer(ctx, te, t)
+	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// Test that a malformed upload (wrong bytesize) is rejected.
@@ -254,7 +254,7 @@ func TestRPCTooLongWrite(t *testing.T) {
 func TestRPCReadWriteLargeBlob(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	clientConn := runByteStreamServer(ctx, te, t)
+	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	blob, err := random.RandomString(10_000_000)
@@ -283,7 +283,7 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 	require.NoError(t, err)
 	te.SetMetricsCollector(mc)
 
-	clientConn := runByteStreamServer(ctx, te, t)
+	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	for _, blobSize := range []int64{1, 1e2, 1e4, 1e6, 8e6} {
@@ -354,7 +354,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
-	clientConn := runByteStreamServer(ctx, te, t)
+	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// Note: Some larger blob sizes are included here so that we have a better
@@ -427,7 +427,7 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
-	clientConn := runByteStreamServer(ctx, te, t)
+	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	for _, blobSize := range []int64{1, 1e2, 1e4, 1e6, 8e6} {
@@ -521,7 +521,7 @@ func Test_CacheHandlesCompression(t *testing.T) {
 
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 			require.NoError(t, err)
-			clientConn := runByteStreamServer(ctx, te, t)
+			clientConn := runByteStreamServer(ctx, t, te)
 			bsClient := bspb.NewByteStreamClient(clientConn)
 
 			// Upload the blob
