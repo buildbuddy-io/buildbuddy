@@ -517,7 +517,7 @@ func TestTargetTracking_BuildGraphIsADag(t *testing.T) {
 			},
 		},
 		&build_event_stream.BuildEvent{
-			targetConfiguredIdWithAspect("//server:baz_test", "some.bzl%some_aspect"),
+			Id: targetConfiguredIdWithAspect("//server:baz_test", "some.bzl%some_aspect"),
 			Children: []*build_event_stream.BuildEventId{
 				targetCompletedIdWithAspect("//server:baz_test", "some.bzl%some_aspect"),
 			},
