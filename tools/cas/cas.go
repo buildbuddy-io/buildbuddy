@@ -38,6 +38,8 @@ var (
 	apiKey       = flag.String("api_key", "", "API key to attach to the outgoing context")
 	invocationID = flag.String("invocation_id", "", "Invocation ID. This is required when fetching the result of a failed action. Otherwise, it's optional.")
 
+	format = flag.String("format", "json", "Output format: `json|raw`")
+
 	showMetadata     = flag.Bool("metadata", false, "Whether to fetch and log metadata for the digest (printed to stderr).")
 	showMetadataOnly = flag.Bool("metadata_only", false, "Whether to *only* fetch metadata, not the contents. This will print the metadata to stdout instead of stderr.")
 )
@@ -66,6 +68,9 @@ func main() {
 	}
 	if *blobDigest == "" {
 		log.Fatalf("Missing --digest")
+	}
+	if *format != "json" && *format != "raw" {
+		log.Fatalf(`invalid -format (must be "json" or "raw")`)
 	}
 
 	// For backwards compatibility, attempt to fixup old style digest
@@ -120,11 +125,7 @@ func main() {
 		// If --metadata_only is set, print the metadata as JSON to stdout for
 		// easy consumption in scripts.
 		if *showMetadataOnly {
-			b, err := protojson.MarshalOptions{Multiline: false}.Marshal(md)
-			if err != nil {
-				log.Fatalf("Failed to marshal metadata: %s", err)
-			}
-			writeToStdout(b)
+			printMessage(md)
 			return
 		}
 	}
@@ -185,8 +186,12 @@ func main() {
 }
 
 func printMessage(msg proto.Message) {
-	out, _ := protojson.MarshalOptions{Multiline: true}.Marshal(msg)
-	writeToStdout(out)
+	marshal := protojson.MarshalOptions{Multiline: true}.Marshal
+	if *format == "raw" {
+		marshal = proto.Marshal
+	}
+	b, _ := marshal(msg)
+	writeToStdout(b)
 }
 
 func writeToStdout(b []byte) {
