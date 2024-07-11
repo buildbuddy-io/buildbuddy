@@ -128,7 +128,7 @@ def parse_program_arguments():
             "--user",
             default="",
             type=str,
-            help="User name for the registry; this should be of the form user[:password]. If the password is missing, the script will prompt for the password via stdin. If this option is specified, the script will attempt to `docker login` to the registry unless '--skip-login' is also specified.",
+            help="User name for the registry; this should be of the form user[:password]. If the password is missing, the script will prompt for the password via stdin. If this option is specified, the script will attempt to `docker login` to the registry unless '--skip-login' is also specified. gcloud users will want to use '_dcgcloud_token' as the user and the output of `gcloud auth print-access-token` as the password.'",
             dest="userpass",
             )
     parser.add_argument(
