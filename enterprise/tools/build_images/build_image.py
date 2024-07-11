@@ -35,7 +35,7 @@ def parse_program_arguments():
             "--registry",
             default="gcr.io/flame-build",
             type=str,
-            help="Container registry where the target repository is located.",
+            help="Container registry where the target repository is located. (Default: gcr.io/flame-build)",
             dest="registry",
             )
     parser.add_argument(
@@ -47,7 +47,6 @@ def parse_program_arguments():
             )
     parser.add_argument(
             "--tag",
-            default="",
             type=str,
             help="Tag to use in the target repository for the built image (if any).",
             dest="tag",
@@ -56,7 +55,7 @@ def parse_program_arguments():
             "--dockerfile",
             default="Dockerfile",
             type=str,
-            help="Path to the dockerfile to use when building the image.",
+            help="Path to the dockerfile to use when building the image. (Default: Dockerfile)",
             dest="dockerfile",
             )
     parser.add_argument(
@@ -82,7 +81,6 @@ def parse_program_arguments():
             )
     parser.add_argument(
             "--user",
-            default="",
             type=str,
             help="User name for the registry; this should be of the form user[:password]. If the password is missing, the script will prompt for the password via stdin. If this option is specified, the script will attempt to `docker login` to the registry unless '--skip-login' is also specified. gcloud users will want to use '_dcgcloud_token' as the user and the output of `gcloud auth print-access-token` as the password.",
             dest="userpass",
@@ -90,28 +88,24 @@ def parse_program_arguments():
     parser.add_argument(
             "--skip-login",
             action="store_false",
-            default=True,
             help="Skip the `docker login` step. This has no effect if '--user' has not been specified.",
             dest="do_login",
             )
     parser.add_argument(
             "--no-push",
             action="store_false",
-            default=True,
             help="Set to only build the image and cache it in docker's build cache. To push the built image, run the build command again with '--push'.",
             dest="push",
             )
     parser.add_argument(
             "--force-ignore-new-repository-check",
             action="store_false",
-            default=True,
             help="Set to ignore warnings about the repository not currently existing in the registry. Set this if you really are looking to push a repository with an entirely new name, not just a new image to an existing repository.",
             dest="do_new_repository_check",
             )
     parser.add_argument(
             "--force-ignore-prod-checks",
             action="store_false",
-            default=True,
             help="*** THIS OPTION IS DANGEROUS, BE SURE YOU KNOW WHAT YOU'RE DOING *** Set to ignore warnings and checks surrounding prod pushes. Recommended only in unmonitored scripts and in the case that the existing prod image is currently broken.",
             dest="do_prod_checks",
             )
