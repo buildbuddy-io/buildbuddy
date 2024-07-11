@@ -14,19 +14,9 @@ genrule(
     cmd_bash = "cp $(SRCS) $@",
 )
 
-genrule(
-    name = "embedsrcs_compatible_bazel_wrapper",
-    srcs = ["//enterprise/server/cmd/ci_runner/bazel_wrapper"],
-    outs = ["buildbuddy_bazel_wrapper"],
-    cmd_bash = "cp $(SRCS) $@",
-)
-
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],
-    embedsrcs = [
-        "buildbuddy_ci_runner",
-        "buildbuddy_bazel_wrapper",
-    ],
+    embedsrcs = ["buildbuddy_ci_runner"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle",
 )

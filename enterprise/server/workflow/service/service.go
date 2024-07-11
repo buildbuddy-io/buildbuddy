@@ -1164,24 +1164,12 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			return nil, status.WrapError(err, "upload runner bin")
 		}
 		runnerName := filepath.Base(ci_runner_bundle.RunnerName)
-		bazelWrapperBinDigest, err := cachetools.UploadBlobToCAS(ctx, ws.env.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, ci_runner_bundle.BazelWrapperBytes)
-		if err != nil {
-			return nil, status.WrapError(err, "upload bazel wrapper bin")
-		}
-		bazelWrapperName := ci_runner_bundle.BazelWrapperName
 		dir := &repb.Directory{
-			Files: []*repb.FileNode{
-				{
-					Name:         runnerName,
-					Digest:       runnerBinDigest,
-					IsExecutable: true,
-				},
-				{
-					Name:         bazelWrapperName,
-					Digest:       bazelWrapperBinDigest,
-					IsExecutable: true,
-				},
-			},
+			Files: []*repb.FileNode{{
+				Name:         runnerName,
+				Digest:       runnerBinDigest,
+				IsExecutable: true,
+			}},
 		}
 		inputRootDigest, err = cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, dir)
 		if err != nil {

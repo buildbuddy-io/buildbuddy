@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
@@ -65,11 +66,6 @@ const (
 	//
 	// This bazelrc takes lower precedence than the workspace .bazelrc.
 	buildbuddyBazelrcPath = "buildbuddy.bazelrc"
-
-	// bashrcPath is the path where we write a bashrc file to be
-	// applied to all bash commands. The path is relative to the runner workspace
-	// root, which notably is not the same as the bazel workspace / git repo root.
-	bashrcPath = ".bashrc"
 
 	// Name of the dir into which the repo is cloned.
 	repoDirName = "repo-root"
@@ -151,6 +147,12 @@ const (
 )
 
 var (
+	// Subcommands of the ci_runner.
+	// Go binaries are relatively large, so these are included as subcommands instead
+	// of separate scripts.
+	credentialHelper = flag.Bool("credential_helper", false, "Run in git credential helper mode. For internal usage only.")
+	bazelWrapper     = flag.Bool("bazel_wrapper", false, "Run in bazel wrapper mode.")
+
 	besBackend         = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
 	cacheBackend       = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
 	rbeBackend         = flag.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
@@ -193,8 +195,6 @@ var (
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
-	credentialHelper = flag.Bool("credential_helper", false, "Run in git credential helper mode. For internal usage only.")
-
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
 
@@ -209,7 +209,6 @@ type workspace struct {
 	//     {rootDir}/
 	//         bazelisk             (copy of embedded bazelisk binary)
 	//         buildbuddy.bazelrc   (BuildBuddy-controlled bazelrc that applies to all bazel commands)
-	//         .bashrc              (BuildBuddy-controlled bashrc)
 	//         artifacts/
 	//             command-0/       (artifacts for bazel_commands[0])
 	//             command-1/       (artifacts for bazel_commands[1])
@@ -578,15 +577,21 @@ func main() {
 }
 
 func run() error {
+	// Do not parse flags in bazel wrapper mode, because it causes parsing errors
+	// with bazel startup options.
+	isBazelWrapper := os.Getenv("BAZEL_WRAPPER_MODE") == "1"
 	if slices.Contains(os.Args, "--credential_helper") {
 		flag.Parse()
-	} else {
+	} else if !isBazelWrapper {
 		if err := parseFlags(); err != nil {
 			return err
 		}
 	}
 	if *credentialHelper {
 		return runCredentialHelper()
+	}
+	if isBazelWrapper {
+		return runBazelWrapper()
 	}
 
 	ws := &workspace{
@@ -694,18 +699,11 @@ func run() error {
 
 	}
 
-	// Alias bazel to the bazel wrapper script, which adds some common flags to all
+	// Use the bazel wrapper script, which adds some common flags to all
 	// Bazel builds.
-	if err := ws.writeBashrc(); err != nil {
-		return status.WrapError(err, "write bashrc")
+	if err := ws.writeBazelWrapperScript(); err != nil {
+		return status.WrapError(err, "write bazel wrapper script")
 	}
-	// Delete bashrc before exiting.
-	wsBashrcPath := filepath.Join(ws.rootDir, ".home/.bashrc")
-	defer func() {
-		if err := os.Remove(wsBashrcPath); err != nil {
-			log.Error(err.Error())
-		}
-	}()
 
 	if *shutdownAndExit {
 		log.Info("--shutdown_and_exit requested; will run bazel shutdown then exit.")
@@ -724,7 +722,7 @@ func run() error {
 		if cfg != nil {
 			wsPath = bazelWorkspacePath(cfg)
 		}
-		args, err := bazelArgsWithCustomBazelrc(rootDir, wsPath, "shutdown")
+		args, err := bazelArgsWithCustomBazelrc(ctx, rootDir, wsPath, "shutdown", ws.log)
 		if err != nil {
 			return err
 		}
@@ -1114,7 +1112,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		iid := wfc.GetInvocation()[i].GetInvocationId()
-		args, err := bazelArgsWithCustomBazelrc(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
+		args, err := bazelArgsWithCustomBazelrc(ctx, ar.rootDir, action.BazelWorkspaceDir, bazelCmd, ar.reporter)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
@@ -1582,7 +1580,7 @@ func printCommandLine(out io.Writer, command string, args ...string) error {
 
 // Returns the tokenized bazel command with a startup option to use the custom
 // baelrc written by the ci_runner.
-func bazelArgsWithCustomBazelrc(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error) {
+func bazelArgsWithCustomBazelrc(ctx context.Context, rootAbsPath, bazelWorkspaceRelPath, cmd string, outputSink io.Writer) ([]string, error) {
 	tokens, err := shlex.Split(cmd)
 	if err != nil {
 		return nil, err
@@ -1590,23 +1588,50 @@ func bazelArgsWithCustomBazelrc(rootAbsPath, bazelWorkspaceRelPath, cmd string) 
 	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
 		tokens = tokens[1:]
 	}
+	startupFlags, err := customBazelrcOptions(ctx, *bazelCommand, rootAbsPath, bazelWorkspaceRelPath, outputSink)
+	if err != nil {
+		return nil, err
+	}
+	return append(startupFlags, tokens...), nil
+}
+
+// Returns the startup options to use the custom bazelrc written by the ci_runner.
+func customBazelrcOptions(ctx context.Context, bazelBin string, rootAbsPath string, bazelWorkspaceRelPath string, outputSink io.Writer) ([]string, error) {
 	startupFlags := []string{"--bazelrc=" + filepath.Join(rootAbsPath, buildbuddyBazelrcPath)}
+
 	// Bazel will treat the user's workspace .bazelrc file with lower precedence
 	// than our --bazelrc, which is undesired. So instead, explicitly add the
 	// workspace rc as a --bazelrc flag after ours, and also set --noworkspace_rc
 	// to prevent the workspace rc from getting loaded twice.
-	workspacercPath := ".bazelrc"
-	if bazelWorkspaceRelPath != "" {
-		workspacercPath = filepath.Join(bazelWorkspaceRelPath, ".bazelrc")
+	workspaceRcPath := ".bazelrc"
+	if bazelWorkspaceRelPath == "" {
+		bazelWorkspaceAbsPath, err := getBazelWorkspaceAbsPath(ctx, bazelBin, startupFlags, "", outputSink)
+		if err != nil {
+			return nil, err
+		}
+		workspaceRcPath = filepath.Join(bazelWorkspaceAbsPath, ".bazelrc")
 	}
-	_, err = os.Stat(workspacercPath)
+	_, err := os.Stat(workspaceRcPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	if exists := (err == nil); exists {
-		startupFlags = append(startupFlags, "--noworkspace_rc", "--bazelrc=.bazelrc")
+	if exists := err == nil; exists {
+		startupFlags = append(startupFlags, "--noworkspace_rc", "--bazelrc="+workspaceRcPath)
 	}
-	return append(startupFlags, tokens...), nil
+	return startupFlags, nil
+}
+
+func getBazelWorkspaceAbsPath(ctx context.Context, bazelBin string, startupFlags []string, bazelWorkspaceRelPath string, outputSink io.Writer) (string, error) {
+	io.WriteString(outputSink, ansiGray+fmt.Sprintf("\nRunning command: %s %s info workspace\n\n", bazelBin, strings.Join(startupFlags, " "))+ansiReset)
+	bazelWorkspaceOutput, err := runCommandWithOutput(ctx, bazelBin, append(startupFlags, []string{"info", "workspace"}...), map[string]string{}, bazelWorkspaceRelPath, outputSink)
+	if err != nil {
+		return "", err.Err
+	}
+	parsedOutput := strings.Split(bazelWorkspaceOutput, "\n")
+	bazelWorkspace := parsedOutput[len(parsedOutput)-1]
+	bazelWorkspace = strings.ReplaceAll(bazelWorkspace, "\x1b[0m", "")
+	bazelWorkspace = strings.TrimSpace(bazelWorkspace)
+	return bazelWorkspace, nil
 }
 
 // appendBazelSubcommandArgs appends bazel arguments to a bazel command,
@@ -2057,35 +2082,47 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	return nil
 }
 
-// This will overwrite any existing .bashrc in the runner workspace root
-func (ws *workspace) writeBashrc() error {
-	p := filepath.Join(ws.rootDir, ".home/.bashrc")
+// Writes a wrapper script that invokes the ci_runner with the bazel_wrapper subcommand.
+// Also adds it to the PATH so it will be invoked whenever `bazel` or `bazelisk` are called.
+// The wrapper script adds a startup option for the custom ci_runner .bazelrc to
+// all bazel commands.
+func (ws *workspace) writeBazelWrapperScript() error {
+	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
+	for _, c := range []string{bazelBinaryName, bazeliskBinaryName} {
+		wrapperPath := filepath.Join(wrapperDir, c)
+		_, err := os.Stat(wrapperPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				if err := os.MkdirAll(filepath.Dir(wrapperPath), 0755); err != nil {
+					return err
+				}
+			} else {
+				return err
+			}
+		}
 
-	_, err := os.Stat(p)
-	if err == nil {
-		ws.log.Printf("%s already exists", p)
+		f, err := os.OpenFile(wrapperPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+		if err != nil {
+			return status.InternalErrorf("Failed to open %s for writing: %s", wrapperPath, err)
+		}
+		defer f.Close()
+
+		contents := `
+#!/usr/bin/env sh
+BAZEL_WRAPPER_MODE=1 BAZEL_BIN=` + *bazelCommand + ` CI_RUNNER_ROOT=` + ws.rootDir + ` ` + os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH") + ` "$@"
+`
+		if _, err := io.WriteString(f, contents); err != nil {
+			return status.InternalErrorf("Failed to write to %s: %s", wrapperPath, err)
+		}
 	}
 
-	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
-		return err
+	prevPath := os.Getenv("PATH")
+	if !strings.Contains(prevPath, wrapperDir) {
+		if err := os.Setenv("PATH", fmt.Sprintf("%s:%s", wrapperDir, prevPath)); err != nil {
+			return status.WrapError(err, "failed to include wrapper dir in PATH")
+		}
 	}
-	f, err := os.OpenFile(p, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0664)
-	if err != nil {
-		return status.InternalErrorf("Failed to open %s for writing: %s", p, err)
-	}
-	defer f.Close()
 
-	lines := []string{
-		`alias bazel='/workspace/buildbuddy_bazel_wrapper --bazel_bin=` + *bazelCommand +
-			` --root_path=` + ws.rootDir +
-			` --bazel_startup_flags=` + *bazelStartupFlags +
-			` --extra_bazel_args=` + *extraBazelArgs +
-			`'`,
-	}
-	contents := strings.Join(lines, "\n") + "\n"
-	if _, err := io.WriteString(f, contents); err != nil {
-		return status.InternalErrorf("Failed to append to %s: %s", p, err)
-	}
 	return nil
 }
 
@@ -2112,16 +2149,10 @@ func isAlreadyUpToDate(err error) bool {
 }
 
 func git(ctx context.Context, out io.Writer, args ...string) (string, *commandError) {
-	var buf bytes.Buffer
-	w := io.MultiWriter(out, &buf)
 	if err := printCommandLine(out, "git", args...); err != nil {
 		return "", &commandError{err, ""}
 	}
-	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, w); err != nil {
-		return "", &commandError{err, buf.String()}
-	}
-	output := buf.String()
-	return strings.TrimSpace(output), nil
+	return runCommandWithOutput(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, out)
 }
 
 func isPushedRefInFork() bool {
@@ -2283,13 +2314,18 @@ func runBashCommand(ctx context.Context, cmd string, env map[string]string, dir 
 		return "", &commandError{err, ""}
 	}
 
+	return runCommandWithOutput(ctx, "bash", []string{"-eo", "pipefail", "-c", cmd}, env, dir, outputSink)
+}
+
+func runCommandWithOutput(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer) (string, *commandError) {
 	var buf bytes.Buffer
 	w := io.MultiWriter(outputSink, &buf)
 
-	if err := runCommand(ctx, "bash", []string{"-eoi", "pipefail", "-c", cmd}, env, dir, w); err != nil {
+	if err := runCommand(ctx, executable, args, env, dir, w); err != nil {
 		return "", &commandError{err, buf.String()}
 	}
 	output := buf.String()
+	output = strings.ReplaceAll(output, "\x1b[0m", "")
 	return strings.TrimSpace(output), nil
 }
 
@@ -2477,6 +2513,23 @@ func runCredentialHelper() error {
 		// Do nothing
 		return nil
 	}
+}
+
+func runBazelWrapper() error {
+	rootPath := os.Getenv("CI_RUNNER_ROOT")
+	bazelCmd := os.Getenv("BAZEL_BIN")
+
+	args := os.Args[1:]
+	startupArgs, err := customBazelrcOptions(context.Background(), bazelCmd, rootPath, "", os.Stderr)
+	if err != nil {
+		return err
+	}
+	args = append([]string{bazelCmd}, append(startupArgs, args...)...)
+
+	io.WriteString(os.Stderr, ansiGray+fmt.Sprintf("Running command: %s\n\n", strings.Join(args, " "))+ansiReset+" ")
+	// Replace the process running the bazel wrapper with the process running bazel,
+	// so there are no remaining traces of the wrapper script.
+	return syscall.Exec(bazelCmd, args, os.Environ())
 }
 
 // Attempts to free up disk space.

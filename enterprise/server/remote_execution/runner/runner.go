@@ -312,7 +312,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 	// the binary from the cache
 	// TODO(Maggie): We'll need to do this even if WorkflowID == "" for remote bazel on macs
 	if r.PlatformProperties.WorkflowID != "" {
-		if err := r.Workspace.AddCIRunnerBundle(ctx); err != nil {
+		if err := r.Workspace.AddCIRunner(ctx); err != nil {
 			return err
 		}
 	}

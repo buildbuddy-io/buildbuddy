@@ -166,13 +166,13 @@ actions:
 	}
 
 	workspaceContentsWithArtifactUploads = map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
-		"BUILD": `
+		"subdir/WORKSPACE": `workspace(name = "test")`,
+		"subdir/BUILD": `
 sh_test(name = "pass", srcs = ["pass.sh"])
 sh_binary(name = "check_artifacts_dir", srcs = ["check_artifacts_dir.sh"])
 `,
-		"pass.sh": `exit 0`,
-		"check_artifacts_dir.sh": `
+		"subdir/pass.sh": `exit 0`,
+		"subdir/check_artifacts_dir.sh": `
 			# Make sure artifacts dir exists
 			artifacts_root="$1/.."
 			if ! [[ -e "$artifacts_root/command-0" ]]; then exit 1; fi
@@ -184,6 +184,7 @@ sh_binary(name = "check_artifacts_dir", srcs = ["check_artifacts_dir.sh"])
 		"buildbuddy.yaml": `
 actions:
   - name: "Test"
+    bazel_workspace_dir: subdir
     triggers:
       pull_request: { branches: [ master ] }
       push: { branches: [ master ] }
@@ -366,6 +367,162 @@ actions:
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Loop 1:")
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Loop 2:")
+}
+
+func TestCIRunner_RunsBashCommands_BazelWithOptions(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	testCases := []struct {
+		name           string
+		command        string
+		expectedOutput string
+	}{
+		{
+			name: "Has startup options",
+			// Set a small JVM memory limit to cause Bazel to OOM.
+			command:        "bazel --host_jvm_args=-Xmx5m build //:print_args",
+			expectedOutput: "java.lang.OutOfMemoryError",
+		},
+		{
+			name:           "Has additional bazel args",
+			command:        "bazel build //:print_args --invocation_id=00000000-0000-0000-0000-000000000000",
+			expectedOutput: "00000000-0000-0000-0000-000000000000",
+		},
+	}
+
+	for _, tc := range testCases {
+		workspaceContents := map[string]string{
+			"WORKSPACE":     `workspace(name = "test")`,
+			"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+			"print_args.sh": "echo 'args: {{' $@ '}}'",
+			"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    steps:
+      - run: ` + tc.command,
+		}
+
+		repoPath, _ := makeGitRepo(t, workspaceContents)
+		runnerFlags := []string{
+			"--workflow_id=test-workflow",
+			"--action_name=Test action",
+			"--trigger_event=push",
+			"--pushed_repo_url=file://" + repoPath,
+			"--pushed_branch=master",
+		}
+		// Start the app so the runner can use it as the BES backend.
+		app := buildbuddy.Run(t)
+		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+		runnerInvocation := singleInvocation(t, app, result)
+		require.Contains(t, runnerInvocation.ConsoleBuffer, tc.expectedOutput, tc.name)
+	}
+}
+
+func TestCIRunner_AppliesCustomBazelrc(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	testCases := []struct {
+		name                    string
+		workspaceContents       map[string]string
+		expectedOutputStrings   []string
+		expectedExcludedStrings []string
+	}{
+		{
+			name: "Has a workspace .bazelrc",
+			workspaceContents: map[string]string{
+				"WORKSPACE": `workspace(name = "test")`,
+				".bazelrc": `
+common --invocation_id=00000000-0000-0000-0000-000000000000
+`,
+				"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+				"print_args.sh": "echo 'args: {{' $@ '}}'",
+				"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    steps:
+      - run: bazel build //:print_args
+`,
+			},
+			expectedOutputStrings: []string{
+				"repo-root/.bazelrc",
+				"--noworkspace_rc",
+				"00000000-0000-0000-0000-000000000000",
+			},
+		},
+		{
+			name: "Does not have a workspace .bazelrc",
+			workspaceContents: map[string]string{
+				"WORKSPACE":     `workspace(name = "test")`,
+				"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+				"print_args.sh": "echo 'args: {{' $@ '}}'",
+				"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    steps:
+      - run: bazel build //:print_args
+`,
+			},
+			expectedOutputStrings: []string{},
+			expectedExcludedStrings: []string{
+				"repo-root/.bazelrc",
+				"--noworkspace_rc",
+			},
+		},
+		{
+			name: "Workspace is in a subdir",
+			workspaceContents: map[string]string{
+				"subdir/WORKSPACE": `workspace(name = "test")`,
+				"subdir/.bazelrc": `
+common --invocation_id=00000000-0000-0000-0000-000000000000
+`,
+				"subdir/BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+				"subdir/print_args.sh": "echo 'args: {{' $@ '}}'",
+				"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    steps:
+      - run: cd subdir && bazel build //:print_args
+`,
+			},
+			expectedOutputStrings: []string{
+				"repo-root/subdir/.bazelrc",
+				"--noworkspace_rc",
+				"00000000-0000-0000-0000-000000000000",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		repoPath, _ := makeGitRepo(t, tc.workspaceContents)
+		runnerFlags := []string{
+			"--workflow_id=test-workflow",
+			"--action_name=Test action",
+			"--pushed_repo_url=file://" + repoPath,
+			"--pushed_branch=master",
+		}
+		// Start the app so the runner can use it as the BES backend.
+		app := buildbuddy.Run(t)
+		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+		checkRunnerResult(t, result)
+
+		runnerInvocation := singleInvocation(t, app, result)
+
+		// Check that logs contain custom bazelrc
+		require.Contains(t, runnerInvocation.ConsoleBuffer, "buildbuddy.bazelrc", tc.name)
+		// Check logs that BES url from buildbuddy.bazelrc was applied
+		require.Contains(t, runnerInvocation.ConsoleBuffer, app.HTTPURL(), tc.name)
+
+		for _, l := range tc.expectedOutputStrings {
+			require.Contains(t, runnerInvocation.ConsoleBuffer, l, tc.name)
+		}
+		for _, l := range tc.expectedExcludedStrings {
+			require.NotContains(t, runnerInvocation.ConsoleBuffer, l, tc.name)
+		}
+	}
 }
 
 func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
@@ -1435,10 +1592,9 @@ func TestArtifactUploads_JVMLog(t *testing.T) {
 	runnerFlags = append(runnerFlags, "--cache_backend="+app.GRPCAddress())
 
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-
-	require.Equal(t, 37, result.ExitCode, "bazel should have exited with code 37 due to OOM")
-
 	runnerInvocation := singleInvocation(t, app, result)
+
+	require.Contains(t, runnerInvocation.ConsoleBuffer, "java.lang.OutOfMemoryError")
 
 	var files []*bespb.File
 	for _, tg := range runnerInvocation.GetTargetGroups() {
