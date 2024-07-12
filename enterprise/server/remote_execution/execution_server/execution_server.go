@@ -647,13 +647,12 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// in the background.
 	if hedge {
 		action_merger.RecordHedgedExecution(ctx, s.rdb, adInstanceDigest)
-		log.CtxInfof(ctx, "Scheduling new hedged execution for %q for invocation %q", downloadString, invocationID)
 		hedgedExecutionID, err := s.Dispatch(ctx, req)
 		if err != nil {
-			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
+			log.CtxWarningf(ctx, "Error dispatching execution for action %q and invocation %q: %s", downloadString, invocationID, err)
 			return err
 		}
-		go s.waitExecution(ctx, &repb.WaitExecutionRequest{Name: hedgedExecutionID}, dummyStream{}, waitOpts{isExecuteRequest: true})
+		log.CtxInfof(ctx, "Dispatched new hedged execution %q for action %q and invocation %q", hedgedExecutionID, downloadString, invocationID)
 	}
 
 	waitReq := repb.WaitExecutionRequest{

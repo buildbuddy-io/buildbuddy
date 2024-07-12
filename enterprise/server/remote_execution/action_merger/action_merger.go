@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -23,6 +22,11 @@ const (
 	// set to twice the length of `remote_execution.lease_duration` to give a
 	// short grace period in the event of missed leases.
 	DefaultClaimedExecutionTTL = 20 * time.Second
+
+	// Redis Hash keys for storing the canonical execution ID and the pending
+	// execution count.
+	executionIDKey    = "execution-id"
+	executionCountKey = "execution-count"
 )
 
 var (
@@ -30,23 +34,19 @@ var (
 	hedgedActionCount   = flag.Int("remote_execution.action_merging_hedge_count", 0, "When action merging is enabled, this flag controls how many additional, 'hedged' attempts an action is run in the background. Note that even hedged actions are run at most once per execution request.")
 )
 
-// Returns the redis keys that store execution-keyed action merging state. The
-// first key points from action ID to the first execution ID that was started
-// for that action (which will usually finish first), and the second key points
-// from an action ID to the number of attempted executions of that action,
-// which is used to track hedging.
-func redisKeysForPendingExecutionID(ctx context.Context, adResource *digest.ResourceName) (string, string, error) {
+// Returns the redis key pointing to the hash storing action merging state. The
+// value stored here is a hash containing the canonical (first-submitted)
+// execution ID and the count of executions run for this action (for hedging).
+func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.ResourceName) (string, error) {
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	downloadString, err := adResource.DownloadString()
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	return fmt.Sprintf("pendingExecution/%s%s", userPrefix, downloadString),
-		fmt.Sprintf("pendingExecutionCount/%s%s", userPrefix, downloadString),
-		nil
+	return fmt.Sprintf("pendingExecution/%s%s", userPrefix, downloadString), nil
 }
 
 func redisKeyForPendingExecutionDigest(executionID string) string {
@@ -72,15 +72,15 @@ func RecordQueuedExecution(ctx context.Context, rdb redis.UniversalClient, execu
 		return nil
 	}
 
-	forwardKey, countKey, err := redisKeysForPendingExecutionID(ctx, adResource)
+	forwardKey, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
 		return err
 	}
 	reverseKey := redisKeyForPendingExecutionDigest(executionID)
 	pipe := rdb.TxPipeline()
-	pipe.Set(ctx, forwardKey, executionID, queuedExecutionTTL)
-	pipe.Incr(ctx, countKey)
-	pipe.Expire(ctx, countKey, queuedExecutionTTL)
+	pipe.HSet(ctx, forwardKey, executionIDKey, executionID)
+	pipe.HIncrBy(ctx, forwardKey, executionCountKey, 1)
+	pipe.Expire(ctx, forwardKey, queuedExecutionTTL)
 	pipe.Set(ctx, reverseKey, forwardKey, queuedExecutionTTL)
 	_, err = pipe.Exec(ctx)
 	return err
@@ -104,7 +104,7 @@ func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, exec
 	}
 
 	pipe := rdb.TxPipeline()
-	pipe.Set(ctx, forwardKey, executionID, ttl)
+	pipe.HSet(ctx, forwardKey, executionIDKey, executionID, ttl)
 	pipe.Set(ctx, reverseKey, forwardKey, ttl)
 	_, err = pipe.Exec(ctx)
 	return err
@@ -112,11 +112,11 @@ func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, exec
 
 // Records a hedged execution in Redis.
 func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.ResourceName) error {
-	_, countKey, err := redisKeysForPendingExecutionID(ctx, adResource)
+	key, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
 		return err
 	}
-	return rdb.Incr(ctx, countKey).Err()
+	return rdb.HIncrBy(ctx, key, executionCountKey, 1).Err()
 }
 
 // Returns the execution ID of a pending execution working on the action with
@@ -128,18 +128,18 @@ func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedu
 		return "", false, nil
 	}
 
-	executionIDKey, countKey, err := redisKeysForPendingExecutionID(ctx, adResource)
+	forwardKey, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
 		return "", false, err
 	}
-	executionID, err := rdb.Get(ctx, executionIDKey).Result()
+	executionID, err := rdb.HGet(ctx, forwardKey, executionIDKey).Result()
 	if err == redis.Nil {
 		return "", false, nil
 	}
 	if err != nil {
 		return "", false, err
 	}
-	count, err := rdb.Get(ctx, countKey).Int()
+	count, err := rdb.HGet(ctx, forwardKey, executionCountKey).Int()
 	if err == redis.Nil {
 		return "", false, nil
 	}
@@ -185,12 +185,8 @@ func DeletePendingExecution(ctx context.Context, rdb redis.UniversalClient, exec
 	if err != nil {
 		return err
 	}
-	pendingExecutionCountKey := strings.Replace(pendingExecutionKey, "pendingExecution", "pendingExecutionCount", 1)
 	if err := rdb.Del(ctx, pendingExecutionKey).Err(); err != nil {
 		log.CtxWarningf(ctx, "could not delete pending execution key %q: %s", pendingExecutionKey, err)
-	}
-	if err := rdb.Del(ctx, pendingExecutionCountKey).Err(); err != nil {
-		log.CtxWarningf(ctx, "could not delete pending execution count key %q: %s", pendingExecutionCountKey, err)
 	}
 	if err := rdb.Del(ctx, pendingExecutionDigestKey).Err(); err != nil {
 		log.CtxWarningf(ctx, "could not delete pending execution digest key %q: %s", pendingExecutionDigestKey, err)
