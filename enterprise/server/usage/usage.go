@@ -237,9 +237,11 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 func (ut *tracker) StartDBFlush() {
 	go func() {
 		ctx := context.Background()
+		ticker := time.NewTicker(flushInterval)
+		defer ticker.Stop()
 		for {
 			select {
-			case <-time.After(flushInterval):
+			case <-ticker.C:
 				if err := ut.FlushToDB(ctx); err != nil {
 					alert.UnexpectedEvent("usage_data_flush_failed", "Error flushing usage data to DB: %s", err)
 				}

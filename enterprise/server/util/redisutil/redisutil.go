@@ -511,11 +511,13 @@ func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) {
 
 	c.stopFlush = make(chan struct{})
 	go func() {
+		ticker := time.NewTicker(*commandBufferFlushPeriod)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-c.stopFlush:
 				return
-			case <-time.After(*commandBufferFlushPeriod):
+			case <-ticker.C:
 				if err := c.Flush(ctx); err != nil {
 					log.Errorf("Failed to flush Redis command buffer: %s", err)
 				}

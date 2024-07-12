@@ -127,11 +127,13 @@ func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 
 func (t *TaskLeaser) keepLease(ctx context.Context) {
 	go func() {
+		ticker := time.NewTicker(t.ttl)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-t.quit:
 				return
-			case <-time.After(t.ttl):
+			case <-ticker.C:
 				if _, err := t.pingServer(ctx); err != nil {
 					log.CtxWarningf(ctx, "Error updating lease for task: %q: %s", t.taskID, err.Error())
 					t.cancelFunc()
