@@ -361,9 +361,9 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       return null;
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
 
-    const versions = getBazelVersion(model);
+    const version = getBazelVersion(model);
     // threshold flag is available from Bazel 7.1 forward
-    if (versions === null || versions.major < 7 || versions.minor < 1) return null;
+    if (version === null || version.major < 7 || version.minor < 1) return null;
 
     return {
       level: SuggestionLevel.INFO,
