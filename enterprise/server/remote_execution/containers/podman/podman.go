@@ -50,9 +50,6 @@ var (
 	// then look at the output of
 	//     find /sys/fs/cgroup | grep libpod-$(podman container inspect sleepy | jq -r '.[0].Id')
 
-	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "", "Go template specifying a path pointing to a container's current memory usage, in bytes. {{.ContainerID}} will be replaced by the containerID.", flag.Deprecated("This is now detected automatically. If paths aren't detected properly, please report a bug."))
-	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. {{.ContainerID}} will be replaced by the containerID.", flag.Deprecated("This is now detected automatically. If paths aren't detected properly, please report a bug."))
-
 	privateImageStreamingEnabled = flag.Bool("executor.podman.enable_private_image_streaming", false, "If set and --executor.podman.enable_image_streaming is set, all private (authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 
 	pullTimeout   = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
@@ -156,12 +153,9 @@ image_parallel_copies = %d`, *parallelPulls)
 	}
 
 	return &Provider{
-		env:           env,
-		podmanVersion: *podmanVersion,
-		cgroupPaths: &cgroup.Paths{
-			MemoryTemplate: *memUsagePathTemplate,
-			CPUTemplate:    *cpuUsagePathTemplate,
-		},
+		env:              env,
+		podmanVersion:    *podmanVersion,
+		cgroupPaths:      &cgroup.Paths{},
 		sociStore:        sociStore,
 		buildRoot:        buildRoot,
 		imageExistsCache: imageExistsCache,

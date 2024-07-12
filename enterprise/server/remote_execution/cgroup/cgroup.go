@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -36,12 +37,24 @@ const (
 type Paths struct {
 	mu sync.RWMutex
 
-	// MemoryTemplate is the path template for the cgroupfs file containing
-	// current memory usage.
-	MemoryTemplate string
-	// CPUPathTemplate is the path template for the cgroupsfs file containing
-	// cumulative CPU usage.
-	CPUTemplate string
+	// V2DirTemplate is the unified cgroupfs dir template (cgroup v2 only).
+	V2DirTemplate string
+
+	// V1CPUTemplate is the CPU usage path template (cgroup v1 only).
+	V1CPUTemplate string
+
+	// V1MemoryTemplate is the memory usage path template (cgroup v1 only).
+	V1MemoryTemplate string
+}
+
+func (p *Paths) CgroupVersion() int {
+	if p.V1CPUTemplate != "" {
+		return 1
+	}
+	if p.V2DirTemplate != "" {
+		return 2
+	}
+	return 0 // unknown
 }
 
 func (p *Paths) Stats(ctx context.Context, cid string) (*repb.UsageStats, error) {
@@ -49,48 +62,80 @@ func (p *Paths) Stats(ctx context.Context, cid string) (*repb.UsageStats, error)
 		return nil, err
 	}
 
-	memUsagePath := strings.ReplaceAll(p.MemoryTemplate, cidPlaceholder, cid)
-	cpuUsagePath := strings.ReplaceAll(p.CPUTemplate, cidPlaceholder, cid)
+	if p.CgroupVersion() == 1 {
+		return p.v1Stats(ctx, cid)
+	}
 
-	memUsageBytes, err := readInt64FromFile(memUsagePath)
+	// cgroup v2 has all cgroup files under a single dir.
+	dir := strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, cid)
+
+	// Read CPU usage.
+	// cpu.stat file contains a line like "usage_usec <N>"
+	// It contains other lines like user_usec, system_usec etc. but we just
+	// report the total for now.
+	cpuUsagePath := filepath.Join(dir, "cpu.stat")
+	cpuMicros, err := readCgroupInt64Field(cpuUsagePath, "usage_usec")
 	if err != nil {
 		return nil, err
 	}
-	var cpuNanos int64
-	switch p.CgroupVersion() {
-	case 1:
-		// cgroup v1: /cpuacct.usage file contains just the CPU usage in ns.
-		cpuNanos, err = readInt64FromFile(cpuUsagePath)
-		if err != nil {
-			return nil, err
-		}
-	case 2:
-		// cgroup v2: /cpu.stat file contains a line like "usage_usec <N>" It
-		// contains other lines like user_usec, system_usec etc. but we just
-		// report the total for now.
-		cpuMicros, err := readCgroupInt64Field(cpuUsagePath, "usage_usec")
-		if err != nil {
-			return nil, err
-		}
-		cpuNanos = cpuMicros * 1e3
-	default:
-		return nil, status.FailedPreconditionErrorf("invalid cgroup version %d", p.CgroupVersion())
+
+	// Read memory usage
+	memUsagePath := filepath.Join(dir, "memory.current")
+	memoryBytes, err := readInt64FromFile(memUsagePath)
+	if err != nil {
+		return nil, err
 	}
+
+	// Read PSI metrics.
+	// Note that PSI may not be supported in all environments,
+	// so ignore NotExist errors.
+
+	cpuPressurePath := filepath.Join(dir, "cpu.pressure")
+	cpuPressure, err := readPSIFile(cpuPressurePath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	memPressurePath := filepath.Join(dir, "memory.pressure")
+	memPressure, err := readPSIFile(memPressurePath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	ioPressurePath := filepath.Join(dir, "io.pressure")
+	ioPressure, err := readPSIFile(ioPressurePath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
 	return &repb.UsageStats{
-		MemoryBytes: memUsageBytes,
-		CpuNanos:    cpuNanos,
+		CpuNanos:       cpuMicros * 1e3,
+		MemoryBytes:    memoryBytes,
+		CpuPressure:    cpuPressure,
+		MemoryPressure: memPressure,
+		IoPressure:     ioPressure,
 	}, nil
 }
 
-func (p *Paths) CgroupVersion() int {
-	if p.CPUTemplate == "" || p.MemoryTemplate == "" {
-		// Not fully initialized.
-		return 0
-	} else if strings.HasSuffix(p.CPUTemplate, "/cpuacct.usage") {
-		return 1
-	} else {
-		return 2
+func (p *Paths) v1Stats(ctx context.Context, cid string) (*repb.UsageStats, error) {
+	// cpuacct.usage file contains just the CPU usage in ns.
+	cpuUsagePath := strings.ReplaceAll(p.V1CPUTemplate, cidPlaceholder, cid)
+	cpuNanos, err := readInt64FromFile(cpuUsagePath)
+	if err != nil {
+		return nil, err
 	}
+
+	// memory.usage_in_bytes file contains the current memory usage.
+	memUsagePath := strings.ReplaceAll(p.V1MemoryTemplate, cidPlaceholder, cid)
+	memoryBytes, err := readInt64FromFile(memUsagePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &repb.UsageStats{
+		CpuNanos:    cpuNanos,
+		MemoryBytes: memoryBytes,
+	}, nil
 }
 
 // find locates cgroup path templates. For this to work, the container must be
@@ -115,8 +160,7 @@ func (p *Paths) find(ctx context.Context, cid string) error {
 		return nil
 	}
 	start := time.Now()
-	// Sentinel error value to short-circuit the walk
-	stop := fmt.Errorf("stop walk")
+	var v2DirTemplate, v1CPUTemplate, v1MemoryTemplate string
 	err := filepath.WalkDir(cgroupfsPath, func(path string, dir fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -127,27 +171,38 @@ func (p *Paths) find(ctx context.Context, cid string) error {
 		if !strings.Contains(path, cid) {
 			return nil
 		}
-		if strings.HasSuffix(path, "/memory.usage_in_bytes") || strings.HasSuffix(path, "/memory.current") {
-			p.MemoryTemplate = strings.ReplaceAll(path, cid, cidPlaceholder)
-		} else if strings.HasSuffix(path, "/cpu.stat") || strings.HasSuffix(path, "/cpuacct.usage") {
-			p.CPUTemplate = strings.ReplaceAll(path, cid, cidPlaceholder)
-		}
-		if p.MemoryTemplate != "" && p.CPUTemplate != "" {
-			return stop
+		basename := filepath.Base(path)
+		if basename == "memory.current" {
+			dir := filepath.Dir(path)
+			v2DirTemplate = strings.ReplaceAll(dir, cid, cidPlaceholder)
+		} else if basename == "cpuacct.usage" {
+			v1CPUTemplate = strings.ReplaceAll(path, cid, cidPlaceholder)
+		} else if basename == "memory.usage_in_bytes" {
+			v1MemoryTemplate = strings.ReplaceAll(path, cid, cidPlaceholder)
 		}
 		return nil
 	})
-	if err != nil && err != stop {
+	if err != nil {
 		return err
 	}
-	if p.MemoryTemplate == "" {
-		return status.InternalErrorf("failed to locate memory cgroup file under %s", cgroupfsPath)
+
+	// Prioritize cgroup v1 paths. In a "hybrid" setup (both v1 and v2 mounted),
+	// some v2 paths will be set up, but might be missing certain files like
+	// memory.current, and the cpu.stat file will be missing some information.
+	if v1CPUTemplate != "" && v1MemoryTemplate != "" {
+		p.V1CPUTemplate = v1CPUTemplate
+		p.V1MemoryTemplate = v1MemoryTemplate
+		log.CtxInfof(ctx, "Initialized cgroup v1 paths: duration=%s, cpu=%s, mem=%s", time.Since(start), v1CPUTemplate, v1MemoryTemplate)
+		return nil
 	}
-	if p.CPUTemplate == "" {
-		return status.InternalErrorf("failed to locate CPU cgroup file under %s", cgroupfsPath)
+
+	if v2DirTemplate != "" {
+		p.V2DirTemplate = v2DirTemplate
+		log.CtxInfof(ctx, "Initialized cgroup v2 paths: duration=%s, template=%s", time.Since(start), v2DirTemplate)
+		return nil
 	}
-	log.CtxInfof(ctx, "Initialized cgroup path templates (%s): mem=%s, cpu=%s", time.Since(start), p.MemoryTemplate, p.CPUTemplate)
-	return nil
+
+	return status.InternalErrorf("failed to locate cgroup under %s", cgroupfsPath)
 }
 
 // readInt64FromFile reads a file expected to contain a single int64.
@@ -183,4 +238,80 @@ func readCgroupInt64Field(path, fieldName string) (int64, error) {
 		return val, nil
 	}
 	return 0, status.NotFoundErrorf("could not find field %q in %s", fieldName, path)
+}
+
+func readPSIFile(path string) (*repb.PSI, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return readPSI(f)
+}
+
+// Parses PSI (Pressure Stall Information) metrics output.
+func readPSI(r io.Reader) (*repb.PSI, error) {
+	psi := &repb.PSI{}
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		line := strings.TrimSpace(s.Text())
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 5 {
+			return nil, fmt.Errorf("malformed PSI line %q (5 fields expected)", line)
+		}
+		m := &repb.PSI_Metrics{}
+		// Parse (some|full)
+		switch fields[0] {
+		case "some":
+			psi.Some = m
+		case "full":
+			psi.Full = m
+		default:
+			return nil, fmt.Errorf("unexpected string %q at field 0", fields[0])
+		}
+		// Parse avgs
+		var avgs [3]float32
+		for i := 0; i < len(avgs); i++ {
+			field := fields[i+1]
+			name, rawValue, ok := strings.Cut(field, "=")
+			if !ok {
+				return nil, fmt.Errorf("malformed avg field %q", field)
+			}
+			value, err := strconv.ParseFloat(rawValue, 32)
+			if err != nil {
+				return nil, fmt.Errorf("malformed avg value field %q", field)
+			}
+			switch name {
+			case "avg10":
+				m.Avg10 = float32(value)
+			case "avg60":
+				m.Avg60 = float32(value)
+			case "avg300":
+				m.Avg300 = float32(value)
+			default:
+				return nil, fmt.Errorf("unexpected field name %q", name)
+			}
+		}
+		// Parse total
+		field := fields[4]
+		name, rawValue, ok := strings.Cut(field, "=")
+		if !ok {
+			return nil, fmt.Errorf("malformed total field %q", field)
+		}
+		total, err := strconv.ParseInt(rawValue, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("malformed total field %q", field)
+		}
+		if name != "total" {
+			return nil, fmt.Errorf("unexpected field name %q", name)
+		}
+		m.Total = int64(total)
+	}
+	if s.Err() != nil {
+		return nil, fmt.Errorf("read: %w", s.Err())
+	}
+	return psi, nil
 }
