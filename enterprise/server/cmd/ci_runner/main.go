@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -383,15 +382,23 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 
 	optionsDescription := strings.Join(options, " ")
 	cmd := ""
+
 	patterns := []string{}
-	if !r.isWorkflow {
-		parsedArgs, err := parseBazelArgs(*bazelSubCommand)
-		if err != nil {
-			return err
+	if r.isWorkflow {
+		cmd = "workflow run"
+	} else {
+		cmd = "remote run"
+
+		if *bazelSubCommand != "" {
+			parsedArgs, err := parseBazelArgs(*bazelSubCommand)
+			if err != nil {
+				return err
+			}
+			cmd = fmt.Sprintf("remote %s", parsedArgs.cmd)
+			patterns = parsedArgs.patterns
 		}
-		cmd = fmt.Sprintf("remote %s", parsedArgs.cmd)
-		patterns = parsedArgs.patterns
 	}
+
 	startedEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
 		Children: []*bespb.BuildEventId{
@@ -419,7 +426,8 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	if err := r.bep.Publish(startedEvent); err != nil {
 		return err
 	}
-	if !r.isWorkflow {
+
+	if len(patterns) > 0 {
 		patternEvent := &bespb.BuildEvent{
 			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}},
 			Payload: &bespb.BuildEvent_Expanded{Expanded: &bespb.PatternExpanded{}},
@@ -428,6 +436,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 			return err
 		}
 	}
+
 	structuredCommandLineEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bespb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original"}}},
 		Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: getStructuredCommandLine()},
@@ -649,7 +658,7 @@ func run() error {
 	}
 
 	// Write default bazelrc
-	if err := writeBazelrc(buildbuddyBazelrcPath, buildEventReporter.invocationID); err != nil {
+	if err := writeBazelrc(buildbuddyBazelrcPath, buildEventReporter.invocationID, rootDir); err != nil {
 		return status.WrapError(err, "write "+buildbuddyBazelrcPath)
 	}
 	// Delete bazelrc before exiting. Use abs path since we might cd after this
@@ -712,7 +721,7 @@ func run() error {
 		if cfg != nil {
 			wsPath = bazelWorkspacePath(cfg)
 		}
-		args, err := bazelArgs(rootDir, wsPath, "shutdown")
+		args, err := bazelArgsWithCustomBazelrc(rootDir, wsPath, "shutdown")
 		if err != nil {
 			return err
 		}
@@ -860,9 +869,13 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// because that error is instead surfaced in the caller func when calling
 	// `buildEventPublisher.Wait()`
 
+	actionName, err := getActionNameForWorkflowConfiguredEvent()
+	if err != nil {
+		return err
+	}
 	wfc := &bespb.WorkflowConfigured{
 		WorkflowId:         *workflowID,
-		ActionName:         getActionNameForWorkflowConfiguredEvent(),
+		ActionName:         actionName,
 		ActionTriggerEvent: *triggerEvent,
 		PushedRepoUrl:      *pushedRepoURL,
 		PushedBranch:       *pushedBranch,
@@ -1098,7 +1111,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		iid := wfc.GetInvocation()[i].GetInvocationId()
-		args, err := bazelArgs(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
+		args, err := bazelArgsWithCustomBazelrc(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
@@ -1113,7 +1126,8 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Instead of actually running the target, have Bazel write out a run script using the --script_path flag and
 		// extract run options (i.e. args, runfile information) from the generated run script.
 		runScript := ""
-		if *recordRunMetadata {
+		isRunCmd := args[0] == "run"
+		if isRunCmd && *recordRunMetadata {
 			tmpDir, err := os.MkdirTemp("", "bazel-run-script-*")
 			if err != nil {
 				return err
@@ -1278,27 +1292,26 @@ func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
 
 // This should only be used for WorkflowConfiguredEvents--it explicitly labels
 // actions with no name so that they can be identified later on.
-func getActionNameForWorkflowConfiguredEvent() string {
+func getActionNameForWorkflowConfiguredEvent() (string, error) {
+	if *serializedAction != "" {
+		a, err := deserializeAction(*serializedAction)
+		if err != nil {
+			return "", err
+		}
+		return a.Name, nil
+	}
 	if *bazelSubCommand != "" {
-		return "run"
+		return "run", nil
 	}
 	if *actionName != "" {
-		return *actionName
+		return *actionName, nil
 	}
-	return "Unknown action"
+	return "Unknown action", nil
 }
 
 func getActionToRun() (*config.Action, error) {
 	if *serializedAction != "" {
-		actionYaml, err := base64.StdEncoding.DecodeString(*serializedAction)
-		if err != nil {
-			return nil, err
-		}
-		a := &config.Action{}
-		if err := yaml.Unmarshal(actionYaml, a); err != nil {
-			return nil, err
-		}
-		return a, nil
+		return deserializeAction(*serializedAction)
 	}
 	if *bazelSubCommand != "" {
 		return &config.Action{
@@ -1318,6 +1331,18 @@ func getActionToRun() (*config.Action, error) {
 		return findAction(cfg.Actions, *actionName)
 	}
 	return nil, status.InvalidArgumentError("One of --action or --bazel_sub_command must be specified.")
+}
+
+func deserializeAction(actionString string) (*config.Action, error) {
+	actionYaml, err := base64.StdEncoding.DecodeString(actionString)
+	if err != nil {
+		return nil, err
+	}
+	a := &config.Action{}
+	if err := yaml.Unmarshal(actionYaml, a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 type runInfo struct {
@@ -1552,8 +1577,9 @@ func printCommandLine(out io.Writer, command string, args ...string) error {
 	return nil
 }
 
-// TODO: Handle shell variable expansion. Probably want to run this with sh -c
-func bazelArgs(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error) {
+// Returns the tokenized bazel command with a startup option to use the custom
+// baelrc written by the ci_runner.
+func bazelArgsWithCustomBazelrc(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error) {
 	tokens, err := shlex.Split(cmd)
 	if err != nil {
 		return nil, err
@@ -1561,12 +1587,7 @@ func bazelArgs(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error)
 	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
 		tokens = tokens[1:]
 	}
-	startupFlags, err := shlex.Split(*bazelStartupFlags)
-	if err != nil {
-		return nil, err
-	}
-	startupFlags = append(startupFlags, "--output_base="+filepath.Join(rootAbsPath, outputBaseDirName))
-	startupFlags = append(startupFlags, "--bazelrc="+filepath.Join(rootAbsPath, buildbuddyBazelrcPath))
+	startupFlags := []string{"--bazelrc=" + filepath.Join(rootAbsPath, buildbuddyBazelrcPath)}
 	// Bazel will treat the user's workspace .bazelrc file with lower precedence
 	// than our --bazelrc, which is undesired. So instead, explicitly add the
 	// workspace rc as a --bazelrc flag after ours, and also set --noworkspace_rc
@@ -1581,13 +1602,6 @@ func bazelArgs(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error)
 	}
 	if exists := (err == nil); exists {
 		startupFlags = append(startupFlags, "--noworkspace_rc", "--bazelrc=.bazelrc")
-	}
-	if *extraBazelArgs != "" {
-		extras, err := shlex.Split(*extraBazelArgs)
-		if err != nil {
-			return nil, err
-		}
-		tokens = appendBazelSubcommandArgs(tokens, extras...)
 	}
 	return append(startupFlags, tokens...), nil
 }
@@ -1863,8 +1877,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 }
 
 func (ws *workspace) shouldMergeBranches(actionTriggers *config.Triggers) bool {
-	return *triggerEvent == webhook_data.EventName.PullRequest &&
-		actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
+	return actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
 		ws.hasMultipleBranches()
 }
 
@@ -2107,7 +2120,7 @@ func invocationURL(invocationID string) string {
 	return urlPrefix + invocationID
 }
 
-func writeBazelrc(path, invocationID string) error {
+func writeBazelrc(path, invocationID, rootDir string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -2177,6 +2190,24 @@ func writeBazelrc(path, invocationID string) error {
 	}
 	if *rbeBackend != "" {
 		lines = append(lines, "build:buildbuddy_remote_executor --remote_executor="+*rbeBackend)
+	}
+
+	outputBase := filepath.Join(rootDir, outputBaseDirName)
+	lines = append(lines, "startup --output_base="+outputBase)
+	startupFlags, err := shlex.Split(*bazelStartupFlags)
+	if err != nil {
+		return status.WrapError(err, "failed to split --bazel_startup_flags")
+	}
+	for _, s := range startupFlags {
+		lines = append(lines, "startup "+s)
+	}
+
+	extras, err := shlex.Split(*extraBazelArgs)
+	if err != nil {
+		return status.WrapError(err, "failed to split --extra_bazel_args")
+	}
+	for _, e := range extras {
+		lines = append(lines, "common "+e)
 	}
 
 	contents := strings.Join(lines, "\n") + "\n"
@@ -2433,7 +2464,7 @@ func reclaimDiskSpace(ctx context.Context, log *buildEventReporter) error {
 		return nil
 	}
 	// Just print a few dirs for now so this doesn't take excessively long.
-	log.Printf("WARNING: high VM disk usage (%.2f%)", usage*100)
+	log.Printf("WARNING: high VM disk usage (%.2f%%)", usage*100)
 	duArgs := []string{"--human-readable", "--max-depth=1", ".", filepath.Join("..", outputBaseDirName)}
 	if err = runCommand(ctx, "du", duArgs, nil /*=env*/, "" /*=dir*/, log); err != nil {
 		return fmt.Errorf("du: %w", err)

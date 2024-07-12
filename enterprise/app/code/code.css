@@ -14,6 +14,7 @@
   align-items: center;
   padding: 0 16px;
   box-sizing: border-box;
+  border-bottom: 2px solid #fafafa;
 }
 
 .code-menu-logo {
@@ -30,6 +31,13 @@
 
 .code-menu-logo .logo {
   height: 24px;
+  width: 29px;
+  stroke: #424242;
+}
+
+.code-menu-logo .logo:hover {
+  fill: #000;
+  stroke: #000;
 }
 
 .code-menu-logo .code-logo {
@@ -62,7 +70,6 @@
 
 .code-menu-breadcrumbs {
   font-size: 0.85em;
-  flex-grow: 1;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -407,13 +414,11 @@
   flex-shrink: 1;
   background-color: #fafafa;
   width: 100%;
-  border-top-left-radius: 8px;
   min-height: 36px;
 }
 
 .code-editor .code-viewer-tab {
   padding: 8px 4px 8px 16px;
-  border-top: 2px solid #fafafa;
   border-bottom: 2px solid #fafafa;
   border-left: 2px solid #fafafa;
   cursor: pointer;
@@ -465,4 +470,31 @@
 .code-query-highlight {
   font-weight: 600;
   background-color: #ffe0b2;
+}
+
+.code-editor-search-bar-empty-state {
+  margin-top: 8px;
+}
+
+.code-editor-search-bar-empty-state ul li code {
+  padding: 2px 4px;
+  font-size: 0.8em;
+  display: inline-flex;
+  margin-top: 0px;
+}
+
+.code-editor-search-bar-empty-state-description {
+}
+
+.code-editor-search-bar-empty-state-examples {
+  margin: 16px 0 12px 0;
+  color: #888;
+  font-size: 0.8em;
+}
+
+.code-editor-search-bar-result {
+}
+
+.code-editor-search-bar-result pre {
+  white-space: pre-wrap;
 }

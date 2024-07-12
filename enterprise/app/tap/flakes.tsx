@@ -133,7 +133,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
         this.setState((s) => {
           const newMap = new Map(s.flakeTestXmlDocs);
           newMap.set(sample.testXmlFileUri, {
-            errorMessage: "Failed to load test results (cache expired or invalid test xml?)",
+            errorMessage: "Cache expired or invalid test xml.",
           });
           return { flakeTestXmlDocs: newMap };
         });
@@ -206,6 +206,55 @@ export default class FlakesComponent extends React.Component<Props, State> {
   renderPluralCount(value: number | undefined, label: string) {
     const val = value ?? 0;
     return `${val} ${this.renderPluralName(val, label)}`;
+  }
+
+  renderFlakeSamples(targetLabel: string) {
+    return (
+      <div className="container">
+        <h3 className="flakes-list-header">Sample flakes for {targetLabel}</h3>
+        {!this.state.pendingFlakeSamplesRequest && !(this.state.flakeSamples?.samples.length ?? 0) && (
+          <div>
+            No samples found--if it looks like there have been flakes in the last seven days, their logs may have
+            expired from the remote cache.
+          </div>
+        )}
+        {this.state.flakeSamples?.samples.map((s) => {
+          const testXmlDoc = this.state.flakeTestXmlDocs.get(s.testXmlFileUri);
+          if (!testXmlDoc) {
+            return <div className="loading"></div>;
+          } else if (testXmlDoc.errorMessage) {
+            // Error messages will just be aggregated at the end.
+            return (
+              <div className={"card artifacts card-broken"}>
+                Failed to load test xml for a failure in invocation{" "}
+                <Link href={router.getInvocationUrl(s.invocationId)}>{s.invocationId}</Link>: {testXmlDoc.errorMessage}
+              </div>
+            );
+          } else if (testXmlDoc.testXmlDocument) {
+            return Array.from(testXmlDoc.testXmlDocument.getElementsByTagName("testsuite"))
+              .filter((testSuite) => testSuite.getElementsByTagName("testcase").length > 0)
+              .sort((a, b) => +(b.getAttribute("failures") || 0) - +(a.getAttribute("failures") || 0))
+              .map((testSuite) => {
+                return (
+                  <TargetFlakyTestCardComponent
+                    invocationId={s.invocationId}
+                    invocationStartTimeUsec={+s.invocationStartTimeUsec}
+                    target={targetLabel}
+                    testSuite={testSuite}
+                    buildEvent={s.event!}
+                    dark={this.props.dark}></TargetFlakyTestCardComponent>
+                );
+              });
+          }
+        })}
+        {Boolean(this.state.pendingFlakeSamplesRequest) && <div className="loading"></div>}
+        {!this.state.pendingFlakeSamplesRequest && this.state.flakeSamples?.nextPageToken && (
+          <button className="load-more" onClick={() => this.loadMoreSamples()}>
+            Load more samples
+          </button>
+        )}
+      </div>
+    );
   }
 
   render() {
@@ -384,49 +433,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
             </div>
           </div>
         )}
-        {singleTarget && this.state.tableData && (
-          <div className="container">
-            <h3 className="flakes-list-header">Sample flakes for {singleTarget}</h3>
-            {Boolean(this.state.pendingFlakeSamplesRequest) && <div className="loading"></div>}
-            {!this.state.pendingFlakeSamplesRequest &&
-              (!(this.state.flakeSamples?.samples.length ?? 0) ? (
-                <div>
-                  No samples found--if it looks like there have been flakes in the last seven days, their logs may have
-                  expired from the remote cache.
-                </div>
-              ) : (
-                this.state.flakeSamples?.samples.map((s) => {
-                  const status = s.status === api_common.v1.Status.FLAKY ? "flaky" : "failure";
-                  const testXmlDoc = this.state.flakeTestXmlDocs.get(s.testXmlFileUri);
-                  if (!testXmlDoc) {
-                    return <div className="loading"></div>;
-                  } else if (testXmlDoc.errorMessage) {
-                    return <div>{testXmlDoc.errorMessage}</div>;
-                  } else if (testXmlDoc.testXmlDocument) {
-                    return Array.from(testXmlDoc.testXmlDocument.getElementsByTagName("testsuite"))
-                      .filter((testSuite) => testSuite.getElementsByTagName("testcase").length > 0)
-                      .sort((a, b) => +(b.getAttribute("failures") || 0) - +(a.getAttribute("failures") || 0))
-                      .map((testSuite) => {
-                        return (
-                          <TargetFlakyTestCardComponent
-                            invocationId={s.invocationId}
-                            invocationStartTimeUsec={+s.invocationStartTimeUsec}
-                            target={singleTarget}
-                            testSuite={testSuite}
-                            buildEvent={s.event!}
-                            dark={this.props.dark}></TargetFlakyTestCardComponent>
-                        );
-                      });
-                  }
-                })
-              ))}
-            {this.state.flakeSamples?.nextPageToken && (
-              <button className="load-more" onClick={() => this.loadMoreSamples()}>
-                Load more samples
-              </button>
-            )}
-          </div>
-        )}
+        {singleTarget && this.state.tableData && this.renderFlakeSamples(singleTarget)}
       </div>
     );
   }

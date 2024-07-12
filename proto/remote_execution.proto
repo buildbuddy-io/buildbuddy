@@ -2230,6 +2230,55 @@ message UsageStats {
 
   // Peak file system usage, for each mounted file system.
   repeated FileSystemUsage peak_file_system_usage = 4;
+
+  // CPU PSI metrics.
+  PSI cpu_pressure = 5;
+
+  // Memory PSI metrics.
+  PSI memory_pressure = 6;
+
+  // IO PSI metrics.
+  PSI io_pressure = 7;
+}
+
+// Pressure Stall Information, commonly known as PSI.
+//
+// This is a structured representation of the PSI output returned by the Linux
+// kernel, which looks like this:
+//
+//     some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+//     full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+//
+// See here for more info:
+// https://docs.kernel.org/accounting/psi.html#pressure-interface
+message PSI {
+  message Metrics {
+    // 10-second average of the percentage of wall time that tasks spent
+    // waiting for this resource.
+    // This is a percentage value from 0 to 100.
+    float avg10 = 1;
+
+    // 1-minute average of the percentage of wall time that tasks spent
+    // waiting for this resource.
+    // This is a percentage value from 0 to 100.
+    float avg60 = 2;
+
+    // 5-minute average of the percentage of wall time that tasks spent
+    // waiting for this resource.
+    // This is a percentage value from 0 to 100.
+    float avg300 = 3;
+
+    // Total accumulated microseconds stalled.
+    int64 total = 4;
+  }
+
+  // Percentages of stall time where at least one task was stalled
+  // on this resource.
+  Metrics some = 1;
+
+  // Percentages of stall time where all tasks were stalled, meaning
+  // the workload is completely stalled on this resource.
+  Metrics full = 2;
 }
 
 // BuildBuddy-specific auxiliary execution metadata containing fine-grained

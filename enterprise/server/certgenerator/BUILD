@@ -23,7 +23,7 @@ go_library(
         "//server/util/monitoring",
         "//server/util/status",
         "//server/util/tracing",
-        "@com_github_coreos_go_oidc//:go-oidc",
+        "@com_github_coreos_go_oidc_v3//oidc",
         "@org_golang_x_crypto//ssh",
     ],
 )

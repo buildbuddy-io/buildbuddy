@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
@@ -25,8 +26,8 @@ var (
 type BuildStatusReporter struct {
 	baseBBURL                 string
 	env                       environment.Env
-	githubClient              *github.GithubClient
-	buildEventAccumulator     *accumulator.BEValues
+	githubClient              interfaces.GitHubStatusClient
+	buildEventAccumulator     accumulator.Accumulator
 	groups                    map[string]*GroupStatus
 	inFlight                  map[string]bool
 	payloads                  []*github.GithubStatusPayload
@@ -41,7 +42,7 @@ type GroupStatus struct {
 	numAborted int
 }
 
-func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumulator.BEValues) *BuildStatusReporter {
+func NewBuildStatusReporter(env environment.Env, buildEventAccumulator accumulator.Accumulator) *BuildStatusReporter {
 	return &BuildStatusReporter{
 		baseBBURL:                 build_buddy_url.String(),
 		env:                       env,
@@ -56,25 +57,31 @@ func (r *BuildStatusReporter) SetBaseBuildBuddyURL(url string) {
 	r.baseBBURL = url
 }
 
-func (r *BuildStatusReporter) initGHClient(ctx context.Context) *github.GithubClient {
+func (r *BuildStatusReporter) initGHClient(ctx context.Context) interfaces.GitHubStatusClient {
+	accessToken := ""
 	if workflowID := r.buildEventAccumulator.WorkflowID(); workflowID != "" {
 		if dbh := r.env.GetDBHandle(); dbh != nil {
 			workflow := &tables.Workflow{}
 			if err := dbh.NewQuery(ctx, "build_status_reporter_get_workflow").Raw(
 				`SELECT * from "Workflows" WHERE workflow_id = ?`, workflowID).Take(workflow); err == nil {
-				return github.NewGithubClient(r.env, workflow.AccessToken)
+				accessToken = workflow.AccessToken
 			}
 		}
 	}
-	return github.NewGithubClient(r.env, "")
+	return r.env.GetGitHubStatusService().GetStatusClient(accessToken)
 }
 
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	// TODO: support other providers than just GitHub
+	if r.env.GetGitHubStatusService() == nil {
+		return
+	}
+
+	// Only report GitHub statuses for CI or CI_RUNNER roles.
 	if role := r.buildEventAccumulator.Invocation().GetRole(); !(role == "CI" || role == "CI_RUNNER") {
 		return
 	}
 
-	// TODO: support other providers than just GitHub
 	var githubPayload *github.GithubStatusPayload
 
 	switch event.Payload.(type) {
@@ -123,10 +130,10 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 	}
 
 	for _, payload := range r.payloads {
-		if payload.State == github.PendingState {
-			r.inFlight[payload.Context] = true
+		if github.State(payload.GetState()) == github.PendingState {
+			r.inFlight[payload.GetContext()] = true
 		} else {
-			delete(r.inFlight, payload.Context)
+			delete(r.inFlight, payload.GetContext())
 		}
 
 		// TODO(siggisim): Kick these into a queue or something (but maintain order).
@@ -207,13 +214,13 @@ func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_eve
 
 func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
 	finished := event.GetFinished()
-	description := descriptionFromExitCodeName(finished.ExitCode.Name)
+	description := descriptionFromExitCodeName(finished.GetExitCode().GetName())
 	startTime := r.buildEventAccumulator.StartTime()
 	endTime := timeutil.GetTimeWithFallback(finished.GetFinishTime(), finished.GetFinishTimeMillis())
 	if !startTime.IsZero() && endTime.After(startTime) {
 		description = fmt.Sprintf("%s in %s", description, timeutil.ShortFormatDuration(endTime.Sub(startTime)))
 	}
-	if finished.ExitCode.Code == 0 || finished.ExitCode.Name == "NO_TESTS_FOUND" {
+	if finished.GetExitCode().GetCode() == 0 || finished.GetExitCode().GetName() == "NO_TESTS_FOUND" {
 		return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.SuccessState)
 	}
 

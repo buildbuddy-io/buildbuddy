@@ -22,7 +22,7 @@ go_library(
         "//server/util/status",
         "//server/util/subdomain",
         "//server/util/urlutil",
-        "@com_github_coreos_go_oidc//:go-oidc",
+        "@com_github_coreos_go_oidc_v3//oidc",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//metadata",

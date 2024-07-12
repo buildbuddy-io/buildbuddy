@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/coreos/go-oidc"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/crypto/ssh"
 
 	cgpb "github.com/buildbuddy-io/buildbuddy/proto/certgenerator"
@@ -37,9 +38,10 @@ var (
 	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
-	tokenIssuer   = flag.String("certgenerator.token.issuer", "", "Issuer of the OIDC token against which it will be validated.")
-	tokenClientID = flag.String("certgenerator.token.client_id", "", "When verifying the OIDC token, only tokens for this client ID will be accepted.")
-	domain        = flag.String("certgenerator.token.domain", "", "When verifying the OIDC token, only tokens for this domain will be accepted.")
+	tokenIssuer     = flag.String("certgenerator.token.issuer", "", "Issuer of the OIDC token against which it will be validated.")
+	tokenClientID   = flag.String("certgenerator.token.client_id", "", "When verifying the OIDC token, only tokens for this client ID will be accepted.")
+	domain          = flag.String("certgenerator.token.domain", "", "When verifying the OIDC token, only tokens for this domain will be accepted.")
+	serviceAccounts = flag.Slice("certgenerator.token.service_accounts", []string{}, "List of allowed service accounts.")
 
 	sshCertDuration   = flag.Duration("certgenerator.ssh.validity", 12*time.Hour, "How long the generated certificate will be valid.")
 	sshCertPrincipals = flag.String("certgenerator.ssh.principals", "", "Comma separated list of principals to include in the generated certificate.")
@@ -122,50 +124,46 @@ type generator struct {
 	kubernetesClusters []*parsedKubernetesCluster
 }
 
-func (g *generator) Generate(ctx context.Context, req *cgpb.GenerateRequest) (*cgpb.GenerateResponse, error) {
-	idToken, err := g.verifier.Verify(ctx, req.GetToken())
-	if err != nil {
-		return nil, status.PermissionDeniedErrorf("invalid token: %s", err)
-	}
-	claims := struct {
-		Subject       string `json:"sub"`
-		Domain        string `json:"hd"`
-		Email         string `json:"email"`
-		EmailVerified bool   `json:"email_verified"`
-	}{}
-	if err := idToken.Claims(&claims); err != nil {
-		return nil, status.PermissionDeniedErrorf("could not parse claims: %s", err)
-	}
-	if claims.Domain != *domain {
-		return nil, status.PermissionDeniedErrorf("invalid domain %q", claims.Domain)
-	}
-	if !claims.EmailVerified {
-		return nil, status.PermissionDeniedError("email not verified")
-	}
+type claims struct {
+	Subject             string `json:"sub"`
+	Domain              string `json:"hd"`
+	Email               string `json:"email"`
+	EmailVerified       bool   `json:"email_verified"`
+	AuthorizedPresenter string `json:"azp"`
+}
 
+func validateUser(c *claims) error {
+	if c.Domain == "" && slices.Contains(*serviceAccounts, c.Email) && c.AuthorizedPresenter == c.Email {
+		return nil
+	}
+	if c.Domain != *domain {
+		return status.PermissionDeniedErrorf("invalid domain %q", c.Domain)
+	}
+	return nil
+}
+
+func (g *generator) generateSSHCerts(c *claims, req *cgpb.GenerateRequest, rsp *cgpb.GenerateResponse) error {
 	pk, _, _, _, err := ssh.ParseAuthorizedKey([]byte(req.GetSshPublicKey()))
 	if err != nil {
-		return nil, status.InvalidArgumentErrorf("could not parse public key: %s", err)
+		return status.InvalidArgumentErrorf("could not parse public key: %s", err)
 	}
-
-	log.Infof("Generating certificates for: %+v", claims)
-
-	rsp := &cgpb.GenerateResponse{}
-
 	cert := ssh.Certificate{
 		Key:             pk,
 		CertType:        ssh.UserCert,
-		KeyId:           claims.Email,
+		KeyId:           c.Email,
 		ValidPrincipals: strings.Split(*sshCertPrincipals, ","),
 		ValidAfter:      uint64(time.Now().Unix()),
 		ValidBefore:     uint64(time.Now().Add(*sshCertDuration).Unix()),
 	}
 	cert.Permissions.Extensions = map[string]string{allowPty: "", allowPortForwarding: ""}
 	if err := cert.SignCert(rand.Reader, g.sshSigner); err != nil {
-		return nil, err
+		return err
 	}
 	rsp.SshCert = string(ssh.MarshalAuthorizedKey(&cert))
+	return nil
+}
 
+func (g *generator) generateKubernetesCerts(c *claims, req *cgpb.GenerateRequest, rsp *cgpb.GenerateResponse) error {
 	for _, kc := range g.kubernetesClusters {
 		caCert := &ssl.CACert{
 			Cert: kc.parsedClientCA,
@@ -177,7 +175,7 @@ func (g *generator) Generate(ctx context.Context, req *cgpb.GenerateRequest) (*c
 		}
 		cert, key, err := ssl.GenerateCert(subject, caCert, *kubernetesCertDuration)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		rsp.KubernetesCredentials = append(rsp.KubernetesCredentials, &cgpb.KubernetesClusterCredentials{
 			Name:          kc.Name,
@@ -187,6 +185,41 @@ func (g *generator) Generate(ctx context.Context, req *cgpb.GenerateRequest) (*c
 			ClientCert:    cert,
 			ClientCertKey: key,
 		})
+	}
+	return nil
+}
+
+func (g *generator) Generate(ctx context.Context, req *cgpb.GenerateRequest) (*cgpb.GenerateResponse, error) {
+	idToken, err := g.verifier.Verify(ctx, req.GetToken())
+	if err != nil {
+		return nil, status.PermissionDeniedErrorf("invalid token: %s", err)
+	}
+	c := &claims{}
+	if err := idToken.Claims(c); err != nil {
+		return nil, status.PermissionDeniedErrorf("could not parse claims: %s", err)
+	}
+
+	log.Infof("Certificate request for: %+v", c)
+
+	if !c.EmailVerified {
+		return nil, status.PermissionDeniedError("email not verified")
+	}
+	if err := validateUser(c); err != nil {
+		return nil, status.PermissionDeniedErrorf("invalid domain %q for user %q", c.Domain, c.Email)
+	}
+
+	log.Infof("Generating certificates for: %+v", c)
+
+	rsp := &cgpb.GenerateResponse{}
+
+	if req.GetSshPublicKey() != "" {
+		if err := g.generateSSHCerts(c, req, rsp); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := g.generateKubernetesCerts(c, req, rsp); err != nil {
+		return nil, err
 	}
 
 	return rsp, nil

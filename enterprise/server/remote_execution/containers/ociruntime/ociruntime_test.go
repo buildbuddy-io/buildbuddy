@@ -77,6 +77,14 @@ func realBusyboxImage(t *testing.T) string {
 	return "mirror.gcr.io/library/busybox"
 }
 
+// Returns a remote reference to the image in //dockerfiles/test_images/ociruntime_test/env_test_image
+func envTestImage(t *testing.T) string {
+	if !hasMountPermissions(t) {
+		t.Skipf("using a real container image with overlayfs requires mount permissions")
+	}
+	return "gcr.io/flame-public/env-test@sha256:e3e64513b41d429a60b0fb420afbecb5b36af11f6d6601ba8177e259d74e1514"
+}
+
 func TestRun(t *testing.T) {
 	image := manuallyProvisionedBusyboxImage(t)
 
@@ -117,8 +125,44 @@ func TestRun(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 }
 
-func TestRunWithImage(t *testing.T) {
+func TestRunUsageStats(t *testing.T) {
 	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run (sleep long enough to collect stats)
+	// TODO: in the Run case, we should be able to use the memory.peak file and
+	// cumulative CPU usage file to reliably return stats even if we don't have
+	// a chance to poll
+	cmd := &repb.Command{Arguments: []string{"sleep", "0.5"}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	assert.Greater(t, res.UsageStats.GetMemoryBytes(), int64(0), "memory")
+	assert.Greater(t, res.UsageStats.GetCpuNanos(), int64(0), "CPU")
+}
+
+func TestRunWithImage(t *testing.T) {
+	image := envTestImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -145,6 +189,7 @@ func TestRunWithImage(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `
 			echo "$GREETING world!"
+			env | grep -v 'HOSTNAME' | sort
 		`},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "GREETING", Value: "Hello"},
@@ -152,7 +197,14 @@ func TestRunWithImage(t *testing.T) {
 	}
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
-	assert.Equal(t, "Hello world!\n", string(res.Stdout))
+	assert.Equal(t, `Hello world!
+GREETING=Hello
+HOME=/root
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
+PWD=/buildbuddy-execroot
+SHLVL=1
+TEST_ENV_VAR=foo
+`, string(res.Stdout))
 	assert.Empty(t, "", string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 }
@@ -199,8 +251,51 @@ func TestCreateExecRemove(t *testing.T) {
 	assert.Equal(t, "buildbuddy was here: /buildbuddy-execroot\n", string(res.Stdout))
 }
 
-func TestPullCreateExecRemove(t *testing.T) {
+func TestExecUsageStats(t *testing.T) {
 	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Exec
+	cmd := &repb.Command{Arguments: []string{"sleep", "0.5"}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	assert.Greater(t, res.UsageStats.GetMemoryBytes(), int64(0), "memory")
+	assert.Greater(t, res.UsageStats.GetCpuNanos(), int64(0), "CPU")
+
+	// Stats
+	s, err := c.Stats(ctx)
+	require.NoError(t, err)
+	assert.Greater(t, s.GetMemoryBytes(), int64(0), "memory")
+	assert.Greater(t, s.GetCpuNanos(), int64(0), "CPU")
+}
+
+func TestPullCreateExecRemove(t *testing.T) {
+	image := envTestImage(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -240,17 +335,30 @@ func TestPullCreateExecRemove(t *testing.T) {
 	})
 
 	// Exec
-	cmd := &repb.Command{Arguments: []string{"sh", "-ec", `
-		touch /bin/foo.txt
-		pwd
-	`}}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-ec", `
+			touch /bin/foo.txt
+			pwd
+			env | grep -v HOSTNAME | sort
+		`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
 	stdio := interfaces.Stdio{}
 	res := c.Exec(ctx, cmd, &stdio)
 	require.NoError(t, res.Error)
 
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, "/buildbuddy-execroot\n", string(res.Stdout))
+	assert.Equal(t, `/buildbuddy-execroot
+GREETING=Hello
+HOME=/root
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
+PWD=/buildbuddy-execroot
+SHLVL=1
+TEST_ENV_VAR=foo
+`, string(res.Stdout))
 
 	// Make sure the image layers were unmodified and that foo.txt was written
 	// to the upper dir in the overlayfs.

@@ -789,13 +789,15 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 }
 
 func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func()) {
+	ticker := time.NewTicker(timeout)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			{
 				return
 			}
-		case <-time.After(timeout):
+		case <-ticker.C:
 			{
 				f()
 			}

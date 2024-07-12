@@ -234,6 +234,7 @@ func handleSearch(args []string) {
 	for _, doc := range docs {
 		regions := highlighter.Highlight(doc)
 		if len(regions) == 0 {
+			log.Warningf("Skipping %q, no regions!!!", doc.Field("filename").Contents())
 			continue
 		}
 

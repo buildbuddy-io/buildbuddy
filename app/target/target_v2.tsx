@@ -197,8 +197,12 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
   }
 
   getTargetHistoryURL() {
-    // Test history doesn't work without a repo selected.
-    if (!this.props.repo) return "";
+    // Test history doesn't work without a repo selected.  We only show this
+    // link if the target has a testSummary event because we only store target
+    // history for tests.
+    // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3584):
+    // support target history for plain-old-build targets, too.
+    if (!this.props.repo || !this.state.target || !this.state.target.testSummary) return "";
 
     const search = new URLSearchParams({
       filter: this.props.label,

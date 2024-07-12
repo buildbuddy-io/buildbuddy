@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -68,6 +69,7 @@ func (s *Set) Len() int {
 type byteToken struct {
 	fieldType types.FieldType
 	tok       []byte
+	position  uint64
 }
 
 func (b byteToken) Type() types.FieldType {
@@ -76,11 +78,14 @@ func (b byteToken) Type() types.FieldType {
 func (b byteToken) Ngram() []byte {
 	return b.tok
 }
+func (b byteToken) Position() uint64 {
+	return b.position
+}
 func (b byteToken) String() string {
 	return fmt.Sprintf("field type: %s, ngram: %q", b.Type(), b.Ngram())
 }
-func newByteToken(fieldType types.FieldType, ngram []byte) byteToken {
-	return byteToken{fieldType, ngram}
+func newByteToken(fieldType types.FieldType, ngram []byte, position uint64) byteToken {
+	return byteToken{fieldType, ngram, position}
 }
 
 // validUTF8 reports whether the byte pair can appear in a
@@ -113,7 +118,7 @@ type TrigramTokenizer struct {
 	trigrams *Set
 	buf      []byte
 
-	n  int64
+	n  uint64
 	tv uint32
 }
 
@@ -154,36 +159,59 @@ func (tt *TrigramTokenizer) Next() (types.Token, error) {
 		alreadySeen := tt.trigrams.Has(tt.tv)
 		if !alreadySeen && tt.tv != 1<<24-1 {
 			tt.trigrams.Add(tt.tv)
-			return newByteToken(types.TrigramField, trigramToBytes(tt.tv)), nil
+			return newByteToken(types.TrigramField, trigramToBytes(tt.tv), tt.n), nil
 		}
 	}
 }
 
 type WhitespaceTokenizer struct {
-	s *bufio.Scanner
+	r io.ByteReader
+	n uint64
 
-	seen map[string]struct{}
-	buf  []byte
+	sb *strings.Builder
 }
 
 func NewWhitespaceTokenizer() *WhitespaceTokenizer {
 	return &WhitespaceTokenizer{
-		seen: make(map[string]struct{}),
+		sb: &strings.Builder{},
 	}
 }
 
 func (wt *WhitespaceTokenizer) Reset(r io.Reader) {
-	wt.s = bufio.NewScanner(r)
-	wt.s.Split(bufio.ScanWords) // split on " ".
-	wt.seen = make(map[string]struct{})
+	if br, ok := r.(io.ByteReader); ok {
+		wt.r = br
+	} else {
+		wt.r = bufio.NewReader(r)
+	}
+	wt.sb.Reset()
+	wt.n = 0
 }
 
 func (wt *WhitespaceTokenizer) Next() (types.Token, error) {
-	for wt.s.Scan() {
-		buf := wt.s.Bytes()
-		tokenBuf := make([]byte, len(buf))
-		copy(tokenBuf, buf)
-		return newByteToken(types.TrigramField, tokenBuf), nil
+	currentToken := func() types.Token {
+		ngram := []byte(wt.sb.String())
+		wt.sb.Reset()
+		return newByteToken(types.TrigramField, ngram, wt.n-uint64(len(ngram)))
 	}
-	return nil, io.EOF
+
+	for {
+		c, err := wt.r.ReadByte()
+		if err != nil {
+			if wt.sb.Len() > 0 {
+				return currentToken(), nil
+			}
+			return nil, err
+		}
+		if c != ' ' {
+			wt.sb.WriteByte(c)
+			wt.n++
+		} else {
+			if wt.sb.Len() > 0 {
+				tok := currentToken()
+				wt.n++
+				return tok, nil
+			}
+			wt.n++
+		}
+	}
 }

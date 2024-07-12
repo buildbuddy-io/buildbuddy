@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,6 +21,7 @@ import (
 	_ "embed"
 	mrand "math/rand/v2"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -86,6 +88,12 @@ var (
 		"CAP_SETUID",
 		"CAP_SYS_CHROOT",
 	}
+
+	// Environment variables applied to all executed commands.
+	// These can be overridden either by the image or the command.
+	baseEnv = []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	}
 )
 
 type provider struct {
@@ -106,7 +114,8 @@ type provider struct {
 	//       - ...
 	layersRoot string
 
-	imageStore *ImageStore
+	imageStore  *ImageStore
+	cgroupPaths *cgroup.Paths
 
 	// Configured runtime path.
 	runtime string
@@ -141,6 +150,7 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 		env:            env,
 		runtime:        rt,
 		containersRoot: containersRoot,
+		cgroupPaths:    &cgroup.Paths{},
 		layersRoot:     layersRoot,
 		imageStore:     imageStore,
 	}, nil
@@ -151,6 +161,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		env:            p.env,
 		runtime:        p.runtime,
 		containersRoot: p.containersRoot,
+		cgroupPaths:    p.cgroupPaths,
 		layersRoot:     p.layersRoot,
 		imageStore:     p.imageStore,
 		imageRef:       args.Props.ContainerImage,
@@ -161,12 +172,14 @@ type ociContainer struct {
 	env environment.Env
 
 	runtime        string
+	cgroupPaths    *cgroup.Paths
 	containersRoot string
 	layersRoot     string
 	imageStore     *ImageStore
 
 	cid     string
 	workDir string
+	stats   container.UsageStats
 
 	imageRef         string
 	overlayfsMounted bool
@@ -219,7 +232,15 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 		return fmt.Errorf("create rootfs: %w", err)
 	}
 
-	// Create config.json
+	// Create config.json from the image config and command
+	image, ok := c.imageStore.CachedImage(c.imageRef)
+	if !ok {
+		return fmt.Errorf("image must be cached before creating OCI bundle")
+	}
+	cmd, err := withImageConfig(cmd, image)
+	if err != nil {
+		return fmt.Errorf("apply image config to command: %w", err)
+	}
 	spec, err := c.createSpec(cmd)
 	if err != nil {
 		return fmt.Errorf("create spec: %w", err)
@@ -240,7 +261,7 @@ func (c *ociContainer) IsolationType() string {
 }
 
 func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
-	_, ok := c.imageStore.CachedLayers(c.imageRef)
+	_, ok := c.imageStore.CachedImage(c.imageRef)
 	return ok, nil
 }
 
@@ -265,12 +286,13 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.imageRef); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("pull image: %s", err))
 	}
-
 	if err := c.createBundle(ctx, cmd); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
 	}
 
-	return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
+	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
+		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
+	})
 }
 
 func (c *ociContainer) Create(ctx context.Context, workDir string) error {
@@ -308,9 +330,34 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 }
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	// TODO: Should we specify a non-zero waitDelay so that a process that spawns children won't
-	//  block forever?
-	return c.invokeRuntime(ctx, cmd, stdio, 0, "exec", "--cwd="+execrootPath, c.cid)
+	// Reset CPU usage and peak memory since we're starting a new task.
+	c.stats.Reset()
+	args := []string{"exec", "--cwd=" + execrootPath}
+	// Respect command env. Note, when setting any --env vars at all, it
+	// completely overrides the env from the bundle, rather than just adding
+	// to it. So we specify the complete env here, including the base env,
+	// image env, and command env.
+	for _, e := range baseEnv {
+		args = append(args, "--env="+e)
+	}
+	image, ok := c.imageStore.CachedImage(c.imageRef)
+	if !ok {
+		return commandutil.ErrorResult(status.UnavailableError("exec called before pulling image"))
+	}
+	cmd, err := withImageConfig(cmd, image)
+	if err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("apply image config: %s", err))
+	}
+	for _, e := range cmd.GetEnvironmentVariables() {
+		args = append(args, fmt.Sprintf("--env=%s=%s", e.GetName(), e.GetValue()))
+	}
+	args = append(args, c.cid)
+
+	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
+		// TODO: Should we specify a non-zero waitDelay so that a process that
+		// spawns children won't block forever?
+		return c.invokeRuntime(ctx, cmd, stdio, 0, args...)
+	})
 }
 
 func (c *ociContainer) Pause(ctx context.Context) error {
@@ -348,8 +395,19 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 }
 
 func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	// TODO: read stats from cgroupfs
-	return nil, nil
+	return c.cgroupPaths.Stats(ctx, c.cid)
+}
+
+// Instruments an OCI runtime call with monitor() to ensure that resource usage
+// metrics are updated while the function is being executed, and that the
+// resource usage results are populated in the returned CommandResult.
+func (c *ociContainer) doWithStatsTracking(ctx context.Context, fn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
+	stop, statsCh := container.TrackStats(ctx, c)
+	defer stop()
+	res := fn(ctx)
+	stop()
+	res.UsageStats = <-statsCh
+	return res
 }
 
 func (c *ociContainer) createRootfs(ctx context.Context) error {
@@ -371,16 +429,12 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 
 	// Create an overlayfs with the pulled image layers.
 	var lowerDirs []string
-	layers, ok := c.imageStore.CachedLayers(c.imageRef)
+	image, ok := c.imageStore.CachedImage(c.imageRef)
 	if !ok {
 		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
 	}
-	for _, layer := range layers {
-		d, err := layer.Digest()
-		if err != nil {
-			return fmt.Errorf("get layer digest: %w", err)
-		}
-		path := layerPath(c.layersRoot, d)
+	for _, layer := range image.Layers {
+		path := layerPath(c.layersRoot, layer.Digest)
 		// Skip empty dirs - these can cause conflicts since they will always
 		// have the same digest, and also just add more overhead.
 		// TODO: precompute this
@@ -454,12 +508,7 @@ func installBusybox(path string) error {
 }
 
 func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
-	// TODO: respect environment variables inside the container (ENV directives)
-	env := append([]string{
-		// TODO: make sure this PATH matches podman's behavior
-		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-	}, commandutil.EnvStringList(cmd)...)
-
+	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
@@ -798,13 +847,25 @@ type ImageStore struct {
 	pullGroup singleflight.Group
 
 	mu           sync.RWMutex
-	cachedLayers map[string][]ctr.Layer
+	cachedImages map[string]*Image
+}
+
+// Image represents a cached image, including all layer digests and image
+// configuration.
+type Image struct {
+	Layers []*ImageLayer
+	Env    []string
+}
+
+// ImageLayer represents a resolved image layer.
+type ImageLayer struct {
+	Digest ctr.Hash
 }
 
 func NewImageStore(layersDir string) *ImageStore {
 	return &ImageStore{
 		layersDir:    layersDir,
-		cachedLayers: map[string][]ctr.Layer{},
+		cachedImages: map[string]*Image{},
 	}
 }
 
@@ -814,7 +875,7 @@ func NewImageStore(layersDir string) *ImageStore {
 // Pull always re-authenticates the credentials with the image registry.
 // Each layer is extracted to a subdirectory given by {algorithm}/{hash}, e.g.
 // "sha256/abc123".
-func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Credentials) ([]ctr.Layer, error) {
+func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
 	key := hash.Strings(imageName, creds.Username, creds.Password)
 	ch := s.pullGroup.DoChan(key, func() (any, error) {
 		// Use a background ctx to prevent ctx cancellation from one pull
@@ -822,16 +883,16 @@ func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Crede
 		// TODO: use something like github.com/janos/singleflight to ensure we
 		// cancel the download if all group member contexts are cancelled.
 		ctx := context.WithoutCancel(ctx)
-		layers, err := pull(ctx, s.layersDir, imageName, creds)
+		image, err := pull(ctx, s.layersDir, imageName, creds)
 		if err != nil {
 			return nil, err
 		}
 
 		s.mu.Lock()
-		s.cachedLayers[imageName] = layers
+		s.cachedImages[imageName] = image
 		s.mu.Unlock()
 
-		return layers, nil
+		return image, nil
 	})
 
 	select {
@@ -841,21 +902,28 @@ func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Crede
 		if res.Err != nil {
 			return nil, res.Err
 		}
-		return res.Val.([]ctr.Layer), nil
+		return res.Val.(*Image), nil
 	}
 }
 
 // CachedLayers returns references to the cached image layers if the image
 // has been pulled. The second return value indicates whether the image has
 // been pulled - if false, the returned slice of layers will be nil.
-func (s *ImageStore) CachedLayers(imageName string) (layers []ctr.Layer, ok bool) {
+func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	layers, ok = s.cachedLayers[imageName]
-	return layers, ok
+
+	// TODO: make ImageStore a param of NewProvider and move this logic to a
+	// test image store
+	if imageName == TestBusyboxImageRef {
+		return &Image{}, true
+	}
+
+	image, ok = s.cachedImages[imageName]
+	return image, ok
 }
 
-func pull(ctx context.Context, layersDir, imageName string, creds oci.Credentials) ([]ctr.Layer, error) {
+func pull(ctx context.Context, layersDir, imageName string, creds oci.Credentials) (*Image, error) {
 	img, err := oci.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return nil, status.WrapError(err, "resolve image")
@@ -865,16 +933,23 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 		return nil, status.UnavailableErrorf("get image layers: %s", err)
 	}
 
+	resolvedImage := &Image{
+		Layers: make([]*ImageLayer, 0, len(layers)),
+	}
+
 	// Download and extract layers concurrently.
 	var eg errgroup.Group
 	eg.SetLimit(min(8, runtime.NumCPU()))
 	for _, layer := range layers {
 		layer := layer
+		resolvedLayer := &ImageLayer{}
+		resolvedImage.Layers = append(resolvedImage.Layers, resolvedLayer)
 		eg.Go(func() error {
 			d, err := layer.Digest()
 			if err != nil {
 				return status.UnavailableErrorf("get layer digest: %s", err)
 			}
+			resolvedLayer.Digest = d
 
 			destDir := layerPath(layersDir, d)
 
@@ -917,10 +992,45 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 			return nil
 		})
 	}
+	// Fetch image config file concurrently with layer downloads.
+	eg.Go(func() error {
+		f, err := img.ConfigFile()
+		if err != nil {
+			return status.UnavailableErrorf("get image config file: %s", err)
+		}
+		resolvedImage.Env = f.Config.Env
+		return nil
+	})
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	return layers, nil
+	return resolvedImage, nil
+}
+
+func withImageConfig(cmd *repb.Command, image *Image) (*repb.Command, error) {
+	// Apply any env vars from the image which aren't overridden by the command
+	cmdVarNames := make(map[string]bool, len(cmd.EnvironmentVariables))
+	for _, cmdVar := range cmd.GetEnvironmentVariables() {
+		cmdVarNames[cmdVar.GetName()] = true
+	}
+	imageEnv, err := commandutil.EnvProto(image.Env)
+	if err != nil {
+		return nil, status.WrapError(err, "parse image env")
+	}
+	outEnv := slices.Clone(cmd.EnvironmentVariables)
+	for _, imageVar := range imageEnv {
+		if cmdVarNames[imageVar.GetName()] {
+			continue
+		}
+		outEnv = append(outEnv, imageVar)
+	}
+
+	// TODO: ENTRYPOINT, CMD
+
+	// Return a copy of the command but with the image config applied
+	out := cmd.CloneVT()
+	out.EnvironmentVariables = outEnv
+	return out, nil
 }
 
 func tmpSuffix() string {

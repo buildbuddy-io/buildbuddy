@@ -85,7 +85,7 @@ func TestDeletes(t *testing.T) {
 	r := NewReader(db, "testing-namespace")
 	docIDs, err := r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"": {1, 2, 3}}, docIDs)
+	assert.Equal(t, map[string][]uint64{"name": {1, 2, 3}}, docIDs)
 
 	// Delete a doc
 	w, err = NewWriter(db, "testing-namespace")
@@ -98,7 +98,7 @@ func TestDeletes(t *testing.T) {
 	r = NewReader(db, "testing-namespace")
 	docIDs, err = r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"": {1, 3}}, docIDs)
+	assert.Equal(t, map[string][]uint64{"name": {1, 3}}, docIDs)
 }
 
 func TestIncrementalIndexing(t *testing.T) {
@@ -141,7 +141,7 @@ func TestIncrementalIndexing(t *testing.T) {
 
 	docIDs, err = r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"": {2, 3, 4, 5}}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {2, 3, 4, 5}}, docIDs)
 }
 
 func TestUnkonwnTokenType(t *testing.T) {
@@ -239,7 +239,7 @@ func TestNamespaceSeparation(t *testing.T) {
 	r := NewReader(db, "namespace-a")
 	docIDs, err := r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"": {1, 2, 3}}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {1, 2, 3}}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:eq text one)"))
 	require.NoError(t, err)
@@ -248,7 +248,7 @@ func TestNamespaceSeparation(t *testing.T) {
 	r = NewReader(db, "namespace-b")
 	docIDs, err = r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"": {1, 2, 3, 4}}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {1, 2, 3, 4}}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:eq text pab)"))
 	require.NoError(t, err)
@@ -274,7 +274,7 @@ func TestSQuery(t *testing.T) {
 	r := NewReader(db, "testing-namespace")
 	docIDs, err := r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"": {1, 2, 3}}, docIDs)
+	assert.Equal(t, map[string][]uint64{"text": {1, 2, 3}}, docIDs)
 
 	docIDs, err = r.RawQuery([]byte("(:none)"))
 	require.NoError(t, err)
