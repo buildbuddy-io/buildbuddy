@@ -86,22 +86,25 @@ func (p *Paths) Stats(ctx context.Context, cid string) (*repb.UsageStats, error)
 		return nil, err
 	}
 
-	// Read PSI metrics
+	// Read PSI metrics.
+	// Note that PSI may not be supported in all environments,
+	// so ignore NotExist errors.
+
 	cpuPressurePath := filepath.Join(dir, "cpu.pressure")
 	cpuPressure, err := readPSIFile(cpuPressurePath)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
 	memPressurePath := filepath.Join(dir, "memory.pressure")
 	memPressure, err := readPSIFile(memPressurePath)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
 	ioPressurePath := filepath.Join(dir, "io.pressure")
 	ioPressure, err := readPSIFile(ioPressurePath)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
@@ -240,7 +243,7 @@ func readCgroupInt64Field(path, fieldName string) (int64, error) {
 func readPSIFile(path string) (*repb.PSI, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open %q: %w", path, err)
+		return nil, err
 	}
 	defer f.Close()
 	return readPSI(f)
