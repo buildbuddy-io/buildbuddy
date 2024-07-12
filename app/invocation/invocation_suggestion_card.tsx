@@ -328,11 +328,11 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (model.optionsMap.get("experimental_remote_cache_compression")) return null;
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
 
-    const versions = getBazelVersion(model);
+    const version = getBazelVersion(model);
     // Bazel pre-v5 doesn't support compression.
-    if (versions === null || versions.major < 5) return null;
+    if (version === null || version.major < 5) return null;
 
-    const flag = versions.major >= 7 ? "--experimental_remote_cache_compression" : "--remote_cache_compression";
+    const flag = version.major >= 7 ? "--experimental_remote_cache_compression" : "--remote_cache_compression";
 
     return {
       level: SuggestionLevel.INFO,
@@ -409,10 +409,10 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!model.optionsMap.get("remote_cache")) return null;
     if (model.optionsMap.get("remote_build_event_upload")) return null;
     if (model.optionsMap.get("experimental_remote_build_event_upload")) return null;
-    const versions = getBazelVersion(model);
+    const version = getBazelVersion(model);
     // Bazel pre-v6 doesn't support --experimental_remote_build_event_upload=minimal, and Bazel post-v6 default to the
     // correct setting
-    if (versions === null || versions.major != 6) return null;
+    if (version === null || version.major != 6) return null;
 
     return {
       level: SuggestionLevel.INFO,
