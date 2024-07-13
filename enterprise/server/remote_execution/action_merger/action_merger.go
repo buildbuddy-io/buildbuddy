@@ -27,6 +27,12 @@ const (
 	// execution count.
 	executionIDKey    = "execution-id"
 	executionCountKey = "execution-count"
+
+	// The redis keys storing action merging data are versioned to support
+	// making backwards-incompatible changes to the storage representation.
+	// Increment this version to cycle to new keys (and discard all old
+	// action-merging data) during the next rollout.
+	keyVersion = 1
 )
 
 var (
@@ -46,11 +52,11 @@ func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.Resou
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("pendingExecution/%s%s", userPrefix, downloadString), nil
+	return fmt.Sprintf("pendingExecution/%d/%s%s", keyVersion, userPrefix, downloadString), nil
 }
 
 func redisKeyForPendingExecutionDigest(executionID string) string {
-	return fmt.Sprintf("pendingExecutionDigest/%s", executionID)
+	return fmt.Sprintf("pendingExecutionDigest/%d/%s", keyVersion, executionID)
 }
 
 // Action merging is an optimization that detects when an execution is
