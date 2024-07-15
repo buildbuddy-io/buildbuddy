@@ -24,7 +24,7 @@ import React from "react";
 import { User } from "../auth/auth_service";
 import { Link } from "../components/link/link";
 import format from "../format/format";
-import router from "../router/router";
+import { getRepoUrlPathParam, Path } from "../router/router";
 import { RepoURL } from "../util/git";
 import InvocationButtons from "./invocation_buttons";
 import InvocationModel from "./invocation_model";
@@ -34,53 +34,6 @@ interface Props {
   user?: User;
 }
 export default class InvocationOverviewComponent extends React.Component<Props> {
-  handleUserClicked() {
-    router.navigateToUserHistory(this.props.model.getUser(false));
-  }
-
-  handleHostClicked() {
-    router.navigateToHostHistory(this.props.model.getHost());
-  }
-
-  handleRepoClicked() {
-    router.navigateToRepoHistory(this.props.model.getRepo());
-  }
-
-  handleBranchClicked() {
-    router.navigateToBranchHistory(this.props.model.getBranchName());
-  }
-
-  handleCommitClicked() {
-    router.navigateToCommitHistory(this.props.model.getCommit());
-  }
-
-  handleCacheClicked() {
-    router.navigateToSetup();
-  }
-
-  handleRBEClicked() {
-    if (this.props.model.getIsRBEEnabled()) {
-      window.location.hash = "#execution";
-      return;
-    }
-    router.navigateToSetup();
-  }
-
-  handleTagClicked(tag: string) {
-    router.navigateToTagHistory(tag);
-  }
-
-  handleFetchesClicked() {
-    if (this.props.model.getFetchURLs().length > 0) {
-      window.location.hash = "#fetches";
-      return;
-    }
-  }
-
-  handleBuildkiteClicked() {
-    window.open(this.props.model.getBuildkiteUrl(), "_blank");
-  }
-
   invocationType() {
     if (this.props.model.isWorkflowInvocation()) {
       return "Workflow";
@@ -142,16 +95,16 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             {this.props.model.getTiming()}
           </div>
           {isBazelInvocation && (
-            <div className="detail clickable" onClick={this.handleUserClicked.bind(this)}>
+            <Link className="detail clickable" href={Path.userHistoryPath + this.props.model.getUser(false)}>
               <UserIcon className="icon" />
               {this.props.model.getUser(false)}
-            </div>
+            </Link>
           )}
           {isBazelInvocation && (
-            <div className="detail clickable" onClick={this.handleHostClicked.bind(this)}>
+            <Link className="detail clickable" href={Path.hostHistoryPath + this.props.model.getHost()}>
               <HardDrive className="icon" />
               {this.props.model.getHost()}
-            </div>
+            </Link>
           )}
           {isBazelInvocation && (
             <div className="detail">
@@ -193,12 +146,10 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             </div>
           )}
           {isBazelInvocation && (
-            <div
-              className={this.props.model.getFetchURLs().length ? "detail clickable" : "detail"}
-              onClick={this.handleFetchesClicked.bind(this)}>
+            <Link className={this.props.model.getFetchURLs().length ? "detail clickable" : "detail"} href={"#fetches"}>
               <DownloadCloud className="icon" />
               {format.formatWithCommas(this.props.model.getFetchURLs().length)} fetches
-            </div>
+            </Link>
           )}
           <div className="detail">
             <Cpu className="icon" />
@@ -211,10 +162,12 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             </div>
           )}
           {this.props.model.getRepo() && (
-            <div className="detail clickable" onClick={this.handleRepoClicked.bind(this)}>
+            <Link
+              className="detail clickable"
+              href={Path.repoHistoryPath + getRepoUrlPathParam(this.props.model.getRepo())}>
               <Github className="icon" />
               {format.formatGitUrl(this.props.model.getRepo())}
-            </div>
+            </Link>
           )}
           {this.props.model.getRepo() && this.props.model.getPullRequestNumber() && (
             <Link
@@ -227,10 +180,10 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           )}
           {/* For branches that aren't in forked repos, show a link to the branch history. */}
           {this.props.model.getBranchName() && !this.props.model.getForkRepoURL() && (
-            <div className="detail clickable" onClick={this.handleBranchClicked.bind(this)}>
+            <Link className="detail clickable" href={Path.branchHistoryPath + this.props.model.getBranchName()}>
               <GitBranch className="icon" />
               {this.props.model.getBranchName()}
-            </div>
+            </Link>
           )}
           {/* For branches in forked repos, just render "{forkName}:{branchName}" */}
           {this.props.model.getBranchName() && this.props.model.getForkRepoURL() && (
@@ -240,40 +193,42 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             </div>
           )}
           {this.props.model.getCommit() && (
-            <div className="detail clickable" onClick={this.handleCommitClicked.bind(this)}>
+            <Link className="detail clickable" href={Path.commitHistoryPath + this.props.model.getCommit()}>
               <GitCommit className="icon" />
               {format.formatCommitHash(this.props.model.getCommit())}
-            </div>
+            </Link>
           )}
           {isBazelInvocation && (
-            <div className="detail clickable" onClick={this.handleCacheClicked.bind(this)}>
+            <Link className="detail clickable" href={Path.setupPath}>
               <Package className="icon" />
               {this.props.model.getCache()}
-            </div>
+            </Link>
           )}
           {isBazelInvocation && (
-            <div className="detail clickable" onClick={this.handleRBEClicked.bind(this)}>
+            <Link
+              className="detail clickable"
+              href={this.props.model.getIsRBEEnabled() ? "#execution" : Path.setupPath}>
               <Cloud className="icon" />
               {this.props.model.getRBE()}
-            </div>
+            </Link>
           )}
           {this.props.model.getBuildkiteUrl() && (
-            <div className="detail clickable" onClick={this.handleBuildkiteClicked.bind(this)}>
+            <Link className="detail clickable" href={this.props.model.getBuildkiteUrl()} target="_blank">
               <img className="icon buildkite" src="/image/buildkite.svg" />
               Buildkite
-            </div>
+            </Link>
           )}
           {this.props.model.getLinks().map((link) => (
-            <a className="detail clickable" href={link.linkUrl} target="_blank">
+            <Link className="detail clickable" href={link.linkUrl} target="_blank">
               <LinkIcon className="icon" />
               {link.linkText}
-            </a>
+            </Link>
           ))}
           {this.props.model.getTags().map((tag) => (
-            <div className="detail clickable" onClick={this.handleTagClicked.bind(this, tag.name)}>
+            <Link className="detail clickable" href={Path.home + "?tag=" + tag}>
               <Tag className="icon" />
               {tag.name}
-            </div>
+            </Link>
           ))}
         </div>
       </div>
