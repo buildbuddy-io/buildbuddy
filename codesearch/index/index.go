@@ -7,6 +7,7 @@ import (
 	"math"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -19,7 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/xiam/s-expr/ast"
 	"github.com/xiam/s-expr/parser"
-	"golang.org/x/exp/slices"
+	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -331,7 +332,7 @@ func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 	return fm, nil
 }
 
-func (r *Reader) GetStoredDocument(docID uint64, fieldNames ...string) (types.Document, error) {
+func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string]types.NamedField, error) {
 	docIDStart := r.storedFieldKey(docID, "")
 	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: docIDStart,
@@ -372,8 +373,15 @@ func (r *Reader) GetStoredDocument(docID uint64, fieldNames ...string) (types.Do
 		copy(fieldVal, iter.Value())
 		fields[k.field] = types.NewNamedField(types.TrigramField, k.field, fieldVal, true /*=stored*/)
 	}
-	doc := types.NewMapDocument(docID, fields)
-	return doc, nil
+	return fields, nil
+}
+
+func (r *Reader) GetStoredDocument(docID uint64, fieldNames ...string) (types.Document, error) {
+	fields, err := r.getStoredFields(docID, fieldNames...)
+	if err != nil {
+		return nil, err
+	}
+	return types.NewMapDocument(docID, fields), nil
 }
 
 // postingList looks up the set of docIDs matching the provided ngram.
@@ -546,7 +554,55 @@ func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
 	return nil
 }
 
-func (r *Reader) RawQuery(squery []byte) (map[string][]uint64, error) {
+type docMatch struct {
+     docid uint64
+     matchedPostings map[string]types.Posting
+}
+func (dm *docMatch) FieldNames() []string {
+     return maps.Keys(dm.matchedPostings)
+}
+func (dm *docMatch) Docid() uint64 {
+     return dm.docid
+}
+func (dm *docMatch) Posting(fieldName string) types.Posting {
+     return dm.matchedPostings[fieldName]
+}
+
+type lazyDoc struct {
+	r *Reader
+
+	id     uint64
+	fields map[string]types.NamedField
+}
+
+func (d lazyDoc) ID() uint64 {
+	return d.id
+}
+
+func (d lazyDoc) Field(name string) types.Field {
+	if f, ok := d.fields[name]; ok {
+		return f
+	}
+	fm, err := d.r.getStoredFields(d.id, name)
+	if err == nil {
+		d.fields[name] = fm[name]
+	}
+	return d.fields[name]
+}
+
+func (d lazyDoc) Fields() []string {
+	return maps.Keys(d.fields)
+}
+
+func (r *Reader) newLazyDoc(docid uint64) *lazyDoc {
+	return &lazyDoc{
+		r: r,
+		id: docid,
+		fields: make(map[string]types.NamedField, 0),
+	}
+}
+
+func (r *Reader) RawQuery(squery []byte) ([]types.DocumentMatch, error) {
 	start := time.Now()
 	root, err := parser.Parse(squery)
 	if err != nil {
@@ -567,5 +623,31 @@ func (r *Reader) RawQuery(squery []byte) (map[string][]uint64, error) {
 	start = time.Now()
 	err = r.removeDeletedDocIDs(bm)
 	r.log.Infof("Took %s to remove deleted docs", time.Since(start))
-	return bm.Map(), err
+	if err != nil {
+		return nil, err
+	}
+	
+	fieldDocidMatches := bm.Map()
+	docMatches := make(map[uint64]*docMatch, 0)
+	for field, docids := range fieldDocidMatches {
+		for _, docid := range docids {
+			if _, ok := docMatches[docid]; !ok {
+				docMatches[docid] = &docMatch{
+					docid:docid,
+					matchedPostings: make(map[string]types.Posting),
+				}
+			}
+			docMatch := docMatches[docid]
+			docMatch.matchedPostings[field] = nil
+		}
+	}
+
+	// Convert to interface (ugh).
+	matches := make([]types.DocumentMatch, len(docMatches))
+	i := 0
+	for _, dm := range docMatches {
+		matches[i] = types.DocumentMatch(dm)
+		i++
+	}
+	return matches, nil
 }
