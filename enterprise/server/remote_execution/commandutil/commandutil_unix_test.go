@@ -13,12 +13,13 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 // set by x_defs in BUILD file
@@ -27,23 +28,15 @@ var testBinaryRunfilePath string
 func TestRun_NormalExit_NoError(t *testing.T) {
 	ctx := context.Background()
 
-	{
-		res := runSh(ctx, "exit 0")
+	for _, code := range []int{0, 1, 137} {
+		res := runSh(ctx, fmt.Sprintf("exit %d", code))
 
 		assert.NoError(t, res.Error)
-		assert.Equal(t, 0, res.ExitCode)
-	}
-	{
-		res := runSh(ctx, "exit 1")
-
-		assert.NoError(t, res.Error)
-		assert.Equal(t, 1, res.ExitCode)
-	}
-	{
-		res := runSh(ctx, "exit 137")
-
-		assert.NoError(t, res.Error)
-		assert.Equal(t, 137, res.ExitCode)
+		assert.Equal(t, code, res.ExitCode)
+		assert.Greater(t, res.UsageStats.GetCpuNanos(), int64(0))
+		assert.Less(t, time.Duration(res.UsageStats.GetCpuNanos()), 10*time.Millisecond, "sh -c 'exit {code}' should not consume a lot of CPU time")
+		assert.Greater(t, res.UsageStats.GetPeakMemoryBytes(), int64(0))
+		assert.Less(t, res.UsageStats.GetPeakMemoryBytes(), int64(1e6), "sh -c 'exit {code}' should not consume a lot of memory")
 	}
 }
 
