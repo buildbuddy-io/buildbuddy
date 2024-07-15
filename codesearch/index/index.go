@@ -376,12 +376,8 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 	return fields, nil
 }
 
-func (r *Reader) GetStoredDocument(docID uint64, fieldNames ...string) (types.Document, error) {
-	fields, err := r.getStoredFields(docID, fieldNames...)
-	if err != nil {
-		return nil, err
-	}
-	return types.NewMapDocument(docID, fields), nil
+func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
+	return r.newLazyDoc(docID), nil
 }
 
 // postingList looks up the set of docIDs matching the provided ngram.
@@ -628,10 +624,9 @@ func (r *Reader) RawQuery(squery []byte) ([]types.DocumentMatch, error) {
 		return nil, err
 	}
 
-	fieldDocidMatches := bm.Map()
 	docMatches := make(map[uint64]*docMatch, 0)
-	for field, docids := range fieldDocidMatches {
-		for _, docid := range docids {
+	for field, pl := range bm {
+		for _, docid := range pl.ToArray() {
 			if _, ok := docMatches[docid]; !ok {
 				docMatches[docid] = &docMatch{
 					docid:           docid,

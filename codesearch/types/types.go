@@ -70,13 +70,13 @@ type IndexWriter interface {
 }
 
 type IndexReader interface {
-	GetStoredDocument(docID uint64, fieldNames ...string) (Document, error)
+	GetStoredDocument(docID uint64) (Document, error)
 	RawQuery(squery []byte) ([]DocumentMatch, error)
 }
 
 type Scorer interface {
 	Skip() bool
-	Score(docMatch DocumentMatch) float64
+	Score(docMatch DocumentMatch, doc Document) float64
 }
 
 type HighlightedRegion interface {
